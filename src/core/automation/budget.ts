@@ -1006,6 +1006,31 @@ export interface AutomationEvidenceRefV1 {
   readonly sha256: string;
 }
 
+/**
+ * Evidence refs are presence-checked, not content-verified: this ledger has no
+ * authority that can resolve one yet. What is cheap now is shape -- a ref must
+ * be a scheme-prefixed typed ref with a digest, so it names something
+ * addressable rather than being free text.
+ */
+const EVIDENCE_REF = /^[a-z][a-z0-9-]{1,31}:[^\s]{1,255}$/u;
+
+/** Schemes that name the run an interrupted operation belonged to. */
+export const AUTOMATION_RUN_EVIDENCE_SCHEMES = ['controller-run', 'provider-run'] as const;
+
+export type AutomationRunEvidenceScheme = typeof AUTOMATION_RUN_EVIDENCE_SCHEMES[number];
+
+export function automationEvidenceScheme(ref: string): string {
+  return ref.slice(0, ref.indexOf(':'));
+}
+
+export function assertAutomationEvidenceRef(value: AutomationEvidenceRefV1, label: string): AutomationEvidenceRefV1 {
+  if (value === null || typeof value !== 'object') invalid(`${label} must be an object`);
+  if (typeof value.ref !== 'string' || !EVIDENCE_REF.test(value.ref)) {
+    invalid(`${label}.ref must be a scheme-prefixed typed reference`);
+  }
+  return Object.freeze({ ref: value.ref, sha256: assertDigest(value.sha256, `${label}.sha256`) });
+}
+
 export interface AutomationUsageEventV1 {
   readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
   readonly kind: typeof AUTOMATION_USAGE_EVENT_KIND;
@@ -1078,10 +1103,7 @@ export function validateAutomationUsageEvent(value: AutomationUsageEventV1): Aut
     consumed: validateAutomationMetricVector(value.consumed, 'usage consumed'),
     outcome: value.outcome,
     resolution: value.resolution,
-    evidence_refs: Object.freeze(value.evidence_refs.map((entry, index) => Object.freeze({
-      ref: assertIdentifier(entry.ref, `evidence_refs[${index}].ref`),
-      sha256: assertDigest(entry.sha256, `evidence_refs[${index}].sha256`),
-    }))),
+    evidence_refs: Object.freeze(value.evidence_refs.map((entry, index) => assertAutomationEvidenceRef(entry, `evidence_refs[${index}]`))),
     observed_at: assertTimestamp(value.observed_at, 'usage observed_at'),
     event_sha256: assertDigest(value.event_sha256, 'usage event_sha256'),
   });

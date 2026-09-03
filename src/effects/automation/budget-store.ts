@@ -19,6 +19,7 @@ import {
   readFileSync,
   readdirSync,
   linkSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeSync,
@@ -30,7 +31,9 @@ import {
   AUTOMATION_ENFORCEMENT_ORDER,
   AUTOMATION_LEDGER_GENESIS,
   AUTOMATION_METRIC_LIMIT_FIELDS,
+  AUTOMATION_RUN_EVIDENCE_SCHEMES,
   AUTOMATION_VERIFIED_USAGE_METRICS,
+  automationEvidenceScheme,
   automationOperationReservation,
   deriveAutomationConsumption,
   parseContractDelegationBudget,
@@ -115,6 +118,7 @@ function assertClockNotRegressed(
 
 const RUN_ID = /^[0-9a-f]{64}$/u;
 
+import { assertProgramAuthorizationAnchored } from './grant-store';
 import {
   automationClockIsInjected,
   automationStoreNow,
@@ -383,10 +387,23 @@ function assertBudgetAuthorities(repoRoot: string, budget: AutomationBudgetV1): 
   }
   const contractRelative = grant.contract_path;
   if (contractRelative === null) fail('automation_budget_store_invalid', 'a task-contract grant must name its contract path');
+  // Containment is checked on real paths: a parent directory that is a symlink
+  // out of the repository would otherwise pass a purely lexical check.
   const absolute = resolve(repoRoot, contractRelative);
-  if (relative(resolve(repoRoot), absolute).startsWith('..')) {
+  let realRepoRoot: string;
+  let realParent: string;
+  try {
+    realRepoRoot = realpathSync(resolve(repoRoot));
+    realParent = realpathSync(dirname(absolute));
+  } catch (error) {
+    return fail('automation_budget_store_unavailable', `cannot resolve the task contract path: ${contractRelative}`, error);
+  }
+  const scoped = relative(realRepoRoot, join(realParent, basename(absolute)));
+  if (scoped === '' || scoped === '..' || scoped.startsWith(`..${sep}`) || /^[A-Za-z]:/u.test(scoped)) {
     fail('automation_budget_store_unsafe', `task contract path escapes the repository: ${contractRelative}`);
   }
+  // `readRaw` performs the final-segment lstat: a symlinked or non-regular
+  // contract file is rejected there, and a missing one reports as missing.
   const text = readRaw(absolute, `task contract ${contractRelative}`);
   const digest = createHash('sha256').update(text, 'utf8').digest('hex');
   if (budget.contract_sha256 !== digest) {
@@ -538,12 +555,17 @@ export function detectAutomationCurrentDrift(
   return 'none';
 }
 
-function repairCurrentFromDurableRecords(
-  repoRoot: string,
+/**
+ * Re-derive the projection from the durable records. This does not write, so
+ * the read-only surfaces can render durable counts instead of the stale ones
+ * the projection still holds, and the mutating verbs reuse the same derivation
+ * before persisting it.
+ */
+function deriveCurrentFromDurableRecords(
   paths: RunPaths,
   status: AutomationBudgetStatusV1,
-  repairedAt: string,
-): AutomationBudgetStatusV1 {
+  derivedAt: string,
+): { readonly current: AutomationBudgetCurrentV1; readonly latest_record_at: string | null } {
   const events = jsonEntries(paths.events)
     .map((entry) => parse(readRaw(join(paths.events, entry), 'automation usage event'), validateAutomationUsageEvent, 'automation usage event'))
     .sort((left, right) => left.step_index - right.step_index);
@@ -579,14 +601,25 @@ function repairCurrentFromDurableRecords(
     ledger_sha256: ledger,
     stop_receipt_sha256: status.stop_receipt === null ? null : status.stop_receipt.stop_receipt_sha256,
     previous_current_sha256: status.current.current_sha256,
-    updated_at: repairedAt,
+    updated_at: derivedAt,
   });
   const latest = [
     ...events.map((event) => event.observed_at),
     ...reservations.map((reservation) => reservation.reserved_at),
   ].sort().pop();
-  if (latest !== undefined) {
-    assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, repairedAt, latest, 'dispatch');
+  return Object.freeze({ current, latest_record_at: latest ?? null });
+}
+
+function repairCurrentFromDurableRecords(
+  repoRoot: string,
+  paths: RunPaths,
+  status: AutomationBudgetStatusV1,
+  repairedAt: string,
+): AutomationBudgetStatusV1 {
+  const derived = deriveCurrentFromDurableRecords(paths, status, repairedAt);
+  const current = derived.current;
+  if (derived.latest_record_at !== null) {
+    assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, repairedAt, derived.latest_record_at, 'dispatch');
   }
   writeAtomic(paths.current, bytes(current), 'automation budget current');
   // A repair that folds in the last charge may itself reach a hard limit, so the
@@ -643,12 +676,20 @@ export function readAutomationBudgetBoardSlice(
   runId: string,
 ): AutomationBudgetBoardSliceV1 {
   const status = readAutomationBudgetStatus(repoRoot, runId);
+  const observedAt = automationStoreNow();
+  // A stale projection would under-report what the run has already spent. The
+  // durable records are re-folded here for rendering only -- nothing is
+  // written, so a read never repairs -- and `projection_stale` still says the
+  // stored projection has not caught up.
+  const current = status.drift === 'none'
+    ? status.current
+    : deriveCurrentFromDurableRecords(runPaths(repoRoot, runId), status, observedAt).current;
   return projectAutomationBudgetSlice({
     budget: status.budget,
-    current: status.current,
+    current,
     stop_receipt: status.stop_receipt,
     drift: status.drift,
-    observed_at: automationStoreNow(),
+    observed_at: observedAt,
   });
 }
 
@@ -680,6 +721,9 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
   const budget = validateAutomationBudget(input.budget);
   const publishedAt = automationStoreNow();
   assertTokenLimitsUnenforceable(budget);
+  // The grant is an authority only if an operator minted it into the harness
+  // home; one that travels inside the budget it authorizes is self-issued.
+  assertProgramAuthorizationAnchored(resolve(input.repo_root), budget.authorization);
   assertBudgetAuthorities(resolve(input.repo_root), budget);
   if (Date.parse(budget.created_at) > Date.parse(publishedAt)) {
     fail('automation_budget_store_invalid', 'an automation budget cannot be created in the future of the store clock');
@@ -1185,6 +1229,20 @@ export function reconcileAutomationReservation(
   }
   // The charge is derived from the resolution, so the caller chooses which
   // recovery it can prove, never what it costs.
+  if (input.resolution === 'reconciled_not_started') {
+    // Charging nothing is the one resolution that costs nothing, so it carries
+    // the strictest shape requirement this ledger can check today: at least one
+    // ref that names the run the operation would have belonged to.
+    const named = input.evidence_refs.some(
+      (entry) => (AUTOMATION_RUN_EVIDENCE_SCHEMES as readonly string[]).includes(automationEvidenceScheme(entry.ref)),
+    );
+    if (!named) {
+      fail(
+        'automation_budget_store_invalid',
+        `a not-started reconciliation needs at least one evidence ref naming the run (${AUTOMATION_RUN_EVIDENCE_SCHEMES.join(' or ')})`,
+      );
+    }
+  }
   const reconciledAt = automationStoreNow();
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
     const evidence = {

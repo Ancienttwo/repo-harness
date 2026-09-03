@@ -93,7 +93,19 @@ repos.
   frozen absolute deadline measured on the store clock, which may not run
   backwards over the run's own durable records. A token or cost limit is
   refused at preflight until provider-attested usage is wired, because a
-  self-asserted usage number is worse than no limit. Replaying an idempotency key charges
+  self-asserted usage number is worse than no limit. `ProgramAuthorizationV1`
+  grants are operator-minted into the account-level harness home and a budget is
+  accepted only when its embedded grant resolves to byte-identical stored bytes.
+- The automation budget defends against honest-but-buggy controllers and
+  transport retries, not against a caller that already has the store's own
+  privileges. Three boundaries are explicitly out of scope until their owning
+  authority exists: `operation` and `outcome` are caller-asserted until the
+  unattended controller binds them to real side effects; reconciliation
+  `evidence_refs` are shape-checked typed refs, presence-checked but not
+  content-verified, until a digest-addressed provider usage and attempt-receipt
+  authority can resolve them; and the store's clock seam is a test-only
+  convenience rather than a permission boundary, because a same-process caller
+  is already trusted at the process level. Replaying an idempotency key charges
   once, an interrupted reservation blocks further spending until it is
   reconciled from exact evidence rather than assumed free, and exhaustion
   publishes an immutable `AutomationStopReceiptV1`. A budget never raises or

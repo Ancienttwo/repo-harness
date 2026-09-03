@@ -79,6 +79,10 @@ allowed_paths:
   - tests/unit/issue-282-automation-budget-store.test.ts
   - tests/unit/issue-282-automation-budget-contention.test.ts
   - tests/unit/issue-282-automation-budget-e2e.test.ts
+  - tests/unit/issue-282-automation-budget-prd-drift.test.ts
+  # the grant store needs the one account-level harness home resolver; this
+  # widens its visibility only and changes no registry semantics
+  - src/effects/repo-registry.ts
   # Widened during execution: adding capability.runtime-harness.automation-budget
   # changes the self-host node count and adds one protocol-owning core module, so
   # three existing closed-scan assertions have to be re-baselined with it.
@@ -156,6 +160,7 @@ exit_criteria:
     - path: tests/unit/issue-282-automation-budget-store.test.ts
     - path: tests/unit/issue-282-automation-budget-contention.test.ts
     - path: tests/unit/issue-282-automation-budget-e2e.test.ts
+    - path: tests/unit/issue-282-automation-budget-prd-drift.test.ts
   commands_succeed:
     - bun test --timeout 60000
     - bun run check:type

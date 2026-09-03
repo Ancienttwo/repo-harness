@@ -252,12 +252,25 @@ interface ProgramAuthorizationV1 {
   allowed_merge_method: "squash" | "merge" | "rebase";
   max_repair_cycles: number;
   budget: ProgramBudgetLimitV1;
+  contract_scope: "task_contract" | "contract_less";
+  contract_path: string | null;
   issued_by: string;
   issued_at: string;
   expires_at: string;
   authorization_sha256: string;
 }
 ```
+`contract_scope` states whether the grant authorizes a run bound to a task
+contract or an explicitly contract-less one; a run with no contract is a
+decision the issuer makes, never a default reached by omission.
+`contract_path` is the repository-relative task contract the consumer must read
+and digest itself; it is required by `task_contract` and must be null under
+`contract_less`.
+
+This block is the single schema source. `tests/unit/issue-282-automation-budget-prd-drift.test.ts`
+parses the field list above and asserts it equals the key set of the
+implemented type in `src/core/automation/budget.ts`, so the two cannot drift.
+
 Grant properties:
 - stored in `REPO_HARNESS_HOME`, not candidate branch;
 - minted only by operator/Host profile;

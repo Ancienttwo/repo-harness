@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:7ee084e0f68fabe6532673016ce95cd1ee28c06382db265815715a0714f05023`
+> **Substantive Change SHA256**: `sha256:301733d024b3dd293733d95302b9699398d04d81687aafd382c9ebf0ae2f5bcf`
 
 ## Design Decisions
 
@@ -99,6 +99,41 @@ fail the build if any of those keys is ever reintroduced to a public input, and
 the end-to-end controller fixture drives the store through the public inputs
 only, so it is itself the proof that a controller cannot influence a decision.
 
+### Threat model and explicit non-goals
+
+The budget authority defends against **honest-but-buggy controllers and
+transport retries**. A caller that can mutate its own process environment or
+write the store's files already has the store's privileges, and a same-process
+API is not a trust boundary against it; that boundary arrives with #279's
+controller binding operation/outcome/evidence to real side effects and, later,
+process isolation.
+
+Three things are therefore explicit non-goals of this slice, each with a
+revisit trigger in `tasks/todos.md`:
+
+- **`operation` and `outcome` are caller-asserted.** The store derives every
+  cost from them, but nothing yet proves a caller claiming `acquisition` /
+  `progress` acquired anything. #279 owns that binding.
+- **`evidence_refs` are presence-checked, not content-verified.** What is cheap
+  today is shape, and that is now enforced: a ref must be a scheme-prefixed
+  typed ref with a digest, and `reconciled_not_started` -- the one resolution
+  that costs nothing -- must carry at least one ref whose scheme names the run
+  (`controller-run:` or `provider-run:`), not free text. Resolving a ref to
+  bytes needs the digest-addressed provider usage / attempt-receipt authority.
+- **The clock seam is a test-only convenience, not a permission boundary.** The
+  env gate stays, because it keeps the seam from being reached by accident, but
+  it is not claimed as a defence.
+
+What is *not* a non-goal, and was fixed here: a grant is only an authority if an
+operator minted it outside the repository. `ProgramAuthorizationV1` grants live
+in the account-level harness home (`<home>/gates/<repoKey>/program-authorizations/<sha256>.json`,
+0o700/0o600, create-once, canonical bytes, published by `link`), are written by
+`repo-harness automation grant mint`, and `publishAutomationBudget` refuses any
+budget whose embedded grant does not resolve to byte-identical stored bytes --
+including revisions. A grant that travels inside the budget it authorizes is
+self-issued, which is what the PRD's "stored in REPO_HARNESS_HOME, not candidate
+branch; minted only by operator/Host profile" already required.
+
 ### The store owns the clock
 
 The frozen deadline is only worth what the time source behind it is worth. A
@@ -148,6 +183,11 @@ parses `delegation.budget` itself. A run with no task contract is not the
 default; it is a grant the human issuer had to make. A caller that summarises a
 contract as looser than it is gets refused by re-reading the contract, which is
 the only check a self-consistent digest cannot pass.
+
+Containment is checked on real paths (`realpathSync` of both the repository root
+and the contract's parent directory) so a symlinked parent cannot carry the path
+out of the repository, and the final segment's lstat still rejects a symlinked
+or non-regular contract file.
 
 The bytes are re-verified on **every** read, not just at publish, so editing the
 bound task contract while a run is in flight fails every verb closed with

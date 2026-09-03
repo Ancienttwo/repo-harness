@@ -32,6 +32,8 @@ import {
   readAutomationBudgetStatus,
   reserveAutomationBudget,
 } from '../../src/effects/automation/budget-store';
+import type { AutomationBudgetStatusV1 } from '../../src/effects/automation/budget-store';
+import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
 
 const ROOT = join(import.meta.dir, '..', '..');
@@ -55,9 +57,23 @@ const at = (iso: string): void => { fixtureClockMs = Date.parse(iso); fixtureAut
 const resumeAutoClock = (): void => { fixtureAutoAdvance = true; };
 
 const FIXTURES = new Set<string>();
+// The grant store is account-level, so every fixture gets its own harness home
+// outside the repository; a shared one would leak grants between fixtures.
+const FIXTURE_HOME = realpathSync(mkdtempSync(join(tmpdir(), 'automation-budget-home-')));
+process.env.REPO_HARNESS_HOME = FIXTURE_HOME;
+
+/** Grants are operator-minted; a fixture mints before it publishes. */
+function mintFor(repo: string, budget: AutomationBudgetV1): void {
+  mintProgramAuthorization({ repo_root: repo, authorization: budget.authorization });
+}
+
+function publishBudget(repo: string, budget: AutomationBudgetV1): AutomationBudgetStatusV1 {
+  mintFor(repo, budget);
+  return publishAutomationBudget({ repo_root: repo, budget });
+}
 
 afterAll(() => {
-  for (const dir of FIXTURES) rmSync(dir, { recursive: true, force: true });
+  for (const dir of [...FIXTURES, FIXTURE_HOME]) rmSync(dir, { recursive: true, force: true });
 });
 
 function repoFixture(): string {
@@ -217,7 +233,7 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
     const before = foreignAuthorityDigest(repo);
 
     const budget = makeBudget('e2e');
-    publishAutomationBudget({ repo_root: repo, budget });
+    publishBudget(repo, budget);
 
     const trace = driveController(repo, budget, 10);
     expect(trace.claims).toHaveLength(3);
@@ -249,7 +265,7 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
   test('the operator CLI projects the same stop receipt the board reads', () => {
     const repo = repoFixture();
     const budget = makeBudget('e2e-cli');
-    publishAutomationBudget({ repo_root: repo, budget });
+    publishBudget(repo, budget);
     driveController(repo, budget, 10);
 
     const result = spawnSync(
