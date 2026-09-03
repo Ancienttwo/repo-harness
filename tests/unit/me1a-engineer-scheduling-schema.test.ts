@@ -18,6 +18,16 @@ const REPO = 'repo_0123456789abcdef';
 const OTHER_REPO = 'repo_fedcba9876543210';
 const DIGEST = `sha256:${'a'.repeat(64)}`;
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
+const MODULE_AUTHORITY = {
+  authority_kind: 'module_acceptance',
+  subject_ref: 'tasks/contracts/wp-b.contract.md',
+  subject_revision: DIGEST,
+} as const;
+const PRODUCT_AUTHORITY = {
+  authority_kind: 'product_acceptance',
+  subject_ref: 'plans/prds/product.md',
+  subject_revision: DIGEST,
+} as const;
 
 function workPackage(id = 'wp-a', taskRef = 'task A', dependsOn: unknown[] = []) {
   return {
@@ -107,21 +117,21 @@ describe('ME-1A closed scheduling schema', () => {
 
   test('rejects missing dependency targets and cycles across repository-qualified identities', () => {
     const missing = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: OTHER_REPO, work_package_id: 'wp-x', required_state: 'canonical_done' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: OTHER_REPO, work_package_id: 'wp-x', required_state: 'canonical_done', acceptance_authority: null }]),
     ]), [task()]);
     expect(() => validateWorkGraphTopology([missing])).toThrow('depends on missing');
 
     const cyclic = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done' }]),
-      workPackage('wp-b', 'task B', [{ repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null }]),
+      workPackage('wp-b', 'task B', [{ repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done', acceptance_authority: null }]),
     ]), [task(), task('task B', '3', '4', 2)]);
     expect(() => validateWorkGraphTopology([cyclic])).toThrow('cycle detected');
   });
 
   test('rejects duplicate dependency identities and duplicate canonical task projections', () => {
     expect(() => graph([workPackage('wp-a', 'task A', [
-      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done' },
-      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'module_accepted' },
+      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null },
+      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'module_accepted', acceptance_authority: MODULE_AUTHORITY },
     ])])).toThrow('depends_on contains duplicates');
     expect(() => projectWorkGraph(graph([
       workPackage('wp-a', 'task A'),
@@ -168,7 +178,7 @@ describe('ME-1A closed scheduling schema', () => {
 
   test('emits closed exclusion reasons instead of partially eligible offers', () => {
     const projected = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY }]),
       workPackage('wp-b', 'task B'),
     ]), [task(), task('task B', '3', '4', 2)]);
     const candidate = buildEngineerOfferCandidate({
@@ -182,7 +192,7 @@ describe('ME-1A closed scheduling schema', () => {
       },
       binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: null,
-      dependencies: [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', status: 'authority_unavailable', authority_revision: null }],
+      dependencies: [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY, status: 'authority_unavailable', authority_revision: null }],
       concurrency_available: false,
       concurrency_revision: DIGEST,
       active_claims: 1,
@@ -240,7 +250,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(retired.exclusion.blockers).toEqual(['binding_inactive']);
 
     const chained = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null }]),
       workPackage('wp-b', 'task B'),
     ]), [task(), task('task B', '3', '4', 2)]);
     const unsatisfied = buildEngineerOfferCandidate({
@@ -249,7 +259,7 @@ describe('ME-1A closed scheduling schema', () => {
       work_package: chained.work_packages.find((item) => item.work_package_id === 'wp-a')!,
       dependencies: [{
         repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done',
-        status: 'unsatisfied', authority_revision: DIGEST,
+        acceptance_authority: null, status: 'unsatisfied', authority_revision: DIGEST,
       }],
     });
     expect(unsatisfied.eligible).toBe(false);
@@ -262,7 +272,7 @@ describe('ME-1A closed scheduling schema', () => {
     const definitions = Array.from({ length: 100 }, (_, index) => workPackage(
       `wp-${String(index).padStart(3, '0')}`,
       `task ${index}`,
-      index === 0 ? [] : [{ repository_id: REPO, work_package_id: `wp-${String(index - 1).padStart(3, '0')}`, required_state: 'canonical_done' }],
+      index === 0 ? [] : [{ repository_id: REPO, work_package_id: `wp-${String(index - 1).padStart(3, '0')}`, required_state: 'canonical_done', acceptance_authority: null }],
     ));
     const tasks = Array.from({ length: 100 }, (_, index) => task(
       `task ${index}`,

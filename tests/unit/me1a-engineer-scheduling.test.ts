@@ -19,6 +19,7 @@ const CONTRACT_REVISION = `sha256:${'a'.repeat(64)}`;
 const BINDING = '11111111-1111-4111-8111-111111111111';
 const SPRINT = 'plans/sprints/demo.sprint.md';
 const POLICY_BYTES = '{"policy":1}\n';
+const PRODUCT_PRD_BYTES = '# Product\n\n> **Status**: Approved\n';
 const ROLLBACK_A = '{"rollback":"a"}\n';
 const ROLLBACK_B = '{"rollback":"b"}\n';
 const SPRINT_TEXT = `# Sprint: demo
@@ -65,7 +66,9 @@ function graph() {
     lane: 'engineering-v2',
     work_packages: [
       definition('wp-a', 'task A'),
-      definition('wp-b', 'task B', [{ repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done' }]),
+      definition('wp-b', 'task B', [{
+        repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done', acceptance_authority: null,
+      }]),
     ],
   };
 }
@@ -249,10 +252,15 @@ describe('ME-1A Engineer offer effects', () => {
     expect([profileReads, bindingReads, fleetReads]).toEqual([0, 0, 0]);
   });
 
-  test('future dependency authority fails closed until its receipt adapter exists', () => {
+  test('a declared product acceptance authority that cannot be read stays authority_unavailable', () => {
     const subject = fixture();
     const baseGraph = graph();
     (baseGraph.work_packages[1] as any).depends_on[0].required_state = 'product_accepted';
+    (baseGraph.work_packages[1] as any).depends_on[0].acceptance_authority = {
+      authority_kind: 'product_acceptance',
+      subject_ref: 'plans/prds/product.md',
+      subject_revision: engineerSha256(PRODUCT_PRD_BYTES),
+    };
     (subject.deps as any).readFileAtCommit = (_repo: string, _commit: string, path: string) => {
       if (path.endsWith('.work-graph.v1.json')) return JSON.stringify(baseGraph);
       if (path === 'plans/policies/module.json') return POLICY_BYTES;

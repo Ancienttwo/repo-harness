@@ -179,12 +179,6 @@ AcceptanceReceipt field.
   promoted to work-package level because it needs its own merge, rollback, or
   verification boundary, rather than staying a checklist row in a sprint
   backlog or active plan.
-- **Sprint task identity**: The `ID` cell of a backlog schema 2 row. It is a
-  persisted 64-hex value read verbatim as `task_id`, never derived from the Task
-  cell text, a slug, or the row index, so editing a Task title is a rename that
-  keeps every Lease, claim-scoped message, Work Graph mapping, and
-  external-source binding attached. `task_revision` still hashes the Task, Mode,
-  and Acceptance cells, so the same edit drifts stale offers and claims.
 - **Task contract**: The authoritative delegation brief in
   `tasks/contracts/*.contract.md` that fixes allowed paths, exit criteria, and
   scope for one execution slice; an implementer works from the contract, not
@@ -219,13 +213,47 @@ AcceptanceReceipt field.
   supersedes an unstarted one into the terminal `superseded` state inside a
   bounded coalescing window that it inherits rather than extends, and a started
   one is never superseded. The Host action carries no claim token and no
-  writable authority, and success requires a controller-step receipt bound to the
-  effect control reference — never a message-delivery receipt and never a process
-  exit code. Binding, capability and authorization fences are re-read after the
-  start becomes durable, so a fence that commits during the start yields a
-  recorded failure instead of a stale Host action. A wake is a hint that work may exist; the awakened controller
-  re-reads current offers and authorization, and a stale or empty snapshot is a
-  no-op, not a claim.
+  writable authority, and success requires a controller-step receipt bound to
+  the effect control reference — never a message-delivery receipt and never a
+  process exit code. Binding, capability and authorization fences are re-read
+  after the start becomes durable, so a fence that commits during the start
+  yields a recorded failure instead of a stale Host action. A wake is a hint
+  that work may exist; the awakened controller re-reads current offers and
+  authorization, and a stale or empty snapshot is a no-op, not a claim.
+- **Dependency authority**: The single read-only resolver that answers one
+  declared Work Graph dependency state from the one authority that already owns
+  that verdict: the canonical Sprint row for `canonical_done`, the acceptance
+  authority's own verification observation for `module_accepted`, the Lease
+  publication pointer plus the immutable PublicationReceipt and integration
+  observation for `publication_integrated`, and the ME-4C product acceptance
+  projection for `product_accepted`. Every branch reads a record-time artifact
+  the owning authority published; none of them re-derives a verdict. A readable negative is `unsatisfied`; a missing,
+  unreadable, unauthorized or unsupported authority is `authority_unavailable`;
+  an unknown authority is never ready. Each observation carries an
+  `authority_revision` digest of its canonical validated evidence projection, so
+  receipt, target-revision or registry-authorization movement stales the
+  Engineer offer that asserted it.
+- **Dependency acceptance authority reference**: The closed, revision-bound
+  `acceptance_authority` field on a Work Graph dependency edge that names the
+  exact acceptance subject for `module_accepted` and `product_accepted`. It is
+  validated against the same canonical commit as the target Work Graph;
+  `required_acceptance` policy documents cannot select a receipt subject and are
+  never used as a substitute.
+- **Acceptance verification observation**: The immutable record the acceptance
+  authority writes for itself inside the same transaction that records an
+  AcceptanceReceipt. It freezes what only that authority can prove — the live
+  normalized review subject digest, the verification-evidence fingerprint, the
+  contract and goal bindings, the target ref and revision, the disposition, and
+  the archive-projection seal digest when one applies. It is keyed by subject
+  (`sha256` of the contract file plus its acceptance fingerprint) rather than
+  content-addressed, so one contract subject has exactly one current
+  observation and re-recording the same subject overwrites it while a changed
+  contract lands under a different key. Readers verify identity, canonical
+  bytes and the derived observation id; they never recompute the acceptance
+  verdict. A dependency edge naming an archive-projected contract is
+  fail-closed `authority_unavailable`, because the acceptance fingerprint
+  normalizes the archive envelope away and only the authority's own seal can
+  distinguish a projected contract from its source.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.
