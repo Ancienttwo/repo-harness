@@ -299,7 +299,7 @@ describe("sprint-backlog helper", () => {
         join(cwd, sprintPath),
         original.replace(
           `| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b | inline | doc section updated | (pending) |`,
-          `| 1 | ${fixtureTaskId('task-dup')} | [ ] | task-dup | inline | duplicate index row | (pending) |\n| 2 | [ ] | task-b | inline | doc section updated | (pending) |`
+          `| 1 | ${fixtureTaskId('task-dup')} | [ ] | task-dup | inline | duplicate index row | (pending) |\n| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b | inline | doc section updated | (pending) |`
         )
       );
 
@@ -629,16 +629,19 @@ describe("sprint-backlog helper", () => {
       writeFileSync(join(lockDir, "holder"), "still here");
       expect(run("bash", ["-lc", `touch -t 202001010000 '${lockDir}'`], cwd).status).toBe(0);
 
-      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
-      expect(complete.status).toBe(1);
-      expect(complete.stderr).toContain("timed out acquiring backlog lock");
+      // `start-task` is the verb that still takes the shell's own backlog lock;
+      // `complete-task` moved into `sprint complete-row`, which takes the same
+      // lock through the TypeScript lease store instead.
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(start.status).toBe(1);
+      expect(start.stderr).toContain("timed out acquiring backlog lock");
       expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain(`| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |`);
 
       const timedOut = readJsonl(join(cwd, WAITS_LEDGER_RELATIVE))
         .filter((record) => record.kind === "backlog_lock_wait");
       expect(timedOut.length).toBe(1);
       expect(timedOut[0].outcome).toBe("timeout");
-      expect(timedOut[0].verb).toBe("complete-task");
+      expect(timedOut[0].verb).toBe("start-task");
       expect(timedOut[0].attempts).toBe(5);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -727,7 +730,7 @@ describe("sprint-backlog helper", () => {
   test("mutations reclaim a stale backlog lock instead of deadlocking", () => {
     const cwd = tmpWorkspace("sprint-backlog-stale-lock");
     try {
-      copySprintHelpers(cwd, ["sprint-backlog.sh"]);
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
       const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
       writeActiveSprintFixture(cwd, sprintPath);
       const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
@@ -735,9 +738,11 @@ describe("sprint-backlog helper", () => {
       // Backdate the lock past the 1-minute stale threshold.
       expect(run("bash", ["-lc", `touch -t 202001010000 '${lockDir}'`], cwd).status).toBe(0);
 
-      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
-      expect(complete.status).toBe(0);
-      expect(complete.stderr).toContain("reclaiming stale backlog lock");
+      // `start-task` still owns the shell's backlog lock; it is the verb whose
+      // stale-lock reclaim this pins.
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      expect(start.stderr).toContain("reclaiming stale backlog lock");
       expect(existsSync(lockDir)).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

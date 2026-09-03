@@ -7,7 +7,7 @@
  * would prove nothing about `mkdir` atomicity or the crash windows.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import {
   existsSync,
   mkdirSync,
@@ -23,11 +23,13 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import {
+  bindLeaseRecord,
   buildLeaseOwnerRecord,
   deriveTaskRevision,
   parseLeaseOwnerRecord,
   projectCanonicalTasks,
   serializeLeaseOwnerRecord,
+  stealLeaseRecord,
   type LeaseOwnerRecordV1,
   type LeaseOwnerRecordV2,
 } from '../src/core/state/coordination-identity';
@@ -36,6 +38,7 @@ import {
   beginCompletionSprintCommand,
   bindSprintCommand,
   claimSprintCommand,
+  completeRowSprintCommand,
   processSprintDependencies,
   reconcileSprintCommand,
   releaseSprintCommand,
@@ -61,6 +64,7 @@ import {
 } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { deriveLegacyTaskId } from '../src/core/state/sprint-schema-v1';
+import { CLAIM_TOKEN_DIR } from '../src/effects/state/coordination-claim-token';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const FIXTURES = new Set<string>();
@@ -84,6 +88,7 @@ function createRepo(): string {
   return root;
 }
 
+const REPO_ROOT = join(import.meta.dir, '..');
 const REPO_IDENTITY = '/tmp/lease-store-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/lease-store.sprint.md';
 
@@ -1239,4 +1244,262 @@ describe('reconcile on a schema 1 sprint: the pre-migration recovery window', ()
     expect(result.canonical_error).toContain('bound');
     expect(readLease(repo, taskId).classification).toBe('bound');
   });
+});
+
+/**
+ * Completing a row is one transaction, and these are the races that used to
+ * break it.
+ *
+ * The old shape resolved the row, gated on a claim id and a revision, rewrote
+ * the row with `awk`, and released the lease -- four observations of shared
+ * state spread across two processes. A `steal`, a `release`, or a fresh `claim`
+ * landing in any of the windows between them produced the one outcome a
+ * completion may never produce: a row marked `[x]` with no lease state that
+ * supports it. Each test below drops a competing verb into exactly that window
+ * by holding the row's task lock while the completion blocks on it.
+ */
+describe('complete-row is one locked transaction', () => {
+  const RACE_SPRINT = 'plans/sprints/race.sprint.md';
+  const RACE_TASK = 'complete under contention';
+  const RACE_ID = fixtureTaskId('race row');
+
+  function raceSprintText(status: string): string {
+    return [
+      '# Sprint: Race Fixture',
+      '',
+      '> **Status**: Executing',
+      '> **Backlog Schema**: 2',
+      '> **Updated**: 2026-01-01 00:00',
+      '',
+      '## Backlog',
+      '',
+      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+      '|---|----|--------|------|------|------------|------|',
+      `| 1 | ${RACE_ID} | ${status} | ${RACE_TASK} | inline | races converge | (pending) |`,
+      '',
+    ].join('\n');
+  }
+
+  function raceRepo(): string {
+    const repo = createRepo();
+    mkdirSync(join(repo, 'plans/sprints'), { recursive: true });
+    writeFileSync(join(repo, RACE_SPRINT), raceSprintText('[ ]'));
+    run(repo, ['add', RACE_SPRINT]);
+    run(repo, ['commit', '--quiet', '-m', 'race sprint']);
+    return repo;
+  }
+
+  function canonicalRevision(repo: string): string {
+    const task = projectCanonicalTasks({
+      repoIdentity: resolveGitCommonDirectory(repo),
+      sprintPath: RACE_SPRINT,
+      sprintText: readFileSync(join(repo, RACE_SPRINT), 'utf-8'),
+    })[0]!;
+    expect(task.task_id).toBe(RACE_ID);
+    return task.task_revision;
+  }
+
+  /** A claimed, bound row with the token this tree would hold. */
+  function claimRow(repo: string, claimId: string): void {
+    const record = bindLeaseRecord(
+      buildLeaseOwnerRecord({
+        claimId,
+        taskId: RACE_ID,
+        taskRevision: canonicalRevision(repo),
+        sprintPath: RACE_SPRINT,
+        targetRef: 'main',
+        generation: 1,
+        sessionId: 'race-session',
+        sourceWorktree: repo,
+      }),
+      { claimId, executionWorktree: repo, branch: 'codex/race', unitRef: 'plans/plan-race.md' },
+    );
+    if (!record.ok) throw new Error(record.error);
+    createLeaseDirectory(repo, RACE_ID);
+    writeLeaseOwnerDurably(repo, RACE_ID, record.record);
+    mkdirSync(join(repo, CLAIM_TOKEN_DIR), { recursive: true });
+    writeFileSync(
+      join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`),
+      [
+        `claim_id=${claimId}`,
+        `task_id=${RACE_ID}`,
+        `sprint=${RACE_SPRINT}`,
+        `task=${RACE_TASK}`,
+        'unit_ref=plans/plan-race.md',
+        '',
+      ].join('\n'),
+    );
+  }
+
+  function completionChildSource(repo: string, signals: string): string {
+    return [
+      "import { writeFileSync } from 'fs';",
+      `import { completeRowSprintCommand, processSprintDependencies } from '${join(REPO_ROOT, 'src/effects/state/coordination-sprint')}';`,
+      `writeFileSync(${JSON.stringify(join(signals, 'started'))}, 'go');`,
+      'const outcome = completeRowSprintCommand(',
+      `  { sprint: ${JSON.stringify(RACE_SPRINT)}, task: ${JSON.stringify(RACE_TASK)}, targetRef: 'main' },`,
+      `  processSprintDependencies(${JSON.stringify(repo)}),`,
+      ');',
+      `writeFileSync(${JSON.stringify(join(signals, 'outcome.json'))}, JSON.stringify(outcome));`,
+    ].join('\n');
+  }
+
+  function waitForFile(path: string, label: string): void {
+    const deadline = Date.now() + 30_000;
+    while (!existsSync(path)) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+      Bun.sleepSync(10);
+    }
+  }
+
+  /**
+   * Run a completion in a second process while `competitor` runs inside the
+   * row's task lock, so the competing verb lands exactly in the window the old
+   * split transaction left open.
+   */
+  function raceAgainst(repo: string, competitor: (repo: string) => void): {
+    readonly exitCode: number;
+    readonly stderr: string;
+  } {
+    const signals = join(repo, '.signals');
+    mkdirSync(signals, { recursive: true });
+    const childPath = join(repo, 'completion-child.ts');
+    writeFileSync(childPath, completionChildSource(repo, signals));
+    const child = spawn('bun', [childPath], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      withTaskLock(repo, RACE_ID, () => {
+        waitForFile(join(signals, 'started'), 'the completion child to start');
+        Bun.sleepSync(300);
+        competitor(repo);
+      });
+      waitForFile(join(signals, 'outcome.json'), 'the completion child to finish');
+      return JSON.parse(readFileSync(join(signals, 'outcome.json'), 'utf-8'));
+    } finally {
+      child.kill();
+    }
+  }
+
+  test('a steal that lands mid-completion wins, and the row is not marked done', () => {
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const outcome = raceAgainst(repo, (root) => {
+      const current = readLease(root, RACE_ID).record!;
+      const stolen = stealLeaseRecord(current, {
+        expectedClaimId: current.claim_id,
+        newClaimId: 'claim-thief',
+        sessionId: 'thief',
+        sourceWorktree: root,
+        reason: 'takeover under contention',
+      });
+      if (!stolen.ok) throw new Error(stolen.error);
+      writeLeaseOwnerDurably(root, RACE_ID, stolen.record);
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('the claim moved');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
+    // The thief still owns it: the completion released nothing.
+    expect(readLease(repo, RACE_ID).record?.claim_id).toBe('claim-thief');
+  }, 60_000);
+
+  test('a release-and-reclaim that lands mid-completion is not completed over', () => {
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const outcome = raceAgainst(repo, (root) => {
+      removeLease(root, RACE_ID, 'claim-original');
+      const record = buildLeaseOwnerRecord({
+        claimId: 'claim-successor',
+        taskId: RACE_ID,
+        taskRevision: canonicalRevision(root),
+        sprintPath: RACE_SPRINT,
+        targetRef: 'main',
+        generation: 2,
+        sessionId: 'successor',
+        sourceWorktree: root,
+      });
+      createLeaseDirectory(root, RACE_ID);
+      writeLeaseOwnerDurably(root, RACE_ID, record);
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('the claim moved');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
+    expect(readLease(repo, RACE_ID).record?.claim_id).toBe('claim-successor');
+  }, 60_000);
+
+  test('a fresh claim that lands mid no-lease completion is not completed over', () => {
+    // The zero-coordination flow: no token, no lease -- until somebody claims
+    // the row while this completion is already blocked on its task lock.
+    const repo = raceRepo();
+    // A lease plane exists on this clone, but nothing owns this row yet.
+    mkdirSync(join(coordinationRoot(repo), 'leases'), { recursive: true });
+    const outcome = raceAgainst(repo, (root) => {
+      const record = buildLeaseOwnerRecord({
+        claimId: 'claim-latecomer',
+        taskId: RACE_ID,
+        taskRevision: canonicalRevision(root),
+        sprintPath: RACE_SPRINT,
+        targetRef: 'main',
+        generation: 1,
+        sessionId: 'latecomer',
+        sourceWorktree: root,
+      });
+      createLeaseDirectory(root, RACE_ID);
+      writeLeaseOwnerDurably(root, RACE_ID, record);
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('holds no claim token');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
+    expect(readLease(repo, RACE_ID).record?.claim_id).toBe('claim-latecomer');
+  }, 60_000);
+
+  test('an uncontended completion flips the row and releases the lease', () => {
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const outcome = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+      processSprintDependencies(repo),
+    );
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [x] |`);
+    expect(readLease(repo, RACE_ID).classification).toBe('available');
+    expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(false);
+  }, 60_000);
+
+  test('bytes that two readers would read differently are refused, not interpreted', () => {
+    // `JSON.parse` keeps the last value for a duplicated key; a line reader
+    // keeps the first. Either answer is somebody's authority, so neither is.
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const ownerPath = leaseOwnerPath(repo, RACE_ID);
+    const owner = readFileSync(ownerPath, 'utf-8');
+    writeFileSync(ownerPath, owner.replace(
+      '"claim_id": "claim-original",',
+      '"claim_id": "claim-original",\n  "claim_id": "claim-forged",',
+    ));
+    expect(parseLeaseOwnerRecord(readFileSync(ownerPath, 'utf-8'))).toBeNull();
+
+    const duplicated = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+      processSprintDependencies(repo),
+    );
+    expect(duplicated.exitCode).toBe(1);
+    expect(duplicated.stderr).toContain('cannot be classified');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
+
+    // The same rule for the token: a second `claim_id=` line is not a capability.
+    writeFileSync(ownerPath, owner);
+    const tokenPath = join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`);
+    const token = readFileSync(tokenPath, 'utf-8');
+    writeFileSync(tokenPath, token.replace('claim_id=claim-original\n', 'claim_id=claim-original\nclaim_id=claim-forged\n'));
+    const ambiguousToken = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+      processSprintDependencies(repo),
+    );
+    expect(ambiguousToken.exitCode).toBe(1);
+    expect(ambiguousToken.stderr).toContain('not readable as a single capability');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
+  }, 60_000);
 });

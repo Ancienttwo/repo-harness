@@ -18,7 +18,8 @@
  * operational failure or a fail-closed refusal, 0 is a completed verb.
  */
 import { randomUUID } from 'crypto';
-import { realpathSync } from 'fs';
+import { existsSync, realpathSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { buildAttemptReceipt } from '../../core/state/attempt-ledger';
 import type { CommandOutcome } from '../../core/state/command-outcome';
 import {
@@ -53,16 +54,26 @@ import {
 import { lookupLegacyTaskForReconcile } from '../../core/state/sprint-schema-v1';
 import { legacyCutoverRefusal } from './coordination-cutover';
 import {
+  readClaimTokenForTask,
+  removeClaimTokenForTask,
   writeClaimTokenForBoundLease,
+  type ClaimTokenRead,
   type ClaimTokenV1,
   type ClaimTokenWriteInput,
 } from './coordination-claim-token';
+import { readText, repoPath } from './collect-state-inputs';
 import {
+  completeBacklogRow,
+  SprintRowCompletionError,
+} from '../../core/state/sprint-row-completion';
+import {
+  coordinationRoot,
   createLeaseDirectory,
   findLeaseByClaimId,
   readLease,
   removeLease,
   removeOwnLeaseAfterFailedClaim,
+  withBacklogLock,
   withTaskLock,
   writeLeaseOwnerDurably,
   type LeaseClaimLookup,
@@ -78,6 +89,17 @@ export interface CoordinationPort {
   readonly legacyCutoverRefusal: () => string | null;
   readonly readCanonicalSprint: (source: CanonicalSprintSource) => CanonicalSprintRead;
   readonly withTaskLock: <T>(taskId: string, run: () => T) => T;
+  /** The shared backlog lock, taken before any task lock. */
+  readonly withBacklogLock: <T>(run: () => T) => T;
+  /** True when this clone has a lease plane at all; false is "nothing owns anything here". */
+  readonly leasesRootExists: () => boolean;
+  /** The token this tree holds for one task id, addressed by identity. */
+  readonly readClaimToken: (taskId: string) => ClaimTokenRead;
+  readonly removeClaimToken: (taskId: string) => void;
+  /** The working-tree sprint file the completion rewrites. */
+  readonly readSprintFile: (repoRelativePath: string) => string | null;
+  readonly writeSprintFile: (repoRelativePath: string, text: string) => void;
+  readonly now: () => Date;
   readonly readLease: (taskId: string) => LeaseRead;
   readonly createLeaseDirectory: (taskId: string) => boolean;
   readonly writeLeaseOwner: (taskId: string, record: LeaseOwnerRecord) => void;
@@ -608,6 +630,235 @@ export function abortCompletionSprintCommand(
   }
 }
 
+export interface CompleteRowCommandOptions {
+  /** Repo-relative sprint path; the working-tree file the row is rewritten in. */
+  readonly sprint?: string;
+  /** Backlog index or exact Task cell, resolved inside the locks. */
+  readonly task?: string;
+  /** Canonical ref the lease was claimed against. */
+  readonly targetRef?: string;
+  /** Replacement Plan cell, already rendered by the caller. */
+  readonly planCell?: string;
+  /** Contract finish owns its own release; its transaction ends at publication. */
+  readonly deferLeaseRelease?: boolean;
+}
+
+/**
+ * Complete one backlog row: the whole transaction, in one place.
+ *
+ * This verb exists because the transaction used to be split. `sprint-backlog.sh`
+ * resolved the row, asked the CLI for an identity, compared a claim id and a
+ * revision with its own line-oriented readers, rewrote the row with `awk`, and
+ * then asked the CLI to release the lease -- four observations of shared state
+ * across two processes, with windows between them and two different parsers for
+ * the same owner record. A concurrent `steal` or `release` landing in any of
+ * those windows produced a row marked `[x]` with no lease state that supports
+ * it, which is the one outcome a completion may never produce.
+ *
+ * Everything now happens inside one boundary: the shared backlog lock, then the
+ * row's task lock, in the same order every other multi-lock caller takes them.
+ * Inside it the canonical row, the owner record and the claim token are read
+ * once each, by their single parsers, and the row flip, the lease release and
+ * the token removal either all happen or none do.
+ *
+ * The no-lease case runs through here too. A clone with no lease plane is the
+ * zero-coordination single-agent flow, and its completion still takes the
+ * backlog lock -- it just finds no token and no lease to check.
+ */
+export function completeRowSprintCommand(
+  options: CompleteRowCommandOptions,
+  deps: SprintCommandDependencies,
+): CommandOutcome {
+  const sprintPath = requireOption(options.sprint, '--sprint');
+  if (isOutcome(sprintPath)) return sprintPath;
+  const taskRef = requireOption(options.task, '--task');
+  if (isOutcome(taskRef)) return taskRef;
+  const targetRef = requireOption(options.targetRef, '--target-ref');
+  if (isOutcome(targetRef)) return targetRef;
+
+  const cutover = deps.coordination.legacyCutoverRefusal();
+  if (cutover !== null) return refuse(cutover);
+
+  try {
+    return deps.coordination.withBacklogLock(() => {
+      const sprintText = deps.coordination.readSprintFile(sprintPath);
+      if (sprintText === null) return refuse(`sprint file is unreadable: ${sprintPath}`);
+
+      // Resolution happens here, not in the caller: a row resolved before the
+      // lock is a row that may have moved by the time it is rewritten.
+      const resolved = resolveCanonicalTaskRef(
+        { repoIdentity: deps.repoIdentity, sprintPath, sprintText },
+        taskRef,
+      );
+      if (!resolved.ok) return refuse(`sprint-backlog: ${resolved.error}`);
+      const row = resolved.task.row;
+      const taskId = resolved.task.task_id;
+      if (row.status !== PENDING_ROW_STATUS) {
+        return refuse(`backlog task '${row.task}' (row ${row.index}) is already complete`);
+      }
+
+      return deps.coordination.withTaskLock(taskId, () => {
+        // Re-read under the task lock: the backlog lock alone does not stop an
+        // ownership verb, which locks per task rather than per backlog.
+        const lockedText = deps.coordination.readSprintFile(sprintPath);
+        if (lockedText === null) return refuse(`sprint file is unreadable: ${sprintPath}`);
+        const lockedResolution = lookupCanonicalTask(
+          { repoIdentity: deps.repoIdentity, sprintPath, sprintText: lockedText },
+          taskId,
+        );
+        if (!lockedResolution.ok) return refuse(`sprint-backlog: ${lockedResolution.error}`);
+        const lockedRow = lockedResolution.task.row;
+        if (lockedRow.status !== PENDING_ROW_STATUS) {
+          return refuse(`backlog task '${lockedRow.task}' (row ${lockedRow.index}) is already complete`);
+        }
+
+        const gate = completionLeaseGate(deps, {
+          sprintPath,
+          targetRef,
+          taskId,
+          taskCell: lockedRow.task,
+        });
+        if (isOutcome(gate)) return gate;
+
+        let completion;
+        try {
+          completion = completeBacklogRow({
+            sprintText: lockedText,
+            rowIndex: lockedRow.index,
+            // The projected row no longer carries `id`; the persisted identity
+            // is `task_id`, which is the same datum read once.
+            rowId: taskId,
+            planCell: options.planCell ?? null,
+            timestamp: formatSprintTimestamp(deps.coordination.now()),
+          });
+        } catch (error) {
+          if (error instanceof SprintRowCompletionError) return refuse(`sprint-backlog: ${error.message}`);
+          throw error;
+        }
+        deps.coordination.writeSprintFile(sprintPath, completion.sprintText);
+
+        // Release inside the same critical section as the flip: an inline
+        // completion's transaction ends here. Contract finish defers it because
+        // its transaction ends at the publication commit instead.
+        let released: string | null = null;
+        if (gate !== null && options.deferLeaseRelease !== true) {
+          const current = deps.coordination.readLease(taskId).record;
+          if (current !== null) {
+            const transition = releaseLeaseRecord(current, gate.claim_id);
+            if (!transition.ok) return refuse(transition.error);
+            deps.coordination.writeLeaseOwner(taskId, transition.record);
+            deps.coordination.removeLease(taskId, gate.claim_id);
+          }
+          deps.coordination.removeClaimToken(taskId);
+          released = gate.claim_id;
+        }
+
+        return ok({
+          task_id: taskId,
+          sprint_path: sprintPath,
+          row_index: completion.row.index,
+          task: completion.row.task,
+          plan_cell: completion.planCell,
+          released_claim_id: released,
+          done: completion.done,
+          total: completion.total,
+        });
+      });
+    });
+  } catch (error) {
+    return operationalFailure(error);
+  }
+}
+
+/**
+ * The lease half of the completion gate, inside the task lock.
+ *
+ * Returns the owner record when the row is owned and this tree may complete it,
+ * `null` when nothing owns the row, and a refusal otherwise. Flipping a row to
+ * `[x]` is the step that publishes "this task is done", so every refusal here
+ * is a refusal to publish that on someone else's behalf.
+ */
+function completionLeaseGate(
+  deps: SprintCommandDependencies,
+  input: {
+    readonly sprintPath: string;
+    readonly targetRef: string;
+    readonly taskId: string;
+    readonly taskCell: string;
+  },
+): LeaseOwnerRecord | null | CommandOutcome {
+  // No lease plane at all: its absence is the authority for "nothing owns
+  // anything here", which is what keeps the single-agent flow unchanged.
+  if (!deps.coordination.leasesRootExists()) return null;
+
+  const lease = deps.coordination.readLease(input.taskId);
+  if (lease.classification === 'available') return null;
+  if (lease.classification === 'unknown' || lease.record === null) {
+    return refuse(
+      `the lease for '${input.taskCell}' cannot be classified (${lease.unknown_reason ?? 'no owner record'}); `
+      + `run 'repo-harness sprint reconcile --task-id ${input.taskId} --target-ref ${input.targetRef}' before completing it`,
+    );
+  }
+  const record = lease.record;
+
+  const token = deps.coordination.readClaimToken(input.taskId);
+  if (token.outcome === 'ambiguous') {
+    return refuse(
+      `the claim token for '${input.taskCell}' is not readable as a single capability (${token.matches.join(', ')}); `
+      + 'refusing to complete on an ambiguous token',
+    );
+  }
+  if (token.outcome === 'none') {
+    return refuse(
+      `backlog task '${input.taskCell}' is claimed by ${record.claim_id} and this worktree holds no claim token for it; `
+      + `complete it from the owning worktree, or take the claim over with 'repo-harness sprint steal `
+      + `--expected-claim-id ${record.claim_id} --reason <reason> --session-id <id>'`,
+    );
+  }
+  if (token.token.claim_id !== record.claim_id) {
+    return refuse(
+      `backlog task '${input.taskCell}' is claimed by ${record.claim_id}, but this worktree holds claim `
+      + `${token.token.claim_id}; the claim moved, so this tree may not complete the row`,
+    );
+  }
+
+  // The revision fence. Identity survives a Task title edit -- that is what the
+  // persisted ID column is for -- but the definition does not: `task_revision`
+  // hashes the Task, Mode and Acceptance cells, so a lease taken before the
+  // edit was taken against a row that no longer exists.
+  const canonical = deps.coordination.readCanonicalSprint({
+    targetRef: input.targetRef,
+    sprintPath: input.sprintPath,
+  });
+  if (!canonical.ok) return refuse(canonical.error);
+  const canonicalTask = lookupCanonicalTask(
+    { repoIdentity: deps.repoIdentity, sprintPath: input.sprintPath, sprintText: canonical.text },
+    input.taskId,
+  );
+  if (!canonicalTask.ok) return refuse(canonicalTask.error);
+  if (canonicalTask.task.task_revision !== record.task_revision) {
+    return refuse(
+      `backlog task '${input.taskCell}' drifted since it was claimed: canonical revision is `
+      + `${canonicalTask.task.task_revision}, the claim observed ${record.task_revision}; release the stale claim `
+      + `with 'repo-harness sprint release --claim-id ${record.claim_id}' and re-claim the row at the current `
+      + `revision, or take it over explicitly with 'repo-harness sprint steal --expected-claim-id `
+      + `${record.claim_id} --reason <reason> --session-id <id>'`,
+    );
+  }
+  return record;
+}
+
+/**
+ * `YYYY-MM-DD HH:MM` in local time, the format `date '+%Y-%m-%d %H:%M'` wrote
+ * when the shell owned this rewrite. Sprint files already carry these stamps,
+ * so the format is a compatibility surface, not a preference.
+ */
+function formatSprintTimestamp(now: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} `
+    + `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
 export interface ReleaseCommandOptions {
   readonly claimId?: string;
 }
@@ -851,6 +1102,15 @@ export function processSprintDependencies(cwd: string): SprintCommandDependencie
       legacyCutoverRefusal: () => legacyCutoverRefusal(cwd),
       readCanonicalSprint: (source) => readCanonicalSprint(cwd, source),
       withTaskLock: (taskId, run) => withTaskLock(cwd, taskId, run),
+      withBacklogLock: (run) => withBacklogLock(cwd, run),
+      leasesRootExists: () => existsSync(join(coordinationRoot(cwd), 'leases')),
+      readClaimToken: (taskId) => readClaimTokenForTask(cwd, taskId),
+      removeClaimToken: (taskId) => removeClaimTokenForTask(cwd, taskId),
+      readSprintFile: (relativePath) => readText(cwd, relativePath),
+      writeSprintFile: (relativePath, text) => {
+        writeFileSync(repoPath(cwd, relativePath), text, 'utf-8');
+      },
+      now: () => new Date(),
       readLease: (taskId) => readLease(cwd, taskId),
       createLeaseDirectory: (taskId) => createLeaseDirectory(cwd, taskId),
       writeLeaseOwner: (taskId, record) => writeLeaseOwnerDurably(cwd, taskId, record),

@@ -441,12 +441,77 @@ function hasExactFields(value: Record<string, unknown>, fields: readonly string[
 }
 
 /**
+ * True when any JSON object in `raw` declares the same key twice.
+ *
+ * `JSON.parse` keeps the last value for a duplicated key while a line-oriented
+ * reader keeps the first, so a record carrying `"claim_id"` twice means two
+ * readers of the same bytes can disagree about who owns a lease. There is no
+ * correct resolution -- one of them is wrong and neither has the authority to
+ * say which -- so the bytes are refused instead of interpreted.
+ *
+ * The scan is a small state machine over the raw text because a parsed object
+ * has already collapsed the duplicate: by then the evidence is gone.
+ */
+export function hasDuplicateJsonKeys(raw: string): boolean {
+  const stack: Set<string>[] = [];
+  let inString = false;
+  let escaped = false;
+  let current = '';
+  let lastString: string | null = null;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') {
+        inString = false;
+        lastString = current;
+      } else current += character;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      current = '';
+      continue;
+    }
+    if (character === '{') {
+      stack.push(new Set());
+      lastString = null;
+      continue;
+    }
+    if (character === '}' || character === ']') {
+      if (character === '}') stack.pop();
+      lastString = null;
+      continue;
+    }
+    if (character === '[') {
+      lastString = null;
+      continue;
+    }
+    if (character === ':') {
+      const keys = stack[stack.length - 1];
+      if (keys !== undefined && lastString !== null) {
+        if (keys.has(lastString)) return true;
+        keys.add(lastString);
+      }
+      lastString = null;
+      continue;
+    }
+    if (character === ',') lastString = null;
+  }
+  return false;
+}
+
+/**
  * Parse one owner record. `null` means the bytes are not a valid record, which
  * the store classifies `unknown`; it never means "assume a default". Every
  * field is checked, so a truncated or hand-edited record fails closed instead
- * of being partially trusted.
+ * of being partially trusted -- including bytes that declare one key twice,
+ * which two readers would otherwise resolve differently.
  */
 export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecord | null {
+  if (hasDuplicateJsonKeys(raw)) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);

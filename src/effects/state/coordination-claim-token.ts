@@ -99,7 +99,27 @@ function tokenField(raw: string, name: string): string {
   return '';
 }
 
+/**
+ * True when `raw` declares the same field twice.
+ *
+ * `tokenField` keeps the first occurrence; a reader that kept the last would
+ * see a different capability in the same bytes. A token is a fencing
+ * capability, so two readable answers is not a token -- it is refused.
+ */
+function hasDuplicateTokenFields(raw: string): boolean {
+  const seen = new Set<string>();
+  for (const line of raw.split('\n')) {
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    const name = line.slice(0, separator);
+    if (seen.has(name)) return true;
+    seen.add(name);
+  }
+  return false;
+}
+
 function parseToken(path: string, raw: string): ClaimTokenV1 | null {
+  if (hasDuplicateTokenFields(raw)) return null;
   const claimId = tokenField(raw, 'claim_id');
   const taskId = tokenField(raw, 'task_id');
   const unitRef = tokenField(raw, 'unit_ref');
@@ -262,6 +282,36 @@ export function writeClaimTokenForBoundLease(cwd: string, input: ClaimTokenWrite
  * directory is `none`, because a repository that never ran `start-task` is
  * not a failure.
  */
+/**
+ * The token this tree holds for one task id, addressed by identity.
+ *
+ * The file *is* `<task_id>.claim`, so this is one read rather than a scan, and
+ * a token whose own `task_id` disagrees with the name it is filed under is
+ * refused rather than trusted.
+ */
+export function readClaimTokenForTask(cwd: string, taskId: string): ClaimTokenRead {
+  if (!/^[0-9a-f]{64}$/.test(taskId)) return { outcome: 'none' };
+  const relative = join(CLAIM_TOKEN_DIR, `${taskId}${CLAIM_TOKEN_SUFFIX}`);
+  const raw = readText(cwd, relative);
+  if (raw === null) return { outcome: 'none' };
+  const token = parseToken(relative, raw);
+  if (token === null || token.task_id !== taskId) {
+    return { outcome: 'ambiguous', matches: [relative] };
+  }
+  return { outcome: 'found', token };
+}
+
+/** Remove the token this tree holds for one task id, if any. */
+export function removeClaimTokenForTask(cwd: string, taskId: string): void {
+  if (!/^[0-9a-f]{64}$/.test(taskId)) return;
+  const target = repoPath(cwd, join(CLAIM_TOKEN_DIR, `${taskId}${CLAIM_TOKEN_SUFFIX}`));
+  try {
+    unlinkSync(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
 export function findClaimTokenByUnitRef(cwd: string, unitRef: string): ClaimTokenRead {
   if (!unitRef) return { outcome: 'none' };
   let entries: readonly string[];

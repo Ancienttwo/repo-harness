@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:e20691b9d1d9a80110672e895be163803cc2c128ad32ec4066824ac85a18b7ee`
+> **Substantive Change SHA256**: `sha256:d9164fb17c9e0333eba9389c54a15d213496a0010bbf3a1ba426cf81d7fa6e60`
 
 ## Design Decisions
 
@@ -159,6 +159,50 @@
   scanners (`contract-worktree.sh`, `ship-worktrees.sh`) were already
   identity-based -- they take the single token in the worktree and read
   `task_id` out of it -- so the sweep changed nothing there.
+- **Completion is one TypeScript transaction; the shell is a thin caller.**
+  Fencing the shell gate on revision was the right rule in the wrong place, and
+  the round after it found why. The transaction was split: `sprint-backlog.sh`
+  resolved the row, asked the CLI for an identity, compared a claim id and a
+  revision with its own line-oriented readers, rewrote the row with `awk`, then
+  asked the CLI to release the lease -- four observations of shared state across
+  two processes, with windows between them, and two different parsers for one
+  owner record. A `steal`, a `release`, or a fresh `claim` landing in any window
+  produced the single outcome a completion may never produce: a row marked `[x]`
+  with no lease state that supports it. No further shell guard closes that;
+  guards were the shape of the defect.
+  `repo-harness sprint complete-row` now owns the whole thing. Inside one
+  boundary -- the shared backlog lock, then the row's task lock, in the same
+  order `withMigrationLocks()` and every ownership verb take them -- it resolves
+  the row, re-reads it under the task lock, reads the owner record and the claim
+  token through their single parsers, compares claim id and `task_revision`,
+  rewrites the row, releases the lease and removes the token. `cmd_complete_task`
+  resolves arguments, calls the verb, and renders its JSON; the shell no longer
+  takes the backlog lock on this path (the lock is a directory mutex, not a
+  reentrant one, so holding it around the verb would deadlock). Deleted with the
+  gate: `assert_completion_lease_gate`, `find_claim_token`, `release_task_lease`,
+  `lease_owner_field`, `resolve_row_task_id`, `COMPLETION_TASK_ID`.
+  `json_string_field` stays, joined by `json_number_field`: both read only CLI
+  stdout the verb just produced, and no shell reader touches an authority record
+  on disk any more. The `awk` row rewrite moved to `completeBacklogRow()` in
+  `src/core/state/sprint-row-completion.ts`, which is pure and matches the row on
+  index *and* persisted id.
+  Two consequences worth naming. The shell's own backlog lock still exists for
+  `start-task`, so the two tests that pin its stale-reclaim and timeout
+  behaviour now exercise it there; `complete-task` contention is pinned instead
+  by three two-process races. And a schema 1 sprint can no longer be completed
+  through this path at all, because resolution runs through
+  `resolveCanonicalTaskRef` -- which is the same fail-closed rule every other
+  identity consumer already applied.
+- **Bytes two readers would read differently are refused.** `JSON.parse` keeps
+  the last value for a duplicated key; a line-oriented reader keeps the first.
+  While the shell had its own owner-record reader that difference was reachable:
+  the same `owner.json` could name two different claim owners. The shell reader
+  is gone, and both remaining parsers now refuse duplicates outright --
+  `parseLeaseOwnerRecord` through `hasDuplicateJsonKeys()` (a small scanner over
+  the raw text, because a parsed object has already collapsed the evidence) and
+  the claim token through `hasDuplicateTokenFields()`. Neither answer is more
+  authoritative than the other, so the bytes are refused rather than
+  interpreted.
 - **Inline completion is fenced on task revision, not only on ownership.**
   Locating the claim token by identity fixed half the rename story and exposed
   the other half: the token was found, the claim ids matched, and
