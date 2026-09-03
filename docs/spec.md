@@ -208,3 +208,30 @@ AcceptanceReceipt field.
 - **Task profile**: The declared execution shape of a contract (for example
   `code-change`) that determines which verification and delegation rules
   apply to that task.
+- **Refactor Mode**: The `off | shadow | active` operating mode under which
+  repo-harness consumes an external structural authority to discover and
+  execute refactors. It is a narrowed entry into the existing plan, contract,
+  worktree, and ship flow, never a second workflow engine.
+- **Proposal Author**: The repo-harness-side agent or human that writes a
+  refactor proposal for the external structural authority to assess. The
+  author supplies intent, scope, target outcomes, and kill list; it never
+  decides the structural scale, the workflow route, or a recommendation's
+  status.
+- **RefactorWorkflowRoute**: The repo-harness workflow routing decision
+  deterministically projected from the external authority's structural scale
+  and its evidence reason codes. It may stop more conservatively than the
+  upstream scale but may never route below it.
+- **Refactor Program**: One authorized Refactor Mode run, holding only the
+  bindings from external recommendations to local work packages. It carries no
+  recommendation status; every status is re-read from the external authority.
+- **Cutover Closure**: The provider-independent gate asserting that every
+  declared old implementation, caller, fallback, test, document, and
+  compatibility window of a replaced surface has an explicit disposition, and
+  that nothing declared removed still exists at the candidate head.
+- **Refactor Execution Binding**: The append-only, immutable set of references
+  tying one external recommendation to the plan, contract, closure,
+  acceptance, and merge evidence of one execution. It has no status field, so
+  a merged pull request can never by itself mean the refactor is resolved.
+- **Joined Refactor Board**: The read-only projection joining the external
+  semantic refactor ledger with local execution evidence. It owns no state and
+  is fully rebuildable from its authorities.

@@ -1,0 +1,14 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:9e396b88996b2b86b1c78bcdc0eae6d6c369651ff5fb03b184979588235c8b55",
+  "reason": "PRD planning artifact under plans/prds/ plus the minimal bash 3.2 compatibility fix of the waiver validator this waiver depends on (empty substantive array expansion under set -u in --validate-waivers-only mode) with its regression test; no workflow semantics change. The PRD explicitly defers Sprint generation until archctx 0.5.0 npm readback and campaign BRC3 clear, so no plan or sprint evidence carrier exists yet.",
+  "owner": "ancienttwo",
+  "scope": [
+    "plans/prds/20260903-0435-archctx-backed-refactor-mode.prd.md",
+    "scripts/check-task-sync.sh",
+    "assets/templates/helpers/check-task-sync.sh",
+    "tests/check-task-sync.test.ts"
+  ],
+  "revisit_trigger": "Module 1 (Cutover Closure Gate) work-package plan is captured from this PRD, or check-task-sync learns plans/prds/ as an evidence class"
+}
