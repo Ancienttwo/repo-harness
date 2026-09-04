@@ -3,7 +3,7 @@
 > **Status**: in_progress
 > **Capability ID**: `runtime-harness-refactor-program`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/refactor-program.md`
-> **Substantive Change SHA256**: `sha256:5ee13f6927ac2a890fba803d35c4851232e5dd207771fe7cae6a6e4aaca386c1`
+> **Substantive Change SHA256**: `sha256:abc11410914a068d469d5ed45745f6a3acd70c6c78cab23f732bdf6fa51fb80a`
 
 ## Verified state
 
