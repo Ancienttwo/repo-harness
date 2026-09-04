@@ -23,7 +23,7 @@
 - Limit archive evidence to the same canonical lifecycle families accepted before closeout: plan, contract, review, and notes. Todo archives remain non-evidence.
 - Reuse Git's add classification with rename detection disabled, so destination-path admission is independent of user Git config, and retain the existing exact digest line; do not introduce a second parser for archive envelopes.
 
-> **Substantive Change SHA256**: `sha256:c8a1e8b05f4d9a628102a2d480975b371e3e1039c872883c98d5337067962bbe`
+> **Substantive Change SHA256**: `sha256:e1f12d5979950d2a17a2d7df8546c8e5d7789ea6f6e909b5b96906dcb7e816f0`
 
 ## Deviations From Plan Or Spec
 
