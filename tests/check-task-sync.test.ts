@@ -143,6 +143,55 @@ describe("check-task-sync helper", () => {
     }
   }, 30_000);
 
+  test("base mode accepts exact-digest evidence archived in the same publication", () => {
+    const cwd = setupRepo();
+    try {
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      const env = { REPO_HARNESS_DIFF_BASE: base };
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+
+      const unbound = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(unbound.status).toBe(1);
+      const digest = reportedDigest(unbound.stdout);
+      writeFileSync(
+        join(cwd, "tasks", "archive", "notes-20260905-task-sync.md"),
+        `# Archived notes\n\n> **Substantive Change SHA256**: \`${digest}\`\n`,
+      );
+      expect(run(cwd, ["git", "add", "src/app.ts", "tasks/archive/notes-20260905-task-sync.md"]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "publish-closed-workflow"]).status).toBe(0);
+
+      const bound = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(bound.status).toBe(0);
+      expect(bound.stdout).toContain("Bound canonical workflow evidence");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("base mode rejects digest laundering through a pre-existing archive", () => {
+    const cwd = setupRepo();
+    try {
+      const archive = join(cwd, "tasks", "archive", "notes-20260905-historical.md");
+      writeFileSync(archive, "# Historical notes\n");
+      expect(run(cwd, ["git", "add", "tasks/archive/notes-20260905-historical.md"]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "historical-archive"]).status).toBe(0);
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      const env = { REPO_HARNESS_DIFF_BASE: base };
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+
+      const unbound = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(unbound.status).toBe(1);
+      const digest = reportedDigest(unbound.stdout);
+      writeFileSync(archive, `# Historical notes\n\n> **Substantive Change SHA256**: \`${digest}\`\n`);
+
+      const laundered = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(laundered.status).toBe(1);
+      expect(laundered.stdout).toContain("Substantive diff lacks canonical workflow evidence");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("binds multiple untracked substantive files as separate NUL-delimited records", () => {
     const cwd = setupRepo();
     try {

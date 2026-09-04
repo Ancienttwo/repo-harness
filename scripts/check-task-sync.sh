@@ -156,6 +156,9 @@ git diff --name-only -z --diff-filter=ACMRD "$effective_base" HEAD -- > "$identi
 git diff --cached --name-only -z --diff-filter=ACMRD -- > "$identity_dir/changed-index.paths"
 git diff --name-only -z --diff-filter=ACMRD -- > "$identity_dir/changed-working.paths"
 git ls-files --others --exclude-standard -z > "$identity_dir/changed-untracked.paths"
+git diff --name-only --no-renames -z --diff-filter=A "$effective_base" HEAD -- > "$identity_dir/added-base-head.paths"
+git diff --cached --name-only --no-renames -z --diff-filter=A -- > "$identity_dir/added-index.paths"
+git ls-files --others --exclude-standard -z > "$identity_dir/added-untracked.paths"
 
 changed_files=()
 append_changed_paths() {
@@ -177,6 +180,34 @@ append_changed_paths "$identity_dir/changed-index.paths"
 append_changed_paths "$identity_dir/changed-working.paths"
 append_changed_paths "$identity_dir/changed-untracked.paths"
 
+added_files=()
+append_added_paths() {
+  local source="$1"
+  local file known duplicate
+  while IFS= read -r -d '' file; do
+    duplicate=0
+    for known in "${added_files[@]-}"; do
+      if [[ "$known" == "$file" ]]; then
+        duplicate=1
+        break
+      fi
+    done
+    [[ "$duplicate" -eq 1 ]] || added_files+=("$file")
+  done < "$source"
+}
+append_added_paths "$identity_dir/added-base-head.paths"
+append_added_paths "$identity_dir/added-index.paths"
+append_added_paths "$identity_dir/added-untracked.paths"
+
+is_added_path() {
+  local candidate="$1"
+  local added
+  for added in "${added_files[@]-}"; do
+    [[ "$added" == "$candidate" ]] && return 0
+  done
+  return 1
+}
+
 if [[ "${#changed_files[@]}" -eq 0 ]]; then
   echo "[task-sync] No changes detected."
   exit 0
@@ -190,6 +221,9 @@ for file in "${changed_files[@]}"; do
       ;;
     docs/architecture/*|docs/PROGRESS.md)
       substantive_files+=("$file")
+      ;;
+    plans/archive/plan-*.md|tasks/archive/contract-*.md|tasks/archive/review-*.md|tasks/archive/notes-*.md)
+      is_added_path "$file" && evidence_files+=("$file")
       ;;
     docs/*|README.md|AGENTS.md|CLAUDE.md|plans/archive/*|tasks/current.md|tasks/todos.md|tasks/lessons.md|tasks/archive/*)
       ;;
