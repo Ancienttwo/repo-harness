@@ -15,7 +15,7 @@ steps:
     label: Persist the exact current state and budget reservation before acquisition or dispatch
     evidence:
       entrypointId: entrypoint.automation-controller.step
-      sourceSymbol: stepAutomationController
+      sourceSymbol: append
       sinkId: sink.automation-controller.journal
 outcomes:
   - id: acquired-and-dispatched
@@ -28,7 +28,7 @@ outcomes:
         label: Consume the first canonical Engineer offer and record its exact WorkEnvelope identity
         evidence:
           entrypointId: entrypoint.automation-controller.step
-          sourceSymbol: stepAutomationController
+          sourceSymbol: acquireNextControllerTask
           sinkId: sink.automation-controller.acquire
       - id: dispatch-existing-effect
         from: controller
@@ -36,7 +36,7 @@ outcomes:
         label: Dispatch the already-admitted run through the single fenced effect and persist its observation
         evidence:
           entrypointId: entrypoint.automation-controller.step
-          sourceSymbol: stepAutomationController
+          sourceSymbol: dispatchControllerRun
           sinkId: sink.automation-controller.dispatch
     terminal:
       participant: controller
@@ -51,7 +51,7 @@ outcomes:
         label: Persist reconciliation_required and prevent another acquisition or dispatch
         evidence:
           entrypointId: entrypoint.automation-controller.step
-          sourceSymbol: stepAutomationController
+          sourceSymbol: append
           sinkId: sink.automation-controller.journal
     terminal:
       participant: controller

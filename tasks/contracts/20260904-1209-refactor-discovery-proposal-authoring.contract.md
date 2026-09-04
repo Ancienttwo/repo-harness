@@ -58,7 +58,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"refactor-proposal-authoring-tests","kind":"deterministic_test","paths":["*"]},{"id":"refactor-discovery-provider-readback","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -73,11 +73,6 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - docs/spec.md
   - docs/researches/20260902-restructure.md
-  - docs/architecture/modules/runtime-harness/refactor-program.md
-  - .archcontext/model/nodes/capability.runtime-harness.refactor-program.yaml
-  - .archcontext/model/nodes/component.refactor-program.archctx-provider.yaml
-  - .archcontext/model/relations/relation.refactor-program.archctx-provider.yaml
-  - .archcontext/model/flows/flow.refactor-program.discovery-assessment.yaml
   - plans/
   - tasks/todos.md
   - tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md
@@ -159,5 +154,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: main@7dd00333
+- Commit / checkpoint: main@4fcf8ae1
 - Revert strategy: remove the additive Module 2 core/effect/test files and revert the status-only documentation edits.

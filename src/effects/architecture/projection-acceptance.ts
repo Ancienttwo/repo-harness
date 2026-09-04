@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -16,6 +17,7 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 import { captureArchitectureProjectionSnapshot, runArchitectureProjection, type ArchctxProviderOptions } from './archctx-provider';
 import {
   ARCHITECTURE_PROJECTION_RUNTIME_ROOT,
+  architectureProjectionJobState,
   completeArchitectureProjectionDeadLetterAcceptance,
   completeArchitectureProjectionDeadLetterReconciliation,
 } from './projection-jobs';
@@ -24,10 +26,12 @@ import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions }
 const CANDIDATE_VERSION = 'repo-harness.architecture-projection-acceptance-candidate/v1' as const;
 const RECEIPT_VERSION = 'repo-harness.architecture-projection-acceptance-receipt/v1' as const;
 const RECONCILIATION_RECEIPT_VERSION = 'repo-harness.architecture-projection-reconciliation-receipt/v1' as const;
+const STALE_RETIREMENT_RECEIPT_VERSION = 'repo-harness.architecture-projection-stale-retirement-receipt/v1' as const;
 const STATE_VERSION = 'repo-harness.architecture-projection-acceptance-state/v1' as const;
 const CANDIDATES = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/acceptance-candidates`;
 const RECEIPTS = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/acceptance-receipts`;
 const RECONCILIATION_RECEIPTS = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/reconciliation-receipts`;
+const STALE_RETIREMENT_RECEIPTS = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/stale-retirement-receipts`;
 const LOCK_PATH = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/locks/acceptance`;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const APPROVAL_REFERENCE = /^[a-zA-Z0-9_.:-]+$/;
@@ -62,11 +66,23 @@ export interface ArchitectureProjectionReconciliationReceiptV1 {
   readonly receiptDigest: Sha256Digest;
 }
 
+export interface ArchitectureProjectionStaleRetirementReceiptV1 {
+  readonly schemaVersion: typeof STALE_RETIREMENT_RECEIPT_VERSION;
+  readonly signalId: Sha256Digest;
+  readonly approvalReference: string;
+  readonly candidateDigest: Sha256Digest;
+  readonly staleHeadSha: string;
+  readonly request: ProjectionRequestV1;
+  readonly result: ProjectionResultV1;
+  readonly receiptDigest: Sha256Digest;
+}
+
 export interface ArchitectureProjectionAcceptanceStateV1 {
   readonly schemaVersion: typeof STATE_VERSION;
   readonly candidates: number;
   readonly receipts: number;
   readonly reconciliationReceipts: number;
+  readonly staleRetirementReceipts: number;
   readonly unresolvedCandidates: number;
   readonly invalidArtifacts: number;
 }
@@ -121,9 +137,14 @@ export function acceptArchitectureProjectionCandidate(
     const candidate = readCandidate(root, signalId);
     const existingPath = artifactPath(root, RECEIPTS, signalId);
     const reconciliationPath = artifactPath(root, RECONCILIATION_RECEIPTS, signalId);
+    const retirementPath = artifactPath(root, STALE_RETIREMENT_RECEIPTS, signalId);
     if (existsSync(reconciliationPath)) {
       readReconciliationReceiptFile(reconciliationPath, candidate);
       throw new Error(`architecture projection candidate is already resolved by reconciliation: ${signalId}`);
+    }
+    if (existsSync(retirementPath)) {
+      readStaleRetirementReceiptFile(retirementPath, candidate, root);
+      throw new Error(`architecture projection candidate is already resolved by stale retirement: ${signalId}`);
     }
     if (existsSync(existingPath)) {
       const existing = readReceiptFile(existingPath, candidate);
@@ -198,9 +219,14 @@ export function reconcileArchitectureProjectionCandidate(
     const candidate = readCandidate(root, signalId);
     const acceptancePath = artifactPath(root, RECEIPTS, signalId);
     const reconciliationPath = artifactPath(root, RECONCILIATION_RECEIPTS, signalId);
+    const retirementPath = artifactPath(root, STALE_RETIREMENT_RECEIPTS, signalId);
     if (existsSync(acceptancePath)) {
       readReceiptFile(acceptancePath, candidate);
       throw new Error(`architecture projection candidate is already resolved by acceptance: ${signalId}`);
+    }
+    if (existsSync(retirementPath)) {
+      readStaleRetirementReceiptFile(retirementPath, candidate, root);
+      throw new Error(`architecture projection candidate is already resolved by stale retirement: ${signalId}`);
     }
     if (existsSync(reconciliationPath)) {
       const existing = readReconciliationReceiptFile(reconciliationPath, candidate);
@@ -243,14 +269,87 @@ export function reconcileArchitectureProjectionCandidate(
   });
 }
 
+export function retireStaleArchitectureProjectionCandidate(
+  repoRoot: string,
+  signalId: string,
+  approvalReference: string,
+  options: ArchitectureProjectionAcceptanceOptions = {},
+): ArchitectureProjectionStaleRetirementReceiptV1 {
+  assertSignalId(signalId);
+  assertApprovalReference(approvalReference, 'stale retirement');
+  const root = realpathSync(resolve(repoRoot));
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () => {
+    const candidate = readCandidate(root, signalId);
+    const acceptancePath = artifactPath(root, RECEIPTS, signalId);
+    const reconciliationPath = artifactPath(root, RECONCILIATION_RECEIPTS, signalId);
+    const retirementPath = artifactPath(root, STALE_RETIREMENT_RECEIPTS, signalId);
+    if (existsSync(acceptancePath)) {
+      readReceiptFile(acceptancePath, candidate);
+      throw new Error(`architecture projection candidate is already resolved by acceptance: ${signalId}`);
+    }
+    if (existsSync(reconciliationPath)) {
+      readReconciliationReceiptFile(reconciliationPath, candidate);
+      throw new Error(`architecture projection candidate is already resolved by reconciliation: ${signalId}`);
+    }
+    if (existsSync(retirementPath)) {
+      const existing = readStaleRetirementReceiptFile(retirementPath, candidate, root);
+      if (existing.approvalReference !== approvalReference) {
+        throw new Error(`architecture stale retirement already recorded with a different approval reference: ${signalId}`);
+      }
+      return existing;
+    }
+
+    assertSemanticCandidate(candidate);
+    if (candidate.jobId && architectureProjectionJobState(root, candidate.jobId) !== 'receipt') {
+      throw new Error(`architecture stale retirement requires a terminal job receipt: ${candidate.jobId}`);
+    }
+    const current = (options.captureSnapshot ?? captureArchitectureProjectionSnapshot)(root);
+    const staleHeadSha = candidate.request.expected.headSha;
+    assertStrictAncestor(root, staleHeadSha, current.headSha);
+    const request: ProjectionRequestV1 = {
+      schemaVersion: PROJECTION_REQUEST_VERSION,
+      requestId: `repo-harness.retire-stale.${signalId.slice('sha256:'.length, 'sha256:'.length + 24)}`,
+      profile: candidate.request.profile,
+      mode: 'check',
+      targets: [...candidate.request.targets],
+      changedPaths: [...candidate.request.changedPaths],
+      expected: current,
+    };
+    const issues = projectionRequestIssues(request);
+    if (issues.length > 0) throw new Error(`architecture stale retirement request invalid: ${issues.join('; ')}`);
+    const result = options.runProjection
+      ? options.runProjection(request, root)
+      : runArchitectureProjection(request, root, options);
+    assertCleanCurrentProof(request, result);
+    const body = {
+      schemaVersion: STALE_RETIREMENT_RECEIPT_VERSION,
+      signalId: candidate.signalId,
+      approvalReference,
+      candidateDigest: candidate.candidateDigest,
+      staleHeadSha,
+      request,
+      result,
+    };
+    const receipt: ArchitectureProjectionStaleRetirementReceiptV1 = {
+      ...body,
+      receiptDigest: digestProjectionJson(body),
+    };
+    assertStaleRetirementReceipt(receipt, candidate, root);
+    atomicJson(retirementPath, receipt);
+    return receipt;
+  });
+}
+
 export function inspectArchitectureProjectionAcceptanceState(repoRoot: string): ArchitectureProjectionAcceptanceStateV1 {
   const root = realpathSync(resolve(repoRoot));
   return withExclusiveDirectoryLock(root, LOCK_PATH, () => {
     const candidateNames = jsonNames(root, CANDIDATES);
     const receiptNames = jsonNames(root, RECEIPTS);
     const reconciliationNames = jsonNames(root, RECONCILIATION_RECEIPTS);
+    const retirementNames = jsonNames(root, STALE_RETIREMENT_RECEIPTS);
     const receiptSet = new Set(receiptNames);
     const reconciliationSet = new Set(reconciliationNames);
+    const retirementSet = new Set(retirementNames);
     let unresolvedCandidates = 0;
     let invalidArtifacts = 0;
     for (const name of candidateNames) {
@@ -259,29 +358,36 @@ export function inspectArchitectureProjectionAcceptanceState(repoRoot: string): 
         const receiptName = `${candidate.signalId.slice('sha256:'.length)}.json`;
         const hasAcceptance = receiptSet.has(receiptName);
         const hasReconciliation = reconciliationSet.has(receiptName);
-        if (!hasAcceptance && !hasReconciliation) {
+        const hasRetirement = retirementSet.has(receiptName);
+        if (!hasAcceptance && !hasReconciliation && !hasRetirement) {
           unresolvedCandidates += 1;
           continue;
         }
         if (hasAcceptance) receiptSet.delete(receiptName);
         if (hasReconciliation) reconciliationSet.delete(receiptName);
-        if (hasAcceptance === hasReconciliation) throw new Error('architecture projection candidate has conflicting resolution receipts');
+        if (hasRetirement) retirementSet.delete(receiptName);
+        if (Number(hasAcceptance) + Number(hasReconciliation) + Number(hasRetirement) !== 1) {
+          throw new Error('architecture projection candidate has conflicting resolution receipts');
+        }
         if (hasAcceptance) {
           readReceiptFile(join(root, RECEIPTS, receiptName), candidate);
-        } else {
+        } else if (hasReconciliation) {
           readReconciliationReceiptFile(join(root, RECONCILIATION_RECEIPTS, receiptName), candidate);
+        } else {
+          readStaleRetirementReceiptFile(join(root, STALE_RETIREMENT_RECEIPTS, receiptName), candidate, root);
         }
       } catch {
         invalidArtifacts += 1;
         unresolvedCandidates += 1;
       }
     }
-    invalidArtifacts += receiptSet.size + reconciliationSet.size;
+    invalidArtifacts += receiptSet.size + reconciliationSet.size + retirementSet.size;
     return {
       schemaVersion: STATE_VERSION,
       candidates: candidateNames.length,
       receipts: receiptNames.length,
       reconciliationReceipts: reconciliationNames.length,
+      staleRetirementReceipts: retirementNames.length,
       unresolvedCandidates,
       invalidArtifacts,
     };
@@ -326,6 +432,16 @@ function readReconciliationReceiptFile(
 ): ArchitectureProjectionReconciliationReceiptV1 {
   const receipt = JSON.parse(readFileSync(path, 'utf8')) as ArchitectureProjectionReconciliationReceiptV1;
   assertReconciliationReceipt(receipt, candidate);
+  return receipt;
+}
+
+function readStaleRetirementReceiptFile(
+  path: string,
+  candidate: ArchitectureProjectionAcceptanceCandidateV1,
+  repoRoot: string,
+): ArchitectureProjectionStaleRetirementReceiptV1 {
+  const receipt = JSON.parse(readFileSync(path, 'utf8')) as ArchitectureProjectionStaleRetirementReceiptV1;
+  assertStaleRetirementReceipt(receipt, candidate, repoRoot);
   return receipt;
 }
 
@@ -414,10 +530,60 @@ function assertReconciliationReceipt(
   }
 }
 
+function assertStaleRetirementReceipt(
+  receipt: ArchitectureProjectionStaleRetirementReceiptV1,
+  candidate: ArchitectureProjectionAcceptanceCandidateV1,
+  repoRoot: string,
+): void {
+  if (receipt.schemaVersion !== STALE_RETIREMENT_RECEIPT_VERSION) {
+    throw new Error('architecture stale retirement receipt schema mismatch');
+  }
+  if (receipt.signalId !== candidate.signalId || receipt.candidateDigest !== candidate.candidateDigest) {
+    throw new Error('architecture stale retirement receipt candidate binding mismatch');
+  }
+  assertApprovalReference(receipt.approvalReference, 'stale retirement receipt');
+  assertSemanticCandidate(candidate);
+  if (receipt.staleHeadSha !== candidate.request.expected.headSha
+    || projectionRequestIssues(receipt.request).length > 0
+    || receipt.request.profile !== candidate.request.profile
+    || receipt.request.targets.join('\0') !== candidate.request.targets.join('\0')
+    || receipt.request.changedPaths.join('\0') !== candidate.request.changedPaths.join('\0')) {
+    throw new Error('architecture stale retirement receipt request surface mismatch');
+  }
+  assertStrictAncestor(repoRoot, receipt.staleHeadSha, receipt.request.expected.headSha);
+  assertCleanCurrentProof(receipt.request, receipt.result);
+  const { receiptDigest: _digest, ...body } = receipt;
+  if (digestProjectionJson(body) !== receipt.receiptDigest) {
+    throw new Error('architecture stale retirement receipt digest mismatch');
+  }
+}
+
 function assertProofOnlyCandidate(candidate: ArchitectureProjectionAcceptanceCandidateV1): void {
   const reasons = candidateSignal(candidate).reasonCodes;
   if (reasons.length !== 1 || reasons[0] !== 'verified-flow-proof-changed') {
     throw new Error('architecture reconciliation requires an exact verified-flow-proof-changed candidate');
+  }
+}
+
+function assertSemanticCandidate(candidate: ArchitectureProjectionAcceptanceCandidateV1): void {
+  const reasons = candidateSignal(candidate).reasonCodes;
+  if (reasons.length === 1 && reasons[0] === 'verified-flow-proof-changed') {
+    throw new Error('architecture stale retirement requires a semantic candidate; use reconciliation for proof-only candidates');
+  }
+}
+
+function assertStrictAncestor(repoRoot: string, staleHeadSha: string, currentHeadSha: string): void {
+  if (staleHeadSha === currentHeadSha) throw new Error('architecture stale retirement candidate head is current');
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', staleHeadSha, currentHeadSha], { cwd: repoRoot, stdio: 'ignore' });
+  } catch {
+    throw new Error('architecture stale retirement candidate head is not an ancestor of current HEAD');
+  }
+}
+
+function assertApprovalReference(approvalReference: string, label: string): void {
+  if (!APPROVAL_REFERENCE.test(approvalReference)) {
+    throw new Error(`architecture ${label} approval reference must be a non-empty event identity containing only letters, digits, . _ : or -`);
   }
 }
 
