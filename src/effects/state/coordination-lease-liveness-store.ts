@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, writeSync } from 'fs';
 import { dirname, join, resolve } from 'path';
-import { buildLeaseRenewalObservation, foldLeaseLivenessCurrent, type LeaseLivenessCurrentV1, type LeaseLivenessPolicyV1, type LeaseReclaimEligibilityReceiptV1, type LeaseRenewalObservationV1 } from '../../core/state/lease-liveness';
+import { buildLeaseRenewalObservation, foldLeaseLivenessCurrent, validateLeaseLivenessCurrent, validateLeaseLivenessPolicy, validateLeaseReclaimEligibility, validateLeaseRenewalObservation, type LeaseLivenessCurrentV1, type LeaseLivenessPolicyV1, type LeaseReclaimEligibilityReceiptV1, type LeaseRenewalObservationV1 } from '../../core/state/lease-liveness';
 import type { LeaseOwnerRecord } from '../../core/state/coordination-identity';
 import { coordinationRoot, readLease, withTaskLock } from './coordination-lease-store';
 
@@ -33,12 +33,12 @@ function canonical(value: unknown): Buffer { return Buffer.from(`${JSON.stringif
 function immutable(path: string, value: unknown): void { const bytes = canonical(value); if (existsSync(path)) { if (!regular(path).equals(bytes)) fail('liveness_conflict', `${path} names different bytes`); return; } atomic(path, bytes); }
 function json<T>(path: string): T { try { return JSON.parse(regular(path).toString('utf8')) as T; } catch (error) { return fail('liveness_conflict', `invalid liveness record: ${path}`, error); } }
 function sameOwner(actual: LeaseOwnerRecord, expected: LeaseOwnerRecord): boolean { return actual.task_id === expected.task_id && actual.task_revision === expected.task_revision && actual.claim_id === expected.claim_id && actual.generation === expected.generation && actual.execution_worktree === expected.execution_worktree && actual.branch === expected.branch && actual.state === expected.state; }
-function readCurrent(paths: ReturnType<typeof pathsFor>): LeaseLivenessCurrentV1 | null { return existsSync(paths.current) ? json(paths.current) : null; }
-function readRenewal(paths: ReturnType<typeof pathsFor>, digest: string): LeaseRenewalObservationV1 { return json(join(paths.renewals, `${shaName(digest)}.json`)); }
+function readCurrent(paths: ReturnType<typeof pathsFor>): LeaseLivenessCurrentV1 | null { return existsSync(paths.current) ? validateLeaseLivenessCurrent(json(paths.current)) : null; }
+function readRenewal(paths: ReturnType<typeof pathsFor>, digest: string): LeaseRenewalObservationV1 { return validateLeaseRenewalObservation(json(join(paths.renewals, `${shaName(digest)}.json`))); }
 function assertNoUnprojected(paths: ReturnType<typeof pathsFor>, current: LeaseLivenessCurrentV1 | null): void {
   for (const entry of readdirSync(paths.renewals, { withFileTypes: true })) {
     if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('liveness_unsafe_path', `unexpected renewal entry: ${entry.name}`);
-    const renewal = json<LeaseRenewalObservationV1>(join(paths.renewals, entry.name));
+    const renewal = validateLeaseRenewalObservation(json(join(paths.renewals, entry.name)));
     if (renewal.previous_renewal_sha256 === (current?.last_renewal_sha256 ?? null) && renewal.renewal_sha256 !== current?.last_renewal_sha256) fail('liveness_persistence_failed', 'durable renewal is not folded into current; replay its exact observation');
   }
 }
@@ -69,7 +69,7 @@ export function renewLeaseLiveness(input: RenewLeaseLivenessInput): { readonly r
 export function readLeaseLiveness(repoRoot: string, taskId: string, identity?: GenerationIdentity): { readonly policy: LeaseLivenessPolicyV1; readonly renewal: LeaseRenewalObservationV1; readonly current: LeaseLivenessCurrentV1 } {
   const selected = identity ?? readPointer(repoRoot, taskId); const paths = pathsFor(repoRoot, taskId, selected);
   if (!existsSync(paths.policy) || !existsSync(paths.current)) fail('liveness_not_found', 'lease liveness generation is missing');
-  const policy = json<LeaseLivenessPolicyV1>(paths.policy); const current = readCurrent(paths)!; const renewal = readRenewal(paths, current.last_renewal_sha256);
+  const policy = validateLeaseLivenessPolicy(json(paths.policy)); const current = readCurrent(paths)!; const renewal = readRenewal(paths, current.last_renewal_sha256);
   if (current.claim_id !== selected.claim_id || current.lease_generation !== selected.lease_generation || policy.policy_sha256 !== current.policy_sha256 || renewal.renewal_sha256 !== current.last_renewal_sha256 || renewal.claim_id !== current.claim_id || renewal.lease_generation !== current.lease_generation) fail('liveness_conflict', 'lease liveness projection is internally inconsistent');
   if (!identity && readPointer(repoRoot, taskId).current_sha256 !== current.current_sha256) fail('liveness_conflict', 'lease liveness pointer is stale');
   return Object.freeze({ policy, renewal, current });
@@ -81,6 +81,6 @@ export function writeLeaseReclaimEligibility(repoRoot: string, receipt: LeaseRec
 }
 export function readLeaseReclaimEligibility(repoRoot: string, taskId: string): LeaseReclaimEligibilityReceiptV1 | null {
   let pointer: LeaseLivenessPointerV1; try { pointer = readPointer(repoRoot, taskId); } catch (error) { if (error instanceof LeaseLivenessStoreError && error.code === 'liveness_not_found') return null; throw error; }
-  const paths = pathsFor(repoRoot, taskId, pointer); if (!existsSync(paths.eligibility)) return null; const receipt = json<LeaseReclaimEligibilityReceiptV1>(paths.eligibility); const current = readCurrent(paths);
+  const paths = pathsFor(repoRoot, taskId, pointer); if (!existsSync(paths.eligibility)) return null; const receipt = validateLeaseReclaimEligibility(json(paths.eligibility)); const current = readCurrent(paths);
   if (current === null || current.current_sha256 !== pointer.current_sha256 || current.last_renewal_sha256 !== receipt.renewal_sha256 || receipt.claim_id !== pointer.claim_id || receipt.lease_generation !== pointer.lease_generation) return null; return receipt;
 }

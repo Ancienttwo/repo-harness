@@ -90,6 +90,49 @@ function timestamp(value: string, name: string): number {
   const parsed = Date.parse(value); if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) throw new Error(`${name} must be a canonical ISO timestamp`); return parsed;
 }
 function sha(value: string, name: string): void { if (!/^sha256:[0-9a-f]{64}$/u.test(value)) throw new Error(`${name} must be sha256`); }
+function record(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const row = value as Record<string, unknown>; const actual = Object.keys(row);
+  if (actual.length !== keys.length || actual.some((key) => !keys.includes(key))) throw new Error(`${label} has unknown or missing fields`);
+  return row;
+}
+function verifyDigest(row: Record<string, unknown>, field: string, label: string): void {
+  const { [field]: claimed, ...body } = row; if (typeof claimed !== 'string' || claimed !== digest(body)) throw new Error(`${label} digest is stale`);
+}
+
+export function validateLeaseLivenessPolicy(value: unknown): LeaseLivenessPolicyV1 {
+  const row = record(value, ['protocol', 'kind', 'renewal_interval_ms', 'maximum_ttl_ms', 'renewal_actor_kind', 'required_evidence_sources', 'unproven_behavior', 'policy_sha256'], 'lease liveness policy');
+  if (row.protocol !== LEASE_LIVENESS_PROTOCOL || row.kind !== LEASE_LIVENESS_POLICY_KIND || !Array.isArray(row.required_evidence_sources)) throw new Error('lease liveness policy protocol, kind or sources are invalid');
+  const built = buildLeaseLivenessPolicy(row as unknown as Omit<LeaseLivenessPolicyV1, 'protocol' | 'kind' | 'policy_sha256'>);
+  if (JSON.stringify(value) !== JSON.stringify(built)) throw new Error('lease liveness policy is not canonical');
+  return built;
+}
+
+export function validateLeaseRenewalObservation(value: unknown): LeaseRenewalObservationV1 {
+  const row = record(value, ['protocol', 'kind', 'task_id', 'task_revision', 'claim_id', 'lease_generation', 'owner_id', 'execution_worktree', 'branch', 'sequence', 'observed_at', 'expires_at', 'binding_generation', 'runtime_effect_id', 'previous_renewal_sha256', 'policy_sha256', 'renewal_sha256'], 'lease renewal');
+  if (row.protocol !== LEASE_LIVENESS_PROTOCOL || row.kind !== LEASE_RENEWAL_KIND) throw new Error('lease renewal protocol or kind is invalid');
+  for (const field of ['task_id', 'task_revision', 'claim_id', 'owner_id', 'observed_at', 'expires_at', 'policy_sha256', 'renewal_sha256']) if (typeof row[field] !== 'string') throw new Error(`lease renewal ${field} is invalid`);
+  integer(row.lease_generation as number, 1, Number.MAX_SAFE_INTEGER, 'lease_generation'); integer(row.sequence as number, 1, Number.MAX_SAFE_INTEGER, 'sequence');
+  timestamp(row.observed_at as string, 'observed_at'); timestamp(row.expires_at as string, 'expires_at'); sha(row.policy_sha256 as string, 'policy_sha256');
+  if (row.previous_renewal_sha256 !== null) sha(row.previous_renewal_sha256 as string, 'previous_renewal_sha256');
+  verifyDigest(row, 'renewal_sha256', 'lease renewal'); return Object.freeze(row as unknown as LeaseRenewalObservationV1);
+}
+
+export function validateLeaseLivenessCurrent(value: unknown): LeaseLivenessCurrentV1 {
+  const row = record(value, ['protocol', 'kind', 'task_id', 'claim_id', 'lease_generation', 'policy_sha256', 'sequence', 'last_renewal_sha256', 'last_renewed_at', 'expires_at', 'current_sha256'], 'lease liveness current');
+  if (row.protocol !== LEASE_LIVENESS_PROTOCOL || row.kind !== LEASE_LIVENESS_CURRENT_KIND) throw new Error('lease liveness current protocol or kind is invalid');
+  integer(row.lease_generation as number, 1, Number.MAX_SAFE_INTEGER, 'lease_generation'); integer(row.sequence as number, 1, Number.MAX_SAFE_INTEGER, 'sequence');
+  for (const field of ['policy_sha256', 'last_renewal_sha256']) sha(row[field] as string, field);
+  timestamp(row.last_renewed_at as string, 'last_renewed_at'); timestamp(row.expires_at as string, 'expires_at');
+  verifyDigest(row, 'current_sha256', 'lease liveness current'); return Object.freeze(row as unknown as LeaseLivenessCurrentV1);
+}
+
+export function validateLeaseReclaimEligibility(value: unknown): LeaseReclaimEligibilityReceiptV1 {
+  const row = record(value, ['protocol', 'kind', 'task_id', 'task_revision', 'claim_id', 'lease_generation', 'policy_sha256', 'renewal_sha256', 'expires_at', 'classified_at', 'classification', 'attention_owner', 'evidence', 'receipt_sha256'], 'lease reclaim eligibility');
+  if (row.protocol !== LEASE_LIVENESS_PROTOCOL || row.kind !== LEASE_RECLAIM_ELIGIBILITY_KIND || !['live', 'expired_but_effect_active', 'reclaimable', 'liveness_unproven', 'publication_recovery_required'].includes(row.classification as string) || !['none', 'operator'].includes(row.attention_owner as string)) throw new Error('lease reclaim eligibility protocol, kind or enum is invalid');
+  record(row.evidence, ['controller_terminal', 'runtime_effect_inactive', 'publication_inactive', 'binding_generation_matches', 'claim_actor_matches', 'evidence_revision'], 'lease reclaim evidence');
+  verifyDigest(row, 'receipt_sha256', 'lease reclaim eligibility'); return Object.freeze(row as unknown as LeaseReclaimEligibilityReceiptV1);
+}
 
 export function buildLeaseLivenessPolicy(input: Omit<LeaseLivenessPolicyV1, 'protocol' | 'kind' | 'policy_sha256'>): LeaseLivenessPolicyV1 {
   integer(input.renewal_interval_ms, 1_000, 3_600_000, 'renewal_interval_ms');
