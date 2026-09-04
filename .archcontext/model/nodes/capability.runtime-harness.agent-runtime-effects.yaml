@@ -81,8 +81,8 @@ notes:
   - Provider Thread V1 is available only to the explicit terminal-only migration and has no steady-state reader or command alias.
 extensions:
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
+    agents: "src/core/engineers/AGENTS.md"
+    claude: "src/core/engineers/CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/unit/issue-281-task-offer-wake.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
