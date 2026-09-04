@@ -143,6 +143,20 @@ function transientAcquisition(result: AcquireNextScheduledEngineerTaskResult): b
       && result.fleet.fleet?.ok === false && (result.fleet.fleet.error === 'offer_stale' || result.fleet.fleet.error === 'claim_failed')));
 }
 
+function invokeAcquireNext(
+  acquireNext: AutomationControllerRunDependencies['acquireNext'],
+  input: Parameters<AutomationControllerRunDependencies['acquireNext']>[0],
+): AcquireNextScheduledEngineerTaskResult {
+  return acquireNext(input);
+}
+
+function invokeDispatch(
+  dispatch: AutomationControllerRunDependencies['dispatch'],
+  input: Parameters<AutomationControllerRunDependencies['dispatch']>[0],
+): DelegatedRunStatus {
+  return dispatch(input);
+}
+
 export function stepAutomationController(input: StepAutomationControllerInput, overrides: Partial<AutomationControllerRunDependencies> = {}): AutomationControllerStepResult {
   const deps = { ...defaultDependencies, ...overrides }; const status = readAutomationControllerStatus(input.repo_root, input.run_id); const run = status.run;
   const startedAt = deps.now().getTime(); let current = status.current; let steps = 0; let acquisition: AcquireNextScheduledEngineerTaskResult | null = null; let dispatched: DelegatedRunStatus | null = null;
@@ -164,7 +178,7 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
     try { reservation = deps.reserveBudget({ repo_root: input.repo_root, automation_run_id: run.run_id, expected_budget_sha256: run.budget_sha256, idempotency_key: `${input.idempotency_key}:acquisition`, operation: 'acquisition', unit_kind: 'execute', unit_id: run.run_id, attempt: 1, provider: null }); }
     catch (error) { if (error instanceof AutomationBudgetStoreError) { current = budgetRefusal(input.repo_root, run.run_id, current, input.idempotency_key, error, at()); return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps + 1 }); } throw error; }
     current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-acquire`, 'begin_acquire', at(), receipt('begin_acquire', 'reserved', { evidence_refs: [reservation.reservation_sha256] })); steps += 1;
-    try { acquisition = deps.acquireNext({ repo_root: input.repo_root, principal: observedPrincipal, idempotency_key: `${input.idempotency_key}:acquire-next`, max_selection_attempts: input.max_selection_attempts }); }
+    try { acquisition = invokeAcquireNext(deps.acquireNext, { repo_root: input.repo_root, principal: observedPrincipal, idempotency_key: `${input.idempotency_key}:acquire-next`, max_selection_attempts: input.max_selection_attempts }); }
     catch (error) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquire-unknown`, 'require_reconciliation', at(), receipt('require_reconciliation', 'acquisition_outcome_unknown'), 'operator', 'controller_reconciliation_required'); throw error; }
     const acquisitionEvidence = evidence(run.run_id, current.current_event_sha256);
     const usage = deps.appendUsage({ repo_root: input.repo_root, reservation, outcome: acquisition.ok ? 'progress' : 'no_progress', evidence_refs: acquisitionEvidence });
@@ -203,7 +217,7 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
       return Object.freeze({run_id:run.run_id,current,acquisition,dispatch:dispatched,steps_executed:steps});
     }
     current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-dispatch`, 'begin_dispatch', at(), receipt('begin_dispatch', 'reserved', { dispatch_id: input.dispatch_id, evidence_refs: [reservation.reservation_sha256] })); steps += 1;
-    try { dispatched = deps.dispatch({ repo_root: input.repo_root, dispatch_id: input.dispatch_id, observed_at: at(), protected_paths: run.protected_paths }); }
+    try { dispatched = invokeDispatch(deps.dispatch, { repo_root: input.repo_root, dispatch_id: input.dispatch_id, observed_at: at(), protected_paths: run.protected_paths }); }
     catch (error) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-unknown`, 'require_reconciliation', at(), receipt('require_reconciliation', 'dispatch_outcome_unknown', { dispatch_id: input.dispatch_id }), 'operator', 'controller_reconciliation_required'); throw error; }
     const outcome = dispatched.current.state === 'completed' ? 'progress' : dispatched.current.state === 'failed' ? 'provider_failure' : 'no_progress';
     const usage = deps.appendUsage({ repo_root: input.repo_root, reservation, outcome, evidence_refs: evidence(run.run_id, current.current_event_sha256) });

@@ -26,15 +26,15 @@ describe("AXR7 repo-harness architecture consumer", () => {
     const relations = yamlFiles(join(modelRoot, "relations"));
     const flows = yamlFiles(join(modelRoot, "flows"));
 
-    expect(capabilities).toHaveLength(25);
-    expect(components).toHaveLength(26);
+    expect(capabilities).toHaveLength(26);
+    expect(components).toHaveLength(27);
     // C4 declared the collaboration -> delegated-runs relation and the
     // delegated-contribution flow; C6 adds the collaboration -> bound-task-freezes
     // relation its read-time succession proof crosses, and the context-delivery
     // flow. Both counts are inventory pins: a legitimate model addition is a red
     // test until the pin moves with it, which is the point. Multiple flows per
     // capability was already the norm.
-    expect(relations).toHaveLength(50);
+    expect(relations).toHaveLength(53);
     expect(flows).toHaveLength(32);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
@@ -46,7 +46,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     const moduleDocs = filesUnder(join(architectureRoot, "modules")).filter((path) => path.endsWith(".md"));
     const html = filesUnder(architectureRoot).filter((path) => path.endsWith(".html"));
 
-    expect(moduleDocs).toHaveLength(25);
+    expect(moduleDocs).toHaveLength(26);
     expect(html.map((path) => relative(ROOT, path))).toEqual([]);
     for (const path of moduleDocs) {
       const body = readFileSync(path, "utf8");
