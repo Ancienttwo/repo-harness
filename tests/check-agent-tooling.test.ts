@@ -1222,7 +1222,7 @@ describe("check-agent-tooling", () => {
           turn_id: "turn-hook-e2e",
           agent_id: "agent-hook-e2e",
           agent_type: "fast-worker",
-          model: "gpt-5.6-luna",
+          model: "gpt-5.6-terra",
         }),
       });
       expect(hook.exitCode).toBe(0);
@@ -1244,7 +1244,7 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.native_role_routing.observations).toEqual([
         expect.objectContaining({
           agent_type: "fast-worker",
-          observed_model: "gpt-5.6-luna",
+          observed_model: "gpt-5.6-terra",
           reasoning_effort_status: "configured_unverified",
         }),
       ]);
