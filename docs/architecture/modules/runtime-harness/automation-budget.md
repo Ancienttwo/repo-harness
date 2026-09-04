@@ -85,6 +85,8 @@ sequenceDiagram
 
 6. Controller journal 是 orchestration evidence，不是 Task 或 Lease authority。每次 step 先重驗 Engineer principal、Binding 與 authorization revision，再向 budget store 預留，之後才可調用 canonical acquire-next 或單一 fenced delegated-run effect。任何 event 已持久但 side effect 結果不明的狀態只可進 `reconciliation_required`。
 7. 同一 Engineer 的 controller 由 Git common-dir lock 與 current pointer 串行化；terminal run 才可被新 run 取代。每次 invocation 同時受 step count 與 wall duration 上限約束，transient retry 使用 frozen policy 推導的 deterministic capped backoff。10x 時最先失效的是 append-only event 與 transition 目錄的線性枚舉，而不是 Lease/Task authority；屆時應加 content-addressed index，不應另建 task queue。
+8. Controller policy 凍結有上限的 Lease renewal interval、maximum TTL、actor kind 與 evidence source closed set。acquire-next 成功後，controller 必須在記錄 `acquired` 前重新讀取 canonical Lease，並只為完全相同的 task revision、claim、generation、worktree 與 branch 建立 renewal；renewal digest 隨 acquisition evidence 一起寫入 controller journal。
+9. Liveness journal 以 claim/generation 分代保存，task-level pointer 只指向最新成功 renewal 的 generation projection。Expiry 本身沒有 preemption authority；automatic reclaim 必須在同一 Lease lock 內重讀 owner、renewal、Binding/runtime/publication evidence，消費一張完全相同的 `reclaimable` receipt，再調用既有 generation-incrementing steal。不可讀或缺失的 evidence 投影為 `liveness_unproven` 並交給 operator。10x 時最先受壓的是每 generation 的 append-only renewal 枚舉；可加入由 journal 重建的索引，但 Lease owner 仍是唯一 claim/preemption authority。
 
 ## 4. 歷史決策記錄(append-only)
 
