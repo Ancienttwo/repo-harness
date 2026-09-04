@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { execFileSync } from "child_process";
 
-export const REFACTOR_PROVIDER_VERSION = "0.5.3" as const;
+export const REFACTOR_PROVIDER_VERSION = "0.5.4" as const;
 export const REFACTOR_SCAN_FEATURES = Object.freeze(["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] as const);
 export const REFACTOR_VERIFY_FEATURES = Object.freeze(["refactor-resolution-v1"] as const);
 

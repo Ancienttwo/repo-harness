@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_VERSION, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.5.3';
+const VERSION = '0.5.4';
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
@@ -191,7 +191,7 @@ function linkBuildDependencies(checkout: string): void {
     if (name === '@archcontext') continue;
     symlinkSync(join(sourceModules, name), join(targetModules, name), 'dir');
   }
-  // 0.5.3 added koffi to the published runtime manifest. The source checkout used as the
+  // 0.5.2 added koffi to the published runtime manifest. The source checkout used as the
   // archive authority may not have refreshed its untracked node_modules after that release;
   // bind the exact dependency installed by this consumer instead of letting the build borrow
   // an undeclared global package.
