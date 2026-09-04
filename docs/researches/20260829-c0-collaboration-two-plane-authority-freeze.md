@@ -88,6 +88,13 @@ clause it fails.
 | `src/core/review/change-assessment.ts` | C-1 (D12) | Review plane; one consumer, `src/effects/review/change-assessment.ts` |
 | `src/core/state/project-board-slice.ts` | C-2 | Advisory host-context projection: it derives nothing itself (every ownership decision is imported from `project-board.ts`), has no store and no `--json` surface, and its only consumer renders prompt text that "never blocks a spawn, never fails a hook, and never carries a decision" |
 
+Post-freeze additions are adjudicated by the same criterion without rewriting
+the historical `main@a490a5ef` count:
+
+| Module | Fails | Evidence |
+|---|---|---|
+| `src/core/refactor/program.ts` | C-1 | Refactor orchestration plane: binds provider recommendation identity to a Work Package before materialization; downstream scheduling reads the resulting canonical Work Graph, never the RefactorProgram bytes, as Task/Claim authority |
+
 **`project-board.ts` vs `fleet/board.ts`.** Both are Task/Lease-plane read
 models, and both are inventoried; the earlier split between them had no stated
 basis and is resolved here by including `src/core/state/project-board.ts`.

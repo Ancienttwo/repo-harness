@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:dbe6e1ab55c4e70c9479881089f2d3a73235a3a0d35f67d60f36a283fac61438`
+> **Substantive Change SHA256**: `sha256:f9ace231e03b967019771a0f4f99657dde6da7af5f1f4a1afc0a3208975c5f19`
 
 ## Design Decisions
 
@@ -18,6 +18,11 @@
 - Reuse the account-level `ProgramAuthorizationV1` by exact id and digest. Its `target_revision` is a full Git object id (SHA-1 or SHA-256 repository format), so policy is read from that protected revision and never from candidate content.
 - Treat explicit `stop` as terminal `stopped`, not `complete`; completion remains reserved for the verified post-merge resolution path.
 - Map `scale = null` deterministically to `no_action`: whether observations deserve proposal authoring belongs to Module 2 before routing and cannot become an undeclared fourth route input.
+- Keep materialization semantic inputs caller-owned, but bind every acceptance and rollback revision to the exact bytes published in the same Git commit. The effect performs no local structural inference.
+- Publish Program bindings, Sprint rows, Plans, Work Graph, acceptance policies, and rollback boundaries through one temporary-index Git CAS. A post-CAS crash leaves state at `materializing`; exact replay recognizes only the authorized child commit and appends `begin_plan`.
+- Preserve the execution hop chain by emitting `execution_surface: contract` Work Packages only. Materialization has no Lease write path.
+- Read accepted recommendation state from ArchContext Book at materialization time and bind the provider fingerprint as `recommendationDigest`; the Program never stores lifecycle status.
+- Enforce the operator-minted `allowed_work_package_ids` before the program enters `materializing`.
 
 ## Deviations From Plan Or Spec
 

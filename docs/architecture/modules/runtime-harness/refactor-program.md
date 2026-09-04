@@ -25,6 +25,14 @@ operator start / status / stop
   -> policy from the exact protected target revision
   -> immutable event append under the Git common directory
   -> current projection rebuilt from the full event chain
+
+accepted recommendation set
+  -> ArchContext Book readback proves status = accepted at current HEAD
+  -> exact RefactorProgramV1 bindings
+  -> one contract-gated Work Package and rollback boundary per architecture node
+  -> canonical Sprint rows plus Work Graph dependencies
+  -> Program, Sprint, Plans, policies, and rollback artifacts published by one Git CAS
+  -> planning state; Contract and Lease remain downstream authorities
 ```
 
 - Proof: `proven` (capability node entrypoints and required flows bind discovery plus lifecycle store paths).
@@ -35,6 +43,9 @@ flowchart LR
   Store --> Grant[Account-level ProgramAuthorization]
   Store --> Policy[Policy at authorized target revision]
   Discovery[Discovery and proposal authoring] --> ArchContext[archctx 0.5.2]
+  CLI --> Materializer[Atomic materialization]
+  Materializer --> Git[Program + Sprint + Plans + Work Graph]
+  Git --> Contract[Existing Plan to Contract to Lease chain]
 ```
 
 > **Proof**: `proven`; lifecycle selectors bind CLI sources to the program-store sinks.
@@ -58,10 +69,15 @@ sequenceDiagram
 
 - No local module statistics, dependency analysis, cycle detection, refactor scoring, or scale inference.
 - No copied recommendation status or locally synthesized resolution.
+- Materialization re-reads ArchContext lifecycle authority and accepts only exact `recommendationId` + fingerprint pairs whose current status is `accepted`.
+- Every generated Work Package ID must be present in the account-level ProgramAuthorization allowlist.
 - Every mutating program transition is append-only, idempotent by exact event identity, and rejected on conflicting replay.
 - Candidate worktrees cannot relax the target revision's policy or authorization.
 - Architecture-scale work always crosses the existing human architecture-acceptance boundary.
 - Workflow route is a pure three-input projection of provider-owned scale, scale reason codes, and major-change reasons; a supplied route is accepted only when it equals that projection.
+- Materialization never creates a Lease: it writes only Program bindings, canonical Sprint tasks, Work Packages, Plans, and their exact acceptance and rollback references.
+- One affected architecture node maps to one Work Package, one rollback boundary, and one repo-scoped concurrency key; dependency topology must validate before the Git CAS.
+- A failed CAS leaves the append-only program at `materializing`; replay recognizes only the exact authorized child commit and finishes the `planning` transition idempotently.
 - Completion requires Cutover Closure plus exact post-merge ArchContext measurement.
 
 ## Verification

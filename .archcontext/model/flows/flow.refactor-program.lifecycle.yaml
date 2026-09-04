@@ -33,6 +33,21 @@ outcomes:
     terminal:
       participant: operator
       label: Return the deterministic current projection and durable events
+  - id: materialized
+    kind: success
+    label: Publish one exact Refactor Program execution graph atomically
+    steps:
+      - id: materialize-program
+        from: operator
+        to: program-store
+        label: Bind recommendations to contract-gated Work Packages and publish Program, Sprint, Plans, Work Graph, acceptance policies, and rollback boundaries in one Git CAS
+        evidence:
+          entrypointId: entrypoint.refactor-program.lifecycle
+          sourceSymbol: runRefactorMaterialize
+          sinkId: sink.refactor-program.materialize
+    terminal:
+      participant: operator
+      label: Return the materialized commit and planning-state receipt
   - id: stopped
     kind: success
     label: Append an explicit stopped terminal transition

@@ -50,11 +50,16 @@ source:
             - id: sink.refactor-program.stop
               path: "src/effects/refactor/program-store.ts"
               symbol: "appendRefactorProgramEvent"
+        - name: "runRefactorMaterialize"
+          sinks:
+            - id: sink.refactor-program.materialize
+              path: "src/effects/refactor/materialization.ts"
+              symbol: "materializeRefactorProgram"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts --timeout 60000"
     - "bun run check:type"

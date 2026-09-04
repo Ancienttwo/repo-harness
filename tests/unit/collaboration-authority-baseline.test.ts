@@ -430,6 +430,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'review plane (D12); one consumer, src/effects/review/change-assessment.ts',
   },
   {
+    module: 'src/core/refactor/program.ts',
+    fails: ['C-1'],
+    evidence: 'refactor orchestration plane: maps provider recommendation identity to a Work Package before materialization, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads RefactorProgram bytes as its authority',
+  },
+  {
     module: 'src/core/state/project-board-slice.ts',
     fails: ['C-2'],
     evidence: 'advisory host-context projection: every ownership decision is imported from project-board.ts, it has no store and no --json surface, and its only consumer renders prompt text that carries no decision',

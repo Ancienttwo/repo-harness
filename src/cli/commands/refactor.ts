@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
 
 import { buildRefactorProgramDefinition } from '../../core/refactor/program-state';
 import { readStoredProgramAuthorization } from '../../effects/automation/grant-store';
@@ -8,6 +9,7 @@ import {
   readRefactorProgramStatus,
   RefactorProgramStoreError,
 } from '../../effects/refactor/program-store';
+import { materializeRefactorProgram, RefactorMaterializationError, type MaterializeRefactorProgramInput } from '../../effects/refactor/materialization';
 
 class RefactorArgumentError extends Error {
   readonly code = 'invalid_argument' as const;
@@ -26,7 +28,7 @@ function output(value: unknown): void {
 function outputError(error: unknown): void {
   const code = error instanceof RefactorArgumentError
     ? error.code
-    : error instanceof RefactorProgramStoreError ? error.code : 'refactor_program_unavailable';
+    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError ? error.code : 'refactor_program_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof RefactorArgumentError ? 2 : 1;
 }
@@ -73,6 +75,14 @@ export function runRefactorStop(raw: { readonly repo?: string; readonly programI
   }));
 }
 
+export function runRefactorMaterialize(raw: { readonly repo?: string; readonly request?: string }): void {
+  const path = required(raw.request, '--request'); let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { throw new RefactorArgumentError(`cannot read --request: ${error instanceof Error ? error.message : String(error)}`); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new RefactorArgumentError('--request must contain one JSON object');
+  const input = parsed as Omit<MaterializeRefactorProgramInput, 'repo_root'>;
+  output(materializeRefactorProgram({ ...input, repo_root: raw.repo?.trim() || process.cwd() }));
+}
+
 export function buildRefactorCommand(): Command {
   const command = new Command('refactor').description('Operate the authorized refactor program state machine');
   command.command('start')
@@ -94,5 +104,9 @@ export function buildRefactorCommand(): Command {
     .requiredOption('--idempotency-key <key>', 'Stable stop key')
     .option('--observed-at <timestamp>', 'RFC3339 stop time')
     .action((options: { repo?: string; programId?: string; expectedCurrentSha256?: string; idempotencyKey?: string; observedAt?: string }) => { try { runRefactorStop(options); } catch (error) { outputError(error); } });
+  command.command('materialize')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Exact Refactor materialization request JSON')
+    .action((options: { repo?: string; request?: string }) => { try { runRefactorMaterialize(options); } catch (error) { outputError(error); } });
   return command;
 }

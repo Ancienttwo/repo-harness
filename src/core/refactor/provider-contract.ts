@@ -56,6 +56,11 @@ export interface RefactorVerifyResultV1 {
   evidence: RefactorResolutionEvidenceV1 | null;
 }
 
+export interface RefactorRecommendationAuthorityV1 {
+  recommendationId: string;
+  recommendationDigest: string;
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new RefactorProviderError("refactor_provider_result_invalid", `${label} must be an object`);
   return value as Record<string, unknown>;
@@ -149,6 +154,23 @@ export function assertRefactorRecordResult(value: unknown, expectedAssessmentDig
     if (issues.length) throw new RefactorProviderError("refactor_provider_result_invalid", `invalid recorded recommendation: ${issues.join("; ")}`);
   }
   return data as unknown as RefactorRecordResultV1;
+}
+
+export function assertAcceptedRefactorRecommendations(value: unknown, expectedHeadSha: string): readonly RefactorRecommendationAuthorityV1[] {
+  const data = dataOf(value, "book.recommendations");
+  if (data.schemaVersion !== "archcontext.architecture-book-recommendations/v1" || !Array.isArray(data.recommendations)) {
+    throw new RefactorProviderError("refactor_provider_result_invalid", "ArchContext recommendation readback is invalid");
+  }
+  const freshness = record(data.freshness, "book recommendations freshness");
+  const worktree = record(freshness.worktree, "book recommendations freshness.worktree");
+  if (worktree.headSha !== expectedHeadSha) throw new RefactorProviderError("refactor_assessment_stale", "ArchContext recommendation readback is not bound to the authorized HEAD");
+  const accepted: RefactorRecommendationAuthorityV1[] = [];
+  for (const recommendation of data.recommendations as RecommendationV3[]) {
+    const issues = recommendationV3InvariantIssues(recommendation);
+    if (issues.length) throw new RefactorProviderError("refactor_provider_result_invalid", `invalid recommendation readback: ${issues.join("; ")}`);
+    if (recommendation.status === "accepted") accepted.push(Object.freeze({ recommendationId: recommendation.recommendationId, recommendationDigest: recommendation.fingerprint }));
+  }
+  return Object.freeze(accepted);
 }
 
 export function assertRefactorVerifyResult(value: unknown, request: RefactorVerificationRequestV1): RefactorVerifyResultV1 {

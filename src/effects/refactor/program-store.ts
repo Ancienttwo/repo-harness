@@ -90,10 +90,17 @@ const SHADOW_OPERATIONS = new Set<RefactorProgramOperation>([
   'require_proof', 'require_architecture_approval', 'mark_stale', 'block', 'require_reconciliation', 'stop',
 ]);
 
-function assertOperationEnabled(repoRoot: string, program: RefactorProgramDefinitionV1, operation: RefactorProgramOperation, env: NodeJS.ProcessEnv): void {
+function assertOperationEnabled(repoRoot: string, program: RefactorProgramDefinitionV1, operation: RefactorProgramOperation, env: NodeJS.ProcessEnv, ownedTargetRevision?: string): void {
   const grant = assertAuthorityBinding(repoRoot, program, env);
   if (Date.parse(grant.expires_at) <= Date.now()) fail('refactor_program_authorization_stale', 'program authorization expired');
-  if (operation !== 'mark_stale' && targetRevision(repoRoot, grant.target_ref) !== grant.target_revision) fail('refactor_program_authorization_stale', 'authorized target ref moved');
+  const currentTarget = targetRevision(repoRoot, grant.target_ref);
+  if (operation !== 'mark_stale' && currentTarget !== grant.target_revision) {
+    if (operation !== 'begin_plan' || ownedTargetRevision !== currentTarget) fail('refactor_program_authorization_stale', 'authorized target ref moved');
+    let parent: string;
+    try { parent = execFileSync('git', ['rev-parse', '--verify', `${currentTarget}^1`], { cwd: repoRoot, encoding: 'utf8' }).trim(); }
+    catch (error) { return fail('refactor_program_authorization_stale', 'materialized target has no verifiable parent', error); }
+    if (parent !== grant.target_revision) fail('refactor_program_authorization_stale', 'materialized target is not the exact authorized child commit');
+  }
   const policy = loadRefactorPolicyAtRevision(repoRoot, program.target_revision);
   if (policy.mode === 'off') fail('refactor_mode_disabled', 'refactor mode is off at the authorized target revision');
   if (policy.mode === 'shadow' && !SHADOW_OPERATIONS.has(operation)) fail('refactor_mode_disabled', `${operation} is forbidden while refactor mode is shadow`);
@@ -103,10 +110,12 @@ export interface AppendRefactorProgramEventInput {
   readonly repo_root: string; readonly program_id: string; readonly expected_current_sha256: string | null;
   readonly idempotency_key: string; readonly operation: RefactorProgramOperation; readonly evidence_refs?: readonly string[];
   readonly observed_at: string; readonly env?: NodeJS.ProcessEnv;
+  /** Exact one-commit target advance owned by Module 6; valid only for begin_plan. */
+  readonly owned_target_revision?: string;
 }
 
 function appendLocked(value: ReturnType<typeof paths>, program: RefactorProgramDefinitionV1, input: AppendRefactorProgramEventInput) {
-  assertOperationEnabled(input.repo_root, program, input.operation, input.env ?? process.env);
+  assertOperationEnabled(input.repo_root, program, input.operation, input.env ?? process.env, input.owned_target_revision);
   ensure(value.events); ensure(value.transitions); const rebuilt = rebuild(value, program); assertCurrentProjection(value, rebuilt.current); const previous = rebuilt.current;
   const transition = join(value.transitions, `${Buffer.from(input.idempotency_key).toString('hex')}.json`);
   const build = (revision: number, previousState: RefactorProgramCurrentV1 | null, previousEvent: string | null) => buildRefactorProgramEvent({ program_id: program.program_id, revision, idempotency_key: input.idempotency_key, operation: input.operation, previous_state: previousState?.state ?? null, evidence_refs: input.evidence_refs ?? [], observed_at: input.observed_at, previous_event_sha256: previousEvent });

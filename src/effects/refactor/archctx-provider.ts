@@ -2,6 +2,7 @@ import type { RefactorRequestV1, RefactorVerificationRequestV1 } from "archctx-c
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
   assertRefactorCapabilities,
+  assertAcceptedRefactorRecommendations,
   assertRefactorRecordResult,
   assertRefactorRequest,
   assertRefactorScanResult,
@@ -9,6 +10,7 @@ import {
   assertRefactorVerifyResult,
   RefactorProviderError,
   type RefactorRecordResultV1,
+  type RefactorRecommendationAuthorityV1,
   type RefactorScanResultV1,
   type RefactorVerifyResultV1,
 } from "../../core/refactor/provider-contract";
@@ -56,6 +58,16 @@ export function runRefactorRecord(
   const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
   const value = invoke(repoRoot, policy.stages.scan, ["refactor", "record", "--assessment-digest", assessmentDigest, "--expected-worktree-digest", expectedWorktreeDigest, "--json"], options);
   return assertRefactorRecordResult(value, assessmentDigest, expectedWorktreeDigest);
+}
+
+export function readAcceptedRefactorRecommendations(
+  expectedHeadSha: string,
+  repoRoot: string,
+  options: RefactorArchctxProviderOptions = {},
+): readonly RefactorRecommendationAuthorityV1[] {
+  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
+  const value = invoke(repoRoot, policy.stages.scan, ["book", "recommendations", "--json"], options);
+  return assertAcceptedRefactorRecommendations(value, expectedHeadSha);
 }
 
 export function runRefactorVerify(request: RefactorVerificationRequestV1, repoRoot: string, options: RefactorArchctxProviderOptions = {}): RefactorVerifyResultV1 {
