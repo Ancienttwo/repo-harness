@@ -123,6 +123,7 @@ collaboration plane.
 
 | Module | Fails | Evidence |
 |---|---|---|
+| `src/core/automation/controller.ts` | C-1 and C-2 | Automation orchestration evidence plane added by issue #279. Its journal records bounded observation and invokes the existing acquire and delegated-dispatch authorities; its bytes grant no Claim, move no Lease generation, and publish or accept nothing. |
 | `src/core/collaboration/common.ts` | C-1 and C-2 | Collaboration plane, which D1 fixes as additive and non-authoritative rather than one of the five planes C0 froze; a signal's bytes grant no Claim, move no Lease generation, and reach any reader inside an untrusted wrapper, so no admission, claim, publication or acceptance decision reads them |
 | `src/core/operator/collaboration-snapshot.ts` | C-1 and C-2 | Operator transport view of the collaboration plane, added by C8. It carries `COLLABORATION_PROTOCOL` rather than minting one, so it fails C-1 for the same reason its source does; it fails C-2 more strongly, because every value in it is a copy of a decision the collaboration read model already made, it has no store, and its only reader is a human browser on loopback |
 
