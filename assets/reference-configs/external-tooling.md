@@ -595,12 +595,12 @@ mapping.
 | `fable` | `gpt-5.6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 
 Three per-agent target overrides are applied after tuple validation, on top of
-the family row above, and are the only effort remaps in the generator:
-`fast-worker` (`opus`/`medium`) targets `gpt-5.6-luna` at `max` reasoning
-instead of the opus family's `gpt-5.6-terra`/`medium`; `deep-worker`
-(`opus`/`high`) and `gatekeeper` (`opus`/`high`) keep the opus family's
-`gpt-5.6-terra` model but bump reasoning to `xhigh` instead of `high`. Every
-other agent's Codex model and effort follow the family row unchanged.
+the family row above, and are the only model/effort remaps in the generator:
+`fast-worker` (`opus`/`medium`) targets `gpt-5.6-terra` at `high` reasoning;
+`deep-worker` (`opus`/`high`) targets `gpt-5.6-sol` at `medium` reasoning; and
+`gatekeeper` (`opus`/`high`) keeps `gpt-5.6-terra` but bumps reasoning to
+`xhigh`. Every other agent's Codex model and effort follow the family row
+unchanged.
 
 `fast-worker`, `deep-worker`, `root-cause-prover`, and `harness-evaluator`
 receive `sandbox_mode = "workspace-write"`; every other role receives

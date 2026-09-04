@@ -9,6 +9,7 @@
 > **Architecture Module**: `docs/architecture/modules/workflow-engine/contract-assets.md`
 > **Source Plan**: `plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 > **Current Slice**: completed-20260713-specialist-roles
+> **Substantive Change SHA256**: `sha256:1fe2012ab0e75d9812cfa08fb036da067211121529d7721faa62fc412af06cf8`
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: `docs/architecture/requests/archive/2026/20260712-211019-workflow-engine-contract-assets.md`
 
@@ -19,6 +20,7 @@ Track durable multi-session progress for `workflow-engine-contract-assets` witho
 ## TODOs
 
 - [x] specialist-roles: Complete the current executable slice for `workflow-engine-contract-assets`.
+- [x] 2026-09-05-runtime-remap: Align fast-worker with Terra/high and deep-worker with Sol/medium across source, generated targets, docs, and tests.
 
 ## Notes
 

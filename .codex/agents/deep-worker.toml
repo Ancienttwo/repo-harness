@@ -1,7 +1,7 @@
 name = "deep-worker"
-description = "Heavy execution worker on GPT-5.6 Terra at xhigh reasoning. Use for hard, well-scoped execution — cross-module refactors, tricky concurrency or state fixes, changes that must land right in one pass; verifies with the project's real commands and returns `RESULT: DONE/PARTIAL/BLOCKED` with the evidence. Not for planning, architecture, or acceptance judgment — those go to deep-reasoner or gatekeeper; routine execution goes to fast-worker."
-model = "gpt-5.6-terra"
-model_reasoning_effort = "xhigh"
+description = "Heavy execution worker on GPT-5.6 Sol at medium reasoning. Use for hard, well-scoped execution — cross-module refactors, tricky concurrency or state fixes, changes that must land right in one pass; verifies with the project's real commands and returns `RESULT: DONE/PARTIAL/BLOCKED` with the evidence. Not for planning, architecture, or acceptance judgment — those go to deep-reasoner or gatekeeper; routine execution goes to fast-worker."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = '''You are a heavy execution worker. An orchestrator hands you the harder well-scoped tasks — cross-module refactors, tricky concurrency or state fixes, changes that must land right in one pass — and you execute them directly and return. You do not plan, decide architecture, or ship.
 
