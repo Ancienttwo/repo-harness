@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.automation-controller.engineer-scheduling
-kind: calls
-source: capability.runtime-harness.automation-budget
-target: capability.runtime-harness.engineer-scheduling
-intent: Acquire the next canonical Engineer WorkEnvelope only after the controller journals its reserved boundary

@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.automation-controller.delegated-runs
-kind: calls
-source: capability.runtime-harness.automation-budget
-target: capability.runtime-harness.delegated-runs
-intent: Dispatch an already admitted run through the single fenced delegated-run effect and journal the observed outcome

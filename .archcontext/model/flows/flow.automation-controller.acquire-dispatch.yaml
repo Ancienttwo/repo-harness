@@ -8,10 +8,6 @@ participants:
     nodeId: capability.runtime-harness.automation-budget
   - id: journal
     nodeId: component.automation-controller.journal
-  - id: scheduling
-    nodeId: capability.runtime-harness.engineer-scheduling
-  - id: delegated-runs
-    nodeId: capability.runtime-harness.delegated-runs
 steps:
   - id: persist-boundary
     from: controller
@@ -28,7 +24,7 @@ outcomes:
     steps:
       - id: acquire-next
         from: controller
-        to: scheduling
+        to: journal
         label: Consume the first canonical Engineer offer and record its exact WorkEnvelope identity
         evidence:
           entrypointId: entrypoint.automation-controller.step
@@ -36,7 +32,7 @@ outcomes:
           sinkId: sink.automation-controller.acquire
       - id: dispatch-existing-effect
         from: controller
-        to: delegated-runs
+        to: journal
         label: Dispatch the already-admitted run through the single fenced effect and persist its observation
         evidence:
           entrypointId: entrypoint.automation-controller.step

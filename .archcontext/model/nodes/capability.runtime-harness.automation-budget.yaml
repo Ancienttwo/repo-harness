@@ -60,14 +60,14 @@ source:
         - name: "stepAutomationController"
           sinks:
             - id: sink.automation-controller.acquire
-              path: "src/effects/automation/controller-run.ts"
-              symbol: "invokeAcquireNext"
+              path: "src/effects/engineers/scheduling-acquire-next.ts"
+              symbol: "acquireNextScheduledEngineerTask"
             - id: sink.automation-controller.dispatch
-              path: "src/effects/automation/controller-run.ts"
-              symbol: "invokeDispatch"
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "dispatchDelegatedRun"
             - id: sink.automation-controller.journal
-              path: "src/effects/automation/controller-run.ts"
-              symbol: "append"
+              path: "src/effects/automation/controller-store.ts"
+              symbol: "appendAutomationControllerEvent"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
