@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T02:38:11+0800 -->
+<!-- updated_at: 2026-09-05T03:33:18+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-09-05T02:38:11+0800
-> **Source Branch**: main
-> **Source Commit**: 54cddf2f
+> **Updated At**: 2026-09-05T03:33:18+0800
+> **Source Branch**: codex/workflow-artifact-cleanup
+> **Source Commit**: 18c7bf61
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -34,10 +34,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - (none)
 ## Active Sprint
 
-- Sprint: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
-- Sprint Status: Approved
-- Backlog: 5/15
-- Next Sprint Task: BRC4 — GPT Pro Issue batch authoring lane
+- Sprint: (none)
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
@@ -58,10 +55,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 9 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260905-0312-workflow-artifact-cleanup.md
+ D tasks/contracts/20260905-0312-workflow-artifact-cleanup.contract.md
+ D tasks/notes/20260905-0312-workflow-artifact-cleanup.notes.md
+ D tasks/reviews/20260905-0312-workflow-artifact-cleanup.review.md
+?? plans/archive/plan-20260905-0312-workflow-artifact-cleanup.md
+?? tasks/archive/contract-20260905-0333-workflow-artifact-cleanup.md
+?? tasks/archive/notes-20260905-0333-workflow-artifact-cleanup.md
+?? tasks/archive/review-20260905-0333-workflow-artifact-cleanup.md
+?? tasks/archive/todo-20260905-0333-workflow-artifact-cleanup.md
 ```
 
 ## Source Artifacts

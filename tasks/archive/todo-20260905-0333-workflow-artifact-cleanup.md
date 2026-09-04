@@ -1,3 +1,9 @@
+> **Archived**: 2026-09-05 03:33
+> **Related Plan**: plans/archive/plan-20260905-0312-workflow-artifact-cleanup.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260905-0333
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
