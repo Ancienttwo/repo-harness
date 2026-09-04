@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:cccaf7cd3fc3d8489aa95e6928b39beb6de47feacafbdd7923eecda8f1e18a77",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "c54584998099ca8e260f9102c6294e26c1b88300",
-    "worktreeDigest": "sha256:08895b73214e4895962648eb57c7211282e688f24e59f37319aeed99aa098971",
-    "sourceTreeDigest": "sha256:70c864e8eae981b54a9e709115abf5f3eaf77e508a8c29f725bd3700066ea3c4",
+    "baseHeadSha": "9330c011250427aaa019d6100718b3631a3f35a8",
+    "worktreeDigest": "sha256:8e7385622a72dc3a2e0c7efd1522bc77c3741e3b98f3cbf4c9e41dc3c72fdff5",
+    "sourceTreeDigest": "sha256:da9ddd0c8866483f5bcff3f1f56e3b5bde73d49d2c34836264c5d25d8fd5d4fd",
     "modelDigest": "sha256:019cbffd34908e604e09bc499372fe8c7c737b96b4af9f11cac6bc54bba31475",
-    "codeGraphDigest": "sha256:3c2778b5486e7425f43a9c453186e7990c4dcab3ef14ced02e1633c294066f1c",
-    "indexedWorktreeDigest": "sha256:e8295336e66c69e8918e0edd68393b627d25227357bde335e8a062f432d95114",
+    "codeGraphDigest": "sha256:c45aaa94538ba126ec37d3e6f3da13589f909113d2148908396b789b2b1df251",
+    "indexedWorktreeDigest": "sha256:8f46f8a9a97b0910321f2f202e408c8d6eebc7fad6f86a68c14b3db9fbb3d5ba",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:e0e61e119762fb6dfdabf26f52ae0fc74283157abeb69b7fa9b988a8a4d7f2c7"
+    "projectionInputDigest": "sha256:bd57814eade2adde4e7b9ae3ba383674f8eeed872a392b9c72d07c8536c46426"
   },
-  "projectionDigest": "sha256:dae05a66d146edf17c1099224fb2a430114e0f592ed8b1b59af4b73fb011311d",
+  "projectionDigest": "sha256:aaecefdffaff63fcf64fb5e081cf7bc849bfc30ce617a12930d1577098ce615f",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -658,12 +658,12 @@
     },
     "digests": {
       "modelDigest": "sha256:019cbffd34908e604e09bc499372fe8c7c737b96b4af9f11cac6bc54bba31475",
-      "sourceTreeDigest": "sha256:70c864e8eae981b54a9e709115abf5f3eaf77e508a8c29f725bd3700066ea3c4",
+      "sourceTreeDigest": "sha256:da9ddd0c8866483f5bcff3f1f56e3b5bde73d49d2c34836264c5d25d8fd5d4fd",
       "flowProofDigest": "sha256:6227e15dcf96418b6f135d79b532854222b313c9adefec97e08cb2e549c249d5",
-      "projectionDigest": "sha256:dae05a66d146edf17c1099224fb2a430114e0f592ed8b1b59af4b73fb011311d"
+      "projectionDigest": "sha256:aaecefdffaff63fcf64fb5e081cf7bc849bfc30ce617a12930d1577098ce615f"
     }
   },
-  "receiptDigest": "sha256:85b5f7865e9f807e4e91b8adefbaf44a6a11c476012dddf571b8739ff6106fc0",
+  "receiptDigest": "sha256:b0d38484940c43b98841da7d8e14b35d0e6cb004ae9fddc9bb0bbf732401ec08",
   "refreshSignalIds": [],
   "targetCount": 31,
   "fileCount": 31,
@@ -956,9 +956,9 @@
       "sourceDigest": "sha256:183d7a9ef531bb200e573b337911d503eac0d86741a87b02d5d0b60896930782",
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
-        "branch": "codex/refactor-provider-readback",
-        "commit": "e4892cf0bdcc33745ab2a6f0af0a154229da7444",
-        "committedAt": "2026-09-04T07:38:02+08:00"
+        "branch": "main",
+        "commit": "9330c011250427aaa019d6100718b3631a3f35a8",
+        "committedAt": "2026-09-04T15:33:22+08:00"
       }
     },
     {
@@ -1136,9 +1136,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/refactor-discovery-proposal-authoring",
-        "commit": "c54584998099ca8e260f9102c6294e26c1b88300",
-        "committedAt": "2026-09-04T15:17:47+08:00"
+        "branch": "main",
+        "commit": "9330c011250427aaa019d6100718b3631a3f35a8",
+        "committedAt": "2026-09-04T15:33:22+08:00"
       }
     },
     {

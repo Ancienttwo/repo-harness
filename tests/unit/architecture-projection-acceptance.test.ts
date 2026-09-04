@@ -16,6 +16,7 @@ import {
   inspectArchitectureProjectionAcceptanceState,
   reconcileArchitectureProjectionCandidate,
   recordArchitectureProjectionAcceptanceCandidates,
+  retireStaleArchitectureProjectionCandidate,
 } from '../../src/effects/architecture/projection-acceptance';
 import {
   architectureProjectionJobId,
@@ -203,6 +204,7 @@ describe('architecture projection acceptance', () => {
       candidates: 1,
       receipts: 1,
       reconciliationReceipts: 0,
+      staleRetirementReceipts: 0,
       unresolvedCandidates: 0,
       invalidArtifacts: 0,
     });
@@ -290,6 +292,7 @@ describe('architecture projection acceptance', () => {
       candidates: 1,
       receipts: 0,
       reconciliationReceipts: 1,
+      staleRetirementReceipts: 0,
       unresolvedCandidates: 0,
       invalidArtifacts: 0,
     });
@@ -419,5 +422,94 @@ describe('architecture projection acceptance', () => {
       unresolvedCandidates: 1,
       invalidArtifacts: 1,
     });
+  });
+
+  test('retires a stale semantic candidate with explicit approval and current noop proof', () => {
+    const f = fixture();
+    writeFileSync(join(f.repoRoot, 'tracked.txt'), 'new head\n');
+    execFileSync('git', ['add', '.'], { cwd: f.repoRoot });
+    execFileSync('git', ['commit', '-m', 'advance'], { cwd: f.repoRoot, stdio: 'ignore' });
+    const current = {
+      ...f.expected,
+      headSha: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.repoRoot, encoding: 'utf8' }).trim(),
+      worktreeDigest: digest('b'),
+    };
+    const observed: ProjectionRequestV1[] = [];
+    const receipt = retireStaleArchitectureProjectionCandidate(
+      f.repoRoot,
+      f.candidate.signalId,
+      'user-approval-20260904-stale-candidate-retirement',
+      {
+        captureSnapshot: () => current,
+        runProjection: (request) => {
+          observed.push(request);
+          return noopProofResult(request);
+        },
+      },
+    );
+
+    expect(observed).toHaveLength(1);
+    expect(observed[0]?.mode).toBe('check');
+    expect(observed[0]?.acceptedChange).toBeUndefined();
+    expect(receipt.staleHeadSha).toBe(f.expected.headSha);
+    expect(receipt.approvalReference).toBe('user-approval-20260904-stale-candidate-retirement');
+    expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot)).toEqual({
+      schemaVersion: 'repo-harness.architecture-projection-acceptance-state/v1',
+      candidates: 1,
+      receipts: 0,
+      reconciliationReceipts: 0,
+      staleRetirementReceipts: 1,
+      unresolvedCandidates: 0,
+      invalidArtifacts: 0,
+    });
+  });
+
+  test('makes stale retirement idempotent for one approval identity', () => {
+    const f = fixture();
+    writeFileSync(join(f.repoRoot, 'tracked.txt'), 'new head\n');
+    execFileSync('git', ['add', '.'], { cwd: f.repoRoot });
+    execFileSync('git', ['commit', '-m', 'advance'], { cwd: f.repoRoot, stdio: 'ignore' });
+    const current = {
+      ...f.expected,
+      headSha: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.repoRoot, encoding: 'utf8' }).trim(),
+      worktreeDigest: digest('b'),
+    };
+    let providerCalls = 0;
+    const options = {
+      captureSnapshot: () => current,
+      runProjection: (request: ProjectionRequestV1) => { providerCalls += 1; return noopProofResult(request); },
+    };
+    const first = retireStaleArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-retire', options);
+    const second = retireStaleArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-retire', options);
+
+    expect(second).toEqual(first);
+    expect(providerCalls).toBe(1);
+    expect(() => retireStaleArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-other', options))
+      .toThrow('different approval reference');
+  });
+
+  test('refuses stale retirement for a current, proof-only, or unterminated job candidate', () => {
+    const current = fixture();
+    expect(() => retireStaleArchitectureProjectionCandidate(
+      current.repoRoot,
+      current.candidate.signalId,
+      'event.review-current',
+      { captureSnapshot: () => current.expected },
+    )).toThrow('candidate head is current');
+
+    const proofOnly = fixture(undefined, ['verified-flow-proof-changed']);
+    expect(() => retireStaleArchitectureProjectionCandidate(
+      proofOnly.repoRoot,
+      proofOnly.candidate.signalId,
+      'event.review-proof-only',
+    )).toThrow('use reconciliation for proof-only candidates');
+
+    const jobId = architectureProjectionJobId(['event-stale'], ['src/core/architecture.ts']);
+    const jobBound = fixture(jobId);
+    expect(() => retireStaleArchitectureProjectionCandidate(
+      jobBound.repoRoot,
+      jobBound.candidate.signalId,
+      'event.review-job-not-terminal',
+    )).toThrow('requires a terminal job receipt');
   });
 });

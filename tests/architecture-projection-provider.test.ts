@@ -207,7 +207,7 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 }
 
 describe('package-local ArchContext projection provider', () => {
-  test('exposes only signal-bound acceptance and proof-only reconciliation as CLI authorities', () => {
+  test('exposes only signal-bound acceptance, proof reconciliation, and approved stale retirement as CLI authorities', () => {
     const command = buildArchitectureProjectionCommand();
     for (const name of ['check', 'plan', 'apply', 'adopt']) {
       const subcommand = command.commands.find((candidate) => candidate.name() === name);
@@ -229,6 +229,13 @@ describe('package-local ArchContext projection provider', () => {
     expect(reconcile!.options.map((option) => option.long)).toEqual([
       '--json',
       '--signal-id',
+    ]);
+    const retireStale = command.commands.find((candidate) => candidate.name() === 'retire-stale');
+    expect(retireStale).toBeDefined();
+    expect(retireStale!.options.map((option) => option.long)).toEqual([
+      '--json',
+      '--signal-id',
+      '--approval-reference',
     ]);
 
     const invalid = request(fixture().repoRoot);
