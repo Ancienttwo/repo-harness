@@ -16,6 +16,7 @@ const TASK_ID = /^[0-9a-f]{64}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const SAFE_TOKEN = /^[a-z0-9][a-z0-9._:-]{0,127}$/u;
 const OPAQUE = /^[^\u0000-\u001f\u007f]{1,512}$/u;
+const AUTOMATION_ATTEMPT_OUTCOMES: readonly TaskAutomationAttemptOutcome[] = ['started','completed','user_blocked','external_blocked','transient_failure','permanent_failure','lease_lost','cancelled','reconciliation_required'];
 
 export type WorkGraphLane = 'generic-v1' | 'engineering-v2';
 export type WorkPackageDependencyState =
@@ -686,8 +687,7 @@ export function validateEngineerOffer(value: unknown): EngineerOfferV1 {
     invalid('Engineer offer protocol or closed state is invalid');
   }
   const blockerOwner: EngineerOfferV1['blocker_owner'] = input.blocker_owner === 'none' || input.blocker_owner === 'user' || input.blocker_owner === 'operator' ? input.blocker_owner : invalid('blocker_owner is invalid');
-  const attemptOutcomes: readonly TaskAutomationAttemptOutcome[] = ['started','completed','user_blocked','external_blocked','transient_failure','permanent_failure','lease_lost','cancelled','reconciliation_required'];
-  const lastOutcome = input.last_outcome === null || attemptOutcomes.includes(input.last_outcome as TaskAutomationAttemptOutcome) ? input.last_outcome as TaskAutomationAttemptOutcome | null : invalid('last_outcome is invalid');
+  const lastOutcome = input.last_outcome === null || AUTOMATION_ATTEMPT_OUTCOMES.includes(input.last_outcome as TaskAutomationAttemptOutcome) ? input.last_outcome as TaskAutomationAttemptOutcome | null : invalid('last_outcome is invalid');
   const basis = {
     protocol: ENGINEER_OFFER_PROTOCOL,
     kind: ENGINEER_OFFER_KIND,
@@ -781,7 +781,7 @@ export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1
       engineer_id: engineerId,
       blockers: Object.freeze(blockers),
       attempt_count: integer(item.attempt_count, 'exclusion.attempt_count', 0, 100),
-      last_outcome: item.last_outcome as TaskAutomationAttemptOutcome | null,
+      last_outcome: item.last_outcome === null || AUTOMATION_ATTEMPT_OUTCOMES.includes(item.last_outcome as TaskAutomationAttemptOutcome) ? item.last_outcome as TaskAutomationAttemptOutcome | null : invalid('exclusion.last_outcome is invalid'),
       next_eligible_at: item.next_eligible_at === null ? null : string(item.next_eligible_at, 'exclusion.next_eligible_at', OPAQUE),
       blocker_owner: item.blocker_owner === 'none' || item.blocker_owner === 'user' || item.blocker_owner === 'operator' ? item.blocker_owner : invalid('exclusion.blocker_owner is invalid'),
     });
