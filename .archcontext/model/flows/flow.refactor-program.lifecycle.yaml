@@ -7,7 +7,7 @@ participants:
   - id: operator
     nodeId: capability.runtime-harness.refactor-program
   - id: program-store
-    nodeId: capability.runtime-harness.refactor-program
+    nodeId: component.refactor-program.lifecycle
 steps:
   - id: create-program
     from: operator
@@ -98,9 +98,9 @@ outcomes:
     label: Off mode, shadow-forbidden work, stale authority, moved target, or conflicting replay fails closed
     steps:
       - id: reject-mutation
-        from: program-store
-        to: operator
-        label: Return a typed refusal before publishing a new durable event
+        from: operator
+        to: program-store
+        label: Reject the requested mutation before publishing a new durable event
         evidence:
           entrypointId: entrypoint.refactor-program.lifecycle
           sourceSymbol: runRefactorStart
