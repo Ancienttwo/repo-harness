@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "kind": "repo-harness-substantive-change-waiver",
-  "substantive_change_sha256": "sha256:92fef4da30d1bd6a25fca4cb646f30ffa5105b9bb41c4b255fca81118de06278",
+  "substantive_change_sha256": "sha256:b014225c34908307d391f461f8fe036bd71e16165b9dd33e4f500cf7e345cfa8",
   "reason": "Issue #286 is a zero-ceremony Lease liveness work unit with architecture documentation and executable acceptance coverage but no work-package plan or contract; this waiver binds the exact final substantive diff required by the repository sync gate.",
   "owner": "ancienttwo",
   "scope": [
@@ -16,6 +16,7 @@
     "src/effects/state/coordination-lease-liveness-store.ts",
     "src/effects/state/coordination-lease-reclaim.ts",
     "tests/board-projection.test.ts",
+    "tests/unit/collaboration-authority-baseline.test.ts",
     "tests/unit/issue-279-automation-controller-core.test.ts",
     "tests/unit/issue-279-automation-controller-run.test.ts",
     "tests/unit/issue-279-automation-controller-store.test.ts",
