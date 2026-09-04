@@ -1,6 +1,6 @@
 # Task Contract: refactor-discovery-proposal-authoring
 
-> **Status**: Fulfilled
+> **Status**: Active
 > **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -75,9 +75,6 @@ allowed_paths:
   - docs/researches/20260902-restructure.md
   - docs/architecture/modules/runtime-harness/refactor-program.md
   - .archcontext/model/nodes/capability.runtime-harness.refactor-program.yaml
-  - .archcontext/model/nodes/component.refactor-program.archctx-provider.yaml
-  - .archcontext/model/relations/relation.refactor-program.archctx-provider.yaml
-  - .archcontext/model/flows/flow.refactor-program.discovery-assessment.yaml
   - plans/
   - tasks/todos.md
   - tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md
@@ -159,5 +156,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: main@7dd00333
+- Commit / checkpoint: main@4fcf8ae1
 - Revert strategy: remove the additive Module 2 core/effect/test files and revert the status-only documentation edits.

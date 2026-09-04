@@ -1,7 +1,0 @@
-schemaVersion: archcontext.node/v2
-id: component.refactor-program.archctx-provider
-kind: component
-name: Refactor ArchContext Provider Boundary
-status: active
-parent: capability.runtime-harness.refactor-program
-summary: Performs exact package-local ArchContext scan, record, and verify handshakes while preserving provider-owned structural semantics.
