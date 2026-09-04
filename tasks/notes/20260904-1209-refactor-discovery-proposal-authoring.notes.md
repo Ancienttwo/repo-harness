@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:a8448f363e23bc84fd60f0aacf333b67ad76da6a6d31bbebac1f284d7db9f9a6`
+> **Substantive Change SHA256**: `sha256:645c183ac76221069e141d806288192e627c2e4375fc202623a2122f400f0ed2`
 
 ## Design Decisions
 
