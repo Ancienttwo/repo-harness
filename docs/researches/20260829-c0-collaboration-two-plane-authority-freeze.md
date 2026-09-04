@@ -634,3 +634,5 @@ its primary component, and moved the ledger through
 - If C4's canary shows `max_parallel_readers = 3` is not reachable under a real
   provider, D6 stays frozen and the sprint records a measurement result; the table
   is not retro-fitted to the observation.
+
+> **Substantive Change SHA256**: `sha256:2db29e25cac199834d23e640afec55a70aa1ab50fdde9574796128997e9704ac`
