@@ -1165,10 +1165,20 @@ ARCHITECTURE_INDEX_EOF
   "refactor": {
     "mode": "off",
     "provider": "archctx",
+    "proposal_author": "local",
     "stages": {
       "scan": { "provider_version": "0.5.2", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
       "verify": { "provider_version": "0.5.2", "required_features": ["refactor-resolution-v1"] }
     },
+    "workflow_routing": {
+      "module_refactor": "work_package",
+      "cross_module_refactor": "refactor_sprint",
+      "architecture_intervention": "human_architecture_approval",
+      "proof_required": "investigation_only",
+      "no_action": "record_and_stop"
+    },
+    "maximum_modules_per_program": 10,
+    "maximum_parallel_modules": 3,
     "require_cutover_closure": true,
     "require_post_merge_measurement": false
   },

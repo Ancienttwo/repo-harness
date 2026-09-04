@@ -17,6 +17,7 @@ source:
   include:
     - "src/core/refactor/**"
     - "src/effects/refactor/**"
+    - "src/cli/commands/refactor.ts"
   entrypoints:
     - id: entrypoint.refactor-program.discover
       path: "src/effects/refactor/discovery-authoring.ts"
@@ -31,11 +32,29 @@ source:
             - id: sink.refactor-program.proposal-assessment
               path: "src/effects/refactor/archctx-provider.ts"
               symbol: "runRefactorScan"
+    - id: entrypoint.refactor-program.lifecycle
+      path: "src/cli/commands/refactor.ts"
+      symbols:
+        - name: "runRefactorStart"
+          sinks:
+            - id: sink.refactor-program.create
+              path: "src/effects/refactor/program-store.ts"
+              symbol: "createRefactorProgram"
+        - name: "runRefactorStatus"
+          sinks:
+            - id: sink.refactor-program.status
+              path: "src/effects/refactor/program-store.ts"
+              symbol: "readRefactorProgramStatus"
+        - name: "runRefactorStop"
+          sinks:
+            - id: sink.refactor-program.stop
+              path: "src/effects/refactor/program-store.ts"
+              symbol: "appendRefactorProgramEvent"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts --timeout 60000"
     - "bun run check:type"

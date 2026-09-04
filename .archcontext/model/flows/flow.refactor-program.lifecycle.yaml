@@ -1,0 +1,65 @@
+schemaVersion: archcontext.flow/v1
+id: flow.refactor-program.lifecycle
+capabilityId: capability.runtime-harness.refactor-program
+name: Operate one authorized append-only refactor program
+applicability: required
+participants:
+  - id: operator
+    nodeId: capability.runtime-harness.refactor-program
+  - id: program-store
+    nodeId: capability.runtime-harness.refactor-program
+steps:
+  - id: create-program
+    from: operator
+    to: program-store
+    label: Bind an account-level ProgramAuthorization to the exact protected target revision and append the created event
+    evidence:
+      entrypointId: entrypoint.refactor-program.lifecycle
+      sourceSymbol: runRefactorStart
+      sinkId: sink.refactor-program.create
+outcomes:
+  - id: status
+    kind: success
+    label: Rebuild current state from the immutable event chain
+    steps:
+      - id: rebuild-status
+        from: operator
+        to: program-store
+        label: Validate the program and every event before comparing the cached projection
+        evidence:
+          entrypointId: entrypoint.refactor-program.lifecycle
+          sourceSymbol: runRefactorStatus
+          sinkId: sink.refactor-program.status
+    terminal:
+      participant: operator
+      label: Return the deterministic current projection and durable events
+  - id: stopped
+    kind: success
+    label: Append an explicit stopped terminal transition
+    steps:
+      - id: stop-program
+        from: operator
+        to: program-store
+        label: Recheck grant, protected target policy, target movement, and expected current digest before append
+        evidence:
+          entrypointId: entrypoint.refactor-program.lifecycle
+          sourceSymbol: runRefactorStop
+          sinkId: sink.refactor-program.stop
+    terminal:
+      participant: program-store
+      label: Persist stopped without claiming completed
+  - id: refused
+    kind: error
+    label: Off mode, shadow-forbidden work, stale authority, moved target, or conflicting replay fails closed
+    steps:
+      - id: reject-mutation
+        from: program-store
+        to: operator
+        label: Return a typed refusal before publishing a new durable event
+        evidence:
+          entrypointId: entrypoint.refactor-program.lifecycle
+          sourceSymbol: runRefactorStart
+          sinkId: sink.refactor-program.create
+    terminal:
+      participant: operator
+      label: Observe a non-zero mutation failure with no synthesized state

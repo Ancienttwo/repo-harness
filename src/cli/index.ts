@@ -36,6 +36,7 @@ import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
 import { buildAutomationCommand } from './commands/automation';
+import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
@@ -135,6 +136,7 @@ export const SUBCOMMANDS = [
   'verified-context',
   'interface-change',
   'external-source',
+  'refactor',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -900,6 +902,7 @@ export function buildProgram(): Command {
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildAutomationCommand());
+  program.addCommand(buildRefactorCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());

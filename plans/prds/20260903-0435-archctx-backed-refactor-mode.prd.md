@@ -21,7 +21,7 @@
 - Core metric: 一條由本地主動發現的結構問題，經 proposal authoring 取得 `scale`，走完執行鏈，最終由 ArchContext 回報 `disposition: 'resolved'`——全程零本地結構判定、零本地狀態複製、每一跳都有可重建 receipt。
 - Hard constraint: ArchContext 是儀器/閘門/賬本，repo-harness 是作者/調度/收口。repo-harness 不得實作任何模組統計、依賴圖、cycle 偵測、refactor 評分或 CodeGraph 直讀；不得持有第二份 recommendation 狀態；不得從 Issue 標題推斷 scale；版本或 feature 不匹配一律 fail closed，永不本地 fallback。
 - Key risk: 「重構做完了但舊路徑還在」。ArchContext 能證明結構指標改善，證明不了舊 public surface、舊 fallback、舊 test、舊 doc 被清乾淨；沒有 Cutover Closure，指標改善會被當成重構完成。
-- Unknowns: first-class provenance 欄位（GPT Pro 來源標註）要等 0.6.0 contract 變更；`ProgramAuthorizationV1` 的 campaign payload 仍待 BRC3；其餘 provider contract 已由 `archctx@0.5.2` 發布並完成 clean-room readback。
+- Unknowns: first-class provenance 欄位（GPT Pro 來源標註）要等 0.6.0 contract 變更；其餘 provider contract 已由 `archctx@0.5.2` 發布並完成 clean-room readback。
 - Acceptance scenarios: 無 proposal 的掃描必須回 `scale = null` 且不得物化任務；`scale = 'cross_module'` 被投影成 `module_refactor` 時 `refactor_route_conflict`；PR 合入但 after-scan 未跑時只能顯示 `merged_pending_measurement`。
 - Suggested next step: **不生成 Sprint**。先把 Module 1（Cutover Closure Gate）抽成獨立 work-package plan——它零 archctx 依賴、可立即落地、且是 GPT Pro campaign Phase B 的前置——並在一個真實歷史重構 PR 上跑 First Proof Point。
 
@@ -82,7 +82,7 @@
   - Sprint backlog 六欄列文法唯一權威在 `src/core/state/sprint-backlog-rows.ts`，與 `scripts/sprint-backlog.sh` 的 awk 掃描綁定。
   - GPT Pro delegate 協議已存在：`assets/skills/repo-harness-chatgpt/references/delegate.md`（GPT Pro 為外部資深工程師，本地持獨立驗收權；GPT Pro 自述已驗證不構成證據；PromptBundle 內容級出境掃描強制）。
   - `scripts/cutover-closure.ts` 不存在；`assets/workflow-contract.v1.json` 無 `cutoverClosure` 鍵。
-  - `ProgramAuthorizationV1` 不在 `src/` 中，定義在 `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md:239`，由 campaign sprint 第 3 行 BRC3 建造。
+  - `ProgramAuthorizationV1` 已由 BRC3 落在 `src/core/automation/budget.ts`；Module 4 以 account-level grant 的 `authorization_id` / `authorization_sha256` 綁定 program，並在每次 mutation 重驗 exact target ref/revision，沒有另建授權型別或 candidate-side policy authority。
   - [HISTORICAL 2026-09-03] 當時 npm latest 為 `0.4.8`，repo-harness pin 為 `0.4.7`；此基線已被 2026-09-04 的 0.5.2 readback 取代。
   - [RESOLVED 2026-09-04] 上游 RF1b/RF2/RF3/RF5a/RF4/RF5b 均已發布；修復版 `archctx@0.5.2` 是唯一可消費版本。
 - [UNKNOWN]:
@@ -91,7 +91,7 @@
   - first-class provenance 欄位（例如 `provenance?: { provider, ref }`）的形狀與時程。上游明示這是 0.6.0 的 contract 變更，0.5.x 期間來源只能寫在 `intent` 自由文字裡。
   - Cutover Closure inventory 能否在不讀 CodeGraph、不做語義分析的前提下對真實歷史重構 PR 做出確定性判定。這是本 PRD 的 falsifier。
 - [UNVERIFIED]:
-  - `ProgramAuthorizationV1` 的最終落地欄位。BRC3 尚未合入 main。
+  - [RESOLVED 2026-09-04] `ProgramAuthorizationV1` 最終欄位已由 BRC3 合入；現有 contract 沒有 refactor payload，因此 Refactor Program 只引用完整 grant identity，不複製或擴充授權 schema。
   - [RESOLVED 2026-09-04] `RefactorVerificationRequestV1` 已凍結為 `archcontext.refactor-verification-request/v1 { recommendationId, expectedHeadSha?, expectedWorktreeDigest?, executionEvidenceRefs? }`；top-level keys 與 evidence refs 均由 `archctx-contracts@0.5.2` fail-closed validator 驗證。
   - 上游錯誤碼 `AC_REFACTOR_STALE`、`AC_REFACTOR_EVIDENCE_REQUIRED`、`AC_REFACTOR_PROPOSAL_UNAUTHORED`（`schema.ts:33-35,74-76`）的實際觸發條件與 stdout 呈現。
 - 研究文檔早期草案中不成立的前提（已由其 §二十二 對齊記錄修正，本 PRD 依修正後版本）:
@@ -687,7 +687,7 @@ Module 8 完整 → Module 9 → Module 10
 
 You are implementing this PRD.
 
-- Current delivery: Module 1 與 Module 3 已完成；當前 work package 是 **Module 2（proposal-free discovery、accountable proposal authoring、proposal-bound reassessment）**。Module 4 仍負責後續 program persistence、state machine 與 CLI orchestration。
+- Current delivery: Module 1 與 Module 3 已合入；Module 2 已完成 discovery / proposal authoring 實作；Module 4 已完成 policy、append-only program store、可重建 current projection 與 `refactor start|status|stop` CLI，正在沿後續 modules 繼續整合。
 - Do not reinterpret:
   - 不要在 repo-harness 實作任何模組統計、依賴圖、cycle 偵測或 refactor 評分；不要直接讀 CodeGraph。
   - 不要把 `proof_required` / `no_action` 當成上游 `RefactorScale` 值。上游只有 `architecture | cross_module | insufficient_evidence | model_adoption_required | module`（`refactor.ts:28-34`）。

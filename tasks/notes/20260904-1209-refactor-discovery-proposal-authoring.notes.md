@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:7ea8a83c05bab12f2c205be180c08d72fae7aa48ce62b8b0a3610249a833ddc8`
+> **Substantive Change SHA256**: `sha256:a612b13f764b236f8905902778de43cd392b2cb357f18e65215f95ec1ee28bbc`
 
 ## Design Decisions
 
@@ -14,6 +14,9 @@
 - Bind short aliases to the provider-owned `recommendationId` and fingerprint; do not copy recommendation status or infer a local score.
 - Reject directory, glob, missing, and repository-escaping `scopePaths` before the proposal-bearing provider call. The provider remains the only scale authority.
 - Register the Refactor Program as its own ArchContext capability boundary so the remaining modules resolve to one explicit architecture owner instead of the root fallback.
+- Keep Module 4 program state outside candidate worktrees under the Git common directory; immutable events are authoritative and `current.json` is only a validated, rebuildable projection.
+- Reuse the account-level `ProgramAuthorizationV1` by exact id and digest. Its `target_revision` is a full Git object id (SHA-1 or SHA-256 repository format), so policy is read from that protected revision and never from candidate content.
+- Treat explicit `stop` as terminal `stopped`, not `complete`; completion remains reserved for the verified post-merge resolution path.
 
 ## Deviations From Plan Or Spec
 

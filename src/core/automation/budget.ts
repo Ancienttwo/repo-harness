@@ -183,6 +183,11 @@ function assertDigest(value: unknown, label: string): string {
   return value;
 }
 
+function assertGitObjectId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value)) invalid(`${label} must be a full lowercase Git object id`);
+  return value;
+}
+
 function assertNullableDigest(value: unknown, label: string): string | null {
   if (value === null) return null;
   return assertDigest(value, label);
@@ -330,7 +335,7 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
     authorization_id: assertIdentifier(value.authorization_id, 'authorization_id'),
     repository_id: assertIdentifier(value.repository_id, 'repository_id'),
     target_ref: assertIdentifier(value.target_ref, 'target_ref'),
-    target_revision: assertDigest(value.target_revision, 'target_revision'),
+    target_revision: assertGitObjectId(value.target_revision, 'target_revision'),
     work_graph_revision: assertDigest(value.work_graph_revision, 'work_graph_revision'),
     allowed_work_package_ids: Object.freeze(work),
     allowed_risk_tiers: Object.freeze(['low']) as readonly ['low'],

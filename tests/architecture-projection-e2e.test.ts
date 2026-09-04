@@ -35,7 +35,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     // test until the pin moves with it, which is the point. Multiple flows per
     // capability was already the norm.
     expect(relations).toHaveLength(51);
-    expect(flows).toHaveLength(33);
+    expect(flows).toHaveLength(34);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
