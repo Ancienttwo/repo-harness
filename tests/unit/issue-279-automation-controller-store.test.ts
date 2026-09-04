@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -34,6 +34,19 @@ describe('issue #279 automation controller store', () => {
       const replay = startAutomationControllerRun({ repo_root: root, run: definition(), idempotency_key: 'start-1', observed_at: '2026-09-04T00:00:00.000Z' });
       expect(replay.current.current_sha256).toBe(first.current.current_sha256);
       expect(() => startAutomationControllerRun({ repo_root: root, run: definition(`sha256:${'c'.repeat(64)}`), idempotency_key: 'start-2', observed_at: '2026-09-04T00:00:01.000Z' })).toThrow(AutomationControllerStoreError);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('two processes starting controllers for one Engineer elect exactly one run', async () => {
+    const root = fixture();
+    try {
+      const modulePath = join(import.meta.dir, '../../src/effects/automation/controller-store.ts');
+      const inputPaths = [definition(), definition(`sha256:${'c'.repeat(64)}`)].map((run, index) => {
+        const path = join(root, `input-${index}.json`); writeFileSync(path, JSON.stringify({ repo_root: root, run, idempotency_key: `start-${index}`, observed_at: '2026-09-04T00:00:00.000Z' })); return path;
+      });
+      const script = `import {readFileSync} from 'fs'; import {startAutomationControllerRun} from ${JSON.stringify(modulePath)}; try { startAutomationControllerRun(JSON.parse(readFileSync(process.argv[1],'utf8'))); process.stdout.write('won'); } catch (e) { process.stdout.write('lost'); }`;
+      const results = await Promise.all(inputPaths.map(async (path) => { const child = Bun.spawn(['bun', '-e', script, path], { stdout: 'pipe', stderr: 'pipe' }); return { code: await child.exited, text: await new Response(child.stdout).text() }; }));
+      expect(results.map((result) => result.text).sort()).toEqual(['lost', 'won']);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
