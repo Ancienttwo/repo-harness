@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "kind": "repo-harness-substantive-change-waiver",
-  "substantive_change_sha256": "sha256:f4662659285a25c8e4064a6d15f14aaeedd41a9394e13edaa58bf1f1ca4570ae",
+  "substantive_change_sha256": "sha256:923f9461643e3c816cc043a95062f367d00e78747c7b7fc3f458e337041e4fd1",
   "reason": "Accept and materialize the exact ArchContext 0.5.2 projection, including its provider-owned proof status and projection inventory.",
   "owner": "ancienttwo",
   "scope": [
