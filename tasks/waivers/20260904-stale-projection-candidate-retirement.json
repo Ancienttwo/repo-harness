@@ -1,0 +1,14 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:c5ff62cb6f11a4f7013469f76c9d4c11d9bb280488adbe241e950ee7103a940d",
+  "reason": "User-approved operational closure for stale architecture projection candidates. The slice adds a fail-closed receipt protocol and CLI entrypoint so obsolete semantic candidates can be retired without deleting authority artifacts or accepting stale semantics.",
+  "owner": "ancienttwo",
+  "scope": [
+    "src/cli/commands/architecture-projection.ts",
+    "src/effects/architecture/projection-acceptance.ts",
+    "tests/architecture-projection-provider.test.ts",
+    "tests/unit/architecture-projection-acceptance.test.ts"
+  ],
+  "revisit_trigger": "The stale retirement receipt protocol changes or the two approved runtime candidates are no longer the intended closure set"
+}

@@ -11,6 +11,7 @@ import {
   acceptArchitectureProjectionCandidate,
   inspectArchitectureProjectionAcceptanceState,
   reconcileArchitectureProjectionCandidate,
+  retireStaleArchitectureProjectionCandidate,
   recordArchitectureProjectionAcceptanceCandidates,
 } from '../../effects/architecture/projection-acceptance';
 import { processArchitectureCascade, readPendingPostEditEvents } from '../hook/mutation-observed';
@@ -112,6 +113,16 @@ export function buildArchitectureProjectionCommand(): Command {
     .action((options: { signalId: string }) => {
       try {
         write(reconcileArchitectureProjectionCandidate(repositoryRoot(), options.signalId));
+      } catch (error) { fail(error); }
+    });
+  command.command('retire-stale')
+    .description('Retire one stale semantic candidate after explicit approval and a current deterministic proof check')
+    .requiredOption('--json', 'Output architecture stale retirement receipt JSON')
+    .requiredOption('--signal-id <sha256>', 'Exact stale unresolved-major refresh signal id')
+    .requiredOption('--approval-reference <event-id>', 'Exact external human approval event identity')
+    .action((options: { signalId: string; approvalReference: string }) => {
+      try {
+        write(retireStaleArchitectureProjectionCandidate(repositoryRoot(), options.signalId, options.approvalReference));
       } catch (error) { fail(error); }
     });
   command.command('adopt')
