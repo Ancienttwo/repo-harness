@@ -8,9 +8,9 @@
 > **Last Updated**: 2026-09-04 12:09
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:87f1af6206a2f27c1fc5f6e064f1afa0c504704bc6aeb17cb6404138e3edbe17
+> **Reviewed Subject SHA256**: sha256:b58801afe3c7076c91727a21cdacf7340dfa91645f0f62b93c13585a8132da83
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: da809be5f9da6c80eca4f76c9121e57a0d802e07
+> **Reviewed Target Revision**: 179543c8f062b74f1664d9b494a21bce2231961e
 
 ## Human Review Card
 
@@ -44,13 +44,13 @@
 > **Reviewer**: Codex
 > **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:87f1af6206a2f27c1fc5f6e064f1afa0c504704bc6aeb17cb6404138e3edbe17
+> **Reviewed Subject SHA256**: sha256:b58801afe3c7076c91727a21cdacf7340dfa91645f0f62b93c13585a8132da83
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: da809be5f9da6c80eca4f76c9121e57a0d802e07
-> **Verification Evidence SHA256**: sha256:4ddd7b4a382e53bc84940873f12c5adf25efe43796956207e72c27ab8f310884
-> **Issued At**: 2026-09-04T07:21:36.453Z
+> **Reviewed Target Revision**: 179543c8f062b74f1664d9b494a21bce2231961e
+> **Verification Evidence SHA256**: sha256:f7b2a8916edf4d29b4e6e5ae3b486c71df4bdd78156c0ca402eb30ff92935618
+> **Issued At**: 2026-09-04T07:51:37.177Z
 
-- Summary: Proposal-free discovery, accountable proposal authoring, file-only scope validation, and proposal-bound reassessment are coherent and covered by deterministic tests plus provider-bound readback.
+- Summary: Proposal-free discovery, accountable proposal authoring, file-only scope validation, and proposal-bound reassessment remain coherent after rebasing onto current main; deterministic tests and provider-bound readback pass.
 - Findings: none
 
 ## Behavior Diff Notes
