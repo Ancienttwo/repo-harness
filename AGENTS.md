@@ -58,8 +58,12 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 
 ## Required Checks
 
+Verification is risk-scoped. The active task contract's `exit_criteria` is the
+source of truth for behavior-specific checks; run focused tests for every
+changed behavior. The following repository-integrity checks are required for
+substantive repository changes:
+
 ```bash
-bun test --timeout 60000
 bash scripts/check-deploy-sql-order.sh
 bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
@@ -67,6 +71,15 @@ bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
 bun src/cli/index.ts init --repo . --dry-run
 ```
+
+Run the full `bun test --timeout 60000` suite when product/runtime source,
+tests, shared machine-executed contracts, test infrastructure, package/release
+behavior, or the active contract requires it. For `docs-only` and
+`ledger-closeout` changes limited to documentation and workflow artifacts, do
+not run the full suite by default; run the relevant focused checks and the
+repository-integrity checks above. When the full suite is skipped, record the
+changed paths, checks run, and the reason the narrower verification is
+sufficient.
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
