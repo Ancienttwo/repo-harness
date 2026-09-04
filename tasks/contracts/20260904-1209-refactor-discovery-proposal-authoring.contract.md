@@ -58,7 +58,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"refactor-proposal-authoring-tests","kind":"deterministic_test","paths":["*"]},{"id":"refactor-discovery-provider-readback","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
