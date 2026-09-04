@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.work-demand.engineer-scheduling
+kind: calls
+source: capability.runtime-harness.work-demand
+target: capability.runtime-harness.engineer-scheduling
+intent: Validate the accepted Work Package against the same-commit canonical Sprint and Work Graph

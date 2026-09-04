@@ -370,6 +370,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'module-engineering attention plane; a derived overlay with no store, no reader but `engineer overlay` output, and an attention payload that asserts no ownership',
   },
   {
+    module: 'src/core/engineers/work-demand.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'task-intake approval plane: an accepted projection authorizes one atomic materialization into the canonical Sprint and Work Graph, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads WorkDemand records as authority',
+  },
+  {
     module: 'src/core/engineers/interface-change.ts',
     fails: ['C-1'],
     evidence: 'module-engineering interface-change plane; its work-package projection is downstream of scheduling.ts and no Work Graph, offer, claim or lease reads it back',

@@ -334,3 +334,9 @@ AcceptanceReceipt field.
 - **Joined Refactor Board**: The read-only projection joining the external
   semantic refactor ledger with local execution evidence. It owns no state and
   is fully rebuildable from its authorities.
+
+## Agent WorkDemand intake authority
+
+An authenticated current Engineer may create a bounded `WorkDemandV1` and submit it for Human review. The immutable request binds its exact Binding generation and contract revision, source and target capabilities, untrusted problem/outcome text, digest-bound resources, and advisory urgency/dependency hints. Messages and external issues may reference the demand but never become its authority.
+
+Only Human authority may accept or reject a submitted demand. Acceptance freezes the exact target Sprint commit, Work Graph revision, stable Task ID, Sprint row bytes, and full `WorkPackageDefinitionV1`. Materialization validates both fences, constructs the new Sprint and Work Graph as one Git tree, and compare-and-swaps the canonical target ref. A mismatch or crash leaves the canonical ref unchanged. Its receipt proves work creation only; normal offer/acquire remains the sole Claim and Lease path.

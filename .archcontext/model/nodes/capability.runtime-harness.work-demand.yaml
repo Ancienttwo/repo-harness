@@ -1,0 +1,51 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.work-demand
+kind: capability
+name: Work Demand Intake
+status: active
+summary: Owns durable Agent-originated work requests, Human-frozen backlog projections and atomic Sprint plus Work Graph materialization without creating execution authority.
+responsibilities:
+  - Persist closed WorkDemandV1 requests, immutable transition events and one recoverable current projection in Git common dir.
+  - Revalidate the exact current requester Binding for propose, submit and Engineer cancel transitions.
+  - Reserve accept, reject, materialization and integration decisions for explicit Human authority.
+  - Freeze the exact Sprint row and WorkPackageDefinitionV1 bytes at acceptance.
+  - Materialize Sprint and Work Graph blobs through one Git tree and compare-and-swap target-ref update.
+  - Keep demand, message, external issue, Task, Claim and Lease authorities separate.
+source:
+  include:
+    - "src/core/engineers/work-demand.ts"
+    - "src/effects/engineers/work-demand-store.ts"
+    - "src/effects/engineers/work-demand-materialization.ts"
+  entrypoints:
+    - id: entrypoint.work-demand.event
+      path: "src/core/engineers/work-demand.ts"
+      symbols:
+        - name: "buildWorkDemandEvent"
+          sinks:
+            - id: sink.work-demand.digest
+              path: "src/core/messages/mechanics.ts"
+              symbol: "canonicalMessageDigest"
+    - id: entrypoint.work-demand.binding
+      path: "src/effects/engineers/work-demand-store.ts"
+      symbols:
+        - name: "validateEngineer"
+          sinks:
+            - id: sink.work-demand.binding
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+    - id: entrypoint.work-demand.materialize
+      path: "src/effects/engineers/work-demand-materialization.ts"
+      symbols:
+        - name: "materializeWorkDemand"
+          sinks:
+            - id: sink.work-demand.graph
+              path: "src/core/engineers/scheduling.ts"
+              symbol: "projectWorkGraph"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/issue-285-work-demand-core.test.ts tests/unit/issue-285-work-demand-materialization.test.ts --timeout 60000"
+    - "bun run check:type"

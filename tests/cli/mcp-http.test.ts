@@ -1069,8 +1069,10 @@ describe('mcp http transport', () => {
         'engineer_message_ack',
         'engineer_runtime_effect_capability',
         'engineer_runtime_effect_status',
-        'engineer_interface_change_propose',
-        'engineer_interface_change_transition',
+          'engineer_interface_change_propose',
+          'engineer_interface_change_transition',
+          'engineer_work_demand_propose',
+          'engineer_work_demand_transition',
         // C7's collaboration block. It extends the same closed inventory rather
         // than opening a second profile, so this list stays the one place the
         // engineer profile's whole surface is stated.
