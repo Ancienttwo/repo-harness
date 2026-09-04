@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { resolve } from 'path';
 import { assertReclaimReceiptCurrent, classifyLeaseReclaim, type LeaseReclaimEligibilityReceiptV1, type LeaseReclaimEvidenceV1 } from '../../core/state/lease-liveness';
 import { stealLeaseRecord, type LeaseOwnerRecord } from '../../core/state/coordination-identity';
-import { readLeaseLiveness } from './coordination-lease-liveness-store';
+import { readLeaseLiveness, writeLeaseReclaimEligibility } from './coordination-lease-liveness-store';
 import { readLease, withTaskLock, writeLeaseOwnerDurably } from './coordination-lease-store';
 
 export interface LeaseReclaimEvidenceObservation {
@@ -45,7 +45,10 @@ export function automaticReclaimLease(input: AutomaticLeaseReclaimInput): LeaseO
 }
 
 export function observeLeaseReclaimEligibility(input: { readonly repo_root: string; readonly task_id: string; readonly evidence: LeaseReclaimEvidenceV1; readonly publication_state: 'inactive' | 'completing' | 'reviewing'; readonly now?: () => Date }): LeaseReclaimEligibilityReceiptV1 {
-  const read = readLease(input.repo_root, input.task_id); if (read.record === null) throw new Error(`lease reclaim cannot read current owner: ${read.classification}`);
-  const liveness = readLeaseLiveness(input.repo_root, input.task_id);
-  return classifyLeaseReclaim({ renewal: liveness.renewal, task_revision: read.record.task_revision, classified_at: (input.now ?? (() => new Date()))().toISOString(), evidence: input.evidence, publication_state: input.publication_state });
+  return withTaskLock(resolve(input.repo_root), input.task_id, () => {
+    const read = readLease(input.repo_root, input.task_id); if (read.record === null) throw new Error(`lease reclaim cannot read current owner: ${read.classification}`);
+    const liveness = readLeaseLiveness(input.repo_root, input.task_id);
+    const receipt = classifyLeaseReclaim({ renewal: liveness.renewal, task_revision: read.record.task_revision, classified_at: (input.now ?? (() => new Date()))().toISOString(), evidence: input.evidence, publication_state: input.publication_state });
+    writeLeaseReclaimEligibility(input.repo_root, receipt); return receipt;
+  });
 }

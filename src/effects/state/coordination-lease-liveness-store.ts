@@ -5,6 +5,7 @@ import {
   foldLeaseLivenessCurrent,
   type LeaseLivenessCurrentV1,
   type LeaseLivenessPolicyV1,
+  type LeaseReclaimEligibilityReceiptV1,
   type LeaseRenewalObservationV1,
 } from '../../core/state/lease-liveness';
 import type { LeaseOwnerRecord } from '../../core/state/coordination-identity';
@@ -19,7 +20,7 @@ export class LeaseLivenessStoreError extends Error {
 function fail(code: LeaseLivenessStoreError['code'], message: string, cause?: unknown): never { throw new LeaseLivenessStoreError(code, message, cause); }
 function safeTask(value: string): string { if (!TASK.test(value)) fail('liveness_unsafe_path', 'invalid liveness task id'); return value; }
 function shaName(value: string): string { if (!SHA.test(value)) fail('liveness_unsafe_path', 'invalid liveness digest'); return value.slice(7); }
-function root(repoRoot: string, taskId: string) { const base = join(coordinationRoot(resolve(repoRoot)), 'liveness', safeTask(taskId)); return { base, policy: join(base, 'policy.json'), current: join(base, 'current.json'), renewals: join(base, 'renewals') }; }
+function root(repoRoot: string, taskId: string) { const base = join(coordinationRoot(resolve(repoRoot)), 'liveness', safeTask(taskId)); return { base, policy: join(base, 'policy.json'), current: join(base, 'current.json'), eligibility: join(base, 'eligibility.json'), renewals: join(base, 'renewals') }; }
 function ensure(path: string): void { mkdirSync(path, { recursive: true, mode: 0o700 }); const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) fail('liveness_unsafe_path', `unsafe liveness directory: ${path}`); }
 function regular(path: string): Buffer { const stat = lstatSync(path); if (!stat.isFile() || stat.isSymbolicLink()) fail('liveness_unsafe_path', `unsafe liveness file: ${path}`); return readFileSync(path); }
 function atomic(path: string, bytes: Buffer): void {
@@ -72,4 +73,12 @@ export function readLeaseLiveness(repoRoot: string, taskId: string): { readonly 
   const policy = json<LeaseLivenessPolicyV1>(paths.policy); const current = readCurrent(paths)!; const renewal = readRenewal(paths, current.last_renewal_sha256);
   if (policy.policy_sha256 !== current.policy_sha256 || renewal.renewal_sha256 !== current.last_renewal_sha256 || renewal.claim_id !== current.claim_id || renewal.lease_generation !== current.lease_generation) fail('liveness_conflict', 'lease liveness projection is internally inconsistent');
   return Object.freeze({ policy, renewal, current });
+}
+
+export function writeLeaseReclaimEligibility(repoRoot: string, receipt: LeaseReclaimEligibilityReceiptV1): void {
+  const paths = root(repoRoot, receipt.task_id); const current = readCurrent(paths); if (current === null || current.claim_id !== receipt.claim_id || current.lease_generation !== receipt.lease_generation || current.last_renewal_sha256 !== receipt.renewal_sha256) fail('liveness_conflict', 'reclaim receipt does not bind current liveness'); atomic(paths.eligibility, canonical(receipt));
+}
+
+export function readLeaseReclaimEligibility(repoRoot: string, taskId: string): LeaseReclaimEligibilityReceiptV1 | null {
+  const paths = root(repoRoot, taskId); if (!existsSync(paths.eligibility)) return null; const receipt = json<LeaseReclaimEligibilityReceiptV1>(paths.eligibility); const current = readCurrent(paths); if (current === null || current.claim_id !== receipt.claim_id || current.lease_generation !== receipt.lease_generation || current.last_renewal_sha256 !== receipt.renewal_sha256) return null; return receipt;
 }
