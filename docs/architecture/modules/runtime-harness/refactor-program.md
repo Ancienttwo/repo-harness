@@ -1,10 +1,10 @@
 # Refactor Program
 
-## Responsibility
+## 1. P1: Capability architecture map
 
 The Refactor Program capability owns repo-harness orchestration around the package-local ArchContext refactor provider. ArchContext remains the only structural-analysis and recommendation-lifecycle authority; repo-harness owns accountable proposal authoring, policy, workflow routing, execution evidence, and closure.
 
-## Runtime Boundary
+## 2. P2: Discovery and assessment flow
 
 - Core contracts and pure projections live under `src/core/refactor/`.
 - Provider calls, Git-common-directory program state, materialization, verification, and resolution effects live under `src/effects/refactor/`.
@@ -21,7 +21,7 @@ proposal-free request
   -> provider-owned scale
 ```
 
-## Invariants
+## 3. P3: Design decisions and invariants
 
 - No local module statistics, dependency analysis, cycle detection, refactor scoring, or scale inference.
 - No copied recommendation status or locally synthesized resolution.
