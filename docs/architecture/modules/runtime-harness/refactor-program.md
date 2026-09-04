@@ -44,7 +44,7 @@ architecture-scale recommendation
 executing Work Package
   -> verify-contract
   -> Cutover Closure at exact candidate commit
-  -> optional ArchContext 0.5.2 candidate preverify
+  -> optional ArchContext 0.5.3 candidate preverify
   -> AcceptanceReceipt at the same contract and commit
   -> immutable candidate-verification receipt
   -> finalized PR and merge references append one execution binding
@@ -71,7 +71,7 @@ flowchart LR
   CLI[refactor CLI] --> Store[Git common-dir program store]
   Store --> Grant[Account-level ProgramAuthorization]
   Store --> Policy[Policy at authorized target revision]
-  Discovery[Discovery and proposal authoring] --> ArchContext[archctx 0.5.2]
+  Discovery[Discovery and proposal authoring] --> ArchContext[archctx 0.5.3]
   CLI --> Materializer[Atomic materialization]
   Materializer --> Git[Program + Sprint + Plans + Work Graph]
   Git --> Contract[Existing Plan to Contract to Lease chain]

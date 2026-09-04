@@ -32,7 +32,7 @@ function measured() {
   return { snapshot, assessment };
 }
 
-function policy() { return readRefactorPolicy({ refactor: { mode: "off", provider: "archctx", stages: { scan: { provider_version: "0.5.2", required_features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }, verify: { provider_version: "0.5.2", required_features: ["refactor-resolution-v1"] } }, require_cutover_closure: false, require_post_merge_measurement: false } }); }
+function policy() { return readRefactorPolicy({ refactor: { mode: "off", provider: "archctx", stages: { scan: { provider_version: "0.5.3", required_features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }, verify: { provider_version: "0.5.3", required_features: ["refactor-resolution-v1"] } }, require_cutover_closure: false, require_post_merge_measurement: false } }); }
 
 describe("refactor archctx provider", () => {
   test("handshakes once and validates a scan result bound to the requested identity", () => {
@@ -40,7 +40,7 @@ describe("refactor archctx provider", () => {
     const run = (_binary: string, args: readonly string[]) => {
       calls.push([...args]);
       const value = args[0] === "capabilities"
-        ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3", "refactor-resolution-v1"] }
+        ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3", "refactor-resolution-v1"] }
         : { schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "refactor.scan", data: { schemaVersion: "archcontext.runtime-refactor-scan/v1", repository: measured().snapshot.repository, worktree: measured().snapshot.worktree, requestId: "request.test", request, ...measured(), proposedRecommendations: [] } };
       return { status: 0, signal: null, stdout: JSON.stringify(value), stderr: "" };
     };
@@ -51,12 +51,12 @@ describe("refactor archctx provider", () => {
   });
 
   test("rejects stale identity and missing features before returning data", () => {
-    const scanRun = (_binary: string, args: readonly string[]) => ({ status: 0, signal: null, stderr: "", stdout: JSON.stringify(args[0] === "capabilities" ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1"] } : {}) });
+    const scanRun = (_binary: string, args: readonly string[]) => ({ status: 0, signal: null, stderr: "", stdout: JSON.stringify(args[0] === "capabilities" ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1"] } : {}) });
     expect(() => runRefactorScan(request, process.cwd(), { consumerRoot: process.cwd(), refactorPolicy: policy(), run: scanRun })).toThrow(RefactorProviderError);
     const staleRun = (_binary: string, args: readonly string[]) => {
       const measuredResult = measured();
       const value = args[0] === "capabilities"
-        ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }
+        ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }
         : { schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "refactor.scan", data: { schemaVersion: "archcontext.runtime-refactor-scan/v1", repository: measuredResult.snapshot.repository, worktree: { ...measuredResult.snapshot.worktree, headSha: "c".repeat(40) }, requestId: "request.test", request, ...measuredResult, proposedRecommendations: [] } };
       return { status: 0, signal: null, stderr: "", stdout: JSON.stringify(value) };
     };
@@ -68,7 +68,7 @@ describe("refactor archctx provider", () => {
     const invalidRun = (_binary: string, args: readonly string[]) => {
       const measuredResult = measured();
       const value = args[0] === "capabilities"
-        ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }
+        ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }
         : { schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "refactor.scan", data: { schemaVersion: "archcontext.runtime-refactor-scan/v1", repository: measuredResult.snapshot.repository, worktree: measuredResult.snapshot.worktree, requestId: "request.test", request: { ...request, expectedHeadSha: "c".repeat(40) }, ...measuredResult, proposedRecommendations: [] } };
       return { status: 0, signal: null, stderr: "", stdout: JSON.stringify(value) };
     };
@@ -80,7 +80,7 @@ describe("refactor archctx provider", () => {
     const run = (_binary: string, args: readonly string[]) => {
       calls.push([...args]);
       let value: unknown;
-      if (args[0] === "capabilities") value = { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3", "refactor-resolution-v1"] };
+      if (args[0] === "capabilities") value = { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3", "refactor-resolution-v1"] };
       else if (args[1] === "record") value = { schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "refactor.record", data: { schemaVersion: "archcontext.runtime-refactor-record/v1", repository: measured().snapshot.repository, worktree: measured().snapshot.worktree, assessmentDigest: digest("f"), recommendationIds: [], recommendations: [] } };
       else value = { schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "refactor.verify", data: { schemaVersion: "archcontext.runtime-refactor-verify/v1", repository: measured().snapshot.repository, worktree: measured().snapshot.worktree, recommendationId: "recommendation.test", disposition: null, evidence: null } };
       return { status: 0, signal: null, stdout: JSON.stringify(value), stderr: "" };
@@ -89,14 +89,14 @@ describe("refactor archctx provider", () => {
     expect(runRefactorVerify({ schemaVersion: "archcontext.refactor-verification-request/v1", recommendationId: "recommendation.test", expectedHeadSha: request.expectedHeadSha, expectedWorktreeDigest: request.expectedWorktreeDigest }, process.cwd(), { consumerRoot: process.cwd(), refactorPolicy: policy(), run }).evidence).toBeNull();
     expect(calls.filter((args) => args[0] === "capabilities")).toHaveLength(2);
 
-    const upstreamError = (_binary: string, args: readonly string[]) => ({ status: args[0] === "capabilities" ? 0 : 1, signal: null, stderr: "", stdout: JSON.stringify(args[0] === "capabilities" ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3", "refactor-resolution-v1"] } : { schemaVersion: "archcontext.envelope/v1", ok: false, requestId: "refactor.scan", error: { code: "AC_REFACTOR_STALE", message: "stale" } }) });
+    const upstreamError = (_binary: string, args: readonly string[]) => ({ status: args[0] === "capabilities" ? 0 : 1, signal: null, stderr: "", stdout: JSON.stringify(args[0] === "capabilities" ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3", "refactor-resolution-v1"] } : { schemaVersion: "archcontext.envelope/v1", ok: false, requestId: "refactor.scan", error: { code: "AC_REFACTOR_STALE", message: "stale" } }) });
     try { runRefactorScan(request, process.cwd(), { consumerRoot: process.cwd(), refactorPolicy: policy(), run: upstreamError }); throw new Error("expected error"); }
     catch (error) { expect((error as RefactorProviderError).code).toBe("AC_REFACTOR_STALE"); }
   });
 
   test("rejects record output for a different assessment", () => {
     const run = (_binary: string, args: readonly string[]) => ({ status: 0, signal: null, stderr: "", stdout: JSON.stringify(args[0] === "capabilities"
-      ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.2" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }
+      ? { schemaVersion: "archcontext.capabilities/v1", package: { name: "archctx", version: "0.5.3" }, features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] }
       : { schemaVersion: "archcontext.envelope/v1", ok: true, requestId: "refactor.record", data: { schemaVersion: "archcontext.runtime-refactor-record/v1", repository: measured().snapshot.repository, worktree: measured().snapshot.worktree, assessmentDigest: digest("e"), recommendationIds: [], recommendations: [] } }) });
     expect(() => runRefactorRecord(digest("f"), request.expectedWorktreeDigest!, process.cwd(), { consumerRoot: process.cwd(), refactorPolicy: policy(), run })).toThrow("assessment identity");
   });

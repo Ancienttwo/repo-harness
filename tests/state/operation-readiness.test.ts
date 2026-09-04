@@ -105,15 +105,15 @@ describe('evaluateReadiness fixture-driven matrix', () => {
       projection_provider: 'archctx',
       projection_apply: 'manual',
       projection_failure_gate: 'strict',
-      projection_version: '0.5.2',
+      projection_version: '0.5.3',
       projection_timeout_ms: 120000,
-    } })).toEqual({ provider: 'archctx', applyMode: 'manual', failureGate: 'strict', requiredVersion: '0.5.2', timeoutMs: 120000 });
+    } })).toEqual({ provider: 'archctx', applyMode: 'manual', failureGate: 'strict', requiredVersion: '0.5.3', timeoutMs: 120000 });
     expect(readArchitectureProjectionPolicy({ architecture: {
       projection_provider: 'disabled',
       projection_apply: 'disabled',
       projection_failure_gate: 'misspelled-inactive-value',
       projection_timeout_ms: -1,
-    } })).toEqual({ provider: 'disabled', applyMode: 'disabled', failureGate: 'advisory', requiredVersion: '0.5.2', timeoutMs: 120000 });
+    } })).toEqual({ provider: 'disabled', applyMode: 'disabled', failureGate: 'advisory', requiredVersion: '0.5.3', timeoutMs: 120000 });
     expect(() => readArchitectureProjectionPolicy({ architecture: {
       projection_provider: 'disabled',
       projection_apply: 'automatic',
