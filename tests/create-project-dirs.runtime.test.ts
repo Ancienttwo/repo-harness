@@ -474,6 +474,9 @@ describe("create-project-dirs runtime smoke", () => {
         expect(parseExternalSourcesPolicy(seeded.external_sources).mode).toBe("off");
       }
       expect(parseExternalSourcesPolicy(repoPolicy.external_sources).mode).toBe("off");
+      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy, repoPolicy]) {
+        expect(seeded.development_campaign).toEqual({ version: 1, mode: "off" });
+      }
       // This repo cut its own authority over to archcontext nodes (Stage 2); the
       // seeded default above is what a newly generated repo gets, not what this repo
       // runs on. Both shapes share the one selector and the one rule string.

@@ -5,6 +5,11 @@
   "rule": "A repair campaign may open an Issue and author a Plan against a protected surface, but it must never route that surface into automated planning, acquisition, execution, publication or closure. Protection is checked before dispatch, and a hit is a hard stop, never a warning.",
   "capabilities": [
     {
+      "capability_id": "capability.runtime-harness.development-campaign",
+      "surface": "campaign authority",
+      "reason": "Owns the campaign policy, host-grant binding and append-only journal. A campaign may report a defect in this surface but cannot route itself into automated repair."
+    },
+    {
       "capability_id": "capability.runtime-harness.integration-acceptance",
       "surface": "acceptance authority",
       "reason": "Owns AcceptanceMatrixV1 and the product-acceptance projection that binds the existing AcceptanceReceipt. A campaign that could edit its own verdict authority could accept itself."
@@ -55,7 +60,8 @@
       "paths": [
         "src/core/publication/publication-receipt.ts",
         "src/core/publication/merge-readiness.ts",
-        "src/core/publication/publication-lifecycle.ts"
+        "src/core/publication/publication-lifecycle.ts",
+        "src/effects/publication/merge-readiness.ts"
       ],
       "reason": "PublicationReceiptV1 and MergeReadinessV1 are protected. The sprint architecture notes name capability.runtime-harness.publication, which does not exist as a node; these paths are reachable only as integration-acceptance sinks."
     },
@@ -67,9 +73,56 @@
       "reason": "The protected helper that mints AcceptanceReceipt bytes. src/cli/runtime/helper-runner.ts already lists it in PROTECTED_HELPERS, but no capability include glob owns the file."
     }
   ],
-  "pending_capability": {
+  "unmapped_closure": {
+    "roots": [
+      "src/core/state",
+      "src/effects/state",
+      "src/core/publication",
+      "src/effects/publication"
+    ],
+    "exempt_paths": [
+      "src/core/publication/feedback.ts",
+      "src/core/state/artifact-parsers.ts",
+      "src/core/state/attempt-ledger.ts",
+      "src/core/state/command-outcome.ts",
+      "src/core/state/lease-liveness.ts",
+      "src/core/state/no-progress.ts",
+      "src/core/state/project-board-slice.ts",
+      "src/core/state/project-board.ts",
+      "src/core/state/project-continuation-envelope.ts",
+      "src/core/state/project-effective-state.ts",
+      "src/core/state/project-state-snapshot.ts",
+      "src/core/state/sprint-row-completion.ts",
+      "src/core/state/sprint-schema-migration.ts",
+      "src/core/state/sprint-schema-v1.ts",
+      "src/core/state/types.ts",
+      "src/effects/publication/feedback-store.ts",
+      "src/effects/publication/feedback.ts",
+      "src/effects/publication/publication-lifecycle.ts",
+      "src/effects/publication/publication-receipt.ts",
+      "src/effects/state/attempt-ledger-store.ts",
+      "src/effects/state/collect-board-inputs.ts",
+      "src/effects/state/collect-slice-inputs.ts",
+      "src/effects/state/collect-state-inputs.ts",
+      "src/effects/state/coordination-canonical-source.ts",
+      "src/effects/state/coordination-claim-token.ts",
+      "src/effects/state/coordination-cutover.ts",
+      "src/effects/state/coordination-lease-liveness-store.ts",
+      "src/effects/state/coordination-lease-reclaim.ts",
+      "src/effects/state/coordination-sprint.ts",
+      "src/effects/state/git-state-version-store.ts",
+      "src/effects/state/resolve-board.ts",
+      "src/effects/state/resolve-continuation-envelope.ts",
+      "src/effects/state/resolve-effective-state.ts",
+      "src/effects/state/sprint-schema-migration.ts",
+      "src/effects/state/state-cache.ts",
+      "src/effects/state/state-lock.ts",
+      "src/effects/state/write-journal.ts"
+    ]
+  },
+  "installed_capability": {
     "capability_id": "capability.runtime-harness.development-campaign",
     "node_file": "capability.runtime-harness.development-campaign.yaml",
-    "reason": "The campaign is protected against itself. Its node is created by sprint row 3 (BRC3); at BRC0 it must not exist, which is what the accompanying test asserts."
+    "reason": "BRC3 installed the campaign boundary while runtime policy remains off by default; the campaign is protected against itself."
   }
 }

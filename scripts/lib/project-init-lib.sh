@@ -1745,6 +1745,10 @@ pi_write_harness_policy() {
     "statuses": ["Draft", "Approved", "Executing", "Done", "Archived"],
     "rule": "PRDs live in plans/prds as the upper planning layer. Sprints live in plans/sprints as long-task execution backlogs; each sprint row is expanded with Waza \$think into a detailed plans/plan-*.md before the plan -> contract -> worktree flow; tasks/todos.md stays the deferred-goal ledger"
   },
+  "development_campaign": {
+    "version": 1,
+    "mode": "off"
+  },
   "reference_material": {
     "dir": "_ref",
     "mode": "external-ignored",

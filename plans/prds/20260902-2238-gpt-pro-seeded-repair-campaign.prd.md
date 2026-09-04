@@ -328,6 +328,7 @@
     {
       "id": "program_authorization_campaign_payload",
       "owner": "host", // ProgramAuthorizationV1 的 campaign-scoped payload，不是新协议
+      "field": "ProgramAuthorizationV1.campaign",
       "fields": {
         "campaign_id": "string",
         "group_count": "1 | 2 | 3",

@@ -67,6 +67,10 @@
     "version": 1,
     "mode": "off"
   },
+  "development_campaign": {
+    "version": 1,
+    "mode": "off"
+  },
   "reference_material": {
     "dir": "_ref",
     "mode": "external-ignored",

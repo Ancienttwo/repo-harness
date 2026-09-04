@@ -114,7 +114,7 @@ function makeBudget(run: string, limits: ProgramBudgetLimitV1): AutomationBudget
       max_repair_cycles: limits.max_repair_cycles,
       budget: limits,
       contract_scope: 'contract_less',
-      contract_path: null,
+      contract_path: null, campaign: null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',

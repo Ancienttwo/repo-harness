@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.development-campaign.engineer-scheduling
+kind: depends_on
+source: capability.runtime-harness.development-campaign
+target: capability.runtime-harness.engineer-scheduling
+intent: Reserve the existing Work Graph and acquire chain as the only later campaign execution path

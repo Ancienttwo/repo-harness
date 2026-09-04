@@ -273,6 +273,46 @@ export function validateProgramBudgetLimit(value: ProgramBudgetLimitV1): Program
   });
 }
 
+export interface ProgramAuthorizationCampaignV1 {
+  readonly campaign_id: string;
+  readonly group_count: 1 | 2 | 3;
+  readonly issues_per_group: number;
+  readonly allowed_issue_kinds: readonly ['bugfix', 'test_gap'];
+  readonly max_parallel_tasks: 1 | 2 | 3;
+  readonly issue_author: 'gpt_pro';
+  readonly local_parent_host: 'claude' | 'codex';
+  readonly require_fresh_main_audit: true;
+}
+
+function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizationCampaignV1 | null {
+  if (value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) invalid('program authorization campaign must be an object or null');
+  const campaign = value as Record<string, unknown>;
+  const expected = ['allowed_issue_kinds', 'campaign_id', 'group_count', 'issue_author', 'issues_per_group', 'local_parent_host', 'max_parallel_tasks', 'require_fresh_main_audit'];
+  if (JSON.stringify(Object.keys(campaign).sort()) !== JSON.stringify(expected)) invalid('program authorization campaign fields are invalid');
+  if (![1, 2, 3].includes(campaign.group_count as number)) invalid('program authorization campaign group_count must be 1, 2, or 3');
+  if (!Number.isSafeInteger(campaign.issues_per_group) || (campaign.issues_per_group as number) < 1 || (campaign.issues_per_group as number) > 10) {
+    invalid('program authorization campaign issues_per_group must be an integer from 1 to 10');
+  }
+  if (JSON.stringify(campaign.allowed_issue_kinds) !== JSON.stringify(['bugfix', 'test_gap'])) {
+    invalid('program authorization campaign allowed_issue_kinds must be exactly ["bugfix","test_gap"]');
+  }
+  if (![1, 2, 3].includes(campaign.max_parallel_tasks as number)) invalid('program authorization campaign max_parallel_tasks must be 1, 2, or 3');
+  if (campaign.issue_author !== 'gpt_pro') invalid('program authorization campaign issue_author must be gpt_pro');
+  if (campaign.local_parent_host !== 'claude' && campaign.local_parent_host !== 'codex') invalid('program authorization campaign local_parent_host is invalid');
+  if (campaign.require_fresh_main_audit !== true) invalid('program authorization campaign require_fresh_main_audit must be true');
+  return Object.freeze({
+    campaign_id: assertIdentifier(campaign.campaign_id, 'campaign_id'),
+    group_count: campaign.group_count as 1 | 2 | 3,
+    issues_per_group: campaign.issues_per_group as number,
+    allowed_issue_kinds: Object.freeze(['bugfix', 'test_gap']) as readonly ['bugfix', 'test_gap'],
+    max_parallel_tasks: campaign.max_parallel_tasks as 1 | 2 | 3,
+    issue_author: 'gpt_pro',
+    local_parent_host: campaign.local_parent_host as 'claude' | 'codex',
+    require_fresh_main_audit: true,
+  });
+}
+
 export interface ProgramAuthorizationV1 {
   readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
   readonly kind: typeof PROGRAM_AUTHORIZATION_KIND;
@@ -295,6 +335,7 @@ export interface ProgramAuthorizationV1 {
   readonly contract_scope: AutomationContractScope;
   /** Repo-relative task contract path; required by `task_contract`, forbidden otherwise. */
   readonly contract_path: string | null;
+  readonly campaign: ProgramAuthorizationCampaignV1 | null;
   readonly issued_by: string;
   readonly issued_at: string;
   readonly expires_at: string;
@@ -303,6 +344,8 @@ export interface ProgramAuthorizationV1 {
 
 export function validateProgramAuthorization(value: ProgramAuthorizationV1): ProgramAuthorizationV1 {
   if (value === null || typeof value !== 'object') invalid('program authorization must be an object');
+  const expected = ['allowed_merge_method', 'allowed_risk_tiers', 'allowed_work_package_ids', 'authorization_id', 'authorization_sha256', 'budget', 'campaign', 'contract_path', 'contract_scope', 'expires_at', 'issued_at', 'issued_by', 'kind', 'max_repair_cycles', 'merge_mode', 'protocol', 'repository_id', 'target_ref', 'target_revision', 'work_graph_revision'];
+  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expected)) invalid('program authorization fields are invalid');
   if (value.protocol !== AUTOMATION_BUDGET_PROTOCOL) invalid('program authorization protocol is unsupported');
   if (value.kind !== PROGRAM_AUTHORIZATION_KIND) invalid('program authorization kind is unsupported');
   if (value.merge_mode !== 'disabled' && value.merge_mode !== 'manual' && value.merge_mode !== 'auto_merge') {
@@ -345,6 +388,7 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
     budget: validateProgramBudgetLimit(value.budget),
     contract_scope: value.contract_scope,
     contract_path: value.contract_path === null ? null : assertRepoRelativePath(value.contract_path, 'contract_path'),
+    campaign: validateProgramAuthorizationCampaign(value.campaign),
     issued_by: assertIdentifier(value.issued_by, 'issued_by'),
     issued_at: issuedAt,
     expires_at: expiresAt,

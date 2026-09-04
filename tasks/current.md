@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T01:15:12+0800 -->
+<!-- updated_at: 2026-09-05T02:27:56+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-09-05T01:15:12+0800
-> **Source Branch**: codex/exclude-codegraph-from-runtime-fixtures
-> **Source Commit**: 05c8fff0
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-09-05T02:27:56+0800
+> **Source Branch**: codex/brc3-development-campaign-core
+> **Source Commit**: 1f1a1a6f
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- linked-worktree-764f70379c98: plans/plan-20260905-0201-task-sync-archived-evidence.md
+- linked-worktree-764f70379c98: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -58,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260905-0109-exclude-codegraph-from-runtime-fixtures.md
- D tasks/contracts/20260905-0109-exclude-codegraph-from-runtime-fixtures.contract.md
- D tasks/notes/20260905-0109-exclude-codegraph-from-runtime-fixtures.notes.md
- D tasks/reviews/20260905-0109-exclude-codegraph-from-runtime-fixtures.review.md
+ D plans/plan-20260905-0119-brc3-development-campaign-core.md
+ D tasks/contracts/20260905-0119-brc3-development-campaign-core.contract.md
+ D tasks/notes/20260905-0119-brc3-development-campaign-core.notes.md
+ D tasks/reviews/20260905-0119-brc3-development-campaign-core.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260905-0109-exclude-codegraph-from-runtime-fixtures.md
-?? tasks/archive/contract-20260905-0115-exclude-codegraph-from-runtime-fixtures.md
-?? tasks/archive/notes-20260905-0115-exclude-codegraph-from-runtime-fixtures.md
-?? tasks/archive/review-20260905-0115-exclude-codegraph-from-runtime-fixtures.md
-?? tasks/archive/todo-20260905-0115-exclude-codegraph-from-runtime-fixtures.md
+?? plans/archive/plan-20260905-0119-brc3-development-campaign-core.md
+?? tasks/archive/contract-20260905-0227-brc3-development-campaign-core.md
+?? tasks/archive/notes-20260905-0227-brc3-development-campaign-core.md
+?? tasks/archive/review-20260905-0227-brc3-development-campaign-core.md
+?? tasks/archive/todo-20260905-0227-brc3-development-campaign-core.md
 ```
 
 ## Source Artifacts

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.development-campaign.automation-budget
+kind: depends_on
+source: capability.runtime-harness.development-campaign
+target: capability.runtime-harness.automation-budget
+intent: Consume the existing host-owned ProgramAuthorizationV1 grant identity without minting or widening automation authority

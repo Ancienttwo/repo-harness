@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.development-campaign.lifecycle
+capabilityId: capability.runtime-harness.development-campaign
+name: Operate one host-authorized development campaign journal
+applicability: required
+participants:
+  - id: operator
+    nodeId: capability.runtime-harness.development-campaign
+  - id: journal
+    nodeId: component.development-campaign.journal
+steps:
+  - id: start-campaign
+    from: operator
+    to: journal
+    label: Bind the stored ProgramAuthorization campaign payload to exact target-base policy and append the authorized event
+    evidence:
+      entrypointId: entrypoint.development-campaign.lifecycle
+      sourceSymbol: runCampaignStart
+      sinkId: sink.development-campaign.create
+outcomes:
+  - id: status
+    kind: success
+    label: Rebuild current from the immutable event chain
+    steps:
+      - id: rebuild-status
+        from: operator
+        to: journal
+        label: Validate the definition and every event before accepting the current projection
+        evidence:
+          entrypointId: entrypoint.development-campaign.lifecycle
+          sourceSymbol: runCampaignStatus
+          sinkId: sink.development-campaign.status
+    terminal:
+      participant: operator
+      label: Return canonical definition, events, and current projection
+  - id: refused
+    kind: error
+    label: Disabled policy, unavailable intake, stale grant, exceeded limits, or conflicting replay fails closed
+    steps:
+      - id: reject-mutation
+        from: operator
+        to: journal
+        label: Reject before publishing a new event or projection
+        evidence:
+          entrypointId: entrypoint.development-campaign.lifecycle
+          sourceSymbol: runCampaignStart
+          sinkId: sink.development-campaign.create
+    terminal:
+      participant: operator
+      label: Observe a non-zero typed failure with no synthesized campaign state

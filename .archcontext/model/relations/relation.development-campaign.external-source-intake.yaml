@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.development-campaign.external-source-intake
+kind: depends_on
+source: capability.runtime-harness.development-campaign
+target: capability.runtime-harness.external-source-intake
+intent: Require the established external Issue intake policy before campaign startup without acquiring provider mutation authority

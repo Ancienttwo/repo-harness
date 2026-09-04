@@ -845,7 +845,7 @@ describe('BRC0 negative freeze: heartbeat-triage stays discovery-only', () => {
   });
 });
 
-describe('BRC0 negative freeze: retired and absent surfaces', () => {
+describe('BRC0 negative freeze and BRC3 campaign boundary transition', () => {
   test('repo-harness-autoplan is retired with no successor and no helper', () => {
     const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'assets/skill-commands/manifest.json'), 'utf-8')) as {
       readonly retiredPackages: readonly { readonly name: string; readonly replacement: string | null }[];
@@ -862,12 +862,15 @@ describe('BRC0 negative freeze: retired and absent surfaces', () => {
     expect(existsSync(join(REPO_ROOT, 'scripts/autoplan.ts'))).toBe(false);
   });
 
-  test('the campaign capability does not exist yet', () => {
+  test('the campaign capability exists but remains disabled by default', () => {
     const policy = JSON.parse(readFileSync(join(REPO_ROOT, '.ai/harness/policy.json'), 'utf-8')) as Record<string, unknown>;
-    expect(Object.prototype.hasOwnProperty.call(policy, 'development_campaign')).toBe(false);
+    expect(policy.development_campaign).toEqual({ version: 1, mode: 'off' });
 
     const nodes = readdirSync(join(REPO_ROOT, '.archcontext/model/nodes'));
-    expect(nodes.filter((entry) => entry.includes('development-campaign'))).toEqual([]);
+    expect(nodes.filter((entry) => entry.includes('development-campaign')).sort()).toEqual([
+      'capability.runtime-harness.development-campaign.yaml',
+      'component.development-campaign.journal.yaml',
+    ]);
 
     // The two directory-level rows (src/core/automation, src/effects/automation) were
     // removed because automation/ became a shared namespace with the #282 budget ledger.
@@ -875,7 +878,7 @@ describe('BRC0 negative freeze: retired and absent surfaces', () => {
       'src/cli/commands/campaign.ts',
       'src/core/automation/development-campaign.ts',
     ]) {
-      expect(existsSync(join(REPO_ROOT, path))).toBe(false);
+      expect(existsSync(join(REPO_ROOT, path))).toBe(true);
     }
   });
 
@@ -891,7 +894,8 @@ describe('BRC0 protected capabilities', () => {
   const PROTECTED = JSON.parse(readFileSync(join(FIXTURES, 'protected-capabilities.json'), 'utf-8')) as {
     readonly capabilities: readonly { readonly capability_id: string; readonly reason: string }[];
     readonly unmapped_surfaces: readonly { readonly paths: readonly string[]; readonly reason: string }[];
-    readonly pending_capability: { readonly capability_id: string; readonly node_file: string };
+    readonly unmapped_closure: { readonly roots: readonly string[]; readonly exempt_paths: readonly string[] };
+    readonly installed_capability: { readonly capability_id: string; readonly node_file: string };
   };
 
   test('every protected capability id resolves to a real archcontext node', () => {
@@ -927,9 +931,21 @@ describe('BRC0 protected capabilities', () => {
     }
   });
 
-  test('the campaign capability node is still pending, not installed', () => {
-    expect(existsSync(join(REPO_ROOT, '.archcontext/model/nodes', PROTECTED.pending_capability.node_file))).toBe(false);
-    expect(PROTECTED.pending_capability.capability_id).toBe('capability.runtime-harness.development-campaign');
+  test('the unmapped protected inventory closes every state and publication directory', () => {
+    const walk = (root: string): string[] => readdirSync(join(REPO_ROOT, root), { withFileTypes: true }).flatMap((entry) => {
+      const path = `${root}/${entry.name}`;
+      return entry.isDirectory() ? walk(path) : [path];
+    });
+    const protectedPaths = PROTECTED.unmapped_surfaces.flatMap((surface) => surface.paths)
+      .filter((path) => PROTECTED.unmapped_closure.roots.some((root) => path.startsWith(`${root}/`)));
+    const accounted = [...protectedPaths, ...PROTECTED.unmapped_closure.exempt_paths].sort();
+    const actual = PROTECTED.unmapped_closure.roots.flatMap(walk).sort();
+    expect(accounted).toEqual(actual);
+  });
+
+  test('the campaign capability node is installed and protected against itself', () => {
+    expect(existsSync(join(REPO_ROOT, '.archcontext/model/nodes', PROTECTED.installed_capability.node_file))).toBe(true);
+    expect(PROTECTED.installed_capability.capability_id).toBe('capability.runtime-harness.development-campaign');
   });
 });
 
@@ -967,8 +983,7 @@ describe('BRC0 architecture request', () => {
     ]) {
       expect(text).toContain(consumed);
     }
-    // The declaration must not claim human acceptance it does not have.
-    expect(text).toContain('> **Status**: Proposed');
+    expect(text).toContain('> **Status**: Accepted');
   });
 });
 

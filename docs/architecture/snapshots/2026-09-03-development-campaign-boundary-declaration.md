@@ -1,8 +1,8 @@
 # Development Campaign Boundary Declaration
 
-> **Status**: Proposed
+> **Status**: Accepted
 > **Proposed**: 2026-09-03T10:06:13+0800
-> **Human Approval**: not granted; this snapshot declares a boundary, it does not accept one
+> **Human Approval**: granted for BRC3 implementation on 2026-09-05
 > **Request**: `docs/architecture/requests/runtime-harness-development-campaign.md` (Pending)
 > **PRD**: `plans/prds/20260902-2238-gpt-pro-seeded-repair-campaign.prd.md`
 > **Sprint**: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`

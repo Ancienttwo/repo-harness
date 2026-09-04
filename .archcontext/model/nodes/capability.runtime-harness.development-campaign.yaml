@@ -1,0 +1,46 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.development-campaign
+kind: capability
+name: Development Campaign
+status: active
+summary: Owns the host-authorized, policy-bounded campaign journal that will route externally authored repair Issues into existing execution authorities without replacing them.
+responsibilities:
+  - Reuse one host-owned ProgramAuthorizationV1 campaign payload and never mint a second campaign authorization protocol.
+  - Read activation and limits from the exact authorized target revision so candidate bytes cannot widen their own authority.
+  - Require external source intake before campaign startup and fail every mutation while development_campaign mode is off.
+  - Persist an exact-key append-only event chain under the Git common directory and rebuild current state from durable events.
+  - Serialize mutation across processes and treat identical replay as idempotent while rejecting conflicting replay.
+  - Keep Task, Lease, Claim, Work Graph, acceptance, publication, merge, and provider mutation authority in their existing capabilities.
+source:
+  include:
+    - "src/core/automation/development-campaign.ts"
+    - "src/effects/automation/development-campaign-policy.ts"
+    - "src/effects/automation/development-campaign-store.ts"
+    - "src/cli/commands/campaign.ts"
+  entrypoints:
+    - id: entrypoint.development-campaign.lifecycle
+      path: "src/cli/commands/campaign.ts"
+      symbols:
+        - name: "runCampaignStart"
+          sinks:
+            - id: sink.development-campaign.create
+              path: "src/effects/automation/development-campaign-store.ts"
+              symbol: "createDevelopmentCampaign"
+        - name: "runCampaignTransition"
+          sinks:
+            - id: sink.development-campaign.append
+              path: "src/effects/automation/development-campaign-store.ts"
+              symbol: "appendDevelopmentCampaignEvent"
+        - name: "runCampaignStatus"
+          sinks:
+            - id: sink.development-campaign.status
+              path: "src/effects/automation/development-campaign-store.ts"
+              symbol: "readDevelopmentCampaignStatus"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/development-campaign-core.test.ts tests/unit/development-campaign-policy.test.ts tests/effects/development-campaign-store.test.ts tests/cli/development-campaign.test.ts --timeout 60000"
+    - "bun run check:type"

@@ -162,7 +162,7 @@ function makeBudget(options: BudgetOptions): AutomationBudgetV1 {
       max_repair_cycles: limits.max_repair_cycles,
       budget: limits,
       contract_scope: options.contract === undefined ? 'contract_less' : 'task_contract',
-      contract_path: options.contract?.path ?? null,
+      contract_path: options.contract?.path ?? null, campaign: null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',

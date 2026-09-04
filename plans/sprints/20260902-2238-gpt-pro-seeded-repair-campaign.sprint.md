@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `gpt-pro-seeded-repair-campaign`
 > **Created**: 2026-09-02 22:38
-> **Updated**: 2026-09-04 19:02
+> **Updated**: 2026-09-05 02:27
 > **Source PRD**: `plans/prds/20260902-2238-gpt-pro-seeded-repair-campaign.prd.md`
 > **Parent Design**: `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md`
 > **Source Spec**: `docs/spec.md`
@@ -71,8 +71,8 @@ Existing（只消费，不改写权威）:
 
 - `capability.runtime-harness.engineer-scheduling`（Work Graph、offers）
 - `capability.runtime-harness.collaboration`（dispatch fence）
-- `capability.runtime-harness.external-sources`（Issue observation intake）
-- `capability.runtime-harness.publication`（`MergeReadinessV1`）
+- `capability.runtime-harness.external-source-intake`（Issue observation intake）
+- `capability.runtime-harness.integration-acceptance`（`MergeReadinessV1` projection sink）
 
 ### Key Design Constraints
 
@@ -157,7 +157,7 @@ Ordered execution queue；保持依赖顺序。Mode `contract` 走完整 plan ->
 |---|----|--------|------|------|------------|------|
 | 1 | 23d385b0f0410137fe33517b757689d02fb1741cb495e9a7b6c4262930a81907 | [x] | BRC0 — Authority freeze 与 baseline characterization | contract | 源码行为零变化，Task/Lease/Acceptance/Publication bytes 逐字节不变；绘出 Issue→Task→Plan→Lease→PR→Merge 数据流并冻结 GPT Pro 与本地 Agent 权限表；负向 fixture 证明 Issue 不是 Task、prompt 不是 Claim；证明 heartbeat-triage 仍只读、旧 autoplan 已退役、External Source binding 不创建 Task、campaign capability 默认不存在；冻结 protected capabilities 清单与 provider partial-success fixtures；architecture request 完整 |  |
 | 2 | bdb16bde88d7b8d131a6304f119d6c863d413eaac5e653b9428e497b85505ab7 | [x] | BRC1 — Dispatch fence 进 effect boundary（消费 #278） | contract | 消费已落地的 #278；未落地则该行 blocked，不在本 sprint 重新实作。落地后断言：直接 effect call 缺 binding 时在 host action 之前失败；`delegation_only` 行为不变；stale binding 拒绝；CLI 路径与 campaign controller 路径各只执行一次 fence（不重复不遗漏）；raw unfenced entrypoint 不再被外部模块调用；ArchContext 同步 | `plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md` |
-| 3 | ebc379bc400fac66ae579d6d7c7670936dfec322c290a5fab77f8c706c0f42af | [ ] | BRC3 — Campaign protocol、policy key、ProgramAuthorization 复用、append-only journal、cross-process lock | contract | 复用 `ProgramAuthorizationV1` 并以 campaign 字段作为其 payload，不新建 `DevelopmentCampaignAuthorizationV1`；`.ai/harness/policy.json` 新增 `development_campaign.mode` 默认 `off`，阶梯 `off → shadow → active/manual`，且 campaign 启动前校验 `external_sources.mode` 非 `off` 否则 fail closed；store 落 `<git-common-dir>/repo-harness/development-campaigns/v1/`；exact-key canonical protocol；append-only event chain 且 current projection 可从 events 完全重建；cross-process lock 生效；same-key replay 幂等、conflicting replay 拒绝；candidate branch 不能放宽 policy；`mode=off` 时所有 mutation 命令失败退出而非静默 no-op |  |
+| 3 | ebc379bc400fac66ae579d6d7c7670936dfec322c290a5fab77f8c706c0f42af | [x] | BRC3 — Campaign protocol、policy key、ProgramAuthorization 复用、append-only journal、cross-process lock | contract | 复用 `ProgramAuthorizationV1` 并以 campaign 字段作为其 payload，不新建 `DevelopmentCampaignAuthorizationV1`；`.ai/harness/policy.json` 新增 `development_campaign.mode` 默认 `off`，阶梯 `off → shadow → active/manual`，且 campaign 启动前校验 `external_sources.mode` 非 `off` 否则 fail closed；store 落 `<git-common-dir>/repo-harness/development-campaigns/v1/`；exact-key canonical protocol；append-only event chain 且 current projection 可从 events 完全重建；cross-process lock 生效；same-key replay 幂等、conflicting replay 拒绝；candidate branch 不能放宽 policy；`mode=off` 时所有 mutation 命令失败退出而非静默 no-op | `plans/archive/plan-20260905-0119-brc3-development-campaign-core.md` |
 | 4 | a8f00b0c394642116eb229d5ee4be562286a547de61b7c231b1505c8eab97278 | [x] | Inline spike — oracle_browser Connector 读回能力探针 | inline | 在行 6 之前完成。用一次真实 `oracle_browser` 往返验证能否产出可验证的 Connector 读回证据，判定 `connector_evidence` 可达到 `verified` 还是仅 `bundle_only`；结论写进 `docs/researches/20260902-gpt-pro-connector-readback-probe.md` 并回填行 14 的 audit 验收路径；若不可达 `verified`，明确 fresh main audit 的人工 SHA 确认降级方案 | `docs/researches/20260902-gpt-pro-connector-readback-probe.md` |
 | 5 | 9e7090269d9d457155983885ef1cfea64fc606bfcbfd01d81d3d6a971e18aa29 | [ ] | BRC4a — browser-consult transport：`--copy-profile` 透传、doctor 能力探测、session meta transport | contract | 有 profile 绑定时 `browser-consult` 的唯一 oracle 传输为 `--copy-profile <user-data-dir> --browser-chrome-profile <profile-directory>`，不再传 `--browser-cookie-path`，两者不共存、无静默回退；oracle 缺 `--copy-profile` 或 `--browser-chrome-profile` 时 fail closed（`ORACLE_COPY_PROFILE_UNSUPPORTED`）；`browser-doctor` capabilities 新增 `copyProfile` 与 `browserChromeProfile`，`status: ready` 要求二者为 true；`BrowserSessionMeta.browser` 新增 `transport: 'copy_profile'` 并落盘；dry-run 命令行断言含 `--copy-profile` 与 `--browser-chrome-profile` 且不含 `--browser-cookie-path`；oracle 输出 `A session with the same prompt is already running` 映射为 `ORACLE_SESSION_ALREADY_RUNNING` 并附 recovery，不自动加 `--force`；`docs/repo-harness-chatgpt-browser-engine.md` 同步，先 grep `tests/` 的字面串断言再改文档；依据：`docs/researches/20260902-gpt-pro-connector-readback-probe.md` |  |
 | 6 | bb7d61be6326a0b5bb524fe43b812e639c8ac308adcdf4aae11e9f36cba06a50 | [ ] | BRC4 — GPT Pro Issue batch authoring lane | contract | persist `IssueBatchIntentV1` 先于打开浏览器，无例外；intent 绑定 exact repo/ref/`base_main_sha`；prompt 出境前跑 secret scan；slot 权威在 body marker 三字段（`campaign_id`/`group`/`slot`）且 marker 不含任何哈希，标题前缀只作显示、对账不读标题；本地无 issue-create fallback（fake provider 断言本地 create 调用数为 0）；authoring session 可用于补缺与指定 edit；浏览器超时后不推断成功，状态只由本地观察改变；GPT Pro 创建第 11 项时该项不被采纳；wrong campaign/group 的 Issue 被忽略；session unverified 不能 adopt |  |
@@ -180,3 +180,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 | 2026-09-02 23:48 | Inline spike — oracle_browser Connector 读回能力探针 | `docs/researches/20260902-gpt-pro-connector-readback-probe.md` | done |
 | 2026-09-04 04:15 | BRC0 — Authority freeze 与 baseline characterization | `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` | done |
 | 2026-09-04 19:02 | BRC1 — Dispatch fence 进 effect boundary（消费 #278） | `plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md` | done |
+| 2026-09-05 02:27 | BRC3 — Campaign protocol、policy key、ProgramAuthorization 复用、append-only journal、cross-process lock | `plans/archive/plan-20260905-0119-brc3-development-campaign-core.md` | done |

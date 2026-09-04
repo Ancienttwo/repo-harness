@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.development-campaign.journal
+kind: calls
+source: capability.runtime-harness.development-campaign
+target: component.development-campaign.journal
+intent: Bind a host-owned campaign grant to target-base policy and publish only canonical serialized campaign events and their rebuildable projection

@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:bd4593da4dd2b54e885bb9c388e046e46ca7bec68d38e7936776460ee3a4df98" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ee4f975d65d198d6854b681cf9a31f3b14fd496d207ab55aed69c8ed00af02c9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:973d35624db31c3aa05e5e80286f0dca2353df48cd031d45264fbf478dbce240" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a0c4f25001b2f5308a3ceb0fea7a4777ac5062c38a161aa07f61f34128ccae86" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
@@ -103,6 +103,7 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.delegated-runs` — Run the collaboration dispatch fence inside the read-only dispatch effect itself, before any host action, refusing a run whose injected coordination context no binding accounts for
+- `depends_on` ← `capability.runtime-harness.development-campaign` — Reserve the existing fenced delegated-run boundary as the only later campaign dispatch path
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
 
 ## 2. P2:端到端數據流

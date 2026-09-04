@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:348c479ef799e188dfb6cb5e04d85963add5ff21ac62a16a5d4932dc49f3b597" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5dece3d0d1c1677aebd3553ccc7b14185a579ad29426bfa43c34460e1be80da4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" sourceDigest="sha256:fbd133786d816af6cecd0d34cd259a5d6bec58bb3ac958b1afef89cf549feee3" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:48452c6ff7afeafe086d9268ee898c8f9a6503573bf13f4c384066ce4abe2fea" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`
@@ -54,7 +54,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `depends_on` ← `capability.runtime-harness.development-campaign` — Observe existing acceptance and publication projections later without creating a second acceptance or merge authority
 
 ## 2. P2:端到端數據流
 

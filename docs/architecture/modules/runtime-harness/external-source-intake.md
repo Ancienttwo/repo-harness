@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:6541799cf66876186ca1f02ea41703c215d77d82a66ecd2fc3c9bc896632465c" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:25015e028af8f33a6d9a4fca5b87625fb450534fc264bc282a94cb7085ed1eb1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:9110cbd9bf052fe6fbbe39626d2fb63aa2897853f064c4039407bb1973974cc3" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9583e5410a03e9fe02eb9d7b8acfedc4acd6cc6dae751b94c0f04a93d7daa8b7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
@@ -50,7 +50,7 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `depends_on` ← `capability.runtime-harness.development-campaign` — Require the established external Issue intake policy before campaign startup without acquiring provider mutation authority
 
 ## 2. P2:端到端數據流
 

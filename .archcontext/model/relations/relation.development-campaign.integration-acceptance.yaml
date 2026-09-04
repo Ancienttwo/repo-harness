@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.development-campaign.integration-acceptance
+kind: depends_on
+source: capability.runtime-harness.development-campaign
+target: capability.runtime-harness.integration-acceptance
+intent: Observe existing acceptance and publication projections later without creating a second acceptance or merge authority

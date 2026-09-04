@@ -67,7 +67,7 @@ function authorization(limits: ProgramBudgetLimitV1 = LIMITS, expiresAt = '2026-
     max_repair_cycles: limits.max_repair_cycles,
     budget: limits,
     contract_scope: 'contract_less',
-    contract_path: null,
+    contract_path: null, campaign: null,
     issued_by: 'ancienttwo',
     issued_at: '2026-09-03T00:00:00.000Z',
     expires_at: expiresAt,

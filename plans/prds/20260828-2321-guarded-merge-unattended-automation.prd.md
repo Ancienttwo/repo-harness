@@ -238,6 +238,17 @@ Policy resolution:
 - candidate changes cannot apply to itself.
 ### ProgramAuthorizationV1
 ```ts
+interface ProgramAuthorizationCampaignV1 {
+  campaign_id: string;
+  group_count: 1 | 2 | 3;
+  issues_per_group: number;
+  allowed_issue_kinds: readonly ["bugfix", "test_gap"];
+  max_parallel_tasks: 1 | 2 | 3;
+  issue_author: "gpt_pro";
+  local_parent_host: "claude" | "codex";
+  require_fresh_main_audit: true;
+}
+
 interface ProgramAuthorizationV1 {
   protocol: 1;
   kind: "repo-harness-program-authorization";
@@ -254,12 +265,16 @@ interface ProgramAuthorizationV1 {
   budget: ProgramBudgetLimitV1;
   contract_scope: "task_contract" | "contract_less";
   contract_path: string | null;
+  campaign: ProgramAuthorizationCampaignV1 | null;
   issued_by: string;
   issued_at: string;
   expires_at: string;
   authorization_sha256: string;
 }
 ```
+`campaign` is required and is either `null` for a non-campaign grant or the
+closed campaign payload above. It is part of the existing authorization digest;
+there is no second campaign authorization protocol and no optional-field fallback.
 `contract_scope` states whether the grant authorizes a run bound to a task
 contract or an explicitly contract-less one; a run with no contract is a
 decision the issuer makes, never a default reached by omission.

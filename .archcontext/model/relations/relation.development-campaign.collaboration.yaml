@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.development-campaign.collaboration
+kind: depends_on
+source: capability.runtime-harness.development-campaign
+target: capability.runtime-harness.collaboration
+intent: Reserve the existing fenced delegated-run boundary as the only later campaign dispatch path

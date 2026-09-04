@@ -1097,6 +1097,10 @@ ARCHITECTURE_INDEX_EOF
     "reviews_dir": "tasks/reviews",
     "notes_dir": "tasks/notes"
   },
+  "development_campaign": {
+    "version": 1,
+    "mode": "off"
+  },
   "reference_material": {
     "dir": "_ref",
     "mode": "external-ignored",

@@ -1,6 +1,6 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" sourceDigest="sha256:2256db20fb00f5cf9a465b0a21404f1f107bf438e2792fa5281f8d132deba027" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5bd358e2d5bca86fdff5ac0b0563fcfa3c2d287ac85e8e7d07125a02ba3154d8" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" sourceDigest="sha256:70042f55f0ec27c526fc3a80fae84a590cff8f3cf206f39dbab61af7e28654ae" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:4508e9d7b733fe992773c9d95d5aa9a6049aa207946ad541b9b64e7084ce8392" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`、`src/effects/engineers/scheduling-acquire.ts`、`src/effects/engineers/scheduling-acquire-next.ts`
@@ -51,6 +51,7 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.collaboration` — Ask the scheduling plane for this exact authenticated principal's own offers, so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list
+- `depends_on` ← `capability.runtime-harness.development-campaign` — Reserve the existing Work Graph and acquire chain as the only later campaign execution path
 - `calls` ← `capability.runtime-harness.interface-change` — Verify target-Engineer materialization against the exact tracked ME-1A Work Graph projection at one Git commit
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
 - `calls` ← `capability.runtime-harness.work-demand` — Validate the accepted Work Package against the same-commit canonical Sprint and Work Graph
