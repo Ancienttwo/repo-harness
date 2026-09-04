@@ -1570,20 +1570,20 @@ Refactor Intelligence, Module Statistics and Resolution Ledger
 
 以下切片镜像上游 `plans/sprints/20260902-2336-refactor-instrumentation-resolution-ledger.sprint.md` 的真实 backlog，编号沿用上游 slug。
 
-**状态（截至 2026-09-03，上游 session 通报）**：rf0、rf1a、rf1b 已完成并合入 arch-context main（rf1b 为 PR #132，`01c9054`），sprint 3/10；rf2（classifier）worktree 开工中，rf3 plan 已就绪；rf5a 起 pending。
+**状态（2026-09-04 权威读回）**：Program A 全部切片已发布并以 clean-room 验证收口；实际可消费版本为 `archctx@0.5.2` / `archctx-contracts@0.5.2`。0.5.0/0.5.1 是历史发布阶段，其中 0.5.1 因 manifest 缺少 `koffi` 不可作为 runtime authority。权威证据为 `docs/verification/axr5-archctx-clean-room-readback.json`。
 
 | # | Slug | Mode | 状态 | 产出 |
 | - | ---- | ---- | ---- | ---- |
 | 1 | `rf0-characterization-freeze` | contract | 已完成（2026-09-03 02:29） | 五个包的 `test/fixtures/refactor-baseline/` digest fixtures；`docs/architecture` 零 drift |
 | 2 | `rf1a-contracts-freeze` | contract | 已完成（2026-09-03 04:00） | `packages/contracts/src/refactor.ts` 六个 schema 常量、invariant validators、digest 函数；`RecommendationStatus` 提升为共用 union |
 | 3 | `rf1b-module-statistics-snapshot` | contract | done（PR #132） | `packages/core/module-statistics`：两次运行 `snapshotDigest` 一致；footprint 改 git-tracked 来源；ancestor/descendant 重叠归最深 node；缺 index → `coverage=unknown` 且 `dependencyGraph=null` |
-| 4 | `rf2-assessment-observations-scale` | contract | pending | `packages/core/refactor-assessment`：S1/S2/S3 scale fixtures、S5 五个 fail-closed 子案例、S7 observation-only、heuristic-isolation |
-| 5 | `rf3-recommendation-v3-ledger-recording` | contract | pending | `refactor_scan` event source、`refactorRecord` RPC、`duplicate-active-fingerprint`、`regressesFrom`、v2→v3 migration 且 `ledger rebuild` digest 不变 |
-| 6 | `rf5a-cli-rpc-capabilities-0.5.0` | contract | pending | `archctx refactor scan/record` 接 RPC；capabilities 增 `module-statistics-v1`、`refactor-assessment-v1`、`recommendation-v3`；版本升 `0.5.0` |
-| 7 | `rf5a-release-readback-0.5.0` | inline | pending | `npm view archctx@0.5.0`、`archctx-contracts@0.5.0`；clean-room readback |
-| 8 | `rf4-resolution-verification` | contract | pending | resolved / not-improved / stale base / HEAD drift / incomplete-coverage fixtures；`refactorVerify` RPC；evidence 经 `EvidenceBinding/v1` 绑定 |
-| 9 | `rf5b-cli-verify-0.5.1` | contract | pending | `archctx refactor verify --request-json` 接 RPC；capabilities 增 `refactor-resolution-v1`；版本升 `0.5.1` |
-| 10 | `rf5b-release-readback-0.5.1` | inline | pending | `npm view archctx@0.5.1`；clean-room readback |
+| 4 | `rf2-assessment-observations-scale` | contract | 已完成 | `packages/core/refactor-assessment`：S1/S2/S3 scale fixtures、S5 五个 fail-closed 子案例、S7 observation-only、heuristic-isolation |
+| 5 | `rf3-recommendation-v3-ledger-recording` | contract | 已完成 | `refactor_scan` event source、`refactorRecord` RPC、`duplicate-active-fingerprint`、`regressesFrom`、v2→v3 migration 且 `ledger rebuild` digest 不变 |
+| 6 | `rf5a-cli-rpc-capabilities-0.5.0` | contract | 已完成 | `archctx refactor scan/record` 接 RPC；capabilities 增 `module-statistics-v1`、`refactor-assessment-v1`、`recommendation-v3`；最终由 0.5.2 提供 |
+| 7 | `rf5a-release-readback-0.5.0` | inline | 已完成 | 历史 0.5.0 readback；最终 clean-room authority 为 0.5.2 |
+| 8 | `rf4-resolution-verification` | contract | 已完成 | resolved / not-improved / stale base / HEAD drift / incomplete-coverage fixtures；`refactorVerify` RPC；evidence 经 `EvidenceBinding/v1` 绑定 |
+| 9 | `rf5b-cli-verify-0.5.1` | contract | 已完成 | `archctx refactor verify --request-json` 接 RPC；capabilities 增 `refactor-resolution-v1`；最终由 0.5.2 修复发布 |
+| 10 | `rf5b-release-readback-0.5.1` | inline | 已完成（0.5.2 替代） | 0.5.1 manifest 缺陷已由 0.5.2 修复并完成 clean-room readback |
 
 与本文早期草案（AC-RF0..AC-RF5 六段）的结构差异：
 

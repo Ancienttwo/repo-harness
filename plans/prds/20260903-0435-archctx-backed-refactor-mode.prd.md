@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `archctx-backed-refactor-mode`
 > **Created**: 2026-09-03 04:35
-> **Updated**: 2026-09-03 05:07
+> **Updated**: 2026-09-04 12:09
 > **Source Spec**: `docs/spec.md`
 > **Tier**: standard
 > **Baseline**: `main@9e922e47a7970d8aded7a3597912df8c02f7ca34`
@@ -687,7 +687,7 @@ Module 8 完整 → Module 9 → Module 10
 
 You are implementing this PRD.
 
-- Current delivery: Module 1 已完成；下一個 work package 是 **Module 3（exact 0.5.2 provider contract、分階段 feature handshake、scan/record/verify adapter）**。
+- Current delivery: Module 1 與 Module 3 已完成；當前 work package 是 **Module 2（proposal-free discovery、accountable proposal authoring、proposal-bound reassessment）**。Module 4 仍負責後續 program persistence、state machine 與 CLI orchestration。
 - Do not reinterpret:
   - 不要在 repo-harness 實作任何模組統計、依賴圖、cycle 偵測或 refactor 評分；不要直接讀 CodeGraph。
   - 不要把 `proof_required` / `no_action` 當成上游 `RefactorScale` 值。上游只有 `architecture | cross_module | insufficient_evidence | model_adoption_required | module`（`refactor.ts:28-34`）。
