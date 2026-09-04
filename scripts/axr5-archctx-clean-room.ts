@@ -1,24 +1,20 @@
 #!/usr/bin/env bun
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_VERSION, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.5.4';
+const VERSION = '0.5.6';
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
 const outputPath = resolve(repoRoot, flag('--out') ?? 'docs/verification/axr5-archctx-clean-room-readback.json');
+const stagedOutputPath = `${outputPath}.tmp-${process.pid}`;
 const keep = process.argv.includes('--keep-temp');
 mkdirSync(dirname(outputPath), { recursive: true });
-writeFileSync(outputPath, `${JSON.stringify({
-  schemaVersion: 'repo-harness.axr5-clean-room/v1',
-  status: 'running',
-  source: { repository: 'Ancienttwo/arch-context', revision, archiveMode: 'git-archive', dirtySourceUsed: false },
-}, null, 2)}\n`);
 const workspace = mkdtempSync(join(tmpdir(), 'repo-harness-axr5-clean-room-'));
 let installedBinary: string | null = null;
 let daemonRoot: string | null = null;
@@ -165,13 +161,14 @@ extensions:
         rendererVersion: projection.outputSnapshot.rendererVersion,
         layoutVersion: projection.outputSnapshot.layoutVersion,
         codeGraph: projection.outputSnapshot.generatedFrom,
-        receiptDigest: projection.receiptDigest,
       },
     },
   };
-  writeFileSync(outputPath, `${JSON.stringify(readback, null, 2)}\n`);
+  writeFileSync(stagedOutputPath, `${JSON.stringify(readback, null, 2)}\n`);
+  renameSync(stagedOutputPath, outputPath);
   process.stdout.write(`${JSON.stringify(readback, null, 2)}\n`);
 } finally {
+  rmSync(stagedOutputPath, { force: true });
   if (installedBinary && daemonRoot) spawnSync(installedBinary, ['daemon', 'stop'], { cwd: daemonRoot, encoding: 'utf8', stdio: 'ignore' });
   if (!keep) rmSync(workspace, { recursive: true, force: true });
 }

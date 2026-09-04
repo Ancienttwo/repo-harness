@@ -88,6 +88,7 @@ export interface ArchitectureProjectionAcceptanceStateV1 {
 }
 
 export interface ArchitectureProjectionAcceptanceOptions extends ArchctxProviderOptions {
+  readonly adoptionPlanId?: string;
   readonly captureSnapshot?: (repoRoot: string) => ProjectionExpectedSnapshotV1;
   readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV1;
   readonly runRefreshActions?: RunArchitectureRefreshActions;
@@ -163,11 +164,12 @@ export function acceptArchitectureProjectionCandidate(
       schemaVersion: PROJECTION_REQUEST_VERSION,
       requestId: `repo-harness.accept.${signal.signalId.slice('sha256:'.length, 'sha256:'.length + 24)}`,
       profile: candidate.request.profile,
-      mode: 'apply',
+      mode: options.adoptionPlanId ? 'adopt' : 'apply',
       targets: [...candidate.request.targets],
       changedPaths: [...candidate.request.changedPaths],
       expected: current,
       acceptedChange,
+      ...(options.adoptionPlanId ? { adoptionPlanId: options.adoptionPlanId } : {}),
     };
     const issues = projectionRequestIssues(request);
     if (issues.length > 0) throw new Error(`architecture acceptance request invalid: ${issues.join('; ')}`);
@@ -491,7 +493,7 @@ function assertReceipt(receipt: ArchitectureProjectionAcceptanceReceiptV1, candi
   if (projectionRequestIssues(receipt.request).length > 0 || projectionResultIssues(receipt.result).length > 0) {
     throw new Error('architecture acceptance receipt request/result invalid');
   }
-  if (receipt.request.mode !== 'apply'
+  if ((receipt.request.mode !== 'apply' && receipt.request.mode !== 'adopt')
     || receipt.request.profile !== candidate.request.profile
     || receipt.request.targets.join('\0') !== candidate.request.targets.join('\0')
     || receipt.request.changedPaths.join('\0') !== candidate.request.changedPaths.join('\0')

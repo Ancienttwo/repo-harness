@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-04T22:42:46+0800 -->
+<!-- updated_at: 2026-09-05T00:37:35+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-09-04T22:42:46+0800
-> **Source Branch**: main
-> **Source Commit**: 1f5e861e
+> **Updated At**: 2026-09-05T00:37:35+0800
+> **Source Branch**: codex/archctx-0-5-6
+> **Source Commit**: 0dd9a737
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bounded-frontier-eval-closed
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -34,10 +34,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - (none)
 ## Active Sprint
 
-- Sprint: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
-- Sprint Status: Approved
-- Backlog: 3/15
-- Next Sprint Task: BRC3 — Campaign protocol、policy key、ProgramAuthorization 复用、append-only journal、cross-process lock
+- Sprint: (none)
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
@@ -58,10 +55,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M tasks/current.md
+ D plans/plan-20260904-2243-archctx-0-5-6.md
+ D tasks/contracts/20260904-2243-archctx-0-5-6.contract.md
+ D tasks/notes/20260904-2243-archctx-0-5-6.notes.md
+ D tasks/reviews/20260904-2243-archctx-0-5-6.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260904-2243-archctx-0-5-6.md
+?? tasks/archive/contract-20260905-0037-archctx-0-5-6.md
+?? tasks/archive/notes-20260905-0037-archctx-0-5-6.md
+?? tasks/archive/review-20260905-0037-archctx-0-5-6.md
+?? tasks/archive/todo-20260905-0037-archctx-0-5-6.md
 ```
 
 ## Source Artifacts

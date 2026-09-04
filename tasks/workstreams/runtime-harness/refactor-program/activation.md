@@ -7,7 +7,7 @@
 
 ## Verified state
 
-- The consumer pins published npm `archctx@0.5.4` and `archctx-contracts@0.5.4` in both provider contracts, installed policy, dependency lock and initialization templates. The capability handshake rejects `0.5.3`.
+- The consumer pins published npm `archctx@0.5.6` and `archctx-contracts@0.5.6` in both provider contracts, installed policy, dependency lock and initialization templates. The capability handshake rejects `0.5.3`.
 - Canaries 5 and 6 passed in a fresh disposable repository through the consumer adapter and registry-installed dependencies: unchanged work cannot resolve; completed cutover resolves on the final main HEAD and the resolved recommendation reads back successfully.
 - Recommendation readback freshness describes live Git identity; provenance retains the historical ledger scope. Verification evidence remains bound to its measured HEAD and worktree digest.
 - Evidence: `/tmp/refactor-canary-054/canary5.json`, `/tmp/refactor-canary-054/canary6.json`; reproducer: `/tmp/refactor-canary-054/lifecycle.ts`.

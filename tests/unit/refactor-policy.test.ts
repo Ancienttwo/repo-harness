@@ -7,8 +7,8 @@ import { loadRefactorPolicy, readRefactorPolicy } from "../../src/core/refactor/
 const expected = (mode: "off" | "shadow" | "active" = "off", require_cutover_closure = false) => ({
   mode, provider: "archctx" as const, proposal_author: "local" as const,
   stages: {
-    scan: { provider_version: "0.5.4" as const, required_features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
-    verify: { provider_version: "0.5.4" as const, required_features: ["refactor-resolution-v1"] },
+    scan: { provider_version: "0.5.6" as const, required_features: ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
+    verify: { provider_version: "0.5.6" as const, required_features: ["refactor-resolution-v1"] },
   },
   workflow_routing: { module_refactor: "work_package" as const, cross_module_refactor: "refactor_sprint" as const, architecture_intervention: "human_architecture_approval" as const, proof_required: "investigation_only" as const, no_action: "record_and_stop" as const },
   maximum_modules_per_program: 10, maximum_parallel_modules: 3,

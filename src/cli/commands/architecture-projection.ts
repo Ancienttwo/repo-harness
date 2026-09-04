@@ -101,9 +101,12 @@ export function buildArchitectureProjectionCommand(): Command {
     .requiredOption('--json', 'Output architecture acceptance receipt JSON')
     .requiredOption('--signal-id <sha256>', 'Exact unresolved-major refresh signal id')
     .requiredOption('--approval-reference <event-id>', 'Exact external human approval event identity')
-    .action((options: { signalId: string; approvalReference: string }) => {
+    .option('--adoption-plan-id <id>', 'Exact approved ArchContext adoption plan id when ownership adoption is required')
+    .action((options: { signalId: string; approvalReference: string; adoptionPlanId?: string }) => {
       try {
-        write(acceptArchitectureProjectionCandidate(repositoryRoot(), options.signalId, options.approvalReference));
+        write(acceptArchitectureProjectionCandidate(repositoryRoot(), options.signalId, options.approvalReference, {
+          adoptionPlanId: options.adoptionPlanId,
+        }));
       } catch (error) { fail(error); }
     });
   command.command('reconcile')

@@ -210,6 +210,24 @@ describe('architecture projection acceptance', () => {
     });
   });
 
+  test('composes an explicit adoption plan with the exact accepted change', () => {
+    const f = fixture();
+    const observed: ProjectionRequestV1[] = [];
+    const receipt = acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-adoption-approval', {
+      adoptionPlanId: 'adopt-plan-0123456789abcdef',
+      captureSnapshot: () => f.expected,
+      runProjection: (request) => { observed.push(request); return acceptedResult(request); },
+    });
+    expect(observed).toHaveLength(1);
+    expect(observed[0]).toMatchObject({
+      mode: 'adopt',
+      adoptionPlanId: 'adopt-plan-0123456789abcdef',
+      acceptedChange: { eventId: 'event.review-adoption-approval', reasonCodes: ['node-added', 'ownership-changed'] },
+    });
+    expect(receipt.request).toEqual(observed[0]!);
+    expect(receipt.result.applyReceipt?.acceptedChange).toEqual(receipt.acceptedChange);
+  });
+
   test('refuses a stale refresh signal before invoking the provider', () => {
     const f = fixture();
     let providerCalls = 0;
