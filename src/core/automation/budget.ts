@@ -281,6 +281,7 @@ export interface ProgramAuthorizationCampaignV1 {
   readonly max_parallel_tasks: 1 | 2 | 3;
   readonly issue_author: 'gpt_pro';
   readonly local_parent_host: 'claude' | 'codex';
+  readonly chrome_profile_directory: string;
   readonly require_fresh_main_audit: true;
 }
 
@@ -288,7 +289,7 @@ function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizat
   if (value === null) return null;
   if (typeof value !== 'object' || Array.isArray(value)) invalid('program authorization campaign must be an object or null');
   const campaign = value as Record<string, unknown>;
-  const expected = ['allowed_issue_kinds', 'campaign_id', 'group_count', 'issue_author', 'issues_per_group', 'local_parent_host', 'max_parallel_tasks', 'require_fresh_main_audit'];
+  const expected = ['allowed_issue_kinds', 'campaign_id', 'chrome_profile_directory', 'group_count', 'issue_author', 'issues_per_group', 'local_parent_host', 'max_parallel_tasks', 'require_fresh_main_audit'];
   if (JSON.stringify(Object.keys(campaign).sort()) !== JSON.stringify(expected)) invalid('program authorization campaign fields are invalid');
   if (![1, 2, 3].includes(campaign.group_count as number)) invalid('program authorization campaign group_count must be 1, 2, or 3');
   if (!Number.isSafeInteger(campaign.issues_per_group) || (campaign.issues_per_group as number) < 1 || (campaign.issues_per_group as number) > 10) {
@@ -309,6 +310,14 @@ function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizat
     max_parallel_tasks: campaign.max_parallel_tasks as 1 | 2 | 3,
     issue_author: 'gpt_pro',
     local_parent_host: campaign.local_parent_host as 'claude' | 'codex',
+    chrome_profile_directory: typeof campaign.chrome_profile_directory === 'string'
+      && campaign.chrome_profile_directory.trim() === campaign.chrome_profile_directory
+      && campaign.chrome_profile_directory.length > 0
+      && campaign.chrome_profile_directory.length <= 128
+      && !campaign.chrome_profile_directory.includes('/')
+      && !campaign.chrome_profile_directory.includes('\\')
+      ? campaign.chrome_profile_directory
+      : invalid('chrome_profile_directory is invalid'),
     require_fresh_main_audit: true,
   });
 }

@@ -34,10 +34,8 @@ const PACKAGE_DIR = "repo-harness-chatgpt";
 const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const PACKAGE_ROOT = join(SKILLS_ROOT, PACKAGE_DIR);
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
-// Raised from 2048 when the 6th mode (delegate, references/delegate.md) and
-// the 7th mode (orchestrate, references/orchestrate.md) added routing and
-// boundary clauses. Kept as a small, deliberate step rather than a round jump
-// so the router stays a compact link list, not a place to inline protocol.
+// Raised from 2048 as bounded modes added routing and boundary clauses. Kept
+// as a small step so the router stays a link list, not an inline protocol.
 const ROUTER_BODY_BYTE_LIMIT = 2560;
 
 const REFERENCES = [
@@ -48,6 +46,7 @@ const REFERENCES = [
   "bridge.md",
   "delegate.md",
   "orchestrate.md",
+  "campaign-issues.md",
 ] as const;
 
 function readSkill(): string {

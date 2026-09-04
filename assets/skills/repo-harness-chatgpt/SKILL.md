@@ -22,6 +22,7 @@ mode protocol lives under `references/`.
 - Verify or accept a ChatGPT MCP tool call as real evidence -> `references/read-back.md`.
 - Operate the MCP Connector bridge (planner/executor/orchestrator/coding) -> `references/bridge.md`.
 - Delegate a self-contained task to GPT Pro and independently accept the result -> `references/delegate.md`.
+- Campaign Issue batch -> `references/campaign-issues.md`
 
 ## Boundaries
 

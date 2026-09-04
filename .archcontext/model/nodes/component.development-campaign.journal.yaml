@@ -4,4 +4,4 @@ kind: component
 name: Development Campaign Journal
 status: active
 parent: capability.runtime-harness.development-campaign
-summary: Validates target-base policy and host grants, then persists and rebuilds one serialized append-only campaign event chain in the Git common directory.
+summary: Validates target-base policy and host grants, then persists the append-only campaign chain plus immutable Issue batch intents and authoring-session evidence in the Git common directory.

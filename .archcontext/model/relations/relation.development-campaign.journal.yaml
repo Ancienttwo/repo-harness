@@ -3,4 +3,4 @@ id: relation.development-campaign.journal
 kind: calls
 source: capability.runtime-harness.development-campaign
 target: component.development-campaign.journal
-intent: Bind a host-owned campaign grant to target-base policy and publish only canonical serialized campaign events and their rebuildable projection
+intent: Bind a host-owned campaign grant to target-base policy and persist only canonical campaign events, immutable Issue batch intents, authoring-session evidence, and rebuildable projections.

@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T03:33:18+0800 -->
+<!-- updated_at: 2026-09-05T03:49:04+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-09-05T03:33:18+0800
-> **Source Branch**: codex/workflow-artifact-cleanup
-> **Source Commit**: 18c7bf61
+> **Status**: Active
+> **Updated At**: 2026-09-05T03:49:04+0800
+> **Source Branch**: detached
+> **Source Commit**: 41f52197
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: sprint-progress
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,10 +31,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- linked-worktree-350aaa0d5495: plans/plan-20260905-0342-review-boundary-repairs.md
+- linked-worktree-350aaa0d5495: active-worktree owner -> self
 ## Active Sprint
 
-- Sprint: (none)
+- Sprint: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
+- Sprint Status: Approved
+- Backlog: 6/15
+- Next Sprint Task: BRC5 — Heartbeat observation 与 slot reconciliation
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
@@ -51,22 +55,39 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 26 changed/untracked path(s)
 
 ```
- D plans/plan-20260905-0312-workflow-artifact-cleanup.md
- D tasks/contracts/20260905-0312-workflow-artifact-cleanup.contract.md
- D tasks/notes/20260905-0312-workflow-artifact-cleanup.notes.md
- D tasks/reviews/20260905-0312-workflow-artifact-cleanup.review.md
-?? plans/archive/plan-20260905-0312-workflow-artifact-cleanup.md
-?? tasks/archive/contract-20260905-0333-workflow-artifact-cleanup.md
-?? tasks/archive/notes-20260905-0333-workflow-artifact-cleanup.md
-?? tasks/archive/review-20260905-0333-workflow-artifact-cleanup.md
-?? tasks/archive/todo-20260905-0333-workflow-artifact-cleanup.md
+M  .archcontext/model/flows/flow.development-campaign.lifecycle.yaml
+M  .archcontext/model/nodes/capability.runtime-harness.development-campaign.yaml
+M  .archcontext/model/nodes/component.development-campaign.journal.yaml
+M  .archcontext/model/relations/relation.development-campaign.journal.yaml
+M  assets/skills/repo-harness-chatgpt/SKILL.md
+A  assets/skills/repo-harness-chatgpt/references/campaign-issues.md
+M  docs/architecture/.projection-manifest.json
+M  docs/architecture/changelog.md
+M  docs/architecture/decisions/index.md
+M  docs/architecture/diagrams/architecture.likec4
+M  docs/architecture/diagrams/architecture.mmd
+M  docs/architecture/diagrams/architecture.structurizr.json
+M  docs/architecture/index.md
+M  docs/architecture/modules/runtime-harness/development-campaign.md
+M  plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md
+M  src/cli/commands/campaign.ts
+M  src/core/automation/budget.ts
+A  src/core/automation/issue-batch.ts
+A  src/effects/automation/gpt-pro-issue-authoring.ts
+A  src/effects/automation/issue-batch-store.ts
+UU tasks/current.md
+M  tests/cli/development-campaign.test.ts
+M  tests/effects/development-campaign-store.test.ts
+A  tests/effects/gpt-pro-issue-authoring.test.ts
+M  tests/skill-surface/chatgpt-package.test.ts
+A  tests/unit/issue-batch.test.ts
 ```
 
 ## Source Artifacts

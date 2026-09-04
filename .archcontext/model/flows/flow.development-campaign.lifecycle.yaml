@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.development-campaign.lifecycle
 capabilityId: capability.runtime-harness.development-campaign
-name: Operate one host-authorized development campaign journal
+name: Operate one host-authorized development campaign
 applicability: required
 participants:
   - id: operator
@@ -17,6 +17,14 @@ steps:
       entrypointId: entrypoint.development-campaign.lifecycle
       sourceSymbol: runCampaignStart
       sinkId: sink.development-campaign.create
+  - id: author-issue-batch
+    from: operator
+    to: journal
+    label: Persist the exact IssueBatchIntent before invoking the secret-scanned GPT Pro browser authoring lane
+    evidence:
+      entrypointId: entrypoint.development-campaign.lifecycle
+      sourceSymbol: runCampaignAuthor
+      sinkId: sink.development-campaign.issue-authoring-start
 outcomes:
   - id: status
     kind: success
@@ -35,7 +43,7 @@ outcomes:
       label: Return canonical definition, events, and current projection
   - id: refused
     kind: error
-    label: Disabled policy, unavailable intake, stale grant, exceeded limits, or conflicting replay fails closed
+    label: Disabled policy, unavailable intake, stale grant, exceeded limits, profile mismatch, secret finding, or conflicting replay fails closed
     steps:
       - id: reject-mutation
         from: operator
