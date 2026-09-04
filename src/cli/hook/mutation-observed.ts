@@ -46,6 +46,7 @@ import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { collectMinimalChangeSignals } from './minimal-change-signals';
 import { canonicalRepoRelativePath, fileExists, readText } from '../../effects/state/collect-state-inputs';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
+import { PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS, runProcess } from '../../effects/process-runner';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
   artifactStemFromPlan,
@@ -566,6 +567,8 @@ export interface PostEditJournalEvent {
 
 const JOURNAL_ROOT = '.ai/harness/journal/post-edit';
 const JOURNAL_PENDING_DIR = `${JOURNAL_ROOT}/pending`;
+const POST_EDIT_CONSUME_BUDGET_MS = 15_000;
+const POST_EDIT_HELPER_TIMEOUT_MS = 10_000;
 
 /** Session-scoped coalesce key: a same-session edit to the same path set
  * overwrites the same pending file instead of appending unboundedly. */
@@ -739,12 +742,11 @@ export function readPendingPostEditEvents(repoRoot: string): readonly PostEditJo
 }
 
 /**
- * Retention decision (gate round-1 second widening, MEDIUM adjudicated): the
- * journal is a transit queue, not an evidence ledger (that is EPC scope --
- * out of scope for this row). Consumption DELETES the pending file outright;
- * there is no `consumed/` retention directory. A consumption failure simply
- * leaves the file in `pending/` for the next Stop to retry (see
- * `consumePendingPostEditEvents`'s per-event try/catch).
+ * The journal is a transit queue, not an evidence ledger. Consumption deletes
+ * the pending file outright; there is no `consumed/` retention directory.
+ * An effect that returns failure or reaches its deadline is reported and
+ * acknowledged so it cannot permanently pin the queue head. Storage and lock
+ * failures still leave the pending file for a later Stop.
  */
 function deletePendingPostEditEventFile(repoRoot: string, name: string): void {
   unlinkSync(join(repoRoot, JOURNAL_PENDING_DIR, name));
@@ -807,14 +809,34 @@ function runRepoHarnessHelper(
   env: NodeJS.ProcessEnv,
   helper: string,
   args: readonly string[],
-): { status: number; stdout: string } {
+  timeoutMs: number | null,
+): { status: number; stdout: string; stderr: string; timedOut: boolean } {
   const cli = env.REPO_HARNESS_CLI;
+  let command: string;
+  let commandArgs: readonly string[];
   if (cli && existsSync(cli) && commandAvailable('bun', env)) {
-    const res = spawnSync('bun', [cli, 'run', helper, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
-    return { status: res.status ?? 1, stdout: res.stdout ?? '' };
+    command = 'bun';
+    commandArgs = [cli, 'run', helper, ...args];
+  } else {
+    command = 'repo-harness';
+    commandArgs = ['run', helper, ...args];
   }
-  const res = spawnSync('repo-harness', ['run', helper, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
-  return { status: res.status ?? 1, stdout: res.stdout ?? '' };
+  if (timeoutMs === null) {
+    const result = spawnSync(command, [...commandArgs], { cwd: repoRoot, encoding: 'utf-8', env });
+    return {
+      status: result.status ?? 1,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? result.error?.message ?? '',
+      timedOut: false,
+    };
+  }
+  const result = runProcess(command, commandArgs, { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    timedOut: result.timedOut,
+  };
 }
 
 /** capability-context's own 3-tier fallback (post-edit-guard.sh:73-93) --
@@ -856,12 +878,12 @@ export function processArchitectureCascade(repoRoot: string, env: NodeJS.Process
   if (!repoHarnessRunnerAvailable(env)) {
     return { ok: false, error: `legacy architecture cascade runner is unavailable for ${filePath}` };
   }
-  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath]);
+  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath], null);
   if (result.status !== 0) {
     return { ok: false, error: `legacy architecture cascade failed for ${filePath}: architecture-queue exited ${result.status}` };
   }
   if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
-    const contextSync = runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest']);
+    const contextSync = runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest'], null);
     if (contextSync.status !== 0) {
       return { ok: false, error: `legacy architecture cascade failed for ${filePath}: context-contract-sync exited ${contextSync.status}` };
     }
@@ -879,27 +901,42 @@ function processContractVerification(
   env: NodeJS.ProcessEnv,
   contractFile: string,
   checksFilePath: string,
-): void {
-  if (!repoHarnessRunnerAvailable(env)) return;
+  timeoutMs: number,
+): { status: number; stderr: string; timedOut: boolean } | null {
+  if (!repoHarnessRunnerAvailable(env)) return null;
   try {
     mkdirSync(dirname(join(repoRoot, checksFilePath)), { recursive: true });
   } catch {
     /* best-effort */
   }
-  runRepoHarnessHelper(repoRoot, env, 'verify-contract', ['--contract', contractFile, '--quiet', '--report-file', checksFilePath]);
+  const result = runRepoHarnessHelper(
+    repoRoot,
+    env,
+    'verify-contract',
+    ['--contract', contractFile, '--quiet', '--report-file', checksFilePath],
+    timeoutMs,
+  );
+  return { status: result.status, stderr: result.stderr, timedOut: result.timedOut };
 }
 
 /** `minimal_change_hook_entry signals --phase post-edit` port -- calls the
  * SAME `collectMinimalChangeSignals()` function `minimal-change-observer.sh`
  * called (via minimal-change-cli.ts), just deferred to Stop time using the
  * path+baseRef captured in the journal event's payload. */
-function processMinimalChangeDeferred(repoRoot: string, path: string, baseRef: string): void {
+function processMinimalChangeDeferred(
+  repoRoot: string,
+  path: string,
+  baseRef: string,
+  deadlineMs: number,
+  nowMs: () => number,
+): { timedOut: boolean } {
   try {
     const policy = loadMinimalChangePolicy(repoRoot);
-    collectMinimalChangeSignals({ repoRoot, path, policy, baseRef });
+    collectMinimalChangeSignals({ repoRoot, path, policy, baseRef, deadlineMs, nowMs });
   } catch {
     // Matches minimal-change-cli.ts's own non-fatal "signals skipped" stance.
   }
+  return { timedOut: nowMs() >= deadlineMs };
 }
 
 export interface PostEditConsumeSummary {
@@ -910,6 +947,15 @@ export interface PostEditConsumeSummary {
    * stderr (see below), returned too so tests/callers can observe it
    * without capturing the process stream. */
   readonly warnings: readonly string[];
+}
+
+export interface PostEditConsumeOptions {
+  /** Absolute wall-clock deadline for this queue pass. */
+  readonly deadlineMs?: number;
+  /** Per helper ceiling, always clamped to the remaining queue budget. */
+  readonly helperTimeoutMs?: number;
+  /** Test seam for deterministic budget exhaustion. */
+  readonly nowMs?: () => number;
 }
 
 /** Writes one warning line to the real process stderr -- host-visible and
@@ -924,18 +970,26 @@ function warnStderr(line: string): void {
 }
 
 /**
- * Processes every pending journal event's dirty bits (contract verification,
- * deferred minimal-change signals) and deletes the event on success.
- * Best-effort per event: one event's failure leaves its file in `pending/`
- * for the next Stop to retry rather than losing the others or throwing out of
- * Stop. Corrupt pending files (unparseable JSON, wrong schema) are removed
- * outright with a stderr warning -- they can never be "retried" into
- * validity.
+ * Processes pending journal events within one bounded Stop-time pass. External
+ * helpers are process-group supervised and clamped to the pass deadline.
+ * Completed, failed, and timed-out effects are all acknowledged; the latter
+ * two emit warnings so one slow event cannot pin the queue head forever.
+ * Events not reached before the total budget remain pending for the next Stop,
+ * as do storage/lock failures. Corrupt files are removed with a warning because
+ * they can never be retried into validity.
  */
 export function consumePendingPostEditEvents(
   repoRoot: string,
   env: NodeJS.ProcessEnv = process.env,
+  options: PostEditConsumeOptions = {},
 ): PostEditConsumeSummary {
+  const nowMs = options.nowMs ?? Date.now;
+  const deadlineMs = options.deadlineMs ?? nowMs() + POST_EDIT_CONSUME_BUDGET_MS;
+  const helperTimeoutMs = options.helperTimeoutMs ?? POST_EDIT_HELPER_TIMEOUT_MS;
+  if (!Number.isFinite(deadlineMs)) throw new Error('post-edit journal deadline must be finite');
+  if (!Number.isSafeInteger(helperTimeoutMs) || helperTimeoutMs < 1) {
+    throw new Error('post-edit journal helper timeout must be a positive integer');
+  }
   migratePendingPostEditJournalV1(repoRoot, 100);
   const { valid, corruptNames } = scanPendingPostEditEventFiles(repoRoot);
   let consumed = 0;
@@ -954,21 +1008,45 @@ export function consumePendingPostEditEvents(
   }
 
   for (const { name, event } of valid) {
+    const remainingMs = Math.floor(deadlineMs - nowMs());
     try {
-      if (event.dirty['contract-verification'] && event.payload.contract_verification) {
-        processContractVerification(
-          repoRoot,
-          env,
-          event.payload.contract_verification.contract_file,
-          event.payload.contract_verification.checks_file,
-        );
+      const eventFailures: string[] = [];
+      const deadlineElapsed = remainingMs <= 0;
+      const hasDeferredEffect = Boolean(
+        (event.dirty['contract-verification'] && event.payload.contract_verification)
+        || (event.dirty['minimal-change'] && event.payload.minimal_change),
+      );
+      if (deadlineElapsed && hasDeferredEffect) {
+        eventFailures.push('journal deadline elapsed before deferred effects');
+      } else if (event.dirty['contract-verification'] && event.payload.contract_verification) {
+        const targetTimeoutMs = Math.min(helperTimeoutMs, remainingMs - PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS);
+        if (targetTimeoutMs < 1) {
+          eventFailures.push('contract verification skipped because the remaining journal budget cannot cover process cleanup');
+        } else {
+          const verification = processContractVerification(
+            repoRoot,
+            env,
+            event.payload.contract_verification.contract_file,
+            event.payload.contract_verification.checks_file,
+            targetTimeoutMs,
+          );
+          if (verification && verification.status !== 0) {
+            const detail = verification.timedOut
+              ? `contract verification timed out after ${targetTimeoutMs}ms`
+              : `contract verification exited ${verification.status}${verification.stderr.trim() ? `: ${verification.stderr.trim().slice(0, 300)}` : ''}`;
+            eventFailures.push(detail);
+          }
+        }
       }
-      if (event.dirty['minimal-change'] && event.payload.minimal_change) {
-        processMinimalChangeDeferred(
+      if (!deadlineElapsed && event.dirty['minimal-change'] && event.payload.minimal_change) {
+        const minimalChange = processMinimalChangeDeferred(
           repoRoot,
           event.payload.minimal_change.path,
           event.payload.minimal_change.base_ref,
+          deadlineMs,
+          nowMs,
         );
+        if (minimalChange.timedOut) eventFailures.push('minimal-change signals reached the journal deadline');
       }
       const root = realpathSync(repoRoot);
       const key = name.replace(/\.json$/, '');
@@ -979,7 +1057,16 @@ export function consumePendingPostEditEvents(
         deletePendingPostEditEventFile(root, name);
         deleted = true;
       });
-      if (deleted) consumed += 1;
+      if (deleted) {
+        consumed += 1;
+        if (eventFailures.length > 0) {
+          errors += eventFailures.length;
+          const warning = `[PostEditJournal] WARN: removed pending event ${event.event_id} after ${eventFailures.join('; ')}`;
+          warnings.push(warning);
+          warnStderr(warning);
+        }
+      }
+      if (nowMs() >= deadlineMs) break;
     } catch {
       errors += 1;
     }

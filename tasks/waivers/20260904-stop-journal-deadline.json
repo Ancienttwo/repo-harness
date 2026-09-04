@@ -1,0 +1,15 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:3daa8dc0c3bdea328391a6a37a40f91723dfe2e71e53f07a323b2d79948de70f",
+  "reason": "Bound one Stop invocation to a single journal-processing deadline so repeated deferred effects cannot extend hook latency indefinitely.",
+  "owner": "ancienttwo",
+  "scope": [
+    "src/cli/hook/minimal-change-signals.ts",
+    "src/cli/hook/mutation-observed.ts",
+    "src/cli/hook/stop-handler.ts",
+    "src/effects/process-runner.ts",
+    "tests/stop-handler.test.ts"
+  ],
+  "revisit_trigger": "The Stop journal moves to an asynchronous worker or gains a host-enforced request deadline"
+}
