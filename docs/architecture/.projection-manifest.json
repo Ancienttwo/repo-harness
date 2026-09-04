@@ -776,9 +776,9 @@
       "sourceDigest": "sha256:8afaff65fd3d710e7b1629adf66c8b12d68e39795fa22778ce9fb9ed07a26135",
       "outputDigest": "sha256:9cdb61bcde296372d3af492fcbe4dabdfa9f42ff37c1ac6816692f1c3bcc598d",
       "verifiedAgainst": {
-        "branch": "codex/automation-budget-flow-proof",
-        "commit": "7dd00333e55f8d292fcf66c187f674f76514a62b",
-        "committedAt": "2026-09-04T13:18:51+08:00"
+        "branch": "main",
+        "commit": "f064c0d4c0ce1e08f9fed10b7f85db1e7811acdc",
+        "committedAt": "2026-09-04T13:42:18+08:00"
       }
     },
     {
@@ -1136,9 +1136,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/automation-budget-flow-proof",
-        "commit": "7dd00333e55f8d292fcf66c187f674f76514a62b",
-        "committedAt": "2026-09-04T13:18:51+08:00"
+        "branch": "main",
+        "commit": "f064c0d4c0ce1e08f9fed10b7f85db1e7811acdc",
+        "committedAt": "2026-09-04T13:42:18+08:00"
       }
     },
     {
@@ -1156,9 +1156,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/architecture-runtime-closure",
-        "commit": "24a83be78db5caf28659be6a19c9118df4455ad8",
-        "committedAt": "2026-09-04T12:11:51+08:00"
+        "branch": "main",
+        "commit": "f064c0d4c0ce1e08f9fed10b7f85db1e7811acdc",
+        "committedAt": "2026-09-04T13:42:18+08:00"
       }
     },
     {
