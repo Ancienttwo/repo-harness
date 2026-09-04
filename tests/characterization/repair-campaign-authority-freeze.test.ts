@@ -934,7 +934,7 @@ describe('BRC0 protected capabilities', () => {
 });
 
 describe('BRC0 architecture request', () => {
-  const CARD = join(REPO_ROOT, 'docs/architecture/requests/runtime-harness-development-campaign.md');
+  const CARD = join(REPO_ROOT, 'docs/architecture/requests/archive/2026/runtime-harness-development-campaign.md');
 
   test('the drift request declares the campaign boundary', () => {
     expect(existsSync(CARD)).toBe(true);
@@ -945,7 +945,7 @@ describe('BRC0 architecture request', () => {
     expect(text).toContain('runtime-harness-development-campaign');
     expect(text).toContain('planned-boundary-change');
     expect(text).toContain('src/core/automation/development-campaign.ts');
-    expect(dirname(CARD).endsWith('docs/architecture/requests')).toBe(true);
+    expect(dirname(CARD).endsWith('docs/architecture/requests/archive/2026')).toBe(true);
   });
 
   test('the boundary declaration names the planned entrypoints and the consumed capabilities', () => {
