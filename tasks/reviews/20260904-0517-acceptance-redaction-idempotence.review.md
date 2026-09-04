@@ -8,9 +8,9 @@
 > **Last Updated**: 2026-09-04 05:17
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:fb1641ce9d758b08d5a254ad8e1c67a7f790e3e382051ee497297ac9aebd12ef
+> **Reviewed Subject SHA256**: sha256:526ff73d5950047bc9a6a678756bcab6e016256a3d22662e2e793fd43d6fe93a
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 385be33dbf25da7add32d1665454ef8f718d8adf
+> **Reviewed Target Revision**: 97fc7c5cc3bd5a077a8478902f52c73968326ed3
 
 ## Human Review Card
 
@@ -44,13 +44,13 @@
 > **Reviewer**: Codex
 > **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:fb1641ce9d758b08d5a254ad8e1c67a7f790e3e382051ee497297ac9aebd12ef
+> **Reviewed Subject SHA256**: sha256:526ff73d5950047bc9a6a678756bcab6e016256a3d22662e2e793fd43d6fe93a
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 385be33dbf25da7add32d1665454ef8f718d8adf
-> **Verification Evidence SHA256**: sha256:d9fd8b0c48644b7827b5f67bd3ab0fd42904e7f5817802e0c084386c3af5ef54
-> **Issued At**: 2026-09-03T23:33:47.435Z
+> **Reviewed Target Revision**: 97fc7c5cc3bd5a077a8478902f52c73968326ed3
+> **Verification Evidence SHA256**: sha256:d37030003bb89a8a810d316ba1cf26542ba3f71b9bc900aad49988a3e106ca16
+> **Issued At**: 2026-09-04T00:44:38.274Z
 
-- Summary: PASS: rebased exact subject preserves immutable prepared-snapshot replay, repeat-finalize idempotence, fail-closed snapshot binding, aligned helper projection, and passes all 23 contract criteria against current origin/main.
+- Summary: PASS: exact source-bound subject preserves immutable snapshot replay and idempotent finalization, retains strict redaction and fingerprint authorities, and passes all 23 contract criteria.
 - Findings: none
 
 ## Behavior Diff Notes
