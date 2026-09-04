@@ -17,6 +17,8 @@ import { resolveEngineerPrincipal } from '../engineers/principal';
 import { acquireNextScheduledEngineerTask, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
 import { dispatchDelegatedRun, type DelegatedRunStatus } from '../engineers/delegated-run-store';
 import { repoHarnessAuthorizationRevision } from '../repo-registry';
+import { readLease } from '../state/coordination-lease-store';
+import { renewLeaseLiveness } from '../state/coordination-lease-liveness-store';
 
 export interface StepAutomationControllerInput {
   readonly repo_root: string;
@@ -43,6 +45,8 @@ export interface AutomationControllerRunDependencies {
   readonly readBudget: typeof readAutomationBudgetStatus;
   readonly reserveBudget: typeof reserveAutomationBudget;
   readonly appendUsage: typeof appendAutomationUsage;
+  readonly readLease: typeof readLease;
+  readonly renewLiveness: typeof renewLeaseLiveness;
 }
 
 export interface StartBoundedAutomationControllerInput {
@@ -63,6 +67,8 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   readBudget: readAutomationBudgetStatus,
   reserveBudget: reserveAutomationBudget,
   appendUsage: appendAutomationUsage,
+  readLease,
+  renewLiveness: renewLeaseLiveness,
 };
 
 function exactPrincipal(repositoryId: string, expected: ReturnType<typeof readAutomationControllerStatus>['run']['principal'], observed: EngineerPrincipalV1, authorizationRevision: number): void {
@@ -152,7 +158,10 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
     const usage = deps.appendUsage({ repo_root: input.repo_root, reservation, outcome: acquisition.ok ? 'progress' : 'no_progress', evidence_refs: acquisitionEvidence });
     if (acquisition.ok) {
       const envelopeSha = workEnvelopeSha256(acquisition.envelope);
-      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256] })); steps += 1;
+      const lease = deps.readLease(input.repo_root, acquisition.envelope.task_id);
+      if (lease.record === null || lease.record.claim_id !== acquisition.envelope.claim_id || lease.record.generation !== acquisition.envelope.generation) throw new Error('acquired WorkEnvelope does not bind the exact current Lease');
+      const renewed = deps.renewLiveness({ repo_root: input.repo_root, owner: lease.record, policy: run.policy.lease_liveness, owner_id: run.run_id, observed_at: at(), requested_ttl_ms: run.policy.lease_liveness.maximum_ttl_ms, binding_generation: run.principal.binding_generation, runtime_effect_id: null, expected_current_sha256: null });
+      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256, renewed.renewal.renewal_sha256] })); steps += 1;
     } else if (acquisition.error === 'engineer_no_eligible_offer') {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:no-offer`, 'no_offer', at(), receipt('no_offer', 'no_eligible_offer', { evidence_refs: [usage.event.event_sha256] })); steps += 1;
     } else if (transientAcquisition(acquisition)) {

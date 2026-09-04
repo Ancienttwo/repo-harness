@@ -7,6 +7,7 @@ import {
   canonicalMessageDigest,
   messageRequiredString,
 } from '../messages/mechanics';
+import { buildLeaseLivenessPolicy, type LeaseLivenessPolicyV1 } from '../state/lease-liveness';
 
 export const AUTOMATION_CONTROLLER_PROTOCOL = 1 as const;
 export const AUTOMATION_CONTROLLER_RUN_KIND = 'repo-harness-automation-controller-run' as const;
@@ -51,6 +52,7 @@ export interface AutomationControllerPolicyV1 {
   readonly maximum_transient_retries: number;
   readonly initial_backoff_ms: number;
   readonly maximum_backoff_ms: number;
+  readonly lease_liveness: LeaseLivenessPolicyV1;
 }
 
 export interface AutomationControllerRunV1 {
@@ -144,8 +146,12 @@ function principal(value: unknown): AutomationControllerPrincipalV1 {
 }
 
 function policy(value: unknown): AutomationControllerPolicyV1 {
-  const row = object(value, 'policy'); exact(row, ['maximum_steps_per_invocation', 'maximum_duration_ms', 'maximum_transient_retries', 'initial_backoff_ms', 'maximum_backoff_ms'], 'policy');
-  const result = Object.freeze({ maximum_steps_per_invocation: integer(row.maximum_steps_per_invocation, 'policy.maximum_steps_per_invocation', 1, 64), maximum_duration_ms: integer(row.maximum_duration_ms, 'policy.maximum_duration_ms', 100, 300_000), maximum_transient_retries: integer(row.maximum_transient_retries, 'policy.maximum_transient_retries', 0, 16), initial_backoff_ms: integer(row.initial_backoff_ms, 'policy.initial_backoff_ms', 1, 60_000), maximum_backoff_ms: integer(row.maximum_backoff_ms, 'policy.maximum_backoff_ms', 1, 300_000) });
+  const row = object(value, 'policy'); exact(row, ['maximum_steps_per_invocation', 'maximum_duration_ms', 'maximum_transient_retries', 'initial_backoff_ms', 'maximum_backoff_ms', 'lease_liveness'], 'policy');
+  const liveness = object(row.lease_liveness, 'policy.lease_liveness');
+  exact(liveness, ['protocol', 'kind', 'renewal_interval_ms', 'maximum_ttl_ms', 'renewal_actor_kind', 'required_evidence_sources', 'unproven_behavior', 'policy_sha256'], 'policy.lease_liveness');
+  const rebuiltLiveness = buildLeaseLivenessPolicy(liveness as unknown as Omit<LeaseLivenessPolicyV1, 'protocol' | 'kind' | 'policy_sha256'>);
+  if (canonicalMessageBytes(liveness) !== canonicalMessageBytes(rebuiltLiveness as unknown as Record<string, unknown>)) invalid('policy.lease_liveness digest is stale');
+  const result = Object.freeze({ maximum_steps_per_invocation: integer(row.maximum_steps_per_invocation, 'policy.maximum_steps_per_invocation', 1, 64), maximum_duration_ms: integer(row.maximum_duration_ms, 'policy.maximum_duration_ms', 100, 300_000), maximum_transient_retries: integer(row.maximum_transient_retries, 'policy.maximum_transient_retries', 0, 16), initial_backoff_ms: integer(row.initial_backoff_ms, 'policy.initial_backoff_ms', 1, 60_000), maximum_backoff_ms: integer(row.maximum_backoff_ms, 'policy.maximum_backoff_ms', 1, 300_000), lease_liveness: rebuiltLiveness });
   if (result.maximum_backoff_ms < result.initial_backoff_ms) invalid('policy.maximum_backoff_ms must be >= initial_backoff_ms');
   return result;
 }

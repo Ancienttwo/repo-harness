@@ -267,6 +267,13 @@ const TRIPLES: readonly Triple[] = TASK_STATES.flatMap((state) => (
 ));
 
 describe('board column decision table', () => {
+  test('projects bounded Lease liveness without exposing owner paths', () => {
+    const task = taskInput('pending', 'bound', 'active');
+    const card = projectBoard(boardInputs([{ ...task, liveness: { expires_at: '2026-09-04T00:00:10.000Z', last_renewed_at: '2026-09-04T00:00:00.000Z', sequence: 2, classification: 'liveness_unproven', attention_owner: 'operator' } }])).cards[0];
+    expect(card.lease_liveness).toEqual({ expires_at: '2026-09-04T00:00:10.000Z', last_renewed_at: '2026-09-04T00:00:00.000Z', sequence: 2, classification: 'liveness_unproven', attention_owner: 'operator' });
+    expect(JSON.stringify(card.lease_liveness)).not.toContain(WORKTREE);
+  });
+
   test('the cross product is total, and every dimension reports what it was given', () => {
     // 4 task states x (3 lease states x 1 progress state + 3 lease states x 4).
     expect(TRIPLES).toHaveLength(4 * (3 + 12));

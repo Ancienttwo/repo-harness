@@ -144,6 +144,13 @@ export interface BoardTaskInput {
   readonly row: CanonicalTaskRow | null;
   readonly lease: BoardLeaseInput;
   readonly evidence: BoardEvidenceInput | null;
+  readonly liveness?: {
+    readonly expires_at: string;
+    readonly last_renewed_at: string;
+    readonly sequence: number;
+    readonly classification: import('./lease-liveness').LeaseLivenessClassification;
+    readonly attention_owner: 'none' | 'operator';
+  };
 }
 
 export interface BoardInputsV1 {
@@ -398,6 +405,7 @@ function projectCard(task: BoardTaskInput, canonicalRef: string): BoardCardV1 {
     lease_state: lease,
     progress_state: progress,
     claim: deriveClaim(task.lease.record),
+    ...(task.liveness === undefined ? {} : { lease_liveness: task.liveness }),
     diagnostics,
     actions: deriveActions(ownership, lease, column, diagnostics, canonicalRef),
   };

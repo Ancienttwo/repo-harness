@@ -6,6 +6,7 @@ import {
   foldAutomationControllerCurrent,
   nextAutomationControllerState,
 } from '../../src/core/automation/controller';
+import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 
 const SHA = `sha256:${'a'.repeat(64)}`;
 const RUN_ID = `sha256:${'b'.repeat(64)}`;
@@ -29,6 +30,7 @@ function run() {
       maximum_transient_retries: 3,
       initial_backoff_ms: 500,
       maximum_backoff_ms: 8_000,
+      lease_liveness: buildLeaseLivenessPolicy({ renewal_interval_ms: 1_000, maximum_ttl_ms: 10_000, renewal_actor_kind: 'controller', required_evidence_sources: ['controller'], unproven_behavior: 'require_attention' }),
     },
     protected_paths: ['plans', 'tasks'],
     created_at: '2026-09-04T00:00:00.000Z',

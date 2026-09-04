@@ -365,6 +365,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
   },
   {
+    module: 'src/core/state/lease-liveness.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'Lease liveness evidence plane (issue #286): classifies expiry and proves reclaim preconditions, but only the existing Lease store can move ownership or increment generation',
+  },
+  {
     module: 'src/core/external-sources/binding.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'external-source provenance plane; receipts bind inert provider evidence to an already-canonical task revision and no TaskOffer, Claim, Lease, Publication or Acceptance authority reads them',
