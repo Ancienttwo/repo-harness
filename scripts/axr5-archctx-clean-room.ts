@@ -142,8 +142,8 @@ extensions:
     status: 'verified',
     source: { repository: 'Ancienttwo/arch-context', revision, archiveMode: 'git-archive', dirtySourceUsed: false },
     packages: {
-      contracts: { name: 'archctx-contracts', version: VERSION, file: basename(contracts.tarball), integrity: contracts.integrity, sha512: sha512(contracts.tarball) },
-      archctx: { name: 'archctx', version: VERSION, file: basename(archctxTarball), integrity: release.artifact.integrity, sha512: sha512(archctxTarball) },
+      contracts: { name: 'archctx-contracts', version: VERSION, file: basename(contracts.tarball) },
+      archctx: { name: 'archctx', version: VERSION, file: basename(archctxTarball) },
     },
     consumer: {
       registry: 'disabled-loopback',
@@ -281,5 +281,4 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
   return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 function git(cwd: string, args: string[]): string { return run('git', args, cwd).stdout.trim(); }
-function sha512(path: string): string { return createHash('sha512').update(readFileSync(path)).digest('hex'); }
 function flag(name: string): string | undefined { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined; }

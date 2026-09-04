@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T00:37:35+0800 -->
+<!-- updated_at: 2026-09-05T00:47:48+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-09-05T00:37:35+0800
-> **Source Branch**: codex/archctx-0-5-6
-> **Source Commit**: 0dd9a737
+> **Updated At**: 2026-09-05T00:47:48+0800
+> **Source Branch**: codex/archctx-readback-stability
+> **Source Commit**: 15688bda
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -58,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260904-2243-archctx-0-5-6.md
- D tasks/contracts/20260904-2243-archctx-0-5-6.contract.md
- D tasks/notes/20260904-2243-archctx-0-5-6.notes.md
- D tasks/reviews/20260904-2243-archctx-0-5-6.review.md
+ D plans/plan-20260905-0040-archctx-readback-stability.md
+ D tasks/contracts/20260905-0040-archctx-readback-stability.contract.md
+ D tasks/notes/20260905-0040-archctx-readback-stability.notes.md
+ D tasks/reviews/20260905-0040-archctx-readback-stability.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260904-2243-archctx-0-5-6.md
-?? tasks/archive/contract-20260905-0037-archctx-0-5-6.md
-?? tasks/archive/notes-20260905-0037-archctx-0-5-6.md
-?? tasks/archive/review-20260905-0037-archctx-0-5-6.md
-?? tasks/archive/todo-20260905-0037-archctx-0-5-6.md
+?? plans/archive/plan-20260905-0040-archctx-readback-stability.md
+?? tasks/archive/contract-20260905-0047-archctx-readback-stability.md
+?? tasks/archive/notes-20260905-0047-archctx-readback-stability.md
+?? tasks/archive/review-20260905-0047-archctx-readback-stability.md
+?? tasks/archive/todo-20260905-0047-archctx-readback-stability.md
 ```
 
 ## Source Artifacts

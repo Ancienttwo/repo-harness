@@ -11,16 +11,12 @@
     "contracts": {
       "name": "archctx-contracts",
       "version": "0.5.6",
-      "file": "archctx-contracts-0.5.6.tgz",
-      "integrity": "sha512-ERh0bYsVRDY0qMwHzNNf+j4zR8TWXXxZ5IlkuYUAnZ+aSgC0hpawok+yCmMul9WQYL388CV6AvWhLapQsYWFKw==",
-      "sha512": "ce337d633ab6125762fed16fa5bae29b77bca60a8fcaf3285908ca2aa69bb2ce787692458258dcf86ddc3fb668820e30dd59367f8c9edf8ad7c99a77d6b475b9"
+      "file": "archctx-contracts-0.5.6.tgz"
     },
     "archctx": {
       "name": "archctx",
       "version": "0.5.6",
-      "file": "archctx-0.5.6.tgz",
-      "integrity": "sha512-9PT2CQ64TEo7LIl2I0O+dzepW9venhchNSleegNSsW3HDG5r9voRGhB3hIYM/AL2lKj8jJbUJ30VYzs/Wv2KFw==",
-      "sha512": "f4f4f6090eb84c4a3b2c89762343be7737a95bdbde9e172135295e7a0352b16dc70c6e6bf6fa111a107784860cfc02f694a8fc8c96d4277d15633b3f5afd8a17"
+      "file": "archctx-0.5.6.tgz"
     }
   },
   "consumer": {
