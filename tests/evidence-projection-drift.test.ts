@@ -305,7 +305,7 @@ describe("projection drift: materialized checks/latest", () => {
    */
   function readFinalizeOverlayProgram(): string {
     const source = readFileSync(VERIFY_SPRINT_PATH, "utf-8");
-    const tail = source.indexOf(`' "$checks_file" > "$finalized_checks"`);
+    const tail = source.indexOf(`' "$prepared_run_file" > "$finalized_checks"`);
     expect(tail).toBeGreaterThan(-1);
     const head = source.slice(0, tail);
     const open = head.lastIndexOf("\n    '\n");
@@ -331,6 +331,12 @@ describe("projection drift: materialized checks/latest", () => {
       review_subject_sha256: SUBJECT_A,
       lifecycle: { snapshot: ".ai/harness/runs/run-drift-overlay.json" },
       contract: { file: contractPath, status: "pass" },
+      commands: [{
+        name: "bun test real-server-longpoll-stall-dedup",
+        command: "bun test real-server-longpoll-stall-dedup",
+        status: "pass",
+        exit_code: 0,
+      }],
       guards: [
         { name: "acceptance_receipt", status: "unsatisfied" },
         { name: "allowed_paths_check", status: "pass" },
@@ -354,8 +360,13 @@ describe("projection drift: materialized checks/latest", () => {
     });
   }
 
-  test("the shipped finalize overlay deletes the materializer-owned provenance block before re-emission", () => {
+  test("the shipped finalizer replays the immutable run snapshot and skips an already-finalized receipt", () => {
+    const source = readFileSync(VERIFY_SPRINT_PATH, "utf-8");
     const program = readFinalizeOverlayProgram();
+    expect(source).toContain('prepared_run_file="$(jq -r \'.run_file // empty\' "$checks_file")"');
+    expect(source).toContain('Sprint acceptance already finalized for the receipt-bound evidence');
+    expect(source).toContain('immutable prepared run snapshot does not match the receipt-bound evidence');
+    expect(source).toContain(`' "$prepared_run_file" > "$finalized_checks"`);
     expect(program).toContain("del(.provenance)");
     // The strip must run on the whole document, before the acceptance fields
     // are layered on -- not on some sub-object after the fact.
@@ -378,7 +389,11 @@ describe("projection drift: materialized checks/latest", () => {
       writeFileSync(join(repoRoot, contractPath), contractText);
       const contractHash = `sha256:${createHash("sha256").update(contractText).digest("hex")}`;
       seedGenesis(repoRoot);
-      seedRunTraceEvent(repoRoot, contractHash, preparedRunTrace(contractPath));
+      const rawPrepared = preparedRunTrace(contractPath);
+      seedRunTraceEvent(repoRoot, contractHash, rawPrepared);
+      const rawPreparedPath = join(repoRoot, ".ai/harness/runs/run-drift-overlay.json");
+      mkdirSync(join(repoRoot, ".ai/harness/runs"), { recursive: true });
+      writeFileSync(rawPreparedPath, `${JSON.stringify(rawPrepared, null, 2)}\n`);
 
       const input: MaterializeChecksLatestInput = {
         repoRoot,
@@ -395,7 +410,9 @@ describe("projection drift: materialized checks/latest", () => {
       const preparedPath = join(repoRoot, "prepared-checks.json");
       writeFileSync(preparedPath, `${JSON.stringify(prepared, null, 2)}\n`);
 
-      // 2. The finalize path's own jq overlay, run verbatim from the script.
+      // 2. The finalize path's own jq overlay, run verbatim from the script
+      //    against the immutable raw snapshot rather than the materialized
+      //    projection that already contains redaction output.
       const overlayed = run(
         "jq",
         [
@@ -404,7 +421,7 @@ describe("projection drift: materialized checks/latest", () => {
           "--arg", "disposition", OVERLAY_ARGS.disposition,
           "--arg", "message", OVERLAY_ARGS.message,
           readFinalizeOverlayProgram(),
-          preparedPath,
+          rawPreparedPath,
         ],
         repoRoot,
       );
@@ -434,7 +451,13 @@ describe("projection drift: materialized checks/latest", () => {
       const finalized = buildChecksLatestProjection(input, acceptedFinal, contractText);
       const { provenance, ...consumerFacing } = finalized;
       expect(consumerFacing.acceptance_receipt).toEqual(finalizedRunTrace.acceptance_receipt);
+      expect(consumerFacing.commands).toEqual(prepared.commands);
       expect(contentHashOf(consumerFacing)).toBe(provenance.content_hash);
+
+      seedRunTraceEvent(repoRoot, contractHash, finalizedRunTrace as JsonValue);
+      const { accepted: acceptedRepeated } = readAcceptedEvents(repoRoot);
+      const repeated = buildChecksLatestProjection(input, acceptedRepeated, contractText);
+      expect(repeated.commands).toEqual(prepared.commands);
 
       // Causality lock: the pre-fix shape -- the same overlay output with the
       // previous materialization's provenance still embedded -- reproduces the

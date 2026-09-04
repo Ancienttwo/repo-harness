@@ -5293,28 +5293,38 @@ describe("Workflow helper scripts", () => {
     };
     try {
       mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       copyHelpers(cwd);
       writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
       writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
+      const preparedRunFile = ".ai/harness/runs/run-finalize-fixture.json";
+      const preparedChecks = {
+        schema: "repo-harness-run-trace.v1",
+        status: "pass",
+        source: "verify-sprint",
+        exit_code: 0,
+        run_file: preparedRunFile,
+        lifecycle: { snapshot: preparedRunFile },
+        commands: [],
+        guards: [
+          { name: "contract", status: "pass" },
+          { name: "review", status: "pass" },
+          { name: "acceptance_receipt", status: "pending" },
+          { name: "allowed_paths", status: "pass" },
+          { name: "change_assessment", status: "pass" },
+        ],
+        acceptance_receipt: { status: "pending" },
+        change_assessment: changeAssessment,
+      };
       writeFileSync(
         join(cwd, ".ai/harness/checks/latest.json"),
-        `${JSON.stringify({
-          schema: "repo-harness-run-trace.v1",
-          status: "pass",
-          source: "verify-sprint",
-          exit_code: 0,
-          guards: [
-            { name: "contract", status: "pass" },
-            { name: "review", status: "pass" },
-            { name: "acceptance_receipt", status: "pending" },
-            { name: "allowed_paths", status: "pass" },
-            { name: "change_assessment", status: "pass" },
-          ],
-          acceptance_receipt: { status: "pending" },
-          change_assessment: changeAssessment,
-        }, null, 2)}\n`,
+        `${JSON.stringify(preparedChecks, null, 2)}\n`,
+      );
+      writeFileSync(
+        join(cwd, preparedRunFile),
+        `${JSON.stringify(preparedChecks, null, 2)}\n`,
       );
       writeFileSync(
         join(cwd, ".ai/harness/checks/change-assessment.latest.json"),
