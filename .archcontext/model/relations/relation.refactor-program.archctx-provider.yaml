@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.refactor-program.archctx-provider
+kind: calls
+source: capability.runtime-harness.refactor-program
+target: component.refactor-program.archctx-provider
+intent: Run proposal-free discovery and proposal-bound assessment through the exact package-local ArchContext contract

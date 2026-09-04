@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.refactor-program.discovery-assessment
+capabilityId: capability.runtime-harness.refactor-program
+name: Discover structural observations and obtain a proposal-bound scale
+applicability: required
+participants:
+  - id: refactor-program
+    nodeId: capability.runtime-harness.refactor-program
+  - id: archctx-provider
+    nodeId: component.refactor-program.archctx-provider
+steps:
+  - id: discover-observations
+    from: refactor-program
+    to: archctx-provider
+    label: Run an exact proposal-free scan and accept only structural observations with null proposal digest and scale
+    evidence:
+      entrypointId: entrypoint.refactor-program.discover
+      sourceSymbol: discoverRefactorCandidates
+      sinkId: sink.refactor-program.provider-scan
+outcomes:
+  - id: assessed
+    kind: success
+    label: An accountable proposal is assessed by the same provider boundary
+    steps:
+      - id: assess-proposal
+        from: refactor-program
+        to: archctx-provider
+        label: Validate file scope and rerun the original request with the authored proposal
+        evidence:
+          entrypointId: entrypoint.refactor-program.discover
+          sourceSymbol: assessRefactorProposal
+          sinkId: sink.refactor-program.proposal-assessment
+    terminal:
+      participant: refactor-program
+      label: Return the provider-owned non-null scale bound to the proposal digest
+  - id: refused
+    kind: error
+    label: Invalid author, scope, provider handshake, or scan transition fails closed
+    steps:
+      - id: reject-invalid-assessment
+        from: refactor-program
+        to: archctx-provider
+        label: Preserve zero local structural output when the provider contract is not exact
+        evidence:
+          entrypointId: entrypoint.refactor-program.discover
+          sourceSymbol: discoverRefactorCandidates
+          sinkId: sink.refactor-program.provider-scan
+    terminal:
+      participant: refactor-program
+      label: Return one typed error without route, materialization, or recommendation-state mutation
