@@ -2,6 +2,7 @@ import { describe, test, expect, setDefaultTimeout } from "bun:test";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -17,9 +18,12 @@ import {
   assertDisposableEvaluationBoundary,
   assertDisposableRootBoundary,
   buildBenchmarkSummary,
+  buildAgentCommand,
   captureGitArtifacts,
   formatIterationName,
   initBenchmarkGitRepo,
+  loadBenchmarkConfig,
+  prepareWorkspaceForRun,
   runDisposableAdoptionProfile,
   parseClaudeStructuredOutput,
   parseCodexStructuredOutput,
@@ -135,6 +139,37 @@ function writeEvalManifest(path: string, pattern = "skill"): void {
 }
 
 describe("run-skill-evals helpers", () => {
+  test("materializes copied skills without an extra source-repository grant", () => {
+    const boundary = tempPath("benchmark-copy-skill");
+    const workspace = join(boundary, "workspace");
+    const skill = join(boundary, "skill");
+    mkdirSync(workspace, { recursive: true });
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(workspace, "AGENTS.md"), "# Fixture\n", "utf-8");
+    writeFileSync(join(skill, "SKILL.md"), "# Copied skill\n", "utf-8");
+    try {
+      prepareWorkspaceForRun(workspace, "claude", "with_skill", skill, "copy");
+      const mounted = join(workspace, ".claude", "skills", "repo-harness");
+      expect(lstatSync(mounted).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(mounted, "SKILL.md"), "utf-8")).toContain("Copied skill");
+
+      const command = buildAgentCommand(
+        "claude",
+        "prompt",
+        "with_skill",
+        {},
+        ROOT,
+        workspace,
+        join(workspace, "final-response.md"),
+        "copy",
+      );
+      expect(command.args).not.toContain("--add-dir");
+      expect(command.args).not.toContain(ROOT);
+    } finally {
+      rmSync(boundary, { recursive: true, force: true });
+    }
+  });
+
   test("formatIterationName builds a stable timestamped label", () => {
     const value = formatIterationName(new Date("2026-03-06T01:02:03Z"), "Bench Smoke");
     expect(value).toBe("iteration-20260306-010203-bench-smoke");
@@ -157,6 +192,37 @@ describe("run-skill-evals helpers", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("captureGitArtifacts compares committed agent changes with the frozen baseline", () => {
+    const cwd = tempPath("benchmark-committed-change");
+    try {
+      writeFileSync(join(cwd, "README.md"), "# Fixture\n", "utf-8");
+      initBenchmarkGitRepo(cwd);
+      const baseline = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf-8" }).stdout.trim();
+      writeFileSync(join(cwd, "README.md"), "# Agent commit\n", "utf-8");
+      expect(spawnSync("git", ["add", "README.md"], { cwd }).status).toBe(0);
+      expect(spawnSync("git", ["commit", "-m", "agent mutation"], { cwd }).status).toBe(0);
+
+      const artifacts = captureGitArtifacts(cwd, undefined, baseline);
+      expect(artifacts.changedFiles).toEqual(["README.md"]);
+      expect(artifacts.diffPatch).toContain("Agent commit");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects malformed benchmark safety fields", () => {
+    const cwd = tempPath("benchmark-invalid-config");
+    const path = join(cwd, "benchmark.config.json");
+    try {
+      writeFileSync(path, JSON.stringify({ requireDisposableBoundaryForLiveRuns: "false" }), "utf-8");
+      expect(() => loadBenchmarkConfig(path)).toThrow("must be a boolean");
+      writeFileSync(path, JSON.stringify({ profiles: { without_skill: { skillMount: "auto" } } }), "utf-8");
+      expect(() => loadBenchmarkConfig(path)).toThrow("Unexpected without_skill skillMount");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 
   test("disposable boundary rejects the real HOME before evaluator writes", () => {
     const boundary = tempPath("benchmark-real-home-guard");

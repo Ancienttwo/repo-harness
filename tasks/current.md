@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-04T21:24:16+0800 -->
+<!-- updated_at: 2026-09-04T22:39:16+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-09-04T21:24:16+0800
-> **Source Branch**: main
-> **Source Commit**: a4f39766
+> **Status**: Idle
+> **Updated At**: 2026-09-04T22:39:16+0800
+> **Source Branch**: codex/bounded-frontier-stress-test-eval
+> **Source Commit**: bcc39886
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: board-closeout-architecture-adoption
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,14 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-22134f137f6e: plans/plan-20260904-1950-bounded-frontier-stress-test-eval.md
-- linked-worktree-22134f137f6e: active-worktree owner -> self
+- (none)
 ## Active Sprint
 
-- Sprint: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
-- Sprint Status: Approved
-- Backlog: 3/15
-- Next Sprint Task: BRC3 — Campaign protocol、policy key、ProgramAuthorization 复用、append-only journal、cross-process lock
+- Sprint: (none)
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
@@ -59,10 +55,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260904-1950-bounded-frontier-stress-test-eval.md
+ D tasks/contracts/20260904-1950-bounded-frontier-stress-test-eval.contract.md
+ D tasks/notes/20260904-1950-bounded-frontier-stress-test-eval.notes.md
+ D tasks/reviews/20260904-1950-bounded-frontier-stress-test-eval.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260904-1950-bounded-frontier-stress-test-eval.md
+?? tasks/archive/contract-20260904-2239-bounded-frontier-stress-test-eval.md
+?? tasks/archive/notes-20260904-2239-bounded-frontier-stress-test-eval.md
+?? tasks/archive/review-20260904-2239-bounded-frontier-stress-test-eval.md
+?? tasks/archive/todo-20260904-2239-bounded-frontier-stress-test-eval.md
 ```
 
 ## Source Artifacts

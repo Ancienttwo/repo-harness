@@ -24,6 +24,7 @@ export const DEFAULT_BENCHMARK_CONFIG_PATH = join(REPO_ROOT, "evals", "benchmark
 
 export type AgentName = "claude" | "codex";
 export type ProfileName = "with_skill" | "without_skill";
+export type SkillMountMode = "link" | "copy";
 
 export interface EvalEntry {
   id: number;
@@ -49,11 +50,13 @@ export interface AgentConfig {
 
 export interface ProfileConfig {
   skillPath?: string;
+  skillMount?: SkillMountMode;
 }
 
 export interface BenchmarkConfig {
   workspaceRoot: string;
   summaryPath: string;
+  requireDisposableBoundaryForLiveRuns: boolean;
   agents: Record<AgentName, AgentConfig>;
   profiles: Record<ProfileName, ProfileConfig>;
 }
@@ -378,9 +381,27 @@ export function loadEvalManifest(path: string = DEFAULT_EVALS_PATH): EvalManifes
 
 export function loadBenchmarkConfig(path: string = DEFAULT_BENCHMARK_CONFIG_PATH): BenchmarkConfig {
   const config = readJsonFile<Partial<BenchmarkConfig>>(path);
+  const requireDisposableBoundaryForLiveRuns = config.requireDisposableBoundaryForLiveRuns;
+  if (
+    requireDisposableBoundaryForLiveRuns !== undefined &&
+    typeof requireDisposableBoundaryForLiveRuns !== "boolean"
+  ) {
+    throw new Error("requireDisposableBoundaryForLiveRuns must be a boolean");
+  }
+  const withSkillMount = config.profiles?.with_skill?.skillMount ?? "link";
+  const withoutSkillMount = config.profiles?.without_skill?.skillMount ?? "link";
+  for (const [profile, mount] of [
+    ["with_skill", withSkillMount],
+    ["without_skill", withoutSkillMount],
+  ] as const) {
+    if (mount !== "link" && mount !== "copy") {
+      throw new Error(`Unexpected ${profile} skillMount: ${String(mount)}`);
+    }
+  }
   return {
     workspaceRoot: config.workspaceRoot ?? "../repo-harness-workspace",
     summaryPath: config.summaryPath ?? "evals/benchmark.md",
+    requireDisposableBoundaryForLiveRuns: requireDisposableBoundaryForLiveRuns ?? false,
     agents: {
       claude: {
         command: config.agents?.claude?.command ?? "claude",
@@ -396,9 +417,11 @@ export function loadBenchmarkConfig(path: string = DEFAULT_BENCHMARK_CONFIG_PATH
     profiles: {
       with_skill: {
         skillPath: config.profiles?.with_skill?.skillPath ?? ".",
+        skillMount: withSkillMount,
       },
       without_skill: {
         skillPath: config.profiles?.without_skill?.skillPath,
+        skillMount: withoutSkillMount,
       },
     },
   };
@@ -516,7 +539,8 @@ export function prepareWorkspaceForRun(
   workspacePath: string,
   agent: AgentName,
   profile: ProfileName,
-  skillPath: string | null
+  skillPath: string | null,
+  skillMount: SkillMountMode = "link",
 ): void {
   if (profile !== "with_skill" || !skillPath) {
     return;
@@ -526,13 +550,21 @@ export function prepareWorkspaceForRun(
     const linkPath = join(workspacePath, ".claude", "skills", "repo-harness");
     ensureDir(dirname(linkPath));
     rmSync(linkPath, { recursive: true, force: true });
-    symlinkSync(skillPath, linkPath, "dir");
+    if (skillMount === "copy") {
+      cpSync(skillPath, linkPath, { recursive: true, dereference: true });
+    } else {
+      symlinkSync(skillPath, linkPath, "dir");
+    }
     return;
   }
 
   const skillLinkPath = join(workspacePath, ".skill-src");
   rmSync(skillLinkPath, { recursive: true, force: true });
-  symlinkSync(skillPath, skillLinkPath, "dir");
+  if (skillMount === "copy") {
+    cpSync(skillPath, skillLinkPath, { recursive: true, dereference: true });
+  } else {
+    symlinkSync(skillPath, skillLinkPath, "dir");
+  }
 
   const existingAgentsPath = join(workspacePath, "AGENTS.md");
   const existingAgents = existsSync(existingAgentsPath)
@@ -644,7 +676,7 @@ function stageWorkspaceChanges(workspacePath: string, home?: string): void {
   runProcess("git", ["add", "-A"], workspacePath, home ? { HOME: home } : {}, Boolean(home));
 }
 
-export function captureGitArtifacts(workspacePath: string, home?: string): {
+export function captureGitArtifacts(workspacePath: string, home?: string, baseRef = "HEAD"): {
   changedFiles: string[];
   diffPatch: string;
   diffStat: string;
@@ -653,9 +685,9 @@ export function captureGitArtifacts(workspacePath: string, home?: string): {
   const scrub = Boolean(home);
   stageWorkspaceChanges(workspacePath, home);
 
-  const changed = runProcess("git", ["diff", "--cached", "--name-only", "HEAD"], workspacePath, env, scrub);
-  const patch = runProcess("git", ["diff", "--cached", "--binary", "HEAD"], workspacePath, env, scrub);
-  const stat = runProcess("git", ["diff", "--cached", "--stat", "HEAD"], workspacePath, env, scrub);
+  const changed = runProcess("git", ["diff", "--cached", "--name-only", baseRef], workspacePath, env, scrub);
+  const patch = runProcess("git", ["diff", "--cached", "--binary", baseRef], workspacePath, env, scrub);
+  const stat = runProcess("git", ["diff", "--cached", "--stat", baseRef], workspacePath, env, scrub);
 
   return {
     changedFiles: changed.stdout
@@ -671,11 +703,13 @@ function buildClaudeCommand(
   prompt: string,
   config: AgentConfig,
   repoRoot: string,
-  profile: ProfileName
+  profile: ProfileName,
+  skillMount: SkillMountMode,
 ): CommandSpec {
   const args = [...(config.args ?? []), "-p", "--output-format", "json", "--no-session-persistence"];
   if (profile === "with_skill") {
-    args.push("--permission-mode", "bypassPermissions", "--add-dir", repoRoot);
+    args.push("--permission-mode", "bypassPermissions");
+    if (skillMount === "link") args.push("--add-dir", repoRoot);
   } else {
     args.push("--permission-mode", "bypassPermissions", "--disable-slash-commands");
   }
@@ -694,7 +728,8 @@ function buildCodexCommand(
   repoRoot: string,
   workspacePath: string,
   finalResponsePath: string,
-  profile: ProfileName
+  profile: ProfileName,
+  skillMount: SkillMountMode,
 ): CommandSpec {
   const args = [
     ...(config.args ?? []),
@@ -706,7 +741,7 @@ function buildCodexCommand(
     finalResponsePath,
     "--json",
   ];
-  if (profile === "with_skill") {
+  if (profile === "with_skill" && skillMount === "link") {
     args.push("--add-dir", repoRoot);
   }
   args.push(prompt);
@@ -725,12 +760,13 @@ export function buildAgentCommand(
   config: AgentConfig,
   repoRoot: string,
   workspacePath: string,
-  finalResponsePath: string
+  finalResponsePath: string,
+  skillMount: SkillMountMode = "link",
 ): CommandSpec {
   if (agent === "claude") {
-    return buildClaudeCommand(prompt, config, repoRoot, profile);
+    return buildClaudeCommand(prompt, config, repoRoot, profile, skillMount);
   }
-  return buildCodexCommand(prompt, config, repoRoot, workspacePath, finalResponsePath, profile);
+  return buildCodexCommand(prompt, config, repoRoot, workspacePath, finalResponsePath, profile, skillMount);
 }
 
 function writeTextFile(path: string, content: string): void {
@@ -1106,8 +1142,22 @@ function runSingleEval(params: {
   ensureDir(runPath);
 
   copyEvalFixtures(evalEntry, repoRoot, runPath);
-  prepareWorkspaceForRun(runPath, agent, profile, resolveSkillPath(repoRoot, profile, config));
+  const skillMount = config.profiles[profile]?.skillMount ?? "link";
+  prepareWorkspaceForRun(
+    runPath,
+    agent,
+    profile,
+    resolveSkillPath(repoRoot, profile, config),
+    skillMount,
+  );
   initBenchmarkGitRepo(runPath, home);
+  const baselineHead = runProcess(
+    "git",
+    ["rev-parse", "HEAD"],
+    runPath,
+    home ? { HOME: home } : {},
+    Boolean(home),
+  ).stdout.trim();
 
   const promptPath = join(runPath, "prompt.txt");
   const commandPath = join(runPath, "command.txt");
@@ -1127,7 +1177,8 @@ function runSingleEval(params: {
     config.agents[agent],
     repoRoot,
     runPath,
-    finalResponsePath
+    finalResponsePath,
+    skillMount,
   );
   if (home) commandSpec.env.HOME = home;
   writeTextFile(commandPath, `${toShellCommand(commandSpec)}\n`);
@@ -1165,9 +1216,24 @@ function runSingleEval(params: {
 
   const durationMs = Date.now() - startedAt;
   const finalResponse = readFileSync(finalResponsePath, "utf-8");
+  if (!dryRun) {
+    const currentHead = runProcess(
+      "git",
+      ["rev-parse", "HEAD"],
+      runPath,
+      home ? { HOME: home } : {},
+      Boolean(home),
+    ).stdout.trim();
+    if (!currentHead || currentHead !== baselineHead) {
+      writeTextFile(
+        join(runPath, ".eval-agent-head-changed"),
+        `baseline=${baselineHead || "unavailable"}\ncurrent=${currentHead || "unavailable"}\n`,
+      );
+    }
+  }
   const gitArtifacts = dryRun
     ? { changedFiles: [] as string[], diffPatch: "", diffStat: "" }
-    : captureGitArtifacts(runPath, home);
+    : captureGitArtifacts(runPath, home, baselineHead);
 
   if (!dryRun) {
     const grading = runEvalGraders(repoRoot, runPath, evalEntry, home);
@@ -1341,6 +1407,15 @@ export function runSkillEvals(options: RunSkillEvalsOptions = {}): IterationRepo
   }
   const evalManifest = loadEvalManifest(evalsPath);
   const config = loadBenchmarkConfig(configPath);
+  if (
+    options.dryRun !== true &&
+    config.requireDisposableBoundaryForLiveRuns &&
+    !options.requireDisposableBoundary
+  ) {
+    throw new Error(
+      "Benchmark config requires requireDisposableBoundary: true for live runs",
+    );
+  }
   const workspaceRoot = resolveRepoPath(
     repoRoot,
     options.workspaceRoot ?? (options.requireDisposableBoundary ? ".ai/harness/evals/workspace" : config.workspaceRoot),

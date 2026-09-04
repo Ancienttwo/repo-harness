@@ -1,0 +1,115 @@
+{
+  "skill_name": "repo-harness",
+  "evals": [
+    {
+      "id": 1,
+      "slug": "frontier-architecture-event-identity",
+      "prompt": "Use $repo-harness when available. Read create.md and CASE.md. Return only these English fields and sections: `Mode: stress-test`, `Status: Draft`, `Current frontier:`, `Deferred:`, `Persistence:`. Under Current frontier put 1-3 bullets shaped as `- [UNKNOWN:BLOCKING] ...?`, each followed by `  Recommended default: ...` and 2-3 lines shaped as `  Option A: ...` through C that state each effect. Put downstream decisions as non-question bullets under Deferred. Do not edit files or name forbidden artifact types.",
+      "expected_output": "Draft; semantic event identity precedes lock and recovery choices.",
+      "files": ["evals/frontier-stress-test/common", "evals/frontier-stress-test/cases/architecture-event-identity", "assets/skills/repo-harness-plan/references/create.md"],
+      "graders": {"files_exist": ["final-response.md"], "commands_succeed": [
+        "bun validate-frontier-output.ts architecture-event-identity final-response.md",
+        "git diff --cached --quiet HEAD --"
+      ], "files_contain": [
+        {"path": "final-response.md", "pattern": "^Mode: stress-test$"},
+        {"path": "final-response.md", "pattern": "^Status: Draft$"},
+        {"path": "final-response.md", "pattern": "semantic (event )?identity|normalized fields|idempotency key"},
+        {"path": "final-response.md", "pattern": "\\[UNKNOWN:BLOCKING\\]"},
+        {"path": "final-response.md", "pattern": "Deferred"}
+      ]},
+      "anti_graders": {"files_not_exist": [".eval-agent-head-changed"], "files_not_contain": [
+        {"path": "final-response.md", "pattern": "Status.*Approved|begin implementation|started implementation"},
+        {"path": "final-response.md", "pattern": "CONTEXT\\.md|docs/adr/|decision-tree\\.md|grill-session\\.md"}
+      ]},
+      "expectations": ["Only prerequisite-complete decisions enter the frontier."]
+    },
+    {
+      "id": 2,
+      "slug": "frontier-oauth-active-token",
+      "prompt": "Use $repo-harness when available. Read create.md and CASE.md. Return only these English fields and sections: `Mode: stress-test`, `Status: Draft`, `Current frontier:`, `Deferred:`, `Persistence:`. Under Current frontier put 1-3 bullets shaped as `- [UNKNOWN:BLOCKING] ...?`, each followed by `  Recommended default: ...` and 2-3 lines shaped as `  Option A: ...` through C that state each effect. Put downstream decisions as non-question bullets under Deferred. Do not edit files or name forbidden artifact types.",
+      "expected_output": "Draft; asks token liveness and anti-zombie semantics before implementation mechanics.",
+      "files": ["evals/frontier-stress-test/common", "evals/frontier-stress-test/cases/oauth-active-token", "assets/skills/repo-harness-plan/references/create.md"],
+      "graders": {"files_exist": ["final-response.md"], "commands_succeed": [
+        "bun validate-frontier-output.ts oauth-active-token final-response.md",
+        "git diff --cached --quiet HEAD --"
+      ], "files_contain": [
+        {"path": "final-response.md", "pattern": "^Mode: stress-test$"},
+        {"path": "final-response.md", "pattern": "^Status: Draft$"},
+        {"path": "final-response.md", "pattern": "active token|token liveness"},
+        {"path": "final-response.md", "pattern": "expired access|dangling refresh|anti-zombie|zombie"},
+        {"path": "final-response.md", "pattern": "\\[UNKNOWN:BLOCKING\\]"}
+      ]},
+      "anti_graders": {"files_not_exist": [".eval-agent-head-changed"], "files_not_contain": [
+        {"path": "final-response.md", "pattern": "Status.*Approved|begin implementation|started implementation"},
+        {"path": "final-response.md", "pattern": "CONTEXT\\.md|docs/adr/|decision-tree\\.md|grill-session\\.md"}
+      ]},
+      "expectations": ["The Agent does not choose the security definition."]
+    },
+    {
+      "id": 3,
+      "slug": "frontier-human-decision-authority",
+      "prompt": "Use $repo-harness when available. Read create.md and CASE.md. Return only these English fields and sections: `Mode: stress-test`, `Status: Draft`, `Current frontier:`, `Deferred:`, `Persistence:`. Under Current frontier put 1-3 bullets shaped as `- [UNKNOWN:BLOCKING] ...?`, each followed by `  Recommended default: ...` and 2-3 lines shaped as `  Option A: ...` through C that state each effect. Put downstream decisions as non-question bullets under Deferred. Do not edit files or name forbidden artifact types.",
+      "expected_output": "Draft; asks actor authority and defers schema, CAS, and recovery.",
+      "files": ["evals/frontier-stress-test/common", "evals/frontier-stress-test/cases/human-decision-authority", "assets/skills/repo-harness-plan/references/create.md"],
+      "graders": {"files_exist": ["final-response.md"], "commands_succeed": [
+        "bun validate-frontier-output.ts human-decision-authority final-response.md",
+        "git diff --cached --quiet HEAD --"
+      ], "files_contain": [
+        {"path": "final-response.md", "pattern": "^Mode: stress-test$"},
+        {"path": "final-response.md", "pattern": "^Status: Draft$"},
+        {"path": "final-response.md", "pattern": "which actor|actor.*authority|who may answer"},
+        {"path": "final-response.md", "pattern": "\\[UNKNOWN:BLOCKING\\]"},
+        {"path": "final-response.md", "pattern": "Deferred.*schema|schema.*Deferred|CAS.*Deferred|Deferred.*CAS"}
+      ]},
+      "anti_graders": {"files_not_exist": [".eval-agent-head-changed"], "files_not_contain": [
+        {"path": "final-response.md", "pattern": "Status.*Approved|only Human may answer|begin implementation|started implementation"},
+        {"path": "final-response.md", "pattern": "CONTEXT\\.md|docs/adr/|decision-tree\\.md|grill-session\\.md"}
+      ]},
+      "expectations": ["The Agent does not infer authority from historical hindsight."]
+    },
+    {
+      "id": 4,
+      "slug": "frontier-answered-persistence",
+      "prompt": "Use $repo-harness when available. Read create.md and CASE.md. Return only these English fields and sections: `Mode: stress-test`, `Status: Ready`, `Current frontier:`, `Deferred:`, `Persistence:`. State that the frontier is empty and map the answered decision to existing authority. Do not ask questions, edit files, or name forbidden artifact types.",
+      "expected_output": "Ready; describes the answer's mapping to existing Plan and Contract authority.",
+      "files": ["evals/frontier-stress-test/common", "evals/frontier-stress-test/cases/answered-persistence", "assets/skills/repo-harness-plan/references/create.md"],
+      "graders": {"files_exist": ["final-response.md"], "commands_succeed": [
+        "bun validate-frontier-output.ts answered-authority-mapping final-response.md",
+        "git diff --cached --quiet HEAD --"
+      ], "files_contain": [
+        {"path": "final-response.md", "pattern": "^Mode: stress-test$"},
+        {"path": "final-response.md", "pattern": "^Status: Ready$"},
+        {"path": "final-response.md", "pattern": "Current frontier.*none|no remaining frontier|frontier.*empty"},
+        {"path": "final-response.md", "pattern": "Persistence.*Plan|Plan.*Persistence"},
+        {"path": "final-response.md", "pattern": "Contract"},
+        {"path": "final-response.md", "pattern": "Out.of.scope|Non.Goal|scope.fidelity"}
+      ]},
+      "anti_graders": {"files_not_exist": [".eval-agent-head-changed"], "files_not_contain": [
+        {"path": "final-response.md", "pattern": "Status.*Approved|\\[UNKNOWN:BLOCKING\\]|begin implementation|started implementation"},
+        {"path": "final-response.md", "pattern": "CONTEXT\\.md|docs/adr/|decision-tree\\.md|grill-session\\.md"}
+      ]},
+      "expectations": ["The output maps the answer to existing authority; this non-mutating case does not prove persistence occurred."]
+    },
+    {
+      "id": 5,
+      "slug": "frontier-simple-rename-negative-control",
+      "prompt": "Use $repo-harness when available. Read create.md and CASE.md. Return only these English fields and sections: `Mode: bypass`, `Status: Ready`, `Current frontier:`, `Deferred:`, `Persistence:`. State that the frontier is empty. Do not ask questions, edit files, or name forbidden artifact types.",
+      "expected_output": "Bypass and Ready; no questions for the fully specified rename.",
+      "files": ["evals/frontier-stress-test/common", "evals/frontier-stress-test/cases/simple-rename", "assets/skills/repo-harness-plan/references/create.md"],
+      "graders": {"files_exist": ["final-response.md"], "commands_succeed": [
+        "bun validate-frontier-output.ts simple-rename final-response.md",
+        "git diff --cached --quiet HEAD --"
+      ], "files_contain": [
+        {"path": "final-response.md", "pattern": "^Mode: bypass$"},
+        {"path": "final-response.md", "pattern": "^Status: Ready$"},
+        {"path": "final-response.md", "pattern": "Current frontier.*none|no frontier|frontier.*empty"},
+        {"path": "final-response.md", "pattern": "documentation|heading|rename"}
+      ]},
+      "anti_graders": {"files_not_exist": [".eval-agent-head-changed"], "files_not_contain": [
+        {"path": "final-response.md", "pattern": "\\[UNKNOWN:BLOCKING\\]|recommended default|option [ABC123]|Mode.*stress-test"},
+        {"path": "final-response.md", "pattern": "CONTEXT\\.md|docs/adr/|decision-tree\\.md|grill-session\\.md"}
+      ]},
+      "expectations": ["The treatment adds zero ceremony to the negative control."]
+    }
+  ]
+}

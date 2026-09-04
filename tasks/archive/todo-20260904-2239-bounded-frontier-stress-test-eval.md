@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-04 22:39
+> **Related Plan**: plans/archive/plan-20260904-1950-bounded-frontier-stress-test-eval.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260904-2239
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-04 18:58
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,0 +1,16 @@
+{
+  "workspaceRoot": ".ai/harness/runs/frontier-stress-test",
+  "summaryPath": ".ai/harness/runs/frontier-stress-test-summary.md",
+  "requireDisposableBoundaryForLiveRuns": true,
+  "agents": {
+    "claude": { "command": "claude", "args": [] },
+    "codex": { "command": "codex", "args": [] }
+  },
+  "profiles": {
+    "with_skill": {
+      "skillPath": "evals/frontier-stress-test/treatment",
+      "skillMount": "copy"
+    },
+    "without_skill": {}
+  }
+}
