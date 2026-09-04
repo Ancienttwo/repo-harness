@@ -201,7 +201,8 @@ function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandid
       execution_surface: 'contract',
       integration_group: null,
       required_acceptance: [{ gate: 'module', policy_id: 'module', policy_ref: 'plans/policy.json', policy_revision: digest }],
-      rollback_boundary: { kind: 'work_package', boundary_id: workPackageId, boundary_ref: 'plans/rollback.json', boundary_revision: digest },
+      retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
+    rollback_boundary: { kind: 'work_package', boundary_id: workPackageId, boundary_ref: 'plans/rollback.json', boundary_revision: digest },
     }],
   }), [{ task_id: taskId, task_revision: revision, task_ref: 'task A', status: '[ ]', row_order: 1 }]);
   return buildEngineerOfferCandidate({
@@ -220,6 +221,7 @@ function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandid
     dependencies,
     concurrency_available: !(blocked && options.blocker === 'concurrency'),
     concurrency_revision: `sha256:${'c'.repeat(64)}`,
+    retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
     active_claims: 0,
   });
 }
@@ -818,7 +820,7 @@ describe('issue #281 the offers document is proved before anything is derived fr
       .toThrow(AgentRuntimeEffectStoreError);
     expect(() => record(fx, { ...document, offers: [{ ...document.offers[0]!, priority: 99 }] }, '2026-09-03T10:04:00.000Z'))
       .toThrow(AgentRuntimeEffectStoreError);
-    expect(() => record(fx, { ...document, exclusions: [{ repository_id: fx.repositoryId, work_package_id: 'wp-z', engineer_id: engineerId, blockers: ['binding_inactive'] }] }, '2026-09-03T10:04:00.000Z'))
+    expect(() => record(fx, { ...document, exclusions: [{ repository_id: fx.repositoryId, work_package_id: 'wp-z', engineer_id: engineerId, blockers: ['binding_inactive'], attempt_count: 0, last_outcome: null, next_eligible_at: null, blocker_owner: 'none' }] }, '2026-09-03T10:04:00.000Z'))
       .toThrow(AgentRuntimeEffectStoreError);
   });
 

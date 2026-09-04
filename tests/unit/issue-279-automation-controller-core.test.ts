@@ -62,6 +62,7 @@ function event(
       work_envelope_sha256: null,
       dispatch_id: null,
       runtime_effect_id: null,
+      attempt_context: null,
       evidence_refs: [],
     },
     observed_at: `2026-09-04T00:00:0${revision}.000Z`,
@@ -88,7 +89,7 @@ describe('issue #279 automation controller core', () => {
       receipt: {
         operation: 'acquired', outcome: 'acquired', work_package_id: 'wp-1', task_id: 'c'.repeat(64),
         claim_id: '22222222-2222-4222-8222-222222222222', lease_generation: 1,
-        work_envelope_sha256: SHA, dispatch_id: null, runtime_effect_id: null, evidence_refs: [`work-envelope:${SHA}`],
+        work_envelope_sha256: SHA, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [`work-envelope:${SHA}`],
       },
     });
     current = foldAutomationControllerCurrent(definition, current, acquired);
@@ -107,7 +108,7 @@ describe('issue #279 automation controller core', () => {
       attention_owner: 'user', blocker: 'approval_required', receipt: {
         operation: 'block', outcome: 'user_blocked', work_package_id: null, task_id: null,
         claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null,
-        runtime_effect_id: null, evidence_refs: ['blocker:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+        runtime_effect_id: null, attempt_context: null, evidence_refs: ['blocker:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
       },
     }));
     expect(current.state).toBe('blocked');

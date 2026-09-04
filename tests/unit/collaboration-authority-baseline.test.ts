@@ -370,6 +370,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'Lease liveness evidence plane (issue #286): classifies expiry and proves reclaim preconditions, but only the existing Lease store can move ownership or increment generation',
   },
   {
+    module: 'src/core/engineers/automation-attempt.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'automation attempt evidence plane (issue #287): gates scheduling retries from Work Graph policy but never creates a Task, Claim, Lease, Publication, Acceptance, or Delegation authority',
+  },
+  {
     module: 'src/core/external-sources/binding.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'external-source provenance plane; receipts bind inert provider evidence to an already-canonical task revision and no TaskOffer, Claim, Lease, Publication or Acceptance authority reads them',

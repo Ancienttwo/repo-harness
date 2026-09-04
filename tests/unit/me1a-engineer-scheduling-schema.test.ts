@@ -45,6 +45,7 @@ function workPackage(id = 'wp-a', taskRef = 'task A', dependsOn: unknown[] = [])
       policy_ref: 'plans/policies/module-default.json',
       policy_revision: DIGEST,
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package',
       boundary_id: `${REPO}:${id}`,
@@ -159,7 +160,8 @@ describe('ME-1A closed scheduling schema', () => {
       dependencies: [],
       concurrency_available: true,
       concurrency_revision: DIGEST,
-      active_claims: 0,
+      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    active_claims: 0,
     });
     expect(candidate.eligible).toBe(true);
     if (!candidate.eligible) throw new Error('expected offer');
@@ -195,7 +197,8 @@ describe('ME-1A closed scheduling schema', () => {
       dependencies: [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY, status: 'authority_unavailable', authority_revision: null }],
       concurrency_available: false,
       concurrency_revision: DIGEST,
-      active_claims: 1,
+      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    active_claims: 1,
     });
     expect(candidate.eligible).toBe(false);
     if (candidate.eligible) throw new Error('expected exclusion');
@@ -227,7 +230,8 @@ describe('ME-1A closed scheduling schema', () => {
       dependencies: [],
       concurrency_available: true,
       concurrency_revision: DIGEST,
-      active_claims: 0,
+      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    active_claims: 0,
     };
     expect(buildEngineerOfferCandidate(ready).eligible).toBe(true);
 

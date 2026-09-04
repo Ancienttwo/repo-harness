@@ -31,7 +31,8 @@ function offer(id: string, priority: number): EngineerOfferV1 {
     concurrency_scope: 'repo', concurrency_key: id, concurrency_revision: D('1'),
     engineer_id: principal.engineer_id, engineer_contract_revision: principal.engineer_contract_revision,
     binding_id: principal.binding_id, binding_generation: 1, fleet_offer_revision: D('2'),
-    authorization_revision: 3, offer_revision: D(id === 'first' ? '3' : '4'),
+    authorization_revision: 3, retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'fixed', initial_seconds: 30, maximum_seconds: 30 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' }, retry_revision: D('9'), eligible_since: '2026-09-04T00:00:00.000Z', attempt_count: 0, last_outcome: null, next_eligible_at: null, blocker_owner: 'none', starvation_attention: false,
+    offer_revision: D(id === 'first' ? '3' : '4'),
   };
 }
 

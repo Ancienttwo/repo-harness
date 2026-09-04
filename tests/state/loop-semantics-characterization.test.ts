@@ -1009,7 +1009,8 @@ describe('LSC-01 profile × operation current-behavior characterization', () => 
         target_paths_capabilities: '`src/feature.ts` / `feature`',
         acceptance: 'the local feature edit remains inside the approved path and passes its focused test',
         verification_commands: '`bun test tests/feature.test.ts`',
-        rollback_boundary: 'revert this independent Work Package change',
+        retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
+    rollback_boundary: 'revert this independent Work Package change',
       },
       contract_exists: false,
     });

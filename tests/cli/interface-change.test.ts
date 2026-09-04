@@ -64,6 +64,7 @@ function definition() {
     work_package_id: 'interface-contract-v2', task_id: fixtureTaskId('change target interface'), primary_capability: TARGET_CAPABILITY,
     depends_on: [], priority: 80, concurrency: { scope: 'repo', key: 'interface-contract' }, execution_surface: 'contract', integration_group: null,
     required_acceptance: [{ gate: 'module', policy_id: 'interface-owner', policy_ref: 'plans/policies/interface.json', policy_revision: D('a') }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: { kind: 'work_package', boundary_id: 'interface-contract-v2', boundary_ref: 'plans/rollback/interface.json', boundary_revision: D('b') },
   };
 }

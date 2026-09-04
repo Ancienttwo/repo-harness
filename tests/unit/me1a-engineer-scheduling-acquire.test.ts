@@ -61,7 +61,8 @@ function offer(): EngineerOfferV1 {
       execution_surface: 'contract',
       integration_group: null,
       required_acceptance: [{ gate: 'module', policy_id: 'module', policy_ref: 'plans/policy.json', policy_revision: DIGEST }],
-      rollback_boundary: { kind: 'work_package', boundary_id: 'wp-a', boundary_ref: 'plans/rollback.json', boundary_revision: DIGEST },
+      retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
+    rollback_boundary: { kind: 'work_package', boundary_id: 'wp-a', boundary_ref: 'plans/rollback.json', boundary_revision: DIGEST },
     }],
   }), [{ task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64), task_ref: 'task A', status: '[ ]', row_order: 1 }]);
   const candidate = buildEngineerOfferCandidate({
@@ -76,6 +77,7 @@ function offer(): EngineerOfferV1 {
     dependencies: [],
     concurrency_available: true,
     concurrency_revision: `sha256:${'c'.repeat(64)}`,
+    retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
     active_claims: 0,
   });
   if (!candidate.eligible) throw new Error('fixture offer is not eligible');

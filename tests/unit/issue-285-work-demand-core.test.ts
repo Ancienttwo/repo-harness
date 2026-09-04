@@ -40,6 +40,7 @@ function definition() {
     work_package_id: 'demand-work', task_id: TASK, primary_capability: 'capability.runtime.target', depends_on: [], priority: 50,
     concurrency: { scope: 'repo', key: 'capability.runtime.target' }, execution_surface: 'contract', integration_group: null,
     required_acceptance: [{ gate: 'module', policy_id: 'module-default', policy_ref: 'plans/policies/module.json', policy_revision: D('e') }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: { kind: 'work_package', boundary_id: 'repo_0123456789abcdef:demand-work', boundary_ref: 'plans/rollback/demand-work.json', boundary_revision: D('f') },
   } as const;
 }

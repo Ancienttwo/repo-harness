@@ -129,6 +129,7 @@ function definition() {
     execution_surface: 'contract' as const,
     integration_group: 'interface-contract',
     required_acceptance: [{ gate: 'module' as const, policy_id: 'interface-owner', policy_ref: 'plans/policies/interface-owner.json', policy_revision: digest(POLICY_BYTES) }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: { kind: 'work_package' as const, boundary_id: 'interface-contract-v2', boundary_ref: 'plans/rollback/interface-contract-v2.json', boundary_revision: digest(ROLLBACK_BYTES) },
   };
 }

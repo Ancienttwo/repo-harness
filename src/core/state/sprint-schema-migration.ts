@@ -162,7 +162,7 @@ const LEGACY_GRAPH_KEYS = [
 const LEGACY_WORK_PACKAGE_KEYS = [
   'work_package_id', 'task_ref', 'primary_capability', 'depends_on', 'priority',
   'concurrency', 'execution_surface', 'integration_group', 'required_acceptance',
-  'rollback_boundary',
+  'retry_policy', 'rollback_boundary',
 ] as const;
 
 const LEGACY_GRAPH_PROTOCOL = 1;
