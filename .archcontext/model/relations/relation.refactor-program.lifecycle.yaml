@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.refactor-program.lifecycle
+kind: calls
+source: capability.runtime-harness.refactor-program
+target: component.refactor-program.lifecycle
+intent: Execute authorized program transitions and publish only exact lifecycle evidence through the capability-owned effect plane

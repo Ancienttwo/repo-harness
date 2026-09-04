@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.refactor-program.lifecycle
+kind: component
+name: Refactor Program Lifecycle Plane
+status: active
+parent: capability.runtime-harness.refactor-program
+summary: Owns the authorized append-only program lifecycle, materialization, candidate verification, execution binding, post-merge resolution, board projection, and activation ledger effects.

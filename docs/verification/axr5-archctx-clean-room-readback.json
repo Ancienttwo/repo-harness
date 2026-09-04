@@ -3,24 +3,24 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "523e95a3f0ec1f5a9357fa6e18777af945896be5",
+    "revision": "78755650cdb424ef4d4aefe28d1a000410aebcf5",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.5.2",
-      "file": "archctx-contracts-0.5.2.tgz",
-      "integrity": "sha512-mzAtDA9FwhpGy5afBXP7Z6lmHYIHDY3JHFnItx9XHA2slEXbJWMQ7Lx+zjdZnK46phCZyRR1ELKec/wPXoxrKw==",
-      "sha512": "e42a7ffa1e9a5a6b9e234da129bb689fe637afe10a18a4b295a0ec2110db325655ae7be4e46a76d8a760818c2914332e52507d1f668c98b50a656215c07f4a84"
+      "version": "0.5.4",
+      "file": "archctx-contracts-0.5.4.tgz",
+      "integrity": "sha512-y6xS+Fjo0Q7QmuSYIZQfH3JIZ6prWbxkL46OO18BUOwD64CW9caXrghlut+u5Xue82Bktt5fT/XgXb3FDz4Rbw==",
+      "sha512": "4ea6e9d69beb536dcd249b13ce163714838a02a178f774e55d22f71c75a85c21867a89b1b817ad6fa6be11b1c9351c04937d2d1d215496167bb529707a3be977"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.5.2",
-      "file": "archctx-0.5.2.tgz",
-      "integrity": "sha512-gFoOPkMrFZCsbN+bEB1CAC/WDwPYUkLGr0pSsTUdpuqS8b0AQrJS438OJLMjT0UTevNY9gv6xsM1s73K88x69g==",
-      "sha512": "805a0e3e432b1590ac6cdf9b101d42002fd60f03d85242c6af4a52b1351da6ea92f1bd0042b252e37f0e24b3234f45137af358f60bfac6c335b3bdcaf3cc7af6"
+      "version": "0.5.4",
+      "file": "archctx-0.5.4.tgz",
+      "integrity": "sha512-pRgqxSc6Fs2Hdysb4qdWO5PgXlNsp2bU4r7ldEpkyj9RrjL53KVgpdwqAwAJyZRqiBA12WqVJ9uVMT44gltcdQ==",
+      "sha512": "a5182ac5273a16cd87772b1be2a7563b93e05e536ca766d4e2bee5744a64ca3f51ae32f9dca560a5dc2a030009c9946a881035d96a9527db95313e38825b5c75"
     }
   },
   "consumer": {
@@ -35,7 +35,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.5.2"
+        "version": "0.5.4"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -70,7 +70,7 @@
         "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
         "codeGraphStatus": "unavailable"
       },
-      "receiptDigest": "sha256:40eca32d0c60e785fb917e6c9ce67ab0483d4b754a52c11df2857798d7d1b210"
+      "receiptDigest": "sha256:69cc842e612507988075a10194df2e21edeac97c2926095d3076316103bf1878"
     }
   }
 }
