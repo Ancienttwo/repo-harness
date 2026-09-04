@@ -57,17 +57,21 @@ source:
     - id: entrypoint.automation-controller.step
       path: "src/effects/automation/controller-run.ts"
       symbols:
-        - name: "stepAutomationController"
+        - name: "append"
+          sinks:
+            - id: sink.automation-controller.journal
+              path: "src/effects/automation/controller-store.ts"
+              symbol: "appendAutomationControllerEvent"
+        - name: "acquireNextControllerTask"
           sinks:
             - id: sink.automation-controller.acquire
               path: "src/effects/engineers/scheduling-acquire-next.ts"
               symbol: "acquireNextScheduledEngineerTask"
+        - name: "dispatchControllerRun"
+          sinks:
             - id: sink.automation-controller.dispatch
               path: "src/effects/engineers/delegated-run-store.ts"
               symbol: "dispatchDelegatedRun"
-            - id: sink.automation-controller.journal
-              path: "src/effects/automation/controller-store.ts"
-              symbol: "appendAutomationControllerEvent"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

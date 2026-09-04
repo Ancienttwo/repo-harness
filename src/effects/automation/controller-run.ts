@@ -70,8 +70,8 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   now: () => new Date(),
   resolvePrincipal: resolveEngineerPrincipal,
   authorizationRevision: repoHarnessAuthorizationRevision,
-  acquireNext: acquireNextScheduledEngineerTask,
-  dispatch: dispatchDelegatedRun,
+  acquireNext: acquireNextControllerTask,
+  dispatch: dispatchControllerRun,
   readBudget: readAutomationBudgetStatus,
   reserveBudget: reserveAutomationBudget,
   appendUsage: appendAutomationUsage,
@@ -82,6 +82,14 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   startAttempt: recordTaskAutomationAttemptStart,
   completeAttempt: recordTaskAutomationAttemptOutcome,
 };
+
+function acquireNextControllerTask(...args: Parameters<typeof acquireNextScheduledEngineerTask>): ReturnType<typeof acquireNextScheduledEngineerTask> {
+  return acquireNextScheduledEngineerTask(...args);
+}
+
+function dispatchControllerRun(...args: Parameters<typeof dispatchDelegatedRun>): ReturnType<typeof dispatchDelegatedRun> {
+  return dispatchDelegatedRun(...args);
+}
 
 function exactPrincipal(repositoryId: string, expected: ReturnType<typeof readAutomationControllerStatus>['run']['principal'], observed: EngineerPrincipalV1, authorizationRevision: number): void {
   if (observed.repository_id !== repositoryId || observed.engineer_id !== expected.engineer_id

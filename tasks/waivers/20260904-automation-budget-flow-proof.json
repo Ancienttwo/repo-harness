@@ -1,0 +1,21 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:06e8490b0393400a4179fb1979c869ad2ca69c17d1def1c5ee3c83a777bfba84",
+  "reason": "Expose the controller's default acquire, dispatch, and journal effects through direct typed seams so ArchContext can verify the declared automation flow without changing dependency injection semantics.",
+  "owner": "ancienttwo",
+  "scope": [
+    ".archcontext/model/flows/flow.automation-controller.acquire-dispatch.yaml",
+    ".archcontext/model/nodes/capability.runtime-harness.automation-budget.yaml",
+    "docs/architecture/changelog.md",
+    "docs/architecture/decisions/index.md",
+    "docs/architecture/diagrams/architecture.likec4",
+    "docs/architecture/diagrams/architecture.mmd",
+    "docs/architecture/diagrams/architecture.structurizr.json",
+    "docs/architecture/index.md",
+    "docs/architecture/modules/runtime-harness/automation-budget.md",
+    "src/effects/automation/controller-run.ts",
+    "tests/architecture-projection-e2e.test.ts"
+  ],
+  "revisit_trigger": "The controller dependency seam or ArchContext selector-evidence contract changes"
+}
