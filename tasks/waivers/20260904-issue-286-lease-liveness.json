@@ -1,0 +1,27 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:92fef4da30d1bd6a25fca4cb646f30ffa5105b9bb41c4b255fca81118de06278",
+  "reason": "Issue #286 is a zero-ceremony Lease liveness work unit with architecture documentation and executable acceptance coverage but no work-package plan or contract; this waiver binds the exact final substantive diff required by the repository sync gate.",
+  "owner": "ancienttwo",
+  "scope": [
+    "docs/architecture/modules/runtime-harness/automation-budget.md",
+    "src/cli/commands/automation.ts",
+    "src/core/automation/controller.ts",
+    "src/core/state/lease-liveness.ts",
+    "src/core/state/project-board.ts",
+    "src/core/state/types.ts",
+    "src/effects/automation/controller-run.ts",
+    "src/effects/state/collect-board-inputs.ts",
+    "src/effects/state/coordination-lease-liveness-store.ts",
+    "src/effects/state/coordination-lease-reclaim.ts",
+    "tests/board-projection.test.ts",
+    "tests/unit/issue-279-automation-controller-core.test.ts",
+    "tests/unit/issue-279-automation-controller-run.test.ts",
+    "tests/unit/issue-279-automation-controller-store.test.ts",
+    "tests/unit/lease-liveness-store.test.ts",
+    "tests/unit/lease-liveness.test.ts",
+    "tests/unit/lease-reclaim.test.ts"
+  ],
+  "revisit_trigger": "Issue #286 is reopened because Lease liveness or evidence-gated reclaim lacks durable workflow evidence"
+}
