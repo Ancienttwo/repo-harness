@@ -61,6 +61,7 @@ sequenceDiagram
 - Every mutating program transition is append-only, idempotent by exact event identity, and rejected on conflicting replay.
 - Candidate worktrees cannot relax the target revision's policy or authorization.
 - Architecture-scale work always crosses the existing human architecture-acceptance boundary.
+- Workflow route is a pure three-input projection of provider-owned scale, scale reason codes, and major-change reasons; a supplied route is accepted only when it equals that projection.
 - Completion requires Cutover Closure plus exact post-merge ArchContext measurement.
 
 ## Verification

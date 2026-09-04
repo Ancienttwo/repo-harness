@@ -687,7 +687,7 @@ Module 8 完整 → Module 9 → Module 10
 
 You are implementing this PRD.
 
-- Current delivery: Module 1 與 Module 3 已合入；Module 2 已完成 discovery / proposal authoring 實作；Module 4 已完成 policy、append-only program store、可重建 current projection 與 `refactor start|status|stop` CLI，正在沿後續 modules 繼續整合。
+- Current delivery: Module 1 與 Module 3 已合入；Module 2 已完成 discovery / proposal authoring；Module 4 已完成 policy、append-only program store、可重建 current projection 與 `refactor start|status|stop` CLI；Module 5 已完成三輸入保守 route 投影與全 major-reason 冪集不變式驗證，正在沿後續 modules 繼續整合。
 - Do not reinterpret:
   - 不要在 repo-harness 實作任何模組統計、依賴圖、cycle 偵測或 refactor 評分；不要直接讀 CodeGraph。
   - 不要把 `proof_required` / `no_action` 當成上游 `RefactorScale` 值。上游只有 `architecture | cross_module | insufficient_evidence | model_adoption_required | module`（`refactor.ts:28-34`）。

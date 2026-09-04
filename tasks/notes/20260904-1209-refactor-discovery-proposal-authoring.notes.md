@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:a612b13f764b236f8905902778de43cd392b2cb357f18e65215f95ec1ee28bbc`
+> **Substantive Change SHA256**: `sha256:dbe6e1ab55c4e70c9479881089f2d3a73235a3a0d35f67d60f36a283fac61438`
 
 ## Design Decisions
 
@@ -17,6 +17,7 @@
 - Keep Module 4 program state outside candidate worktrees under the Git common directory; immutable events are authoritative and `current.json` is only a validated, rebuildable projection.
 - Reuse the account-level `ProgramAuthorizationV1` by exact id and digest. Its `target_revision` is a full Git object id (SHA-1 or SHA-256 repository format), so policy is read from that protected revision and never from candidate content.
 - Treat explicit `stop` as terminal `stopped`, not `complete`; completion remains reserved for the verified post-merge resolution path.
+- Map `scale = null` deterministically to `no_action`: whether observations deserve proposal authoring belongs to Module 2 before routing and cannot become an undeclared fourth route input.
 
 ## Deviations From Plan Or Spec
 

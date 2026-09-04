@@ -56,5 +56,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts --timeout 60000"
     - "bun run check:type"
