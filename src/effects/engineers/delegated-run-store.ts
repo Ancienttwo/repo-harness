@@ -256,7 +256,7 @@ function assertCapabilityRequest(value: ReadOnlyCapabilityRequest): ReadOnlyCapa
  */
 const CODEX_CHILD_ENV_KEYS = Object.freeze(['HOME', 'PATH'] as const);
 
-function codexChildEnvironment(): { readonly env: NodeJS.ProcessEnv; readonly sha256: string } {
+export function codexChildEnvironment(): { readonly env: NodeJS.ProcessEnv; readonly sha256: string } {
   const selected: Record<string, string> = {};
   for (const key of CODEX_CHILD_ENV_KEYS) {
     const value = process.env[key];

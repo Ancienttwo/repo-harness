@@ -31,6 +31,22 @@ function observation(id: string, fingerprint: string): RecommendationV3 {
 }
 
 describe('refactor discovery and proposal authoring', () => {
+  test('pins the first scan identity before asking the provider to assess a proposal', () => {
+    const discovery = projectRefactorDiscovery({ ...discoveryScan([observation('recommendation.one', digest('1'))]),
+      worktree: { workspaceId: 'workspace.test', storageWorkspaceId: 'storage.test', branch: 'main', headSha: 'a'.repeat(40), worktreeDigest: digest('2') },
+    } as RefactorScanResultV1, []);
+    const proposal = authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [] });
+    let assessedRequest: Record<string, unknown> | undefined;
+    try {
+      assessRefactorProposal({ discovery, candidateAlias: 'C01', proposal }, process.cwd(), { consumerRoot: process.cwd(), run: (_binary, args) => {
+        if (args[0] === 'capabilities') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.6' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] }) };
+        assessedRequest = JSON.parse(args[args.indexOf('--request-json') + 1]!);
+        throw new Error('captured assessment request');
+      } });
+    } catch { /* The fake provider stops after capturing its request. */ }
+    expect(assessedRequest?.expectedHeadSha).toBe(discovery.scan.worktree.headSha);
+    expect(assessedRequest?.expectedWorktreeDigest).toBe(discovery.scan.worktree.worktreeDigest);
+  });
   test('authors only the upstream proposal shape and rejects every illegal identity class', () => {
     const proposal = authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [] });
     expect(proposal.proposalDigest).toMatch(/^sha256:[0-9a-f]{64}$/);

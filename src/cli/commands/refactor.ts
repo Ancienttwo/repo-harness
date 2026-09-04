@@ -18,6 +18,9 @@ import { advanceRefactorActivation, appendRefactorCanaryReceipt, readRefactorAct
 import type { RefactorProgramV1 } from '../../core/refactor/program';
 import type { RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
 import type { RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
+import { RefactorProviderError } from '../../core/refactor/provider-contract';
+import { RefactorDiscoveryError } from '../../effects/refactor/discovery-authoring';
+import { runShadowRefactorDiscovery, RefactorShadowError, type RefactorShadowDependencies, type RefactorShadowInput } from '../../effects/refactor/shadow-discovery';
 
 class RefactorArgumentError extends Error {
   readonly code = 'invalid_argument' as const;
@@ -36,7 +39,7 @@ function output(value: unknown): void {
 function outputError(error: unknown): void {
   const code = error instanceof RefactorArgumentError
     ? error.code
-    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError || error instanceof RefactorCandidateVerificationEffectError || error instanceof RefactorExecutionBindingStoreError || error instanceof RefactorPostMergeResolutionError ? error.code : 'refactor_program_unavailable';
+    : error instanceof RefactorProviderError || error instanceof RefactorDiscoveryError || error instanceof RefactorShadowError || error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError || error instanceof RefactorCandidateVerificationEffectError || error instanceof RefactorExecutionBindingStoreError || error instanceof RefactorPostMergeResolutionError ? error.code : 'refactor_program_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof RefactorArgumentError ? 2 : 1;
 }
@@ -119,8 +122,16 @@ export function runRefactorCanaryRecord(raw: { readonly repo?: string; readonly 
 export function runRefactorActivationPromote(raw: { readonly repo?: string; readonly request?: string }): void { output(advanceRefactorActivation({ ...requestJson(raw.request), repo_root: raw.repo?.trim() || process.cwd() } as Parameters<typeof advanceRefactorActivation>[0])); }
 export function runRefactorActivationStatus(raw: { readonly repo?: string }): void { output({ level: readRefactorActivationLevel(raw.repo?.trim() || process.cwd()) }); }
 
-export function buildRefactorCommand(): Command {
+export function buildRefactorCommand(shadowDependencies: RefactorShadowDependencies = {}): Command {
   const command = new Command('refactor').description('Operate the authorized refactor program state machine');
+  command.command('discover')
+    .description('Scan, select and assess one local agent proposal within shadow boundaries')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Shadow request JSON with scan request and explicit call/time budgets')
+    .action(async (options: { repo?: string; request?: string }) => {
+      try { output(await runShadowRefactorDiscovery(requestJson(options.request) as unknown as RefactorShadowInput, options.repo?.trim() || process.cwd(), shadowDependencies)); }
+      catch (error) { outputError(error); }
+    });
   command.command('start')
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--program-id <id>', 'Stable refactor program id')

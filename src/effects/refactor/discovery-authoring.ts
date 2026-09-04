@@ -1,5 +1,6 @@
 import { lstatSync } from 'fs';
 import { resolve, sep } from 'path';
+import { canonicalize } from '../../core/evidence/canonical-json';
 import type { RecommendationV3, RefactorProposalV1, RefactorRequestV1 } from 'archctx-contracts';
 import type { RefactorScanResultV1 } from '../../core/refactor/provider-contract';
 import { readRefactorRecommendationRecords, runRefactorScan, type RefactorArchctxProviderOptions } from './archctx-provider';
@@ -84,7 +85,15 @@ export function assessRefactorProposal(
   const candidate = input.discovery.candidates.find((value) => value.alias === input.candidateAlias);
   if (!candidate) throw new RefactorDiscoveryError('refactor_candidate_not_found', `unknown discovery candidate: ${input.candidateAlias}`);
   assertProposalFiles(repoRoot, input.proposal);
-  const scan = runRefactorScan({ ...input.discovery.scan.request, proposal: input.proposal }, repoRoot, options);
+  const baseline = input.discovery.scan;
+  const scan = runRefactorScan({ ...baseline.request, expectedHeadSha: baseline.worktree.headSha,
+    expectedWorktreeDigest: baseline.worktree.worktreeDigest, proposal: input.proposal }, repoRoot, options);
+  if (canonicalize(scan.repository as never) !== canonicalize(baseline.repository as never)
+    || canonicalize(scan.worktree as never) !== canonicalize(baseline.worktree as never)
+    || scan.snapshot.modelDigest !== baseline.snapshot.modelDigest
+    || scan.assessment.codeFactsDigest !== baseline.assessment.codeFactsDigest) {
+    throw new RefactorDiscoveryError('refactor_discovery_invalid', 'assessment evidence differs from the discovery baseline');
+  }
   return bindRefactorAssessment(candidate, input.proposal, scan);
 }
 
