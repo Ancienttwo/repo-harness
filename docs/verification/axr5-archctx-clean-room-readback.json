@@ -3,24 +3,24 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "f78a7e024f99075042218b9bff8b61a13e01b018",
+    "revision": "523e95a3f0ec1f5a9357fa6e18777af945896be5",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.4.7",
-      "file": "archctx-contracts-0.4.7.tgz",
-      "integrity": "sha512-N+SChBNcU2Dm9vWCsLfyj6/YFxeHoedG81GVeau/7BmdWZ0KwU2wnbPYv+AMWXqxhtX/L0vaNuZJj/I/UVA4Ug==",
-      "sha512": "37e48284135c5360e6f6f582b0b7f28fafd8171787a1e746f3519579abbfec199d599d0ac14db09db3d8bfe00c597ab186d5ff2f4bda36e6498ff23f51503852"
+      "version": "0.5.2",
+      "file": "archctx-contracts-0.5.2.tgz",
+      "integrity": "sha512-mzAtDA9FwhpGy5afBXP7Z6lmHYIHDY3JHFnItx9XHA2slEXbJWMQ7Lx+zjdZnK46phCZyRR1ELKec/wPXoxrKw==",
+      "sha512": "e42a7ffa1e9a5a6b9e234da129bb689fe637afe10a18a4b295a0ec2110db325655ae7be4e46a76d8a760818c2914332e52507d1f668c98b50a656215c07f4a84"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.4.7",
-      "file": "archctx-0.4.7.tgz",
-      "integrity": "sha512-fjzmH8CE1eMJF8o9VXfwGJqhXTTWmmDp3zDHwrgoZ5qp0K11bZ/mchLbWv4kt8GDteFVb3/ZkyLRv2Yydsf3cQ==",
-      "sha512": "7e3ce61fc084d5e30917ca3d5577f0189aa15d34d69a60e9df30c7c2b828679aa9d0ad756d9fe67212db5afe24b7c183b5e1556f7fd99322d1bf663276c7f771"
+      "version": "0.5.2",
+      "file": "archctx-0.5.2.tgz",
+      "integrity": "sha512-gFoOPkMrFZCsbN+bEB1CAC/WDwPYUkLGr0pSsTUdpuqS8b0AQrJS438OJLMjT0UTevNY9gv6xsM1s73K88x69g==",
+      "sha512": "805a0e3e432b1590ac6cdf9b101d42002fd60f03d85242c6af4a52b1351da6ea92f1bd0042b252e37f0e24b3234f45137af358f60bfac6c335b3bdcaf3cc7af6"
     }
   },
   "consumer": {
@@ -35,7 +35,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.4.7"
+        "version": "0.5.2"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -49,8 +49,13 @@
       "features": [
         "architecture-docs-renderer-v2",
         "architecture-refresh-signal-v1",
+        "module-statistics-v1",
         "projection-apply-receipt-v1",
-        "projection-protocol-v2"
+        "projection-apply-recovery-v1",
+        "projection-protocol-v2",
+        "recommendation-v3",
+        "refactor-assessment-v1",
+        "refactor-resolution-v1"
       ]
     },
     "projection": {
@@ -65,7 +70,7 @@
         "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
         "codeGraphStatus": "unavailable"
       },
-      "receiptDigest": "sha256:194cc35759802a9d21d599ef8c3aae8c3040573c604154e4db79a5987a3d2489"
+      "receiptDigest": "sha256:40eca32d0c60e785fb917e6c9ce67ab0483d4b754a52c11df2857798d7d1b210"
     }
   }
 }

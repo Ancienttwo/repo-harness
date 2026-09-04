@@ -21,7 +21,7 @@
 - Core metric: 一條由本地主動發現的結構問題，經 proposal authoring 取得 `scale`，走完執行鏈，最終由 ArchContext 回報 `disposition: 'resolved'`——全程零本地結構判定、零本地狀態複製、每一跳都有可重建 receipt。
 - Hard constraint: ArchContext 是儀器/閘門/賬本，repo-harness 是作者/調度/收口。repo-harness 不得實作任何模組統計、依賴圖、cycle 偵測、refactor 評分或 CodeGraph 直讀；不得持有第二份 recommendation 狀態；不得從 Issue 標題推斷 scale；版本或 feature 不匹配一律 fail closed，永不本地 fallback。
 - Key risk: 「重構做完了但舊路徑還在」。ArchContext 能證明結構指標改善，證明不了舊 public surface、舊 fallback、舊 test、舊 doc 被清乾淨；沒有 Cutover Closure，指標改善會被當成重構完成。
-- Unknowns: `archctx refactor` CLI 尚未實作（上游只凍結 contract），0.5.0/0.5.1 未發布；first-class provenance 欄位（GPT Pro 來源標註）要等 0.6.0 contract 變更；Cutover Closure inventory 能否在不做語義分析下確定性判定（本 PRD 的 falsifier）。
+- Unknowns: first-class provenance 欄位（GPT Pro 來源標註）要等 0.6.0 contract 變更；`ProgramAuthorizationV1` 的 campaign payload 仍待 BRC3；其餘 provider contract 已由 `archctx@0.5.2` 發布並完成 clean-room readback。
 - Acceptance scenarios: 無 proposal 的掃描必須回 `scale = null` 且不得物化任務；`scale = 'cross_module'` 被投影成 `module_refactor` 時 `refactor_route_conflict`；PR 合入但 after-scan 未跑時只能顯示 `merged_pending_measurement`。
 - Suggested next step: **不生成 Sprint**。先把 Module 1（Cutover Closure Gate）抽成獨立 work-package plan——它零 archctx 依賴、可立即落地、且是 GPT Pro campaign Phase B 的前置——並在一個真實歷史重構 PR 上跑 First Proof Point。
 
@@ -52,7 +52,7 @@
   - `mode = off` 時所有 mutation 命令失敗退出，不靜默 no-op（沿用 BRC3 對 `development_campaign.mode` 的既定形狀）。
 - Recommended Defaults:
   - `refactor.mode` 安裝預設 `off`；晉級階梯 `off → shadow → active/module-only → active/cross-module`。
-  - provider 分兩階段：Stage 1 `archctx@0.5.0`（scan/record）解鎖 Module 2-8，Stage 2 `archctx@0.5.1`（verify）解鎖 Module 9-10 的測量面。`required_features` 按 stage 分組，不是一份扁平列表。
+  - provider 仍按兩個 feature stage 握手，但兩者都精確綁定已修復的 `archctx@0.5.2`：scan/record 需要前三項 feature，verify 另需 `refactor-resolution-v1`。公開的 0.5.1 manifest 漏掉 `koffi`，不得安裝或作為 runtime authority。
   - `proposal_author` 預設 `local`，可選 `gpt_pro` 或 `ask`；GPT Pro 只在本地作者判定證據不足或需要外部視角時才請。
   - `maximum_modules_per_program = 10`、`maximum_parallel_modules = 3`。
   - `require_cutover_closure` 只有在 Module 1 真正落地後才置 `true`；`require_post_merge_measurement` 在 verify stage 就緒前只能是 `false`，不得用本地推斷頂替。
@@ -83,16 +83,16 @@
   - GPT Pro delegate 協議已存在：`assets/skills/repo-harness-chatgpt/references/delegate.md`（GPT Pro 為外部資深工程師，本地持獨立驗收權；GPT Pro 自述已驗證不構成證據；PromptBundle 內容級出境掃描強制）。
   - `scripts/cutover-closure.ts` 不存在；`assets/workflow-contract.v1.json` 無 `cutoverClosure` 鍵。
   - `ProgramAuthorizationV1` 不在 `src/` 中，定義在 `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md:239`，由 campaign sprint 第 3 行 BRC3 建造。
-  - npm latest `archctx@0.4.8` / `archctx-contracts@0.4.8`，發布於 2026-09-02T08:32:49Z，早於 rf1a（2026-09-03 04:00 +0800 合入 main）。repo-harness 現 pin `0.4.7`（`src/core/architecture/projection.ts:12`）。
-  - 上游剩餘順序：RF1b（實作中）→ RF2 → RF3 → RF5a（`0.5.0` + npm readback）→ RF4 → RF5b（`0.5.1`）。每次 readback 完成後上游以 session chat 通知並附 `capabilities --json`。
+  - [HISTORICAL 2026-09-03] 當時 npm latest 為 `0.4.8`，repo-harness pin 為 `0.4.7`；此基線已被 2026-09-04 的 0.5.2 readback 取代。
+  - [RESOLVED 2026-09-04] 上游 RF1b/RF2/RF3/RF5a/RF4/RF5b 均已發布；修復版 `archctx@0.5.2` 是唯一可消費版本。
 - [UNKNOWN]:
   - `archctx refactor scan|record|verify` 的實際 CLI args、stdout 契約與退出碼。上游只凍結了 contract。
-  - `archctx@0.5.0` / `0.5.1` 的 capabilities feature 實際命名。本 PRD 使用的 feature 名來自上游 dispatch §2，仍需 readback 確認。
+  - [RESOLVED 2026-09-04] `archctx@0.5.2 capabilities --json` 已讀回 9 項 feature，包含 `module-statistics-v1`、`refactor-assessment-v1`、`recommendation-v3`、`refactor-resolution-v1`。
   - first-class provenance 欄位（例如 `provenance?: { provider, ref }`）的形狀與時程。上游明示這是 0.6.0 的 contract 變更，0.5.x 期間來源只能寫在 `intent` 自由文字裡。
   - Cutover Closure inventory 能否在不讀 CodeGraph、不做語義分析的前提下對真實歷史重構 PR 做出確定性判定。這是本 PRD 的 falsifier。
 - [UNVERIFIED]:
   - `ProgramAuthorizationV1` 的最終落地欄位。BRC3 尚未合入 main。
-  - `archctx refactor verify` 的 `--request-json` 請求包絡待 rf5b 凍結（上游 sprint 第 9 行）。上游定案（2026-09-03）：`RefactorVerificationRequestV1` **會**在 `0.5.1`（RF4/RF5b）凍結，預期形狀為 `archcontext.refactor-verification-request/v1 { recommendationId, expectedHeadSha, expectedWorktreeDigest?, executionEvidenceRefs? }`，核心 API 維持 `refactorVerifyInvariantIssues(afterSnapshot, evidence)`（`refactor.ts:723`）。最終欄位以 0.5.1 readback 通知為準，標 `[UNVERIFIED until rf5b]`；0.5.1 之前不得為其撰寫 validator。
+  - [RESOLVED 2026-09-04] `RefactorVerificationRequestV1` 已凍結為 `archcontext.refactor-verification-request/v1 { recommendationId, expectedHeadSha?, expectedWorktreeDigest?, executionEvidenceRefs? }`；top-level keys 與 evidence refs 均由 `archctx-contracts@0.5.2` fail-closed validator 驗證。
   - 上游錯誤碼 `AC_REFACTOR_STALE`、`AC_REFACTOR_EVIDENCE_REQUIRED`、`AC_REFACTOR_PROPOSAL_UNAUTHORED`（`schema.ts:33-35,74-76`）的實際觸發條件與 stdout 呈現。
 - 研究文檔早期草案中不成立的前提（已由其 §二十二 對齊記錄修正，本 PRD 依修正後版本）:
   - 早期草案稱「繼續執行仍使用 `repo-harness execute`」。該命令在本倉庫不存在。執行走既有 fleet acquire 鏈。
@@ -248,7 +248,7 @@
 
 ### Scenario 14（negative，Module 9）→ Non-goal「PR merged ≠ resolved」
 
-- Given: PR 已合入 main，尚未在 exact new main 上跑 after-scan；且當前只有 Stage 1 provider（`0.5.0`），refactor 類的 `resolved` 在 0.5.0 不可達。
+- Given: PR 已合入 main，尚未在 exact new main 上跑 after-scan。
 - When: 產生 board。
 - Then（must NOT）: architecture result 欄不得顯示 `Resolved`，不得從 merge 事件推斷結構已改善。必須顯示 `merged_pending_measurement`。
 - Machine-checkable evidence: board JSON 該列 `architectureResult === 'merged_pending_measurement'`，來源標註為 `repo-harness`。
@@ -278,7 +278,7 @@
 - 不依賴 v1 未推導的 `majorChangeReasons`（`node-added`、`lifecycle-changed`）作為任何 route 或閘門的觸發條件。
 - 不新增 `repo-harness execute` 命令；不新增 skill 或 facade package；不復活 autoplan。
 - provider 版本或 feature 不匹配時不提供任何本地 fallback；不以 git link 或本地路徑在 runtime 依賴未發布 contract（compile-only 型別準備除外）。
-- 0.5.x 不新增 MCP 工具，只透過 CLI 消費；0.5.1 之前不得為 `archctx refactor verify` 的請求包絡撰寫 validator。
+- 0.5.x 不新增 MCP 工具，只透過 CLI 消費；verify 包絡只採用 `archctx-contracts@0.5.2` 已發布 validator。
 - 不新建第二個授權協議；複用 `ProgramAuthorizationV1`。
 - `RefactorExecutionBindingV1` 不含任何狀態欄位；`PR merged` 永遠不等於 `resolved`。
 - Closure gate 不做語義分析、不猜測應刪內容；未宣告即不判定。
@@ -287,8 +287,7 @@
 - 不把 `tests.callerCoverage` 當作 essential evidence（v1 恆為 `null`）。
 - 不以 `cross-review --json` 的 `findings` 欄位判定外部審查通過；一律讀 transcript。
 - 晉級階梯不得跳級。
-- 本 PRD 不生成 Sprint，直到 Stage 1 在 npm 發布**且** campaign sprint 第 3 行 BRC3 已清。
-- `0.4.7 → 0.4.8` 的 pin bump 是獨立技術債，不屬於本 PRD。
+- 本 PRD 的 provider 發布前置已由 `archctx@0.5.2` clean-room readback 清除；campaign BRC3 仍由其自身 sprint 管理。
 
 ## Module Behaviors (P0)
 
@@ -342,9 +341,9 @@
   - handshake 四道全過才算成功：package version **精確相等**、capabilities feature **子集判定**、repository/workspace/head/worktree identity 精確匹配、result `schemaVersion` 與 digest readback。
   - `required_features` 按 stage 分組。Stage 1 缺 `refactor-resolution-v1` 是合法狀態，不得因此擋住 scan。
   - 只透過 CLI 消費；0.5.x 不新增 MCP 工具。
-  - `0.5.1` 會凍結 `RefactorVerificationRequestV1`，預期形狀 `archcontext.refactor-verification-request/v1 { recommendationId, expectedHeadSha, expectedWorktreeDigest?, executionEvidenceRefs? }`（`[UNVERIFIED until rf5b]`，最終欄位以 0.5.1 readback 通知為準）；0.5.1 之前不得為其撰寫 validator。核心 API 維持 `refactorVerifyInvariantIssues(afterSnapshot, evidence)`（`refactor.ts:723`），語義輸入是 after `ModuleStatisticsSnapshotV1` + `RefactorResolutionEvidenceV1`。
+  - `archctx-contracts@0.5.2` 已凍結 `RefactorVerificationRequestV1` 與 ingress validator；核心 API 維持 `refactorVerifyInvariantIssues(afterSnapshot, evidence)`，語義輸入是 after `ModuleStatisticsSnapshotV1` + `RefactorResolutionEvidenceV1`。
   - 上游錯誤碼原樣透出，不本地翻譯成別的語義。
-- Recommended Defaults: Stage 1 = `0.5.0` + `["module-statistics-v1","refactor-assessment-v1","recommendation-v3"]`；Stage 2 = `0.5.1` + `["refactor-resolution-v1"]`；timeout 沿用 `projection_timeout_ms` 的 1000..120000 邊界。
+- Recommended Defaults: scan stage = `0.5.2` + `["module-statistics-v1","refactor-assessment-v1","recommendation-v3"]`；verify stage = `0.5.2` + `["refactor-resolution-v1"]`；timeout 沿用 `projection_timeout_ms` 的 1000..120000 邊界。
 - Freedoms: request 組裝的內部結構；readback 快取策略。
 - Normal path: 解析 package-local archctx → `capabilities` handshake → 組 `RefactorRequestV1`（帶 `expectedHeadSha` / `expectedWorktreeDigest`）→ 呼叫 → 驗證 result → 回傳。
 - Failure path 1: 版本或 feature 不匹配 → `refactor_provider_version_mismatch`，零產出。
@@ -449,7 +448,7 @@
 - Hard Constraints:
   - `RefactorExecutionBindingV1` append-only，全欄位是不可變引用，**無任何狀態欄位**。
   - 驗證順序固定：`verify-contract` → Cutover Closure → candidate `archctx refactor verify` → AcceptanceReceipt。closure 失敗直接擋，不進 archctx verify。
-  - verify 的請求面由 `0.5.1` 凍結的 `RefactorVerificationRequestV1` 決定，預期形狀 `archcontext.refactor-verification-request/v1 { recommendationId, expectedHeadSha, expectedWorktreeDigest?, executionEvidenceRefs? }`（`[UNVERIFIED until rf5b]`）；`executionEvidenceRefs` 正是 Module 1 產出的 `{ kind: 'cutover_closure', locator, sha256 }` 的落點。0.5.1 之前不得為此包絡撰寫 validator。
+  - verify 的請求面由 `archctx-contracts@0.5.2` 的 `RefactorVerificationRequestV1` 與 `refactorVerificationRequestInvariantIssues` 唯一決定；`executionEvidenceRefs` 是 Module 1 產出的 `{ kind: 'cutover_closure', locator, sha256 }` 的落點。
   - candidate verify 是**預驗**，其 `disposition` 不得寫入 board 的 architecture result 欄；權威 resolution 只能在 exact final main 上算（Module 9）。
   - refactor task profile 在 Module 1 落地後強制 `require_cutover_closure = true`。
   - 不得以 `cross-review --json` 的 `findings` 欄位判定外部審查通過；一律讀 transcript。
@@ -466,7 +465,7 @@
 
 - Purpose: 在 exact final main 上取得權威 resolution，並把「發現—提案—執行—完成」四段 join 成一份純投影看板。
 - Hard Constraints:
-  - resolution 權威只在 ArchContext。repo-harness 觀察到 merge 只能標 `merged_pending_measurement`。refactor 類的 `resolved` 在 `0.5.0` 不可達（需 `0.5.1` 的 resolution evidence）。
+  - resolution 權威只在 ArchContext。repo-harness 觀察到 merge 只能標 `merged_pending_measurement`；只有 exact final main 的 0.5.2 verify resolution evidence 能轉為 resolved。
   - board 兩份產出（`<program-id>.md` 人讀、`<program-id>.board.v1.json` 機讀）都是純投影，可從 authorities 完全重建，自身不持有狀態。
   - join key = `recommendationId` + `recommendationDigest`；digest 變更即新 recommendation，`superseded` 從 ArchContext `relations` 讀，不本地推斷。
   - 已 `resolved` 的 recommendation 不得被 campaign 重複 adopt；去重依據是 ArchContext 狀態讀回。
@@ -605,8 +604,8 @@ Policy 片段（`.ai/harness/policy.json`）:
     "provider": "archctx",
     "proposal_author": "local",            // local | gpt_pro | ask
     "stages": {
-      "scan":   { "provider_version": "0.5.0", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
-      "verify": { "provider_version": "0.5.1", "required_features": ["refactor-resolution-v1"] }
+      "scan":   { "provider_version": "0.5.2", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
+      "verify": { "provider_version": "0.5.2", "required_features": ["refactor-resolution-v1"] }
     },
     // 鍵是 RefactorWorkflowRoute 值，不是 ArchContext scale
     "workflow_routing": {
@@ -631,25 +630,21 @@ Module 1（Cutover Closure Gate）+ policy reader 骨架（fail-closed 在 off�
   零 archctx 依賴 · 可立即落地 · 亦是 GPT Pro campaign Phase B 前置
   → First Proof Point 在此驗
        ↓
-   archctx 0.5.0 發布（上游 RF1b → RF2 → RF3 → RF5a + npm readback）
+   archctx 0.5.2 發布與 clean-room readback（已完成）
        ↓
 Module 3 → Module 4 → Module 2 → Module 5
        ↓
 Module 6 ─┬─→ Module 7
-          └─→ Module 8（closure 部分已就緒；candidate verify 待 Stage 2）
-       ↓
-   archctx 0.5.1 發布（上游 RF4 → RF5b + npm readback）
+          └─→ Module 8（closure 與 candidate verify provider 均已就緒）
        ↓
 Module 8 完整 → Module 9 → Module 10
 ```
 
 阻塞事實：
 
-- 上游 `main` 目前只完成 rf0 + rf1a（contract 凍結），無 core 計算、無 `archctx refactor` CLI、未發布。npm latest `archctx@0.4.8` 發布於 2026-09-02T08:32:49Z，早於 rf1a。
-- Module 2-9 全部被上游阻塞；Module 1、policy reader 骨架與 canary 1 不被阻塞。
-- 上游在 0.5.0 與 0.5.1 各自 npm readback 完成時以 session chat 通知，附 `capabilities --json` 的 features 清單與 readback 記錄路徑；收到後才開 Module 3 / Module 8。
-- 本 PRD 不生成 Sprint，直到 Stage 1 在 npm 發布**且** campaign sprint 第 3 行 BRC3（`ProgramAuthorizationV1`）已清。
-- 兩個倉庫不得在未發布協議上同時猜欄位開發；只允許 compile-only 型別準備。
+- 上游 RF1b/RF2/RF3/RF5a/RF4/RF5b 已全部發布；唯一允許的 runtime authority 是修復 manifest 後的 exact `archctx@0.5.2` / `archctx-contracts@0.5.2`。
+- Module 3 與 Module 8 的 provider 阻塞已解除；其餘模組仍按本 PRD 的本地依賴順序推進。
+- `docs/verification/axr5-archctx-clean-room-readback.json` 是版本、feature、CLI 与 package install 的 readback 权威。
 
 ## Performance Targets
 
@@ -664,15 +659,15 @@ Module 8 完整 → Module 9 → Module 10
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| [UNKNOWN] `archctx refactor scan\|record\|verify` 的 CLI args、stdout 契約與退出碼 | Module 3 的 adapter 無法定稿 | 上游 RF5a/RF5b 完成後對照實作；在此之前只寫型別層 | 上游 Program A |
-| [UNKNOWN] `archctx@0.5.0` / `0.5.1` 的 capabilities feature 實際命名 | 本 PRD 的 feature 名若與上游不同則 handshake 失效 | 等上游 readback 通知附帶的 `capabilities --json` | 上游 Program A |
+| [RESOLVED 2026-09-04] `archctx refactor scan\|record\|verify` 的 CLI args、stdout 契約與退出碼 | Module 3 adapter 已可定稿 | exact 0.5.2 CLI readback + upstream contract validators | Program B |
+| [RESOLVED 2026-09-04] capabilities feature 實際命名 | stage handshake 已凍結 | scan/record 三項；verify 為 `refactor-resolution-v1`；均由 0.5.2 提供 | Program B |
 | [RESOLVED 2026-09-03] GPT Pro 作為 proposal author 的合法 `authoredBy` 配對 | GPT Pro lane 的責任歸屬與可審計性已確定 | 上游定案：0.5.0 不新增 source 值；`authoredBy` 記的是**提交者與問責方**而非內容產地。人審閱署名 → `developer → manual`；harness agent 採納草稿後以己名提交 → `subagent → subagent`，來源寫進 `intent`。`cli → cli` 保留給操作者自提。GPT Pro 永不是任何 kind | 上游 Program A |
 | [UNKNOWN] first-class provenance 欄位（例如 `provenance?: { provider, ref }`）的形狀與時程 | 0.5.x 期間 GPT Pro 來源只能是 `intent` 自由文字，無法機器查詢或聚合 | 上游列為 0.6.0 contract 變更的 Known Unknown；等上游提出欄位形狀後再評估是否消費 | 上游 Program A |
 | [UNKNOWN] Cutover Closure inventory 能否在不做語義分析下確定性判定真實歷史 PR | 若不能，本 PRD 的獨占價值主張不成立（見 Falsifier） | First Proof Point：在真實歷史重構 PR 上跑 gate | Refactor Owner |
 | [UNVERIFIED] `ProgramAuthorizationV1` 最終欄位 | Module 4 的授權實作可能缺鍵 | 等 BRC3 合入 main 後對照 | 並行 campaign session |
-| [UNVERIFIED until rf5b] `RefactorVerificationRequestV1`（`archctx refactor verify --request-json` 的請求包絡） | Module 8/9 的 verify 呼叫面待定 | 上游定案：**會**在 `0.5.1`（RF4/RF5b）凍結，預期形狀 `archcontext.refactor-verification-request/v1 { recommendationId, expectedHeadSha, expectedWorktreeDigest?, executionEvidenceRefs? }`，核心 API 維持 `refactorVerifyInvariantIssues(afterSnapshot, evidence)`。最終欄位以 0.5.1 readback 通知為準；0.5.1 之前不得撰寫 validator | 上游 Program A |
+| [RESOLVED 2026-09-04] `RefactorVerificationRequestV1` | Module 8/9 可直接消費 | 使用 `archctx-contracts@0.5.2` 的 closed validator，不在本地重建語義 | Program B |
 | [UNVERIFIED] 上游 `AC_REFACTOR_*` 錯誤碼的實際觸發條件與呈現 | 錯誤映射可能不完整 | 上游實作落地後補 fixture | 上游 Program A |
-| [ASSUMED] Stage 1 = `0.5.0`（scan/record）、Stage 2 = `0.5.1`（verify）。理由：讓 scan/materialization 不被 verify 能力阻塞 | 若上游一次發全部能力，兩階段是多餘複雜度 | PRD review 時確認或否決 | Refactor Owner |
+| [RESOLVED 2026-09-04] scan/record 與 verify 保留分階段 feature gate，但版本都 exact 0.5.2 | 保留能力邊界，同時拒絕壞包 0.5.1 | clean-room readback 已驗證 | Refactor Owner |
 | [ASSUMED] Closure inventory 六類 + 四種 disposition。理由：覆蓋「舊實現/引用/回退/測試/文檔/相容期限」六個實際殘留面 | 過細增加 contract 負擔，過粗會漏判 | First Proof Point 後按實測調整 | Refactor Owner |
 | [ASSUMED] `retained_with_reason` 強制帶 `expiry`。理由：無期限的相容分支就是永久債 | 若某些保留確實無法定期限，會擋住合法情況 | PRD review 時確認或否決 | Refactor Owner |
 | [ASSUMED] 驗證順序 closure 先於 `archctx refactor verify`。理由：closure 零成本且是硬前置，先擋可省 provider 呼叫 | 若 provider 預驗能更早發現嚴重問題，順序應反轉 | canary 3 實測後確認 | Refactor Owner |
@@ -692,7 +687,7 @@ Module 8 完整 → Module 9 → Module 10
 
 You are implementing this PRD.
 
-- Build first: **Module 1（Cutover Closure Gate）與 `policy.refactor` reader 骨架（fail-closed 在 `off`）**，且只做這兩項。它們零 archctx 依賴、對普通重構 PR 立刻有價值、是 GPT Pro campaign Phase B 的前置，也是本 PRD 的 First Proof Point。上游 0.5.0 發布之前，其餘模組只允許 compile-only 型別準備與負向測試。
+- Current delivery: Module 1 已完成；下一個 work package 是 **Module 3（exact 0.5.2 provider contract、分階段 feature handshake、scan/record/verify adapter）**。
 - Do not reinterpret:
   - 不要在 repo-harness 實作任何模組統計、依賴圖、cycle 偵測或 refactor 評分；不要直接讀 CodeGraph。
   - 不要把 `proof_required` / `no_action` 當成上游 `RefactorScale` 值。上游只有 `architecture | cross_module | insufficient_evidence | model_adoption_required | module`（`refactor.ts:28-34`）。
@@ -703,7 +698,7 @@ You are implementing this PRD.
   - 不要送目錄或 glob 當 `scopePaths`；提交前展開成檔案路徑，否則上游回 `model_adoption_required`。
   - 不要依賴 `node-added` / `lifecycle-changed` 這兩個 `majorChangeReasons`——v1 不推導它們，未解析的目標走 `targetDelta.unresolvedTargets`。
   - 不要把 `required_features` 寫成扁平列表；按 stage 分組。
-  - 不要以 git link 或本地路徑在 runtime 依賴未發布 contract；不要為 `archctx refactor verify` 的請求包絡在 0.5.1 前寫 validator。
+  - 不要以 git link 或本地路徑作 runtime authority；只消費 exact 0.5.2 發布包與其 validator。
   - 不要新增 MCP 工具；0.5.x 只走 CLI。
   - 不要新增 `repo-harness execute` 命令；執行走既有 fleet acquire 鏈。
   - 不要新建授權型別；複用 `ProgramAuthorizationV1`。
@@ -753,7 +748,7 @@ You are implementing this PRD.
 
 - **權威分層。** ArchContext 擁有結構事實、判級與 recommendation 生命週期；repo-harness 擁有提案作者身份、Task 身份（canonical Sprint）、priority/dependency/concurrency（Work Graph）、任務歸屬（Lease + ClaimActorReceipt + WorkEnvelope）、驗證結果（checks + AcceptanceReceipt）、收口事實（`CutoverClosureV1`）。`RefactorProgramV1` 只擁有「哪條 recommendation 對應哪個 Work Package」這一映射，**不擁有以上任何一項**。
 - **判級與提案的職責倒置是這條鏈最容易做錯的地方。** 直覺會以為「分析工具給建議、執行方採納」，但上游 contract 的實際形狀相反：ArchContext 只給觀察與判級，**提案由 repo-harness 側的 agent 撰寫並送進去評估**。這意味著 proposal 的質量是 repo-harness 的責任，而 scale 的正確性是 ArchContext 的責任。任何把兩者混在一起的實作（例如本地先猜 scale 再去驗證）都會退化成第二個判定器。
-- **「PR merged ≠ resolved」是資料模型層強制，不是文檔提醒。** `RefactorExecutionBindingV1` 結構上沒有狀態欄位，`RefactorProgramV1` 也沒有。repo-harness 在拿不到 ArchContext resolution 時，唯一能表達的就是 `merged_pending_measurement`——它結構上無法說謊。在只有 0.5.0 的階段這是常態，因為 refactor 類的 `resolved` 在 0.5.0 根本不可達。
+- **「PR merged ≠ resolved」是資料模型層強制，不是文檔提醒。** `RefactorExecutionBindingV1` 結構上沒有狀態欄位，`RefactorProgramV1` 也沒有。repo-harness 在 exact final main 的 ArchContext resolution 尚未產生前，唯一能表達的就是 `merged_pending_measurement`——它結構上無法說謊。
 - **10x 時最先失敗的三處。** 其一，program event chain 的線性掃描：program 數上升後 projection 重建會變慢，解法是 content-addressed 索引與 per-program 投影，GC 只清 terminal runtime cache、絕不刪 binding。其二，closure gate 的殘留掃描：selector 數 × 檔案數是乘積關係，解法是把掃描限縮在 contract allowed paths 與 diff 觸及檔案，而不是全倉庫掃。其三，`maximum_parallel_modules` 與 node 粒度 concurrency key 的組合會在大型 cross-module program 上成為吞吐瓶頸——正確解法是拆小 program，不是放寬 concurrency key。
 - **provider 呼叫是外部 I/O，必須有預算。** scan 走既有 `projection_timeout_ms` 的 1000..120000 邊界；一次 program 的 provider 呼叫次數應有上限並記入 event chain，避免重試風暴打到上游。GPT Pro lane 的呼叫成本更高，`proposal_author = gpt_pro` 必須有每 program 的次數上限。
 - **兩階段 provider 的代價是狀態空間變大。** Stage 2 不可用時 Module 8 的預驗跳過、Module 9 的測量停在 `merged_pending_measurement`——這兩條路徑必須有獨立測試，否則會退化成「Stage 2 永遠不可用也沒人發現」。
