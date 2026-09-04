@@ -1,6 +1,6 @@
 # runtime-harness/automation-budget 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:6095065bcf536fc757dd7f54fbee57b8e81d2641f6c32d79c8f696ab50354f37" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9d7da961f39ccb664bcbfcb555b4d343a88a94a9dccbe4a66b22f9cae43c2b93" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:8afaff65fd3d710e7b1629adf66c8b12d68e39795fa22778ce9fb9ed07a26135" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9cdb61bcde296372d3af492fcbe4dabdfa9f42ff37c1ac6816692f1c3bcc598d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.automation-budget`(kind `capability`)
 > **Matched Prefixes**:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:6eadeb2f7953a892b9ba41d8eb4c3fcfe8be033698f16c0296769eea80bdb60e`).
+- Proof: `proven` (`sha256:436efd49d7082178d973b8b59763f4c5addf7d80a6f53c46f9b148e0081c376a`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -37,7 +37,9 @@ flowchart LR
 | `entrypoint.automation-budget.reserve` | `src/effects/automation/budget-store.ts#persistStopReceipt` | `sink.automation-budget.stop-receipt` → `src/core/automation/budget.ts#sealAutomationStopReceipt` |
 | `entrypoint.automation-budget.append` | `src/effects/automation/budget-store.ts#commitUsage` | `sink.automation-budget.usage-event` → `src/core/automation/budget.ts#sealAutomationUsageEvent`、`sink.automation-budget.ledger-chain` → `src/core/automation/budget.ts#chainAutomationLedgerDigest` |
 | `entrypoint.automation-budget.project` | `src/effects/automation/budget-store.ts#readAutomationBudgetBoardSlice` | `sink.automation-budget.operator-slice` → `src/core/automation/projection.ts#projectAutomationBudgetSlice` |
-| `entrypoint.automation-controller.step` | `src/effects/automation/controller-run.ts#stepAutomationController` | `sink.automation-controller.acquire` → `src/effects/engineers/scheduling-acquire-next.ts#acquireNextScheduledEngineerTask`、`sink.automation-controller.dispatch` → `src/effects/engineers/delegated-run-store.ts#dispatchDelegatedRun`、`sink.automation-controller.journal` → `src/effects/automation/controller-store.ts#appendAutomationControllerEvent` |
+| `entrypoint.automation-controller.step` | `src/effects/automation/controller-run.ts#append` | `sink.automation-controller.journal` → `src/effects/automation/controller-store.ts#appendAutomationControllerEvent` |
+| `entrypoint.automation-controller.step` | `src/effects/automation/controller-run.ts#acquireNextControllerTask` | `sink.automation-controller.acquire` → `src/effects/engineers/scheduling-acquire-next.ts#acquireNextScheduledEngineerTask` |
+| `entrypoint.automation-controller.step` | `src/effects/automation/controller-run.ts#dispatchControllerRun` | `sink.automation-controller.dispatch` → `src/effects/engineers/delegated-run-store.ts#dispatchDelegatedRun` |
 
 ### 1.3 規模信號
 
@@ -58,11 +60,42 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **human-action-required**: P2 flow evidence is unprovable; no sequence diagram was generated.
-- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.journal
-- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.acquire
-- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.dispatch
-- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.journal
+> **Proof**: `proven` (`sha256:436efd49d7082178d973b8b59763f4c5addf7d80a6f53c46f9b148e0081c376a`); selectors `8/8`.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_budget_6928fdbe as Automation Budget
+  participant p2_ledger_bccca523 as Automation Budget Ledger
+  p2_budget_6928fdbe->>p2_ledger_bccca523: Re-read the budget revision and folded ledger， then decide the next operation under the run lock
+  alt A reservation inside every hard limit is charged exactly once
+  p2_budget_6928fdbe->>p2_ledger_bccca523: Append the authoritative usage event for the exact reservation
+  p2_budget_6928fdbe->>p2_ledger_bccca523: Chain the append-only ledger digest so no earlier event can be edited out
+    Note over p2_budget_6928fdbe: Return the reservation and the updated projection without touching Task， Lease， Work Graph， or contract authority
+  else A hard limit stops the run before the operation happens
+  p2_budget_6928fdbe->>p2_ledger_bccca523: Publish the immutable stop receipt naming the triggering metric and the in-flight authority
+  p2_budget_6928fdbe->>p2_ledger_bccca523: Project the stopped budget for the operator without provider-sensitive data
+    Note over p2_budget_6928fdbe: Refuse with a typed refusal and leave every in-flight authority to its own owner's normal recovery
+  end
+```
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_controller_e1a8c5d7 as Automation Budget
+  participant p2_journal_6b53b807 as Automation Controller Journal
+  p2_controller_e1a8c5d7->>p2_journal_6b53b807: Persist the exact current state and budget reservation before acquisition or dispatch
+  alt The canonical acquire-next seam returns a WorkEnvelope and the fenced delegated-run effect reports completion
+  p2_controller_e1a8c5d7->>p2_journal_6b53b807: Consume the first canonical Engineer offer and record its exact WorkEnvelope identity
+  p2_controller_e1a8c5d7->>p2_journal_6b53b807: Dispatch the already-admitted run through the single fenced effect and persist its observation
+    Note over p2_controller_e1a8c5d7: Return to observing only after durable outcome evidence and one budget charge
+  else A crash or stale authority makes the side effect ambiguous
+  p2_controller_e1a8c5d7->>p2_journal_6b53b807: Persist reconciliation_required and prevent another acquisition or dispatch
+    Note over p2_controller_e1a8c5d7: Stop with operator attention while Task and Lease authority remain unchanged
+  end
+```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" -->
 
 ## 3. P3:設計決策與不變量
