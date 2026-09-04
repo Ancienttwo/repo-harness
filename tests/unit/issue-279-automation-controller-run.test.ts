@@ -5,6 +5,7 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 
 import { buildAutomationControllerRun } from '../../src/core/automation/controller';
+import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 import { startAutomationControllerRun } from '../../src/effects/automation/controller-store';
 import { stepAutomationController, stopAutomationController } from '../../src/effects/automation/controller-run';
 
@@ -21,7 +22,7 @@ function setup() {
   const root = mkdtempSync(join(tmpdir(), 'controller-run-')); spawnSync('git', ['init', '-q'], { cwd: root });
   const run = buildAutomationControllerRun({ run_id: RUN_ID, repository_id: principal.repository_id,
     principal: { authorization_id: principal.auth_subject, engineer_id: principal.engineer_id, binding_id: principal.binding_id, binding_generation: 1, engineer_contract_revision: SHA, authorization_revision: 7 }, budget_sha256: SHA,
-    policy: { maximum_steps_per_invocation: 8, maximum_duration_ms: 10_000, maximum_transient_retries: 2, initial_backoff_ms: 100, maximum_backoff_ms: 1_000 }, protected_paths: ['plans', 'tasks'], created_at: '2026-09-04T00:00:00.000Z' });
+    policy: { maximum_steps_per_invocation: 8, maximum_duration_ms: 10_000, maximum_transient_retries: 2, initial_backoff_ms: 100, maximum_backoff_ms: 1_000, lease_liveness: buildLeaseLivenessPolicy({ renewal_interval_ms: 1_000, maximum_ttl_ms: 10_000, renewal_actor_kind: 'controller', required_evidence_sources: ['controller'], unproven_behavior: 'require_attention' }) }, protected_paths: ['plans', 'tasks'], created_at: '2026-09-04T00:00:00.000Z' });
   startAutomationControllerRun({ repo_root: root, run, idempotency_key: 'start', observed_at: run.created_at }); return { root, run };
 }
 
@@ -34,6 +35,8 @@ function dependencies(acquire: unknown, dispatch: unknown = null) {
     reserveBudget: () => ({ reservation_sha256: `sha256:${String(++reservation).padStart(64, '0')}` }) as never,
     appendUsage: () => ({ event: { event_sha256: `sha256:${'e'.repeat(64)}` }, current: {}, stop_receipt: null }) as never,
     acquireNext: () => acquire as never, dispatch: () => dispatch as never,
+    readLease: () => ({ record: { task_id: 'c'.repeat(64), task_revision: 'd'.repeat(64), claim_id: '22222222-2222-4222-8222-222222222222', generation: 1, execution_worktree: null, branch: null, state: 'reserving' } }) as never,
+    renewLiveness: () => ({ renewal: { renewal_sha256: SHA }, current: {} }) as never,
   };
 }
 

@@ -15,6 +15,7 @@ import {
   mintProgramAuthorization,
 } from '../../effects/automation/grant-store';
 import { AutomationControllerError } from '../../core/automation/controller';
+import { buildLeaseLivenessPolicy } from '../../core/state/lease-liveness';
 import { AutomationControllerStoreError, listAutomationControllerRuns, readAutomationControllerStatus } from '../../effects/automation/controller-store';
 import { reconcileAutomationController, startBoundedAutomationController, stepAutomationController, stopAutomationController } from '../../effects/automation/controller-run';
 
@@ -166,8 +167,10 @@ export function buildAutomationCommand(): Command {
     .option('--maximum-transient-retries <n>', 'Bounded transient retries', '3')
     .option('--initial-backoff-ms <n>', 'Initial deterministic backoff', '500')
     .option('--maximum-backoff-ms <n>', 'Maximum deterministic backoff', '8000')
-    .action((options: { run: string; authorizationId: string; idempotencyKey: string; protectedPath: string[]; maximumSteps: string; maximumDurationMs: string; maximumTransientRetries: string; initialBackoffMs: string; maximumBackoffMs: string }) => {
-      try { process.stdout.write(`${JSON.stringify(startBoundedAutomationController({ repo_root: process.cwd(), automation_run_id: options.run, authorization_id: options.authorizationId, idempotency_key: options.idempotencyKey, protected_paths: options.protectedPath, policy: { maximum_steps_per_invocation: number(options.maximumSteps, 'maximum-steps'), maximum_duration_ms: number(options.maximumDurationMs, 'maximum-duration-ms'), maximum_transient_retries: number(options.maximumTransientRetries, 'maximum-transient-retries'), initial_backoff_ms: number(options.initialBackoffMs, 'initial-backoff-ms'), maximum_backoff_ms: number(options.maximumBackoffMs, 'maximum-backoff-ms') } }), null, 2)}\n`); } catch (error) { outputError(error); }
+    .option('--lease-renewal-interval-ms <n>', 'Controller lease renewal interval', '30000')
+    .option('--lease-maximum-ttl-ms <n>', 'Maximum controller lease TTL', '120000')
+    .action((options: { run: string; authorizationId: string; idempotencyKey: string; protectedPath: string[]; maximumSteps: string; maximumDurationMs: string; maximumTransientRetries: string; initialBackoffMs: string; maximumBackoffMs: string; leaseRenewalIntervalMs: string; leaseMaximumTtlMs: string }) => {
+      try { process.stdout.write(`${JSON.stringify(startBoundedAutomationController({ repo_root: process.cwd(), automation_run_id: options.run, authorization_id: options.authorizationId, idempotency_key: options.idempotencyKey, protected_paths: options.protectedPath, policy: { maximum_steps_per_invocation: number(options.maximumSteps, 'maximum-steps'), maximum_duration_ms: number(options.maximumDurationMs, 'maximum-duration-ms'), maximum_transient_retries: number(options.maximumTransientRetries, 'maximum-transient-retries'), initial_backoff_ms: number(options.initialBackoffMs, 'initial-backoff-ms'), maximum_backoff_ms: number(options.maximumBackoffMs, 'maximum-backoff-ms'), lease_liveness: buildLeaseLivenessPolicy({ renewal_interval_ms: number(options.leaseRenewalIntervalMs, 'lease-renewal-interval-ms'), maximum_ttl_ms: number(options.leaseMaximumTtlMs, 'lease-maximum-ttl-ms'), renewal_actor_kind: 'controller', required_evidence_sources: ['controller', 'runtime_effect', 'publication', 'binding'], unproven_behavior: 'require_attention' }) } }), null, 2)}\n`); } catch (error) { outputError(error); }
     });
   controller.command('step')
     .requiredOption('--run <automationRunId>', 'Exact controller run digest')
