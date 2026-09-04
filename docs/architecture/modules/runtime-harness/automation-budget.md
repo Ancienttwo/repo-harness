@@ -83,6 +83,9 @@ sequenceDiagram
 4. token / cost 硬上限在本 slice 一律 fail closed:沒有 provider-attested usage 權威可讀之前,自證的用量數字比沒有上限更糟。
 5. `ProgramAuthorizationV1` 由 operator 鑄進 harness home 的 gate store,key 取自 Git common directory,所以同一個 clone 的每個 linked worktree 解析到同一份 grant;目標不是 Git 倉庫時直接 typed 拒絕,不會落到之後 `git init` 就作廢的路徑 key。每個讀取面都會重新錨定 grant,撤銷或改動後下一個 verb 就停。
 
+6. Controller journal 是 orchestration evidence，不是 Task 或 Lease authority。每次 step 先重驗 Engineer principal、Binding 與 authorization revision，再向 budget store 預留，之後才可調用 canonical acquire-next 或單一 fenced delegated-run effect。任何 event 已持久但 side effect 結果不明的狀態只可進 `reconciliation_required`。
+7. 同一 Engineer 的 controller 由 Git common-dir lock 與 current pointer 串行化；terminal run 才可被新 run 取代。每次 invocation 同時受 step count 與 wall duration 上限約束，transient retry 使用 frozen policy 推導的 deterministic capped backoff。10x 時最先失效的是 append-only event 與 transition 目錄的線性枚舉，而不是 Lease/Task authority；屆時應加 content-addressed index，不應另建 task queue。
+
 ## 4. 歷史決策記錄(append-only)
 
 ## Optimization Backlog

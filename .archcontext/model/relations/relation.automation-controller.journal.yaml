@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.automation-controller.journal
+kind: calls
+source: capability.runtime-harness.automation-budget
+target: component.automation-controller.journal
+intent: Persist each observation, acquisition and delegated dispatch boundary before the controller may advance

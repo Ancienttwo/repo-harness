@@ -14,6 +14,9 @@ import {
   listStoredProgramAuthorizations,
   mintProgramAuthorization,
 } from '../../effects/automation/grant-store';
+import { AutomationControllerError } from '../../core/automation/controller';
+import { AutomationControllerStoreError, listAutomationControllerRuns, readAutomationControllerStatus } from '../../effects/automation/controller-store';
+import { reconcileAutomationController, startBoundedAutomationController, stepAutomationController, stopAutomationController } from '../../effects/automation/controller-run';
 
 export interface AutomationBudgetRawOptions {
   readonly repo?: string;
@@ -39,6 +42,7 @@ function outputError(error: unknown): void {
   const code = invalid
     ? 'invalid_argument'
     : error instanceof AutomationBudgetStoreError || error instanceof AutomationGrantStoreError
+      || error instanceof AutomationControllerError || error instanceof AutomationControllerStoreError
       ? error.code
       : 'automation_budget_unavailable';
   const message = error instanceof Error ? error.message : String(error);
@@ -149,5 +153,39 @@ export function buildAutomationCommand(): Command {
     });
   automation.addCommand(budget);
   automation.addCommand(grant);
+  const controller = new Command('controller').description('Run one bounded unattended Engineer controller');
+  const number = (value: string, field: string): number => { const parsed = Number(value); if (!Number.isSafeInteger(parsed)) throw new AutomationArgumentError(`${field} must be an integer`); return parsed; };
+  const collect = (value: string, previous: string[]): string[] => [...previous, value];
+  controller.command('start')
+    .requiredOption('--run <automationRunId>', 'Exact automation budget run digest')
+    .requiredOption('--authorization-id <id>', 'Mapped Engineer OAuth authorization')
+    .requiredOption('--idempotency-key <key>', 'Stable controller start key')
+    .requiredOption('--protected-path <path>', 'Protected repository path; repeatable', collect, [])
+    .option('--maximum-steps <n>', 'Hard steps per invocation', '8')
+    .option('--maximum-duration-ms <n>', 'Hard invocation duration', '60000')
+    .option('--maximum-transient-retries <n>', 'Bounded transient retries', '3')
+    .option('--initial-backoff-ms <n>', 'Initial deterministic backoff', '500')
+    .option('--maximum-backoff-ms <n>', 'Maximum deterministic backoff', '8000')
+    .action((options: { run: string; authorizationId: string; idempotencyKey: string; protectedPath: string[]; maximumSteps: string; maximumDurationMs: string; maximumTransientRetries: string; initialBackoffMs: string; maximumBackoffMs: string }) => {
+      try { process.stdout.write(`${JSON.stringify(startBoundedAutomationController({ repo_root: process.cwd(), automation_run_id: options.run, authorization_id: options.authorizationId, idempotency_key: options.idempotencyKey, protected_paths: options.protectedPath, policy: { maximum_steps_per_invocation: number(options.maximumSteps, 'maximum-steps'), maximum_duration_ms: number(options.maximumDurationMs, 'maximum-duration-ms'), maximum_transient_retries: number(options.maximumTransientRetries, 'maximum-transient-retries'), initial_backoff_ms: number(options.initialBackoffMs, 'initial-backoff-ms'), maximum_backoff_ms: number(options.maximumBackoffMs, 'maximum-backoff-ms') } }), null, 2)}\n`); } catch (error) { outputError(error); }
+    });
+  controller.command('step')
+    .requiredOption('--run <automationRunId>', 'Exact controller run digest')
+    .requiredOption('--idempotency-key <key>', 'Stable step key')
+    .option('--dispatch-id <digest>', 'Exact already-admitted delegated-run dispatch')
+    .option('--max-selection-attempts <n>', 'Bounded acquire-next rereads', '3')
+    .action((options: { run: string; idempotencyKey: string; dispatchId?: string; maxSelectionAttempts: string }) => {
+      try { process.stdout.write(`${JSON.stringify(stepAutomationController({ repo_root: process.cwd(), run_id: options.run, idempotency_key: options.idempotencyKey, dispatch_id: options.dispatchId, max_selection_attempts: number(options.maxSelectionAttempts, 'max-selection-attempts') }), null, 2)}\n`); } catch (error) { outputError(error); }
+    });
+  controller.command('status').option('--run <automationRunId>', 'Exact controller run digest').action((options: { run?: string }) => {
+    try { process.stdout.write(`${JSON.stringify(options.run ? readAutomationControllerStatus(process.cwd(), options.run) : listAutomationControllerRuns(process.cwd()), null, 2)}\n`); } catch (error) { outputError(error); }
+  });
+  controller.command('stop').requiredOption('--run <automationRunId>').requiredOption('--idempotency-key <key>').action((options: { run: string; idempotencyKey: string }) => {
+    try { process.stdout.write(`${JSON.stringify(stopAutomationController(process.cwd(), options.run, options.idempotencyKey), null, 2)}\n`); } catch (error) { outputError(error); }
+  });
+  controller.command('reconcile').requiredOption('--run <automationRunId>').requiredOption('--idempotency-key <key>').requiredOption('--evidence-ref <ref>', 'Exact evidence reference; repeatable', collect, []).action((options: { run: string; idempotencyKey: string; evidenceRef: string[] }) => {
+    try { process.stdout.write(`${JSON.stringify(reconcileAutomationController(process.cwd(), options.run, options.idempotencyKey, options.evidenceRef), null, 2)}\n`); } catch (error) { outputError(error); }
+  });
+  automation.addCommand(controller);
   return automation;
 }

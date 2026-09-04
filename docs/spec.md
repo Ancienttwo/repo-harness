@@ -116,6 +116,21 @@ repos.
   renews itself, never rewrites Task, Lease, Work Graph, or contract authority,
   and never releases or steals a claim.
 
+- One unattended controller is bound to the exact automation budget run,
+  Engineer principal, Binding generation, authorization revision, and protected
+  path set. Each invocation has independent hard step and duration ceilings.
+  Acquisition is only through canonical `acquire-next`; execution consumes its
+  returned `WorkEnvelopeV1` and dispatches only an already-admitted run through
+  `dispatchDelegatedRun`. The controller never creates Task, Work Graph, Lease,
+  or delegated-run authority.
+- Controller events are append-only evidence under the Git common directory.
+  The event is durable before every acquisition or dispatch; a restart at an
+  unresolved side-effect boundary becomes `reconciliation_required` and cannot
+  repeat that side effect. Transient acquisition failures use recorded,
+  deterministic exponential backoff capped by the frozen policy; user/operator
+  blockers and budget exhaustion are terminal. Explicit stop prevents another
+  acquisition and leaves the current Claim and Lease to their normal owner.
+
 ## Workflow Surfaces
 
 | Surface | Owner | Purpose |
@@ -130,6 +145,7 @@ repos.
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
 | `repo-harness automation budget show --run <id>` | Package runtime | Read-only operator projection of one automation run's budget, consumption, and stop receipt |
+| `repo-harness automation controller start\|step\|status\|stop\|reconcile` | Package runtime | Bounded unattended Engineer orchestration over the existing budget, acquire-next, WorkEnvelope and delegated-run authorities |
 | `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; `frontend` task_profile contracts must cite a design brief, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries
