@@ -6,13 +6,14 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:a8448f363e23bc84fd60f0aacf333b67ad76da6a6d31bbebac1f284d7db9f9a6`
+> **Substantive Change SHA256**: `sha256:0801553b25d579ce26da00d492e1f42608f92d666df2a27888d9d3227c84d7c3`
 
 ## Design Decisions
 
 - Keep discovery/authoring stateless. Module 4 remains the sole owner of program events, current projection, author dispatch, and CLI lifecycle.
 - Bind short aliases to the provider-owned `recommendationId` and fingerprint; do not copy recommendation status or infer a local score.
 - Reject directory, glob, missing, and repository-escaping `scopePaths` before the proposal-bearing provider call. The provider remains the only scale authority.
+- Register the Refactor Program as its own ArchContext capability boundary so the remaining modules resolve to one explicit architecture owner instead of the root fallback.
 
 ## Deviations From Plan Or Spec
 

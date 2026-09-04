@@ -73,6 +73,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - docs/spec.md
   - docs/researches/20260902-restructure.md
+  - docs/architecture/modules/runtime-harness/refactor-program.md
+  - .archcontext/model/nodes/capability.runtime-harness.refactor-program.yaml
   - plans/
   - tasks/todos.md
   - tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md

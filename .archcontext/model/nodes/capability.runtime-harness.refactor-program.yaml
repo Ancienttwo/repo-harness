@@ -1,0 +1,41 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.refactor-program
+kind: capability
+name: Refactor Program
+status: active
+summary: Orchestrates ArchContext-backed refactor discovery, accountable proposal authoring, conservative workflow routing, execution evidence, and post-merge resolution without duplicating structural authority.
+responsibilities:
+  - Keep ArchContext as the sole authority for structural observations, refactor scale, recommendation identity, verification, and resolution.
+  - Enforce the proposal-free discovery scan followed by accountable proposal authoring and a proposal-bound assessment.
+  - Persist one append-only Refactor Program event chain in the Git common directory and rebuild its current projection from durable events.
+  - Apply the off, shadow, and active policy ladder without allowing a candidate worktree to relax its own mutation authority.
+  - Project assessed scale conservatively into module, cross-module, architecture-intervention, proof-required, or no-action workflow routes.
+  - Materialize bounded work packages and execution bindings without copying recommendation lifecycle state.
+  - Require Cutover Closure and exact candidate verification before merge, then measure and resolve only against exact new main.
+  - Keep board and workflow views deterministic projections of provider and program authorities.
+source:
+  include:
+    - "src/core/refactor/**"
+    - "src/effects/refactor/**"
+  entrypoints:
+    - id: entrypoint.refactor-program.discover
+      path: "src/effects/refactor/discovery-authoring.ts"
+      symbols:
+        - name: "discoverRefactorCandidates"
+          sinks:
+            - id: sink.refactor-program.provider-scan
+              path: "src/effects/refactor/archctx-provider.ts"
+              symbol: "runRefactorScan"
+        - name: "assessRefactorProposal"
+          sinks:
+            - id: sink.refactor-program.proposal-assessment
+              path: "src/effects/refactor/archctx-provider.ts"
+              symbol: "runRefactorScan"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts --timeout 60000"
+    - "bun run check:type"
