@@ -14,6 +14,7 @@ import { prepareRefactorArchitectureIntervention, RefactorArchitectureInterventi
 import { verifyRefactorCandidate, RefactorCandidateVerificationEffectError } from '../../effects/refactor/candidate-verification';
 import { appendRefactorExecutionBinding, RefactorExecutionBindingStoreError } from '../../effects/refactor/execution-binding-store';
 import { rebuildRefactorBoard, resolveRefactorPostMerge, RefactorPostMergeResolutionError } from '../../effects/refactor/post-merge-resolution';
+import { advanceRefactorActivation, appendRefactorCanaryReceipt, readRefactorActivationLevel } from '../../effects/refactor/activation-store';
 import type { RefactorProgramV1 } from '../../core/refactor/program';
 import type { RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
 import type { RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
@@ -114,6 +115,9 @@ export async function runRefactorPostMerge(raw: { readonly repo?: string; readon
 export function runRefactorBoard(raw: { readonly repo?: string; readonly request?: string }): void {
   output(rebuildRefactorBoard({ ...requestJson(raw.request), repo_root: raw.repo?.trim() || process.cwd() } as Parameters<typeof rebuildRefactorBoard>[0]));
 }
+export function runRefactorCanaryRecord(raw: { readonly repo?: string; readonly request?: string }): void { output(appendRefactorCanaryReceipt(raw.repo?.trim() || process.cwd(), requestJson(raw.request) as never)); }
+export function runRefactorActivationPromote(raw: { readonly repo?: string; readonly request?: string }): void { output(advanceRefactorActivation({ ...requestJson(raw.request), repo_root: raw.repo?.trim() || process.cwd() } as Parameters<typeof advanceRefactorActivation>[0])); }
+export function runRefactorActivationStatus(raw: { readonly repo?: string }): void { output({ level: readRefactorActivationLevel(raw.repo?.trim() || process.cwd()) }); }
 
 export function buildRefactorCommand(): Command {
   const command = new Command('refactor').description('Operate the authorized refactor program state machine');
@@ -160,5 +164,16 @@ export function buildRefactorCommand(): Command {
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--request <path>', 'Exact board projection request JSON')
     .action((options: { repo?: string; request?: string }) => { try { runRefactorBoard(options); } catch (error) { outputError(error); } });
+  command.command('canary-record')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Repository-local canary evidence request JSON')
+    .action((options: { repo?: string; request?: string }) => { try { runRefactorCanaryRecord(options); } catch (error) { outputError(error); } });
+  command.command('activation-promote')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'One-step activation promotion request JSON')
+    .action((options: { repo?: string; request?: string }) => { try { runRefactorActivationPromote(options); } catch (error) { outputError(error); } });
+  command.command('activation-status')
+    .option('--repo <path>', 'Repository root', '.')
+    .action((options: { repo?: string }) => { try { runRefactorActivationStatus(options); } catch (error) { outputError(error); } });
   return command;
 }

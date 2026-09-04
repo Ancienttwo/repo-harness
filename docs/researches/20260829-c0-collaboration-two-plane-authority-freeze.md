@@ -95,6 +95,7 @@ the historical `main@a490a5ef` count:
 |---|---|---|
 | `src/core/refactor/program.ts` | C-1 | Refactor orchestration plane: binds provider recommendation identity to a Work Package before materialization; downstream scheduling reads the resulting canonical Work Graph, never the RefactorProgram bytes, as Task/Claim authority |
 | `src/core/refactor/board.ts` | C-1, C-2 | Refactor read model: projects Program, provider lifecycle, execution, and resolution authorities for display; no delivery-plane admission or ownership decision reads the board bytes |
+| `src/core/refactor/activation.ts` | C-1, C-2 | Refactor rollout-control plane: canary receipts gate mode activation but grant no Task/Claim, move no Lease generation, and publish or accept no delivery-plane fact |
 
 **`project-board.ts` vs `fleet/board.ts`.** Both are Task/Lease-plane read
 models, and both are inventoried; the earlier split between them had no stated

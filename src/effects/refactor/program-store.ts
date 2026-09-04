@@ -16,6 +16,8 @@ import {
   type RefactorProgramOperation,
 } from '../../core/refactor/program-state';
 import { loadRefactorPolicyAtRevision } from '../../core/refactor/policy';
+import { REFACTOR_ACTIVATION_LEVELS } from '../../core/refactor/activation';
+import { readRefactorActivationLevel } from './activation-store';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readStoredProgramAuthorization } from '../automation/grant-store';
@@ -108,6 +110,8 @@ function assertOperationEnabled(repoRoot: string, program: RefactorProgramDefini
   }
   const policy = loadRefactorPolicyAtRevision(repoRoot, program.target_revision);
   if (policy.mode === 'off') fail('refactor_mode_disabled', 'refactor mode is off at the authorized target revision');
+  const activation = readRefactorActivationLevel(repoRoot); const requiredActivation = policy.mode === 'shadow' ? 'shadow' : 'active_module';
+  if (REFACTOR_ACTIVATION_LEVELS.indexOf(activation) < REFACTOR_ACTIVATION_LEVELS.indexOf(requiredActivation)) fail('refactor_mode_disabled', `refactor policy ${policy.mode} requires activation level ${requiredActivation}`);
   if (policy.mode === 'shadow' && !SHADOW_OPERATIONS.has(operation)) fail('refactor_mode_disabled', `${operation} is forbidden while refactor mode is shadow`);
 }
 

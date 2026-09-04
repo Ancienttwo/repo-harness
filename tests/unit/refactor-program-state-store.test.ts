@@ -8,6 +8,7 @@ import { sealProgramAuthorization } from '../../src/core/automation/budget';
 import { buildRefactorProgramDefinition } from '../../src/core/refactor/program-state';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { appendRefactorProgramEvent, createRefactorProgram, readRefactorProgramStatus, RefactorProgramStoreError } from '../../src/effects/refactor/program-store';
+import { activateRefactorFixture } from '../helpers/refactor-activation-fixture';
 
 const roots: string[] = [];
 const hex = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -24,6 +25,7 @@ function fixture(mode: 'off' | 'shadow' | 'active' = 'shadow') {
   execFileSync('git', ['add', '.ai/harness/policy.json'], { cwd: root });
   execFileSync('git', ['commit', '-qm', 'policy'], { cwd: root });
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  if (mode !== 'off') activateRefactorFixture(root, 'repo-fixture', revision, mode === 'shadow' ? 'shadow' : 'active_module');
   const authorization = sealProgramAuthorization({ authorization_id: 'authorization-refactor', repository_id: 'repo-fixture', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work-graph'), allowed_work_package_ids: ['wp-refactor'], allowed_risk_tiers: ['low'], merge_mode: 'disabled', allowed_merge_method: 'squash', max_repair_cycles: limits.max_repair_cycles, budget: limits, contract_scope: 'contract_less', contract_path: null, issued_by: 'ancienttwo', issued_at: '2026-09-04T00:00:00.000Z', expires_at: '2027-09-04T00:00:00.000Z' });
   const env = { ...process.env, REPO_HARNESS_HOME: home };
   mintProgramAuthorization({ repo_root: root, authorization, env });
@@ -34,6 +36,7 @@ function fixture(mode: 'off' | 'shadow' | 'active' = 'shadow') {
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 
 describe('Module 4 refactor program state and store', () => {
+  test('treats policy mode as an intent ceiling and requires canary activation evidence', () => { const f = fixture('active'); const common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: f.root, encoding: 'utf8' }).trim(); rmSync(join(f.root, common, 'repo-harness', 'refactor-activation'), { recursive: true }); expect(() => createRefactorProgram({ repo_root: f.root, program: f.program, idempotency_key: 'unactivated', env: f.env })).toThrow('requires activation level active_module'); });
   test('rebuilds current from the append-only chain and keeps exact replay idempotent', () => {
     const f = fixture();
     const created = createRefactorProgram({ repo_root: f.root, program: f.program, idempotency_key: 'create-1', env: f.env });

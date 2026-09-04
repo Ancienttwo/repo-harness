@@ -8,6 +8,7 @@ import { projectWorkGraph, validateWorkGraphTopology } from '../../core/engineer
 import { canonicalRefactorProgramBytes, validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
 import { projectRefactorMaterialization, type RefactorMaterializationArtifactV1, type RefactorMaterializationUnitV1 } from '../../core/refactor/materialization';
 import { loadRefactorPolicyAtRevision } from '../../core/refactor/policy';
+import { readRefactorActivationLevel } from './activation-store';
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
 import { BACKLOG_TABLE_HEADER, BACKLOG_TABLE_SEPARATOR, SPRINT_BACKLOG_SCHEMA_HEADER } from '../../core/state/sprint-backlog-rows';
 import type { RefactorRecommendationAuthorityV1 } from '../../core/refactor/provider-contract';
@@ -71,6 +72,7 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
   if (status.program.base_main_sha !== program.baseMainSha || status.program.target_revision !== program.baseMainSha) fail('refactor_materialization_conflict', 'program baseline differs from the authorized target revision');
   const policy = loadRefactorPolicyAtRevision(root, status.program.target_revision);
   if (policy.mode !== 'active') fail('refactor_materialization_conflict', 'execution materialization requires active Refactor Mode');
+  if (program.route === 'cross_module_refactor' && readRefactorActivationLevel(root) !== 'active_cross_module') fail('refactor_materialization_conflict', 'cross-module materialization requires active_cross_module activation');
   const grant = readStoredProgramAuthorization(root, status.program.authorization_sha256, input.env ?? process.env);
   const authorizedWorkPackages = new Set(grant.allowed_work_package_ids);
   for (const binding of program.bindings) if (!authorizedWorkPackages.has(binding.workPackageId)) fail('refactor_materialization_conflict', `work package is not authorized: ${binding.workPackageId}`);

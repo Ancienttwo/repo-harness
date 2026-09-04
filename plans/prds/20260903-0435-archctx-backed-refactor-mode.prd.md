@@ -1,6 +1,6 @@
 # PRD: ArchContext-backed Refactor Mode and Execution Integration
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `archctx-backed-refactor-mode`
 > **Created**: 2026-09-03 04:35
 > **Updated**: 2026-09-04 12:09
@@ -23,7 +23,7 @@
 - Key risk: 「重構做完了但舊路徑還在」。ArchContext 能證明結構指標改善，證明不了舊 public surface、舊 fallback、舊 test、舊 doc 被清乾淨；沒有 Cutover Closure，指標改善會被當成重構完成。
 - Unknowns: first-class provenance 欄位（GPT Pro 來源標註）要等 0.6.0 contract 變更；其餘 provider contract 已由 `archctx@0.5.2` 發布並完成 clean-room readback。
 - Acceptance scenarios: 無 proposal 的掃描必須回 `scale = null` 且不得物化任務；`scale = 'cross_module'` 被投影成 `module_refactor` 時 `refactor_route_conflict`；PR 合入但 after-scan 未跑時只能顯示 `merged_pending_measurement`。
-- Suggested next step: **不生成 Sprint**。先把 Module 1（Cutover Closure Gate）抽成獨立 work-package plan——它零 archctx 依賴、可立即落地、且是 GPT Pro campaign Phase B 的前置——並在一個真實歷史重構 PR 上跑 First Proof Point。
+- Suggested next step: 依 Module 10 的 repository-local canary receipts 逐級執行 `off → shadow → active/module-only → active/cross-module`；任何級別都不得绕过前一级或复用其他仓库证据。
 
 ## Problem
 
@@ -687,7 +687,7 @@ Module 8 完整 → Module 9 → Module 10
 
 You are implementing this PRD.
 
-- Current delivery: Module 1 與 Module 3 已合入；Module 2 已完成 discovery / proposal authoring；Module 4 已完成 policy、append-only program store、可重建 current projection 與 `refactor start|status|stop` CLI；Module 5 已完成三輸入保守 route 投影與全 major-reason 冪集不變式驗證；Module 6 已完成 recommendation binding、module / cross-module / proof-investigation 投影，以及 Program、Sprint、Plan、Work Graph、acceptance policy、rollback boundary 的單一 Git CAS 與 crash replay；Module 7 已完成完整 target delta 綁定、unresolved-target 硬閘、既有 architecture-projection 人工 receipt 驗證，以及 projection-owned docs 與執行 artifacts 的同一 Git CAS；Module 8 已完成固定四閘 candidate verification、Stage 2 unavailable 顯式證據，以及無 lifecycle state 的 append-only execution binding；Module 9 已完成 exact final-main resolution、ArchContext lifecycle closure、resolved discovery 去重，以及可重建的 joined Refactor Board。
+- Current delivery: Module 1–10 已全部實作。Module 2 完成 discovery / proposal authoring；Module 4–9 完成 policy/state machine、保守 route、原子 materialization、architecture approval、candidate/execution binding、exact final-main resolution 與 joined Refactor Board；Module 10 完成十項固定 canary receipt、repository/revision exact binding，以及不可跳級的 `off → shadow → active/module-only → active/cross-module` activation ledger。Module 1 與 Module 3 分別由 PR #296、#304 提供已合入前置。
 - Do not reinterpret:
   - 不要在 repo-harness 實作任何模組統計、依賴圖、cycle 偵測或 refactor 評分；不要直接讀 CodeGraph。
   - 不要把 `proof_required` / `no_action` 當成上游 `RefactorScale` 值。上游只有 `architecture | cross_module | insufficient_evidence | model_adoption_required | module`（`refactor.ts:28-34`）。

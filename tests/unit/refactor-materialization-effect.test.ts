@@ -11,6 +11,7 @@ import { buildRefactorProgramDefinition } from '../../src/core/refactor/program-
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { materializeRefactorProgram } from '../../src/effects/refactor/materialization';
 import { appendRefactorProgramEvent, createRefactorProgram, readRefactorProgramStatus } from '../../src/effects/refactor/program-store';
+import { activateRefactorFixture } from '../helpers/refactor-activation-fixture';
 
 const roots: string[] = [];
 const D = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -25,7 +26,7 @@ function fixture() {
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root }); execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root }); execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
   mkdirSync(join(root, '.ai', 'harness'), { recursive: true }); writeFileSync(join(root, '.ai', 'harness', 'policy.json'), `${JSON.stringify({ refactor: { mode: 'active' } })}\n`);
   execFileSync('git', ['add', '.'], { cwd: root }); execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
-  const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(); const env = { ...process.env, REPO_HARNESS_HOME: home };
+  const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(); const env = { ...process.env, REPO_HARNESS_HOME: home }; activateRefactorFixture(root, 'repo_0123456789abcdef', revision, 'active_cross_module');
   const authorization = sealProgramAuthorization({ authorization_id: 'authorization-rf', repository_id: 'repo_0123456789abcdef', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: H('graph'), allowed_work_package_ids: ['rf-runtime'], allowed_risk_tiers: ['low'], merge_mode: 'disabled', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, issued_by: 'ancienttwo', issued_at: OBSERVED, expires_at: '2027-09-04T00:00:00.000Z' });
   mintProgramAuthorization({ repo_root: root, authorization, env });
   const definition = buildRefactorProgramDefinition({ program_id: 'rf-1', authorization_id: authorization.authorization_id, authorization_sha256: authorization.authorization_sha256, repository_id: authorization.repository_id, target_ref: authorization.target_ref, target_revision: revision, base_main_sha: revision, created_at: OBSERVED });

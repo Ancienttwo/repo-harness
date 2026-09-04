@@ -13,6 +13,7 @@ responsibilities:
   - Materialize bounded work packages and execution bindings without copying recommendation lifecycle state.
   - Require Cutover Closure and exact candidate verification before merge, then measure and resolve only against exact new main.
   - Keep board and workflow views deterministic projections of provider and program authorities.
+  - Gate shadow, module-only, and cross-module activation on repository-local canary evidence without allowing rung skips.
 source:
   include:
     - "src/core/refactor/**"
@@ -80,11 +81,16 @@ source:
             - id: sink.refactor-program.board-projection
               path: "src/effects/refactor/post-merge-resolution.ts"
               symbol: "rebuildRefactorBoard"
+        - name: "runRefactorActivationPromote"
+          sinks:
+            - id: sink.refactor-program.activation-ledger
+              path: "src/effects/refactor/activation-store.ts"
+              symbol: "advanceRefactorActivation"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts tests/unit/refactor-candidate-verification.test.ts tests/unit/refactor-execution-binding.test.ts tests/unit/refactor-board.test.ts tests/unit/refactor-post-merge-resolution.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts tests/unit/refactor-candidate-verification.test.ts tests/unit/refactor-execution-binding.test.ts tests/unit/refactor-board.test.ts tests/unit/refactor-post-merge-resolution.test.ts tests/unit/refactor-activation.test.ts --timeout 60000"
     - "bun run check:type"

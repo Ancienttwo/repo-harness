@@ -56,6 +56,12 @@ finalized merge on exact protected target
   -> ArchContext lifecycle resolve only for resolved evidence
   -> rebuild versioned JSON and Markdown board from authorities
   -> complete only when every bound recommendation is resolved
+
+activation request
+  -> append repository-local canary receipts bound to exact HEAD
+  -> require the fixed canary subset for the next rung
+  -> append one immutable activation event
+  -> permit shadow, module execution, then cross-module execution without skips
 ```
 
 - Proof: `proven` (capability node entrypoints and required flows bind discovery plus lifecycle store paths).
@@ -72,6 +78,8 @@ flowchart LR
   CLI --> Resolution[Exact final-main resolution]
   Resolution --> ArchContext
   Resolution --> Board[Pure Refactor Board projection]
+  CLI --> Activation[Canary-gated activation ledger]
+  Activation --> Store
 ```
 
 > **Proof**: `proven`; lifecycle selectors bind CLI sources to the program-store sinks.
@@ -112,6 +120,8 @@ sequenceDiagram
 - Refactor Board joins Program, recommendation readback, execution bindings, and resolution evidence by exact recommendation ID plus digest; duplicate authorities fail closed.
 - Merge observation alone is `merged_pending_measurement`. Only provider evidence bound to the exact final-main commit may resolve a card, while stale evidence requires reconciliation and all other non-resolved dispositions require follow-up.
 - Discovery re-reads ArchContext lifecycle state and excludes exact resolved or superseded recommendation identities before assigning candidate aliases.
+- Runtime policy is an intent ceiling, not activation evidence: shadow requires the shadow rung, active execution requires `active_module`, and cross-module materialization additionally requires `active_cross_module`.
+- Activation events are append-only, advance exactly one rung, and bind the fixed canary receipt subset to the same repository and exact target revision. Architecture intervention retains its independent human approval at every rung.
 
 ## Verification
 
