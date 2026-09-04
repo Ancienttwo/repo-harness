@@ -83,7 +83,7 @@ function cell(value: string, label: string): string {
 export function projectRefactorMaterialization(input: ProjectRefactorMaterializationInput): ProjectedRefactorMaterializationV1 {
   exact(input, ['repositoryId', 'sprintPath', 'sprintSchema', 'firstRowIndex', 'maximumModulesPerProgram', 'program', 'units', 'artifacts'], 'materialization projection');
   const program = validateRefactorProgram(input.program);
-  if (program.route !== 'module_refactor' && program.route !== 'cross_module_refactor' && program.route !== 'proof_required') {
+  if (program.route !== 'module_refactor' && program.route !== 'cross_module_refactor' && program.route !== 'proof_required' && program.route !== 'architecture_intervention') {
     invalid(`route ${program.route} cannot be materialized as execution work`);
   }
   if (!Number.isSafeInteger(input.maximumModulesPerProgram) || input.maximumModulesPerProgram < 1) invalid('maximumModulesPerProgram is invalid');
@@ -107,7 +107,7 @@ export function projectRefactorMaterialization(input: ProjectRefactorMaterializa
     const binding = bindingByRecommendation.get(unit.recommendationId);
     if (!binding) invalid(`unit ${unit.recommendationId} has no binding`);
     if (!program.affectedNodeIds.includes(unit.architectureNodeId)) invalid(`unit ${unit.recommendationId} names an unaffected architecture node`);
-    const expectedBoundary = program.route === 'cross_module_refactor' ? 'cross_module_stage' : 'module';
+    const expectedBoundary = program.route === 'cross_module_refactor' ? 'cross_module_stage' : program.route === 'architecture_intervention' ? 'architecture_intervention' : 'module';
     if (binding.executionBoundary !== expectedBoundary) invalid(`binding ${binding.recommendationId} has the wrong execution boundary`);
     if (binding.taskRef !== `${input.sprintPath}#${unit.taskId}`) invalid(`binding ${binding.recommendationId} does not reference its canonical Sprint task`);
     if ((program.route === 'proof_required') !== (unit.kind === 'investigation')) invalid('proof_required may only materialize investigation Work Packages');

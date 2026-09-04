@@ -288,6 +288,20 @@ export function inspectArchitectureProjectionAcceptanceState(repoRoot: string): 
   });
 }
 
+export function readArchitectureProjectionAcceptanceReceipt(
+  repoRoot: string,
+  signalId: string,
+): ArchitectureProjectionAcceptanceReceiptV1 {
+  assertSignalId(signalId);
+  const root = realpathSync(resolve(repoRoot));
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () => {
+    const candidate = readCandidate(root, signalId);
+    const path = artifactPath(root, RECEIPTS, signalId);
+    if (!existsSync(path)) throw new Error(`architecture acceptance receipt is missing: ${signalId}`);
+    return readReceiptFile(path, candidate);
+  });
+}
+
 function readCandidate(root: string, signalId: string): ArchitectureProjectionAcceptanceCandidateV1 {
   const path = artifactPath(root, CANDIDATES, signalId);
   if (!existsSync(path)) throw new Error(`architecture acceptance candidate is missing: ${signalId}`);

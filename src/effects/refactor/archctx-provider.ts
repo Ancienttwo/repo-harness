@@ -3,6 +3,7 @@ import { canonicalize } from "../../core/evidence/canonical-json";
 import {
   assertRefactorCapabilities,
   assertAcceptedRefactorRecommendations,
+  assertRefactorRecommendationReadback,
   assertRefactorRecordResult,
   assertRefactorRequest,
   assertRefactorScanResult,
@@ -11,6 +12,7 @@ import {
   RefactorProviderError,
   type RefactorRecordResultV1,
   type RefactorRecommendationAuthorityV1,
+  type RefactorRecommendationReadbackV1,
   type RefactorScanResultV1,
   type RefactorVerifyResultV1,
 } from "../../core/refactor/provider-contract";
@@ -68,6 +70,16 @@ export function readAcceptedRefactorRecommendations(
   const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
   const value = invoke(repoRoot, policy.stages.scan, ["book", "recommendations", "--json"], options);
   return assertAcceptedRefactorRecommendations(value, expectedHeadSha);
+}
+
+export function readRefactorRecommendationRecords(
+  expectedHeadSha: string,
+  repoRoot: string,
+  options: RefactorArchctxProviderOptions = {},
+): RefactorRecommendationReadbackV1 {
+  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
+  const value = invoke(repoRoot, policy.stages.scan, ["book", "recommendations", "--json"], options);
+  return assertRefactorRecommendationReadback(value, expectedHeadSha);
 }
 
 export function runRefactorVerify(request: RefactorVerificationRequestV1, repoRoot: string, options: RefactorArchctxProviderOptions = {}): RefactorVerifyResultV1 {

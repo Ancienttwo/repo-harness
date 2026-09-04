@@ -108,7 +108,7 @@ function state(value: unknown, field: string): RefactorProgramState {
 
 const TRANSITIONS: Readonly<Record<RefactorProgramOperation, readonly (RefactorProgramState | null)[]>> = Object.freeze({
   create: [null], begin_scan: ['created'], observe: ['scanning'], begin_authoring: ['observed'], assess: ['authoring'],
-  begin_route: ['assessed'], begin_materialize: ['routing'], begin_plan: ['materializing'], begin_execute: ['planning'],
+  begin_route: ['assessed'], begin_materialize: ['routing', 'architecture_approval_required'], begin_plan: ['materializing'], begin_execute: ['planning'],
   begin_verify: ['executing'], begin_merge: ['verifying'], begin_post_merge_measure: ['merging'], begin_resolve: ['post_merge_measuring'],
   complete: ['resolving'], require_proof: ['assessed', 'routing'], require_architecture_approval: ['assessed', 'routing'],
   mark_stale: REFACTOR_PROGRAM_STATES.filter((value) => !['complete', 'stopped'].includes(value)),

@@ -48,6 +48,21 @@ outcomes:
     terminal:
       participant: operator
       label: Return the materialized commit and planning-state receipt
+  - id: architecture-approved
+    kind: success
+    label: Route architecture-scale work through the existing human projection acceptance authority
+    steps:
+      - id: prepare-architecture-intervention
+        from: operator
+        to: program-store
+        label: Bind the accepted ArchContext target delta and stop at architecture_approval_required
+        evidence:
+          entrypointId: entrypoint.refactor-program.lifecycle
+          sourceSymbol: runRefactorArchitectureRequest
+          sinkId: sink.refactor-program.architecture-intervention
+    terminal:
+      participant: operator
+      label: Use the returned digest-derived approval reference with architecture-projection accept before materialization
   - id: stopped
     kind: success
     label: Append an explicit stopped terminal transition

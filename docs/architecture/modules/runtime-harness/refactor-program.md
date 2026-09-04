@@ -33,6 +33,13 @@ accepted recommendation set
   -> canonical Sprint rows plus Work Graph dependencies
   -> Program, Sprint, Plans, policies, and rollback artifacts published by one Git CAS
   -> planning state; Contract and Lease remain downstream authorities
+
+architecture-scale recommendation
+  -> exact provider targetDelta readback
+  -> unresolved target gate
+  -> architecture_approval_required state
+  -> existing architecture-projection accept receipt
+  -> atomic projection-doc plus Work Package materialization
 ```
 
 - Proof: `proven` (capability node entrypoints and required flows bind discovery plus lifecycle store paths).
@@ -74,6 +81,8 @@ sequenceDiagram
 - Every mutating program transition is append-only, idempotent by exact event identity, and rejected on conflicting replay.
 - Candidate worktrees cannot relax the target revision's policy or authorization.
 - Architecture-scale work always crosses the existing human architecture-acceptance boundary.
+- An architecture approval reference is derived from the complete target delta; the existing projection receipt must bind that reference, the exact affected nodes, and the exact provider major-change reasons.
+- Projection-owned architecture file changes join the same Git CAS as the Refactor Program artifacts; the refactor lane never renders architecture docs itself.
 - Workflow route is a pure three-input projection of provider-owned scale, scale reason codes, and major-change reasons; a supplied route is accepted only when it equals that projection.
 - Materialization never creates a Lease: it writes only Program bindings, canonical Sprint tasks, Work Packages, Plans, and their exact acceptance and rollback references.
 - One affected architecture node maps to one Work Package, one rollback boundary, and one repo-scoped concurrency key; dependency topology must validate before the Git CAS.

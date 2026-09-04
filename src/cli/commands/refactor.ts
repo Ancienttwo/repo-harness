@@ -10,6 +10,7 @@ import {
   RefactorProgramStoreError,
 } from '../../effects/refactor/program-store';
 import { materializeRefactorProgram, RefactorMaterializationError, type MaterializeRefactorProgramInput } from '../../effects/refactor/materialization';
+import { prepareRefactorArchitectureIntervention, RefactorArchitectureInterventionEffectError, type PrepareRefactorArchitectureInterventionInput } from '../../effects/refactor/architecture-intervention';
 
 class RefactorArgumentError extends Error {
   readonly code = 'invalid_argument' as const;
@@ -28,7 +29,7 @@ function output(value: unknown): void {
 function outputError(error: unknown): void {
   const code = error instanceof RefactorArgumentError
     ? error.code
-    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError ? error.code : 'refactor_program_unavailable';
+    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError ? error.code : 'refactor_program_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof RefactorArgumentError ? 2 : 1;
 }
@@ -83,6 +84,13 @@ export function runRefactorMaterialize(raw: { readonly repo?: string; readonly r
   output(materializeRefactorProgram({ ...input, repo_root: raw.repo?.trim() || process.cwd() }));
 }
 
+export function runRefactorArchitectureRequest(raw: { readonly repo?: string; readonly request?: string }): void {
+  const path = required(raw.request, '--request'); let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { throw new RefactorArgumentError(`cannot read --request: ${error instanceof Error ? error.message : String(error)}`); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new RefactorArgumentError('--request must contain one JSON object');
+  output(prepareRefactorArchitectureIntervention({ ...(parsed as Omit<PrepareRefactorArchitectureInterventionInput, 'repo_root'>), repo_root: raw.repo?.trim() || process.cwd() }));
+}
+
 export function buildRefactorCommand(): Command {
   const command = new Command('refactor').description('Operate the authorized refactor program state machine');
   command.command('start')
@@ -108,5 +116,9 @@ export function buildRefactorCommand(): Command {
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--request <path>', 'Exact Refactor materialization request JSON')
     .action((options: { repo?: string; request?: string }) => { try { runRefactorMaterialize(options); } catch (error) { outputError(error); } });
+  command.command('architecture-request')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Exact architecture intervention request JSON')
+    .action((options: { repo?: string; request?: string }) => { try { runRefactorArchitectureRequest(options); } catch (error) { outputError(error); } });
   return command;
 }

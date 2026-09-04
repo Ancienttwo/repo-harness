@@ -61,6 +61,11 @@ export interface RefactorRecommendationAuthorityV1 {
   recommendationDigest: string;
 }
 
+export interface RefactorRecommendationReadbackV1 {
+  readonly headSha: string;
+  readonly recommendations: readonly RecommendationV3[];
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new RefactorProviderError("refactor_provider_result_invalid", `${label} must be an object`);
   return value as Record<string, unknown>;
@@ -156,7 +161,7 @@ export function assertRefactorRecordResult(value: unknown, expectedAssessmentDig
   return data as unknown as RefactorRecordResultV1;
 }
 
-export function assertAcceptedRefactorRecommendations(value: unknown, expectedHeadSha: string): readonly RefactorRecommendationAuthorityV1[] {
+export function assertRefactorRecommendationReadback(value: unknown, expectedHeadSha: string): RefactorRecommendationReadbackV1 {
   const data = dataOf(value, "book.recommendations");
   if (data.schemaVersion !== "archcontext.architecture-book-recommendations/v1" || !Array.isArray(data.recommendations)) {
     throw new RefactorProviderError("refactor_provider_result_invalid", "ArchContext recommendation readback is invalid");
@@ -164,13 +169,18 @@ export function assertAcceptedRefactorRecommendations(value: unknown, expectedHe
   const freshness = record(data.freshness, "book recommendations freshness");
   const worktree = record(freshness.worktree, "book recommendations freshness.worktree");
   if (worktree.headSha !== expectedHeadSha) throw new RefactorProviderError("refactor_assessment_stale", "ArchContext recommendation readback is not bound to the authorized HEAD");
-  const accepted: RefactorRecommendationAuthorityV1[] = [];
+  const recommendations: RecommendationV3[] = [];
   for (const recommendation of data.recommendations as RecommendationV3[]) {
     const issues = recommendationV3InvariantIssues(recommendation);
     if (issues.length) throw new RefactorProviderError("refactor_provider_result_invalid", `invalid recommendation readback: ${issues.join("; ")}`);
-    if (recommendation.status === "accepted") accepted.push(Object.freeze({ recommendationId: recommendation.recommendationId, recommendationDigest: recommendation.fingerprint }));
+    recommendations.push(Object.freeze(recommendation));
   }
-  return Object.freeze(accepted);
+  return Object.freeze({ headSha: expectedHeadSha, recommendations: Object.freeze(recommendations) });
+}
+
+export function assertAcceptedRefactorRecommendations(value: unknown, expectedHeadSha: string): readonly RefactorRecommendationAuthorityV1[] {
+  const readback = assertRefactorRecommendationReadback(value, expectedHeadSha);
+  return Object.freeze(readback.recommendations.filter((entry) => entry.status === 'accepted').map((entry) => Object.freeze({ recommendationId: entry.recommendationId, recommendationDigest: entry.fingerprint })));
 }
 
 export function assertRefactorVerifyResult(value: unknown, request: RefactorVerificationRequestV1): RefactorVerifyResultV1 {

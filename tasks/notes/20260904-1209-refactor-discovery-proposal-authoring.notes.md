@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:f9ace231e03b967019771a0f4f99657dde6da7af5f1f4a1afc0a3208975c5f19`
+> **Substantive Change SHA256**: `sha256:dd4de2a178961e92b0aa09ed898220e37c1e904dd91ebd95a2b531d1b1301e13`
 
 ## Design Decisions
 
@@ -23,6 +23,8 @@
 - Preserve the execution hop chain by emitting `execution_surface: contract` Work Packages only. Materialization has no Lease write path.
 - Read accepted recommendation state from ArchContext Book at materialization time and bind the provider fingerprint as `recommendationDigest`; the Program never stores lifecycle status.
 - Enforce the operator-minted `allowed_work_package_ids` before the program enters `materializing`.
+- Derive the architecture approval reference from the complete provider-owned target delta, then require the existing `architecture-projection accept` receipt to bind that reference, affected nodes, and major-change reasons.
+- Commit projection-owned architecture file changes in the same CAS as architecture-route Program artifacts; this lane consumes provider output bytes and never renders architecture docs.
 
 ## Deviations From Plan Or Spec
 
