@@ -40,6 +40,14 @@ architecture-scale recommendation
   -> architecture_approval_required state
   -> existing architecture-projection accept receipt
   -> atomic projection-doc plus Work Package materialization
+
+executing Work Package
+  -> verify-contract
+  -> Cutover Closure at exact candidate commit
+  -> optional ArchContext 0.5.2 candidate preverify
+  -> AcceptanceReceipt at the same contract and commit
+  -> immutable candidate-verification receipt
+  -> finalized PR and merge references append one execution binding
 ```
 
 - Proof: `proven` (capability node entrypoints and required flows bind discovery plus lifecycle store paths).
@@ -88,6 +96,8 @@ sequenceDiagram
 - One affected architecture node maps to one Work Package, one rollback boundary, and one repo-scoped concurrency key; dependency topology must validate before the Git CAS.
 - A failed CAS leaves the append-only program at `materializing`; replay recognizes only the exact authorized child commit and finishes the `planning` transition idempotently.
 - Completion requires Cutover Closure plus exact post-merge ArchContext measurement.
+- Candidate verification preserves the fixed four-gate order. A closure failure prevents provider and acceptance calls; an unavailable Stage 2 provider is recorded explicitly and never weakens Contract, closure, or AcceptanceReceipt gates.
+- Execution bindings contain only immutable references. Candidate verification is a separate receipt because PR and merge identities do not exist at preverify time; no nullable or lifecycle fields represent a partial binding.
 
 ## Verification
 

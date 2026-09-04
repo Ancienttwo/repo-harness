@@ -11,6 +11,11 @@ import {
 } from '../../effects/refactor/program-store';
 import { materializeRefactorProgram, RefactorMaterializationError, type MaterializeRefactorProgramInput } from '../../effects/refactor/materialization';
 import { prepareRefactorArchitectureIntervention, RefactorArchitectureInterventionEffectError, type PrepareRefactorArchitectureInterventionInput } from '../../effects/refactor/architecture-intervention';
+import { verifyRefactorCandidate, RefactorCandidateVerificationEffectError } from '../../effects/refactor/candidate-verification';
+import { appendRefactorExecutionBinding, RefactorExecutionBindingStoreError } from '../../effects/refactor/execution-binding-store';
+import type { RefactorProgramV1 } from '../../core/refactor/program';
+import type { RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
+import type { RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
 
 class RefactorArgumentError extends Error {
   readonly code = 'invalid_argument' as const;
@@ -29,7 +34,7 @@ function output(value: unknown): void {
 function outputError(error: unknown): void {
   const code = error instanceof RefactorArgumentError
     ? error.code
-    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError ? error.code : 'refactor_program_unavailable';
+    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError || error instanceof RefactorCandidateVerificationEffectError || error instanceof RefactorExecutionBindingStoreError ? error.code : 'refactor_program_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof RefactorArgumentError ? 2 : 1;
 }
@@ -77,18 +82,28 @@ export function runRefactorStop(raw: { readonly repo?: string; readonly programI
 }
 
 export function runRefactorMaterialize(raw: { readonly repo?: string; readonly request?: string }): void {
-  const path = required(raw.request, '--request'); let parsed: unknown;
-  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { throw new RefactorArgumentError(`cannot read --request: ${error instanceof Error ? error.message : String(error)}`); }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new RefactorArgumentError('--request must contain one JSON object');
-  const input = parsed as Omit<MaterializeRefactorProgramInput, 'repo_root'>;
+  const input = requestJson(raw.request) as unknown as Omit<MaterializeRefactorProgramInput, 'repo_root'>;
   output(materializeRefactorProgram({ ...input, repo_root: raw.repo?.trim() || process.cwd() }));
 }
 
 export function runRefactorArchitectureRequest(raw: { readonly repo?: string; readonly request?: string }): void {
-  const path = required(raw.request, '--request'); let parsed: unknown;
+  output(prepareRefactorArchitectureIntervention({ ...(requestJson(raw.request) as unknown as Omit<PrepareRefactorArchitectureInterventionInput, 'repo_root'>), repo_root: raw.repo?.trim() || process.cwd() }));
+}
+
+function requestJson(pathInput: string | undefined): Record<string, unknown> {
+  const path = required(pathInput, '--request'); let parsed: unknown;
   try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { throw new RefactorArgumentError(`cannot read --request: ${error instanceof Error ? error.message : String(error)}`); }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new RefactorArgumentError('--request must contain one JSON object');
-  output(prepareRefactorArchitectureIntervention({ ...(parsed as Omit<PrepareRefactorArchitectureInterventionInput, 'repo_root'>), repo_root: raw.repo?.trim() || process.cwd() }));
+  return parsed as Record<string, unknown>;
+}
+
+export async function runRefactorCandidateVerify(raw: { readonly repo?: string; readonly request?: string }): Promise<void> {
+  output(await verifyRefactorCandidate({ ...requestJson(raw.request), repo_root: raw.repo?.trim() || process.cwd() } as Parameters<typeof verifyRefactorCandidate>[0]));
+}
+
+export function runRefactorBindExecution(raw: { readonly repo?: string; readonly request?: string }): void {
+  const input = requestJson(raw.request) as { program: RefactorProgramV1; candidate_verification: RefactorCandidateVerificationReceiptV1; binding: RefactorExecutionBindingV1 };
+  output(appendRefactorExecutionBinding({ repo_root: raw.repo?.trim() || process.cwd(), ...input }));
 }
 
 export function buildRefactorCommand(): Command {
@@ -120,5 +135,13 @@ export function buildRefactorCommand(): Command {
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--request <path>', 'Exact architecture intervention request JSON')
     .action((options: { repo?: string; request?: string }) => { try { runRefactorArchitectureRequest(options); } catch (error) { outputError(error); } });
+  command.command('verify-candidate')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Exact candidate verification request JSON')
+    .action(async (options: { repo?: string; request?: string }) => { try { await runRefactorCandidateVerify(options); } catch (error) { outputError(error); } });
+  command.command('bind-execution')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Exact finalized execution binding request JSON')
+    .action((options: { repo?: string; request?: string }) => { try { runRefactorBindExecution(options); } catch (error) { outputError(error); } });
   return command;
 }

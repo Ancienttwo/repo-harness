@@ -6,13 +6,15 @@
 > **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:725d4b36ebdddff164897e18bcc888eefd209a66fc323001cdc34f27810d01b0`
+> **Substantive Change SHA256**: `sha256:cbb07b67a9ab7d2da4110afcf206c5129a5e126b9cb61c130463c0acbaaf711f`
 
 ## Design Decisions
 
 - Keep discovery/authoring stateless. Module 4 remains the sole owner of program events, current projection, author dispatch, and CLI lifecycle.
 - Bind short aliases to the provider-owned `recommendationId` and fingerprint; do not copy recommendation status or infer a local score.
 - Reject directory, glob, missing, and repository-escaping `scopePaths` before the proposal-bearing provider call. The provider remains the only scale authority.
+- Separate the pre-merge candidate-verification receipt from the finalized execution binding: PR and merge identities do not exist until later, and nullable placeholders would violate the immutable-reference contract.
+- Enforce `verify-contract → Cutover Closure → candidate refactor verify → AcceptanceReceipt` as one ordered effect. Only exact Stage 2 capability unavailability may skip preverify; every other provider or evidence failure remains fatal.
 
 ## Deviations From Plan Or Spec
 

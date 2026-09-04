@@ -60,11 +60,21 @@ source:
             - id: sink.refactor-program.architecture-intervention
               path: "src/effects/refactor/architecture-intervention.ts"
               symbol: "prepareRefactorArchitectureIntervention"
+        - name: "runRefactorCandidateVerify"
+          sinks:
+            - id: sink.refactor-program.candidate-verification
+              path: "src/effects/refactor/candidate-verification.ts"
+              symbol: "verifyRefactorCandidate"
+        - name: "runRefactorBindExecution"
+          sinks:
+            - id: sink.refactor-program.execution-binding
+              path: "src/effects/refactor/execution-binding-store.ts"
+              symbol: "appendRefactorExecutionBinding"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts tests/unit/refactor-candidate-verification.test.ts tests/unit/refactor-execution-binding.test.ts --timeout 60000"
     - "bun run check:type"

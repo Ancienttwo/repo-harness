@@ -63,6 +63,21 @@ outcomes:
     terminal:
       participant: operator
       label: Use the returned digest-derived approval reference with architecture-projection accept before materialization
+  - id: candidate-verified
+    kind: success
+    label: Verify an exact candidate through all four gates in fixed order
+    steps:
+      - id: verify-candidate
+        from: operator
+        to: program-store
+        label: Run Contract, Cutover Closure, ArchContext candidate preverify, then AcceptanceReceipt and persist an immutable receipt
+        evidence:
+          entrypointId: entrypoint.refactor-program.lifecycle
+          sourceSymbol: runRefactorCandidateVerify
+          sinkId: sink.refactor-program.candidate-verification
+    terminal:
+      participant: operator
+      label: Return exact evidence references without projecting a final architecture disposition
   - id: stopped
     kind: success
     label: Append an explicit stopped terminal transition
