@@ -983,8 +983,8 @@
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
         "branch": "codex/board-closeout-architecture-adoption",
-        "commit": "6013d3fe33851726be8743d1779fe9748d3bacd1",
-        "committedAt": "2026-09-04T19:41:30+08:00"
+        "commit": "bcadb3cb31ac302e8f99f42f3e47e568083c6432",
+        "committedAt": "2026-09-04T21:13:12+08:00"
       }
     },
     {
@@ -1083,8 +1083,8 @@
       "outputDigest": "sha256:281710e8acc1b2e7fa7a7e0521833566e98430f128f36147674832cef046126d",
       "verifiedAgainst": {
         "branch": "codex/board-closeout-architecture-adoption",
-        "commit": "6013d3fe33851726be8743d1779fe9748d3bacd1",
-        "committedAt": "2026-09-04T19:41:30+08:00"
+        "commit": "bcadb3cb31ac302e8f99f42f3e47e568083c6432",
+        "committedAt": "2026-09-04T21:13:12+08:00"
       }
     },
     {
@@ -1183,8 +1183,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/board-closeout-architecture-adoption",
-        "commit": "6013d3fe33851726be8743d1779fe9748d3bacd1",
-        "committedAt": "2026-09-04T19:41:30+08:00"
+        "commit": "bcadb3cb31ac302e8f99f42f3e47e568083c6432",
+        "committedAt": "2026-09-04T21:13:12+08:00"
       }
     },
     {
@@ -1203,8 +1203,8 @@
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
         "branch": "codex/board-closeout-architecture-adoption",
-        "commit": "6013d3fe33851726be8743d1779fe9748d3bacd1",
-        "committedAt": "2026-09-04T19:41:30+08:00"
+        "commit": "bcadb3cb31ac302e8f99f42f3e47e568083c6432",
+        "committedAt": "2026-09-04T21:13:12+08:00"
       }
     },
     {
