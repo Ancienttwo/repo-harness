@@ -77,12 +77,10 @@ describe('refactor discovery and proposal authoring', () => {
     const discovery = projectRefactorDiscovery(discoveryScan([observation('recommendation.one', digest('1'))]));
     const proposal = authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [] });
     expect(() => assessRefactorProposal({ discovery, candidateAlias: 'C99', proposal }, process.cwd())).toThrow('unknown discovery candidate');
-    for (const scopePath of ['src/core/refactor', 'src/**/*.ts', 'does-not-exist.ts']) {
+    for (const scopePath of ['src/core/refactor', 'src/**/*.ts', 'does-not-exist.ts', '../outside.ts']) {
       const invalidProposal = authorRefactorProposal({ ...draft, scopePaths: [scopePath], targetOutcomes: [], killList: [] });
       try { assessRefactorProposal({ discovery, candidateAlias: 'C01', proposal: invalidProposal }, process.cwd()); throw new Error('expected rejection'); }
       catch (error) { expect(error).toBeInstanceOf(RefactorDiscoveryError); expect((error as RefactorDiscoveryError).code).toBe('refactor_proposal_scope_invalid'); }
     }
-    expect(() => authorRefactorProposal({ ...draft, scopePaths: ['../outside.ts'], targetOutcomes: [], killList: [] }))
-      .toThrow(RefactorProposalAuthoringError);
   });
 });
