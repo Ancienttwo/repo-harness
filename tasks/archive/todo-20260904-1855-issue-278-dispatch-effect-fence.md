@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260904-1855
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: 2026-09-04 18:58
+> **Updated**: 2026-09-04 18:52
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

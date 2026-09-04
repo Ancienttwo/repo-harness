@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-04 18:58
+> **Related Plan**: plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260904-1858
+> **Archive Projection V1**: `plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md` => `plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md` => `tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md` => `tasks/archive/contract-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md` => `tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md`
+
 # Task Contract: refactor-discovery-proposal-authoring
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
+> **Plan**: plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-04 12:09
-> **Review File**: `tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md`
-> **Notes File**: `tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md`
+> **Review File**: `tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Notes File**: `tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md`
+- Source plan: `plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md`
-- Notes file: `tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md`
+- Review file: `tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md`
+- Notes file: `tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -75,9 +85,9 @@ allowed_paths:
   - docs/researches/20260902-restructure.md
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md
-  - tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
-  - tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md
+  - tasks/archive/contract-20260904-1858-refactor-discovery-proposal-authoring.md
+  - tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md
+  - tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md
   - .ai/context/capabilities.json
   - .claude/templates/
   - src/
@@ -132,7 +142,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md
+    - tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md
   tests_pass:
     - path: tests/unit/refactor-discovery-proposal-authoring.test.ts
   commands_succeed:

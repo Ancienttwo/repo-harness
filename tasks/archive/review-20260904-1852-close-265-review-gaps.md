@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:52
+> **Related Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-1852
+> **Archive Projection V1**: `plans/plan-20260901-1119-close-265-review-gaps.md` => `plans/archive/plan-20260901-1119-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/notes/20260901-1119-close-265-review-gaps.notes.md` => `tasks/archive/notes-20260904-1852-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-1119-close-265-review-gaps.contract.md` => `tasks/archive/contract-20260904-1852-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-1119-close-265-review-gaps.review.md` => `tasks/archive/review-20260904-1852-close-265-review-gaps.md`
+
 # Task Review: close-265-review-gaps
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260901-1119-close-265-review-gaps.md
-> **Contract**: tasks/contracts/20260901-1119-close-265-review-gaps.contract.md
-> **Notes File**: tasks/notes/20260901-1119-close-265-review-gaps.notes.md
+> **Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
+> **Contract**: tasks/archive/contract-20260904-1852-close-265-review-gaps.md
+> **Notes File**: tasks/archive/notes-20260904-1852-close-265-review-gaps.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-01 11:19
 > **Recommendation**: pass
@@ -79,7 +89,7 @@
 
 ## Retest Steps
 
-- Re-run: `repo-harness run verify-contract --contract tasks/contracts/20260901-1119-close-265-review-gaps.contract.md --strict`.
+- Re-run: `repo-harness run verify-contract --contract tasks/archive/contract-20260904-1852-close-265-review-gaps.md --strict`.
 - Re-check: `repo-harness run verify-sprint` and GitHub Actions run `33493563308`.
 
 ## Summary

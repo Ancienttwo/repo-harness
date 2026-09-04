@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:52
+> **Related Plan**: plans/archive/plan-20260831-1239-operator-board-r1-presentation.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-1852
+> **Archive Projection V1**: `plans/plan-20260831-1239-operator-board-r1-presentation.md` => `plans/archive/plan-20260831-1239-operator-board-r1-presentation.md`
+> **Archive Projection V1**: `tasks/notes/20260831-1239-operator-board-r1-presentation.notes.md` => `tasks/archive/notes-20260904-1852-operator-board-r1-presentation.md`
+> **Archive Projection V1**: `tasks/contracts/20260831-1239-operator-board-r1-presentation.contract.md` => `tasks/archive/contract-20260904-1852-operator-board-r1-presentation.md`
+> **Archive Projection V1**: `tasks/reviews/20260831-1239-operator-board-r1-presentation.review.md` => `tasks/archive/review-20260904-1852-operator-board-r1-presentation.md`
+
 # Task Review: operator-board-r1-presentation
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260831-1239-operator-board-r1-presentation.md
-> **Contract**: tasks/contracts/20260831-1239-operator-board-r1-presentation.contract.md
-> **Notes File**: tasks/notes/20260831-1239-operator-board-r1-presentation.notes.md
+> **Plan**: plans/archive/plan-20260831-1239-operator-board-r1-presentation.md
+> **Contract**: tasks/archive/contract-20260904-1852-operator-board-r1-presentation.md
+> **Notes File**: tasks/archive/notes-20260904-1852-operator-board-r1-presentation.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-31 13:11
 > **Recommendation**: pass
@@ -26,7 +36,7 @@
 ## Mode Evidence
 
 - Selected route: approved work-package in an isolated contract worktree.
-- P1/P2/P3 evidence: recorded in `tasks/notes/20260831-1239-operator-board-r1-presentation.notes.md`; the server DTO remains authoritative, the browser validates and renders it literally, and runtime evidence remains presentation-only.
+- P1/P2/P3 evidence: recorded in `tasks/archive/notes-20260904-1852-operator-board-r1-presentation.md`; the server DTO remains authoritative, the browser validates and renders it literally, and runtime evidence remains presentation-only.
 - Root cause or plan evidence: source validation already accepted protocol 3; the stale ignored build and hard-coded footer created contradictory presentation. Rebuilding through the package authority and rendering the payload protocol removes the contradiction without a fallback.
 
 ## Verification Evidence

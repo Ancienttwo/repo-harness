@@ -250,7 +250,7 @@ Before merge, delete the isolated contract worktree/branch. After merge but befo
 - [x] Implement the loopback-only operator server, health/snapshot/static routes, CLI lifecycle, and server integration tests.
 - [x] Implement the React/Vite operator UI from the confirmed reference tokens with all required states, responsive layouts, keyboard/focus behavior, and UI tests.
 - [x] Integrate CLI registration, build/prepack/package surfaces, README discovery, and clean-install asset resolution.
-- [ ] Run focused, browser desktop/mobile, full repository, package, workflow and independent review gates; record evidence and close the work package.
+- [x] Run focused, browser desktop/mobile, full repository, package, workflow and independent review gates; record evidence and close the work package.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->

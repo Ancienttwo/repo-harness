@@ -1,9 +1,9 @@
 # Sprint: Collaborative Work Exchange and Agent Succession
 
-> **Status**: Approved
+> **Status**: Done
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-31 08:57
+> **Updated**: 2026-09-04 18:52
 > **Source PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
@@ -21,6 +21,12 @@ PRD A; R1 belongs to Child PRD D and joins the program before C8/C9. Each
 contract row is an independent merge and rollback boundary.
 Do not combine the signal store, the succession path and the Operator view into
 one branch.
+
+> **Delivery closure**: Canonical backlog rows C0-C9 and R1 are 11/11 done;
+> the Execution Log is the delivery record. Unchecked lists inside the detailed
+> work-package descriptions below are the original acceptance decomposition,
+> not a second task-status authority. Phase 2 and Phase 3 live in their deferred
+> child PRDs and are not part of this completed sprint.
 
 ## PRD
 

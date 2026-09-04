@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md` => `plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md` => `tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md` => `tasks/archive/contract-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md` => `tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+
 # Task Contract: brc4b-oracle-version-pin-gate-findings
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
+> **Plan**: plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-03 04:38
-> **Review File**: `tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md`
-> **Notes File**: `tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md`
+> **Review File**: `tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Notes File**: `tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -76,10 +86,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md`
+- Source plan: `plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md`
-- Notes file: `tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md`
+- Review file: `tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+- Notes file: `tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -104,9 +114,9 @@ allowed_paths:
   - docs/spec.md
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md
-  - tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md
-  - tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md
+  - tasks/archive/contract-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
+  - tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
+  - tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
   - .ai/context/capabilities.json
   - .ai/harness/evidence/
   - .claude/templates/
@@ -165,7 +175,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md
+    - tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
   tests_pass:
     - path: tests/cli/chatgpt-browser.test.ts
     - path: tests/readme-dx.test.ts

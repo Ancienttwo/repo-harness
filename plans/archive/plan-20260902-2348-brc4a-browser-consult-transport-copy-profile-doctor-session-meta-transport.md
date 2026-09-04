@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` => `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md` => `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md` => `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md` => `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+
 # Plan: Sprint task: BRC4a — browser-consult transport：`--copy-profile` 透传、doctor 能力探测、session meta transport
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260902-2348
 > **Slug**: brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport
 > **Planning Source**: repo-harness-sprint
@@ -8,14 +18,14 @@
 > **Source Ref**: sprint:plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md#BRC4a — browser-consult transport：`--copy-profile` 透传、doctor 能力探测、session meta transport
 > **Artifact Level**: work-package
 > **Promotion Reason**: worktree_boundary
-> **Verification Boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md --strict`.
-> **Rollback Surface**: Before execution remove `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
+> **Verification Boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md --strict`.
+> **Rollback Surface**: Before execution remove `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
 > **Spec**: `docs/spec.md`
 > **Substantive Change SHA256**: `sha256:117898eb6fb02ff73456beb39c3d3b2df1258def8aaa75d5151109e652c7dd3f`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md`
-> **Task Review**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md`
-> **Implementation Notes**: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Task Review**: `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Implementation Notes**: `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
 
 ## Agentic Routing
 - Selected route: planning
@@ -54,16 +64,16 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
-- Sprint contract: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md`
-- Sprint review: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md`
-- Implementation notes: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md`
+- Active plan: `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+- Sprint contract: `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+- Sprint review: `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+- Implementation notes: `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md` `allowed_paths`
+- Scope authority: `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`.
 
 ## Approach
 ### Strategy
@@ -109,11 +119,11 @@ None beyond the file changes above; the transport is a two-flag argv change plus
 | Local doctor stays `action_required` because Oracle 0.18.0 != pinned 0.14.1 | High | This machine cannot reach `ready` until the version pin moves | Out of scope here; recorded in the notes file and the contract acceptance notes |
 
 ## Task Contracts
-- Contract file: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md`
-- Review file: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md`
-- Implementation notes file: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md`
+- Contract file: `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+- Review file: `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+- Implementation notes file: `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md --strict`
 - Active plan rule: this captured plan is written to `.ai/harness/active-plan` and the owning worktree is written to `.ai/harness/active-worktree` unless --no-active is used. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -123,20 +133,20 @@ None beyond the file changes above; the transport is a two-flag argv change plus
 
 ## Promotion Gate
 
-- **Merge/PR unit**: Captured plan `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
-- **Rollback surface**: Before execution remove `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
-- **Verification boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md --strict`.
-- **Review/acceptance boundary**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md` must record pass against the captured acceptance criteria.
+- **Merge/PR unit**: Captured plan `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Rollback surface**: Before execution remove `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
+- **Verification boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md --strict`.
+- **Review/acceptance boundary**: `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
 - **Why not checklist row**: worktree_boundary
 
 ## Evidence Contract
 
-- **State/progress path**: `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md`, `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md`, and `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md`
+- **State/progress path**: `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`, `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`, and `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
-- **Evaluator rubric**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md` must record a passing Waza /check style recommendation
+- **Evaluator rubric**: `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
-- **Rollback surface**: Before execution remove `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
+- **Rollback surface**: Before execution remove `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
 
 ## Captured Planning Output
 

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:58
+> **Related Plan**: plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-1858
+> **Archive Projection V1**: `plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md` => `plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md` => `tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md` => `tasks/archive/contract-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md` => `tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md`
+
 # Task Review: refactor-discovery-proposal-authoring
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
-> **Contract**: tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md
-> **Notes File**: tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md
+> **Plan**: plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md
+> **Contract**: tasks/archive/contract-20260904-1858-refactor-discovery-proposal-authoring.md
+> **Notes File**: tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-04 12:09
 > **Recommendation**: pass

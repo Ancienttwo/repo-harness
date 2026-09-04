@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md` => `plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md` => `tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md` => `tasks/archive/contract-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md` => `tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+
 # Implementation Notes: brc4b-oracle-version-pin-gate-findings
 
 > **Status**: Active
-> **Plan**: plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
-> **Contract**: tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md
-> **Review**: tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md
+> **Plan**: plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
+> **Contract**: tasks/archive/contract-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
+> **Review**: tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
 > **Last Updated**: 2026-09-03 04:38
 > **Lifecycle**: notes
 

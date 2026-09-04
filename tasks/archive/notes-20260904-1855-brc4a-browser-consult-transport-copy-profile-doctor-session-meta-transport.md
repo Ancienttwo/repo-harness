@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` => `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md` => `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md` => `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md` => `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+
 # Implementation Notes: brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport
 
 > **Status**: Active
-> **Plan**: plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
-> **Contract**: tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md
-> **Review**: tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md
+> **Plan**: plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Contract**: tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Review**: tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
 > **Last Updated**: 2026-09-02 23:48
 > **Lifecycle**: notes
 

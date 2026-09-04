@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` => `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md` => `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md` => `tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md` => `tasks/archive/review-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
+
 # Task Review: brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
-> **Contract**: tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md
-> **Notes File**: tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md
+> **Plan**: plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Contract**: tasks/archive/contract-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
+> **Notes File**: tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-02 23:48
 > **Recommendation**: pass
@@ -26,7 +36,7 @@
 ## Mode Evidence
 
 - Selected route: planning (sprint contract execution)
-- P1/P2/P3 evidence: `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` Agentic Routing section
+- P1/P2/P3 evidence: `plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md` Agentic Routing section
 - Root cause or plan evidence: `docs/researches/20260902-gpt-pro-connector-readback-probe.md` runs 1-6 (cookie-path 1/3, copy-profile 2/2)
 
 ## Verification Evidence
@@ -35,7 +45,7 @@
 - Commands run: see the Human Review Card `Commands passed` line
 - Manual checks: `oracle --help | grep -c copy-profile` = 1 and `oracle --debug-help | grep -c browser-chrome-profile` = 1 on the host 0.18.0 binary; `browser-doctor --provider oracle --json` reports both new capabilities true with `missingCapabilities: []`; `browser-consult --dry-run` against the real profile binding renders `--copy-profile <user-data-dir> --browser-chrome-profile "Profile 11"` with no `--browser-cookie-path` and session meta `transport: copy_profile`
 - Supporting artifacts: `.ai/harness/checks/latest.json`
-- Implementation notes reviewed: `tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md`
+- Implementation notes reviewed: `tasks/archive/notes-20260904-1855-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`
 - Run snapshot: `.ai/harness/runs/run-20260903T014910-39220-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.json`
 
 ## Acceptance Receipt Projection
