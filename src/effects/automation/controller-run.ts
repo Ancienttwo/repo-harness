@@ -190,6 +190,9 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
   }
   if (current.state === 'executing' && room()) {
     if (!input.dispatch_id) return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
+    let reservation;
+    try { reservation = deps.reserveBudget({ repo_root: input.repo_root, automation_run_id: run.run_id, expected_budget_sha256: run.budget_sha256, idempotency_key: `${input.idempotency_key}:dispatch`, operation: 'dispatch', unit_kind: 'execute', unit_id: run.run_id, attempt: 1, provider: null }); }
+    catch (error) { if (error instanceof AutomationBudgetStoreError) { current = budgetRefusal(input.repo_root, run.run_id, current, input.idempotency_key, error, at()); return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps + 1 }); } throw error; }
     const context=deps.readAttemptContext(input.repo_root,run.run_id); if(context===null) throw new Error('controller execution is missing its acquired attempt context');
     const { retry_policy, ...attemptContext } = context;
     const started=deps.startAttempt({ repo_root:input.repo_root, ...attemptContext, controller_run_id:run.run_id, dispatch_id:input.dispatch_id, policy:retry_policy, started_at:at() });
@@ -199,9 +202,6 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
       current=append(input.repo_root,run.run_id,current,`${input.idempotency_key}:attempt-reconciliation`,'require_reconciliation',endedAt,receipt('require_reconciliation','dispatch_outcome_unknown',{dispatch_id:input.dispatch_id,evidence_refs:[started.attempt.attempt_sha256]}),'operator','controller_reconciliation_required'); steps+=1;
       return Object.freeze({run_id:run.run_id,current,acquisition,dispatch:dispatched,steps_executed:steps});
     }
-    let reservation;
-    try { reservation = deps.reserveBudget({ repo_root: input.repo_root, automation_run_id: run.run_id, expected_budget_sha256: run.budget_sha256, idempotency_key: `${input.idempotency_key}:dispatch`, operation: 'dispatch', unit_kind: 'execute', unit_id: run.run_id, attempt: 1, provider: null }); }
-    catch (error) { if (error instanceof AutomationBudgetStoreError) { current = budgetRefusal(input.repo_root, run.run_id, current, input.idempotency_key, error, at()); return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps + 1 }); } throw error; }
     current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-dispatch`, 'begin_dispatch', at(), receipt('begin_dispatch', 'reserved', { dispatch_id: input.dispatch_id, evidence_refs: [reservation.reservation_sha256] })); steps += 1;
     try { dispatched = deps.dispatch({ repo_root: input.repo_root, dispatch_id: input.dispatch_id, observed_at: at(), protected_paths: run.protected_paths }); }
     catch (error) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-unknown`, 'require_reconciliation', at(), receipt('require_reconciliation', 'dispatch_outcome_unknown', { dispatch_id: input.dispatch_id }), 'operator', 'controller_reconciliation_required'); throw error; }

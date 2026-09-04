@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "kind": "repo-harness-substantive-change-waiver",
-  "substantive_change_sha256": "sha256:8004eda7af713230cc3a95ff3fc4fadccec15ade1a9df8190ad4aacc001a5440",
+  "substantive_change_sha256": "sha256:e2a59359026350394c0c05c993b0bc57b303874a8ffaa6ed8b57dc6809e41a50",
   "reason": "Issue #287 is a zero-ceremony automation-attempt and bounded-retry work unit with architecture documentation and executable acceptance coverage but no work-package plan or contract; this waiver binds the exact final substantive diff required by the repository sync gate.",
   "owner": "ancienttwo",
   "scope": [
