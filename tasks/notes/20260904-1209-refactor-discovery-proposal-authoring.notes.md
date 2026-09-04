@@ -1,6 +1,6 @@
 # Implementation Notes: refactor-discovery-proposal-authoring
 
-> **Substantive Change SHA256**: `sha256:b60b9f51087ac167945fd36437d2b7071f033c61d5c97196c3e56a26a82192d6`
+> **Substantive Change SHA256**: `sha256:30e7aca094a0d5a930d8e691b5630cf753c90d8960493af3e6760a48a969e43b`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
