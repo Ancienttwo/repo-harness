@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:cecd5c7909f900aa8a1fac6be04cfae4d0be66dd317bc6952368cbb06101d8a9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:0d1a18d1a26ccaf526e9b486826f5bb7f0698c0c05849cb191f4a7f387831b98" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:cdf567032caddaaed39c7205a7243dbf1f35ced90d92af584cfececc9ffd3a4d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5b8d7ca0d2bfe132fa3c68512637adcf53e5864f762cb12553fbecccf7d49b5b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -59,6 +59,7 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.interface-change` — Revalidate the exact current Binding for every Engineer-owned transition
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate Engineer decision actors against the exact current active Binding fence
+- `calls` ← `capability.runtime-harness.work-demand` — Revalidate the exact current requester Binding for Engineer-owned transitions
 
 ## 2. P2:端到端數據流
 

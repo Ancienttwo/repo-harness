@@ -1,17 +1,21 @@
 {
   "protocol": 1,
   "kind": "repo-harness-substantive-change-waiver",
-  "substantive_change_sha256": "sha256:26b40d87aec08f4712b6ff5cf1c4b87a5da9deaef292d9b711f878ea19011515",
-  "reason": "Close stale local architecture runtime state: archive a planned boundary request whose source file was never created, and normalize the Agent Runtime Effects capability contract paths to the generated local context files required by the archcontext authority.",
+  "substantive_change_sha256": "sha256:629edcd606df075915e83ebdd0af86508481cd797de39b1ed70c50682fc28527",
+  "reason": "Accept and materialize the exact ArchContext 0.5.2 projection after the stale campaign request was archived and the Agent Runtime Effects capability contract paths were normalized.",
   "owner": "ancienttwo",
   "scope": [
-    ".archcontext/model/nodes/capability.runtime-harness.agent-runtime-effects.yaml",
     "docs/architecture/index.md",
-    "docs/architecture/requests/runtime-harness-development-campaign.md",
-    "docs/architecture/requests/archive/2026/runtime-harness-development-campaign.md",
-    "src/core/engineers/AGENTS.md",
-    "src/core/engineers/CLAUDE.md",
-    "tests/characterization/repair-campaign-authority-freeze.test.ts"
+    "docs/architecture/changelog.md",
+    "docs/architecture/decisions/index.md",
+    "docs/architecture/diagrams/architecture.likec4",
+    "docs/architecture/diagrams/architecture.mmd",
+    "docs/architecture/diagrams/architecture.structurizr.json",
+    "docs/architecture/modules/runtime-harness/agent-runtime-effects.md",
+    "docs/architecture/modules/runtime-harness/automation-budget.md",
+    "docs/architecture/modules/runtime-harness/engineer-bindings.md",
+    "docs/architecture/modules/runtime-harness/engineer-scheduling.md",
+    "docs/architecture/modules/runtime-harness/work-demand.md"
   ],
   "revisit_trigger": "The Agent Runtime Effects capability moves to a different source prefix or the archived development-campaign boundary is introduced as real source code"
 }

@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:cf6305e29cf70cb1471dcea7d32f180648d0a0bad14cf42daf4dd85aac814df8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:beffdb16a20f9be3014dfc9a73c4302e8478b35907a3e31a438f20a08d641603" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:f63e5270606812600f9273cb93f2bef4c552bdf6ab06c09623da933c5c08079d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1ce2d11ce633b4c1715d7e060634e905f6c8e0477571802f3d259d8edb4a12f2" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -157,6 +157,14 @@
         ]
       },
       {
+        "id": "capability.runtime-harness.work-demand",
+        "name": "Work Demand Intake",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
         "id": "capability.runtime-mcp.general-repo-access",
         "name": "General Repository Access",
         "type": "Software System",
@@ -223,6 +231,14 @@
       {
         "id": "component.automation-budget.ledger",
         "name": "Automation Budget Ledger",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.automation-controller.journal",
+        "name": "Automation Controller Journal",
         "type": "Component",
         "tags": [
           "component"
@@ -387,6 +403,14 @@
         "tags": [
           "component"
         ]
+      },
+      {
+        "id": "component.work-demand.primary",
+        "name": "Work Demand Authority Store",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
       }
     ],
     "relationships": [
@@ -424,6 +448,12 @@
         "id": "relation.automation-budget.ledger",
         "sourceId": "capability.runtime-harness.automation-budget",
         "destinationId": "component.automation-budget.ledger",
+        "description": "calls"
+      },
+      {
+        "id": "relation.automation-controller.journal",
+        "sourceId": "capability.runtime-harness.automation-budget",
+        "destinationId": "component.automation-controller.journal",
         "description": "calls"
       },
       {
@@ -665,6 +695,24 @@
         "sourceId": "capability.runtime-harness.verified-context",
         "destinationId": "component.verified-context.primary",
         "description": "calls"
+      },
+      {
+        "id": "relation.work-demand.engineer-bindings",
+        "sourceId": "capability.runtime-harness.work-demand",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.work-demand.engineer-scheduling",
+        "sourceId": "capability.runtime-harness.work-demand",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "calls"
+      },
+      {
+        "id": "relation.work-demand.primary",
+        "sourceId": "capability.runtime-harness.work-demand",
+        "destinationId": "component.work-demand.primary",
+        "description": "calls"
       }
     ]
   },
@@ -691,6 +739,7 @@
         "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.verified-context",
+        "capability.runtime-harness.work-demand",
         "capability.runtime-mcp.general-repo-access",
         "capability.verification.codegraph-readiness",
         "capability.verification.evals-checks",
@@ -700,6 +749,7 @@
         "component.adoption.primary",
         "component.agent-runtime-effects.journal",
         "component.automation-budget.ledger",
+        "component.automation-controller.journal",
         "component.bound-task-freezes.primary",
         "component.codegraph-readiness.primary",
         "component.collaboration.primary",
@@ -719,7 +769,8 @@
         "component.interface-change.primary",
         "component.mcp-sidecar.primary",
         "component.root-router.primary",
-        "component.verified-context.primary"
+        "component.verified-context.primary",
+        "component.work-demand.primary"
       ]
     }
   }

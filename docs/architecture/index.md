@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:cf6305e29cf70cb1471dcea7d32f180648d0a0bad14cf42daf4dd85aac814df8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9c67d27dfbce1c7fa13af22e136aa82a88b5b4805395a756bd0472029e39dbf5" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:f63e5270606812600f9273cb93f2bef4c552bdf6ab06c09623da933c5c08079d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:fd5dff2860d42ceb4fc092b17e378b5edf3505822f31c1c3640488589dc53eed" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -322,6 +322,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Interface Change Requests](modules/runtime-harness/interface-change.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
 - [Verified Evidence Context](modules/runtime-harness/verified-context.md) — capability / active
+- [Work Demand Intake](modules/runtime-harness/work-demand.md) — capability / active
 - [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
 - [CodeGraph Readiness](modules/verification/codegraph-readiness.md) — capability / active
 - [Evals And Checks](modules/verification/evals-checks.md) — capability / active
@@ -336,6 +337,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.agent-runtime-effects -> component.agent-runtime-effects.journal — calls
 - capability.runtime-harness.automation-budget -> component.automation-budget.ledger — calls
+- capability.runtime-harness.automation-budget -> component.automation-controller.journal — calls
 - capability.runtime-harness.bound-task-freezes -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.bound-task-freezes -> component.bound-task-freezes.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
@@ -376,6 +378,9 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.verified-context -> capability.runtime-harness.delegated-runs — calls
 - capability.runtime-harness.verified-context -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.verified-context -> component.verified-context.primary — calls
+- capability.runtime-harness.work-demand -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.work-demand -> capability.runtime-harness.engineer-scheduling — calls
+- capability.runtime-harness.work-demand -> component.work-demand.primary — calls
 
 ## Projections
 

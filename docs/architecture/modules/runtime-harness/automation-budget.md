@@ -1,13 +1,13 @@
 # runtime-harness/automation-budget 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:ef80f6b703842a6c19e68bdf67a289c4b6e9edb98a98bcf9182c8fe7c6c4bd06" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:242db864138c0ef4e61a296690722497d0eadb675199351b6d3a11239e139387" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:6095065bcf536fc757dd7f54fbee57b8e81d2641f6c32d79c8f696ab50354f37" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9d7da961f39ccb664bcbfcb555b4d343a88a94a9dccbe4a66b22f9cae43c2b93" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.automation-budget`(kind `capability`)
 > **Matched Prefixes**:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Enforces one machine-checked per-goal automation budget by reserving before every claim, dispatch, retry, or provider invocation and publishing an immutable stop receipt on exhaustion.
+Enforces one machine-checked per-goal automation budget and runs the exact Engineer through a bounded, journaled acquire and delegated-dispatch controller.
 
 ## 1. P1:能力架構地圖
 
@@ -17,15 +17,17 @@ Enforces one machine-checked per-goal automation budget by reserving before ever
 flowchart LR
   p1_capability_runtime_harness_automation_budget_eeb4bf8d["Automation Budget"]:::component
   p1_component_automation_budget_ledger_b45affae["Automation Budget Ledger"]:::component
+  p1_component_automation_controller_journal_01662136["Automation Controller Journal"]:::component
   p1_capability_runtime_harness_automation_budget_eeb4bf8d -->|"Reserve， charge， and stop one automation run against a create-once ledger held under the Git common directory"| p1_component_automation_budget_ledger_b45affae
+  p1_capability_runtime_harness_automation_budget_eeb4bf8d -->|"Persist each observation， acquisition and delegated dispatch boundary before the controller may advance"| p1_component_automation_controller_journal_01662136
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:531ac1aa0a9cf7997f30f22088f000bdb453a045bf87ca121030dada13372b45`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:6eadeb2f7953a892b9ba41d8eb4c3fcfe8be033698f16c0296769eea80bdb60e`).
+- Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
@@ -35,10 +37,11 @@ flowchart LR
 | `entrypoint.automation-budget.reserve` | `src/effects/automation/budget-store.ts#persistStopReceipt` | `sink.automation-budget.stop-receipt` → `src/core/automation/budget.ts#sealAutomationStopReceipt` |
 | `entrypoint.automation-budget.append` | `src/effects/automation/budget-store.ts#commitUsage` | `sink.automation-budget.usage-event` → `src/core/automation/budget.ts#sealAutomationUsageEvent`、`sink.automation-budget.ledger-chain` → `src/core/automation/budget.ts#chainAutomationLedgerDigest` |
 | `entrypoint.automation-budget.project` | `src/effects/automation/budget-store.ts#readAutomationBudgetBoardSlice` | `sink.automation-budget.operator-slice` → `src/core/automation/projection.ts#projectAutomationBudgetSlice` |
+| `entrypoint.automation-controller.step` | `src/effects/automation/controller-run.ts#stepAutomationController` | `sink.automation-controller.acquire` → `src/effects/engineers/scheduling-acquire-next.ts#acquireNextScheduledEngineerTask`、`sink.automation-controller.dispatch` → `src/effects/engineers/delegated-run-store.ts#dispatchDelegatedRun`、`sink.automation-controller.journal` → `src/effects/automation/controller-store.ts#appendAutomationControllerEvent` |
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `2000–5000` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -47,6 +50,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.automation-budget.ledger` — Reserve, charge, and stop one automation run against a create-once ledger held under the Git common directory
+- `calls` → `component.automation-controller.journal` — Persist each observation, acquisition and delegated dispatch boundary before the controller may advance
 
 入向關係:
 
@@ -54,25 +58,11 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:531ac1aa0a9cf7997f30f22088f000bdb453a045bf87ca121030dada13372b45`); selectors `5/5`.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
-sequenceDiagram
-  autonumber
-  participant p2_budget_6928fdbe as Automation Budget
-  participant p2_ledger_bccca523 as Automation Budget Ledger
-  p2_budget_6928fdbe->>p2_ledger_bccca523: Re-read the budget revision and folded ledger， then decide the next operation under the run lock
-  alt A reservation inside every hard limit is charged exactly once
-  p2_budget_6928fdbe->>p2_ledger_bccca523: Append the authoritative usage event for the exact reservation
-  p2_budget_6928fdbe->>p2_ledger_bccca523: Chain the append-only ledger digest so no earlier event can be edited out
-    Note over p2_budget_6928fdbe: Return the reservation and the updated projection without touching Task， Lease， Work Graph， or contract authority
-  else A hard limit stops the run before the operation happens
-  p2_budget_6928fdbe->>p2_ledger_bccca523: Publish the immutable stop receipt naming the triggering metric and the in-flight authority
-  p2_budget_6928fdbe->>p2_ledger_bccca523: Project the stopped budget for the operator without provider-sensitive data
-    Note over p2_budget_6928fdbe: Refuse with a typed refusal and leave every in-flight authority to its own owner's normal recovery
-  end
-```
+> **human-action-required**: P2 flow evidence is unprovable; no sequence diagram was generated.
+- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.journal
+- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.acquire
+- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.dispatch
+- `selector-evidence-unmatched`: entrypoint.automation-controller.step :: stepAutomationController :: sink.automation-controller.journal
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" -->
 
 ## 3. P3:設計決策與不變量
