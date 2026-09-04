@@ -90,6 +90,9 @@ export interface CollectMinimalChangeSignalsOptions {
   readonly baseRef?: string;
   readonly now?: Date;
   readonly writeReport?: boolean;
+  /** Optional absolute deadline used by Stop-time journal consumption. */
+  readonly deadlineMs?: number;
+  readonly nowMs?: () => number;
 }
 
 const DEPENDENCY_FIELDS = Object.freeze([
@@ -116,13 +119,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function git(repoRoot: string, args: readonly string[]): string | null {
+function git(
+  repoRoot: string,
+  args: readonly string[],
+  deadlineMs?: number,
+  nowMs: () => number = Date.now,
+): string | null {
   try {
+    const remainingMs = deadlineMs === undefined ? 1_500 : Math.floor(deadlineMs - nowMs());
+    if (remainingMs <= 0) return null;
     return execFileSync('git', ['-C', repoRoot, ...args], {
       encoding: 'utf8',
       maxBuffer: 1024 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 1500,
+      timeout: Math.min(1_500, remainingMs),
     });
   } catch {
     return null;
@@ -186,8 +196,8 @@ function readTextFileBounded(repoRoot: string, relPath: string): string {
   }
 }
 
-function isTracked(repoRoot: string, relPath: string): boolean {
-  return git(repoRoot, ['ls-files', '--error-unmatch', '--', relPath]) !== null;
+function isTracked(repoRoot: string, relPath: string, deadlineMs?: number, nowMs?: () => number): boolean {
+  return git(repoRoot, ['ls-files', '--error-unmatch', '--', relPath], deadlineMs, nowMs) !== null;
 }
 
 function parseNumstat(numstat: string): {
@@ -266,11 +276,11 @@ function parseJsonObject(raw: string | null): unknown {
   }
 }
 
-function readHeadFile(repoRoot: string, baseRef: string, relPath: string): string | null {
-  return git(repoRoot, ['show', `${baseRef}:${relPath}`]);
+function readHeadFile(repoRoot: string, baseRef: string, relPath: string, deadlineMs?: number, nowMs?: () => number): string | null {
+  return git(repoRoot, ['show', `${baseRef}:${relPath}`], deadlineMs, nowMs);
 }
 
-function dependencySignals(repoRoot: string, baseRef: string, relPath: string): {
+function dependencySignals(repoRoot: string, baseRef: string, relPath: string, deadlineMs?: number, nowMs?: () => number): {
   changed: boolean;
   newDependencies: readonly MinimalChangeDependencySignal[];
   removedDependencies: readonly MinimalChangeDependencySignal[];
@@ -279,7 +289,7 @@ function dependencySignals(repoRoot: string, baseRef: string, relPath: string): 
     return { changed: true, newDependencies: [], removedDependencies: [] };
   }
 
-  const oldRaw = readHeadFile(repoRoot, baseRef, relPath);
+  const oldRaw = readHeadFile(repoRoot, baseRef, relPath, deadlineMs, nowMs);
   const newRaw = existsSync(resolve(repoRoot, relPath)) ? readFileSync(resolve(repoRoot, relPath), 'utf8') : '';
   const oldDeps = packageDeps(parseJsonObject(oldRaw));
   const newDeps = packageDeps(parseJsonObject(newRaw));
@@ -492,6 +502,7 @@ export function collectMinimalChangeSignals(
   const policy = options.policy ?? loadMinimalChangePolicy(repoRoot);
   const baseRef = options.baseRef ?? 'HEAD';
   const now = options.now ?? new Date();
+  const nowMs = options.nowMs ?? Date.now;
   const reportAbs = resolve(repoRoot, policy.report_path);
 
   if (policy.mode === 'off' || !policy.post_edit_observer) {
@@ -502,7 +513,7 @@ export function collectMinimalChangeSignals(
     };
   }
 
-  const top = git(repoRoot, ['rev-parse', '--show-toplevel'])?.trim();
+  const top = git(repoRoot, ['rev-parse', '--show-toplevel'], options.deadlineMs, nowMs)?.trim();
   if (!top || realpathSync(resolve(top)) !== repoRoot) {
     return unknownReport(policy, baseRef, 'not a git repository root', now);
   }
@@ -524,11 +535,11 @@ export function collectMinimalChangeSignals(
     }
   }
 
-  const nameStatusRaw = git(repoRoot, ['diff', '--name-status', '--find-renames', baseRef, '--', relPath]) ?? '';
-  const numstatRaw = git(repoRoot, ['diff', '--numstat', baseRef, '--', relPath]) ?? '';
+  const nameStatusRaw = git(repoRoot, ['diff', '--name-status', '--find-renames', baseRef, '--', relPath], options.deadlineMs, nowMs) ?? '';
+  const numstatRaw = git(repoRoot, ['diff', '--numstat', baseRef, '--', relPath], options.deadlineMs, nowMs) ?? '';
   const status = parseNameStatus(nameStatusRaw);
   const numstat = parseNumstat(numstatRaw);
-  const tracked = isTracked(repoRoot, relPath);
+  const tracked = isTracked(repoRoot, relPath, options.deadlineMs, nowMs);
   const exists = existsSync(abs);
   const untrackedNewFile = exists && !tracked;
   const filesAdded = (status.added ? 1 : 0) + (untrackedNewFile ? 1 : 0);
@@ -540,7 +551,7 @@ export function collectMinimalChangeSignals(
   const manifest = manifestKind(relPath);
   const manifestPaths = manifest ? [relPath] : [];
   const dependency = manifest
-    ? dependencySignals(repoRoot, baseRef, relPath)
+    ? dependencySignals(repoRoot, baseRef, relPath, options.deadlineMs, nowMs)
     : { changed: false, newDependencies: [], removedDependencies: [] };
   const dependencyManifestPaths = manifest && dependency.changed ? [relPath] : [];
   const protectedChanges = exists ? detectProtectedChanges(repoRoot, relPath) : [];

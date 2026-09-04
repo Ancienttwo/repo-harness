@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
-import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
+import { consumePendingPostEditEvents, readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 import { advanceArchitectureDriftCursor, computeArchitectureDriftChangedSet, readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
 
 const fixtures: string[] = [];
@@ -246,6 +246,132 @@ describe('runStopHandler', () => {
 
     // The journal no longer carries any architecture datum, so its trigger
     // effects are never held back by the architecture lane's outcome.
+    expect(readPendingPostEditEvents(cwd)).toEqual([]);
+  });
+
+  test('advances past a contract verification timeout instead of retrying the queue head forever', () => {
+    const cwd = fixture();
+    const pending = join(cwd, '.ai/harness/journal/post-edit/pending');
+    mkdirSync(pending, { recursive: true });
+    writeFileSync(join(pending, '0123456789abcdefabcd.json'), `${JSON.stringify({
+      schema: 'change_observed',
+      schema_version: 2,
+      source_key: '0123456789abcdefabcd',
+      event_id: 'event-timeout',
+      session_id: 'session-timeout',
+      created_at: '2026-09-03T00:00:00.000Z',
+      updated_at: '2026-09-03T00:00:00.000Z',
+      changed_paths: ['src/slow-contract.ts'],
+      subject_revision: null,
+      dirty: { 'contract-verification': true, context: false, capability: false, 'minimal-change': false, checkpoint: false },
+      payload: {
+        contract_verification: { contract_file: 'tasks/contracts/slow.contract.md', checks_file: '.ai/harness/checks/latest.json' },
+      },
+    }, null, 2)}\n`);
+
+    const stubCli = join(cwd, 'slow-cli.ts');
+    writeFileSync(stubCli, 'await Bun.sleep(10_000);\n');
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const captured: string[] = [];
+    process.stderr.write = (chunk: string) => {
+      captured.push(String(chunk));
+      return true;
+    };
+    let summary;
+    const startedAt = Date.now();
+    try {
+      summary = consumePendingPostEditEvents(
+        cwd,
+        { ...process.env, REPO_HARNESS_CLI: stubCli },
+        { deadlineMs: Date.now() + 5_000, helperTimeoutMs: 100 },
+      );
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(summary).toMatchObject({ consumed: 1, pending: 0, errors: 1 });
+    expect(summary.warnings).toHaveLength(1);
+    expect(summary.warnings[0]).toContain('contract verification timed out');
+    expect(captured.join('')).toContain('removed pending event event-timeout');
+    expect(readPendingPostEditEvents(cwd)).toEqual([]);
+  });
+
+  test('acknowledges a minimal-change event when its remaining journal budget is exhausted', () => {
+    const cwd = fixture();
+    writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({
+      minimal_change: { mode: 'advice', post_edit_observer: true },
+    }));
+    const pending = join(cwd, '.ai/harness/journal/post-edit/pending');
+    mkdirSync(pending, { recursive: true });
+    writeFileSync(join(pending, 'fedcba9876543210abcd.json'), `${JSON.stringify({
+      schema: 'change_observed',
+      schema_version: 2,
+      source_key: 'fedcba9876543210abcd',
+      event_id: 'event-minimal-change-timeout',
+      session_id: 'session-minimal-change-timeout',
+      created_at: '2026-09-03T00:00:00.000Z',
+      updated_at: '2026-09-03T00:00:00.000Z',
+      changed_paths: ['src/minimal-change.ts'],
+      subject_revision: null,
+      dirty: { 'contract-verification': false, context: false, capability: false, 'minimal-change': true, checkpoint: false },
+      payload: { minimal_change: { path: 'src/minimal-change.ts', base_ref: 'HEAD' } },
+    }, null, 2)}\n`);
+
+    let clock = 0;
+    const summary = consumePendingPostEditEvents(
+      cwd,
+      process.env,
+      { deadlineMs: 5, nowMs: () => (clock += 3) },
+    );
+
+    expect(summary).toMatchObject({ consumed: 1, pending: 0, errors: 1 });
+    expect(summary.warnings[0]).toContain('minimal-change signals reached the journal deadline');
+    expect(readPendingPostEditEvents(cwd)).toEqual([]);
+  });
+
+  test('uses the Stop-entry deadline and acknowledges the queue head after preceding work exhausts it', () => {
+    const cwd = fixture();
+    const pending = join(cwd, '.ai/harness/journal/post-edit/pending');
+    mkdirSync(pending, { recursive: true });
+    writeFileSync(join(pending, 'aaaaaaaaaaaaaaaaaaaa.json'), `${JSON.stringify({
+      schema: 'change_observed',
+      schema_version: 2,
+      source_key: 'aaaaaaaaaaaaaaaaaaaa',
+      event_id: 'event-preceding-work-timeout',
+      session_id: 'session-preceding-work-timeout',
+      created_at: '2026-09-03T00:00:00.000Z',
+      updated_at: '2026-09-03T00:00:00.000Z',
+      changed_paths: ['src/preceding-work.ts'],
+      subject_revision: null,
+      dirty: { 'contract-verification': true, context: false, capability: false, 'minimal-change': false, checkpoint: false },
+      payload: {
+        contract_verification: { contract_file: 'tasks/contracts/slow.contract.md', checks_file: '.ai/harness/checks/latest.json' },
+      },
+    }, null, 2)}\n`);
+    const sentinel = join(cwd, 'verification-started');
+    const stubCli = join(cwd, 'sentinel-cli.ts');
+    writeFileSync(stubCli, `await Bun.write(${JSON.stringify(sentinel)}, 'started\\n');\n`);
+    let wallClock = 0;
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { ...process.env, REPO_HARNESS_CLI: stubCli },
+      dependencies: {
+        wallClockMs: () => wallClock,
+        drainArchitectureProjection: () => {
+          wallClock = 25_000;
+          return {
+            schemaVersion: 'repo-harness.architecture-projection-drain/v1',
+            status: 'idle', jobId: null, sourceEventIds: [], resultStatus: null,
+            error: null, acknowledgeSourceEvents: true,
+            queue: { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1', pending: 0, running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: null, oldestDeadLetterJobId: null },
+          };
+        },
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(sentinel)).toBe(false);
     expect(readPendingPostEditEvents(cwd)).toEqual([]);
   });
 

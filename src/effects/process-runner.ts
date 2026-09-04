@@ -41,6 +41,12 @@ export const DEFAULT_PROCESS_MAX_OUTPUT_BYTES = 64 * 1024;
 export const DEFAULT_PROCESS_MAX_BUFFER_BYTES = 1024 * 1024;
 const PROCESS_SUPERVISOR = join(import.meta.dir, "process-supervisor.ts");
 const PROCESS_SUPERVISOR_HARD_TIMEOUT_SLACK_MS = 1_000;
+const PROCESS_SUPERVISOR_HARD_TIMEOUT_OVERHEAD_MS = PROCESS_SUPERVISOR_TERMINATION_GRACE_MS
+  + PROCESS_SUPERVISOR_HARD_TIMEOUT_SLACK_MS;
+/** Worst-case wall-clock overhead after a supervised target timeout: the
+ * supervisor hard-timeout allowance plus the caller's TERM/KILL backstop. */
+export const PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS = PROCESS_SUPERVISOR_HARD_TIMEOUT_OVERHEAD_MS
+  + (2 * PROCESS_SUPERVISOR_TERMINATION_GRACE_MS);
 
 interface SupervisedProcessReceipt {
   readonly status: number;
@@ -156,9 +162,7 @@ function runSupervisedProcess(
     }
     if (opts.taskkillBin) supervisorArgs.push("--taskkill-bin", opts.taskkillBin);
     supervisorArgs.push("--", command, ...args);
-    const supervisorHardTimeoutMs = timeoutMs
-      + PROCESS_SUPERVISOR_TERMINATION_GRACE_MS
-      + PROCESS_SUPERVISOR_HARD_TIMEOUT_SLACK_MS;
+    const supervisorHardTimeoutMs = timeoutMs + PROCESS_SUPERVISOR_HARD_TIMEOUT_OVERHEAD_MS;
     const result = spawnSync(process.execPath, supervisorArgs, {
       cwd: opts.cwd,
       encoding: stdio === "pipe" ? "utf8" : undefined,
