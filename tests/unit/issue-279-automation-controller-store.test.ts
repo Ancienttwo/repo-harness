@@ -57,6 +57,7 @@ describe('issue #279 automation controller store', () => {
       const input = { repo_root: root, run_id: started.run.run_id, expected_current_sha256: started.current.current_sha256, idempotency_key: 'observe-1', operation: 'observe' as const, attention_owner: 'none' as const, blocker: null, retry_at: null, receipt: emptyReceipt('observe'), observed_at: '2026-09-04T00:00:01.000Z' };
       expect(() => appendAutomationControllerEvent({ ...input, crash_hook: (point) => { if (point === 'after_event_fsync') throw new Error('crash'); } })).toThrow('crash');
       expect(readAutomationControllerStatus(root, started.run.run_id).current.state).toBe('created');
+      expect(() => appendAutomationControllerEvent({ ...input, idempotency_key: 'observe-2' })).toThrow('durable event not folded');
       const repaired = appendAutomationControllerEvent(input);
       expect(repaired.current.state).toBe('observing');
       expect(appendAutomationControllerEvent(input).current.current_sha256).toBe(repaired.current.current_sha256);

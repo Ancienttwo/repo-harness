@@ -78,8 +78,10 @@ export function startBoundedAutomationController(input: StartBoundedAutomationCo
   const deps = { ...defaultDependencies, ...overrides };
   const principal = deps.resolvePrincipal({ repo_root: input.repo_root, authorization_id: input.authorization_id });
   const authorizationRevision = deps.authorizationRevision();
-  const budget = deps.readBudget(input.repo_root, input.automation_run_id).budget;
+  const budgetStatus = deps.readBudget(input.repo_root, input.automation_run_id);
+  const budget = budgetStatus.budget;
   if (!budget.unattended || budget.automation_run_id !== input.automation_run_id || budget.repository_id !== principal.repository_id || budget.engineer_id !== principal.engineer_id) throw new Error('automation budget does not authorize this exact unattended Engineer controller');
+  if (budgetStatus.current.state !== 'active' || budgetStatus.stop_receipt !== null) throw new Error('automation budget is not active');
   const observedAt = deps.now().toISOString();
   const run = buildAutomationControllerRun({ run_id: input.automation_run_id, repository_id: principal.repository_id, principal: { authorization_id: input.authorization_id, engineer_id: principal.engineer_id, binding_id: principal.binding_id, binding_generation: principal.binding_generation, engineer_contract_revision: principal.engineer_contract_revision, authorization_revision: authorizationRevision }, budget_sha256: budget.budget_sha256, policy: input.policy, protected_paths: input.protected_paths, created_at: observedAt });
   return startAutomationControllerRun({ repo_root: input.repo_root, run, idempotency_key: input.idempotency_key, observed_at: observedAt });

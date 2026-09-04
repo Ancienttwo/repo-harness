@@ -30,7 +30,7 @@ function dependencies(acquire: unknown, dispatch: unknown = null) {
   return {
     now: () => new Date('2026-09-04T00:00:01.000Z'), resolvePrincipal: () => principal as never,
     authorizationRevision: () => 7,
-    readBudget: () => ({ budget: { budget_sha256: SHA, unattended: true, engineer_id: principal.engineer_id }, current: {}, stored_current: {}, stop_receipt: null, drift: 'none', latest_record_at: null }) as never,
+    readBudget: () => ({ budget: { budget_sha256: SHA, unattended: true, engineer_id: principal.engineer_id }, current: { state: 'active' }, stored_current: {}, stop_receipt: null, drift: 'none', latest_record_at: null }) as never,
     reserveBudget: () => ({ reservation_sha256: `sha256:${String(++reservation).padStart(64, '0')}` }) as never,
     appendUsage: () => ({ event: { event_sha256: `sha256:${'e'.repeat(64)}` }, current: {}, stop_receipt: null }) as never,
     acquireNext: () => acquire as never, dispatch: () => dispatch as never,
