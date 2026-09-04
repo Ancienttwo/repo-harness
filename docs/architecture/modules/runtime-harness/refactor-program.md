@@ -48,6 +48,14 @@ executing Work Package
   -> AcceptanceReceipt at the same contract and commit
   -> immutable candidate-verification receipt
   -> finalized PR and merge references append one execution binding
+
+finalized merge on exact protected target
+  -> append exact execution binding
+  -> ArchContext verify at exact final main and worktree digest
+  -> append provider resolution evidence
+  -> ArchContext lifecycle resolve only for resolved evidence
+  -> rebuild versioned JSON and Markdown board from authorities
+  -> complete only when every bound recommendation is resolved
 ```
 
 - Proof: `proven` (capability node entrypoints and required flows bind discovery plus lifecycle store paths).
@@ -61,6 +69,9 @@ flowchart LR
   CLI --> Materializer[Atomic materialization]
   Materializer --> Git[Program + Sprint + Plans + Work Graph]
   Git --> Contract[Existing Plan to Contract to Lease chain]
+  CLI --> Resolution[Exact final-main resolution]
+  Resolution --> ArchContext
+  Resolution --> Board[Pure Refactor Board projection]
 ```
 
 > **Proof**: `proven`; lifecycle selectors bind CLI sources to the program-store sinks.
@@ -98,6 +109,9 @@ sequenceDiagram
 - Completion requires Cutover Closure plus exact post-merge ArchContext measurement.
 - Candidate verification preserves the fixed four-gate order. A closure failure prevents provider and acceptance calls; an unavailable Stage 2 provider is recorded explicitly and never weakens Contract, closure, or AcceptanceReceipt gates.
 - Execution bindings contain only immutable references. Candidate verification is a separate receipt because PR and merge identities do not exist at preverify time; no nullable or lifecycle fields represent a partial binding.
+- Refactor Board joins Program, recommendation readback, execution bindings, and resolution evidence by exact recommendation ID plus digest; duplicate authorities fail closed.
+- Merge observation alone is `merged_pending_measurement`. Only provider evidence bound to the exact final-main commit may resolve a card, while stale evidence requires reconciliation and all other non-resolved dispositions require follow-up.
+- Discovery re-reads ArchContext lifecycle state and excludes exact resolved or superseded recommendation identities before assigning candidate aliases.
 
 ## Verification
 

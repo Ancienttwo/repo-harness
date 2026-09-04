@@ -13,6 +13,7 @@ import { materializeRefactorProgram, RefactorMaterializationError, type Material
 import { prepareRefactorArchitectureIntervention, RefactorArchitectureInterventionEffectError, type PrepareRefactorArchitectureInterventionInput } from '../../effects/refactor/architecture-intervention';
 import { verifyRefactorCandidate, RefactorCandidateVerificationEffectError } from '../../effects/refactor/candidate-verification';
 import { appendRefactorExecutionBinding, RefactorExecutionBindingStoreError } from '../../effects/refactor/execution-binding-store';
+import { rebuildRefactorBoard, resolveRefactorPostMerge, RefactorPostMergeResolutionError } from '../../effects/refactor/post-merge-resolution';
 import type { RefactorProgramV1 } from '../../core/refactor/program';
 import type { RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
 import type { RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
@@ -34,7 +35,7 @@ function output(value: unknown): void {
 function outputError(error: unknown): void {
   const code = error instanceof RefactorArgumentError
     ? error.code
-    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError || error instanceof RefactorCandidateVerificationEffectError || error instanceof RefactorExecutionBindingStoreError ? error.code : 'refactor_program_unavailable';
+    : error instanceof RefactorProgramStoreError || error instanceof RefactorMaterializationError || error instanceof RefactorArchitectureInterventionEffectError || error instanceof RefactorCandidateVerificationEffectError || error instanceof RefactorExecutionBindingStoreError || error instanceof RefactorPostMergeResolutionError ? error.code : 'refactor_program_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof RefactorArgumentError ? 2 : 1;
 }
@@ -106,6 +107,14 @@ export function runRefactorBindExecution(raw: { readonly repo?: string; readonly
   output(appendRefactorExecutionBinding({ repo_root: raw.repo?.trim() || process.cwd(), ...input }));
 }
 
+export async function runRefactorPostMerge(raw: { readonly repo?: string; readonly request?: string }): Promise<void> {
+  output(await resolveRefactorPostMerge({ ...requestJson(raw.request), repo_root: raw.repo?.trim() || process.cwd() } as Parameters<typeof resolveRefactorPostMerge>[0]));
+}
+
+export function runRefactorBoard(raw: { readonly repo?: string; readonly request?: string }): void {
+  output(rebuildRefactorBoard({ ...requestJson(raw.request), repo_root: raw.repo?.trim() || process.cwd() } as Parameters<typeof rebuildRefactorBoard>[0]));
+}
+
 export function buildRefactorCommand(): Command {
   const command = new Command('refactor').description('Operate the authorized refactor program state machine');
   command.command('start')
@@ -143,5 +152,13 @@ export function buildRefactorCommand(): Command {
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--request <path>', 'Exact finalized execution binding request JSON')
     .action((options: { repo?: string; request?: string }) => { try { runRefactorBindExecution(options); } catch (error) { outputError(error); } });
+  command.command('resolve-post-merge')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Exact post-merge resolution request JSON')
+    .action(async (options: { repo?: string; request?: string }) => { try { await runRefactorPostMerge(options); } catch (error) { outputError(error); } });
+  command.command('board')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--request <path>', 'Exact board projection request JSON')
+    .action((options: { repo?: string; request?: string }) => { try { runRefactorBoard(options); } catch (error) { outputError(error); } });
   return command;
 }

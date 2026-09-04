@@ -1,5 +1,7 @@
 # Implementation Notes: refactor-discovery-proposal-authoring
 
+> **Substantive Change SHA256**: `sha256:a47dfdae6bc92645dc82ce69f9b6fa5ae78a28dd09f1a38d32690698f0f6b481`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
 > **Contract**: tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md

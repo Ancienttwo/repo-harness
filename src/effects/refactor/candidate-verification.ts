@@ -12,7 +12,7 @@ import { projectCanonicalTasks } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { runRefactorVerify, type RefactorArchctxProviderOptions } from './archctx-provider';
 import { appendRefactorProgramEvent, readRefactorProgramStatus } from './program-store';
-import { RefactorProviderError, type RefactorVerifyResultV1 } from '../../core/refactor/provider-contract';
+import { assertRefactorVerificationRequest, RefactorProviderError, type RefactorVerifyResultV1 } from '../../core/refactor/provider-contract';
 import { evaluateCutoverClosure, type CutoverClosureV1 } from '../../../scripts/cutover-closure';
 import { acceptanceReceiptPath, verifyAcceptance, type AcceptanceReceipt } from '../../../scripts/acceptance-receipt';
 
@@ -76,7 +76,8 @@ export async function verifyRefactorCandidate(input: {
   const closure = (dependencies.verify_cutover ?? evaluateCutoverClosure)({ repo: root, contract: contractPath, head, locator: input.cutover_locator });
   if (closure.status !== 'closed' || `sha256:${closure.contractSha256}` !== contractSha || closure.headSha !== head) fail('refactor_candidate_verification_failed', 'Cutover Closure did not close the exact candidate and contract');
   const request: RefactorVerificationRequestV1 = { schemaVersion: 'archcontext.refactor-verification-request/v1', recommendationId: binding.recommendationId, expectedHeadSha: head, expectedWorktreeDigest: input.candidate_worktree_digest,
-    executionEvidenceRefs: [{ kind: 'cutover_closure', locator: input.cutover_locator, sha256: `sha256:${closure.closureSha256}` }] };
+    executionEvidenceRefs: [{ kind: 'cutover_closure', locator: input.cutover_locator, sha256: closure.closureSha256 }] };
+  assertRefactorVerificationRequest(request);
   let verifyStatus: 'passed' | 'verify_stage_unavailable' = 'passed'; let verifyDigest: string | null;
   try {
     const result = (dependencies.verify_candidate ?? ((value, repo) => runRefactorVerify(value, repo, { ...input.provider_options, env: input.env })))(request, root);

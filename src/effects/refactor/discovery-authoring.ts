@@ -2,7 +2,7 @@ import { lstatSync } from 'fs';
 import { resolve, sep } from 'path';
 import type { RecommendationV3, RefactorProposalV1, RefactorRequestV1 } from 'archctx-contracts';
 import type { RefactorScanResultV1 } from '../../core/refactor/provider-contract';
-import { runRefactorScan, type RefactorArchctxProviderOptions } from './archctx-provider';
+import { readRefactorRecommendationRecords, runRefactorScan, type RefactorArchctxProviderOptions } from './archctx-provider';
 
 export type RefactorDiscoveryErrorCode =
   | 'refactor_discovery_invalid'
@@ -28,7 +28,7 @@ export interface RefactorDiscoveryV1 {
   readonly candidates: readonly RefactorDiscoveryCandidateV1[];
 }
 
-export function projectRefactorDiscovery(scan: RefactorScanResultV1): RefactorDiscoveryV1 {
+export function projectRefactorDiscovery(scan: RefactorScanResultV1, lifecycleRecommendations: readonly RecommendationV3[]): RefactorDiscoveryV1 {
   if (scan.request.proposal || scan.assessment.scale !== null || scan.assessment.proposalDigest !== null || scan.proposal !== undefined) {
     throw new RefactorDiscoveryError('refactor_discovery_invalid', 'discovery scan returned proposal-derived fields');
   }
@@ -38,7 +38,8 @@ export function projectRefactorDiscovery(scan: RefactorScanResultV1): RefactorDi
   if (observations.length !== scan.proposedRecommendations.length) {
     throw new RefactorDiscoveryError('refactor_discovery_invalid', 'discovery scan returned a non-observation recommendation');
   }
-  const candidates = observations.map((recommendation, index) => Object.freeze({
+  const lifecycle = new Map<string, RecommendationV3>(); for (const recommendation of lifecycleRecommendations) { const key = `${recommendation.recommendationId}\0${recommendation.fingerprint}`; if (lifecycle.has(key)) throw new RefactorDiscoveryError('refactor_discovery_invalid', `duplicate lifecycle recommendation: ${recommendation.recommendationId}`); lifecycle.set(key, recommendation); }
+  const candidates = observations.filter((recommendation) => { const status = lifecycle.get(`${recommendation.recommendationId}\0${recommendation.fingerprint}`)?.status; return status !== 'resolved' && status !== 'superseded'; }).map((recommendation, index) => Object.freeze({
     alias: `C${String(index + 1).padStart(2, '0')}`,
     recommendationId: recommendation.recommendationId,
     recommendationFingerprint: recommendation.fingerprint,
@@ -68,7 +69,7 @@ export function discoverRefactorCandidates(
   options: RefactorArchctxProviderOptions = {},
 ): RefactorDiscoveryV1 {
   if (request.proposal) throw new RefactorDiscoveryError('refactor_discovery_invalid', 'discovery scan must not contain a proposal');
-  return projectRefactorDiscovery(runRefactorScan(request, repoRoot, options));
+  const scan = runRefactorScan(request, repoRoot, options); return projectRefactorDiscovery(scan, readRefactorRecommendationRecords(scan.worktree.headSha, repoRoot, options).recommendations);
 }
 
 export function assessRefactorProposal(

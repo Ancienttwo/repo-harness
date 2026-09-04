@@ -4,6 +4,7 @@ import {
   assertRefactorCapabilities,
   assertAcceptedRefactorRecommendations,
   assertRefactorRecommendationReadback,
+  assertRefactorResolutionRecord,
   assertRefactorRecordResult,
   assertRefactorRequest,
   assertRefactorScanResult,
@@ -13,6 +14,7 @@ import {
   type RefactorRecordResultV1,
   type RefactorRecommendationAuthorityV1,
   type RefactorRecommendationReadbackV1,
+  type RefactorResolutionRecordResultV1,
   type RefactorScanResultV1,
   type RefactorVerifyResultV1,
 } from "../../core/refactor/provider-contract";
@@ -80,6 +82,20 @@ export function readRefactorRecommendationRecords(
   const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
   const value = invoke(repoRoot, policy.stages.scan, ["book", "recommendations", "--json"], options);
   return assertRefactorRecommendationReadback(value, expectedHeadSha);
+}
+
+export function recordRefactorResolution(
+  recommendationId: string,
+  resolutionDigest: string,
+  expectedWorktreeDigest: string,
+  reason: string,
+  repoRoot: string,
+  options: RefactorArchctxProviderOptions = {},
+): RefactorResolutionRecordResultV1 {
+  if (!recommendationId || !/^sha256:[a-f0-9]{64}$/u.test(resolutionDigest) || !/^sha256:[a-f0-9]{64}$/u.test(expectedWorktreeDigest) || !reason.trim()) throw new RefactorProviderError('refactor_provider_result_invalid', 'resolution record input is invalid');
+  const policy = options.refactorPolicy ?? loadRefactorPolicy(repoRoot);
+  const value = invoke(repoRoot, policy.stages.verify, ['recommendations', 'resolve', '--id', recommendationId, '--reason', reason, '--expected-worktree-digest', expectedWorktreeDigest, '--evidence-digest', resolutionDigest, '--json'], options);
+  return assertRefactorResolutionRecord(value, recommendationId);
 }
 
 export function runRefactorVerify(request: RefactorVerificationRequestV1, repoRoot: string, options: RefactorArchctxProviderOptions = {}): RefactorVerifyResultV1 {

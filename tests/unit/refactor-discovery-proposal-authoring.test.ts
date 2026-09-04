@@ -52,7 +52,7 @@ describe('refactor discovery and proposal authoring', () => {
   });
 
   test('accepts scale only from an assessment bound to the authored proposal digest', () => {
-    const discovery = projectRefactorDiscovery(discoveryScan([observation('recommendation.one', digest('1'))]));
+    const discovery = projectRefactorDiscovery(discoveryScan([observation('recommendation.one', digest('1'))]), []);
     const candidate = discovery.candidates[0]!;
     const proposal = authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [] });
     const assessed = { ...discoveryScan(), request: { ...discovery.scan.request, proposal }, proposal, assessment: { scale: 'module', proposalDigest: proposal.proposalDigest } } as RefactorScanResultV1;
@@ -64,17 +64,18 @@ describe('refactor discovery and proposal authoring', () => {
   test('projects only proposal-free observations to stable aliases bound to provider identities', () => {
     const first = observation('recommendation.one', digest('1'));
     const second = observation('recommendation.two', digest('2'));
-    const discovery = projectRefactorDiscovery(discoveryScan([first, second]));
+    const discovery = projectRefactorDiscovery(discoveryScan([first, second]), []);
     expect(discovery.candidates.map(({ alias, recommendationId, recommendationFingerprint }) => ({ alias, recommendationId, recommendationFingerprint }))).toEqual([
       { alias: 'C01', recommendationId: 'recommendation.one', recommendationFingerprint: digest('1') },
       { alias: 'C02', recommendationId: 'recommendation.two', recommendationFingerprint: digest('2') },
     ]);
-    expect(() => projectRefactorDiscovery({ ...discoveryScan(), assessment: { scale: 'module', proposalDigest: digest('3') } } as RefactorScanResultV1)).toThrow(RefactorDiscoveryError);
-    expect(() => projectRefactorDiscovery(discoveryScan([{ ...first, category: 'refactor_proposal' } as RecommendationV3]))).toThrow('non-observation');
+    expect(() => projectRefactorDiscovery({ ...discoveryScan(), assessment: { scale: 'module', proposalDigest: digest('3') } } as RefactorScanResultV1, [])).toThrow(RefactorDiscoveryError);
+    expect(() => projectRefactorDiscovery(discoveryScan([{ ...first, category: 'refactor_proposal' } as RecommendationV3]), [])).toThrow('non-observation');
+    expect(projectRefactorDiscovery(discoveryScan([first, second]), [{ ...first, status: 'resolved' } as RecommendationV3]).candidates.map((entry) => entry.recommendationId)).toEqual(['recommendation.two']);
   });
 
   test('rejects an unknown candidate and every non-file scope before invoking the provider', () => {
-    const discovery = projectRefactorDiscovery(discoveryScan([observation('recommendation.one', digest('1'))]));
+    const discovery = projectRefactorDiscovery(discoveryScan([observation('recommendation.one', digest('1'))]), []);
     const proposal = authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [] });
     expect(() => assessRefactorProposal({ discovery, candidateAlias: 'C99', proposal }, process.cwd())).toThrow('unknown discovery candidate');
     for (const scopePath of ['src/core/refactor', 'src/**/*.ts', 'does-not-exist.ts']) {

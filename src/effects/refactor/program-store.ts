@@ -95,11 +95,16 @@ function assertOperationEnabled(repoRoot: string, program: RefactorProgramDefini
   if (Date.parse(grant.expires_at) <= Date.now()) fail('refactor_program_authorization_stale', 'program authorization expired');
   const currentTarget = targetRevision(repoRoot, grant.target_ref);
   if (operation !== 'mark_stale' && currentTarget !== grant.target_revision) {
-    if (operation !== 'begin_plan' || ownedTargetRevision !== currentTarget) fail('refactor_program_authorization_stale', 'authorized target ref moved');
-    let parent: string;
-    try { parent = execFileSync('git', ['rev-parse', '--verify', `${currentTarget}^1`], { cwd: repoRoot, encoding: 'utf8' }).trim(); }
-    catch (error) { return fail('refactor_program_authorization_stale', 'materialized target has no verifiable parent', error); }
-    if (parent !== grant.target_revision) fail('refactor_program_authorization_stale', 'materialized target is not the exact authorized child commit');
+    if (ownedTargetRevision !== currentTarget) fail('refactor_program_authorization_stale', 'authorized target ref moved');
+    if (operation === 'begin_plan') {
+      let parent: string;
+      try { parent = execFileSync('git', ['rev-parse', '--verify', `${currentTarget}^1`], { cwd: repoRoot, encoding: 'utf8' }).trim(); }
+      catch (error) { return fail('refactor_program_authorization_stale', 'materialized target has no verifiable parent', error); }
+      if (parent !== grant.target_revision) fail('refactor_program_authorization_stale', 'materialized target is not the exact authorized child commit');
+    } else if (['begin_merge', 'begin_post_merge_measure', 'begin_resolve', 'complete', 'require_reconciliation'].includes(operation)) {
+      try { execFileSync('git', ['merge-base', '--is-ancestor', grant.target_revision, currentTarget], { cwd: repoRoot, stdio: 'ignore' }); }
+      catch (error) { return fail('refactor_program_authorization_stale', 'post-merge target is not descended from the authorized revision', error); }
+    } else fail('refactor_program_authorization_stale', 'authorized target ref moved');
   }
   const policy = loadRefactorPolicyAtRevision(repoRoot, program.target_revision);
   if (policy.mode === 'off') fail('refactor_mode_disabled', 'refactor mode is off at the authorized target revision');
@@ -110,7 +115,7 @@ export interface AppendRefactorProgramEventInput {
   readonly repo_root: string; readonly program_id: string; readonly expected_current_sha256: string | null;
   readonly idempotency_key: string; readonly operation: RefactorProgramOperation; readonly evidence_refs?: readonly string[];
   readonly observed_at: string; readonly env?: NodeJS.ProcessEnv;
-  /** Exact one-commit target advance owned by Module 6; valid only for begin_plan. */
+  /** Exact effect-owned target revision for Module 6 materialization or Module 9 post-merge transitions. */
   readonly owned_target_revision?: string;
 }
 

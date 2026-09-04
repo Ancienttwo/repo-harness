@@ -435,6 +435,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'refactor orchestration plane: maps provider recommendation identity to a Work Package before materialization, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads RefactorProgram bytes as its authority',
   },
   {
+    module: 'src/core/refactor/board.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'refactor read-model plane: projects Program, provider lifecycle, execution, and resolution authorities for display, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads Refactor Board bytes',
+  },
+  {
     module: 'src/core/state/project-board-slice.ts',
     fails: ['C-2'],
     evidence: 'advisory host-context projection: every ownership decision is imported from project-board.ts, it has no store and no --json surface, and its only consumer renders prompt text that carries no decision',

@@ -65,6 +65,7 @@ export interface RefactorRecommendationReadbackV1 {
   readonly headSha: string;
   readonly recommendations: readonly RecommendationV3[];
 }
+export interface RefactorResolutionRecordResultV1 { readonly recommendationId: string; readonly previousStatus: string; readonly nextStatus: 'resolved'; readonly recommendation: RecommendationV3 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new RefactorProviderError("refactor_provider_result_invalid", `${label} must be an object`);
@@ -183,6 +184,14 @@ export function assertAcceptedRefactorRecommendations(value: unknown, expectedHe
   return Object.freeze(readback.recommendations.filter((entry) => entry.status === 'accepted').map((entry) => Object.freeze({ recommendationId: entry.recommendationId, recommendationDigest: entry.fingerprint })));
 }
 
+export function assertRefactorResolutionRecord(value: unknown, recommendationId: string): RefactorResolutionRecordResultV1 {
+  const data = dataOf(value, 'recommendations.resolve');
+  if (data.schemaVersion !== 'archcontext.runtime-recommendation-lifecycle/v1' || data.action !== 'resolve' || data.recommendationId !== recommendationId || data.nextStatus !== 'resolved') throw new RefactorProviderError('refactor_provider_result_invalid', 'ArchContext resolution record is invalid');
+  const recommendation = data.recommendation as RecommendationV3; const issues = recommendationV3InvariantIssues(recommendation);
+  if (issues.length || recommendation.recommendationId !== recommendationId || recommendation.status !== 'resolved') throw new RefactorProviderError('refactor_provider_result_invalid', `invalid resolved recommendation readback: ${issues.join('; ')}`);
+  return Object.freeze({ recommendationId, previousStatus: String(data.previousStatus), nextStatus: 'resolved', recommendation });
+}
+
 export function assertRefactorVerifyResult(value: unknown, request: RefactorVerificationRequestV1): RefactorVerifyResultV1 {
   const data = dataOf(value, "refactor.verify");
   if (data.schemaVersion !== "archcontext.runtime-refactor-verify/v1" || data.recommendationId !== request.recommendationId) throw new RefactorProviderError("refactor_provider_result_invalid", "refactor verify subject is invalid");
@@ -195,6 +204,7 @@ export function assertRefactorVerifyResult(value: unknown, request: RefactorVeri
     if (evidence.verifiedHeadSha !== resultWorktree.headSha || evidence.verifiedWorktreeDigest !== resultWorktree.worktreeDigest) {
       throw new RefactorProviderError("refactor_provider_result_invalid", "refactor verify evidence identity disagrees with its result envelope");
     }
+    if (!sameJson(evidence.executionEvidenceRefs, request.executionEvidenceRefs ?? [])) throw new RefactorProviderError('refactor_provider_result_invalid', 'refactor verify evidence does not bind the requested execution evidence');
   }
   return data as unknown as RefactorVerifyResultV1;
 }

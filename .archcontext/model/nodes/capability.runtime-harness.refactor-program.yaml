@@ -70,11 +70,21 @@ source:
             - id: sink.refactor-program.execution-binding
               path: "src/effects/refactor/execution-binding-store.ts"
               symbol: "appendRefactorExecutionBinding"
+        - name: "runRefactorPostMerge"
+          sinks:
+            - id: sink.refactor-program.post-merge-resolution
+              path: "src/effects/refactor/post-merge-resolution.ts"
+              symbol: "resolveRefactorPostMerge"
+        - name: "runRefactorBoard"
+          sinks:
+            - id: sink.refactor-program.board-projection
+              path: "src/effects/refactor/post-merge-resolution.ts"
+              symbol: "rebuildRefactorBoard"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts tests/unit/refactor-candidate-verification.test.ts tests/unit/refactor-execution-binding.test.ts --timeout 60000"
+    - "bun test tests/unit/refactor-discovery-proposal-authoring.test.ts tests/unit/refactor-provider-contract.test.ts tests/refactor-archctx-provider.test.ts tests/unit/refactor-policy.test.ts tests/unit/refactor-program-state-store.test.ts tests/unit/refactor-workflow-route.test.ts tests/unit/refactor-program-contract.test.ts tests/unit/refactor-materialization-contract.test.ts tests/unit/refactor-materialization-effect.test.ts tests/unit/refactor-architecture-intervention.test.ts tests/unit/refactor-candidate-verification.test.ts tests/unit/refactor-execution-binding.test.ts tests/unit/refactor-board.test.ts tests/unit/refactor-post-merge-resolution.test.ts --timeout 60000"
     - "bun run check:type"
