@@ -1,6 +1,6 @@
 # Task Contract: refactor-discovery-proposal-authoring
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
