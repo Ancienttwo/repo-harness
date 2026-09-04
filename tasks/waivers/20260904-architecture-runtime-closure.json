@@ -1,8 +1,8 @@
 {
   "protocol": 1,
   "kind": "repo-harness-substantive-change-waiver",
-  "substantive_change_sha256": "sha256:629edcd606df075915e83ebdd0af86508481cd797de39b1ed70c50682fc28527",
-  "reason": "Accept and materialize the exact ArchContext 0.5.2 projection after the stale campaign request was archived and the Agent Runtime Effects capability contract paths were normalized.",
+  "substantive_change_sha256": "sha256:f4662659285a25c8e4064a6d15f14aaeedd41a9394e13edaa58bf1f1ca4570ae",
+  "reason": "Accept and materialize the exact ArchContext 0.5.2 projection, including its provider-owned proof status and projection inventory.",
   "owner": "ancienttwo",
   "scope": [
     "docs/architecture/index.md",
@@ -15,7 +15,8 @@
     "docs/architecture/modules/runtime-harness/automation-budget.md",
     "docs/architecture/modules/runtime-harness/engineer-bindings.md",
     "docs/architecture/modules/runtime-harness/engineer-scheduling.md",
-    "docs/architecture/modules/runtime-harness/work-demand.md"
+    "docs/architecture/modules/runtime-harness/work-demand.md",
+    "tests/architecture-projection-e2e.test.ts"
   ],
   "revisit_trigger": "The Agent Runtime Effects capability moves to a different source prefix or the archived development-campaign boundary is introduced as real source code"
 }
