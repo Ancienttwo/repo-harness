@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-04T19:05:13+0800 -->
+<!-- updated_at: 2026-09-04T21:24:16+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-09-04T19:05:13+0800
+> **Status**: Active
+> **Updated At**: 2026-09-04T21:24:16+0800
 > **Source Branch**: main
-> **Source Commit**: ff787c49
+> **Source Commit**: a4f39766
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: board-workflow-closeout
+> **Reason**: board-closeout-architecture-adoption
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- linked-worktree-22134f137f6e: plans/plan-20260904-1950-bounded-frontier-stress-test-eval.md
+- linked-worktree-22134f137f6e: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
@@ -58,49 +59,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 69 changed/untracked path(s)
+- Summary: clean
 
 ```
- M docs/researches/20260819-GPT-kanban.md
- M plans/archive/plan-20260824-0103-local-human-control-board-v1.md
- D plans/plan-20260831-1239-operator-board-r1-presentation.md
- D plans/plan-20260901-1119-close-265-review-gaps.md
- D plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md
- D plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
- D plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
- D plans/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md
- D plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
- M plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md
- M plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md
- D tasks/contracts/20260831-1239-operator-board-r1-presentation.contract.md
- D tasks/contracts/20260901-1119-close-265-review-gaps.contract.md
- D tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md
- D tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md
- D tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md
- D tasks/contracts/20260904-0226-candidate-bound-global-runtime-reconciliation.contract.md
- D tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md
- M tasks/current.md
- D tasks/notes/20260831-1239-operator-board-r1-presentation.notes.md
- D tasks/notes/20260901-1119-close-265-review-gaps.notes.md
- D tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md
- D tasks/notes/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.notes.md
- D tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md
- D tasks/notes/20260904-0226-candidate-bound-global-runtime-reconciliation.notes.md
- D tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md
- D tasks/reviews/20260831-1239-operator-board-r1-presentation.review.md
- D tasks/reviews/20260901-1119-close-265-review-gaps.review.md
- D tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md
- D tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md
- D tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md
- D tasks/reviews/20260904-0226-candidate-bound-global-runtime-reconciliation.review.md
- D tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260831-1239-operator-board-r1-presentation.md
-?? plans/archive/plan-20260901-1119-close-265-review-gaps.md
-?? plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
-?? plans/archive/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md
-?? plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
-?? plans/archive/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md
+(none)
 ```
 
 ## Source Artifacts
