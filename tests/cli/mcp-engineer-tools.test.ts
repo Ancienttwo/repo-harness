@@ -80,6 +80,7 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
       gate: 'module', policy_id: 'module-default',
       policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policyBytes),
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package', boundary_id: `${repositoryId}:${id}`,
       boundary_ref: `plans/rollback/${id}.json`, boundary_revision: engineerSha256(rollback),

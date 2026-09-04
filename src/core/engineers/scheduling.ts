@@ -1,4 +1,5 @@
 import { canonicalEngineerJson, engineerSha256 } from './profile-binding';
+import type { RetryEligibilityObservationV1, TaskAutomationAttemptOutcome } from './automation-attempt';
 
 export const WORK_GRAPH_PROTOCOL = 1 as const;
 export const WORK_GRAPH_KIND = 'repo-harness-work-graph' as const;
@@ -15,6 +16,7 @@ const TASK_ID = /^[0-9a-f]{64}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const SAFE_TOKEN = /^[a-z0-9][a-z0-9._:-]{0,127}$/u;
 const OPAQUE = /^[^\u0000-\u001f\u007f]{1,512}$/u;
+const AUTOMATION_ATTEMPT_OUTCOMES: readonly TaskAutomationAttemptOutcome[] = ['started','completed','user_blocked','external_blocked','transient_failure','permanent_failure','lease_lost','cancelled','reconciliation_required'];
 
 export type WorkGraphLane = 'generic-v1' | 'engineering-v2';
 export type WorkPackageDependencyState =
@@ -58,6 +60,14 @@ export interface WorkPackageRollbackBoundaryV1 {
   readonly boundary_ref: string;
   readonly boundary_revision: string;
 }
+export type AutomationFailureClass = 'transient_failure' | 'external_blocked' | 'lease_lost';
+export interface WorkPackageRetryPolicyV1 {
+  readonly max_automated_attempts: number;
+  readonly retryable_failure_classes: readonly AutomationFailureClass[];
+  readonly backoff: { readonly kind: 'fixed' | 'exponential'; readonly initial_seconds: number; readonly maximum_seconds: number };
+  readonly attention_after_seconds: number;
+  readonly revision_reset: 'reset_on_work_package_revision';
+}
 
 export interface WorkPackageDefinitionV1 {
   readonly work_package_id: string;
@@ -75,6 +85,7 @@ export interface WorkPackageDefinitionV1 {
   readonly integration_group: string | null;
   readonly required_acceptance: readonly WorkPackageAcceptancePolicyV1[];
   readonly rollback_boundary: WorkPackageRollbackBoundaryV1;
+  readonly retry_policy: WorkPackageRetryPolicyV1;
 }
 
 export interface WorkGraphV1 {
@@ -130,13 +141,22 @@ export type EngineerOfferBlockerCode =
   | 'dependency_not_ready'
   | 'dependency_authority_unavailable'
   | 'concurrency_unavailable'
-  | 'active_claim_limit';
+  | 'active_claim_limit'
+  | 'retry_backoff'
+  | 'retry_exhausted'
+  | 'retry_forbidden'
+  | 'attempt_reconciliation_required'
+  | 'attempt_authority_unavailable';
 
 export interface EngineerOfferExclusionV1 {
   readonly repository_id: string;
   readonly work_package_id: string;
   readonly engineer_id: string;
   readonly blockers: readonly EngineerOfferBlockerCode[];
+  readonly attempt_count: number;
+  readonly last_outcome: TaskAutomationAttemptOutcome | null;
+  readonly next_eligible_at: string | null;
+  readonly blocker_owner: 'none' | 'user' | 'operator';
 }
 
 export interface EngineerOfferV1 {
@@ -162,6 +182,14 @@ export interface EngineerOfferV1 {
   readonly binding_generation: number;
   readonly fleet_offer_revision: string;
   readonly authorization_revision: number;
+  readonly retry_policy: WorkPackageRetryPolicyV1;
+  readonly retry_revision: string;
+  readonly eligible_since: string;
+  readonly attempt_count: number;
+  readonly last_outcome: TaskAutomationAttemptOutcome | null;
+  readonly next_eligible_at: string | null;
+  readonly blocker_owner: 'none' | 'user' | 'operator';
+  readonly starvation_attention: boolean;
   readonly offer_revision: string;
 }
 
@@ -310,12 +338,29 @@ function parseRollback(value: unknown): WorkPackageRollbackBoundaryV1 {
   });
 }
 
+export function validateWorkPackageRetryPolicy(value: unknown, index = 0): WorkPackageRetryPolicyV1 {
+  const label = `work_packages[${index}].retry_policy`; const input = record(value, label);
+  exact(input, ['max_automated_attempts', 'retryable_failure_classes', 'backoff', 'attention_after_seconds', 'revision_reset'], label);
+  if (!Array.isArray(input.retryable_failure_classes) || input.retryable_failure_classes.length === 0) invalid(`${label}.retryable_failure_classes must be a non-empty array`);
+  const classes = input.retryable_failure_classes.map((value, classIndex) => {
+    if (!['transient_failure', 'external_blocked', 'lease_lost'].includes(String(value))) invalid(`${label}.retryable_failure_classes[${classIndex}] is invalid`);
+    return value as AutomationFailureClass;
+  });
+  if (new Set(classes).size !== classes.length) invalid(`${label}.retryable_failure_classes contains duplicates`);
+  const backoff = record(input.backoff, `${label}.backoff`); exact(backoff, ['kind', 'initial_seconds', 'maximum_seconds'], `${label}.backoff`);
+  if (backoff.kind !== 'fixed' && backoff.kind !== 'exponential') invalid(`${label}.backoff.kind is invalid`);
+  const initial = integer(backoff.initial_seconds, `${label}.backoff.initial_seconds`, 1, 86_400);
+  const maximum = integer(backoff.maximum_seconds, `${label}.backoff.maximum_seconds`, initial, 604_800);
+  if (input.revision_reset !== 'reset_on_work_package_revision') invalid(`${label}.revision_reset is invalid`);
+  return Object.freeze({ max_automated_attempts: integer(input.max_automated_attempts, `${label}.max_automated_attempts`, 1, 100), retryable_failure_classes: Object.freeze(classes), backoff: Object.freeze({ kind: backoff.kind, initial_seconds: initial, maximum_seconds: maximum }), attention_after_seconds: integer(input.attention_after_seconds, `${label}.attention_after_seconds`, 1, 2_592_000), revision_reset: 'reset_on_work_package_revision' });
+}
+
 function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV1 {
   const input = record(value, `work_packages[${index}]`);
   exact(input, [
     'work_package_id', 'task_id', 'primary_capability', 'depends_on', 'priority',
     'concurrency', 'execution_surface', 'integration_group', 'required_acceptance',
-    'rollback_boundary',
+    'rollback_boundary', 'retry_policy',
   ], `work_packages[${index}]`);
   if (!Array.isArray(input.depends_on)) invalid(`work_packages[${index}].depends_on must be an array`);
   if (!Array.isArray(input.required_acceptance) || input.required_acceptance.length === 0) {
@@ -344,6 +389,7 @@ function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV
       : string(input.integration_group, `work_packages[${index}].integration_group`, SAFE_TOKEN),
     required_acceptance: Object.freeze(policies),
     rollback_boundary: parseRollback(input.rollback_boundary),
+    retry_policy: validateWorkPackageRetryPolicy(input.retry_policy, index),
   });
 }
 
@@ -506,6 +552,7 @@ export interface EngineerOfferCandidateInput {
   readonly concurrency_available: boolean;
   readonly concurrency_revision: string;
   readonly active_claims: number;
+  readonly retry: RetryEligibilityObservationV1;
 }
 
 export type EngineerOfferCandidateResult =
@@ -526,6 +573,8 @@ export function buildEngineerOfferCandidate(input: EngineerOfferCandidateInput):
   if (typeof input.concurrency_available !== 'boolean' || !DIGEST.test(input.concurrency_revision)) {
     invalid('Engineer offer concurrency input is invalid');
   }
+  if (!DIGEST.test(input.retry.authority_revision) || !Number.isSafeInteger(input.retry.attempt_count) || input.retry.attempt_count < 0
+    || (input.retry.state === 'eligible' && input.retry.eligible_since === null)) invalid('Engineer offer retry input is invalid');
   const graphItem = input.graph.work_packages.find((entry) => entry.work_package_id === item.work_package_id);
   if (!graphItem || graphItem.repository_id !== item.repository_id || graphItem.sprint_path !== item.sprint_path
     || graphItem.work_package_revision !== item.work_package_revision || graphItem.task_id !== item.task_id
@@ -563,6 +612,11 @@ export function buildEngineerOfferCandidate(input: EngineerOfferCandidateInput):
   if (input.dependencies.some((entry) => entry.status === 'unsatisfied')) blockers.push('dependency_not_ready');
   if (!input.concurrency_available) blockers.push('concurrency_unavailable');
   if (input.active_claims >= input.engineer.max_active_claims) blockers.push('active_claim_limit');
+  if (input.retry.state === 'retry_backoff') blockers.push('retry_backoff');
+  if (input.retry.state === 'retry_exhausted') blockers.push('retry_exhausted');
+  if (input.retry.state === 'retry_forbidden') blockers.push('retry_forbidden');
+  if (input.retry.state === 'reconciliation_required') blockers.push('attempt_reconciliation_required');
+  if (input.retry.state === 'authority_unavailable') blockers.push('attempt_authority_unavailable');
   if (blockers.length > 0 || !input.fleet_offer || input.binding.binding_id === null) {
     return Object.freeze({
       eligible: false,
@@ -571,6 +625,10 @@ export function buildEngineerOfferCandidate(input: EngineerOfferCandidateInput):
         work_package_id: item.work_package_id,
         engineer_id: input.engineer.engineer_id,
         blockers: uniqueBlockers(blockers),
+        attempt_count: input.retry.attempt_count,
+        last_outcome: input.retry.last_outcome,
+        next_eligible_at: input.retry.next_eligible_at,
+        blocker_owner: input.retry.attention_owner,
       }),
     });
   }
@@ -598,6 +656,14 @@ export function buildEngineerOfferCandidate(input: EngineerOfferCandidateInput):
     binding_generation: input.binding.binding_generation,
     fleet_offer_revision: input.fleet_offer.offer_revision,
     authorization_revision: input.fleet_offer.authorization_revision,
+    retry_policy: item.retry_policy,
+    retry_revision: input.retry.authority_revision,
+    eligible_since: input.retry.eligible_since!,
+    attempt_count: input.retry.attempt_count,
+    last_outcome: input.retry.last_outcome,
+    next_eligible_at: input.retry.next_eligible_at,
+    blocker_owner: input.retry.attention_owner,
+    starvation_attention: input.retry.starvation_attention,
   };
   return Object.freeze({
     eligible: true,
@@ -613,12 +679,15 @@ export function validateEngineerOffer(value: unknown): EngineerOfferV1 {
     'primary_capability', 'priority', 'dependency_state', 'dependency_revision',
     'concurrency_scope', 'concurrency_key', 'concurrency_revision', 'engineer_id',
     'engineer_contract_revision', 'binding_id', 'binding_generation',
-    'fleet_offer_revision', 'authorization_revision', 'offer_revision',
+    'fleet_offer_revision', 'authorization_revision', 'retry_policy', 'retry_revision', 'eligible_since',
+    'attempt_count', 'last_outcome', 'next_eligible_at', 'blocker_owner', 'starvation_attention', 'offer_revision',
   ], 'Engineer offer');
   if (input.protocol !== ENGINEER_OFFER_PROTOCOL || input.kind !== ENGINEER_OFFER_KIND
     || input.dependency_state !== 'ready' || input.concurrency_scope !== 'repo') {
     invalid('Engineer offer protocol or closed state is invalid');
   }
+  const blockerOwner: EngineerOfferV1['blocker_owner'] = input.blocker_owner === 'none' || input.blocker_owner === 'user' || input.blocker_owner === 'operator' ? input.blocker_owner : invalid('blocker_owner is invalid');
+  const lastOutcome = input.last_outcome === null || AUTOMATION_ATTEMPT_OUTCOMES.includes(input.last_outcome as TaskAutomationAttemptOutcome) ? input.last_outcome as TaskAutomationAttemptOutcome | null : invalid('last_outcome is invalid');
   const basis = {
     protocol: ENGINEER_OFFER_PROTOCOL,
     kind: ENGINEER_OFFER_KIND,
@@ -642,6 +711,14 @@ export function validateEngineerOffer(value: unknown): EngineerOfferV1 {
     binding_generation: integer(input.binding_generation, 'binding_generation', 1, Number.MAX_SAFE_INTEGER),
     fleet_offer_revision: string(input.fleet_offer_revision, 'fleet_offer_revision', DIGEST),
     authorization_revision: integer(input.authorization_revision, 'authorization_revision', 0, Number.MAX_SAFE_INTEGER),
+    retry_policy: validateWorkPackageRetryPolicy(input.retry_policy),
+    retry_revision: string(input.retry_revision, 'retry_revision', DIGEST),
+    eligible_since: string(input.eligible_since, 'eligible_since', OPAQUE),
+    attempt_count: integer(input.attempt_count, 'attempt_count', 0, 100),
+    last_outcome: lastOutcome,
+    next_eligible_at: input.next_eligible_at === null ? null : string(input.next_eligible_at, 'next_eligible_at', OPAQUE),
+    blocker_owner: blockerOwner,
+    starvation_attention: input.starvation_attention === true ? true : input.starvation_attention === false ? false : invalid('starvation_attention is invalid'),
   };
   const revision = string(input.offer_revision, 'offer_revision', DIGEST);
   if (revision !== engineerSha256(canonicalEngineerJson(basis))) invalid('Engineer offer revision is invalid');
@@ -683,11 +760,12 @@ export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1
   });
   const exclusions = (input.exclusions as readonly unknown[]).map((entry) => {
     const item = record(entry, 'exclusion');
-    exact(item, ['repository_id', 'work_package_id', 'engineer_id', 'blockers'], 'exclusion');
+    exact(item, ['repository_id', 'work_package_id', 'engineer_id', 'blockers', 'attempt_count', 'last_outcome', 'next_eligible_at', 'blocker_owner'], 'exclusion');
     if (!Array.isArray(item.blockers)) invalid('exclusion.blockers is invalid');
     const blockers = (item.blockers as readonly unknown[]).map((code) => {
       if (!['profile_capability_mismatch', 'binding_inactive', 'fleet_offer_unavailable', 'dependency_not_ready',
-        'dependency_authority_unavailable', 'concurrency_unavailable', 'active_claim_limit'].includes(String(code))) {
+        'dependency_authority_unavailable', 'concurrency_unavailable', 'active_claim_limit', 'retry_backoff',
+        'retry_exhausted', 'retry_forbidden', 'attempt_reconciliation_required', 'attempt_authority_unavailable'].includes(String(code))) {
         invalid('exclusion.blockers contains an invalid code');
       }
       return code as EngineerOfferBlockerCode;
@@ -702,6 +780,10 @@ export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1
       work_package_id: string(item.work_package_id, 'exclusion.work_package_id', WORK_PACKAGE_ID),
       engineer_id: engineerId,
       blockers: Object.freeze(blockers),
+      attempt_count: integer(item.attempt_count, 'exclusion.attempt_count', 0, 100),
+      last_outcome: item.last_outcome === null || AUTOMATION_ATTEMPT_OUTCOMES.includes(item.last_outcome as TaskAutomationAttemptOutcome) ? item.last_outcome as TaskAutomationAttemptOutcome | null : invalid('exclusion.last_outcome is invalid'),
+      next_eligible_at: item.next_eligible_at === null ? null : string(item.next_eligible_at, 'exclusion.next_eligible_at', OPAQUE),
+      blocker_owner: item.blocker_owner === 'none' || item.blocker_owner === 'user' || item.blocker_owner === 'operator' ? item.blocker_owner : invalid('exclusion.blocker_owner is invalid'),
     });
   });
   const basis = {
@@ -730,6 +812,7 @@ export function buildEngineerOffersDocument(input: {
     .filter((candidate): candidate is Extract<EngineerOfferCandidateResult, { eligible: true }> => candidate.eligible)
     .map((candidate) => validateEngineerOffer(candidate.offer))
     .sort((left, right) => right.priority - left.priority
+      || left.eligible_since.localeCompare(right.eligible_since)
       || left.work_package_id.localeCompare(right.work_package_id)
       || left.offer_revision.localeCompare(right.offer_revision));
   const exclusions = input.candidates

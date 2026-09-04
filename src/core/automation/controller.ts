@@ -8,6 +8,7 @@ import {
   messageRequiredString,
 } from '../messages/mechanics';
 import { buildLeaseLivenessPolicy, type LeaseLivenessPolicyV1 } from '../state/lease-liveness';
+import { validateWorkPackageRetryPolicy, type WorkPackageRetryPolicyV1 } from '../engineers/scheduling';
 
 export const AUTOMATION_CONTROLLER_PROTOCOL = 1 as const;
 export const AUTOMATION_CONTROLLER_RUN_KIND = 'repo-harness-automation-controller-run' as const;
@@ -78,7 +79,14 @@ export interface AutomationControllerStepReceiptV1 {
   readonly work_envelope_sha256: string | null;
   readonly dispatch_id: string | null;
   readonly runtime_effect_id: string | null;
+  readonly attempt_context: AutomationControllerAttemptContextV1 | null;
   readonly evidence_refs: readonly string[];
+}
+export interface AutomationControllerAttemptContextV1 {
+  readonly repository_id: string; readonly sprint_path: string; readonly task_id: string; readonly task_revision: string;
+  readonly work_package_id: string; readonly work_package_revision: string; readonly engineer_id: string; readonly binding_generation: number;
+  readonly claim_id: string; readonly lease_generation: number; readonly budget_revision: string; readonly retry_policy: WorkPackageRetryPolicyV1;
+  readonly first_eligible_at: string;
 }
 
 export interface AutomationControllerEventV1 {
@@ -186,11 +194,13 @@ export function nextAutomationControllerState(current: AutomationControllerState
 }
 
 function receipt(value: AutomationControllerStepReceiptV1, operation: AutomationControllerOperation): AutomationControllerStepReceiptV1 {
-  const row = object(value, 'receipt'); exact(row, ['operation', 'outcome', 'work_package_id', 'task_id', 'claim_id', 'lease_generation', 'work_envelope_sha256', 'dispatch_id', 'runtime_effect_id', 'evidence_refs'], 'receipt');
+  const row = object(value, 'receipt'); exact(row, ['operation', 'outcome', 'work_package_id', 'task_id', 'claim_id', 'lease_generation', 'work_envelope_sha256', 'dispatch_id', 'runtime_effect_id', 'attempt_context', 'evidence_refs'], 'receipt');
   if (row.operation !== operation) invalid('receipt.operation does not match event operation');
   const nullable = (field: string, pattern?: RegExp): string | null => row[field] === null ? null : string(row[field], `receipt.${field}`, pattern, 2048);
   if (!Array.isArray(row.evidence_refs) || row.evidence_refs.length > 32) invalid('receipt.evidence_refs must be a bounded array');
-  return Object.freeze({ operation, outcome: string(row.outcome, 'receipt.outcome'), work_package_id: nullable('work_package_id'), task_id: nullable('task_id', /^[0-9a-f]{64}$/u), claim_id: nullable('claim_id', UUID), lease_generation: row.lease_generation === null ? null : integer(row.lease_generation, 'receipt.lease_generation', 1, Number.MAX_SAFE_INTEGER), work_envelope_sha256: row.work_envelope_sha256 === null ? null : sha(row.work_envelope_sha256, 'receipt.work_envelope_sha256'), dispatch_id: row.dispatch_id === null ? null : sha(row.dispatch_id, 'receipt.dispatch_id'), runtime_effect_id: row.runtime_effect_id === null ? null : sha(row.runtime_effect_id, 'receipt.runtime_effect_id'), evidence_refs: Object.freeze(row.evidence_refs.map((item, index) => string(item, `receipt.evidence_refs[${index}]`, undefined, 2048))) });
+  let attemptContext: AutomationControllerAttemptContextV1 | null = null;
+  if (row.attempt_context !== null) { const context=object(row.attempt_context,'receipt.attempt_context'); exact(context,['repository_id','sprint_path','task_id','task_revision','work_package_id','work_package_revision','engineer_id','binding_generation','claim_id','lease_generation','budget_revision','retry_policy','first_eligible_at'],'receipt.attempt_context'); attemptContext=Object.freeze({ repository_id:string(context.repository_id,'attempt_context.repository_id',REPOSITORY_ID), sprint_path:string(context.sprint_path,'attempt_context.sprint_path'), task_id:string(context.task_id,'attempt_context.task_id',/^[0-9a-f]{64}$/u), task_revision:string(context.task_revision,'attempt_context.task_revision',/^[0-9a-f]{64}$/u), work_package_id:string(context.work_package_id,'attempt_context.work_package_id'), work_package_revision:sha(context.work_package_revision,'attempt_context.work_package_revision'), engineer_id:string(context.engineer_id,'attempt_context.engineer_id',ENGINEER_ID), binding_generation:integer(context.binding_generation,'attempt_context.binding_generation',1,Number.MAX_SAFE_INTEGER), claim_id:string(context.claim_id,'attempt_context.claim_id',UUID), lease_generation:integer(context.lease_generation,'attempt_context.lease_generation',1,Number.MAX_SAFE_INTEGER), budget_revision:sha(context.budget_revision,'attempt_context.budget_revision'), retry_policy:validateWorkPackageRetryPolicy(context.retry_policy), first_eligible_at:timestamp(context.first_eligible_at,'attempt_context.first_eligible_at') }); }
+  return Object.freeze({ operation, outcome: string(row.outcome, 'receipt.outcome'), work_package_id: nullable('work_package_id'), task_id: nullable('task_id', /^[0-9a-f]{64}$/u), claim_id: nullable('claim_id', UUID), lease_generation: row.lease_generation === null ? null : integer(row.lease_generation, 'receipt.lease_generation', 1, Number.MAX_SAFE_INTEGER), work_envelope_sha256: row.work_envelope_sha256 === null ? null : sha(row.work_envelope_sha256, 'receipt.work_envelope_sha256'), dispatch_id: row.dispatch_id === null ? null : sha(row.dispatch_id, 'receipt.dispatch_id'), runtime_effect_id: row.runtime_effect_id === null ? null : sha(row.runtime_effect_id, 'receipt.runtime_effect_id'), attempt_context: attemptContext, evidence_refs: Object.freeze(row.evidence_refs.map((item, index) => string(item, `receipt.evidence_refs[${index}]`, undefined, 2048))) });
 }
 
 export function buildAutomationControllerEvent(input: Omit<AutomationControllerEventV1, 'protocol' | 'kind' | 'next_state' | 'event_sha256'>): AutomationControllerEventV1 {

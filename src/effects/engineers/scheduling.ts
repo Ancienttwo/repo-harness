@@ -40,6 +40,8 @@ import {
 } from './dependency-authority';
 import { listLiveClaimActorReceiptsForEngineer } from './claim-actor-store';
 import { loadEngineerProfile, resolveCapabilityForEngineer } from './profile-store';
+import { observeRetryEligibility } from '../../core/engineers/automation-attempt';
+import { readTaskAutomationAttemptCurrent } from './automation-attempt-store';
 
 export interface ProjectedGraphRead {
   readonly repo: RepoHarnessRegisteredRepo;
@@ -71,6 +73,8 @@ export interface EngineerSchedulingDependencies {
   readonly repoIdentity: typeof resolveRepoIdentity;
   readonly dependencyAuthority: DependencyAuthorityResolver;
   readonly dependencyReaders: Partial<DependencyAuthorityReaders>;
+  readonly readAttemptCurrent: typeof readTaskAutomationAttemptCurrent;
+  readonly now: () => Date;
 }
 
 export interface CollectEngineerOffersOptions {
@@ -117,6 +121,8 @@ function dependencies(overrides: Partial<EngineerSchedulingDependencies> = {}): 
     repoIdentity: resolveRepoIdentity,
     dependencyAuthority: resolveDependencyObservation,
     dependencyReaders: {},
+    readAttemptCurrent: readTaskAutomationAttemptCurrent,
+    now: () => new Date(),
     ...overrides,
   };
 }
@@ -351,6 +357,7 @@ export function collectEngineerOffers(options: CollectEngineerOffersOptions): En
   const candidates = current.graph.work_packages.map((item) => {
     const fleetOffer = fleet.offers.find((offer) => offer.task_id === item.task_id) ?? null;
     const concurrency = concurrencyObservation(repo.path, item, current.graph!, deps);
+    const retry = observeRetryEligibility({ policy: item.retry_policy, current: deps.readAttemptCurrent(repo.path, item.work_package_id, item.work_package_revision), work_package_revision: item.work_package_revision, observed_at: (options.now_ms === undefined ? deps.now() : new Date(options.now_ms)).toISOString() });
     return buildEngineerOfferCandidate({
       graph: current.graph!,
       work_package: item,
@@ -370,6 +377,7 @@ export function collectEngineerOffers(options: CollectEngineerOffersOptions): En
       concurrency_available: concurrency.available,
       concurrency_revision: concurrency.revision,
       active_claims: liveClaims,
+      retry,
     });
   });
   return buildEngineerOffersDocument({

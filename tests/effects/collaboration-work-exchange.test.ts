@@ -101,7 +101,8 @@ function offer(repositoryId: string, workPackageId: string, taskSeed: string): E
           policy_ref: 'plans/policies/module-default.json',
           policy_revision: DIGEST,
         }],
-        rollback_boundary: {
+        retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
+    rollback_boundary: {
           kind: 'work_package',
           boundary_id: `${repositoryId}:${workPackageId}`,
           boundary_ref: `plans/rollback/${workPackageId}.json`,
@@ -138,6 +139,7 @@ function offer(repositoryId: string, workPackageId: string, taskSeed: string): E
     dependencies: [],
     concurrency_available: true,
     concurrency_revision: DIGEST,
+    retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
     active_claims: 0,
   });
   if (!candidate.eligible) throw new Error(`fixture offer was excluded: ${candidate.exclusion.blockers.join(', ')}`);

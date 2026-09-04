@@ -25,7 +25,7 @@ function definition(runId = `sha256:${'b'.repeat(64)}`) {
     created_at: '2026-09-04T00:00:00.000Z',
   });
 }
-function emptyReceipt(operation: 'observe') { return { operation, outcome: 'observed', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, evidence_refs: [] } as const; }
+function emptyReceipt(operation: 'observe') { return { operation, outcome: 'observed', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [] } as const; }
 
 describe('issue #279 automation controller store', () => {
   test('same-key start is idempotent and one Engineer has one current controller', () => {

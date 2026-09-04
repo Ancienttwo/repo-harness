@@ -179,6 +179,7 @@ function workGraphJson(state: WorkPackageDependencyState = 'canonical_done', rep
       policy_ref: 'plans/policies/module.json',
       policy_revision: engineerSha256(POLICY_BYTES),
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package',
       boundary_id: `${repositoryId}:${id}`,
@@ -570,6 +571,8 @@ function schedulingDependencies(subject: Fixture, state: WorkPackageDependencySt
       }],
     }) as never,
     listLiveClaims: () => [],
+    readAttemptCurrent: () => null,
+    now: () => new Date('2026-09-04T00:00:00.000Z'),
     dependencyReaders: { resolveAuthorityHome: () => subject.root },
   };
 }
@@ -725,6 +728,7 @@ function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityIn
       policy_ref: 'plans/policies/module.json',
       policy_revision: engineerSha256(POLICY_BYTES),
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package',
       boundary_id: `${RECORD_REPO_ID}:wp-demo`,
