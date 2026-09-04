@@ -207,7 +207,7 @@ function installCandidateRuntimeFixture(home: string, version: string): string {
   rmSync(candidate, { recursive: true, force: true });
   cpSync(ROOT, candidate, {
     recursive: true,
-    filter: (source) => !['.git', 'node_modules', '_ops'].includes(basename(source)),
+    filter: (source) => !['.git', '.codegraph', 'node_modules', '_ops'].includes(basename(source)),
   });
   const manifestPath = join(candidate, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
