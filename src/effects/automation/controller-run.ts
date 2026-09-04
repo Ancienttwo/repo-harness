@@ -10,9 +10,13 @@ import {
 } from './budget-store';
 import {
   appendAutomationControllerEvent,
+  readAutomationControllerAttemptContext,
+  readAutomationControllerHeadEvent,
   readAutomationControllerStatus,
   startAutomationControllerRun,
 } from './controller-store';
+import { attemptIdentity } from '../../core/engineers/automation-attempt';
+import { recordTaskAutomationAttemptOutcome, recordTaskAutomationAttemptStart } from '../engineers/automation-attempt-store';
 import { resolveEngineerPrincipal } from '../engineers/principal';
 import { acquireNextScheduledEngineerTask, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
 import { dispatchDelegatedRun, type DelegatedRunStatus } from '../engineers/delegated-run-store';
@@ -47,6 +51,10 @@ export interface AutomationControllerRunDependencies {
   readonly appendUsage: typeof appendAutomationUsage;
   readonly readLease: typeof readLease;
   readonly renewLiveness: typeof renewLeaseLiveness;
+  readonly readAttemptContext: typeof readAutomationControllerAttemptContext;
+  readonly readHeadEvent: typeof readAutomationControllerHeadEvent;
+  readonly startAttempt: typeof recordTaskAutomationAttemptStart;
+  readonly completeAttempt: typeof recordTaskAutomationAttemptOutcome;
 }
 
 export interface StartBoundedAutomationControllerInput {
@@ -69,6 +77,10 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   appendUsage: appendAutomationUsage,
   readLease,
   renewLiveness: renewLeaseLiveness,
+  readAttemptContext: readAutomationControllerAttemptContext,
+  readHeadEvent: readAutomationControllerHeadEvent,
+  startAttempt: recordTaskAutomationAttemptStart,
+  completeAttempt: recordTaskAutomationAttemptOutcome,
 };
 
 function exactPrincipal(repositoryId: string, expected: ReturnType<typeof readAutomationControllerStatus>['run']['principal'], observed: EngineerPrincipalV1, authorizationRevision: number): void {
@@ -112,7 +124,7 @@ export function reconcileAutomationController(repoRoot: string, runId: string, i
 
 function evidence(runId: string, sha256: string) { return Object.freeze([{ ref: `controller-run:${runId}`, sha256 }]); }
 function receipt(operation: AutomationControllerOperation, outcome: string, extra: Partial<AutomationControllerStepReceiptV1> = {}): AutomationControllerStepReceiptV1 {
-  return Object.freeze({ operation, outcome, work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, evidence_refs: [], ...extra });
+  return Object.freeze({ operation, outcome, work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [], ...extra });
 }
 
 function append(repoRoot: string, runId: string, current: AutomationControllerCurrentV1, key: string, operation: AutomationControllerOperation, observedAt: string, stepReceipt: AutomationControllerStepReceiptV1, attentionOwner: 'none' | 'user' | 'operator' = 'none', blocker: string | null = null, retryAt: string | null = null): AutomationControllerCurrentV1 {
@@ -161,7 +173,7 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
       const lease = deps.readLease(input.repo_root, acquisition.envelope.task_id);
       if (lease.record === null || lease.record.claim_id !== acquisition.envelope.claim_id || lease.record.generation !== acquisition.envelope.generation) throw new Error('acquired WorkEnvelope does not bind the exact current Lease');
       const renewed = deps.renewLiveness({ repo_root: input.repo_root, owner: lease.record, policy: run.policy.lease_liveness, owner_id: run.run_id, observed_at: at(), requested_ttl_ms: run.policy.lease_liveness.maximum_ttl_ms, binding_generation: run.principal.binding_generation, runtime_effect_id: null, expected_current_sha256: null });
-      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256, renewed.renewal.renewal_sha256] })); steps += 1;
+      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, attempt_context: { repository_id: run.repository_id, sprint_path: acquisition.offer.sprint_path, task_id: acquisition.offer.task_id, task_revision: acquisition.offer.task_revision, work_package_id: acquisition.offer.work_package_id, work_package_revision: acquisition.offer.work_package_revision, engineer_id: run.principal.engineer_id, binding_generation: run.principal.binding_generation, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, budget_revision: run.budget_sha256, retry_policy: acquisition.offer.retry_policy, first_eligible_at: acquisition.offer.eligible_since }, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256, renewed.renewal.renewal_sha256] })); steps += 1;
     } else if (acquisition.error === 'engineer_no_eligible_offer') {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:no-offer`, 'no_offer', at(), receipt('no_offer', 'no_eligible_offer', { evidence_refs: [usage.event.event_sha256] })); steps += 1;
     } else if (transientAcquisition(acquisition)) {
@@ -178,6 +190,15 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
   }
   if (current.state === 'executing' && room()) {
     if (!input.dispatch_id) return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
+    const context=deps.readAttemptContext(input.repo_root,run.run_id); if(context===null) throw new Error('controller execution is missing its acquired attempt context');
+    const { retry_policy, ...attemptContext } = context;
+    const started=deps.startAttempt({ repo_root:input.repo_root, ...attemptContext, controller_run_id:run.run_id, dispatch_id:input.dispatch_id, policy:retry_policy, started_at:at() });
+    const identity=attemptIdentity(started.attempt);
+    if (deps.readHeadEvent(input.repo_root,run.run_id).operation === 'begin_dispatch') {
+      const endedAt=at(); deps.completeAttempt({ repo_root:input.repo_root, work_package_id:context.work_package_id, work_package_revision:context.work_package_revision, policy:retry_policy, identity_sha256:identity, outcome:'reconciliation_required', ended_at:endedAt, runtime_effect_id:null, evidence_refs:[`controller-event:${current.current_event_sha256}`] });
+      current=append(input.repo_root,run.run_id,current,`${input.idempotency_key}:attempt-reconciliation`,'require_reconciliation',endedAt,receipt('require_reconciliation','dispatch_outcome_unknown',{dispatch_id:input.dispatch_id,evidence_refs:[started.attempt.attempt_sha256]}),'operator','controller_reconciliation_required'); steps+=1;
+      return Object.freeze({run_id:run.run_id,current,acquisition,dispatch:dispatched,steps_executed:steps});
+    }
     let reservation;
     try { reservation = deps.reserveBudget({ repo_root: input.repo_root, automation_run_id: run.run_id, expected_budget_sha256: run.budget_sha256, idempotency_key: `${input.idempotency_key}:dispatch`, operation: 'dispatch', unit_kind: 'execute', unit_id: run.run_id, attempt: 1, provider: null }); }
     catch (error) { if (error instanceof AutomationBudgetStoreError) { current = budgetRefusal(input.repo_root, run.run_id, current, input.idempotency_key, error, at()); return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps + 1 }); } throw error; }
@@ -186,6 +207,8 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
     catch (error) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-unknown`, 'require_reconciliation', at(), receipt('require_reconciliation', 'dispatch_outcome_unknown', { dispatch_id: input.dispatch_id }), 'operator', 'controller_reconciliation_required'); throw error; }
     const outcome = dispatched.current.state === 'completed' ? 'progress' : dispatched.current.state === 'failed' ? 'provider_failure' : 'no_progress';
     const usage = deps.appendUsage({ repo_root: input.repo_root, reservation, outcome, evidence_refs: evidence(run.run_id, current.current_event_sha256) });
+    const attemptOutcome = dispatched.current.state === 'completed' ? 'completed' : dispatched.current.state === 'failed' && ['infrastructure','provider'].includes(dispatched.current.failure_class) ? 'transient_failure' : dispatched.current.state === 'failed' ? 'permanent_failure' : 'reconciliation_required';
+    deps.completeAttempt({ repo_root:input.repo_root, work_package_id:context.work_package_id, work_package_revision:context.work_package_revision, policy:context.retry_policy, identity_sha256:identity, outcome:attemptOutcome, ended_at:at(), runtime_effect_id:null, evidence_refs:[dispatched.current.observation_sha256,usage.event.event_sha256] });
     if (dispatched.current.state === 'completed') {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-started`, 'dispatch_started', at(), receipt('dispatch_started', 'completed', { dispatch_id: input.dispatch_id, evidence_refs: [dispatched.current.observation_sha256, usage.event.event_sha256] })); steps += 1;
       if (room()) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:outcome`, 'outcome_observed', at(), receipt('outcome_observed', 'progress', { dispatch_id: input.dispatch_id, evidence_refs: [dispatched.current.observation_sha256] })); steps += 1; }

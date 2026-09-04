@@ -113,7 +113,7 @@ export function startAutomationControllerRun(input: { readonly repo_root: string
         atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
       }
     } else atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
-    const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, evidence_refs: [] }, observed_at: input.observed_at, crash_hook: input.crash_hook });
+    const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [] }, observed_at: input.observed_at, crash_hook: input.crash_hook });
     return Object.freeze({ run, ...result });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true }), { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
@@ -128,6 +128,22 @@ export function readAutomationControllerStatus(repoRootInput: string, runId: str
   const run = parse(value.definition, validateAutomationControllerRun, canonicalAutomationControllerRunBytes); const projection = current(value)!;
   if (projection.run_id !== run.run_id || projection.run_sha256 !== run.run_sha256 || !existsSync(join(value.root, 'events', `${shaName(projection.current_event_sha256)}.json`))) fail('automation_controller_conflict', 'controller current does not resolve to its exact run and durable event');
   return Object.freeze({ run, current: projection });
+}
+
+export function readAutomationControllerAttemptContext(repoRootInput: string, runId: string): NonNullable<AutomationControllerStepReceiptV1['attempt_context']> | null {
+  const value = paths(resolve(repoRootInput), runId); if (!existsSync(value.definition) || !existsSync(value.current)) fail('automation_controller_not_found', 'controller run is missing');
+  const head = current(value)!; let latest: AutomationControllerEventV1 | null = null;
+  for (const entry of readdirSync(join(value.root, 'events'), { withFileTypes: true })) {
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
+    const event = parse(join(value.root, 'events', entry.name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
+    if (event.run_id === runId && event.revision <= head.revision && event.receipt.attempt_context !== null && (latest === null || event.revision > latest.revision)) latest = event;
+  }
+  return latest?.receipt.attempt_context ?? null;
+}
+
+export function readAutomationControllerHeadEvent(repoRootInput: string, runId: string): AutomationControllerEventV1 {
+  const value=paths(resolve(repoRootInput),runId); const projection=current(value); if(projection===null) fail('automation_controller_not_found','controller run is missing');
+  return parse(join(value.root,'events',`${shaName(projection.current_event_sha256)}.json`),validateAutomationControllerEvent,canonicalAutomationControllerEventBytes);
 }
 
 export function listAutomationControllerRuns(repoRootInput: string): readonly ReturnType<typeof readAutomationControllerStatus>[] {
