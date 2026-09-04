@@ -37,6 +37,21 @@ function collectFiles(root: string, current = root): string[] {
 }
 
 describe("workflow contract manifest", () => {
+  test("registers the closed cutover closure protocol", () => {
+    const contract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf8"));
+    expect(contract.cutoverClosure).toEqual({
+      protocol: 1,
+      categories: ["old_implementation", "callers", "fallback", "tests", "docs_and_projections", "compatibility_expiry"],
+      dispositions: ["removed", "migrated", "retained_with_reason", "not_applicable"],
+      selectorKinds: ["path", "relation", "symbol"],
+      errorCodes: ["refactor_closure_residue", "refactor_closure_incomplete", "refactor_closure_missing"],
+      authority: "scripts/cutover-closure.ts",
+      projection: "assets/templates/helpers/cutover-closure.ts",
+      evidenceKind: "cutover_closure",
+    });
+    expect(contract.helpers.scripts).toContain("cutover-closure.ts");
+  });
+
   test("self-hosted runtime manifest should match the asset contract", () => {
     const asset = readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8");
     const runtime = readFileSync(join(ROOT, ".ai/harness/workflow-contract.json"), "utf-8");

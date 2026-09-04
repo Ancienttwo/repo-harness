@@ -42,6 +42,7 @@ import {
   resolveRepoIdentity,
 } from './coordination-canonical-source';
 import { readLease, type LeaseRead } from './coordination-lease-store';
+import { LeaseLivenessStoreError, readLeaseLiveness, readLeaseReclaimEligibility } from './coordination-lease-liveness-store';
 import {
   StateResolutionUnstableError,
   resolveEffectiveStateReadOnly,
@@ -223,6 +224,26 @@ export function collectBoardInputs(cwd: string, options: CollectBoardOptions): B
       evidence = cached ?? observeOwnerWorktree(ownerWorktree, topologyPaths, options.nowMs);
       observed.set(ownerWorktree, evidence);
     }
+    let liveness: BoardTaskInput['liveness'];
+    if (lease.record !== null) {
+      try {
+        const status = readLeaseLiveness(cwd, task.task_id);
+        if (status.current.claim_id === lease.record.claim_id && status.current.lease_generation === lease.record.generation) {
+          const eligibility = readLeaseReclaimEligibility(cwd, task.task_id);
+          const classification = eligibility?.classification
+            ?? (Date.parse(status.current.expires_at) > options.nowMs ? 'live' : 'liveness_unproven');
+          liveness = {
+            expires_at: status.current.expires_at,
+            last_renewed_at: status.current.last_renewed_at,
+            sequence: status.current.sequence,
+            classification,
+            attention_owner: eligibility?.attention_owner ?? (classification === 'live' ? 'none' : 'operator'),
+          };
+        }
+      } catch (error) {
+        if (!(error instanceof LeaseLivenessStoreError) || error.code !== 'liveness_not_found') throw error;
+      }
+    }
     return {
       task_id: task.task_id,
       task_revision: task.task_revision,
@@ -233,6 +254,7 @@ export function collectBoardInputs(cwd: string, options: CollectBoardOptions): B
         record: lease.record,
       },
       evidence,
+      ...(liveness === undefined ? {} : { liveness }),
     };
   });
 

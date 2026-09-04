@@ -16,6 +16,7 @@ import {
   recordAgentRuntimeCapability,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const roots: string[] = [];
 const sourceRoot = process.cwd();
@@ -68,7 +69,7 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
   const repositoryId = repoHarnessRepoIdFor(repoRoot);
   const workPackage = (id: string, taskRef: string, capability: string, rollback: string) => ({
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: capability,
     depends_on: [],
     priority: 50,
@@ -79,6 +80,7 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
       gate: 'module', policy_id: 'module-default',
       policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policyBytes),
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package', boundary_id: `${repositoryId}:${id}`,
       boundary_ref: `plans/rollback/${id}.json`, boundary_revision: engineerSha256(rollback),
@@ -87,11 +89,11 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
   writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repoRoot, sprintPath), [
-    '# Sprint: demo', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|---|---|---|---|---|',
-    '| 1 | [ ] | task A | contract | accepted A | (pending) |',
-    '| 2 | [ ] | task B | contract | accepted B | (pending) |', '',
+    '# Sprint: demo', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|---|---|---|---|---|',
+    `| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |`,
+    `| 2 | ${fixtureTaskId('task B')} | [ ] | task B | contract | accepted B | (pending) |`, '',
     '## Execution Log', '',
   ].join('\n'));
   writeFileSync(join(repoRoot, 'plans/sprints/demo.work-graph.v1.json'), `${JSON.stringify({
@@ -152,6 +154,7 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_status',
       'engineer_offers',
       'engineer_acquire',
+      'engineer_acquire_next',
       'engineer_messages',
       'engineer_message_send',
       'engineer_message_ack',
@@ -159,6 +162,8 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_runtime_effect_status',
       'engineer_interface_change_propose',
       'engineer_interface_change_transition',
+      'engineer_work_demand_propose',
+      'engineer_work_demand_transition',
       // C7's collaboration block. It extends the same closed inventory rather
       // than opening a second profile, so this list stays the one place the
       // engineer profile's whole surface is stated.
@@ -227,7 +232,7 @@ describe('restricted Engineer MCP tools', () => {
     const capability = recordAgentRuntimeCapability(repoRoot, {
       adapter_kind: 'codex-app-thread',
       host_id: 'local',
-      operations: { notify_inbox: 'supported' },
+      operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
@@ -246,7 +251,7 @@ describe('restricted Engineer MCP tools', () => {
     });
     const capabilityView = await callMcpTool(context, 'engineer_runtime_effect_capability', {});
     expect(capabilityView).toMatchObject({
-      structuredContent: { status: 'supported', capability: { capability_sha256: capability.capability_sha256 } },
+      structuredContent: { capability: { capability_sha256: capability.capability_sha256, operations: { notify_inbox: 'supported', wake_for_offer: 'supported' } } },
     });
     const effectView = await callMcpTool(context, 'engineer_runtime_effect_status', { effect_id: effect.intent.effect_id });
     expect(effectView).toMatchObject({
@@ -355,7 +360,7 @@ describe('restricted Engineer MCP tools', () => {
     const capability = recordAgentRuntimeCapability(repoRoot, {
       adapter_kind: 'codex-app-thread',
       host_id: 'local',
-      operations: { notify_inbox: 'supported' },
+      operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
@@ -499,11 +504,25 @@ describe('restricted Engineer MCP tools', () => {
     });
 
     const before = coordinationState(repoRoot);
+    const noNextOffer = await callMcpTool(context, 'engineer_acquire_next', {
+      ...fences,
+      idempotency_key: 'no-next-offer',
+      capability_id: 'capability.workflow-engine.contract-assets',
+      minimum_priority: 100,
+      max_selection_attempts: 2,
+    });
+    expect(noNextOffer).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'engineer_no_eligible_offer' } },
+    });
+    expect(coordinationState(repoRoot).filter((path) => path.endsWith('.json'))).toEqual(before.filter((path) => path.endsWith('.json')));
+
+    const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
     expect(staleOffer).toMatchObject({
       isError: true,
       structuredContent: { error: { code: 'engineer_offer_stale' } },
     });
-    expect(coordinationState(repoRoot)).toEqual(before);
+    expect(coordinationState(repoRoot)).toEqual(beforeStale);
   }, 30_000);
 });

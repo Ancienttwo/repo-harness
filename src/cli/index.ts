@@ -7,9 +7,12 @@
  */
 
 import { Command } from 'commander';
+import { randomBytes } from 'crypto';
 import { readFileSync, realpathSync } from 'fs';
 import { homedir, userInfo } from 'os';
+import { dirname, join } from 'path';
 import { createInterface } from 'readline/promises';
+import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { writeAllSync } from './runtime/write-all-sync';
@@ -32,6 +35,7 @@ import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
+import { buildAutomationCommand } from './commands/automation';
 import { buildOperatorCommand } from './commands/operator';
 import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
@@ -49,6 +53,17 @@ import {
   type GlobalRuntimeOptions,
   type GlobalRuntimeResult,
 } from './commands/global-runtime';
+import {
+  assertCandidateReconciliationReceipt,
+  assertInstalledAdapterProjection,
+  candidatePackageIdentity,
+  consumeCandidateReconciliationCapability,
+  parseCandidateRequest,
+  publishCandidateReconciliationCapability,
+  routeRegistryDigest,
+  sha256,
+  type CandidateReconciliationReceipt,
+} from './runtime/candidate-reconciliation';
 import { windowsProtectedHelperConfigPath } from './runtime/protected-helper-platform';
 import {
   applyInstallProfile,
@@ -78,7 +93,10 @@ import { runReviewRubricCli } from './hook/review-rubric';
 import { runReviewSubjectCli } from './hook/review-subject';
 import { runAdoptionPlan } from './commands/adoption-plan';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
-import { withExclusiveDirectoryLock } from '../effects/locking/exclusive-directory-lock';
+import {
+  acquireExclusiveDirectoryLock,
+  type ExclusiveDirectoryLockHandle,
+} from '../effects/locking/exclusive-directory-lock';
 import {
   assertTarget,
   assertLocation,
@@ -247,18 +265,134 @@ function runtimeHostMutationPaths(env: NodeJS.ProcessEnv): readonly string[] {
   return [...new Set(paths)];
 }
 
-function withRuntimeHostTransactionLock<T>(env: NodeJS.ProcessEnv | undefined, run: () => T): T {
+function withRuntimeHostTransactionLock<T>(
+  env: NodeJS.ProcessEnv | undefined,
+  run: (lock: ExclusiveDirectoryLockHandle) => T,
+): T {
   // Resolve the protected root with the same precedence as runtime mutations.
   // A partial injected env must not make the lock fall back to a different HOME.
   const home = process.platform === 'win32'
     ? userInfo().homedir
     : env?.HOME ?? process.env.HOME ?? homedir();
-  return withExclusiveDirectoryLock(
+  const lock = acquireExclusiveDirectoryLock(
     realpathSync(home),
     '.repo-harness/transactions/global-runtime.lock',
-    run,
     { reclaimStaleOwner: true },
   );
+  try {
+    lock.assertOwned();
+    return run(lock);
+  } finally {
+    lock.release();
+  }
+}
+
+function candidateSourceRoot(): string {
+  return realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..'));
+}
+
+/**
+ * Internal candidate entrypoint. It intentionally never acquires the global
+ * runtime lock: the predecessor process owns that lock and its transaction.
+ */
+export function runCandidateRuntimeReconciliation(
+  encodedRequest: string,
+  env: NodeJS.ProcessEnv = process.env,
+): CandidateReconciliationReceipt {
+  const request = parseCandidateRequest(encodedRequest);
+  if (
+    env.REPO_HARNESS_RUNTIME_RECONCILIATION_PARENT !== '1'
+    || env.REPO_HARNESS_RUNTIME_RECONCILIATION_TOKEN !== request.parent_token
+  ) {
+    throw new Error('candidate reconciliation requires an explicit parent transaction capability');
+  }
+  const home = realpathSync(env.HOME ?? homedir());
+  consumeCandidateReconciliationCapability(request, home);
+  const sourceRoot = candidateSourceRoot();
+  const candidate = candidatePackageIdentity(sourceRoot);
+  if (
+    candidate.root !== request.candidate.root
+    || candidate.version !== request.candidate.version
+    || candidate.package_digest !== request.candidate.package_digest
+  ) {
+    throw new Error('candidate reconciliation package authority mismatch');
+  }
+
+  const runtime = runGlobalRuntimeSetup({
+    sourceRoot,
+    cwd: request.cwd,
+    env,
+    target: request.target,
+    profile: request.profile,
+    installCli: false,
+    syncSkill: request.sync_skill,
+    hostAdapters: request.host_adapters,
+    externalSkills: request.external_skills,
+    reverseSkill: request.reverse_skill,
+    obsidianSkills: request.obsidian_skills,
+    codegraph: request.codegraph,
+    brainRoot: request.brain_root,
+    updateMode: true,
+  });
+  if (runtime.exitCode !== 0) {
+    throw new Error(`candidate reconciliation failed: ${runtime.lines.join('; ')}`);
+  }
+
+  const complete = request.sync_skill && request.host_adapters;
+  const adapterDigests = request.host_adapters
+    ? assertInstalledAdapterProjection(request.target, request.profile, env)
+    : {};
+  let ownershipManifestDigest: string | null = null;
+  if (complete) {
+    const applied = applyInstallProfile(request.profile, env);
+    const status = installedProfileStatus(applied.state, env);
+    if (status.drift.status !== 'consistent') {
+      throw new Error(`candidate reconciliation ownership ledger drift: ${status.drift.surface_drift.join(',') || '(unknown)'}`);
+    }
+    ownershipManifestDigest = sha256(JSON.stringify(applied.state.ownership_manifest));
+  }
+  const receipt: CandidateReconciliationReceipt = {
+    protocol: 1,
+    transaction_id: request.transaction_id,
+    candidate_package_root: candidate.root,
+    candidate_version: candidate.version,
+    candidate_package_digest: candidate.package_digest,
+    route_registry_digest: routeRegistryDigest(),
+    selected_target: request.target,
+    adapter_projection_digests: adapterDigests,
+    ownership_manifest_digest: ownershipManifestDigest,
+    reconciliation_scope: complete ? 'complete' : 'partial',
+    verified_at: new Date().toISOString(),
+  };
+  assertCandidateReconciliationReceipt(receipt, {
+    transaction_id: request.transaction_id,
+    candidate,
+    target: request.target,
+    profile: request.profile,
+    require_complete: complete,
+    require_adapter_projection: request.host_adapters,
+  });
+  return receipt;
+}
+
+function candidateHandoffContext(
+  transaction: ReturnType<typeof beginInstallHostTransaction>,
+  lock: ExclusiveDirectoryLockHandle,
+): NonNullable<GlobalRuntimeOptions['candidateHandoff']> {
+  const context = {
+    transactionId: sha256(transaction.backup_root),
+    transactionBackupRoot: transaction.backup_root,
+    parentToken: randomBytes(32).toString('hex'),
+  };
+  publishCandidateReconciliationCapability({
+    transactionId: context.transactionId,
+    transactionBackupRoot: context.transactionBackupRoot,
+    parentToken: context.parentToken,
+    parentPid: process.pid,
+    lockPath: lock.lockPath,
+    lockOwnerToken: lock.ownerToken,
+  });
+  return context;
 }
 
 export function runTransactionalRuntimeRefresh(
@@ -266,11 +400,11 @@ export function runTransactionalRuntimeRefresh(
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = runGlobalRuntimeSetup,
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
-  return withRuntimeHostTransactionLock(transactionEnv, () => {
+  return withRuntimeHostTransactionLock(transactionEnv, (lock) => {
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
     let result: GlobalRuntimeResult;
     try {
-      result = setup(options);
+      result = setup({ ...options, candidateHandoff: candidateHandoffContext(transaction, lock) });
     } catch (error) {
       rollbackInstallHostTransaction(transaction);
       throw error;
@@ -765,6 +899,7 @@ export function buildProgram(): Command {
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
+  program.addCommand(buildAutomationCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());
@@ -773,6 +908,19 @@ export function buildProgram(): Command {
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());
   program.addCommand(buildExternalSourceCommand());
+  program
+    .command('__reconcile-installed-runtime', { hidden: true })
+    .description('Internal candidate-owned managed runtime reconciliation')
+    .requiredOption('--request <base64url>', 'Parent transaction capability payload')
+    .action((rawOpts: { request: string }) => {
+      try {
+        console.log(JSON.stringify(runCandidateRuntimeReconciliation(rawOpts.request)));
+        process.exit(0);
+      } catch (error) {
+        console.error(`candidate reconciliation: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    });
   program
     .command('circuit-breaker-record', { hidden: true })
     .description('Internal persistent workflow circuit breaker')

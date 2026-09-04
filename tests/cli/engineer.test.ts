@@ -8,6 +8,7 @@ import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
 const sourceRoot = process.cwd();
@@ -53,12 +54,13 @@ function graphFixture(): string {
   const rollback = '{"rollback":"wp-a"}\n';
   const repositoryId = repoHarnessRepoIdFor(root);
   writeFileSync(join(root, 'plans/sprints/demo.sprint.md'), `# Sprint: demo
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [ ] | task A | contract | accepted A | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |
 
 ## Execution Log
 `);
@@ -70,7 +72,7 @@ function graphFixture(): string {
     lane: 'engineering-v2',
     work_packages: [{
       work_package_id: 'wp-a',
-      task_ref: 'task A',
+      task_id: fixtureTaskId('task A'),
       primary_capability: 'capability.verification.evals-checks',
       depends_on: [],
       priority: 50,
@@ -81,7 +83,8 @@ function graphFixture(): string {
         gate: 'module', policy_id: 'module-default',
         policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policy),
       }],
-      rollback_boundary: {
+      retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
+    rollback_boundary: {
         kind: 'work_package', boundary_id: `${repositoryId}:wp-a`,
         boundary_ref: 'plans/rollback/wp-a.json', boundary_revision: engineerSha256(rollback),
       },
@@ -242,7 +245,7 @@ describe('repo-harness engineer CLI', () => {
       'engineer', 'runtime-effect', 'capability',
       '--adapter-kind', 'codex-app-thread',
       '--host-id', 'local',
-      '--operations-json', JSON.stringify({ notify_inbox: 'supported' }),
+      '--operations-json', JSON.stringify({ notify_inbox: 'supported', wake_for_offer: 'supported' }),
       '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),
       '--observed-at', '2026-08-25T00:31:00.000Z',
       '--json',
@@ -311,7 +314,7 @@ describe('repo-harness engineer CLI', () => {
     expect(JSON.parse(retired.stdout).state).toBe('retired');
   });
 
-  test('exposes operator principal mapping but no CLI Engineer acquire route', () => {
+  test('exposes operator principal mapping and the bounded acquire-next route', () => {
     const root = fixture();
     const help = run(root, ['engineer', '--help']);
     expect(help.exitCode).toBe(0);
@@ -322,7 +325,7 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).toContain('message');
     expect(help.stdout).toContain('runtime-effect');
     expect(help.stdout).not.toContain('claim');
-    expect(help.stdout).not.toContain('acquire');
+    expect(help.stdout).toContain('acquire-next');
     const offersHelp = run(root, ['engineer', 'offers', '--help']);
     expect(offersHelp.exitCode).toBe(0);
     expect(offersHelp.stdout).toContain('--authorization-id');

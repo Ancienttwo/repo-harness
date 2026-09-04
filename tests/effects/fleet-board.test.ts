@@ -22,7 +22,6 @@ import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
@@ -34,6 +33,7 @@ import {
 import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 function repo(index: number): RepoHarnessRegisteredRepo {
   return {
@@ -83,10 +83,10 @@ function createReviewingProviderFixture(root: string, cards: number): { readonly
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(root, sprintPath), [
-    '# Fleet provider fixture', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    ...taskNames.map((task, index) => `| ${index + 1} | [ ] | ${task} | inline | provider observation remains read only | (pending) |`),
+    '# Fleet provider fixture', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    ...taskNames.map((task, index) => `| ${index + 1} | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | inline | provider observation remains read only | (pending) |`),
     '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'fixture\n');
@@ -102,8 +102,8 @@ function createReviewingProviderFixture(root: string, cards: number): { readonly
   const repoId = resolveRepoIdentity(root);
   const providerCases: string[] = [];
   for (const [index, taskName] of taskNames.entries()) {
-    const taskId = deriveTaskId({ repoIdentity: repoId, sprintPath, taskCell: taskName });
-    const taskRevision = deriveTaskRevision({ taskId, modeCell: 'inline', acceptanceCell: 'provider observation remains read only' });
+    const taskId = fixtureTaskId(taskName);
+    const taskRevision = deriveTaskRevision({ taskCell: taskName, taskId, modeCell: 'inline', acceptanceCell: 'provider observation remains read only' });
     const claimId = `fleet-provider-claim-${index + 1}`;
     const receipt = buildPublicationReceipt({
       repo_id: repoId, task_id: taskId, task_revision: taskRevision, claim_id: claimId, generation: 1,
@@ -185,10 +185,10 @@ describe('fleet board collector', () => {
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
       writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
       writeFileSync(join(repoRoot, sprintPath), [
-        '# Fleet fixture', '', '## Backlog', '',
-        '| # | Status | Task | Mode | Acceptance | Plan |',
-        '|---|--------|------|------|------------|------|',
-        '| 1 | [ ] | inspect one registered repository | inline | projection is read only | (pending) |', '',
+        '# Fleet fixture', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+        '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+        '|---|----|--------|------|------|------------|------|',
+        `| 1 | ${fixtureTaskId('inspect one registered repository')} | [ ] | inspect one registered repository | inline | projection is read only | (pending) |`, '',
       ].join('\n'));
       execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, encoding: 'utf8' });
       execFileSync('git', ['config', 'user.name', 'Fleet Board Test'], { cwd: repoRoot, encoding: 'utf8' });

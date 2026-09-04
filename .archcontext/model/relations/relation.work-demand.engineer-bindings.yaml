@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.work-demand.engineer-bindings
+kind: calls
+source: capability.runtime-harness.work-demand
+target: capability.runtime-harness.engineer-bindings
+intent: Revalidate the exact current requester Binding for Engineer-owned transitions

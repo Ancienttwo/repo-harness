@@ -1,7 +1,7 @@
 /** Durable, task-locked publication review lifecycle effects. */
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
-import { readFileSync, realpathSync } from 'fs';
+import { readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, join } from 'path';
 
 import {
@@ -20,6 +20,7 @@ import {
   canonicalPublicationLineageBytes,
   publicationLineageFromPointer,
   publicationPointerFromReceipt,
+  validatePublicationIntegrationObservation,
   type PublicationLifecycleErrorCode,
   type PublicationIntegrationObservationV1,
   type PublicationIntegrationState,
@@ -813,6 +814,68 @@ function persistIntegrationObservation(repoRoot: string, observation: Publicatio
     }
     if (current !== bytes) throw failure('publication_pointer_mismatch', 'existing integration observation conflicts with reconcile');
   }
+}
+
+/**
+ * Read-only projection of the immutable integration observation store for one
+ * exact task identity. The store is content-addressed, so the only way to
+ * observe "this task was integrated" without inventing a second authority is
+ * to read the observations this module itself persisted.
+ */
+export function readPublicationIntegrationObservations(
+  repoRoot: string,
+  taskId: string,
+  taskRevision: string,
+  gitBin?: string,
+): readonly PublicationIntegrationObservationV1[] {
+  const root = join(resolveGitCommonDirectory(repoRoot, gitBin), INTEGRATION_RELATIVE_PATH);
+  let publications: readonly string[];
+  try {
+    publications = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return Object.freeze([]);
+    throw failure('publication_incomplete', 'integration observation store is unreadable', error);
+  }
+  const observations: PublicationIntegrationObservationV1[] = [];
+  for (const publication of publications) {
+    const directory = join(root, publication);
+    let files: readonly string[];
+    try {
+      files = readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+        .map((entry) => entry.name)
+        .sort();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw failure('publication_incomplete', 'integration observation store is unreadable', error);
+    }
+    for (const file of files) {
+      const path = join(directory, file);
+      let raw: string;
+      try {
+        raw = readFileSync(path, 'utf-8');
+      } catch (error) {
+        throw failure('publication_incomplete', `integration observation is unreadable: ${path}`, error);
+      }
+      let observation: PublicationIntegrationObservationV1;
+      try {
+        observation = validatePublicationIntegrationObservation(JSON.parse(raw));
+      } catch (error) {
+        throw failure('publication_incomplete', `integration observation is invalid: ${path}`, error);
+      }
+      if (`${canonicalPublicationIntegrationObservationBytes(observation)}\n` !== raw) {
+        throw failure('publication_pointer_mismatch', `integration observation is not canonical: ${path}`);
+      }
+      if (observation.publication_id.slice('sha256:'.length) !== publication) {
+        throw failure('publication_pointer_mismatch', `integration observation is misfiled: ${path}`);
+      }
+      if (observation.task_id === taskId && observation.task_revision === taskRevision) observations.push(observation);
+    }
+  }
+  return Object.freeze(observations.sort((left, right) => left.observation_id.localeCompare(right.observation_id)));
 }
 
 /** Provider-OID-fenced closeout for one exact reviewing publication. */

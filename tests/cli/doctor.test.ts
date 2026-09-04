@@ -244,7 +244,20 @@ describe('doctor command (Phase 1C)', () => {
         expect(update.status).toBe('warn');
         expect(update.detail).toContain('current=');
         expect(update.detail).toContain('latest=99.0.0');
-        expect(update.detail).toContain('agent_action=bun add -g repo-harness@latest && repo-harness init');
+        expect(update.detail).toContain('agent_action=repo-harness update --target both');
+      });
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('cli-update scopes the recommended runtime refresh to the requested target', () => {
+    withTempHome(() => {
+      withEnv({ REPO_HARNESS_CHECK_UPDATES: '1', REPO_HARNESS_LATEST_VERSION: '99.0.0' }, () => {
+        for (const target of ['codex', 'claude'] as const) {
+          const r = runDoctor(process.cwd(), target);
+          const update = r.checks.find((c) => c.id === 'cli-update')!;
+          expect(update.status).toBe('warn');
+          expect(update.detail).toContain(`agent_action=repo-harness update --target ${target}`);
+        }
       });
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);

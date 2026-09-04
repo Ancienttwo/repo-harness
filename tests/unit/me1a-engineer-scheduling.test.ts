@@ -10,6 +10,7 @@ import {
   collectEngineerOffers,
   type EngineerSchedulingDependencies,
 } from '../../src/effects/engineers/scheduling';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
@@ -18,16 +19,18 @@ const CONTRACT_REVISION = `sha256:${'a'.repeat(64)}`;
 const BINDING = '11111111-1111-4111-8111-111111111111';
 const SPRINT = 'plans/sprints/demo.sprint.md';
 const POLICY_BYTES = '{"policy":1}\n';
+const PRODUCT_PRD_BYTES = '# Product\n\n> **Status**: Approved\n';
 const ROLLBACK_A = '{"rollback":"a"}\n';
 const ROLLBACK_B = '{"rollback":"b"}\n';
 const SPRINT_TEXT = `# Sprint: demo
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [x] | task A | contract | accepted A | (pending) |
-| 2 | [ ] | task B | contract | accepted B | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('task A')} | [x] | task A | contract | accepted A | (pending) |
+| 2 | ${fixtureTaskId('task B')} | [ ] | task B | contract | accepted B | (pending) |
 
 ## Execution Log
 `;
@@ -35,7 +38,7 @@ const SPRINT_TEXT = `# Sprint: demo
 function definition(id: string, taskRef: string, dependencies: unknown[] = []) {
   return {
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: CAPABILITY,
     depends_on: dependencies,
     priority: id === 'wp-b' ? 90 : 10,
@@ -46,6 +49,7 @@ function definition(id: string, taskRef: string, dependencies: unknown[] = []) {
       gate: 'module', policy_id: 'module-default', policy_ref: 'plans/policies/module.json',
       policy_revision: engineerSha256(POLICY_BYTES),
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package', boundary_id: `${REPO}:${id}`,
       boundary_ref: `plans/rollback/${id}.json`,
@@ -63,7 +67,9 @@ function graph() {
     lane: 'engineering-v2',
     work_packages: [
       definition('wp-a', 'task A'),
-      definition('wp-b', 'task B', [{ repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done' }]),
+      definition('wp-b', 'task B', [{
+        repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done', acceptance_authority: null,
+      }]),
     ],
   };
 }
@@ -109,6 +115,8 @@ function fixture(options: { carrier?: boolean; activeConcurrency?: boolean; acti
     return { classification: 'available', unknown_reason: null, record: null } as any;
   };
   const deps: Partial<EngineerSchedulingDependencies> = {
+    readAttemptCurrent: () => null,
+    now: () => new Date('2026-09-04T00:00:00.000Z'),
     readRegistry: () => registry,
     readActiveSprintPath: () => SPRINT,
     readCanonicalTargetRef: () => 'main',
@@ -247,10 +255,15 @@ describe('ME-1A Engineer offer effects', () => {
     expect([profileReads, bindingReads, fleetReads]).toEqual([0, 0, 0]);
   });
 
-  test('future dependency authority fails closed until its receipt adapter exists', () => {
+  test('a declared product acceptance authority that cannot be read stays authority_unavailable', () => {
     const subject = fixture();
     const baseGraph = graph();
     (baseGraph.work_packages[1] as any).depends_on[0].required_state = 'product_accepted';
+    (baseGraph.work_packages[1] as any).depends_on[0].acceptance_authority = {
+      authority_kind: 'product_acceptance',
+      subject_ref: 'plans/prds/product.md',
+      subject_revision: engineerSha256(PRODUCT_PRD_BYTES),
+    };
     (subject.deps as any).readFileAtCommit = (_repo: string, _commit: string, path: string) => {
       if (path.endsWith('.work-graph.v1.json')) return JSON.stringify(baseGraph);
       if (path === 'plans/policies/module.json') return POLICY_BYTES;

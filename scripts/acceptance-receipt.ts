@@ -300,7 +300,7 @@ function normalizeArchiveProjection(content: string): string {
   return content.replace(legacyEnvelope, '');
 }
 
-function authorityFingerprint(content: string): string {
+export function authorityFingerprint(content: string): string {
   const normalized = normalizeArchiveProjection(content)
     .replace(/^> \*\*Status\*\*:[ \t]*.+$/m, '> **Status**: <lifecycle>')
     .replace(/^> \*\*Last Updated\*\*:[ \t]*.+$/m, '> **Last Updated**: <lifecycle>');
@@ -619,6 +619,189 @@ export function userWaiverGrantPath(root: string, authorityHome: string, createP
   return join(parent, 'user-waiver-grant.latest.json');
 }
 
+export const ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL = 1 as const;
+export const ACCEPTANCE_VERIFICATION_OBSERVATION_KIND = 'repo-harness-acceptance-verification-observation' as const;
+
+/**
+ * The acceptance authority's own record-time observation of one verified
+ * acceptance. It exists so a reader that needs an acceptance verdict does not
+ * re-derive one: everything the asynchronous `verifyAcceptance` proved at
+ * record time (live normalized subject, verification evidence fingerprint,
+ * archive-projection seal) is frozen here by the authority that proved it.
+ * Readers verify identity and bytes; they never recompute the verdict.
+ */
+export type AcceptanceVerificationObservationV1 = {
+  protocol: typeof ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL;
+  kind: typeof ACCEPTANCE_VERIFICATION_OBSERVATION_KIND;
+  observation_id: string;
+  repository_root: string;
+  acceptance_receipt_sha256: string;
+  contract_file: string;
+  contract_sha256: string;
+  goal_file: string;
+  goal_sha256: string;
+  target_ref: string;
+  target_revision: string;
+  subject_sha256: string;
+  verification_evidence_sha256: string;
+  disposition: AcceptanceDisposition;
+  archive_projection_sha256: string | null;
+  verified_at: string;
+};
+
+type AcceptanceVerificationObservationBasis = Omit<AcceptanceVerificationObservationV1, 'protocol' | 'kind' | 'observation_id'>;
+
+/**
+ * Subject key, not content address: one contract subject has exactly one
+ * current observation, so re-recording the same subject overwrites its file
+ * and a changed contract lands under a different key.
+ */
+export function acceptanceVerificationObservationSubjectKey(contractFile: string, contractSha256: string): string {
+  return sha256(stableJson({ contract_file: contractFile, contract_sha256: contractSha256 }));
+}
+
+export function acceptanceVerificationObservationPath(
+  root: string,
+  authorityHome: string,
+  contractFile: string,
+  contractSha256: string,
+  createParent = false,
+): string {
+  const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
+  const parent = join(stateRoot(authorityHome), 'gates', repoId, 'acceptance-observations');
+  if (createParent) {
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+  }
+  const key = acceptanceVerificationObservationSubjectKey(contractFile, contractSha256);
+  return join(parent, `${key.slice('sha256:'.length)}.json`);
+}
+
+function acceptanceVerificationObservationId(basis: AcceptanceVerificationObservationBasis): string {
+  return sha256(stableJson([
+    ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
+    ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
+    basis.repository_root,
+    basis.acceptance_receipt_sha256,
+    basis.contract_file,
+    basis.contract_sha256,
+    basis.goal_file,
+    basis.goal_sha256,
+    basis.target_ref,
+    basis.target_revision,
+    basis.subject_sha256,
+    basis.verification_evidence_sha256,
+    basis.disposition,
+    basis.archive_projection_sha256,
+    basis.verified_at,
+  ]));
+}
+
+function buildAcceptanceVerificationObservation(basis: AcceptanceVerificationObservationBasis): AcceptanceVerificationObservationV1 {
+  return {
+    protocol: ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
+    kind: ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
+    observation_id: acceptanceVerificationObservationId(basis),
+    ...basis,
+  };
+}
+
+/** Thin read-only wrapper so other modules can refuse an archive-projected contract without a second parser. */
+export function contractCarriesArchiveProjection(content: string): boolean {
+  return parseArchiveProjection(content) !== null;
+}
+
+export function writeAcceptanceVerificationObservation(args: {
+  root: string;
+  authorityHome: string;
+  receipt: AcceptanceReceipt;
+  archiveProjectionSha256: string | null;
+}): AcceptanceVerificationObservationV1 {
+  const root = realpathSync(args.root);
+  const acceptancePath = acceptanceReceiptPath(root, args.authorityHome);
+  const observation = buildAcceptanceVerificationObservation({
+    repository_root: root,
+    acceptance_receipt_sha256: sha256(readFileSync(acceptancePath)),
+    contract_file: args.receipt.contract_file,
+    contract_sha256: args.receipt.contract_sha256,
+    goal_file: args.receipt.goal_file,
+    goal_sha256: args.receipt.goal_sha256,
+    target_ref: args.receipt.target_ref,
+    target_revision: args.receipt.target_revision,
+    subject_sha256: args.receipt.subject_sha256,
+    verification_evidence_sha256: args.receipt.verification_evidence_sha256,
+    disposition: args.receipt.disposition,
+    archive_projection_sha256: args.archiveProjectionSha256,
+    verified_at: args.receipt.issued_at,
+  });
+  const path = acceptanceVerificationObservationPath(
+    root,
+    args.authorityHome,
+    observation.contract_file,
+    observation.contract_sha256,
+    true,
+  );
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${stableJson(observation)}\n`, { mode: 0o600 });
+  chmodSync(temporary, 0o600);
+  renameSync(temporary, path);
+  return observation;
+}
+
+export function readAcceptanceVerificationObservation(
+  root: string,
+  authorityHome: string,
+  contractFile: string,
+  contractSha256: string,
+): AcceptanceVerificationObservationV1 | null {
+  const repositoryRoot = realpathSync(root);
+  const path = acceptanceVerificationObservationPath(repositoryRoot, authorityHome, contractFile, contractSha256);
+  if (!existsSync(path)) return null;
+  const raw = readFileSync(path, 'utf-8');
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    fail(`AcceptanceVerificationObservation is invalid JSON: ${(error as Error).message}`);
+  }
+  if (!isRecord(value)
+    || value.protocol !== ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL
+    || value.kind !== ACCEPTANCE_VERIFICATION_OBSERVATION_KIND) {
+    fail('AcceptanceVerificationObservation kind/protocol is invalid');
+  }
+  const record = value as unknown as AcceptanceVerificationObservationV1;
+  if (record.repository_root !== repositoryRoot) fail('AcceptanceVerificationObservation repository root is stale');
+  if (record.contract_file !== contractFile || record.contract_sha256 !== contractSha256) {
+    fail('AcceptanceVerificationObservation subject is stale');
+  }
+  if (unsafeRepoRelativePath(record.goal_file)) fail('AcceptanceVerificationObservation goal_file is unsafe');
+  if (!['external_pass', 'user_waiver', 'reject'].includes(String(record.disposition))) {
+    fail('AcceptanceVerificationObservation disposition is invalid');
+  }
+  const rebuilt = buildAcceptanceVerificationObservation({
+    repository_root: record.repository_root,
+    acceptance_receipt_sha256: record.acceptance_receipt_sha256,
+    contract_file: record.contract_file,
+    contract_sha256: record.contract_sha256,
+    goal_file: record.goal_file,
+    goal_sha256: record.goal_sha256,
+    target_ref: record.target_ref,
+    target_revision: record.target_revision,
+    subject_sha256: record.subject_sha256,
+    verification_evidence_sha256: record.verification_evidence_sha256,
+    disposition: record.disposition,
+    archive_projection_sha256: record.archive_projection_sha256,
+    verified_at: record.verified_at,
+  });
+  if (record.observation_id !== rebuilt.observation_id) fail('AcceptanceVerificationObservation id is stale');
+  if (`${stableJson(rebuilt)}\n` !== raw) fail('AcceptanceVerificationObservation bytes are not canonical');
+  const key = acceptanceVerificationObservationSubjectKey(rebuilt.contract_file, rebuilt.contract_sha256);
+  if (basename(path) !== `${key.slice('sha256:'.length)}.json`) {
+    fail('AcceptanceVerificationObservation is misfiled');
+  }
+  return rebuilt;
+}
+
 function waiverGrantFingerprint(grant: UserWaiverGrant): string {
   return sha256(stableJson(grant));
 }
@@ -665,6 +848,158 @@ function validateDisposition(
   if (findings.length === 0) fail('reject requires at least one finding');
 }
 
+/**
+ * Stable identifiers for every rule the shared synchronous validator applies.
+ * They exist so a second reader can enumerate the rule set and declare, per
+ * rule, how it is covered on its own path.
+ */
+export type AcceptanceValidatorRuleId =
+  | 'receipt_protocol_kind'
+  | 'repository_root'
+  | 'contract_file'
+  | 'contract_fingerprint'
+  | 'reviewer_policy'
+  | 'goal_file_shape'
+  | 'goal_fingerprint'
+  | 'verification_file_shape'
+  | 'verification_evidence_shape'
+  | 'benchmark_evidence_present'
+  | 'subject_sha256_shape'
+  | 'subject_scope'
+  | 'target_ref_present'
+  | 'target_revision_shape'
+  | 'reviewed_paths_shape'
+  | 'summary_present'
+  | 'issued_at_shape'
+  | 'disposition_not_reject'
+  | 'waiver_grant_present'
+  | 'waiver_policy_allowed'
+  | 'waiver_grant_repository'
+  | 'waiver_grant_contract'
+  | 'waiver_grant_goal'
+  | 'waiver_grant_owner'
+  | 'waiver_grant_fingerprint'
+  | 'waiver_binding_symmetry'
+  | 'disposition_policy'
+  | 'validator_threw';
+
+export const ACCEPTANCE_VALIDATOR_RULE_IDS: readonly AcceptanceValidatorRuleId[] = [
+  'receipt_protocol_kind', 'repository_root', 'contract_file', 'contract_fingerprint',
+  'reviewer_policy', 'goal_file_shape', 'goal_fingerprint', 'verification_file_shape',
+  'verification_evidence_shape', 'benchmark_evidence_present', 'subject_sha256_shape',
+  'subject_scope', 'target_ref_present', 'target_revision_shape', 'reviewed_paths_shape',
+  'summary_present', 'issued_at_shape', 'disposition_not_reject', 'waiver_grant_present',
+  'waiver_policy_allowed', 'waiver_grant_repository', 'waiver_grant_contract',
+  'waiver_grant_goal', 'waiver_grant_owner', 'waiver_grant_fingerprint',
+  'waiver_binding_symmetry', 'disposition_policy', 'validator_threw',
+];
+
+export type AcceptanceReceiptPolicyVerdict =
+  | { ok: true }
+  | { ok: false; rule: AcceptanceValidatorRuleId; reason: string };
+
+export type AcceptanceReceiptPolicyInput = {
+  receipt: AcceptanceReceipt;
+  repositoryRoot: string;
+  expectedContractFile: string;
+  contractContent: string;
+  goalContent: string;
+  waiverGrant: UserWaiverGrant | null;
+};
+
+/**
+ * Every AcceptanceReceipt key the shared synchronous validator below consumes.
+ * A test asserts against this list so a key added to the receipt without a
+ * rule, or a rule silently dropped, fails rather than quietly widening what
+ * this gate counts as accepted.
+ */
+export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
+  'protocol', 'kind', 'repository_root', 'contract_file', 'contract_sha256',
+  'goal_file', 'goal_sha256', 'verification_file', 'verification_evidence_sha256',
+  'benchmark_evidence_sha256', 'subject_sha256', 'subject_scope', 'target_ref',
+  'target_revision', 'reviewed_paths', 'disposition', 'expected_reviewer',
+  'reviewer', 'source', 'actor', 'summary', 'findings', 'waiver_grant_sha256',
+  'issued_at',
+];
+
+const SHA256_FIELD = /^sha256:[0-9a-f]{64}$/;
+const GIT_OID_FIELD = /^[0-9a-f]{40,64}$/;
+
+function unsafeRepoRelativePath(value: string): boolean {
+  return value.length === 0
+    || isAbsolute(value)
+    || value.startsWith('-')
+    || value.includes('\\')
+    || value.split('/').some((part) => part.length === 0 || part === '.' || part === '..');
+}
+
+/**
+ * The single synchronous acceptance rule set, composed by `verifyAcceptance`
+ * with the live subject and verification-evidence reads. It is the acceptance
+ * gate's own rule set and has exactly one caller: readers outside this module
+ * do not run it, they read the record-time
+ * `AcceptanceVerificationObservationV1` this authority publishes instead.
+ */
+export function validateAcceptanceReceiptAgainstPolicy(
+  input: AcceptanceReceiptPolicyInput,
+): AcceptanceReceiptPolicyVerdict {
+  const no = (rule: AcceptanceValidatorRuleId, reason: string): AcceptanceReceiptPolicyVerdict => ({ ok: false, rule, reason });
+  const receipt = input.receipt;
+  try {
+    if (receipt.protocol !== 2 || receipt.kind !== 'repo-harness-acceptance-receipt') {
+      return no('receipt_protocol_kind', 'AcceptanceReceipt kind/protocol is invalid');
+    }
+    if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
+    if (receipt.contract_file !== input.expectedContractFile) return no('contract_file', 'AcceptanceReceipt contract file is stale');
+    if (authorityFingerprint(input.contractContent) !== receipt.contract_sha256) return no('contract_fingerprint', 'AcceptanceReceipt contract is stale');
+    const policy = parseAcceptancePolicy(input.contractContent);
+    if (policy.reviewer !== receipt.expected_reviewer) return no('reviewer_policy', 'AcceptanceReceipt reviewer policy is stale');
+    if (unsafeRepoRelativePath(receipt.goal_file)) return no('goal_file_shape', 'AcceptanceReceipt goal_file is unsafe');
+    if (authorityFingerprint(input.goalContent) !== receipt.goal_sha256) return no('goal_fingerprint', 'AcceptanceReceipt goal is stale');
+    if (unsafeRepoRelativePath(receipt.verification_file)) return no('verification_file_shape', 'AcceptanceReceipt verification_file is unsafe');
+    if (!SHA256_FIELD.test(receipt.verification_evidence_sha256)) return no('verification_evidence_shape', 'AcceptanceReceipt verification_evidence_sha256 is invalid');
+    if (receipt.benchmark_evidence_sha256.trim() === '') return no('benchmark_evidence_present', 'AcceptanceReceipt benchmark_evidence_sha256 is required');
+    if (!SHA256_FIELD.test(receipt.subject_sha256)) return no('subject_sha256_shape', 'AcceptanceReceipt subject_sha256 is invalid');
+    if (receipt.subject_scope !== 'normalized-final-content') return no('subject_scope', 'AcceptanceReceipt subject scope is invalid');
+    if (receipt.target_ref.trim() === '') return no('target_ref_present', 'AcceptanceReceipt target_ref is required');
+    if (!GIT_OID_FIELD.test(receipt.target_revision)) return no('target_revision_shape', 'AcceptanceReceipt target_revision is invalid');
+    // Emptiness is legal: a subject can review zero paths. Shape is not.
+    if (receipt.reviewed_paths.some(unsafeRepoRelativePath)) return no('reviewed_paths_shape', 'AcceptanceReceipt reviewed_paths are invalid');
+    if (receipt.summary.trim() === '') return no('summary_present', 'AcceptanceReceipt summary is required');
+    if (receipt.issued_at.trim() === '' || Number.isNaN(Date.parse(receipt.issued_at))) {
+      return no('issued_at_shape', 'AcceptanceReceipt issued_at is invalid');
+    }
+    if (receipt.disposition === 'reject') return no('disposition_not_reject', 'AcceptanceReceipt disposition is reject');
+    const owner = markdownHeader(input.contractContent, 'Owner');
+    if (receipt.disposition === 'user_waiver') {
+      const grant = input.waiverGrant;
+      if (grant === null) return no('waiver_grant_present', 'AcceptanceReceipt user_waiver requires a UserWaiverGrant');
+      if (policy.user_waiver !== 'allowed') return no('waiver_policy_allowed', 'contract forbids user waiver');
+      if (grant.repository_root !== input.repositoryRoot) return no('waiver_grant_repository', 'UserWaiverGrant repository root is stale');
+      if (grant.contract_file !== receipt.contract_file || grant.contract_sha256 !== receipt.contract_sha256) {
+        return no('waiver_grant_contract', 'UserWaiverGrant contract authority is stale');
+      }
+      if (grant.goal_file !== receipt.goal_file || grant.goal_sha256 !== receipt.goal_sha256) {
+        return no('waiver_grant_goal', 'UserWaiverGrant goal authority is stale');
+      }
+      if (grant.actor !== owner) return no('waiver_grant_owner', 'UserWaiverGrant owner is stale');
+      if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) return no('waiver_grant_fingerprint', 'AcceptanceReceipt waiver grant is stale');
+    } else if (receipt.waiver_grant_sha256 !== null || input.waiverGrant !== null) {
+      return no('waiver_binding_symmetry', 'AcceptanceReceipt waiver grant binding does not match disposition');
+    }
+    try {
+      validateDisposition(policy, owner, receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
+    } catch (error) {
+      return no('disposition_policy', (error as Error).message);
+    }
+    return { ok: true };
+  } catch (error) {
+    // A rule that threw rather than returned: the contract policy block is
+    // unparseable, or an input the caller supplied is malformed.
+    return { ok: false, rule: 'validator_threw', reason: (error as Error).message };
+  }
+}
+
 function readReceipt(path: string): AcceptanceReceipt {
   if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
   let value: unknown;
@@ -705,11 +1040,24 @@ function readReceipt(path: string): AcceptanceReceipt {
   return { ...value, findings: validateFindings(value.findings) } as AcceptanceReceipt;
 }
 
+/**
+ * Read-only accessor for the single AcceptanceReceipt authority file. It
+ * exists so other authorities revalidate the same bytes through the same
+ * validator instead of re-deriving a second receipt parser.
+ */
+export function readAcceptanceReceiptFile(path: string): AcceptanceReceipt {
+  return readReceipt(path);
+}
+
 function writeReceipt(path: string, receipt: AcceptanceReceipt): void {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
   chmodSync(temporary, 0o600);
   renameSync(temporary, path);
+}
+
+export function readUserWaiverGrantFile(path: string): UserWaiverGrant {
+  return readUserWaiverGrant(path);
 }
 
 function readUserWaiverGrant(path: string): UserWaiverGrant {
@@ -1011,11 +1359,42 @@ function writeAcceptanceWithArchiveProjection(
   receipt: AcceptanceReceipt,
 ): void {
   const acceptancePath = acceptanceReceiptPath(root, authorityHome, true);
+  const observationPath = acceptanceVerificationObservationPath(
+    root,
+    authorityHome,
+    receipt.contract_file,
+    receipt.contract_sha256,
+    true,
+  );
+  const previousObservation = existsSync(observationPath) ? readFileSync(observationPath) : null;
+  const restoreObservation = (): void => {
+    if (previousObservation === null) {
+      if (existsSync(observationPath)) unlinkSync(observationPath);
+      return;
+    }
+    writeFileSync(observationPath, previousObservation, { mode: 0o600 });
+    chmodSync(observationPath, 0o600);
+  };
+  const previousAcceptance = existsSync(acceptancePath) ? readFileSync(acceptancePath) : null;
   if (!parseArchiveProjection(contract.content)) {
-    writeReceipt(acceptancePath, receipt);
+    try {
+      writeReceipt(acceptancePath, receipt);
+      // The observation is part of the same acceptance transaction: an
+      // acceptance that cannot publish its verified observation is rolled back
+      // rather than left readable without one.
+      writeAcceptanceVerificationObservation({ root, authorityHome, receipt, archiveProjectionSha256: null });
+    } catch (error) {
+      if (previousAcceptance === null) {
+        if (existsSync(acceptancePath)) unlinkSync(acceptancePath);
+      } else {
+        writeFileSync(acceptancePath, previousAcceptance, { mode: 0o600 });
+        chmodSync(acceptancePath, 0o600);
+      }
+      restoreObservation();
+      throw error;
+    }
     return;
   }
-  const previousAcceptance = existsSync(acceptancePath) ? readFileSync(acceptancePath) : null;
   const archivePath = archiveProjectionReceiptPath(root, authorityHome, true);
   const previousArchive = existsSync(archivePath) ? readFileSync(archivePath) : null;
   if (previousAcceptance === null) fail('projected archive acceptance requires an existing semantic receipt');
@@ -1023,7 +1402,13 @@ function writeAcceptanceWithArchiveProjection(
   verifyArchiveProjectionAuthority({ root, authorityHome, acceptance: currentAcceptance, contract });
   try {
     writeReceipt(acceptancePath, receipt);
-    sealArchiveProjection({ root, authorityHome, contract: contract.path });
+    const seal = sealArchiveProjection({ root, authorityHome, contract: contract.path });
+    writeAcceptanceVerificationObservation({
+      root,
+      authorityHome,
+      receipt,
+      archiveProjectionSha256: seal.projection_sha256,
+    });
   } catch (error) {
     writeFileSync(acceptancePath, previousAcceptance, { mode: 0o600 });
     chmodSync(acceptancePath, 0o600);
@@ -1033,8 +1418,35 @@ function writeAcceptanceWithArchiveProjection(
       writeFileSync(archivePath, previousArchive, { mode: 0o600 });
       chmodSync(archivePath, 0o600);
     }
+    restoreObservation();
     throw error;
   }
+}
+
+/**
+ * Both record paths run the gate's full synchronous rule set before the
+ * receipt — and therefore the verification observation — is written, so every
+ * `record_time` coverage claim on the observation path is literally true.
+ *
+ * `disposition_not_reject` is the one rule deliberately skipped here: a
+ * rejection is a legitimate thing to record. It stays a reader-side rule, and
+ * every shape rule above it still runs for a rejection.
+ */
+function assertRecordedReceiptPolicy(
+  context: Awaited<ReturnType<typeof acceptanceContext>>,
+  receipt: AcceptanceReceipt,
+  waiverGrant: UserWaiverGrant | null,
+): void {
+  const verdict = validateAcceptanceReceiptAgainstPolicy({
+    receipt,
+    repositoryRoot: context.root,
+    expectedContractFile: receipt.contract_file,
+    contractContent: context.contract.content,
+    goalContent: context.goal.content,
+    waiverGrant,
+  });
+  if (verdict.ok || verdict.rule === 'disposition_not_reject') return;
+  fail(`${verdict.reason} (${verdict.rule})`);
 }
 
 export async function recordAcceptance(args: {
@@ -1067,6 +1479,7 @@ export async function recordAcceptance(args: {
     null,
     args.now ?? (() => new Date()),
   );
+  assertRecordedReceiptPolicy(context, receipt, null);
   writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
   return receipt;
 }
@@ -1097,6 +1510,7 @@ export async function recordUserWaiverAcceptance(args: {
     waiverGrantFingerprint(grant),
     args.now ?? (() => new Date()),
   );
+  assertRecordedReceiptPolicy(context, receipt, grant);
   writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
   return receipt;
 }
@@ -1113,11 +1527,8 @@ export async function verifyAcceptance(args: {
   const contractPath = args.contract ?? resolveArchived(root, receipt.contract_file, 'tasks', receipt.contract_sha256);
   const contract = readRegular(root, contractPath, 'contract');
   if (authorityFingerprint(contract.content) !== receipt.contract_sha256) fail('AcceptanceReceipt contract is stale');
-  const policy = parseAcceptancePolicy(contract.content);
-  if (policy.reviewer !== receipt.expected_reviewer) fail('AcceptanceReceipt reviewer policy is stale');
   const goalPath = resolveArchived(root, receipt.goal_file, 'plans', receipt.goal_sha256);
   const goal = readRegular(root, goalPath, 'goal');
-  if (authorityFingerprint(goal.content) !== receipt.goal_sha256) fail('AcceptanceReceipt goal is stale');
   verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
   const verificationPath = args.verification ?? receipt.verification_file;
   const verification = readRegular(root, verificationPath, 'verification evidence');
@@ -1128,12 +1539,19 @@ export async function verifyAcceptance(args: {
   }
   const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
   if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
-  if (receipt.disposition === 'reject') fail('AcceptanceReceipt disposition is reject');
-  if (receipt.disposition === 'user_waiver') {
-    const grant = verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path });
-    if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) fail('AcceptanceReceipt waiver grant is stale');
-  }
-  validateDisposition(policy, markdownHeader(contract.content, 'Owner'), receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
+  // The gate's one synchronous rule set. Readers outside this module do not
+  // run it: they read the AcceptanceVerificationObservationV1 written below.
+  const policyVerdict = validateAcceptanceReceiptAgainstPolicy({
+    receipt,
+    repositoryRoot: root,
+    expectedContractFile: receipt.contract_file,
+    contractContent: contract.content,
+    goalContent: goal.content,
+    waiverGrant: receipt.disposition === 'user_waiver'
+      ? verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path })
+      : null,
+  });
+  if (!policyVerdict.ok) fail(policyVerdict.reason);
   return receipt;
 }
 

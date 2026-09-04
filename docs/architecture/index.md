@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:3c056bba364cc1652c2a55470677d813948674c1c34c35b7adba45e6cb62bba1" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f502e512b3331101b5b7a8c2d51676642f13c1b53de5b006b2dd48de2dd8c628" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:cf6305e29cf70cb1471dcea7d32f180648d0a0bad14cf42daf4dd85aac814df8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9c67d27dfbce1c7fa13af22e136aa82a88b5b4805395a756bd0472029e39dbf5" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -307,6 +307,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
 - [Agent Runtime Effects](modules/runtime-harness/agent-runtime-effects.md) — capability / active
+- [Automation Budget](modules/runtime-harness/automation-budget.md) — capability / active
 - [Bound Task Freezes](modules/runtime-harness/bound-task-freezes.md) — capability / active
 - [Collaboration Substrate](modules/runtime-harness/collaboration.md) — capability / active
 - [Read-only Delegated Runs](modules/runtime-harness/delegated-runs.md) — capability / active
@@ -334,6 +335,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.agent-runtime-effects -> component.agent-runtime-effects.journal — calls
+- capability.runtime-harness.automation-budget -> component.automation-budget.ledger — calls
 - capability.runtime-harness.bound-task-freezes -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.bound-task-freezes -> component.bound-task-freezes.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls

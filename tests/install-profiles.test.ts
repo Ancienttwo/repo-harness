@@ -453,6 +453,14 @@ describe('install profiles', () => {
     writeFileSync(adapter, JSON.stringify(config));
     expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
 
+    config.hooks.SessionStart[0].hooks.push({
+      type: 'command',
+      command: 'echo user-owned-sibling',
+      timeout: 30,
+    });
+    writeFileSync(adapter, JSON.stringify(config));
+    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+
     config.hooks.SessionStart[0].hooks[0].command = ': repo-harness-managed-hook-v1; changed';
     writeFileSync(adapter, JSON.stringify(config));
     expect(installedProfileStatus(applied.state, env).drift.surface_drift).toContain(adapter);

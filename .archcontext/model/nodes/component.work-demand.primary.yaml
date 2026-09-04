@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.work-demand.primary
+kind: component
+name: Work Demand Authority Store
+status: active
+parent: capability.runtime-harness.work-demand
+summary: Stores immutable demands, transitions, accepted projections and materialization receipts plus one recoverable current pointer.

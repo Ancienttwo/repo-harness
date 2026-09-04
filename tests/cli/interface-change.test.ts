@@ -10,6 +10,7 @@ import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engin
 import { enrollEngineerPrincipal } from '../../src/effects/engineers/principal-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -34,12 +35,13 @@ function fixture(): { repoRoot: string; home: string } {
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, 'plans/sprints/interface.sprint.md'), `# Sprint: interface
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [ ] | change target interface | contract | exact | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('change target interface')} | [ ] | change target interface | contract | exact | (pending) |
 `);
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
@@ -59,9 +61,10 @@ function bind(root: string, engineerId: string, bindingId: string): void {
 
 function definition() {
   return {
-    work_package_id: 'interface-contract-v2', task_ref: 'change target interface', primary_capability: TARGET_CAPABILITY,
+    work_package_id: 'interface-contract-v2', task_id: fixtureTaskId('change target interface'), primary_capability: TARGET_CAPABILITY,
     depends_on: [], priority: 80, concurrency: { scope: 'repo', key: 'interface-contract' }, execution_surface: 'contract', integration_group: null,
     required_acceptance: [{ gate: 'module', policy_id: 'interface-owner', policy_ref: 'plans/policies/interface.json', policy_revision: D('a') }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: { kind: 'work_package', boundary_id: 'interface-contract-v2', boundary_ref: 'plans/rollback/interface.json', boundary_revision: D('b') },
   };
 }

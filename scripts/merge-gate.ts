@@ -16,9 +16,7 @@ import { userInfo } from "os";
 import { dirname, isAbsolute, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import {
-  acceptanceAuthorityFingerprint,
   acceptanceReceiptPath,
-  archiveProjectionReceiptPath,
   resolveProtectedGitRuntime,
   verifyAcceptance,
   type AcceptanceReceipt,
@@ -419,9 +417,11 @@ function acceptanceReceiptFingerprint(root: string, authorityHome: string): stri
   const path = acceptanceReceiptPath(root, authorityHome);
   if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
   requireHostOwnedRegular(path, "AcceptanceReceipt");
-  const archivePath = archiveProjectionReceiptPath(root, authorityHome);
-  if (existsSync(archivePath)) requireHostOwnedRegular(archivePath, "ArchiveProjectionReceipt");
-  return acceptanceAuthorityFingerprint(root, authorityHome);
+  // The semantic receipt is invariant across live-to-archive projection. The
+  // auxiliary archive receipt is created by the allowlisted lifecycle step
+  // after this seal, and verifyAcceptance() independently proves that it binds
+  // the same accepted authorities before this fingerprint is checked.
+  return sha256(readFileSync(path));
 }
 
 function readSeal(path: string): Seal {

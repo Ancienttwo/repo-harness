@@ -1,7 +1,17 @@
+> **Archived**: 2026-09-04 04:16
+> **Related Plan**: plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-0416
+> **Archive Projection V1**: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` => `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md` => `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md` => `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md` => `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+
 # Implementation Notes: brc0-authority-freeze-baseline-characterization
 
-> **Plan**: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
-> **Contract**: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md`
+> **Plan**: `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
+> **Contract**: `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 
 ## Deviations from the dispatched slice
 

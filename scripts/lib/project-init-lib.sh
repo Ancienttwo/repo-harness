@@ -1798,7 +1798,7 @@ pi_write_harness_policy() {
     "projection_provider": "disabled",
     "projection_apply": "disabled",
     "projection_failure_gate": "advisory",
-    "projection_version": "0.4.7",
+    "projection_version": "0.5.2",
     "projection_timeout_ms": 120000,
     "freshness_gate": "advisory",
     "gate_min_severity": "medium",
@@ -1809,6 +1809,16 @@ pi_write_harness_policy() {
     "contract_block_begin": "<!-- BEGIN ARCHITECTURE CONTRACT -->",
     "contract_block_end": "<!-- END ARCHITECTURE CONTRACT -->",
     "rule": "hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams"
+  },
+  "refactor": {
+    "mode": "off",
+    "provider": "archctx",
+    "stages": {
+      "scan": { "provider_version": "0.5.2", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
+      "verify": { "provider_version": "0.5.2", "required_features": ["refactor-resolution-v1"] }
+    },
+    "require_cutover_closure": true,
+    "require_post_merge_measurement": false
   },
   "workstreams": {
     "dir": "tasks/workstreams",

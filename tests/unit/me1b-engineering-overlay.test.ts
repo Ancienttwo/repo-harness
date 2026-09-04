@@ -18,6 +18,7 @@ import { readProjectedWorkGraphAt } from '../../src/effects/engineers/scheduling
 import { collectFleetBoard } from '../../src/effects/fleet/board';
 import { listEngineerProfiles, loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -77,10 +78,10 @@ function fixture(): string {
   writeFileSync(join(root, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(root, sprintPath), [
-    '# Sprint: demo', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|---|---|---|---|---|',
-    '| 1 | [ ] | task A | contract | accepted A | (pending) |', '',
+    '# Sprint: demo', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|---|---|---|---|---|',
+    `| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |`, '',
     '## Execution Log', '',
   ].join('\n'));
   writeFileSync(join(root, 'plans/sprints/demo.work-graph.v1.json'), `${JSON.stringify({
@@ -91,7 +92,7 @@ function fixture(): string {
     lane: 'engineering-v2',
     work_packages: [{
       work_package_id: 'wp-a',
-      task_ref: 'task A',
+      task_id: fixtureTaskId('task A'),
       primary_capability: capabilityId,
       depends_on: [],
       priority: 50,
@@ -102,7 +103,8 @@ function fixture(): string {
         gate: 'module', policy_id: 'module-default',
         policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policyBytes),
       }],
-      rollback_boundary: {
+      retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
+    rollback_boundary: {
         kind: 'work_package', boundary_id: `${repoHarnessRepoIdFor(root)}:wp-a`,
         boundary_ref: 'plans/rollback/wp-a.json', boundary_revision: engineerSha256(rollbackBytes),
       },

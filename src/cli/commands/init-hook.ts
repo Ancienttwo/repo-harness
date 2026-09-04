@@ -13,8 +13,12 @@ import * as os from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { Command } from 'commander';
-import { runDoctor, type CheckStatus, type DoctorReport } from './doctor';
-import { runStatus, type StatusReport } from './status';
+import { runDoctor, type CheckStatus, type DoctorReport, type DoctorTarget } from './doctor';
+import {
+  formatManagedHookProjectionMismatch,
+  runStatus,
+  type StatusReport,
+} from './status';
 import type { InstallTargetSpec } from './install';
 import { planAdoption } from '../../core/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
@@ -224,9 +228,19 @@ function statusChecks(
       continue;
     }
 
+    const countConfigured = entry.managedEntryCount === entry.expectedEntryCount;
+    const projectionConfigured = entry.projection === undefined
+      ? countConfigured
+      : entry.projection.status === 'consistent';
     const configured = invalidProfile === null
       && entry.alreadyConfigured
-      && entry.managedEntryCount === entry.expectedEntryCount;
+      && countConfigured
+      && projectionConfigured;
+    const projectionDetail = entry.alreadyConfigured
+      && entry.projection?.status === 'drift'
+      && entry.projection.mismatches.length > 0
+      ? `; projection drift: ${entry.projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}`
+      : '';
     checks.push({
       id: `status.adapter.${id}`,
       title: `${targetLabel(id)} global hook adapter`,
@@ -236,7 +250,7 @@ function statusChecks(
         ? `installed profile state is invalid: ${invalidProfile.error}`
         : configured
         ? `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath}`
-        : `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath ?? '(unknown config path)'}`,
+        : `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath ?? '(unknown config path)'}${projectionDetail}`,
     });
 
     if (!configured && invalidProfile === null) {
@@ -703,7 +717,7 @@ export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
 
   const statusReport = opts.statusReport ?? withProcessEnv(opts.env, () => runStatus(cwd));
   const doctorEnv = { ...(opts.env ?? {}), [UPDATE_CHECK_ENV]: checkUpdates ? '1' : undefined };
-  const doctorReport = opts.doctorReport ?? withProcessEnv(doctorEnv, () => runDoctor(cwd));
+  const doctorReport = opts.doctorReport ?? withProcessEnv(doctorEnv, () => runDoctor(cwd, target as DoctorTarget));
   const toolingProbe = opts.toolingReport
     ? { report: opts.toolingReport, error: undefined }
     : collectToolingReport(sourceRoot, cwd, target, checkUpdates, opts.env);

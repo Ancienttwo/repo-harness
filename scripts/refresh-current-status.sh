@@ -348,12 +348,13 @@ workstream_summary() {
 sprint_backlog_progress() {
   local sprint_file="$1"
   awk -F '|' '
+    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
     /^## Backlog[[:space:]]*$/ { in_section = 1; next }
     in_section && /^## / { exit }
     !in_section { next }
     /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
       total++
-      cell = $3
+      cell = $(3 + off)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell)
       if (cell ~ /^\[[xX]\]$/) done++
     }
@@ -364,11 +365,12 @@ sprint_backlog_progress() {
 sprint_next_task() {
   local sprint_file="$1"
   awk -F '|' '
+    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
     /^## Backlog[[:space:]]*$/ { in_section = 1; next }
     in_section && /^## / { exit }
     !in_section { next }
     /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-      status = $3; task = $4
+      status = $(3 + off); task = $(4 + off)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
       if (status == "[ ]") { print task; found = 1; exit }

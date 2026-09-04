@@ -215,19 +215,26 @@ function resolveArchctxForRepo(repoRoot: string, requiredVersion: string, consum
   return resolvePackageLocalArchctx(findConsumerRoot(), requiredVersion);
 }
 
+export function runPackageLocalArchctxJson(
+  repoRoot: string,
+  requiredVersion: string,
+  args: readonly string[],
+  options: ArchctxProviderOptions = {},
+  maximumMs = 120_000,
+  allowErrorEnvelope = false,
+): { resolved: ResolvedArchctxPackage; value: unknown } {
+  const resolved = resolveArchctxForRepo(repoRoot, requiredVersion, options.consumerRoot);
+  const result = runArchctxProcess(resolved, args, options, repoRoot, remainingTimeout(options, maximumMs, args.join(' ')));
+  if ((result.status !== 0 || result.signal || result.error) && !allowErrorEnvelope) throw new Error(`archctx ${args.join(' ')} failed: ${processFailure(result)}`);
+  if (result.signal || result.error || result.stdout.trim() === '') throw new Error(`archctx ${args.join(' ')} failed: ${processFailure(result)}`);
+  return { resolved, value: parseJson(result.stdout, `archctx ${args.join(' ')}`) };
+}
+
 export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(repoRoot);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
-  const resolved = resolveArchctxForRepo(repoRoot, policy.requiredVersion, options.consumerRoot);
-  const result = runArchctxProcess(
-    resolved,
-    ['capabilities', '--json'],
-    options,
-    repoRoot,
-    remainingTimeout(options, Math.min(policy.timeoutMs, 10_000), 'capabilities'),
-  );
-  if (result.status !== 0 || result.signal || result.error) throw new Error(`archctx capabilities failed: ${processFailure(result)}`);
-  return { resolved, capabilities: assertArchctxCapabilities(parseJson(result.stdout, 'archctx capabilities'), policy.requiredVersion) };
+  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['capabilities', '--json'], options, Math.min(policy.timeoutMs, 10_000));
+  return { resolved, capabilities: assertArchctxCapabilities(value, policy.requiredVersion) };
 }
 
 export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {

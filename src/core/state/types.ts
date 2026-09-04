@@ -307,6 +307,13 @@ export interface BoardCardV1 {
   readonly lease_state: BoardLeaseState;
   readonly progress_state: BoardProgressState;
   readonly claim: BoardClaimV1 | null;
+  readonly lease_liveness?: {
+    readonly expires_at: string;
+    readonly last_renewed_at: string;
+    readonly sequence: number;
+    readonly classification: import('./lease-liveness').LeaseLivenessClassification;
+    readonly attention_owner: 'none' | 'operator';
+  };
   readonly diagnostics: BoardDiagnosticsV1;
   readonly actions: BoardActionsV1;
 }

@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_VERSION, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.4.7';
+const VERSION = '0.5.2';
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
@@ -45,6 +45,7 @@ try {
   const archctxTarball = join(artifacts, String(release.artifact.tarball));
   const codeGraphPlatform = installedPlatformPackage('@colbymchenry', 'codegraph');
   const jiebaPlatform = installedPlatformPackage('@node-rs', 'jieba');
+  const koffiPlatform = installedPlatformPackage('@koromix', 'koffi');
 
   mkdirSync(consumer, { recursive: true });
   writeFileSync(join(consumer, 'package.json'), `${JSON.stringify({
@@ -56,6 +57,8 @@ try {
       [codeGraphPlatform.name]: `file:${codeGraphPlatform.path}`,
       '@node-rs/jieba': `file:${installedPackagePath('@node-rs', 'jieba')}`,
       [jiebaPlatform.name]: `file:${jiebaPlatform.path}`,
+      koffi: `file:${join(repoRoot, 'node_modules', 'koffi')}`,
+      [koffiPlatform.name]: `file:${koffiPlatform.path}`,
     },
   }, null, 2)}\n`);
   const offlineEnv = {
@@ -188,6 +191,12 @@ function linkBuildDependencies(checkout: string): void {
     if (name === '@archcontext') continue;
     symlinkSync(join(sourceModules, name), join(targetModules, name), 'dir');
   }
+  // 0.5.2 added koffi to the published runtime manifest. The source checkout used as the
+  // archive authority may not have refreshed its untracked node_modules after that release;
+  // bind the exact dependency installed by this consumer instead of letting the build borrow
+  // an undeclared global package.
+  const koffiTarget = join(targetModules, 'koffi');
+  if (!existsSync(koffiTarget)) symlinkSync(join(repoRoot, 'node_modules', 'koffi'), koffiTarget, 'dir');
   const targetScope = join(targetModules, '@archcontext');
   mkdirSync(targetScope, { recursive: true });
   const workspaces = (JSON.parse(readFileSync(join(checkout, 'package.json'), 'utf8')) as { workspaces?: unknown }).workspaces;
@@ -243,6 +252,8 @@ function installedPackagePath(scope: string, name: string): string {
   const roots = [
     join(archContextRoot, 'node_modules', scope),
     join(archContextRoot, 'node_modules', '.bun', 'node_modules', scope),
+    join(repoRoot, 'node_modules', scope),
+    join(repoRoot, 'node_modules', '.bun', 'node_modules', scope),
   ];
   for (const root of roots) {
     const candidate = join(root, name);
@@ -256,6 +267,8 @@ function installedPlatformPackage(scope: string, baseName: string): { name: stri
   const roots = [
     join(archContextRoot, 'node_modules', scope),
     join(archContextRoot, 'node_modules', '.bun', 'node_modules', scope),
+    join(repoRoot, 'node_modules', scope),
+    join(repoRoot, 'node_modules', '.bun', 'node_modules', scope),
   ];
   for (const root of roots) {
     if (!existsSync(root)) continue;

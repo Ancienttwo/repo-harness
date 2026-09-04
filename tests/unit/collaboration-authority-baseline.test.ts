@@ -346,6 +346,35 @@ interface ExcludedModule {
  */
 const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
   {
+    module: 'src/core/automation/controller.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'automation orchestration evidence plane (issue #279): journals bounded observations and calls existing acquire/dispatch authorities, but grants no claim, moves no lease generation, and publishes or accepts nothing',
+  },
+  {
+    /**
+     * The automation cost plane (issue #282). It fails C-1 because a budget is
+     * none of the five planes C0 froze: it owns spend, not Task/Claim, Lease,
+     * Publication, Acceptance, or Delegation identity. It fails C-2 because its
+     * bytes decide only whether the next operation may be paid for -- they
+     * grant no claim, move no lease generation, and publish or accept nothing,
+     * and exhaustion explicitly leaves every in-flight authority to its own
+     * owner's normal recovery.
+     */
+    module: 'src/core/automation/budget.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
+  },
+  {
+    module: 'src/core/state/lease-liveness.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'Lease liveness evidence plane (issue #286): classifies expiry and proves reclaim preconditions, but only the existing Lease store can move ownership or increment generation',
+  },
+  {
+    module: 'src/core/engineers/automation-attempt.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'automation attempt evidence plane (issue #287): gates scheduling retries from Work Graph policy but never creates a Task, Claim, Lease, Publication, Acceptance, or Delegation authority',
+  },
+  {
     module: 'src/core/external-sources/binding.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'external-source provenance plane; receipts bind inert provider evidence to an already-canonical task revision and no TaskOffer, Claim, Lease, Publication or Acceptance authority reads them',
@@ -354,6 +383,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     module: 'src/core/engineers/engineering-overlay.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'module-engineering attention plane; a derived overlay with no store, no reader but `engineer overlay` output, and an attention payload that asserts no ownership',
+  },
+  {
+    module: 'src/core/engineers/work-demand.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'task-intake approval plane: an accepted projection authorizes one atomic materialization into the canonical Sprint and Work Graph, but no TaskOffer, Claim, Lease, Publication, Acceptance, or Delegation decision reads WorkDemand records as authority',
   },
   {
     module: 'src/core/engineers/interface-change.ts',
@@ -417,6 +451,20 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     module: 'src/core/operator/collaboration-snapshot.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'operator transport view of the collaboration plane (D1): a redacting projection with no store, no agent reader, and no field it decides rather than copies',
+  },
+  {
+    /**
+     * The schema 1 -> 2 backlog migration receipt. It fails C-1 because a
+     * migration receipt is not a wire identity on Task/Claim, Lease,
+     * Publication, Acceptance or Delegation -- it is an audit record of one
+     * file rewrite. It fails C-2 because nothing reads it back: no offer,
+     * claim, lease, publication or acceptance path imports it, and the
+     * migration itself proves its result by re-reading the canonical sprint,
+     * never by trusting the receipt.
+     */
+    module: 'src/core/state/sprint-schema-migration.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'one-shot backlog schema migration plane: a write-only audit receipt with a single consumer, src/effects/state/sprint-schema-migration.ts, and no reader on any delivery plane',
   },
 ];
 

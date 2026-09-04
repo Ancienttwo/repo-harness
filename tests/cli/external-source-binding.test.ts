@@ -6,10 +6,10 @@ import { join } from 'path';
 
 import { buildExternalSourceCommand } from '../../src/cli/commands/external-source';
 import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
-import { deriveTaskId } from '../../src/core/state/coordination-identity';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { writeProviderIssueObservation } from '../../src/effects/external-sources/store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, '..', '..');
 
@@ -52,7 +52,7 @@ describe('external-source binding CLI contract', () => {
       mkdirSync(home, { recursive: true });
       writeFileSync(join(repo, '.ai/harness/policy.json'), '{}\n');
       writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
-      writeFileSync(join(repo, sprint), `# Sprint\n\n## Backlog\n\n| # | Status | Task | Mode | Acceptance | Plan |\n|---|---|---|---|---|---|\n| 1 | [ ] | ${task} | contract | tests pass | (pending) |\n`);
+      writeFileSync(join(repo, sprint), `# Sprint\n\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|---|---|---|---|---|\n| 1 | ${fixtureTaskId(task)} | [ ] | ${task} | contract | tests pass | (pending) |\n`);
       writeFileSync(join(repo, planPath), plan(sprint, task, planPath, contractPath));
       writeFileSync(join(repo, contractPath), `# Contract\n\n> **Plan**: ${planPath}\n\n## Allowed Paths\n\n\`\`\`yaml\nallowed_paths:\n  - src/\n\`\`\`\n`);
       execFileSync('git', ['init', '-b', 'main'], { cwd: repo });
@@ -68,7 +68,7 @@ describe('external-source binding CLI contract', () => {
         title: 'issue', body: 'untrusted request', labels: ['ready'], assignees: [], comments_policy: 'omitted', policy_revision: `sha256:${'a'.repeat(64)}`, eligible: true, eligibility_reasons: [],
       });
       writeProviderIssueObservation(repo, observation);
-      const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(repo), sprintPath: sprint, taskCell: task });
+      const taskId = fixtureTaskId(task);
       const env = { ...process.env, REPO_HARNESS_HOME: home };
       const bound = spawnSync('bun', ['src/cli/index.ts', 'external-source', 'bind', '--repo', repoId, '--source-revision', observation.source_revision, '--sprint', sprint, '--task-id', taskId, '--target-ref', 'main', '--format', 'json'], { cwd: ROOT, env, encoding: 'utf8' });
       expect(bound.status, bound.stderr).toBe(0);

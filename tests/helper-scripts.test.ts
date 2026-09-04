@@ -19,6 +19,7 @@ import { join } from "path";
 import { spawn, spawnSync } from "child_process";
 import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -5292,28 +5293,38 @@ describe("Workflow helper scripts", () => {
     };
     try {
       mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       copyHelpers(cwd);
       writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
       writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
+      const preparedRunFile = ".ai/harness/runs/run-finalize-fixture.json";
+      const preparedChecks = {
+        schema: "repo-harness-run-trace.v1",
+        status: "pass",
+        source: "verify-sprint",
+        exit_code: 0,
+        run_file: preparedRunFile,
+        lifecycle: { snapshot: preparedRunFile },
+        commands: [],
+        guards: [
+          { name: "contract", status: "pass" },
+          { name: "review", status: "pass" },
+          { name: "acceptance_receipt", status: "pending" },
+          { name: "allowed_paths", status: "pass" },
+          { name: "change_assessment", status: "pass" },
+        ],
+        acceptance_receipt: { status: "pending" },
+        change_assessment: changeAssessment,
+      };
       writeFileSync(
         join(cwd, ".ai/harness/checks/latest.json"),
-        `${JSON.stringify({
-          schema: "repo-harness-run-trace.v1",
-          status: "pass",
-          source: "verify-sprint",
-          exit_code: 0,
-          guards: [
-            { name: "contract", status: "pass" },
-            { name: "review", status: "pass" },
-            { name: "acceptance_receipt", status: "pending" },
-            { name: "allowed_paths", status: "pass" },
-            { name: "change_assessment", status: "pass" },
-          ],
-          acceptance_receipt: { status: "pending" },
-          change_assessment: changeAssessment,
-        }, null, 2)}\n`,
+        `${JSON.stringify(preparedChecks, null, 2)}\n`,
+      );
+      writeFileSync(
+        join(cwd, preparedRunFile),
+        `${JSON.stringify(preparedChecks, null, 2)}\n`,
       );
       writeFileSync(
         join(cwd, ".ai/harness/checks/change-assessment.latest.json"),
@@ -6064,12 +6075,13 @@ describe("Workflow helper scripts", () => {
           "# Sprint: Alpha",
           "",
           "> **Status**: Executing",
+          "> **Backlog Schema**: 2",
           "",
           "## Backlog",
           "",
-          "| # | Status | Task | Mode | Acceptance | Plan |",
-          "|---:|:---:|---|---|---|---|",
-          "| 1 | [ ] | Alpha handoff | contract | handoff includes active artifacts | `plans/plan-20260327-2200-alpha.md` |",
+          "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+          "|---:|----|:---:|---|---|---|---|",
+          `| 1 | ${fixtureTaskId('Alpha handoff')} | [ ] | Alpha handoff | contract | handoff includes active artifacts | \`plans/plan-20260327-2200-alpha.md\` |`,
           "",
         ].join("\n")
       );

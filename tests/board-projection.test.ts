@@ -18,7 +18,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AttemptLedgerRead } from '../src/core/state/attempt-ledger';
 import {
-  deriveTaskId,
   deriveTaskRevision,
   type LeaseOwnerRecordV2,
   type LeaseOwnerRecordV1,
@@ -32,7 +31,7 @@ import {
   type BoardLeaseInput,
   type BoardTaskInput,
 } from '../src/core/state/project-board';
-import type { BacklogRow } from '../src/core/state/sprint-backlog-rows';
+import type { CanonicalTaskRow } from '../src/core/state/coordination-identity';
 import type {
   AttemptReceiptV1,
   BoardCardV1,
@@ -41,6 +40,7 @@ import type {
   BoardProgressState,
   TaskState,
 } from '../src/core/state/types';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const REPO_IDENTITY = '/tmp/board-projection-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/board.sprint.md';
@@ -51,18 +51,14 @@ const WORKTREE = '/tmp/board-projection-fixture-wt-a';
 const UNIT_REF = 'plans/plan-board.md';
 const TOKEN = 'sha256:progress-token-a';
 
-const TASK_ID = deriveTaskId({
-  repoIdentity: REPO_IDENTITY,
-  sprintPath: SPRINT_PATH,
-  taskCell: TASK_CELL,
-});
-const TASK_REVISION = deriveTaskRevision({
+const TASK_ID = fixtureTaskId(TASK_CELL);
+const TASK_REVISION = deriveTaskRevision({ taskCell: TASK_CELL,
   taskId: TASK_ID,
   modeCell: 'contract',
   acceptanceCell: 'board tests pass',
 });
 /** What the row's definition drifted TO; the lease still holds the old one. */
-const DRIFTED_REVISION = deriveTaskRevision({
+const DRIFTED_REVISION = deriveTaskRevision({ taskCell: TASK_CELL,
   taskId: TASK_ID,
   modeCell: 'inline',
   acceptanceCell: 'something else entirely',
@@ -96,7 +92,7 @@ const UNKNOWN_REASONS = [
   'owner_record_unreadable',
 ] as const;
 
-function backlogRow(status: string): BacklogRow {
+function backlogRow(status: string): CanonicalTaskRow {
   return {
     index: '1',
     status,
@@ -271,6 +267,13 @@ const TRIPLES: readonly Triple[] = TASK_STATES.flatMap((state) => (
 ));
 
 describe('board column decision table', () => {
+  test('projects bounded Lease liveness without exposing owner paths', () => {
+    const task = taskInput('pending', 'bound', 'active');
+    const card = projectBoard(boardInputs([{ ...task, liveness: { expires_at: '2026-09-04T00:00:10.000Z', last_renewed_at: '2026-09-04T00:00:00.000Z', sequence: 2, classification: 'liveness_unproven', attention_owner: 'operator' } }])).cards[0];
+    expect(card.lease_liveness).toEqual({ expires_at: '2026-09-04T00:00:10.000Z', last_renewed_at: '2026-09-04T00:00:00.000Z', sequence: 2, classification: 'liveness_unproven', attention_owner: 'operator' });
+    expect(JSON.stringify(card.lease_liveness)).not.toContain(WORKTREE);
+  });
+
   test('the cross product is total, and every dimension reports what it was given', () => {
     // 4 task states x (3 lease states x 1 progress state + 3 lease states x 4).
     expect(TRIPLES).toHaveLength(4 * (3 + 12));

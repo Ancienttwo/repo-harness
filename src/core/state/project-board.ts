@@ -49,7 +49,7 @@ import {
   PENDING_ROW_STATUS,
   type LeaseOwnerRecord,
 } from './coordination-identity';
-import type { BacklogRow } from './sprint-backlog-rows';
+import type { CanonicalTaskRow } from './coordination-identity';
 import type {
   BoardActionsV1,
   BoardCanonicalTargetV1,
@@ -141,9 +141,16 @@ export interface BoardTaskInput {
    * projection is what keeps `missing` from becoming an unreachable state that
    * silently changes meaning the first time a caller does enumerate leases.
    */
-  readonly row: BacklogRow | null;
+  readonly row: CanonicalTaskRow | null;
   readonly lease: BoardLeaseInput;
   readonly evidence: BoardEvidenceInput | null;
+  readonly liveness?: {
+    readonly expires_at: string;
+    readonly last_renewed_at: string;
+    readonly sequence: number;
+    readonly classification: import('./lease-liveness').LeaseLivenessClassification;
+    readonly attention_owner: 'none' | 'operator';
+  };
 }
 
 export interface BoardInputsV1 {
@@ -168,7 +175,7 @@ export interface BoardInputsV1 {
 export interface BoardOwnershipInput {
   readonly task_id: string;
   readonly task_revision: string;
-  readonly row: BacklogRow | null;
+  readonly row: CanonicalTaskRow | null;
   readonly lease: BoardLeaseInput;
   readonly worktree_present: boolean | null;
 }
@@ -398,6 +405,7 @@ function projectCard(task: BoardTaskInput, canonicalRef: string): BoardCardV1 {
     lease_state: lease,
     progress_state: progress,
     claim: deriveClaim(task.lease.record),
+    ...(task.liveness === undefined ? {} : { lease_liveness: task.liveness }),
     diagnostics,
     actions: deriveActions(ownership, lease, column, diagnostics, canonicalRef),
   };

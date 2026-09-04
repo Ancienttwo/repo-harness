@@ -26,7 +26,6 @@ import { dirname, join, relative } from 'path';
 import {
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   lookupCanonicalTask,
   parseLeaseOwnerRecord,
@@ -112,20 +111,56 @@ function frozen(id: string): string {
 const REPO_IDENTITY = 'repo_00000000000000c0';
 const SPRINT_PATH = 'plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md';
 
+/**
+ * The persisted `ID` cells of the freeze subject, verbatim.
+ *
+ * Under backlog schema 2 a task's identity is read from this column, not
+ * derived from its Task text, so these literals *are* the identities the
+ * assertions below pin. They are fixture constants on purpose: deriving them
+ * from anything would reintroduce the coupling schema 2 removed.
+ *
+ * Their *values* are the ids this fixture's rows had before the migration --
+ * `digest(protocol + repo identity + sprint path + Task cell)` under schema 1 --
+ * because that is exactly what `sprint migrate-schema` persists for a real
+ * sprint. Freezing the same values keeps `task_id` and every digest built on
+ * `task_id` alone unchanged across the re-baseline, so the only bytes that move
+ * are the ones that genuinely had to: those carrying a `task_revision`, whose
+ * preimage gained the Task cell and the `protocol-v2` domain.
+ */
+const FROZEN_ROW_IDS = [
+  '5c2f33a355674ae7897396785848ab88c4332950ce2083431d45ecab144a8b92',
+  '5bac52a43a184c492663fc351fe780f8dc46274fcc1447d3892b06a18eddaee2',
+  'a3385f1c38ebecdaae3cfccdd00c0c386ba18d32835411b7f80e8a7c4c2d7126',
+] as const;
+
 const SPRINT_TEXT = [
   '# Sprint: freeze subject',
   '',
+  '> **Backlog Schema**: 2',
+  '',
   '## Backlog',
   '',
-  '| # | Status | Task | Mode | Acceptance | Plan |',
-  '|---:|:---:|---|---|---|---|',
-  '| 1 | [ ] | BRC0 — Authority freeze | contract | Frozen bytes hold | |',
-  '| 2 | [ ] | BRC1 — Dispatch fence | contract | Fence runs once | |',
-  '| 3 | [x] | BRC2 — Inline spike | inline | Probe recorded | docs/researches/probe.md |',
+  '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+  '|---:|---|:---:|---|---|---|---|',
+  `| 1 | ${FROZEN_ROW_IDS[0]} | [ ] | BRC0 — Authority freeze | contract | Frozen bytes hold | |`,
+  `| 2 | ${FROZEN_ROW_IDS[1]} | [ ] | BRC1 — Dispatch fence | contract | Fence runs once | |`,
+  `| 3 | ${FROZEN_ROW_IDS[2]} | [x] | BRC2 — Inline spike | inline | Probe recorded | docs/researches/probe.md |`,
   '',
   '## Execution Log',
   '',
 ].join('\n');
+
+/**
+ * A well-formed task id that no backlog row produced.
+ *
+ * The negative proofs below need such a value: "an identity invented from an
+ * Issue title or a dispatch prompt is not a Task". Schema 2 has no function
+ * that turns text into an identity -- that is the whole point -- so the test
+ * fabricates one locally and says so. Nothing in `src/` may do this.
+ */
+function inventedTaskId(text: string): string {
+  return createHash('sha256').update(`brc0-invented ${text}`, 'utf-8').digest('hex');
+}
 
 const CANONICAL_TASKS = projectCanonicalTasks({
   repoIdentity: REPO_IDENTITY,
@@ -307,16 +342,25 @@ function listFiles(root: string): string[] {
 describe('BRC0 authority freeze: canonical bytes', () => {
   test('Task authority bytes are unchanged', () => {
     expect(canonicalDigest(CANONICAL_TASKS)).toBe(frozen('task.canonical_projection'));
-    expect(CANONICAL_TASKS[0]!.task_id).toBe(deriveTaskId({
-      repoIdentity: REPO_IDENTITY,
-      sprintPath: SPRINT_PATH,
-      taskCell: 'BRC0 — Authority freeze',
-    }));
+    // Schema 2: identity is the persisted ID cell, read verbatim, not a digest
+    // of the Task text. The revision still moves with the Task, Mode and
+    // Acceptance cells, which is what stales an offer taken before an edit.
+    expect(CANONICAL_TASKS[0]!.task_id).toBe(FROZEN_ROW_IDS[0]);
+    expect(CANONICAL_TASKS.map((task) => task.task_id)).toEqual([...FROZEN_ROW_IDS]);
     expect(CANONICAL_TASKS[0]!.task_revision).toBe(deriveTaskRevision({
       taskId: CANONICAL_TASKS[0]!.task_id,
+      taskCell: 'BRC0 — Authority freeze',
       modeCell: 'contract',
       acceptanceCell: 'Frozen bytes hold',
     }));
+    // A title edit is a rename: identity survives, revision drifts.
+    const renamed = projectCanonicalTasks({
+      repoIdentity: REPO_IDENTITY,
+      sprintPath: SPRINT_PATH,
+      sprintText: SPRINT_TEXT.replace('BRC0 — Authority freeze', 'BRC0 — Authority freeze (v2)'),
+    });
+    expect(renamed[0]!.task_id).toBe(CANONICAL_TASKS[0]!.task_id);
+    expect(renamed[0]!.task_revision).not.toBe(CANONICAL_TASKS[0]!.task_revision);
     expect(taskOfferRevision([REPO_IDENTITY, SPRINT_PATH, CANONICAL_TASKS[0]!.task_id, 1, null]))
       .toBe(frozen('task.offer_revision'));
   });
@@ -482,11 +526,9 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
     // `binding.ts` validates shape only, so a well-formed digest that no
     // backlog row produced still passes its schema. That is exactly why the
     // binding is not the authority: the canonical sprint is.
-    const inventedFromIssue = deriveTaskId({
-      repoIdentity: REPO_IDENTITY,
-      sprintPath: SPRINT_PATH,
-      taskCell: `Issue #${observation.provider_issue_id}: ${observation.title}`,
-    });
+    const inventedFromIssue = inventedTaskId(
+      `Issue #${observation.provider_issue_id}: ${observation.title}`,
+    );
     expect(inventedFromIssue).toMatch(/^[0-9a-f]{64}$/);
 
     const lookup = lookupCanonicalTask(canonicalSprint, inventedFromIssue);
@@ -703,11 +745,7 @@ describe('BRC0 negative freeze: a prompt is not a Claim', () => {
       dependencies: dependencies(),
       session_id: 'brc0-prompt-task',
       assertion: {
-        task_id: deriveTaskId({
-          repoIdentity: REPO_IDENTITY,
-          sprintPath: SPRINT_PATH,
-          taskCell: PROMPT,
-        }),
+        task_id: inventedTaskId(PROMPT),
       },
     });
     expect(promptTask.ok).toBe(false);
@@ -831,9 +869,9 @@ describe('BRC0 negative freeze: retired and absent surfaces', () => {
     const nodes = readdirSync(join(REPO_ROOT, '.archcontext/model/nodes'));
     expect(nodes.filter((entry) => entry.includes('development-campaign'))).toEqual([]);
 
+    // The two directory-level rows (src/core/automation, src/effects/automation) were
+    // removed because automation/ became a shared namespace with the #282 budget ledger.
     for (const path of [
-      'src/core/automation',
-      'src/effects/automation',
       'src/cli/commands/campaign.ts',
       'src/core/automation/development-campaign.ts',
     ]) {
@@ -931,5 +969,53 @@ describe('BRC0 architecture request', () => {
     }
     // The declaration must not claim human acceptance it does not have.
     expect(text).toContain('> **Status**: Proposed');
+  });
+});
+
+/**
+ * The re-baseline's own falsifier.
+ *
+ * The freeze above pins bytes the campaign is designed against; this pins the
+ * one migration fact the campaign depends on -- that #283 preserved identity
+ * rather than reassigning it. If the migrated sprint's `ID` cells ever stop
+ * matching the ids recorded in its migration receipt, every Lease, message and
+ * binding minted before the migration is pointing at a task that no longer
+ * exists, and the acceptance the owner gave for this re-baseline was given
+ * against a different fact.
+ */
+describe('BRC0 re-baseline: the campaign sprint kept its pre-migration identities', () => {
+  const CAMPAIGN_SPRINT = 'plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md';
+  const CAMPAIGN_RECEIPT = 'plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.schema-migration.v1.json';
+
+  // The values the pre-migration derivation produced, pinned as literals so the
+  // assertion cannot drift by reading a rewritten receipt.
+  const ROW_1_ID = '23d385b0f0410137fe33517b757689d02fb1741cb495e9a7b6c4262930a81907';
+  const ROW_5_ID = '9e7090269d9d457155983885ef1cfea64fc606bfcbfd01d81d3d6a971e18aa29';
+
+  test('rows 1 and 5 carry the exact ids the migration receipt recorded', () => {
+    const receipt = JSON.parse(readFileSync(join(REPO_ROOT, CAMPAIGN_RECEIPT), 'utf-8')) as {
+      readonly from_schema: number;
+      readonly to_schema: number;
+      readonly sprint_path: string;
+      readonly tasks: readonly { readonly row_index: string; readonly task_id: string }[];
+    };
+    expect(receipt.from_schema).toBe(1);
+    expect(receipt.to_schema).toBe(2);
+    expect(receipt.sprint_path).toBe(CAMPAIGN_SPRINT);
+
+    const byRow = new Map(receipt.tasks.map((task) => [task.row_index, task.task_id]));
+    expect(byRow.get('1')).toBe(ROW_1_ID);
+    expect(byRow.get('5')).toBe(ROW_5_ID);
+
+    // And the sprint on disk agrees with the receipt, row for row.
+    const projected = projectCanonicalTasks({
+      repoIdentity: 'repo_00000000000000c0',
+      sprintPath: CAMPAIGN_SPRINT,
+      sprintText: readFileSync(join(REPO_ROOT, CAMPAIGN_SPRINT), 'utf-8'),
+    });
+    expect(projected[0]!.task_id).toBe(ROW_1_ID);
+    expect(projected[4]!.task_id).toBe(ROW_5_ID);
+    expect(projected.map((task) => task.task_id))
+      .toEqual(receipt.tasks.map((task) => task.task_id));
   });
 });

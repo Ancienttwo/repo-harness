@@ -5,6 +5,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { listHelpers, protectedChildEnv, resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
 import { RUN_HELP_GROUPS, RUN_HELP_MAX_HELPERS, RUN_HELP_MAX_LINES } from "../../src/cli/commands/run";
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -37,12 +38,13 @@ function writeActiveSprintFixture(cwd: string) {
       "# Sprint: Run Helper Root",
       "",
       "> **Status**: Approved",
+      "> **Backlog Schema**: 2",
       "",
       "## Backlog",
       "",
-      "| # | Status | Task | Mode | Acceptance | Plan |",
-      "|---|--------|------|------|------------|------|",
-      "| 1 | [ ] | root-task | inline | package run reads target repo | (pending) |",
+      "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+      "|---|----|--------|------|------|------------|------|",
+      `| 1 | ${fixtureTaskId('root-task')} | [ ] | root-task | inline | package run reads target repo | (pending) |`,
       "",
     ].join("\n")
   );
@@ -276,6 +278,7 @@ describe("run command", () => {
       /check-task-workflow\s+Check workflow contract and policy compliance for the current repo/,
     );
     expect(res.stdout).toContain("Planning & execution:");
+    expect(res.stdout.match(/cutover-closure/g)).toHaveLength(1);
     expect(res.stdout).toContain("Verification & maintenance:");
   }, 30_000);
 

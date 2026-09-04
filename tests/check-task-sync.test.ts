@@ -60,6 +60,31 @@ function setupRepo(): string {
 }
 
 describe("check-task-sync helper", () => {
+  test("validates waivers with no substantive paths under bash 3.2 set -u", () => {
+    const cwd = setupRepo();
+    try {
+      mkdirSync(join(cwd, "tasks", "waivers"), { recursive: true });
+      writeFileSync(
+        join(cwd, "tasks", "waivers", "x.json"),
+        JSON.stringify({
+          protocol: 1,
+          kind: "repo-harness-substantive-change-waiver",
+          substantive_change_sha256: `sha256:${"a".repeat(64)}`,
+          reason: "Fixture waiver for schema-only validation.",
+          owner: "test-owner",
+          scope: ["src/**"],
+          revisit_trigger: "Remove when the fixture no longer exercises schema-only validation.",
+        }),
+      );
+
+      const res = run(cwd, ["bash", "scripts/check-task-sync.sh", "--validate-waivers-only"]);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Machine-readable substantive-change waivers are valid.");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("fails when working tree has code changes without task updates", () => {
     const cwd = setupRepo();
     try {

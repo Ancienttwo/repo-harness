@@ -76,6 +76,60 @@ repos.
   `effect_started` are durable; only the exact persisted Task or Module Inbox
   receipt proves delivery, and every ambiguous outcome requires reconciliation
   without an automatic retry.
+- An unattended automation run is bounded by one machine-enforced budget, never
+  by prompt text. Every claim, dispatch, retry, and provider invocation first
+  takes a reservation under the run's exclusive lock, and a reservation that
+  would pass any hard limit is refused before the operation happens.
+- The budget store's caller is untrusted for every decision input; the host
+  process is the only trusted source. The store reads its own clock, derives the
+  reserved vector from the operation kind, derives the charge from the outcome
+  the host observed, and reads and digests the task contract from the repository
+  itself. A caller names what it wants to do and what happened; it never states
+  what that costs or when it happened. The limits are the host-owned
+  `ProgramAuthorizationV1` / `ProgramBudgetLimitV1` grant composed with the task
+  contract's own runner budget, strictest value per metric, recomputed from both
+  authorities on every read rather than trusted from the record. A run with no
+  task contract requires an explicit `contract_less` grant. Wall clock is a
+  frozen absolute deadline measured on the store clock, which may not run
+  backwards over the run's own durable records. A token or cost limit is
+  refused at preflight until provider-attested usage is wired, because a
+  self-asserted usage number is worse than no limit. `ProgramAuthorizationV1`
+  grants are operator-minted into the account-level harness home and a budget is
+  accepted only when its embedded grant resolves to byte-identical stored bytes.
+- The automation budget defends against honest-but-buggy controllers and
+  transport retries, not against a caller that already has the store's own
+  privileges. Three boundaries are explicitly out of scope until their owning
+  authority exists: `operation` and `outcome` are caller-asserted until the
+  unattended controller binds them to real side effects; reconciliation
+  `evidence_refs` are shape-checked typed refs, presence-checked but not
+  content-verified, until a digest-addressed provider usage and attempt-receipt
+  authority can resolve them; and the store's clock seam is a test-only
+  convenience rather than a permission boundary, because a same-process caller
+  is already trusted at the process level. Replaying an idempotency key charges
+  once, an interrupted reservation blocks further spending until it is
+  reconciled from exact evidence rather than assumed free -- and once a
+  reconciliation decision is recorded, only that decision may charge the
+  reservation. A projection that counts durable records the disk does not have
+  is corruption, not a crash window: every verb and every read surface fails
+  closed without writing anything. Exhaustion
+  publishes an immutable `AutomationStopReceiptV1`. A budget never raises or
+  renews itself, never rewrites Task, Lease, Work Graph, or contract authority,
+  and never releases or steals a claim.
+
+- One unattended controller is bound to the exact automation budget run,
+  Engineer principal, Binding generation, authorization revision, and protected
+  path set. Each invocation has independent hard step and duration ceilings.
+  Acquisition is only through canonical `acquire-next`; execution consumes its
+  returned `WorkEnvelopeV1` and dispatches only an already-admitted run through
+  `dispatchDelegatedRun`. The controller never creates Task, Work Graph, Lease,
+  or delegated-run authority.
+- Controller events are append-only evidence under the Git common directory.
+  The event is durable before every acquisition or dispatch; a restart at an
+  unresolved side-effect boundary becomes `reconciliation_required` and cannot
+  repeat that side effect. Transient acquisition failures use recorded,
+  deterministic exponential backoff capped by the frozen policy; user/operator
+  blockers and budget exhaustion are terminal. Explicit stop prevents another
+  acquisition and leaves the current Claim and Lease to their normal owner.
 
 ## Workflow Surfaces
 
@@ -90,6 +144,8 @@ repos.
 | `.ai/harness/checks/latest.json` | Verifier | Current structured gate result |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
+| `repo-harness automation budget show --run <id>` | Package runtime | Read-only operator projection of one automation run's budget, consumption, and stop receipt |
+| `repo-harness automation controller start\|step\|status\|stop\|reconcile` | Package runtime | Bounded unattended Engineer orchestration over the existing budget, acquire-next, WorkEnvelope and delegated-run authorities |
 | `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; `frontend` task_profile contracts must cite a design brief, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries
@@ -199,12 +255,104 @@ AcceptanceReceipt field.
   only explicitly engineer-scoped runtime commands issued through a trusted
   principal boundary.
 - **Agent Runtime effect**: An immutable V2 intent and observation chain that
-  fences one persisted inbox message to one current endpoint and admits at most
-  one closed `notify_inbox` Host action. Reachability and delivery are read-model
-  facts, never scheduling or acceptance authority.
+  fences one subject to one current endpoint and admits at most one closed Host
+  action per intent. `notify_inbox` fences one persisted inbox message;
+  `wake_for_offer` fences one `EngineerOffersV1` snapshot revision. Reachability
+  and delivery are read-model facts, never scheduling or acceptance authority.
+- **Task-offer wake**: A durable `wake_for_offer` effect armed from an offer
+  snapshot that has been re-proved against the offer authority's own
+  whole-document validator and fenced to this repository and the exact current
+  Binding, bound to the Engineer Binding generation, repository ID,
+  authorization revision, offer snapshot revision and a closed reason. Exactly
+  one wake is current per Binding: every wake mutation linearizes on the
+  per-Binding wake lock taken before the per-effect lock, a newer snapshot
+  supersedes an unstarted one into the terminal `superseded` state inside a
+  bounded coalescing window that it inherits rather than extends, and a started
+  one is never superseded. The Host action carries no claim token and no
+  writable authority, and success requires a controller-step receipt bound to
+  the effect control reference — never a message-delivery receipt and never a
+  process exit code. Binding, capability and authorization fences are re-read
+  after the start becomes durable, so a fence that commits during the start
+  yields a recorded failure instead of a stale Host action. A wake is a hint
+  that work may exist; the awakened controller re-reads current offers and
+  authorization, and a stale or empty snapshot is a no-op, not a claim.
+- **Engineer acquire-next**: An idempotent effects operation that reads the
+  current `EngineerOffersV1`, selects the first offer in its authoritative
+  order under closed filters, constructs the full revision assertion, and
+  delegates to the existing scheduled acquire path. Stale selections and lost
+  elections may be re-read only within a caller-supplied bound. A persisted
+  pending receipt after an uncertain side-effect boundary fails closed as
+  reconciliation-required.
+- **Dependency authority**: The single read-only resolver that answers one
+  declared Work Graph dependency state from the one authority that already owns
+  that verdict: the canonical Sprint row for `canonical_done`, the acceptance
+  authority's own verification observation for `module_accepted`, the Lease
+  publication pointer plus the immutable PublicationReceipt and integration
+  observation for `publication_integrated`, and the ME-4C product acceptance
+  projection for `product_accepted`. Every branch reads a record-time artifact
+  the owning authority published; none of them re-derives a verdict. A readable negative is `unsatisfied`; a missing,
+  unreadable, unauthorized or unsupported authority is `authority_unavailable`;
+  an unknown authority is never ready. Each observation carries an
+  `authority_revision` digest of its canonical validated evidence projection, so
+  receipt, target-revision or registry-authorization movement stales the
+  Engineer offer that asserted it.
+- **Dependency acceptance authority reference**: The closed, revision-bound
+  `acceptance_authority` field on a Work Graph dependency edge that names the
+  exact acceptance subject for `module_accepted` and `product_accepted`. It is
+  validated against the same canonical commit as the target Work Graph;
+  `required_acceptance` policy documents cannot select a receipt subject and are
+  never used as a substitute.
+- **Acceptance verification observation**: The immutable record the acceptance
+  authority writes for itself inside the same transaction that records an
+  AcceptanceReceipt. It freezes what only that authority can prove — the live
+  normalized review subject digest, the verification-evidence fingerprint, the
+  contract and goal bindings, the target ref and revision, the disposition, and
+  the archive-projection seal digest when one applies. It is keyed by subject
+  (`sha256` of the contract file plus its acceptance fingerprint) rather than
+  content-addressed, so one contract subject has exactly one current
+  observation and re-recording the same subject overwrites it while a changed
+  contract lands under a different key. Readers verify identity, canonical
+  bytes and the derived observation id; they never recompute the acceptance
+  verdict. A dependency edge naming an archive-projected contract is
+  fail-closed `authority_unavailable`, because the acceptance fingerprint
+  normalizes the archive envelope away and only the authority's own seal can
+  distinguish a projected contract from its source.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.
 - **Task profile**: The declared execution shape of a contract (for example
   `code-change`) that determines which verification and delegation rules
   apply to that task.
+- **Refactor Mode**: The `off | shadow | active` operating mode under which
+  repo-harness consumes an external structural authority to discover and
+  execute refactors. It is a narrowed entry into the existing plan, contract,
+  worktree, and ship flow, never a second workflow engine.
+- **Proposal Author**: The repo-harness-side agent or human that writes a
+  refactor proposal for the external structural authority to assess. The
+  author supplies intent, scope, target outcomes, and kill list; it never
+  decides the structural scale, the workflow route, or a recommendation's
+  status.
+- **RefactorWorkflowRoute**: The repo-harness workflow routing decision
+  deterministically projected from the external authority's structural scale
+  and its evidence reason codes. It may stop more conservatively than the
+  upstream scale but may never route below it.
+- **Refactor Program**: One authorized Refactor Mode run, holding only the
+  bindings from external recommendations to local work packages. It carries no
+  recommendation status; every status is re-read from the external authority.
+- **Cutover Closure**: The provider-independent gate asserting that every
+  declared old implementation, caller, fallback, test, document, and
+  compatibility window of a replaced surface has an explicit disposition, and
+  that nothing declared removed still exists at the candidate head.
+- **Refactor Execution Binding**: The append-only, immutable set of references
+  tying one external recommendation to the plan, contract, closure,
+  acceptance, and merge evidence of one execution. It has no status field, so
+  a merged pull request can never by itself mean the refactor is resolved.
+- **Joined Refactor Board**: The read-only projection joining the external
+  semantic refactor ledger with local execution evidence. It owns no state and
+  is fully rebuildable from its authorities.
+
+## Agent WorkDemand intake authority
+
+An authenticated current Engineer may create a bounded `WorkDemandV1` and submit it for Human review. The immutable request binds its exact Binding generation and contract revision, source and target capabilities, untrusted problem/outcome text, digest-bound resources, and advisory urgency/dependency hints. Messages and external issues may reference the demand but never become its authority.
+
+Only Human authority may accept or reject a submitted demand. Acceptance freezes the exact target Sprint commit, Work Graph revision, stable Task ID, Sprint row bytes, and full `WorkPackageDefinitionV1`. Materialization validates both fences, constructs the new Sprint and Work Graph as one Git tree, and compare-and-swaps the canonical target ref. A mismatch or crash leaves the canonical ref unchanged. Its receipt proves work creation only; normal offer/acquire remains the sole Claim and Lease path.

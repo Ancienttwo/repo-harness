@@ -512,23 +512,80 @@ sprint_ready_error() {
     missing=1
   fi
 
-  if ! grep -Eq '^\|[[:space:]]*#[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Task[[:space:]]*\|[[:space:]]*Mode[[:space:]]*\|[[:space:]]*Acceptance[[:space:]]*\|[[:space:]]*Plan[[:space:]]*\|' "$file"; then
-    echo "missing backlog table header '| # | Status | Task | Mode | Acceptance | Plan |'"
+  # Execution readiness is only ever asked of an Approved or Executing sprint,
+  # and such a sprint must carry persisted task ids: schema 1 derives identity
+  # from the Task cell, so activating one means every title edit silently
+  # deletes a task and creates another. Schema 1 stays readable for archived
+  # sprints and for the migration input, never for live execution.
+  # Counted over the pre-'## Backlog' preamble only, because that is the exact
+  # region both parsers read: sprintBacklogSchema() stops at the heading and so
+  # does backlog_rows()'s awk. A whole-file grep would let a marker quoted in
+  # prose below the table fail this gate on a file both parsers accept.
+  local schema_declarations schema_twos schema_ready
+  read -r schema_declarations schema_twos <<<"$(awk '
+    /^## Backlog[[:space:]]*$/ { exit }
+    /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
+      count++
+      declared = $0
+      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
+      gsub(/[[:space:]]+$/, "", declared)
+      if (declared == "2") two++
+    }
+    END { printf "%d %d\n", count + 0, two + 0 }
+  ' "$file")"
+  schema_ready=0
+  if [[ "$schema_declarations" -eq 1 && "$schema_twos" -eq 1 ]]; then
+    schema_ready=1
+  fi
+  if [[ "$schema_ready" -ne 1 ]]; then
+    if [[ "$schema_declarations" -gt 1 ]]; then
+      echo "backlog schema is declared ${schema_declarations} times; exactly one '> **Backlog Schema**: 2' line is allowed"
+    else
+      echo "backlog is not schema 2 and carries no persisted task ids; run 'repo-harness sprint migrate-schema --sprint ${file} --target-ref <ref>' before approving or executing it"
+    fi
+    missing=1
+  fi
+
+  if [[ "$schema_ready" -ne 1 ]]; then
+    :
+  elif ! LC_ALL=C awk -F '|' '
+    /^## Backlog[[:space:]]*$/ { in_section = 1; next }
+    in_section && /^## / { exit }
+    in_section && /^\|/ {
+      for (i = 2; i <= 8; i++) {
+        cell[i] = $i
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell[i])
+      }
+      if (cell[2] == "#" && cell[3] == "ID" && cell[4] == "Status" && cell[5] == "Task" && cell[6] == "Mode" && cell[7] == "Acceptance" && cell[8] == "Plan") {
+        found = 1
+        exit
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$file"; then
+    echo "backlog table header does not match the declared backlog schema"
     missing=1
   else
     local row_errors
     row_errors="$(LC_ALL=C awk -F '|' '
+      !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
       /^## Backlog[[:space:]]*$/ { in_section = 1; next }
       in_section && /^## / { exit }
       !in_section { next }
       /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
         rows++
-        idx = $2; status = $3; task = $4; mode = $5; acceptance = $6
+        idx = $2; id = (off ? $3 : ""); status = $(3 + off); task = $(4 + off); mode = $(5 + off); acceptance = $(6 + off)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", mode)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", acceptance)
+        if (off) {
+          if (id == "") printf "row %s is missing its persisted task id\n", idx
+          else if (id !~ /^[0-9a-f]{64}$/) printf "row %s has a malformed task id\n", idx
+          else seen_id[id]++
+        }
         if (status !~ /^\[[ xX]\]$/) printf "row %s has an invalid status cell (expected [ ] or [x])\n", idx
         if (task == "" || task == "...") printf "row %s is missing a task\n", idx
         if (mode != "contract" && mode != "inline") printf "row %s has an invalid mode (expected contract or inline)\n", idx
@@ -541,6 +598,7 @@ sprint_ready_error() {
         if (rows == 0) print "backlog table has no task rows"
         for (i in seen_idx) if (seen_idx[i] > 1) printf "duplicate backlog index %s\n", i
         for (t in seen_task) if (seen_task[t] > 1) printf "duplicate backlog task %s\n", t
+        for (d in seen_id) if (seen_id[d] > 1) printf "duplicate backlog task id %s\n", d
       }
     ' "$file")"
     if [[ -n "$row_errors" ]]; then

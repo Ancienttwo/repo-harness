@@ -1,0 +1,78 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.automation-budget
+kind: capability
+name: Automation Budget
+status: active
+summary: Enforces one machine-checked per-goal automation budget and runs the exact Engineer through a bounded, journaled acquire and delegated-dispatch controller.
+responsibilities:
+  - Project one exact host-owned ProgramAuthorization grant onto one automation run without minting a second authorization or budget schema.
+  - Compose the grant's limits with the task contract's own runner budget by strictest value per metric and bind the derivation into the budget digest.
+  - Reject a configured hard token or cost limit at preflight unless the provider capability revision attests attributable usage.
+  - Grant or refuse each reservation under the run's exclusive lock against the frozen deadline and the folded append-only ledger.
+  - Charge one idempotency key once and hold an interrupted reservation in a typed reconciliation state that only exact evidence can resolve.
+  - Publish an immutable AutomationStopReceipt on exhaustion and project a read-only operator slice of budget, consumption, and stop receipt.
+  - Never create, rewrite, release, or steal Task, Lease, Work Graph, claim, or contract authority, and never raise or renew a budget.
+  - Persist each controller decision before its acquisition or dispatch side effect and require reconciliation after an ambiguous crash boundary.
+  - Revalidate the exact Engineer principal, Binding and authorization revision before every bounded controller invocation.
+  - Consume only the canonical acquire-next WorkEnvelope and dispatch only through the existing fenced delegated-run effect.
+  - Apply a hard step and duration ceiling, deterministic bounded transient backoff, explicit stop, and one active controller per Engineer.
+source:
+  include:
+    - "src/core/automation/**"
+    - "src/effects/automation/**"
+    - "src/cli/commands/automation.ts"
+  entrypoints:
+    - id: entrypoint.automation-budget.reserve
+      path: "src/effects/automation/budget-store.ts"
+      symbols:
+        - name: "reserveAutomationBudget"
+          sinks:
+            - id: sink.automation-budget.reservation-decision
+              path: "src/core/automation/budget.ts"
+              symbol: "evaluateAutomationReservation"
+        - name: "persistStopReceipt"
+          sinks:
+            - id: sink.automation-budget.stop-receipt
+              path: "src/core/automation/budget.ts"
+              symbol: "sealAutomationStopReceipt"
+    - id: entrypoint.automation-budget.append
+      path: "src/effects/automation/budget-store.ts"
+      symbols:
+        - name: "commitUsage"
+          sinks:
+            - id: sink.automation-budget.usage-event
+              path: "src/core/automation/budget.ts"
+              symbol: "sealAutomationUsageEvent"
+            - id: sink.automation-budget.ledger-chain
+              path: "src/core/automation/budget.ts"
+              symbol: "chainAutomationLedgerDigest"
+    - id: entrypoint.automation-budget.project
+      path: "src/effects/automation/budget-store.ts"
+      symbols:
+        - name: "readAutomationBudgetBoardSlice"
+          sinks:
+            - id: sink.automation-budget.operator-slice
+              path: "src/core/automation/projection.ts"
+              symbol: "projectAutomationBudgetSlice"
+    - id: entrypoint.automation-controller.step
+      path: "src/effects/automation/controller-run.ts"
+      symbols:
+        - name: "stepAutomationController"
+          sinks:
+            - id: sink.automation-controller.acquire
+              path: "src/effects/engineers/scheduling-acquire-next.ts"
+              symbol: "acquireNextScheduledEngineerTask"
+            - id: sink.automation-controller.dispatch
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "dispatchDelegatedRun"
+            - id: sink.automation-controller.journal
+              path: "src/effects/automation/controller-store.ts"
+              symbol: "appendAutomationControllerEvent"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/issue-282-automation-budget-core.test.ts tests/unit/issue-282-automation-budget-store.test.ts tests/unit/issue-282-automation-budget-contention.test.ts tests/unit/issue-282-automation-budget-e2e.test.ts --timeout 60000"
+    - "bun run check:type"

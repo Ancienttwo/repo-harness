@@ -12,16 +12,27 @@ import {
   type SchedulingCanonicalTask,
   type WorkGraphV1,
 } from '../../src/core/engineers/scheduling';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
 const OTHER_REPO = 'repo_fedcba9876543210';
 const DIGEST = `sha256:${'a'.repeat(64)}`;
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
+const MODULE_AUTHORITY = {
+  authority_kind: 'module_acceptance',
+  subject_ref: 'tasks/contracts/wp-b.contract.md',
+  subject_revision: DIGEST,
+} as const;
+const PRODUCT_AUTHORITY = {
+  authority_kind: 'product_acceptance',
+  subject_ref: 'plans/prds/product.md',
+  subject_revision: DIGEST,
+} as const;
 
 function workPackage(id = 'wp-a', taskRef = 'task A', dependsOn: unknown[] = []) {
   return {
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: CAPABILITY,
     depends_on: dependsOn,
     priority: 50,
@@ -34,6 +45,7 @@ function workPackage(id = 'wp-a', taskRef = 'task A', dependsOn: unknown[] = [])
       policy_ref: 'plans/policies/module-default.json',
       policy_revision: DIGEST,
     }],
+    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
       kind: 'work_package',
       boundary_id: `${REPO}:${id}`,
@@ -56,7 +68,7 @@ function graph(workPackages: unknown[], lane: 'generic-v1' | 'engineering-v2' = 
 
 function task(ref = 'task A', id = '1', revision = '2', rowOrder = 1): SchedulingCanonicalTask {
   return {
-    task_id: id.length === 64 ? id : id.repeat(64),
+    task_id: fixtureTaskId(ref),
     task_revision: revision.length === 64 ? revision : revision.repeat(64),
     task_ref: ref,
     status: '[ ]',
@@ -101,31 +113,31 @@ describe('ME-1A closed scheduling schema', () => {
     expect(() => projectWorkGraph(graph([workPackage()]), [task(), task('task B', '3', '4', 2)]))
       .toThrow('cover every canonical Sprint row');
     expect(() => projectWorkGraph(graph([workPackage('wp-a', 'missing')]), [task()]))
-      .toThrow('task_ref is absent');
+      .toThrow('task_id is absent');
   });
 
   test('rejects missing dependency targets and cycles across repository-qualified identities', () => {
     const missing = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: OTHER_REPO, work_package_id: 'wp-x', required_state: 'canonical_done' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: OTHER_REPO, work_package_id: 'wp-x', required_state: 'canonical_done', acceptance_authority: null }]),
     ]), [task()]);
     expect(() => validateWorkGraphTopology([missing])).toThrow('depends on missing');
 
     const cyclic = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done' }]),
-      workPackage('wp-b', 'task B', [{ repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null }]),
+      workPackage('wp-b', 'task B', [{ repository_id: REPO, work_package_id: 'wp-a', required_state: 'canonical_done', acceptance_authority: null }]),
     ]), [task(), task('task B', '3', '4', 2)]);
     expect(() => validateWorkGraphTopology([cyclic])).toThrow('cycle detected');
   });
 
   test('rejects duplicate dependency identities and duplicate canonical task projections', () => {
     expect(() => graph([workPackage('wp-a', 'task A', [
-      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done' },
-      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'module_accepted' },
+      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null },
+      { repository_id: REPO, work_package_id: 'wp-b', required_state: 'module_accepted', acceptance_authority: MODULE_AUTHORITY },
     ])])).toThrow('depends_on contains duplicates');
     expect(() => projectWorkGraph(graph([
       workPackage('wp-a', 'task A'),
       workPackage('wp-b', 'task B'),
-    ]), [task(), task('task B', '1', '3', 2)])).toThrow('duplicate task_id');
+    ]), [task(), { ...task('task B', '1', '3', 2), task_id: fixtureTaskId('task A') }])).toThrow('duplicate task_id');
   });
 
   test('builds a revision-fenced offer only when every closed input is ready', () => {
@@ -142,13 +154,14 @@ describe('ME-1A closed scheduling schema', () => {
       binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: {
         execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: '1'.repeat(64), task_revision: '2'.repeat(64),
+        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
         offer_revision: DIGEST, authorization_revision: 7,
       },
       dependencies: [],
       concurrency_available: true,
       concurrency_revision: DIGEST,
-      active_claims: 0,
+      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    active_claims: 0,
     });
     expect(candidate.eligible).toBe(true);
     if (!candidate.eligible) throw new Error('expected offer');
@@ -167,7 +180,7 @@ describe('ME-1A closed scheduling schema', () => {
 
   test('emits closed exclusion reasons instead of partially eligible offers', () => {
     const projected = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY }]),
       workPackage('wp-b', 'task B'),
     ]), [task(), task('task B', '3', '4', 2)]);
     const candidate = buildEngineerOfferCandidate({
@@ -181,10 +194,11 @@ describe('ME-1A closed scheduling schema', () => {
       },
       binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: null,
-      dependencies: [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', status: 'authority_unavailable', authority_revision: null }],
+      dependencies: [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'product_accepted', acceptance_authority: PRODUCT_AUTHORITY, status: 'authority_unavailable', authority_revision: null }],
       concurrency_available: false,
       concurrency_revision: DIGEST,
-      active_claims: 1,
+      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    active_claims: 1,
     });
     expect(candidate.eligible).toBe(false);
     if (candidate.eligible) throw new Error('expected exclusion');
@@ -210,13 +224,14 @@ describe('ME-1A closed scheduling schema', () => {
       binding: { state: 'active' as const, binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: {
         execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: '1'.repeat(64), task_revision: '2'.repeat(64),
+        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
         offer_revision: DIGEST, authorization_revision: 7,
       },
       dependencies: [],
       concurrency_available: true,
       concurrency_revision: DIGEST,
-      active_claims: 0,
+      retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    active_claims: 0,
     };
     expect(buildEngineerOfferCandidate(ready).eligible).toBe(true);
 
@@ -239,7 +254,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(retired.exclusion.blockers).toEqual(['binding_inactive']);
 
     const chained = projectWorkGraph(graph([
-      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done' }]),
+      workPackage('wp-a', 'task A', [{ repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done', acceptance_authority: null }]),
       workPackage('wp-b', 'task B'),
     ]), [task(), task('task B', '3', '4', 2)]);
     const unsatisfied = buildEngineerOfferCandidate({
@@ -248,7 +263,7 @@ describe('ME-1A closed scheduling schema', () => {
       work_package: chained.work_packages.find((item) => item.work_package_id === 'wp-a')!,
       dependencies: [{
         repository_id: REPO, work_package_id: 'wp-b', required_state: 'canonical_done',
-        status: 'unsatisfied', authority_revision: DIGEST,
+        acceptance_authority: null, status: 'unsatisfied', authority_revision: DIGEST,
       }],
     });
     expect(unsatisfied.eligible).toBe(false);
@@ -261,7 +276,7 @@ describe('ME-1A closed scheduling schema', () => {
     const definitions = Array.from({ length: 100 }, (_, index) => workPackage(
       `wp-${String(index).padStart(3, '0')}`,
       `task ${index}`,
-      index === 0 ? [] : [{ repository_id: REPO, work_package_id: `wp-${String(index - 1).padStart(3, '0')}`, required_state: 'canonical_done' }],
+      index === 0 ? [] : [{ repository_id: REPO, work_package_id: `wp-${String(index - 1).padStart(3, '0')}`, required_state: 'canonical_done', acceptance_authority: null }],
     ));
     const tasks = Array.from({ length: 100 }, (_, index) => task(
       `task ${index}`,

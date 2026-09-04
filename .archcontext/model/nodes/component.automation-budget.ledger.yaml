@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.automation-budget.ledger
+kind: component
+name: Automation Budget Ledger
+status: active
+parent: capability.runtime-harness.automation-budget
+summary: Persists budgets, reservations, usage events, reconciliations, and the stop receipt create-once under the Git common directory and serves only validated reads.

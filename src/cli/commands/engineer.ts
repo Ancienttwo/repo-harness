@@ -1,11 +1,12 @@
 import { Command } from 'commander';
-import { realpathSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import { EngineeringOverlayError } from '../../core/engineers/engineering-overlay';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
-import { EngineerSchedulingError } from '../../core/engineers/scheduling';
+import { EngineerSchedulingError, type EngineerOffersV1 } from '../../core/engineers/scheduling';
 import { TaskFreezeError } from '../../core/engineers/task-freeze';
+import { WorkDemandError, validateAcceptedWorkDemandProjection, validateWorkDemand, validateMaterializedWorkDemandReceipt, type WorkDemandActorV1, type WorkDemandTransition } from '../../core/engineers/work-demand';
 import {
   ModuleMessageError,
   buildModuleMessageEvent,
@@ -40,6 +41,7 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
+import { acquireNextScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire-next';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
   EngineeringOverlayProjectionError,
@@ -54,11 +56,15 @@ import {
 import {
   AgentRuntimeEffectStoreError,
   listAgentRuntimeEffects,
+  listDueOfferWakes,
   migrateProviderThreadEffectsV1,
   observeAgentRuntimeEffect,
   prepareAgentRuntimeEffect,
   readAgentRuntimeEffectStatus,
+  readOfferWakeLedger,
   recordAgentRuntimeCapability,
+  recordAgentRuntimeControllerStep,
+  recordEngineerOfferSnapshot,
   startAgentRuntimeEffect,
 } from '../../effects/engineers/agent-runtime-effect-store';
 import {
@@ -67,6 +73,8 @@ import {
   verifyTaskFreeze,
 } from '../../effects/engineers/task-freeze-store';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
+import { WorkDemandStoreError, listWorkDemandStatuses, readWorkDemandStatus, transitionWorkDemand } from '../../effects/engineers/work-demand-store';
+import { WorkDemandMaterializationError, materializeWorkDemand } from '../../effects/engineers/work-demand-materialization';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 
 function emit(value: unknown, json: boolean | undefined, human: string): void {
@@ -81,6 +89,7 @@ function emitError(error: unknown): void {
     || error instanceof ModuleMessageError || error instanceof ModuleInboxError
     || error instanceof AgentRuntimeEffectError || error instanceof AgentRuntimeEffectStoreError
     || error instanceof TaskFreezeError
+    || error instanceof WorkDemandError || error instanceof WorkDemandStoreError || error instanceof WorkDemandMaterializationError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
     : error instanceof CliArgumentError
@@ -317,6 +326,41 @@ export function buildEngineerCommand(): Command {
         : offers.offers.map((offer) => `${offer.work_package_id} ${offer.offer_revision}`).join('\n'));
     }));
 
+  engineer
+    .command('acquire-next')
+    .description('Select and acquire the first canonical current Engineer offer')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .requiredOption('--idempotency-key <key>', 'Stable transport retry key')
+    .option('--capability-id <id>', 'Require one exact capability ID')
+    .option('--minimum-priority <n>', 'Require this minimum canonical priority')
+    .option('--max-selection-attempts <n>', 'Bounded stale-selection attempts', '3')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      authorizationId: string;
+      idempotencyKey: string;
+      capabilityId?: string;
+      minimumPriority?: string;
+      maxSelectionAttempts: string;
+      json?: boolean;
+    }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = acquireNextScheduledEngineerTask({
+        repo_root: repoRoot,
+        principal,
+        idempotency_key: options.idempotencyKey,
+        filters: {
+          ...(options.capabilityId === undefined ? {} : { capability_id: options.capabilityId }),
+          ...(options.minimumPriority === undefined ? {} : { minimum_priority: integerOption(options.minimumPriority, 'minimum-priority') }),
+        },
+        max_selection_attempts: integerOption(options.maxSelectionAttempts, 'max-selection-attempts'),
+      });
+      emit(result, options.json, result.ok
+        ? `acquired ${result.offer.work_package_id} ${result.envelope.claim_id}`
+        : `${result.error}: ${result.message}`);
+      if (!result.ok && result.error !== 'engineer_no_eligible_offer') process.exitCode = 1;
+    }));
+
   const message = new Command('message').description('Persist and consume closed Module Engineer coordination messages');
   message
     .command('send')
@@ -403,7 +447,7 @@ export function buildEngineerCommand(): Command {
     .command('capability')
     .requiredOption('--adapter-kind <kind>', 'codex-app-thread or tmux-cli-agent')
     .requiredOption('--host-id <id>', 'Exact host ID')
-    .requiredOption('--operations-json <json>', 'Exact notify_inbox capability status')
+    .requiredOption('--operations-json <json>', 'Exact capability status per runtime operation')
     .requiredOption('--evidence-refs-json <json>', 'Bounded capability evidence references')
     .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
     .option('--json', 'Output JSON')
@@ -530,6 +574,81 @@ export function buildEngineerCommand(): Command {
       emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
     }));
   runtimeEffect
+    .command('wake-record-offers')
+    .description('Record one Engineer offer snapshot and arm at most one durable task-offer wake')
+    .requiredOption('--offers-json <json>', 'Exact EngineerOffersV1 document from the offer authority')
+    .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
+    .requiredOption('--expected-capability-sha256 <digest>', 'Exact capability observation digest')
+    .requiredOption('--expected-binding-id <id>', 'Exact Binding UUID the snapshot was collected under')
+    .requiredOption('--expected-binding-generation <n>', 'Exact Binding generation the snapshot was collected under')
+    .requiredOption('--expected-engineer-contract-revision <digest>', 'Exact Engineer contract revision the snapshot was collected under')
+    .requiredOption('--debounce-ms <n>', 'Bounded wake coalescing window in milliseconds')
+    .option('--polling-fallback', 'Permit scheduled polling when the adapter cannot wake')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      offersJson: string; observedAt: string; expectedCapabilitySha256: string; expectedBindingId: string;
+      expectedBindingGeneration: string; expectedEngineerContractRevision: string; debounceMs: string;
+      pollingFallback?: boolean; json?: boolean;
+    }) => run(() => {
+      const result = recordEngineerOfferSnapshot({
+        repo_root: realpathSync(process.cwd()),
+        offers: jsonOption<EngineerOffersV1>(options.offersJson, 'offers-json'),
+        observed_at: options.observedAt,
+        expected_capability_sha256: options.expectedCapabilitySha256,
+        expected_binding_id: options.expectedBindingId,
+        expected_binding_generation: integerOption(options.expectedBindingGeneration, 'expected-binding-generation'),
+        expected_engineer_contract_revision: options.expectedEngineerContractRevision,
+        wake_policy: {
+          debounce_ms: integerOption(options.debounceMs, 'debounce-ms'),
+          polling_fallback_enabled: options.pollingFallback === true,
+        },
+      });
+      emit(result, options.json, `${result.outcome} ${result.cause} ${result.status?.intent.effect_id ?? 'no-effect'}`);
+    }));
+  runtimeEffect
+    .command('wake-status')
+    .description('Read due task-offer wakes and one Binding wake ledger without host authority')
+    .requiredOption('--now <timestamp>', 'Stable RFC3339 evaluation time')
+    .option('--engineer-id <id>', 'Filter wakes by exact Engineer ID')
+    .option('--binding-id <id>', 'Read the exact Binding wake ledger')
+    .option('--binding-generation <n>', 'Exact Binding generation of the ledger to read')
+    .option('--json', 'Output JSON')
+    .action((options: { now: string; engineerId?: string; bindingId?: string; bindingGeneration?: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      if (options.bindingId !== undefined || options.bindingGeneration !== undefined) {
+        if (options.engineerId === undefined || options.bindingId === undefined || options.bindingGeneration === undefined) {
+          throw new CliArgumentError('--engineer-id, --binding-id and --binding-generation must be given together');
+        }
+        const ledger = readOfferWakeLedger(repoRoot, {
+          engineer_id: options.engineerId,
+          binding_id: options.bindingId,
+          binding_generation: integerOption(options.bindingGeneration, 'binding-generation'),
+        });
+        emit(ledger, options.json, ledger ? `${ledger.observed.snapshot_revision} ${ledger.pending?.effect_id ?? 'no-pending-wake'}` : 'no-ledger');
+        return;
+      }
+      const due = listDueOfferWakes(repoRoot, { now: options.now, engineer_id: options.engineerId });
+      emit(due, options.json, due.length === 0 ? 'no-due-wake' : due.map((item) => `${item.state} ${item.wake_reason} ${item.effect_id}`).join('\n'));
+    }));
+  runtimeEffect
+    .command('wake-receipt')
+    .description('Record the controller-step receipt that proves one bounded step ran for this wake')
+    .requiredOption('--effect-id <digest>', 'Exact started wake effect ID')
+    .requiredOption('--control-ref <ref>', 'Exact bounded wake control reference from the Host action')
+    .requiredOption('--observed-snapshot-revision <digest>', 'Offer snapshot revision the controller re-read')
+    .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
+    .option('--json', 'Output JSON')
+    .action((options: { effectId: string; controlRef: string; observedSnapshotRevision: string; observedAt: string; json?: boolean }) => run(() => {
+      const receipt = recordAgentRuntimeControllerStep({
+        repo_root: realpathSync(process.cwd()),
+        effect_id: options.effectId,
+        control_ref: options.controlRef,
+        observed_snapshot_revision: options.observedSnapshotRevision,
+        observed_at: options.observedAt,
+      });
+      emit(receipt, options.json, `${receipt.effect_id} ${receipt.receipt_sha256}`);
+    }));
+  runtimeEffect
     .command('migrate-v1')
     .requiredOption('--migrated-at <timestamp>', 'Stable RFC3339 migration time')
     .option('--json', 'Output JSON')
@@ -639,6 +758,19 @@ export function buildEngineerCommand(): Command {
       emit(mapping, options.json, `${mapping.state} ${mapping.engineer_id} generation=${mapping.binding_generation}`);
     }));
   engineer.addCommand(principal);
+
+  const workDemand = new Command('work-demand').description('Manage durable Agent WorkDemand review and task materialization');
+  workDemand.command('propose').requiredOption('--demand-json <path>').requiredOption('--idempotency-key <key>').option('--json').action((options:{demandJson:string;idempotencyKey:string;json?:boolean})=>run(()=>{
+    const repoRoot=realpathSync(process.cwd());const demand=validateWorkDemand(JSON.parse(readFileSync(options.demandJson,'utf8')));const actor:WorkDemandActorV1={kind:'engineer',principal:demand.source_engineer};const result=transitionWorkDemand({repo_root:repoRoot,demand,idempotency_key:options.idempotencyKey,transition:'propose',expected_current_digest:null,actor,acceptance:null,materialization_receipt:null});emit(result,options.json,`${result.current.state} ${demand.demand_id}`);
+  }));
+  workDemand.command('transition').requiredOption('--demand-id <id>').requiredOption('--transition <name>').requiredOption('--idempotency-key <key>').requiredOption('--expected-current-digest <digest>').option('--human-ref <ref>').option('--acceptance-json <path>').option('--receipt-json <path>').option('--json').action((options:{demandId:string;transition:string;idempotencyKey:string;expectedCurrentDigest:string;humanRef?:string;acceptanceJson?:string;receiptJson?:string;json?:boolean})=>run(()=>{
+    const repoRoot=realpathSync(process.cwd());const status=readWorkDemandStatus(repoRoot,options.demandId);const actor:WorkDemandActorV1=options.humanRef?{kind:'human',principal_ref:options.humanRef}:{kind:'engineer',principal:status.demand.source_engineer};const acceptance=options.acceptanceJson?JSON.parse(readFileSync(options.acceptanceJson,'utf8')):null;const receipt=options.receiptJson?validateMaterializedWorkDemandReceipt(JSON.parse(readFileSync(options.receiptJson,'utf8'))):null;const result=transitionWorkDemand({repo_root:repoRoot,demand:status.demand,idempotency_key:options.idempotencyKey,transition:options.transition as WorkDemandTransition,expected_current_digest:options.expectedCurrentDigest,actor,acceptance,materialization_receipt:receipt});emit(result,options.json,`${result.current.state} ${status.demand.demand_id}`);
+  }));
+  workDemand.command('materialize').requiredOption('--demand-id <id>').option('--now <timestamp>').option('--json').action((options:{demandId:string;now?:string;json?:boolean})=>run(()=>{
+    const repoRoot=realpathSync(process.cwd());const status=readWorkDemandStatus(repoRoot,options.demandId);if(!status.current.accepted_projection)throw new CliArgumentError('WorkDemand has no accepted projection');const receipt=materializeWorkDemand({repo_root:repoRoot,demand:status.demand,projection:validateAcceptedWorkDemandProjection(status.current.accepted_projection),now:options.now?()=>options.now!:undefined});emit(receipt,options.json,`${receipt.materialized_commit} ${receipt.task_id}`);
+  }));
+  workDemand.command('status').option('--demand-id <id>').option('--json').action((options:{demandId?:string;json?:boolean})=>run(()=>{const repoRoot=realpathSync(process.cwd());if(options.demandId){const value=readWorkDemandStatus(repoRoot,options.demandId);emit(value,options.json,`${value.current.state} ${value.demand.demand_id}`);return;}const values=listWorkDemandStatuses(repoRoot);emit(values,options.json,values.map(item=>`${item.current.state} ${item.demand.demand_id}`).join('\n'));}));
+  engineer.addCommand(workDemand);
 
   engineer
     .command('bootstrap-prompt')

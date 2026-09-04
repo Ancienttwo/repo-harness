@@ -1,6 +1,10 @@
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
 
-import { validateAgentRuntimeHostAction, type AgentRuntimeAdapterObservationV2, type AgentRuntimeHostActionV2 } from '../../../core/engineers/agent-runtime-effect';
+import { validateAgentRuntimeHostAction, type AgentRuntimeAdapterObservationV2, type AgentRuntimeHostActionV2, type AgentRuntimeOperation } from '../../../core/engineers/agent-runtime-effect';
+
+/** The operations this adapter implements. An action naming anything else is
+ * reported as a typed `unsupported` observation instead of being attempted. */
+export const TMUX_CLI_AGENT_OPERATIONS: readonly AgentRuntimeOperation[] = Object.freeze(['notify_inbox', 'wake_for_offer']);
 
 export type TmuxEndpointResolver = (input: Readonly<{ host_id: string; endpoint_id: string }>) => string;
 export type TmuxSpawn = (command: string, args: readonly string[]) => SpawnSyncReturns<Buffer>;
@@ -14,6 +18,7 @@ export function executeTmuxCliAgentAction(
 ): AgentRuntimeAdapterObservationV2 {
   const action = validateAgentRuntimeHostAction(actionValue);
   if (action.adapter_kind !== 'tmux-cli-agent') throw new Error('agent_runtime_adapter_mismatch');
+  if (!TMUX_CLI_AGENT_OPERATIONS.includes(action.operation)) return Object.freeze({ adapter_kind: 'tmux-cli-agent', outcome: 'unsupported', process_exit_code: null, process_signal: null });
   let target: string;
   try { target = resolveEndpoint({ host_id: action.host_id, endpoint_id: action.endpoint_id }); }
   catch { return Object.freeze({ adapter_kind: 'tmux-cli-agent', outcome: 'unavailable', process_exit_code: null, process_signal: null }); }

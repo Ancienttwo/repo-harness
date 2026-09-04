@@ -1,10 +1,7 @@
 import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 
-import {
-  COMPLETED_ROW_STATUS_PATTERN,
-  projectCanonicalTasks,
-} from '../../core/state/coordination-identity';
+import { projectCanonicalTasks } from '../../core/state/coordination-identity';
 import {
   EngineerSchedulingError,
   buildEngineerOfferCandidate,
@@ -36,8 +33,15 @@ import {
   type RepoHarnessRegistrySnapshot,
 } from '../repo-registry';
 import { readEngineerBindingStatus } from './binding-store';
+import {
+  resolveDependencyObservation,
+  type DependencyAuthorityInput,
+  type DependencyAuthorityReaders,
+} from './dependency-authority';
 import { listLiveClaimActorReceiptsForEngineer } from './claim-actor-store';
 import { loadEngineerProfile, resolveCapabilityForEngineer } from './profile-store';
+import { observeRetryEligibility } from '../../core/engineers/automation-attempt';
+import { readTaskAutomationAttemptCurrent } from './automation-attempt-store';
 
 export interface ProjectedGraphRead {
   readonly repo: RepoHarnessRegisteredRepo;
@@ -52,11 +56,7 @@ export interface TrackedWorkGraphProjectionRead {
   readonly graph: ProjectedWorkGraphV1 | null;
 }
 
-export type DependencyAuthorityResolver = (input: {
-  readonly dependency: WorkPackageDependencyV1;
-  readonly target: ProjectedWorkPackageV1;
-  readonly graphs: readonly ProjectedWorkGraphV1[];
-}) => WorkPackageDependencyObservationV1;
+export type DependencyAuthorityResolver = (input: DependencyAuthorityInput) => WorkPackageDependencyObservationV1;
 
 export interface EngineerSchedulingDependencies {
   readonly readRegistry: typeof readRepoHarnessRegistrySnapshot;
@@ -72,6 +72,9 @@ export interface EngineerSchedulingDependencies {
   readonly readFileAtCommit: typeof gitFileAtCommit;
   readonly repoIdentity: typeof resolveRepoIdentity;
   readonly dependencyAuthority: DependencyAuthorityResolver;
+  readonly dependencyReaders: Partial<DependencyAuthorityReaders>;
+  readonly readAttemptCurrent: typeof readTaskAutomationAttemptCurrent;
+  readonly now: () => Date;
 }
 
 export interface CollectEngineerOffersOptions {
@@ -102,25 +105,6 @@ function fail(code: EngineerSchedulingError['code'], message: string, cause?: un
   throw new EngineerSchedulingError(code, message, cause);
 }
 
-function defaultDependencyAuthority(input: {
-  readonly dependency: WorkPackageDependencyV1;
-  readonly target: ProjectedWorkPackageV1;
-}): WorkPackageDependencyObservationV1 {
-  if (input.dependency.required_state !== 'canonical_done') {
-    return Object.freeze({ ...input.dependency, status: 'authority_unavailable', authority_revision: null });
-  }
-  const satisfied = COMPLETED_ROW_STATUS_PATTERN.test(input.target.task_status);
-  return Object.freeze({
-    ...input.dependency,
-    status: satisfied ? 'satisfied' : 'unsatisfied',
-    authority_revision: engineerSha256(canonicalEngineerJson({
-      task_id: input.target.task_id,
-      task_revision: input.target.task_revision,
-      task_status: input.target.task_status,
-    })),
-  });
-}
-
 function dependencies(overrides: Partial<EngineerSchedulingDependencies> = {}): EngineerSchedulingDependencies {
   return {
     readRegistry: readRepoHarnessRegistrySnapshot,
@@ -135,7 +119,10 @@ function dependencies(overrides: Partial<EngineerSchedulingDependencies> = {}): 
     readLease,
     readFileAtCommit: gitFileAtCommit,
     repoIdentity: resolveRepoIdentity,
-    dependencyAuthority: defaultDependencyAuthority,
+    dependencyAuthority: resolveDependencyObservation,
+    dependencyReaders: {},
+    readAttemptCurrent: readTaskAutomationAttemptCurrent,
+    now: () => new Date(),
     ...overrides,
   };
 }
@@ -268,16 +255,30 @@ function graphUniverse(
 
 function dependencyObservations(
   item: ProjectedWorkPackageV1,
-  graphs: readonly ProjectedWorkGraphV1[],
+  reads: readonly ProjectedGraphRead[],
+  registry: RepoHarnessRegistrySnapshot,
+  env: NodeJS.ProcessEnv | undefined,
   deps: EngineerSchedulingDependencies,
 ): readonly WorkPackageDependencyObservationV1[] {
   return Object.freeze(item.depends_on.map((dependency) => {
-    const target = graphs
-      .flatMap((graph) => graph.work_packages)
+    const target = reads
+      .flatMap((read) => read.graph === null ? [] : read.graph.work_packages)
       .find((candidate) => candidate.repository_id === dependency.repository_id
         && candidate.work_package_id === dependency.work_package_id);
     if (!target) fail('work_graph_invalid', `dependency target disappeared: ${dependency.repository_id}:${dependency.work_package_id}`);
-    return deps.dependencyAuthority({ dependency, target, graphs });
+    return deps.dependencyAuthority({
+      dependency,
+      target,
+      reads,
+      registry,
+      env,
+      readFileAtCommit: deps.readFileAtCommit,
+      readers: {
+        readCanonicalTargetRef: deps.readCanonicalTargetRef,
+        readLease: deps.readLease,
+        ...deps.dependencyReaders,
+      },
+    });
   }));
 }
 
@@ -353,10 +354,10 @@ export function collectEngineerOffers(options: CollectEngineerOffersOptions): En
     ...options.fleet_options,
   });
   const liveClaims = deps.listLiveClaims(repo.path, options.principal.engineer_id, deps.readLease).length;
-  const graphs = reads.flatMap((entry) => entry.graph === null ? [] : [entry.graph]);
   const candidates = current.graph.work_packages.map((item) => {
     const fleetOffer = fleet.offers.find((offer) => offer.task_id === item.task_id) ?? null;
     const concurrency = concurrencyObservation(repo.path, item, current.graph!, deps);
+    const retry = observeRetryEligibility({ policy: item.retry_policy, current: deps.readAttemptCurrent(repo.path, item.work_package_id, item.work_package_revision), work_package_revision: item.work_package_revision, observed_at: (options.now_ms === undefined ? deps.now() : new Date(options.now_ms)).toISOString() });
     return buildEngineerOfferCandidate({
       graph: current.graph!,
       work_package: item,
@@ -372,10 +373,11 @@ export function collectEngineerOffers(options: CollectEngineerOffersOptions): En
         binding_generation: binding.current.binding_generation,
       },
       fleet_offer: fleetOffer,
-      dependencies: dependencyObservations(item, graphs, deps),
+      dependencies: dependencyObservations(item, reads, registry, options.env, deps),
       concurrency_available: concurrency.available,
       concurrency_revision: concurrency.revision,
       active_claims: liveClaims,
+      retry,
     });
   });
   return buildEngineerOffersDocument({
