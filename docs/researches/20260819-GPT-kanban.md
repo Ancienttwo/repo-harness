@@ -1303,3 +1303,24 @@ task_id preimage 含 `repoIdentity`（git common dir 绝对路径，`src/effects
 ## Addendum (2026-08-20): cross-machine coordination stays a projection-source seam
 
 Ledger closure note: the deferred "cloud / cross-machine coordination" row was retired from `tasks/todos.md` as a design-decision record rather than deferrable work. The decision it recorded stays binding: WP1's correctness comes from git-derived, clock-free reclaim (worktree absence from `git worktree list` is the only reclaim evidence), and a pluggable lease store spanning machines would force that down to a TTL-lease consistency model. If a real multi-machine need ever appears, the forward seam is an additional projection input source (for example `gh pr list`) on top of the versioned `protocol: 1, kind: 'repo-harness-board'` envelope — never a swappable lease store.
+
+## Delivery closure (2026-09-04)
+
+The status table above is the 2026-08-19 point-in-time audit, not the current
+delivery state. WP-A/WP-B hardening, WP-C Board projection, and WP-D Hook
+visibility subsequently completed with passing archived reviews:
+
+- `plans/archive/plan-20260819-1519-coordination-lease-hardening.md`;
+- `plans/archive/plan-20260819-2109-wp2-board-projection.md`;
+- `plans/archive/plan-20260820-0159-wp3-hook-visibility.md`.
+
+WP-E remains deliberately unscheduled behind its measured-bottleneck trigger.
+The remaining coordination residuals are owned by `tasks/todos.md`; they do not
+make the A-D delivery incomplete.
+
+The quick-read cards in the 2026-08-28 collaboration umbrella PRD and the
+2026-08-30 R1 runtime PRD are also point-in-time planning snapshots. Their
+current delivery authorities are the 11/11 `Done` rows and Execution Log in
+`plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`,
+the completed collaboration workstream, and R1 PR #230 (`4f7cb37e`). Phase 2
+independent review and Phase 3 guarded merge remain explicitly deferred.

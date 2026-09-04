@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md` => `plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md` => `tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md` => `tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md` => `tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md`
+
 # Task Review: issue-278-dispatch-effect-fence
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md
-> **Contract**: tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md
-> **Notes File**: tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md
+> **Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Contract**: tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md
+> **Notes File**: tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-02 21:01
 > **Recommendation**: pass
@@ -35,7 +45,7 @@
 - Commands run: `repo-harness run verify-sprint --prepare-acceptance` (exit 0, `[ContractVerify] total=18 failed=0 status=Fulfilled`), then `repo-harness run verify-sprint` on the recorded receipt.
 - Manual checks: independent external review by Codex (`codex exec -s read-only`, codex-cli 0.150.1) against issue #278's acceptance criteria and this contract, judging the branch diff versus `origin/main`; verdict PASS with two LOW findings, both stale prose and neither a behaviour or contract violation - `tests/cli/collaboration.test.ts:190` and `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md:38`.
 - Supporting artifacts: `.ai/harness/checks/latest.json` (frozen evidence bundle, `review_subject_sha256: sha256:2c246c217fc329490f6dc3941c11975a5a4ff37ab2fbc8607396d96fed6e8263`, diff base `d8d62dea20c47d4f58638fbd4cfc93126f358144`).
-- Implementation notes reviewed: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md`, including the bounded D1 exception decision and the two-command architecture acceptance deviation.
+- Implementation notes reviewed: `tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md`, including the bounded D1 exception decision and the two-command architecture acceptance deviation.
 - Run snapshot: `.ai/harness/runs/run-20260903T000942-50475-20260902-2101-issue-278-dispatch-effect-fence.json`
 
 ## Acceptance Receipt Projection

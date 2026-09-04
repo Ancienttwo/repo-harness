@@ -1,11 +1,21 @@
+> **Archived**: 2026-09-04 18:58
+> **Related Plan**: plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1858
+> **Archive Projection V1**: `plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md` => `plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/notes/20260904-1209-refactor-discovery-proposal-authoring.notes.md` => `tasks/archive/notes-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md` => `tasks/archive/contract-20260904-1858-refactor-discovery-proposal-authoring.md`
+> **Archive Projection V1**: `tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md` => `tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md`
+
 # Implementation Notes: refactor-discovery-proposal-authoring
 
 > **Substantive Change SHA256**: `sha256:30e7aca094a0d5a930d8e691b5630cf753c90d8960493af3e6760a48a969e43b`
 
 > **Status**: Active
-> **Plan**: plans/plan-20260904-1209-refactor-discovery-proposal-authoring.md
-> **Contract**: tasks/contracts/20260904-1209-refactor-discovery-proposal-authoring.contract.md
-> **Review**: tasks/reviews/20260904-1209-refactor-discovery-proposal-authoring.review.md
+> **Plan**: plans/archive/plan-20260904-1209-refactor-discovery-proposal-authoring.md
+> **Contract**: tasks/archive/contract-20260904-1858-refactor-discovery-proposal-authoring.md
+> **Review**: tasks/archive/review-20260904-1858-refactor-discovery-proposal-authoring.md
 > **Last Updated**: 2026-09-04 12:09
 > **Lifecycle**: notes
 

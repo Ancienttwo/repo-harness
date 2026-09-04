@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md` => `plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md` => `tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md` => `tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md` => `tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md`
+
 # Implementation Notes: issue-278-dispatch-effect-fence
 
 > **Status**: Active
-> **Plan**: plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md
-> **Contract**: tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md
-> **Review**: tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md
+> **Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Contract**: tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md
+> **Review**: tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
 > **Substantive Change SHA256**: `sha256:4c68625c861a36d2e8e1d27cfebd18a43ab6bf9380294c05f8e9db3ec77f3c11`

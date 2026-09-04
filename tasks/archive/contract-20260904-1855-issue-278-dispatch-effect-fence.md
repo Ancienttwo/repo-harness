@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md` => `plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md` => `tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md` => `tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md` => `tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md`
+
 # Task Contract: issue-278-dispatch-effect-fence
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+> **Plan**: plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-02 21:01
-> **Review File**: `tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md`
-> **Notes File**: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md`
+> **Review File**: `tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md`
+> **Notes File**: `tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -67,10 +77,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md`
+- Source plan: `plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md`
-- Notes file: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md`
+- Review file: `tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md`
+- Notes file: `tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -102,9 +112,9 @@ allowed_paths:
   - CLAUDE.md
   - tasks/todos.md
   - plans/
-  - tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md
-  - tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md
-  - tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md
+  - tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md
+  - tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md
+  - tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md
 ```
 
 ## Evidence Requirements
@@ -152,11 +162,11 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md
+    - plans/archive/plan-20260902-2101-issue-278-dispatch-effect-fence.md
   artifacts_exist:
-    - tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md
-    - tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md
-    - tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md
+    - tasks/archive/contract-20260904-1855-issue-278-dispatch-effect-fence.md
+    - tasks/archive/review-20260904-1855-issue-278-dispatch-effect-fence.md
+    - tasks/archive/notes-20260904-1855-issue-278-dispatch-effect-fence.md
   tests_pass:
     - path: tests/effects/collaboration-dispatch-effect-fence.test.ts
     - path: tests/effects/collaboration-dispatch-fence-composed.test.ts

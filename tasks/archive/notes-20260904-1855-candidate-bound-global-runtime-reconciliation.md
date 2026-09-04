@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md` => `plans/archive/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md`
+> **Archive Projection V1**: `tasks/notes/20260904-0226-candidate-bound-global-runtime-reconciliation.notes.md` => `tasks/archive/notes-20260904-1855-candidate-bound-global-runtime-reconciliation.md`
+> **Archive Projection V1**: `tasks/contracts/20260904-0226-candidate-bound-global-runtime-reconciliation.contract.md` => `tasks/archive/contract-20260904-1855-candidate-bound-global-runtime-reconciliation.md`
+> **Archive Projection V1**: `tasks/reviews/20260904-0226-candidate-bound-global-runtime-reconciliation.review.md` => `tasks/archive/review-20260904-1855-candidate-bound-global-runtime-reconciliation.md`
+
 # Implementation Notes: candidate-bound-global-runtime-reconciliation
 
 > **Status**: Active
-> **Plan**: plans/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md
-> **Contract**: tasks/contracts/20260904-0226-candidate-bound-global-runtime-reconciliation.contract.md
-> **Review**: tasks/reviews/20260904-0226-candidate-bound-global-runtime-reconciliation.review.md
+> **Plan**: plans/archive/plan-20260904-0226-candidate-bound-global-runtime-reconciliation.md
+> **Contract**: tasks/archive/contract-20260904-1855-candidate-bound-global-runtime-reconciliation.md
+> **Review**: tasks/archive/review-20260904-1855-candidate-bound-global-runtime-reconciliation.md
 > **Last Updated**: 2026-09-04 02:26
 > **Lifecycle**: notes
 

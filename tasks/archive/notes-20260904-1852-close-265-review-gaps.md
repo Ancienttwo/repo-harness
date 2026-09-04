@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:52
+> **Related Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1852
+> **Archive Projection V1**: `plans/plan-20260901-1119-close-265-review-gaps.md` => `plans/archive/plan-20260901-1119-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/notes/20260901-1119-close-265-review-gaps.notes.md` => `tasks/archive/notes-20260904-1852-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-1119-close-265-review-gaps.contract.md` => `tasks/archive/contract-20260904-1852-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-1119-close-265-review-gaps.review.md` => `tasks/archive/review-20260904-1852-close-265-review-gaps.md`
+
 # Implementation Notes: close-265-review-gaps
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260901-1119-close-265-review-gaps.md
-> **Contract**: tasks/contracts/20260901-1119-close-265-review-gaps.contract.md
-> **Review**: tasks/reviews/20260901-1119-close-265-review-gaps.review.md
+> **Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
+> **Contract**: tasks/archive/contract-20260904-1852-close-265-review-gaps.md
+> **Review**: tasks/archive/review-20260904-1852-close-265-review-gaps.md
 > **Last Updated**: 2026-09-01 11:19
 > **Lifecycle**: notes
 

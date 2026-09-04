@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 18:55
+> **Related Plan**: plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-1855
+> **Archive Projection V1**: `plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md` => `plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md` => `tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md` => `tasks/archive/contract-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md` => `tasks/archive/review-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
+
 # Task Review: brc4b-oracle-version-pin-gate-findings
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
-> **Contract**: tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md
-> **Notes File**: tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md
+> **Plan**: plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
+> **Contract**: tasks/archive/contract-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
+> **Notes File**: tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-03 04:38
 > **Recommendation**: pass
@@ -26,7 +36,7 @@
 ## Mode Evidence
 
 - Selected route: planning (captured work-package plan)
-- P1/P2/P3 evidence: `plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md` Captured Planning Output (P1 map, P2 trace, P3 decision)
+- P1/P2/P3 evidence: `plans/archive/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md` Captured Planning Output (P1 map, P2 trace, P3 decision)
 - Root cause or plan evidence: `src/cli/chatgpt-browser/oracle-provider.ts` pinned `0.14.1` against the installed Oracle `0.18.0`; pre-fix capture in `.ai/harness/evidence/brc4b-pre-fix.txt` (`PRE_FIX_EXIT=1`)
 
 ## Verification Evidence
@@ -35,7 +45,7 @@
 - Commands run: see the Human Review Card `Commands passed` line
 - Manual checks: `bun src/cli/index.ts chatgpt browser-doctor --provider oracle --json` on the host Oracle 0.18.0 reports `status: "ready"`, `versionCompatible: true`, `missingCapabilities: []` and no `browserCookiePath` key; `browser-consult --provider oracle --dry-run` against the real profile binding still renders `--copy-profile` plus `--browser-chrome-profile "Profile 11"` and no `--browser-cookie-path`
 - Supporting artifacts: `.ai/harness/checks/latest.json`, `.ai/harness/evidence/brc4b-pre-fix.txt`
-- Implementation notes reviewed: `tasks/notes/20260903-0438-brc4b-oracle-version-pin-gate-findings.notes.md`
+- Implementation notes reviewed: `tasks/archive/notes-20260904-1855-brc4b-oracle-version-pin-gate-findings.md`
 - Run snapshot: `.ai/harness/runs/run-20260903T050827-60435-20260903-0438-brc4b-oracle-version-pin-gate-findings.json`
 
 ## Acceptance Receipt Projection

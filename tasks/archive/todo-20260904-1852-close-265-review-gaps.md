@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-04 18:52
+> **Related Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260904-1852
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: 2026-09-04 18:58
+> **Updated**: (archive-workflow)
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

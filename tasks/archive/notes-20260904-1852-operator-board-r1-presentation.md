@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-04 18:52
+> **Related Plan**: plans/archive/plan-20260831-1239-operator-board-r1-presentation.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260904-1852
+> **Archive Projection V1**: `plans/plan-20260831-1239-operator-board-r1-presentation.md` => `plans/archive/plan-20260831-1239-operator-board-r1-presentation.md`
+> **Archive Projection V1**: `tasks/notes/20260831-1239-operator-board-r1-presentation.notes.md` => `tasks/archive/notes-20260904-1852-operator-board-r1-presentation.md`
+> **Archive Projection V1**: `tasks/contracts/20260831-1239-operator-board-r1-presentation.contract.md` => `tasks/archive/contract-20260904-1852-operator-board-r1-presentation.md`
+> **Archive Projection V1**: `tasks/reviews/20260831-1239-operator-board-r1-presentation.review.md` => `tasks/archive/review-20260904-1852-operator-board-r1-presentation.md`
+
 # Implementation Notes: operator-board-r1-presentation
 
 ## P1 Architecture Map
@@ -16,9 +26,9 @@
 Consume protocol 3 literally, reject other protocols, render the snapshot protocol rather than a UI constant, and render runtime/delivery as secondary evidence plus exception-only badges. Preserve the existing worklist/five-column semantics and visual system. No compatibility adapter or inferred status is permitted.
 
 > **Status**: Active
-> **Plan**: plans/plan-20260831-1239-operator-board-r1-presentation.md
-> **Contract**: tasks/contracts/20260831-1239-operator-board-r1-presentation.contract.md
-> **Review**: tasks/reviews/20260831-1239-operator-board-r1-presentation.review.md
+> **Plan**: plans/archive/plan-20260831-1239-operator-board-r1-presentation.md
+> **Contract**: tasks/archive/contract-20260904-1852-operator-board-r1-presentation.md
+> **Review**: tasks/archive/review-20260904-1852-operator-board-r1-presentation.md
 > **Last Updated**: 2026-08-31 13:11
 > **Lifecycle**: notes
 

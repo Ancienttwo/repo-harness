@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-04 18:52
+> **Related Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260904-1852
+> **Archive Projection V1**: `plans/plan-20260901-1119-close-265-review-gaps.md` => `plans/archive/plan-20260901-1119-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/notes/20260901-1119-close-265-review-gaps.notes.md` => `tasks/archive/notes-20260904-1852-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-1119-close-265-review-gaps.contract.md` => `tasks/archive/contract-20260904-1852-close-265-review-gaps.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-1119-close-265-review-gaps.review.md` => `tasks/archive/review-20260904-1852-close-265-review-gaps.md`
+
 # Task Contract: close-265-review-gaps
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260901-1119-close-265-review-gaps.md
+> **Plan**: plans/archive/plan-20260901-1119-close-265-review-gaps.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-01 11:19
-> **Review File**: `tasks/reviews/20260901-1119-close-265-review-gaps.review.md`
-> **Notes File**: `tasks/notes/20260901-1119-close-265-review-gaps.notes.md`
+> **Review File**: `tasks/archive/review-20260904-1852-close-265-review-gaps.md`
+> **Notes File**: `tasks/archive/notes-20260904-1852-close-265-review-gaps.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -60,10 +70,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260901-1119-close-265-review-gaps.md`
+- Source plan: `plans/archive/plan-20260901-1119-close-265-review-gaps.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260901-1119-close-265-review-gaps.review.md`
-- Notes file: `tasks/notes/20260901-1119-close-265-review-gaps.notes.md`
+- Review file: `tasks/archive/review-20260904-1852-close-265-review-gaps.md`
+- Notes file: `tasks/archive/notes-20260904-1852-close-265-review-gaps.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -97,9 +107,9 @@ allowed_paths:
   - plans/
   - scripts/
   - tasks/todos.md
-  - tasks/contracts/20260901-1119-close-265-review-gaps.contract.md
-  - tasks/reviews/20260901-1119-close-265-review-gaps.review.md
-  - tasks/notes/20260901-1119-close-265-review-gaps.notes.md
+  - tasks/archive/contract-20260904-1852-close-265-review-gaps.md
+  - tasks/archive/review-20260904-1852-close-265-review-gaps.md
+  - tasks/archive/notes-20260904-1852-close-265-review-gaps.md
   - .ai/context/capabilities.json
   - .claude/templates/
   - src/
@@ -151,11 +161,11 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - plans/plan-20260901-1119-close-265-review-gaps.md
+    - plans/archive/plan-20260901-1119-close-265-review-gaps.md
   artifacts_exist:
-    - tasks/contracts/20260901-1119-close-265-review-gaps.contract.md
-    - tasks/reviews/20260901-1119-close-265-review-gaps.review.md
-    - tasks/notes/20260901-1119-close-265-review-gaps.notes.md
+    - tasks/archive/contract-20260904-1852-close-265-review-gaps.md
+    - tasks/archive/review-20260904-1852-close-265-review-gaps.md
+    - tasks/archive/notes-20260904-1852-close-265-review-gaps.md
   tests_pass:
     - path: tests/cli/operator-serve.test.ts
     - path: tests/effects/operator-task-message.test.ts

@@ -1,14 +1,18 @@
 # Refactor Program
 
-## Responsibility
+## 1. P1:能力架构地圖
+
+### Responsibility
 
 The Refactor Program capability owns repo-harness orchestration around the package-local ArchContext refactor provider. ArchContext remains the only structural-analysis and recommendation-lifecycle authority; repo-harness owns accountable proposal authoring, policy, workflow routing, execution evidence, and closure.
 
-## Runtime Boundary
+### Runtime Boundary
 
 - Core contracts and pure projections live under `src/core/refactor/`.
 - Provider calls, Git-common-directory program state, materialization, verification, and resolution effects live under `src/effects/refactor/`.
 - The operator entrypoint is `src/cli/commands/refactor.ts` once the program lifecycle is activated.
+
+## 2. P2:端到端數據流
 
 The implemented paths are:
 
@@ -99,7 +103,7 @@ sequenceDiagram
   S-->>O: validated projection
 ```
 
-## Invariants
+## 3. P3:設計決策與不變量
 
 - No local module statistics, dependency analysis, cycle detection, refactor scoring, or scale inference.
 - No copied recommendation status or locally synthesized resolution.
