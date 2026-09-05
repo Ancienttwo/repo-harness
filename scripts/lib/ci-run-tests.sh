@@ -41,7 +41,7 @@ run_bun_tests() {
         failed_count=$((failed_count + 1))
         failed_list+="  $file (exit $status)"$'\n'
       fi
-    done < <(find tests -type f -name '*.test.ts' | LC_ALL=C sort)
+    done < <(find tests -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | LC_ALL=C sort)
   fi
 
   if [[ "$found" != "1" ]]; then
