@@ -130,7 +130,7 @@ describe('operator browser payload contracts', () => {
     const payload = validFleetPayload();
     const repositories = payload.repositories as Array<Record<string, unknown>>;
     const cards = repositories[0]!.cards as Array<Record<string, unknown>>;
-    cards[0] = { ...cards[0], inbox: { ...(cards[0]!.inbox as Record<string, unknown>), effect_sha256 } };
+    cards[0] = { ...cards[0], inbox: { ...(cards[0]!.inbox as Record<string, unknown>), effect_sha256: effectSha256 } };
     expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
   });
 
@@ -258,7 +258,7 @@ describe('operator browser payload contracts', () => {
   // Every repository error code the transport can carry is client-owned copy.
   // The server sentence is a diagnostic contract, not board copy, so leaving a
   // code unlocalized is what put nine English sentences in the Chinese board.
-  test.each(OPERATOR_REPOSITORY_ERROR_CODES)('localizes repository error %s in both locales', (code) => {
+  test.each([...OPERATOR_REPOSITORY_ERROR_CODES])('localizes repository error %s in both locales', (code) => {
     const key = `repo.error.${code}` as OperatorMessageKey;
     expect(isOperatorMessageKey(`repo.error.${code}`)).toBe(true);
     expect(translate('en', key).length).toBeGreaterThan(0);
@@ -268,7 +268,7 @@ describe('operator browser payload contracts', () => {
   // The API error catalogue is closed on the client too: every code the three
   // routes the browser calls can return has its own localized sentence and
   // recovery action, so nothing reaches the board as an untranslated fallback.
-  test.each(OPERATOR_API_ERROR_CODES)('localizes API error %s in both locales', (code) => {
+  test.each([...OPERATOR_API_ERROR_CODES])('localizes API error %s in both locales', (code) => {
     for (const suffix of ['message', 'action'] as const) {
       const key = `error.${code}.${suffix}`;
       expect(isOperatorMessageKey(key)).toBe(true);

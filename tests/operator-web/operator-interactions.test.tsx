@@ -1486,7 +1486,7 @@ describe('operator web composer target truth', () => {
     await act(async () => composerToggle().click());
   }
 
-  test.each(heldCases)('names the $lease holder instead of claiming the task is unheld', async (entry) => {
+  test.each([...heldCases])('names the $lease holder instead of claiming the task is unheld', async (entry) => {
     const claim = entry.task.claim_id.slice(-8);
     await openLeaseStateComposer(entry.task.task_label, entry.group);
 
@@ -1503,7 +1503,7 @@ describe('operator web composer target truth', () => {
     expect(sendButton().textContent).not.toBe('Send to the next claimant');
   });
 
-  test.each(heldCases)('names the $lease holder in Chinese too', async (entry) => {
+  test.each([...heldCases])('names the $lease holder in Chinese too', async (entry) => {
     const claim = entry.task.claim_id.slice(-8);
     await openLeaseStateComposer(entry.task.task_label, entry.group);
     await act(async () => buttonWithText('中').click());
