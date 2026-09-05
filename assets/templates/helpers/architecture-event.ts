@@ -1128,11 +1128,24 @@ function syncContextMap(args: Args): void {
 
   if (!Array.isArray(data.discoverable_contexts)) data.discoverable_contexts = [];
 
+  // Root-facing capabilities declare the root contract files, which the root
+  // context already loads. Registering them here would make one path a
+  // discoverable context under every root-facing capability id.
+  const rootContextFiles = new Set<string>(
+    Array.isArray(data.root_context_files) && data.root_context_files.length > 0
+      ? data.root_context_files
+      : defaultContextMap().root_context_files,
+  );
+
   for (const [fileName, entryPath] of [
     ["CLAUDE.md", contractClaude],
     ["AGENTS.md", contractAgents],
   ]) {
     const targetAgent = fileName === "CLAUDE.md" ? "claude" : "codex";
+    if (rootContextFiles.has(entryPath)) {
+      console.log(`[ArchitectureEvent] context map: skipped root context file ${entryPath}`);
+      continue;
+    }
     if (!data.discoverable_contexts.some((entry: any) => entry && entry.path === entryPath)) {
       data.discoverable_contexts.push({
         path: entryPath,

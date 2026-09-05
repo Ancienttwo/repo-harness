@@ -533,6 +533,41 @@ describe("architecture-event helper", () => {
     }
   }, 30_000);
 
+  test("skips root context files instead of registering them as discoverable contexts", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-context-map-root-"));
+    try {
+      const args = [
+        "sync-context-map",
+        "--context-map",
+        ".ai/context/context-map.json",
+        "--block",
+        "SKILL.md",
+        "--capability-id",
+        "public-surface-root-router",
+        "--contract-agents",
+        "AGENTS.md",
+        "--contract-claude",
+        "CLAUDE.md",
+        "--architecture-domain",
+        "public-surface",
+        "--architecture-capability",
+        "root-router",
+        "--lsp-profile",
+        "typescript-lsp",
+      ];
+
+      const result = runArchitectureEvent(args, cwd);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("skipped root context file CLAUDE.md");
+      expect(result.stdout).toContain("skipped root context file AGENTS.md");
+
+      const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
+      expect(contextMap.discoverable_contexts).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("syncs architecture contract blocks without shell rendering", () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-event-contract-files-"));
     try {
