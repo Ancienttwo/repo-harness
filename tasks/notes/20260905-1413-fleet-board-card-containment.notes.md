@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
 > **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
 > **Review**: tasks/reviews/20260905-1413-fleet-board-card-containment.review.md
-> **Last Updated**: 2026-09-05 16:52
+> **Last Updated**: 2026-09-05 17:50
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -65,8 +65,18 @@
   minimal blocking fix is in scope: `decodeCard` reuses the existing
   `decodeError` allowlist for the card error and `decodeOperatorFleetSnapshot`
   requires `counts.unclassified`, plus the demo fixture literals. Board chips,
-  composer copy, i18n, and styling for the new fields stay with the sibling
-  browser package.
+  composer copy, styling for the new fields, and all other client i18n work stay
+  with the sibling browser package.
+- `origin_required` was added to `OPERATOR_API_ERROR_CODES` in
+  `src/operator-web/types.ts` with en/zh copy in `src/operator-web/i18n.ts`. The
+  merged server (`src/effects/operator/server.ts`) already returns that code, so
+  without the client entry the board raised `OperatorPayloadError` on a
+  legitimate 403 instead of naming it. The #316 acceptance gate recorded this as
+  "`origin_required` absent from the client i18n catalogue" and deferred it to
+  ride this branch; the orchestrator adopted it here. The i18n half is not
+  optional polish: `test.each([...OPERATOR_API_ERROR_CODES])` requires every code
+  to resolve a message and an action in both locales, so adding the code without
+  both locales fails the guard.
 - Two existing tests encoded the old lock order and had to change meaning, not
   just shape. `tests/effects/operator-task-message.test.ts` no longer asserts
   that a sender holding registry authorization publishes ahead of a waiting

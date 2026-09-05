@@ -5,7 +5,7 @@
 > **Task Profile**: bugfix
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-05 16:52
+> **Last Updated**: 2026-09-05 17:50
 > **Review File**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
 > **Notes File**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -38,12 +38,17 @@ machine-global registry authorization lock across the per-task lock.
   event-loop yields plus deadline preemption bookkeeping; provider limiter slot
   transfer; registry authority realpath comparison; Agent Runtime read folded into
   card consistency; registry/task lock order in the operator write.
-- Also in scope, as the one blocking out-of-scope fix: the browser transport
-  decode of the two additive fields in `src/operator-web/types.ts` and
-  `src/operator-web/fixture.ts`, because they are required members of the type
-  the browser shares and the branch must type-check on its own.
-- Out of scope: browser board chips, composer copy, i18n, and styling for the
-  new fields; deriving the claim-scope canonical fence from the lease record;
+- Also in scope, as the two orchestrator-authorized out-of-scope fixes:
+  (1) the browser transport decode of the two additive fields in
+  `src/operator-web/types.ts` and `src/operator-web/fixture.ts`, because they are
+  required members of the type the browser shares and the branch must type-check
+  on its own; (2) the `origin_required` error code in `src/operator-web/types.ts`
+  and its en/zh copy in `src/operator-web/i18n.ts`, deferred from the #316
+  acceptance gate, because the merged server (`src/effects/operator/server.ts`)
+  already emits that code and the client decoder rejects it.
+- Out of scope: browser board chips, composer copy, and styling for the new
+  fields; all client i18n work other than the `origin_required` copy above;
+  deriving the claim-scope canonical fence from the lease record;
   `task_label` null versus empty-cell ambiguity; R1 delivery/reachability
   contributing to `attention_owner`.
 - Taste constraints: keep the public repository/card error vocabulary closed and
@@ -121,6 +126,9 @@ allowed_paths:
   # the transport type this browser package constructs by literal.
   - src/operator-web/types.ts
   - src/operator-web/fixture.ts
+  # Adopted #316 gate deferral: the client must decode and name `origin_required`,
+  # a code the merged server already emits.
+  - src/operator-web/i18n.ts
   - tests/
   - docs/architecture/
   - plans/plan-20260905-1413-fleet-board-card-containment.md
