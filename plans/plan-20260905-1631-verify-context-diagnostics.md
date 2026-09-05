@@ -31,7 +31,8 @@ scripts/verify-sprint.sh; assets/templates/helpers/verify-sprint.sh; tests/helpe
 - [x] Add failure-only diagnostics at the owning comparison branch and regenerate its helper projection.
 - [x] Verify drift, stable acceptance, unavailable identity, helper/package projection, and appropriate integrity checks.
 - [x] Record root-cause evidence and validation, commit the bounded patch, and report the actual integration state.
-- [ ] Resolve the separately owned workflow-checker conflict and safe main integration before closing the branch.
+- [x] Resolve the separately owned workflow-checker conflict and integrate into clean local main.
+- [ ] Archive the fulfilled plan when the existing archive workflow supports standard single-plan completion; see Archive Boundary.
 
 ## Promotion Gate
 
@@ -101,7 +102,7 @@ The prerequisite landed as `6c19234e`, with all staged blobs verified against th
 - Merged typecheck, 56 helper projections, 23 reference projections, shell syntax and whitespace: pass.
 - Merged deploy SQL, strict workflow, project inspector and init dry-run: pass; no drift or planned init operations. Architecture sync passes with pending/running/dead-letters all zero.
 - Task-sync comparison is bound to prerequisite `6c19234e` and the final substantive digest above. Earlier verification results retain their original scope; this combined run covers the actual overlapping test seam.
-- The merge is ready for a compare-and-swap guarded local-main fast-forward. Record its resulting commit before declaring integration complete.
+- Local main was checked clean at `6c19234e` immediately before a fast-forward to merge commit `a0bcf49d`. Both prerequisite `6c19234e` and diagnostics `be6e90f8` are ancestors of main; the post-merge worktree is clean. The only delta from the prerequisite is the five-path diagnostics patch and its evidence. Main integration is complete.
 
 ## Archive Boundary
 
