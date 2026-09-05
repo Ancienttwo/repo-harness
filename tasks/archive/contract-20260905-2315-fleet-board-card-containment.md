@@ -1,13 +1,23 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1413-fleet-board-card-containment.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1413-fleet-board-card-containment.md` => `plans/archive/plan-20260905-1413-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md` => `tasks/archive/notes-20260905-2315-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md` => `tasks/archive/contract-20260905-2315-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md` => `tasks/archive/review-20260905-2315-fleet-board-card-containment.md`
+
 # Task Contract: fleet-board-card-containment
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
+> **Plan**: plans/archive/plan-20260905-1413-fleet-board-card-containment.md
 > **Task Profile**: bugfix
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-05 17:50
-> **Review File**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
-> **Notes File**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
+> **Review File**: `tasks/archive/review-20260905-2315-fleet-board-card-containment.md`
+> **Notes File**: `tasks/archive/notes-20260905-2315-fleet-board-card-containment.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 > **Substantive Change SHA256**: `sha256:49ebb4d965c54723072d188d36a2d34a2b74617f5f0398fe9fe5bf5436cd3a13`
 
@@ -91,10 +101,10 @@ produces `status: 'ok'` with a typed card error.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260905-1413-fleet-board-card-containment.md`
+- Source plan: `plans/archive/plan-20260905-1413-fleet-board-card-containment.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
-- Notes file: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
+- Review file: `tasks/archive/review-20260905-2315-fleet-board-card-containment.md`
+- Notes file: `tasks/archive/notes-20260905-2315-fleet-board-card-containment.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -131,11 +141,11 @@ allowed_paths:
   - src/operator-web/i18n.ts
   - tests/
   - docs/architecture/
-  - plans/plan-20260905-1413-fleet-board-card-containment.md
+  - plans/archive/plan-20260905-1413-fleet-board-card-containment.md
   - tasks/todos.md
-  - tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
-  - tasks/reviews/20260905-1413-fleet-board-card-containment.review.md
-  - tasks/notes/20260905-1413-fleet-board-card-containment.notes.md
+  - tasks/archive/contract-20260905-2315-fleet-board-card-containment.md
+  - tasks/archive/review-20260905-2315-fleet-board-card-containment.md
+  - tasks/archive/notes-20260905-2315-fleet-board-card-containment.md
 ```
 
 ## Evidence Requirements
@@ -185,7 +195,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260905-1413-fleet-board-card-containment.notes.md
+    - tasks/archive/notes-20260905-2315-fleet-board-card-containment.md
   tests_pass:
     - path: tests/effects/fleet-board.test.ts
     - path: tests/unit/fleet-board.test.ts

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1414-operator-server-write-gate.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1414-operator-server-write-gate.md` => `plans/archive/plan-20260905-1414-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md` => `tasks/archive/notes-20260905-2315-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1414-operator-server-write-gate.contract.md` => `tasks/archive/contract-20260905-2315-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1414-operator-server-write-gate.review.md` => `tasks/archive/review-20260905-2315-operator-server-write-gate.md`
+
 # Implementation Notes: operator-server-write-gate
 
 > **Status**: Active
-> **Plan**: plans/plan-20260905-1414-operator-server-write-gate.md
-> **Contract**: tasks/contracts/20260905-1414-operator-server-write-gate.contract.md
-> **Review**: tasks/reviews/20260905-1414-operator-server-write-gate.review.md
+> **Plan**: plans/archive/plan-20260905-1414-operator-server-write-gate.md
+> **Contract**: tasks/archive/contract-20260905-2315-operator-server-write-gate.md
+> **Review**: tasks/archive/review-20260905-2315-operator-server-write-gate.md
 > **Last Updated**: 2026-09-05 14:14
 > **Lifecycle**: notes
 

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1414-operator-server-write-gate.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1414-operator-server-write-gate.md` => `plans/archive/plan-20260905-1414-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md` => `tasks/archive/notes-20260905-2315-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1414-operator-server-write-gate.contract.md` => `tasks/archive/contract-20260905-2315-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1414-operator-server-write-gate.review.md` => `tasks/archive/review-20260905-2315-operator-server-write-gate.md`
+
 # Task Review: operator-server-write-gate
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260905-1414-operator-server-write-gate.md
-> **Contract**: tasks/contracts/20260905-1414-operator-server-write-gate.contract.md
-> **Notes File**: tasks/notes/20260905-1414-operator-server-write-gate.notes.md
+> **Plan**: plans/archive/plan-20260905-1414-operator-server-write-gate.md
+> **Contract**: tasks/archive/contract-20260905-2315-operator-server-write-gate.md
+> **Notes File**: tasks/archive/notes-20260905-2315-operator-server-write-gate.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 14:14
 > **Recommendation**: pass
@@ -35,7 +45,7 @@
 
 - Selected route: planning (captured work-package plan executed in an isolated
   contract worktree).
-- P1/P2/P3 evidence: `plans/plan-20260905-1414-operator-server-write-gate.md`
+- P1/P2/P3 evidence: `plans/archive/plan-20260905-1414-operator-server-write-gate.md`
   `## Captured Planning Output`.
 - Root cause or plan evidence: `## Root Cause Evidence` in the contract, backed
   by `.ai/harness/evidence/pre-fix/operator-serve.test.log` (`PRE_FIX_EXIT=1`,
@@ -54,7 +64,7 @@
   `bash scripts/check-task-workflow.sh --strict`;
   `bun scripts/inspect-project-state.ts --repo . --format text`;
   `bun src/cli/index.ts init --repo . --dry-run`; `bun test --timeout 60000`;
-  `bun src/cli/index.ts run verify-contract --contract tasks/contracts/20260905-1414-operator-server-write-gate.contract.md --strict`
+  `bun src/cli/index.ts run verify-contract --contract tasks/archive/contract-20260905-2315-operator-server-write-gate.md --strict`
   (27/27 Fulfilled).
 - Manual checks: live loopback probe against `bun src/cli/index.ts operator
   serve --port 0` — an aborted snapshot followed immediately by a re-request
@@ -66,7 +76,7 @@
   `Content-Security-Policy`. A separate run with stdout and stderr split proved
   stdout stays the single bound-URL line while refusals go to stderr.
 - Supporting artifacts: pre-fix logs under `.ai/harness/evidence/pre-fix/`.
-- Implementation notes reviewed: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md`.
+- Implementation notes reviewed: `tasks/archive/notes-20260905-2315-operator-server-write-gate.md`.
 - Run snapshot: `.ai/harness/runs/`
 
 ## Acceptance Receipt Projection
@@ -132,7 +142,7 @@
 ## Retest Steps
 
 - Re-run: `bun test --timeout 60000 tests/cli/operator-serve.test.ts tests/effects/operator-write-boundary.test.ts`
-- Re-check: `bun src/cli/index.ts run verify-contract --contract tasks/contracts/20260905-1414-operator-server-write-gate.contract.md --strict`
+- Re-check: `bun src/cli/index.ts run verify-contract --contract tasks/archive/contract-20260905-2315-operator-server-write-gate.md --strict`
 
 ## Summary
 

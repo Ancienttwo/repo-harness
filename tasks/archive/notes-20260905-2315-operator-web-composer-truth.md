@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1414-operator-web-composer-truth.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1414-operator-web-composer-truth.md` => `plans/archive/plan-20260905-1414-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1414-operator-web-composer-truth.notes.md` => `tasks/archive/notes-20260905-2315-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md` => `tasks/archive/contract-20260905-2315-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1414-operator-web-composer-truth.review.md` => `tasks/archive/review-20260905-2315-operator-web-composer-truth.md`
+
 # Implementation Notes: operator-web-composer-truth
 
 > **Status**: Active
-> **Plan**: plans/plan-20260905-1414-operator-web-composer-truth.md
-> **Contract**: tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md
-> **Review**: tasks/reviews/20260905-1414-operator-web-composer-truth.review.md
+> **Plan**: plans/archive/plan-20260905-1414-operator-web-composer-truth.md
+> **Contract**: tasks/archive/contract-20260905-2315-operator-web-composer-truth.md
+> **Review**: tasks/archive/review-20260905-2315-operator-web-composer-truth.md
 > **Last Updated**: 2026-09-05 14:14
 > **Lifecycle**: notes
 

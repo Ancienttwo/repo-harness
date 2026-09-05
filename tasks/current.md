@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T23:07:43+0800 -->
+<!-- updated_at: 2026-09-05T23:15:59+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-09-05T23:07:43+0800
-> **Source Branch**: codex/campaign-authoring-budget-prerequisite
-> **Source Commit**: 803b582c
+> **Updated At**: 2026-09-05T23:15:59+0800
+> **Source Branch**: codex/task-board-closeout
+> **Source Commit**: 26bae0b4
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -54,23 +54,42 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 29 changed/untracked path(s)
 
 ```
- D plans/plan-20260905-1841-campaign-authoring-budget-prerequisite.md
- D tasks/contracts/20260905-1841-campaign-authoring-budget-prerequisite.contract.md
- D tasks/notes/20260905-1841-campaign-authoring-budget-prerequisite.notes.md
- D tasks/reviews/20260905-1841-campaign-authoring-budget-prerequisite.review.md
+ D plans/plan-20260905-1413-fleet-board-card-containment.md
+ D plans/plan-20260905-1414-operator-server-write-gate.md
+ D plans/plan-20260905-1414-operator-web-composer-truth.md
+ D tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
+ D tasks/contracts/20260905-1414-operator-server-write-gate.contract.md
+ D tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md
+ M tasks/current.md
+ D tasks/notes/20260905-1413-fleet-board-card-containment.notes.md
+ D tasks/notes/20260905-1414-operator-server-write-gate.notes.md
+ D tasks/notes/20260905-1414-operator-web-composer-truth.notes.md
+ D tasks/reviews/20260905-1413-fleet-board-card-containment.review.md
+ D tasks/reviews/20260905-1414-operator-server-write-gate.review.md
+ D tasks/reviews/20260905-1414-operator-web-composer-truth.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260905-1841-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/contract-20260905-2307-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/notes-20260905-2307-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/review-20260905-2307-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/todo-20260905-2307-campaign-authoring-budget-prerequisite.md
+?? plans/archive/plan-20260905-1413-fleet-board-card-containment.md
+?? plans/archive/plan-20260905-1414-operator-server-write-gate.md
+?? plans/archive/plan-20260905-1414-operator-web-composer-truth.md
+?? tasks/archive/contract-20260905-2315-fleet-board-card-containment.md
+?? tasks/archive/contract-20260905-2315-operator-server-write-gate.md
+?? tasks/archive/contract-20260905-2315-operator-web-composer-truth.md
+?? tasks/archive/notes-20260905-2315-fleet-board-card-containment.md
+?? tasks/archive/notes-20260905-2315-operator-server-write-gate.md
+?? tasks/archive/notes-20260905-2315-operator-web-composer-truth.md
+?? tasks/archive/review-20260905-2315-fleet-board-card-containment.md
+?? tasks/archive/review-20260905-2315-operator-server-write-gate.md
+?? tasks/archive/review-20260905-2315-operator-web-composer-truth.md
+?? tasks/archive/todo-20260905-2315-fleet-board-card-containment.md
+?? tasks/archive/todo-20260905-2315-operator-server-write-gate.md
+?? tasks/archive/todo-20260905-2315-operator-web-composer-truth.md
 ```
 
 ## Source Artifacts

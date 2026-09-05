@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1413-fleet-board-card-containment.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1413-fleet-board-card-containment.md` => `plans/archive/plan-20260905-1413-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md` => `tasks/archive/notes-20260905-2315-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md` => `tasks/archive/contract-20260905-2315-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md` => `tasks/archive/review-20260905-2315-fleet-board-card-containment.md`
+
 # Implementation Notes: fleet-board-card-containment
 
 > **Status**: Active
-> **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
-> **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
-> **Review**: tasks/reviews/20260905-1413-fleet-board-card-containment.review.md
+> **Plan**: plans/archive/plan-20260905-1413-fleet-board-card-containment.md
+> **Contract**: tasks/archive/contract-20260905-2315-fleet-board-card-containment.md
+> **Review**: tasks/archive/review-20260905-2315-fleet-board-card-containment.md
 > **Last Updated**: 2026-09-05 17:50
 > **Lifecycle**: notes
 

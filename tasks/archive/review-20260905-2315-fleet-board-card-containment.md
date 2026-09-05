@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1413-fleet-board-card-containment.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1413-fleet-board-card-containment.md` => `plans/archive/plan-20260905-1413-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md` => `tasks/archive/notes-20260905-2315-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md` => `tasks/archive/contract-20260905-2315-fleet-board-card-containment.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md` => `tasks/archive/review-20260905-2315-fleet-board-card-containment.md`
+
 # Task Review: fleet-board-card-containment
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
-> **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
-> **Notes File**: tasks/notes/20260905-1413-fleet-board-card-containment.notes.md
+> **Plan**: plans/archive/plan-20260905-1413-fleet-board-card-containment.md
+> **Contract**: tasks/archive/contract-20260905-2315-fleet-board-card-containment.md
+> **Notes File**: tasks/archive/notes-20260905-2315-fleet-board-card-containment.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 17:50
 > **Recommendation**: pass
@@ -17,7 +27,7 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, the blocking type-level additions in `src/operator-web/types.ts` and `src/operator-web/fixture.ts`, plus their tests
-- Actual files changed: source — `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, `src/operator-web/types.ts`, `src/operator-web/fixture.ts`, `src/operator-web/i18n.ts`; tests — `tests/effects/fleet-board.test.ts`, `tests/unit/fleet-board.test.ts`, `tests/unit/operator-fleet-snapshot.test.ts`, `tests/unit/task-inbox-v1.test.ts`, `tests/effects/operator-task-message.test.ts`, `tests/cli/operator-serve.test.ts`, `tests/unit/operator-web-types.test.ts`, `tests/operator-web/operator-ui.test.tsx`, `tests/operator-web/operator-interactions.test.tsx`; workflow artifacts — `plans/plan-20260905-1413-fleet-board-card-containment.md`, `tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md`, `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`, `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`, `tasks/todos.md`
+- Actual files changed: source — `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, `src/operator-web/types.ts`, `src/operator-web/fixture.ts`, `src/operator-web/i18n.ts`; tests — `tests/effects/fleet-board.test.ts`, `tests/unit/fleet-board.test.ts`, `tests/unit/operator-fleet-snapshot.test.ts`, `tests/unit/task-inbox-v1.test.ts`, `tests/effects/operator-task-message.test.ts`, `tests/cli/operator-serve.test.ts`, `tests/unit/operator-web-types.test.ts`, `tests/operator-web/operator-ui.test.tsx`, `tests/operator-web/operator-interactions.test.tsx`; workflow artifacts — `plans/archive/plan-20260905-1413-fleet-board-card-containment.md`, `tasks/archive/contract-20260905-2315-fleet-board-card-containment.md`, `tasks/archive/notes-20260905-2315-fleet-board-card-containment.md`, `tasks/archive/review-20260905-2315-fleet-board-card-containment.md`, `tasks/todos.md`
 - Commands passed: focused fleet/inbox/operator suites, `bun run check:type`, `bun run build:operator-web`, `bash scripts/check-deploy-sql-order.sh`, `bash scripts/check-architecture-sync.sh`, `bash scripts/check-task-sync.sh`, `bash scripts/check-task-workflow.sh --strict`, `bun scripts/inspect-project-state.ts --repo . --format text`, `bun src/cli/index.ts init --repo . --dry-run`, full `bun test --timeout 60000`
 - Residual risks: the operator write nests the registry authorization lock inside the task lock; the one-directional proof is recorded in the notes file
 - Reviewer action required: inspect diff and card
@@ -26,8 +36,8 @@
 ## Mode Evidence
 
 - Selected route: planning (captured `repo-harness-plan` output)
-- P1/P2/P3 evidence: `plans/plan-20260905-1413-fleet-board-card-containment.md` `## Captured Planning Output`
-- Root cause or plan evidence: `tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md` `## Root Cause Evidence`
+- P1/P2/P3 evidence: `plans/archive/plan-20260905-1413-fleet-board-card-containment.md` `## Captured Planning Output`
+- Root cause or plan evidence: `tasks/archive/contract-20260905-2315-fleet-board-card-containment.md` `## Root Cause Evidence`
 
 ## Verification Evidence
 
