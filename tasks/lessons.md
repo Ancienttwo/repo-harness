@@ -329,3 +329,13 @@
 - Mistake pattern: classifying safety by operation name (`read` versus `write`) instead of serialized data shape. A mutation response is also a read surface for its caller, and returning a domain record from a successful write silently claims every field in that record was established by the write. Persistence, schema validity and semantic proof are distinct claims.
 - Prevention rule: inventory every externally serialized egress — list/read responses, mutation acknowledgements, events, logs and error payloads — by field set. A value may appear only if that exact boundary proved its meaning; otherwise return an identity-only acknowledgement and require consumers to enter through the verified projection. Pin the acknowledgement shape at every transport and include it in the same forged-value non-containment test as the named read surfaces.
 - Where to apply next time: C8 Operator actions, C9 canary evidence, and any future CLI/MCP mutation that returns a collaboration, Task, Lease, Publication or Acceptance record carrying fields whose semantic proof lives above the store.
+
+### 2026-09-05 — Generated host guidance verification includes output parity
+
+When changing `assets/partials/` or `assets/partials-agents/`, run
+`bun test tests/assembly.test.ts tests/agents-assembly.test.ts tests/output-parity.test.ts`
+as the focused generated-output boundary. Host-specific assertions alone miss
+cross-target command contracts and aggregate line budgets. Synchronize intentional
+command changes with parity assertions, and shorten source guidance instead of
+raising the existing line limit. Reproduced on `0d6bc102`: 27 pass / 2 fail;
+repair: 58 pass across the three named files, AGENTS restored to 260 lines.

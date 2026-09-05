@@ -230,7 +230,11 @@ describe("Output Quality Gates", () => {
     expect(agents).toContain("repo-harness run check-agent-tooling --host both --check-updates");
     expect(agents).toContain("repo-harness run check-task-sync");
     expect(agents).toContain("repo-harness run check-task-workflow --strict");
-    expect(agents).toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
+    for (const output of [claude, agents]) {
+      expect(output).toContain("repo-harness run verify-sprint --prepare-acceptance");
+      expect(output).toContain("`repo-harness run verify-sprint`");
+      expect(output).not.toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
+    }
     expect(agents).toContain(".ai/harness/checks/latest.json");
     expect(agents).toContain("new plans/plan-{timestamp}-{slug}.md");
     expect(claude).toContain(".ai/harness/active-plan");
