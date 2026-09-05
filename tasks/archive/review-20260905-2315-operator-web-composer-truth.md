@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1414-operator-web-composer-truth.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1414-operator-web-composer-truth.md` => `plans/archive/plan-20260905-1414-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1414-operator-web-composer-truth.notes.md` => `tasks/archive/notes-20260905-2315-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md` => `tasks/archive/contract-20260905-2315-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1414-operator-web-composer-truth.review.md` => `tasks/archive/review-20260905-2315-operator-web-composer-truth.md`
+
 # Task Review: operator-web-composer-truth
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260905-1414-operator-web-composer-truth.md
-> **Contract**: tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md
-> **Notes File**: tasks/notes/20260905-1414-operator-web-composer-truth.notes.md
+> **Plan**: plans/archive/plan-20260905-1414-operator-web-composer-truth.md
+> **Contract**: tasks/archive/contract-20260905-2315-operator-web-composer-truth.md
+> **Notes File**: tasks/archive/notes-20260905-2315-operator-web-composer-truth.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 14:14
 > **Recommendation**: pass
@@ -37,7 +47,7 @@
 ## Mode Evidence
 
 - Selected route: planning (captured work-package plan)
-- P1/P2/P3 evidence: `plans/plan-20260905-1414-operator-web-composer-truth.md`
+- P1/P2/P3 evidence: `plans/archive/plan-20260905-1414-operator-web-composer-truth.md`
   `## Captured Planning Output`
 - Root cause or plan evidence: contract `## Root Cause Evidence`; the pre-fix runs
   in `.ai/harness/evidence/pre-fix/` record 15 `(fail)` lines in
@@ -55,7 +65,7 @@
   zh error copy, with zero console errors; AA contrast was recomputed
   independently at 5.43:1 default, 7.08:1 hover, 5.25:1 disabled
 - Supporting artifacts: `.ai/harness/evidence/pre-fix/*.log`
-- Implementation notes reviewed: `tasks/notes/20260905-1414-operator-web-composer-truth.notes.md`
+- Implementation notes reviewed: `tasks/archive/notes-20260905-2315-operator-web-composer-truth.md`
 - Run snapshot: `.ai/harness/checks/latest.json`
 
 ## Acceptance Receipt Projection
@@ -115,7 +125,7 @@
 ## Retest Steps
 
 - Re-run: `bun test --timeout 60000 tests/operator-web/operator-ui.test.tsx tests/operator-web/operator-interactions.test.tsx tests/operator-web/operator-collaboration.test.tsx tests/unit/operator-web-types.test.ts`
-- Re-check: `bun src/cli/index.ts run verify-contract --contract tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md --strict`
+- Re-check: `bun src/cli/index.ts run verify-contract --contract tasks/archive/contract-20260905-2315-operator-web-composer-truth.md --strict`
 
 ## Summary
 

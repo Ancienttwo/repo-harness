@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1414-operator-server-write-gate.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1414-operator-server-write-gate.md` => `plans/archive/plan-20260905-1414-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md` => `tasks/archive/notes-20260905-2315-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1414-operator-server-write-gate.contract.md` => `tasks/archive/contract-20260905-2315-operator-server-write-gate.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1414-operator-server-write-gate.review.md` => `tasks/archive/review-20260905-2315-operator-server-write-gate.md`
+
 # Task Contract: operator-server-write-gate
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260905-1414-operator-server-write-gate.md
+> **Plan**: plans/archive/plan-20260905-1414-operator-server-write-gate.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-05 14:14
-> **Review File**: `tasks/reviews/20260905-1414-operator-server-write-gate.review.md`
-> **Notes File**: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md`
+> **Review File**: `tasks/archive/review-20260905-2315-operator-server-write-gate.md`
+> **Notes File**: `tasks/archive/notes-20260905-2315-operator-server-write-gate.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 > **Substantive Change SHA256**: `sha256:823b80ff4f808689792de8371a84ff0c4eb6950c5a2c80556aef7393ce2ed6f1`
 
@@ -73,10 +83,10 @@ cancel path only runs when the subscriber count has already reached zero.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260905-1414-operator-server-write-gate.md`
+- Source plan: `plans/archive/plan-20260905-1414-operator-server-write-gate.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260905-1414-operator-server-write-gate.review.md`
-- Notes file: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md`
+- Review file: `tasks/archive/review-20260905-2315-operator-server-write-gate.md`
+- Notes file: `tasks/archive/notes-20260905-2315-operator-server-write-gate.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -98,11 +108,11 @@ cancel path only runs when the subscriber count has already reached zero.
 
 ```yaml
 allowed_paths:
-  - plans/plan-20260905-1414-operator-server-write-gate.md
+  - plans/archive/plan-20260905-1414-operator-server-write-gate.md
   - tasks/todos.md
-  - tasks/contracts/20260905-1414-operator-server-write-gate.contract.md
-  - tasks/reviews/20260905-1414-operator-server-write-gate.review.md
-  - tasks/notes/20260905-1414-operator-server-write-gate.notes.md
+  - tasks/archive/contract-20260905-2315-operator-server-write-gate.md
+  - tasks/archive/review-20260905-2315-operator-server-write-gate.md
+  - tasks/archive/notes-20260905-2315-operator-server-write-gate.md
   - src/effects/operator/server.ts
   - src/effects/operator/collaboration.ts
   - src/cli/commands/operator.ts
@@ -158,7 +168,7 @@ exit_criteria:
     - src/effects/operator/server.ts
     - src/effects/operator/collaboration.ts
   artifacts_exist:
-    - tasks/notes/20260905-1414-operator-server-write-gate.notes.md
+    - tasks/archive/notes-20260905-2315-operator-server-write-gate.md
     - .ai/harness/evidence/pre-fix/operator-serve.test.log
   tests_pass:
     - path: tests/cli/operator-serve.test.ts

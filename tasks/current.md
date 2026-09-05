@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T23:07:43+0800 -->
+<!-- updated_at: 2026-09-05T23:16:18+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-09-05T23:07:43+0800
-> **Source Branch**: codex/campaign-authoring-budget-prerequisite
-> **Source Commit**: 803b582c
+> **Status**: Active
+> **Updated At**: 2026-09-05T23:16:18+0800
+> **Source Branch**: codex/task-board-closeout
+> **Source Commit**: 2d30fb37
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -54,23 +54,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: clean
 
 ```
- D plans/plan-20260905-1841-campaign-authoring-budget-prerequisite.md
- D tasks/contracts/20260905-1841-campaign-authoring-budget-prerequisite.contract.md
- D tasks/notes/20260905-1841-campaign-authoring-budget-prerequisite.notes.md
- D tasks/reviews/20260905-1841-campaign-authoring-budget-prerequisite.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260905-1841-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/contract-20260905-2307-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/notes-20260905-2307-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/review-20260905-2307-campaign-authoring-budget-prerequisite.md
-?? tasks/archive/todo-20260905-2307-campaign-authoring-budget-prerequisite.md
+(none)
 ```
 
 ## Source Artifacts

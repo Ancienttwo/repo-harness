@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-05 23:15
+> **Related Plan**: plans/archive/plan-20260905-1414-operator-web-composer-truth.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260905-2315
+> **Archive Projection V1**: `plans/plan-20260905-1414-operator-web-composer-truth.md` => `plans/archive/plan-20260905-1414-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1414-operator-web-composer-truth.notes.md` => `tasks/archive/notes-20260905-2315-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md` => `tasks/archive/contract-20260905-2315-operator-web-composer-truth.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1414-operator-web-composer-truth.review.md` => `tasks/archive/review-20260905-2315-operator-web-composer-truth.md`
+
 # Task Contract: operator-web-composer-truth
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260905-1414-operator-web-composer-truth.md
+> **Plan**: plans/archive/plan-20260905-1414-operator-web-composer-truth.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-05 14:14
-> **Review File**: `tasks/reviews/20260905-1414-operator-web-composer-truth.review.md`
-> **Notes File**: `tasks/notes/20260905-1414-operator-web-composer-truth.notes.md`
+> **Review File**: `tasks/archive/review-20260905-2315-operator-web-composer-truth.md`
+> **Notes File**: `tasks/archive/notes-20260905-2315-operator-web-composer-truth.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -83,10 +93,10 @@ scope is the only delivery a non-bound lease can accept.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260905-1414-operator-web-composer-truth.md`
+- Source plan: `plans/archive/plan-20260905-1414-operator-web-composer-truth.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260905-1414-operator-web-composer-truth.review.md`
-- Notes file: `tasks/notes/20260905-1414-operator-web-composer-truth.notes.md`
+- Review file: `tasks/archive/review-20260905-2315-operator-web-composer-truth.md`
+- Notes file: `tasks/archive/notes-20260905-2315-operator-web-composer-truth.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -108,11 +118,11 @@ scope is the only delivery a non-bound lease can accept.
 
 ```yaml
 allowed_paths:
-  - plans/plan-20260905-1414-operator-web-composer-truth.md
+  - plans/archive/plan-20260905-1414-operator-web-composer-truth.md
   - tasks/todos.md
-  - tasks/contracts/20260905-1414-operator-web-composer-truth.contract.md
-  - tasks/reviews/20260905-1414-operator-web-composer-truth.review.md
-  - tasks/notes/20260905-1414-operator-web-composer-truth.notes.md
+  - tasks/archive/contract-20260905-2315-operator-web-composer-truth.md
+  - tasks/archive/review-20260905-2315-operator-web-composer-truth.md
+  - tasks/archive/notes-20260905-2315-operator-web-composer-truth.md
   - src/operator-web/
   - tests/
   - docs/architecture/
@@ -170,7 +180,7 @@ exit_criteria:
     - src/operator-web/fixture.ts
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260905-1414-operator-web-composer-truth.notes.md
+    - tasks/archive/notes-20260905-2315-operator-web-composer-truth.md
     - .ai/harness/evidence/pre-fix/operator-interactions.log
   tests_pass:
     - path: tests/operator-web/operator-interactions.test.tsx
