@@ -1,20 +1,20 @@
 # Task Review: ci-test-gate-aggregate-failures
 
-> **Status**: Pending
+> **Status**: Complete
 > **Plan**: plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
 > **Contract**: tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md
 > **Notes File**: tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 23:54
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 9fba4387
 
 ## Human Review Card
 
-- Verdict: pending
+- Verdict: pass
 - Change type: code-change
 - Intended files changed: `scripts/lib/ci-run-tests.sh` (add), `scripts/check-ci.sh` (source the lib), `tests/check-ci-isolate-aggregation.test.ts` (add), plus this work package's plan/contract/review/notes and `tasks/todos.md`
 - Actual files changed: same set; `assets/templates/helpers/` untouched because `scripts/check-ci.sh` is not a projected helper
@@ -61,15 +61,19 @@
 ## Residual Risks / Follow-ups
 
 - `scripts/lib/ci-run-tests.sh` is a new local library with no packaged mirror; if it is ever added to the workflow contract's helper list, the projection must be regenerated rather than hand-copied.
+- bash 5.x is not available on this machine; correctness on `ubuntu-latest` is inferred from the constructs used, and the PR's own CI run is the proof.
+- Default values for `BUN_TEST_TIMEOUT_MS`/`BUN_TEST_MAX_CONCURRENCY`/`BUN_TEST_ISOLATE_FILES` now exist in two places: `scripts/check-ci.sh:7-9` and the lib's inline `${VAR:-default}` fallbacks. Accepted because the contract required `check-ci.sh` to stay byte-identical apart from the `source` line.
+- The pre-fix RED artifact lives under gitignored `.ai/harness/evidence/`, so it is not preserved in version control.
+- The gate still stops after the test summary and does not continue into the workflow checks; that is by design and unchanged by this work package.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
+| Functionality | 9/10 | Guard 2/2 and `tests/bootstrap-files.test.ts` 17/17; positive readback exits 0 with no summary; negative readbacks exit 1, still run every selected file, and print summaries naming 1 and 2 failing files with their exit codes; per-file `[ci] test` lines stay on stdout while the summary goes to stderr; full suite 4422 pass / 4 skip / 0 fail at product commit `6d5302b1` |
+| Product depth | 8/10 | Solves the observed failure (a red `main` hid every file sorting after the first failure) and stops there: no phase-order change, no new knobs, no scope creep past the isolate-mode loop |
+| Design quality | 8/10 | Extracting `scripts/lib/ci-run-tests.sh` makes the loop directly observable without an install/typecheck/pack cycle; `check-ci.sh` stays byte-identical apart from the `source` line; helper/hook/reference-config projections unchanged |
+| Code quality | 9/10 | `bash -n` clean and verified on `/bin/bash` 3.2.57 including an empty selection with no unbound-variable error; per-file status captured into a `local` instead of reading `$?` in the `then` branch; six repository-integrity checks exit 0; `verify-contract --strict` 20/20 Fulfilled; CI-mode task-sync digest `sha256:b637a977…` matches the contract; `git merge-tree` clean against `origin/main` `5a6a2121` |
 
 ## Failing Items
 
