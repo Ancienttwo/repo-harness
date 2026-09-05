@@ -117,7 +117,10 @@
     "readiness": {
       "ok": true,
       "allowedToEdit": {
-        "decision": "allow"
+        "decision": "block",
+        "reasons": [
+          "required_worktree_missing"
+        ]
       },
       "allowedToStop": {
         "decision": "block",
@@ -128,6 +131,7 @@
       "readyToShip": {
         "decision": "block",
         "reasons": [
+          "required_worktree_missing",
           "required_review_missing",
           "required_external_acceptance_missing",
           "required_checks_missing"
@@ -143,7 +147,7 @@
           {
             "key": "isolated_contract_worktree",
             "status": "required",
-            "satisfied": true
+            "satisfied": false
           }
         ],
         "stop": [
@@ -162,7 +166,7 @@
           {
             "key": "isolated_contract_worktree",
             "status": "required",
-            "satisfied": true
+            "satisfied": false
           },
           {
             "key": "fresh_review",
