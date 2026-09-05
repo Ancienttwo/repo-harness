@@ -137,6 +137,8 @@ function assertRepositoryAuthority(repo: RepoHarnessRegisteredRepo): void {
     throw new FleetRepositoryError('repo_authority_invalid', `registry repository ${repo.id} is not a direct directory authority`);
   }
   try {
+    // Resolvability probe only: the authority invariant is the lstat above, and
+    // the resolved path is deliberately discarded.
     realpathSync(path);
   } catch (error) {
     throw new FleetRepositoryError('repo_unreadable', `cannot resolve registry repository ${repo.id}`, error);
