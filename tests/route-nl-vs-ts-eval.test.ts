@@ -91,6 +91,23 @@ describe("route-nl-vs-ts eval", () => {
     }
   });
 
+  test("checkTsArm fails on a coverage shortfall even with zero mismatches", () => {
+    const withoutDoneGate = checkTsArm(
+      ROUTE_SCENARIOS.filter((scenario) => scenario.expected.action !== "done_gate"),
+    );
+    expect(withoutDoneGate.mismatchCount).toBe(0);
+    expect(withoutDoneGate.ok).toBe(false);
+    expect(withoutDoneGate.missingActions).toContain("done_gate");
+    expect(withoutDoneGate.summaryLines.join("\n")).toContain("result=fail");
+
+    const withoutPassiveWorktreeStatus = checkTsArm(
+      ROUTE_SCENARIOS.filter((scenario) => scenario.expected.intent !== "passive_worktree_status"),
+    );
+    expect(withoutPassiveWorktreeStatus.mismatchCount).toBe(0);
+    expect(withoutPassiveWorktreeStatus.ok).toBe(false);
+    expect(withoutPassiveWorktreeStatus.missingIntents).toContain("passive_worktree_status");
+  }, 30_000);
+
   test("every scenario cites a non-empty lessonSource", () => {
     const ids = new Set<string>();
     for (const scenario of ROUTE_SCENARIOS) {

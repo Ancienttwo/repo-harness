@@ -15,7 +15,7 @@
 > **Task Contract**: `tasks/contracts/20260906-0257-route-eval-ci-gate.contract.md`
 > **Task Review**: `tasks/reviews/20260906-0257-route-eval-ci-gate.review.md`
 > **Implementation Notes**: `tasks/notes/20260906-0257-route-eval-ci-gate.notes.md`
-> **Substantive Change SHA256**: `sha256:21a7073504f2599d5d492525e64099486ee2e07272d5089135efdce0c8a6cafa`
+> **Substantive Change SHA256**: `sha256:add860b0064b2893ae1e9c9cd976cf57f30c6f14b8e63a09b233e1f905d93317`
 
 ## Agentic Routing
 - Selected route: planning
@@ -243,7 +243,7 @@ $ bash scripts/check-architecture-sync.sh
 [ArchitectureProjection] provider=archctx apply=automatic state=ready pending=0 running=0 dead_letters=0 human_actions=0 adoption_required=0 blocking=0 uncommitted=0
 
 $ REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh
-[task-sync] Bound canonical workflow evidence: plans/plan-20260906-0257-route-eval-ci-gate.md (sha256:21a7073504f2599d5d492525e64099486ee2e07272d5089135efdce0c8a6cafa).
+[task-sync] Bound canonical workflow evidence: plans/plan-20260906-0257-route-eval-ci-gate.md (sha256:add860b0064b2893ae1e9c9cd976cf57f30c6f14b8e63a09b233e1f905d93317).
 (exit 0)
 
 $ bash scripts/check-task-workflow.sh --strict

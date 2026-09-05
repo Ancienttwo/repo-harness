@@ -29,6 +29,12 @@
 
 ## Deviations From Plan Or Spec
 
+- The failure exit code is asserted at function level (`checkTsArm(...).ok === false`,
+  including the zero-mismatch coverage-shortfall case); `main()` maps `ok === false` to
+  `process.exitCode = 1` at `scripts/route-nl-vs-ts-eval.ts:1057`. No subprocess failure
+  test exists because `main()` has no scenario-injection point, and adding a test-only
+  flag or env override would be new product surface this contract forbids.
+
 - The plan's P1 said `ROUTE_SCENARIOS` had 9 entries; the file had 8. Corpus grew
   8 -> 31, not 9 -> 31.
 - The plan expected a `## Unreachable Actions` list. The Falsifier check found

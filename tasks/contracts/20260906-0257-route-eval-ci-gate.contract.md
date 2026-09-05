@@ -75,6 +75,7 @@ allowed_paths:
   - tasks/contracts/20260906-0257-route-eval-ci-gate.contract.md
   - tasks/reviews/20260906-0257-route-eval-ci-gate.review.md
   - tasks/notes/20260906-0257-route-eval-ci-gate.notes.md
+  - tasks/todos.md
   - scripts/route-nl-vs-ts-eval.ts
   - scripts/check-ci.sh
   - package.json
