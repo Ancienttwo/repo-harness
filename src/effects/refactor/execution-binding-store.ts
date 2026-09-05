@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { constants, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 import { canonicalRefactorExecutionBindingBytes, validateRefactorExecutionBinding, type RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
 import { canonicalRefactorCandidateVerificationReceiptBytes, validateRefactorCandidateVerificationReceipt, type RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
@@ -32,7 +32,13 @@ export function appendRefactorExecutionBinding(input: { readonly repo_root: stri
   if (sha(execFileSync('git', ['show', `${candidate.candidateHeadSha}:${binding.planPath}`], { cwd: input.repo_root })) !== binding.planSha256) fail('refactor_execution_binding_stale', 'execution binding plan bytes are stale');
   if (sha(execFileSync('git', ['show', `${candidate.candidateHeadSha}:${binding.contractPath}`], { cwd: input.repo_root })) !== binding.contractSha256) fail('refactor_execution_binding_stale', 'execution binding contract bytes are stale');
   if (git(input.repo_root, ['rev-parse', '--verify', `${binding.pullRequestHeadSha}^{commit}`]) !== binding.pullRequestHeadSha || git(input.repo_root, ['rev-parse', '--verify', `${binding.mergeCommitSha}^{commit}`]) !== binding.mergeCommitSha) fail('refactor_execution_binding_stale', 'execution binding commit identity is stale');
-  try { execFileSync('git', ['merge-base', '--is-ancestor', binding.pullRequestHeadSha, binding.mergeCommitSha], { cwd: input.repo_root, stdio: 'ignore' }); } catch (error) { return fail('refactor_execution_binding_stale', 'pull request head is not an ancestor of the merge commit', error); }
+  const helper = resolve(import.meta.dir, '../../../scripts/worktree-merge-lib.sh');
+  let integration: string;
+  try { integration = execFileSync('bash', [helper, '--target', binding.mergeCommitSha, binding.pullRequestHeadSha], { cwd: input.repo_root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }).trim(); }
+  catch (error) { return fail('refactor_execution_binding_stale', 'cannot verify pull request integration', error); }
+  if (integration !== `${binding.pullRequestHeadSha}\tancestor` && integration !== `${binding.pullRequestHeadSha}\tabsorbed`) {
+    fail('refactor_execution_binding_stale', 'pull request head is not an ancestor or absorbed squash of the merge commit');
+  }
   const root = directory(input.repo_root, program.programId); ensure(root); const path = join(root, `${binding.bindingSha256.slice('sha256:'.length)}.json`); const bytes = Buffer.from(`${canonicalRefactorExecutionBindingBytes(binding)}\n`);
   if (existsSync(path)) { if (!readFileSync(path).equals(bytes)) fail('refactor_execution_binding_conflict', 'binding digest names different immutable bytes'); return binding; }
   let descriptor: number; try { descriptor = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); } catch (error) { return fail('refactor_execution_binding_conflict', 'cannot create execution binding', error); }

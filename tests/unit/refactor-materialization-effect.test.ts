@@ -101,3 +101,19 @@ describe('Module 6 atomic Refactor Program materialization', () => {
     expect(() => materializeRefactorProgram(f.request)).toThrow('target moved outside this materialization transaction');
   });
 });
+
+  test('advances the owned materialization to execution and verification but rejects unrelated target movement', () => {
+    const f = fixture(); const materialized = materializeRefactorProgram(f.request);
+    const executing = appendRefactorProgramEvent({ repo_root: f.root, program_id: 'rf-1', expected_current_sha256: materialized.current.current_sha256,
+      idempotency_key: 'execute', operation: 'begin_execute', observed_at: f.request.observed_at, env: f.env });
+    expect(executing.current.state).toBe('executing');
+    const verifying = appendRefactorProgramEvent({ repo_root: f.root, program_id: 'rf-1', expected_current_sha256: executing.current.current_sha256,
+      idempotency_key: 'verify', operation: 'begin_verify', observed_at: f.request.observed_at, env: f.env });
+    expect(verifying.current.state).toBe('verifying');
+    const changed = fixture(); const ready = materializeRefactorProgram(changed.request);
+    const tree = execFileSync('git', ['rev-parse', 'main^{tree}'], { cwd: changed.root, encoding: 'utf8' }).trim();
+    const outsider = execFileSync('git', ['commit-tree', tree, '-p', changed.request.program.baseMainSha, '-m', 'unrelated child'], { cwd: changed.root, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/heads/main', outsider], { cwd: changed.root });
+    expect(() => appendRefactorProgramEvent({ repo_root: changed.root, program_id: 'rf-1', expected_current_sha256: ready.current.current_sha256,
+      idempotency_key: 'wrong-execute', operation: 'begin_execute', observed_at: changed.request.observed_at, owned_target_revision: outsider, env: changed.env })).toThrow('target');
+  });

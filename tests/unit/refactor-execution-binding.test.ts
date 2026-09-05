@@ -20,9 +20,11 @@ import { activateRefactorFixture } from '../helpers/refactor-activation-fixture'
 const roots: string[] = []; const D = (value: string | Buffer) => `sha256:${createHash('sha256').update(value).digest('hex')}`; const H = (value: string) => createHash('sha256').update(value).digest('hex'); const TASK = 'f'.repeat(64); const NOW = '2026-09-04T05:00:00.000Z';
 const limits = { max_agent_turns: 10, max_successful_acquisitions: 3, max_runner_invocations: 10, max_provider_failures: 3, max_consecutive_no_progress_steps: 2, max_repair_cycles: 2, max_wall_clock_seconds: 3600, max_input_tokens: null, max_output_tokens: null, max_cost_micros: null } as const;
 
-async function fixture() {
+async function fixture(squash = false) {
   const root = mkdtempSync(join(tmpdir(), 'refactor-binding-')); roots.push(root); const home = mkdtempSync(join(tmpdir(), 'refactor-binding-home-')); roots.push(home);
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root }); execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root }); execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
+  execFileSync('git', ['commit', '--allow-empty', '-qm', 'base'], { cwd: root });
+  const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   const sprintPath = 'plans/sprints/refactor.sprint.md'; const planPath = 'plans/plan.md'; const contractPath = 'tasks/contracts/task.md'; mkdirSync(join(root, 'plans', 'sprints'), { recursive: true }); mkdirSync(join(root, 'tasks', 'contracts'), { recursive: true }); mkdirSync(join(root, '.ai', 'harness'), { recursive: true });
   const row = renderBacklogRow(2, { index: '1', id: TASK, status: '[ ]', task: 'Refactor module', mode: 'contract', acceptance: 'All gates pass', plan: planPath });
   writeFileSync(join(root, sprintPath), `# Sprint\n> **Status**: Approved\n${SPRINT_BACKLOG_SCHEMA_HEADER}\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---:|---|:---:|---|---|---|---|\n${row}\n`); writeFileSync(join(root, planPath), '# Plan\n'); writeFileSync(join(root, contractPath), '# Contract\n'); writeFileSync(join(root, '.ai', 'harness', 'policy.json'), `${JSON.stringify({ refactor: { mode: 'active' } })}\n`);
@@ -35,6 +37,11 @@ async function fixture() {
     verify_contract: () => ({ reportBytes: Buffer.from('contract-pass') }), verify_cutover: () => ({ status: 'closed', contractSha256: D(readFileSync(join(root, contractPath))).slice(7), headSha: candidateHead, closureSha256: H('closure') }) as never,
     verify_candidate: () => ({ disposition: 'resolved', evidence: { recommendationId: 'recommendation.binding', verifiedHeadSha: candidateHead } }) as never, verify_acceptance: async () => { const value = { contract_sha256: D(readFileSync(join(root, contractPath))), target_revision: candidateHead, disposition: 'external_pass' }; return { receipt: value as never, bytes: Buffer.from('acceptance') }; },
   });
+  if (squash) {
+    execFileSync('git', ['branch', 'topic', candidateHead], { cwd: root });
+    execFileSync('git', ['reset', '--hard', base], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['merge', '--squash', 'topic'], { cwd: root, stdio: 'ignore' });
+  }
   execFileSync('git', ['commit', '--allow-empty', '-qm', 'merge'], { cwd: root }); const merge = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   const binding = buildRefactorExecutionBinding({ recommendationId: 'recommendation.binding', recommendationDigest: D('recommendation'), taskId: TASK, taskRevision: candidate.taskRevision, planPath, planSha256: D('# Plan\n'), contractPath, contractSha256: D('# Contract\n'), cutoverClosureSha256: D('closure'), acceptanceReceiptSha256: D('acceptance'), pullRequestNumber: 42, pullRequestHeadSha: candidateHead, mergeCommitSha: merge }); return { root, env, candidateHead, merge, program, candidate, binding };
 }
@@ -67,4 +74,10 @@ describe('Module 8 immutable execution binding', () => {
     const f = await fixture(); const altered = buildRefactorProgram({ ...f.program, affectedNodeIds: ['workflow.materialization'] });
     expect(() => appendRefactorExecutionBinding({ repo_root: f.root, program: altered, candidate_verification: f.candidate, binding: f.binding, env: f.env })).toThrow('immutable materialized Program');
   });
+});
+
+ test('accepts an absorbed squash with an exact persisted candidate receipt', async () => {
+  const f = await fixture(true);
+  expect(() => execFileSync('git', ['merge-base', '--is-ancestor', f.candidateHead, f.merge], { cwd: f.root, stdio: 'ignore' })).toThrow();
+  expect(appendRefactorExecutionBinding({ repo_root: f.root, program: f.program, candidate_verification: f.candidate, binding: f.binding, env: f.env })).toEqual(f.binding);
 });

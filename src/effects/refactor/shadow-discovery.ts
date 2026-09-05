@@ -19,7 +19,7 @@ export class RefactorShadowError extends Error {
 }
 export interface RefactorShadowInput {
   readonly request: RefactorRequestV1;
-  readonly candidateAlias?: string;
+  readonly selection?: { readonly recommendationId: string; readonly recommendationFingerprint: string };
   readonly providerCalls: number;
   readonly authorCalls: number;
   readonly timeoutMs: number;
@@ -50,11 +50,14 @@ export async function runLocalRefactorAuthor(prompt: string, timeoutMs: number):
 export async function runShadowRefactorDiscovery(input: RefactorShadowInput, repoRootInput: string, dependencies: RefactorShadowDependencies = {}): Promise<unknown> {
   const repoRoot = resolve(repoRootInput);
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some((key) => !['request', 'candidateAlias', 'providerCalls', 'authorCalls', 'timeoutMs'].includes(key))
+    || Object.keys(input).some((key) => !['request', 'selection', 'providerCalls', 'authorCalls', 'timeoutMs'].includes(key))
     || !Number.isSafeInteger(input.providerCalls) || input.providerCalls < 0 || input.providerCalls > 3
     || !Number.isSafeInteger(input.authorCalls) || input.authorCalls < 0 || input.authorCalls > 1
     || !Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 120000
-    || (input.candidateAlias !== undefined && (typeof input.candidateAlias !== 'string' || !/^C[0-9]{2,}$/.test(input.candidateAlias)))) fail('refactor_shadow_input_invalid', 'shadow requires providerCalls 0..3, authorCalls 0..1, timeoutMs 1..120000 and an optional candidate alias');
+    || (input.selection !== undefined && (!input.selection || typeof input.selection !== 'object' || Array.isArray(input.selection)
+      || Object.keys(input.selection).some((key) => !['recommendationId', 'recommendationFingerprint'].includes(key))
+      || typeof input.selection.recommendationId !== 'string' || !input.selection.recommendationId.trim()
+      || typeof input.selection.recommendationFingerprint !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(input.selection.recommendationFingerprint)))) fail('refactor_shadow_input_invalid', 'shadow requires providerCalls 0..3, authorCalls 0..1, timeoutMs 1..120000 and an optional exact recommendation selection');
   const policy = loadRefactorPolicy(repoRoot);
   if (policy.mode === 'off' || readRefactorActivationLevel(repoRoot) === 'off') fail('refactor_shadow_disabled', 'shadow requires existing policy and activation enablement');
   if (policy.proposal_author !== 'local') fail('refactor_shadow_author_unavailable', 'this shadow entry supports the configured local proposal author only');
@@ -67,11 +70,12 @@ export async function runShadowRefactorDiscovery(input: RefactorShadowInput, rep
   if (discovery.scan.snapshot.codeFacts.coverage !== 'complete' || discovery.scan.snapshot.codeFacts.truncated
     || discovery.scan.snapshot.repositorySummary.multiplyOwnedFileCount > 0) return { status: 'proof_required', discovery };
   if (!discovery.candidates.length) return { status: 'no_action', discovery };
-  if (input.candidateAlias === undefined) return { status: 'awaiting_selection', discovery };
-  const candidate = discovery.candidates.find((item) => item.alias === input.candidateAlias);
-  if (!candidate) fail('refactor_candidate_not_found', 'candidate alias is not in this discovery');
+  if (input.selection === undefined) return { status: 'awaiting_selection', discovery };
+  const matches = discovery.candidates.filter((item) => item.recommendationId === input.selection!.recommendationId && item.recommendationFingerprint === input.selection!.recommendationFingerprint);
+  if (matches.length !== 1) fail('refactor_candidate_not_found', 'exact recommendation selection is not in this discovery');
+  const candidate = matches[0]!;
   const identity = { repository: discovery.scan.repository, worktree: discovery.scan.worktree, modelDigest: discovery.scan.snapshot.modelDigest, codeFactsDigest: discovery.scan.assessment.codeFactsDigest };
-  const key = hash({ identity, request: discovery.scan.request, recommendationId: candidate.recommendationId, fingerprint: candidate.recommendationFingerprint, author: policy.proposal_author });
+  const key = hash({ providerVersion: policy.stages.scan.provider_version, identity, request: discovery.scan.request, recommendationId: candidate.recommendationId, fingerprint: candidate.recommendationFingerprint, author: policy.proposal_author });
   const root = join(resolveGitCommonDirectory(repoRoot), 'repo-harness', 'refactor-shadow', 'v1');
   mkdirSync(root, { recursive: true, mode: 0o700 });
   if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) fail('refactor_shadow_store_invalid', 'shadow store is not a regular directory');
@@ -83,7 +87,17 @@ export async function runShadowRefactorDiscovery(input: RefactorShadowInput, rep
     return { status: 'duplicate', discovery, result: receipt.result };
   }
   if (input.providerCalls < 3 || input.authorCalls < 1) return { status: 'budget_exhausted', stage: 'author_assessment', discovery };
-  const evidence = canonicalize({ identity, candidate, snapshot: discovery.scan.snapshot } as never);
+  // Preserve Git protocol bytes, including filenames resembling secrets; ownership stays upstream.
+  const tree = runProcess('git', ['ls-tree', '-rz', '--full-tree', discovery.scan.worktree.headSha], { cwd: repoRoot, timeoutMs: remaining(), maxOutputBytes: 65536, stdio: 'pipe', redactions: [] });
+  if (!tree.ok) fail('refactor_shadow_evidence_unavailable', tree.error || 'cannot read the scanned Git tree');
+  if (Buffer.byteLength(tree.stdout) > 65536) return { status: 'budget_exhausted', stage: 'evidence', discovery };
+  if (tree.stdout && !tree.stdout.endsWith('\0')) fail('refactor_shadow_evidence_unavailable', 'Git tree inventory is incomplete');
+  const repositoryFiles = tree.stdout.split('\0').filter(Boolean).flatMap((record) => {
+    const match = /^(\d{6}) (blob|tree|commit) [a-f0-9]{40,64}\t([\s\S]+)$/u.exec(record);
+    if (!match) fail('refactor_shadow_evidence_unavailable', 'Git tree inventory is invalid');
+    return match[2] === 'blob' && ['100644', '100755'].includes(match[1]!) ? [match[3]!] : [];
+  }).sort();
+  const evidence = canonicalize({ identity, candidate, snapshot: discovery.scan.snapshot, repositoryFiles } as never);
   if (Buffer.byteLength(evidence) > 65536) return { status: 'budget_exhausted', stage: 'evidence', discovery };
   const lock = join(root, `${key}.claim`);
   try { closeSync(openSync(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)); }
@@ -93,7 +107,7 @@ export async function runShadowRefactorDiscovery(input: RefactorShadowInput, rep
   try {
     const prompt = [
       'Write exactly one refactor proposal from the bounded evidence below. Return strict JSON only.',
-      'Allowed fields: authoredBy, intent, scopePaths, targetDelta (optional), targetOutcomes, killList.',
+      'Allowed fields: authoredBy, intent, scopePaths, targetDelta (optional), targetOutcomes, killList. scopePaths must use exact paths from repositoryFiles.',
       'authoredBy must be {"id":"repo-harness.local-refactor-author","kind":"subagent","source":"subagent"}.',
       'Do not provide scale, route, status, digest or execution instructions. Do not infer business ownership from filenames. Unknown evidence stays unknown.',
       'Use only supplied evidence. Do not read other files, invoke tools, write code, create tasks, contact services or mutate any state.',
@@ -104,6 +118,7 @@ export async function runShadowRefactorDiscovery(input: RefactorShadowInput, rep
     remaining();
     const proposal = authorRefactorProposal(raw as RefactorProposalDraftV1);
     if (proposal.authoredBy.id !== 'repo-harness.local-refactor-author' || proposal.authoredBy.kind !== 'subagent' || proposal.authoredBy.source !== 'subagent') fail('refactor_shadow_author_invalid', 'proposal author differs from the invoked responsibility');
+    if (proposal.scopePaths.some((path) => !repositoryFiles.includes(path))) fail('refactor_shadow_author_invalid', 'proposal scope must use exact files from the scanned Git tree');
     const assessment = assessRefactorProposal({ discovery, candidateAlias: candidate.alias, proposal }, repoRoot, provider);
     remaining();
     result = { status: 'assessed', proposal, assessment, workflow: projectRefactorWorkflowRoute(assessment.scan.assessment.scale, assessment.scan.assessment.scaleReasonCodes, assessment.scan.assessment.majorChangeReasons) };

@@ -9,7 +9,7 @@ export const ARCHCTX_CAPABILITIES_VERSION = 'archcontext.capabilities/v1' as con
 export const ARCHITECTURE_REFRESH_SIGNAL_VERSION = 'archcontext.architecture-refresh-signal/v1' as const;
 export const ARCHITECTURE_DOCS_RENDERER_VERSION = 'archcontext.docs-renderer/v4' as const;
 export const ARCHITECTURE_DOCS_LAYOUT_VERSION = 'archcontext.docs-layout/v1' as const;
-export const ARCHCTX_REQUIRED_VERSION = '0.5.6' as const;
+export const ARCHCTX_REQUIRED_VERSION = '0.5.7' as const;
 export const ARCHCTX_REQUIRED_FEATURES = Object.freeze([
   'architecture-docs-renderer-v2',
   'architecture-refresh-signal-v1',

@@ -198,7 +198,7 @@ export function assertRefactorVerifyResult(value: unknown, request: RefactorVeri
     const evidence = data.evidence as RefactorResolutionEvidenceV1;
     const issues = refactorResolutionEvidenceInvariantIssues(evidence);
     if (issues.length) throw new RefactorProviderError("refactor_provider_result_invalid", `invalid refactor verify evidence: ${issues.join("; ")}`);
-    if (evidence.verifiedHeadSha !== resultWorktree.headSha || evidence.verifiedWorktreeDigest !== resultWorktree.worktreeDigest) {
+    if (evidence.recommendationId !== request.recommendationId || evidence.disposition !== data.disposition || evidence.verifiedHeadSha !== resultWorktree.headSha || evidence.verifiedWorktreeDigest !== resultWorktree.worktreeDigest) {
       throw new RefactorProviderError("refactor_provider_result_invalid", "refactor verify evidence identity disagrees with its result envelope");
     }
     if (!sameJson(evidence.executionEvidenceRefs, request.executionEvidenceRefs ?? [])) throw new RefactorProviderError('refactor_provider_result_invalid', 'refactor verify evidence does not bind the requested execution evidence');

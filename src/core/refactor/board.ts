@@ -17,20 +17,20 @@ export class RefactorBoardError extends Error { readonly code = 'refactor_board_
 function invalid(message: string): never { throw new RefactorBoardError(message); }
 
 export function projectRefactorBoard(input: { readonly program: RefactorProgramV1; readonly measuredHeadSha: string; readonly recommendations: readonly RecommendationV3[]; readonly bindings: readonly RefactorExecutionBindingV1[]; readonly resolutions: readonly RefactorResolutionEvidenceV1[] }): RefactorBoardV1 {
-  const program = validateRefactorProgram(input.program); const recommendations = new Map<string, RecommendationV3>();
-  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(input.measuredHeadSha)) invalid('measuredHeadSha is invalid');
-  for (const recommendation of input.recommendations) { const issues = recommendationV3InvariantIssues(recommendation); if (issues.length) invalid(`invalid recommendation authority: ${issues.join('; ')}`); const key = `${recommendation.recommendationId}\0${recommendation.fingerprint}`; if (recommendations.has(key)) invalid(`duplicate exact recommendation readback: ${recommendation.recommendationId}`); recommendations.set(key, recommendation); }
+  const program = validateRefactorProgram(input.program); if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(input.measuredHeadSha)) invalid('board requires an exact final main HEAD'); const recommendations = new Map<string, RecommendationV3>();
+  for (const recommendation of input.recommendations) { const issues = recommendationV3InvariantIssues(recommendation); if (issues.length) invalid(`invalid recommendation authority: ${issues.join('; ')}`); const key = recommendation.recommendationId; if (recommendations.has(key)) invalid(`duplicate exact recommendation readback: ${recommendation.recommendationId}`); recommendations.set(key, recommendation); }
   const bindings = new Map<string, RefactorExecutionBindingV1>(); for (const entry of input.bindings) { const value = validateRefactorExecutionBinding(entry); const key = `${value.recommendationId}\0${value.recommendationDigest}`; if (bindings.has(key)) invalid(`duplicate execution binding: ${value.recommendationId}`); bindings.set(key, value); }
-  const resolutions = new Map<string, RefactorResolutionEvidenceV1>(); for (const resolution of input.resolutions) { const issues = refactorResolutionEvidenceInvariantIssues(resolution); if (issues.length) invalid(`invalid resolution authority: ${issues.join('; ')}`); const key = `${resolution.recommendationId}\0${resolution.recommendationDigest}`; if (resolutions.has(key)) invalid(`duplicate resolution evidence: ${resolution.recommendationId}`); resolutions.set(key, resolution); }
+  const resolutions = new Map<string, RefactorResolutionEvidenceV1>(); for (const resolution of input.resolutions) { const issues = refactorResolutionEvidenceInvariantIssues(resolution); if (issues.length) invalid(`invalid resolution authority: ${issues.join('; ')}`); const key = resolution.recommendationId; if (resolutions.has(key)) invalid(`duplicate resolution evidence: ${resolution.recommendationId}`); resolutions.set(key, resolution); }
   const cards = program.bindings.map((programBinding): RefactorBoardCardV1 => {
-    const key = `${programBinding.recommendationId}\0${programBinding.recommendationDigest}`; const recommendation = recommendations.get(key); if (!recommendation) invalid(`missing exact recommendation readback: ${programBinding.recommendationId}`);
-    const binding = bindings.get(key) ?? null; const resolution = resolutions.get(key) ?? null;
+    const key = `${programBinding.recommendationId}\0${programBinding.recommendationDigest}`; const recommendation = recommendations.get(programBinding.recommendationId); if (!recommendation || recommendation.fingerprint !== programBinding.recommendationDigest) invalid(`missing exact recommendation readback: ${programBinding.recommendationId}`);
+    const binding = bindings.get(key) ?? null; const resolution = resolutions.get(programBinding.recommendationId) ?? null;
     if (resolution && (!binding || resolution.verifiedHeadSha !== input.measuredHeadSha)) invalid(`resolution is not measured at the exact board head: ${programBinding.recommendationId}`);
     let architectureResult: RefactorBoardArchitectureResult; let source: 'archctx' | 'repo-harness';
     if (recommendation.status === 'superseded') { architectureResult = 'superseded'; source = 'archctx'; }
     else if (!binding) { architectureResult = 'open'; source = 'archctx'; }
     else if (!resolution) { architectureResult = 'merged_pending_measurement'; source = 'repo-harness'; }
-    else if (resolution.disposition === 'resolved') { architectureResult = 'resolved'; source = 'archctx'; }
+    else if (resolution.disposition === 'resolved' && recommendation.status === 'resolved') { architectureResult = 'resolved'; source = 'archctx'; }
+    else if (resolution.disposition === 'resolved') { architectureResult = 'merged_pending_measurement'; source = 'repo-harness'; }
     else if (resolution.disposition === 'stale') { architectureResult = 'reconciliation_required'; source = 'archctx'; }
     else { architectureResult = 'follow_up_required'; source = 'archctx'; }
     return Object.freeze({ recommendationId: programBinding.recommendationId, recommendationDigest: programBinding.recommendationDigest, candidateAlias: programBinding.candidateAlias, route: program.route,

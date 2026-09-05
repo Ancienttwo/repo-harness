@@ -20,18 +20,30 @@ Request example:
 }
 ```
 
-Without `candidateAlias`, a complete scan with observations returns
-`awaiting_selection` and the candidate list. Submit the same request with an
-explicit alias such as `"candidateAlias": "C01"` to author one candidate. Each
-invocation scans the current revision; aliases only identify candidates in that
-invocation. To require the same checkout when selecting, copy the discovery
-HEAD and worktree digest into the upstream request's `expectedHeadSha` and
-`expectedWorktreeDigest` fields.
+Without `selection`, a complete scan with observations returns
+`awaiting_selection` and the candidate list. Select the exact upstream identity:
+
+```json
+"selection": {
+  "recommendationId": "<candidate.recommendationId>",
+  "recommendationFingerprint": "<candidate.recommendationFingerprint>"
+}
+```
+
+Candidate aliases are display labels within one invocation. Lifecycle changes can
+renumber them even at the same HEAD. The public entry rejects `candidateAlias`;
+a missing or changed selected identity fails closed. To pin the checkout as well,
+copy the discovery HEAD and worktree digest into the upstream request's
+`expectedHeadSha` and `expectedWorktreeDigest` fields.
 
 The budgets count semantic provider operations: scan plus lifecycle readback
 cost two; proposal assessment costs one more. Author calls are limited to one,
 with no automatic retry. One deadline covers the invocation. Evidence and the
-final author JSON are bounded to 64 KiB. At larger repository sizes the evidence
+final author JSON are bounded to 64 KiB. The evidence includes `repositoryFiles`,
+the complete regular-file inventory read from the exact scan HEAD with Git
+`ls-tree`. Staged-only paths and symlinks are excluded. The author must select
+exact inventory paths; the consumer also checks live path containment. Module
+ownership and structural measurements remain upstream. At larger repository sizes the evidence
 budget or upstream partial coverage stops the run before authoring; the harness
 does not truncate authoritative evidence and continue.
 
@@ -57,15 +69,16 @@ ArchContext assessment.
 
 Trigger claims and immutable result receipts live under the Git common directory
 at `repo-harness/refactor-shadow/v1`. Their key binds the exact request, provider
-identity, candidate id/fingerprint and author path. A fresh lifecycle readback
+version and identity, candidate id/fingerprint and author path. A fresh lifecycle readback
 precedes reuse, so these files are not a second recommendation-status ledger.
 Concurrent duplicate triggers reserve one author attempt. A completed duplicate
-returns the existing result; an interrupted claim returns
+returns the existing result. Both an initial failed result and a duplicate failed
+result exit nonzero at the CLI. An interrupted claim returns
 `in_progress_or_interrupted` and never silently retries. There is no automatic
 claim deletion/recovery command in this slice.
 
 Upstream handoff source: `Ancienttwo/arch-context`, merge `8463767`,
 `docs/researches/20260905-repo-harness-refactor-discovery-handoff.md`, D1.
-The installed `archctx` and `archctx-contracts` baseline is 0.5.6. This work does
-not claim that unreleased upstream evidence-integrity fixes are in those bytes.
-Real published-artifact conformance is the separate D2 work item.
+The installed consumer baseline is now npm `archctx@0.5.7` and
+`archctx-contracts@0.5.7`; see the [audit repair record](20260905-refactor-057-audit-repairs.md)
+for the authority boundaries, regression evidence and installed-package checks.

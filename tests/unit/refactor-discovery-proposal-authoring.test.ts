@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { RecommendationV3 } from 'archctx-contracts';
+import { architectureTargetDeltaInterventionId, type RecommendationV3 } from 'archctx-contracts';
 import { authorRefactorProposal, RefactorProposalAuthoringError } from '../../src/core/refactor/proposal-authoring';
 import {
   assessRefactorProposal,
@@ -39,7 +39,7 @@ describe('refactor discovery and proposal authoring', () => {
     let assessedRequest: Record<string, unknown> | undefined;
     try {
       assessRefactorProposal({ discovery, candidateAlias: 'C01', proposal }, process.cwd(), { consumerRoot: process.cwd(), run: (_binary, args) => {
-        if (args[0] === 'capabilities') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.6' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] }) };
+        if (args[0] === 'capabilities') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.7' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] }) };
         assessedRequest = JSON.parse(args[args.indexOf('--request-json') + 1]!);
         throw new Error('captured assessment request');
       } });
@@ -102,4 +102,13 @@ describe('refactor discovery and proposal authoring', () => {
     expect(() => authorRefactorProposal({ ...draft, scopePaths: ['../outside.ts'], targetOutcomes: [], killList: [] }))
       .toThrow(RefactorProposalAuthoringError);
   });
+});
+
+test('0.5.7 forbids a relation from being both a permanent target and temporary migration state', () => {
+  const targetDelta = { interventionId: 'intervention.one', trigger: ['one owner'], thesis: 'Separate ownership', targetState: { owners: { service: 'node.a' }, requiredRelations: ['node.a->node.b'], removedConcepts: [] }, migrationState: { active: true, compatibilityContracts: [], temporaryRelations: [] as string[] }, completionCriteria: [{ outcomeId: 'one-owner', metric: 'repositorySummary.multiplyOwnedFileCount', subjectSelectorId: 'node.a', nodeId: null, operator: 'equals' as const, value: 0, required: true }], falsifiers: ['ownership remains split'], benefitLedger: { benefits: ['one owner'], costs: ['cutover'], rollbackPoint: 'before cutover' }, unresolvedTargets: [] };
+  targetDelta.interventionId = architectureTargetDeltaInterventionId(targetDelta);
+  expect(() => authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [], targetDelta })).not.toThrow();
+  targetDelta.migrationState.temporaryRelations = ['node.a->node.b'];
+  targetDelta.interventionId = architectureTargetDeltaInterventionId(targetDelta);
+  expect(() => authorRefactorProposal({ ...draft, scopePaths: [...draft.scopePaths], targetOutcomes: [], killList: [], targetDelta })).toThrow('must not contain migration-only relation');
 });

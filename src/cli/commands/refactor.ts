@@ -129,7 +129,11 @@ export function buildRefactorCommand(shadowDependencies: RefactorShadowDependenc
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--request <path>', 'Shadow request JSON with scan request and explicit call/time budgets')
     .action(async (options: { repo?: string; request?: string }) => {
-      try { output(await runShadowRefactorDiscovery(requestJson(options.request) as unknown as RefactorShadowInput, options.repo?.trim() || process.cwd(), shadowDependencies)); }
+      try {
+        const result = await runShadowRefactorDiscovery(requestJson(options.request) as unknown as RefactorShadowInput, options.repo?.trim() || process.cwd(), shadowDependencies) as { status: string; result?: { status: string } };
+        output(result);
+        if (result.status === 'failed' || (result.status === 'duplicate' && result.result?.status === 'failed')) process.exitCode = 1;
+      }
       catch (error) { outputError(error); }
     });
   command.command('start')

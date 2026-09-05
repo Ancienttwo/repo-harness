@@ -18,7 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-const VERSION = "0.5.6";
+const VERSION = "0.5.7";
 const REPO_HARNESS_VERSION = "0.17.0";
 const repoRoot = resolve(import.meta.dir, "..");
 const archContextRoot = resolve(flag("--arch-context-root") ?? join(repoRoot, "..", "arch-context"));

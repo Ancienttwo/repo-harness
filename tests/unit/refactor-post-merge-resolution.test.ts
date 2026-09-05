@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { refactorResolutionEvidenceDigest, type RecommendationV3, type RefactorResolutionEvidenceV1, type RefactorVerificationRequestV1 } from 'archctx-contracts';
@@ -21,7 +21,7 @@ import { activateRefactorFixture } from '../helpers/refactor-activation-fixture'
 const roots: string[] = []; const D = (value: string | Buffer) => `sha256:${createHash('sha256').update(value).digest('hex')}`; const H = (value: string) => createHash('sha256').update(value).digest('hex'); const TASK = '9'.repeat(64); const NOW = '2026-09-04T06:00:00.000Z';
 const limits = { max_agent_turns: 10, max_successful_acquisitions: 3, max_runner_invocations: 10, max_provider_failures: 3, max_consecutive_no_progress_steps: 2, max_repair_cycles: 2, max_wall_clock_seconds: 3600, max_input_tokens: null, max_output_tokens: null, max_cost_micros: null } as const;
 function recommendation(status: RecommendationV3['status']): RecommendationV3 { return { schemaVersion: 'archcontext.recommendation/v3', recommendationId: 'recommendation.post', runId: 'run.post', fingerprint: D('recommendation'), subject: 'runtime.refactor', status, confidence: 'high', enforcement: 'advisory', risk: 'low', uncertainty: 'low', evidenceBindingIds: [], explanation: [], authoredBy: { kind: 'daemon', id: 'archctxd', source: 'daemon' }, subjectSelectorId: 'runtime.refactor', relations: {}, createdAt: NOW, updatedAt: NOW, category: 'structural_observation', payload: { assessmentDigest: D('assessment'), kind: 'cycle', affectedNodeIds: ['runtime.refactor'], baselineSnapshotDigest: D('stats'), derivedOutcomes: [] } }; }
-function resolution(request: RefactorVerificationRequestV1, head: string, disposition: RefactorResolutionEvidenceV1['disposition']): RefactorResolutionEvidenceV1 { const basis = { schemaVersion: 'archcontext.refactor-resolution-evidence/v1' as const, recommendationId: 'recommendation.post', recommendationDigest: D('recommendation'), beforeSnapshotDigest: D('before'), afterSnapshotDigest: D('after'), verifiedHeadSha: head, verifiedWorktreeDigest: D('worktree'), expectedOutcomes: [], observedOutcomes: [], residuals: [], executionEvidenceRefs: request.executionEvidenceRefs ?? [], disposition, verifiedAt: NOW }; return { ...basis, resolutionDigest: refactorResolutionEvidenceDigest({ ...basis, resolutionDigest: D('placeholder') }) }; }
+function resolution(request: RefactorVerificationRequestV1, head: string, disposition: RefactorResolutionEvidenceV1['disposition']): RefactorResolutionEvidenceV1 { const basis = { schemaVersion: 'archcontext.refactor-resolution-evidence/v1' as const, recommendationId: 'recommendation.post', recommendationDigest: D('provider-resolution-identity'), beforeSnapshotDigest: D('before'), afterSnapshotDigest: D('after'), verifiedHeadSha: head, verifiedWorktreeDigest: D('worktree'), expectedOutcomes: [{ outcomeId: 'no-cycle', metric: 'repositorySummary.crossModuleCycleCount', subjectSelectorId: 'runtime.refactor', nodeId: null, operator: 'equals' as const, value: 0, required: true }], observedOutcomes: [{ outcomeId: 'no-cycle', observedValue: disposition === 'resolved' ? 0 : 1, satisfied: disposition === 'resolved', direction: disposition === 'resolved' ? 'improved' as const : 'unchanged' as const }], residuals: [], executionEvidenceRefs: request.executionEvidenceRefs ?? [], disposition, verifiedAt: NOW }; return { ...basis, resolutionDigest: refactorResolutionEvidenceDigest({ ...basis, resolutionDigest: D('placeholder') }) }; }
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'refactor-post-merge-')); roots.push(root); const home = mkdtempSync(join(tmpdir(), 'refactor-post-home-')); roots.push(home); execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root }); execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root }); execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
   const sprintPath = 'plans/sprints/rf.sprint.md'; const planPath = 'plans/plan.md'; const contractPath = 'tasks/contracts/task.md';
@@ -44,8 +44,8 @@ describe('Module 9 exact post-merge resolution', () => {
   test('records ArchContext resolution and completes only after exact final-main evidence', async () => { const f = await fixture(); const order: string[] = [];
     let resolved = false; const dependencies = { verify: (request: RefactorVerificationRequestV1) => { order.push('verify'); const evidence = resolution(request, f.finalMain, 'resolved'); return { disposition: 'resolved', evidence } as never; }, resolve: () => { order.push('resolve'); resolved = true; }, recommendations: () => { order.push('recommendations'); return [recommendation(resolved ? 'resolved' : 'accepted')]; } };
     const request = { repo_root: f.root, program: f.program, final_main_sha: f.finalMain, final_worktree_digest: D('worktree'), items: [{ candidateVerification: f.candidate, binding: f.binding, acceptanceReceiptLocator: '.repo-harness/acceptance.json', mergeReceiptLocator: '.repo-harness/merge.json', mergeReceiptSha256: D('merge') }], expected_current_sha256: f.current.current_sha256, idempotency_key: 'post', observed_at: NOW, env: f.env } as const;
-    const result = await resolveRefactorPostMerge(request, dependencies); expect(order).toEqual(['verify', 'recommendations', 'resolve', 'recommendations']); expect(result.stage).toBe('resolved'); expect(readRefactorProgramStatus(f.root, 'rf-post', f.env).current.state).toBe('complete'); expect(existsSync(result.jsonPath)).toBe(true); expect(readFileSync(result.markdownPath, 'utf8')).toContain('resolved (resolved)');
-    order.length = 0; expect((await resolveRefactorPostMerge({ ...request, expected_current_sha256: readRefactorProgramStatus(f.root, 'rf-post', f.env).current.current_sha256 }, dependencies)).stage).toBe('resolved'); expect(order).toEqual(['recommendations']);
+    const result = await resolveRefactorPostMerge(request, dependencies); expect(order).toEqual(['recommendations', 'verify', 'resolve', 'recommendations', 'recommendations']); expect(result.stage).toBe('resolved'); expect(readRefactorProgramStatus(f.root, 'rf-post', f.env).current.state).toBe('complete'); expect(existsSync(result.jsonPath)).toBe(true); expect(readFileSync(result.markdownPath, 'utf8')).toContain('resolved (resolved)');
+    order.length = 0; expect((await resolveRefactorPostMerge({ ...request, expected_current_sha256: readRefactorProgramStatus(f.root, 'rf-post', f.env).current.current_sha256 }, dependencies)).stage).toBe('resolved'); expect(order).toEqual(['recommendations', 'recommendations']);
   });
   test('Stage 2 absence stays merged_pending_measurement and never claims resolution', async () => { const f = await fixture(); const result = await resolveRefactorPostMerge({ repo_root: f.root, program: f.program, final_main_sha: f.finalMain, final_worktree_digest: D('worktree'), items: [{ candidateVerification: f.candidate, binding: f.binding, acceptanceReceiptLocator: '.repo-harness/acceptance.json', mergeReceiptLocator: '.repo-harness/merge.json', mergeReceiptSha256: D('merge') }], expected_current_sha256: f.current.current_sha256, idempotency_key: 'post', observed_at: NOW, env: f.env }, { verify: () => { throw new RefactorProviderError('refactor_provider_version_mismatch', 'missing'); }, recommendations: () => [recommendation('accepted')] }); expect(result.stage).toBe('merged_pending_measurement'); expect(result.board.cards[0]?.architectureResult).toBe('merged_pending_measurement'); expect(readRefactorProgramStatus(f.root, 'rf-post', f.env).current.state).toBe('post_merge_measuring'); });
 
@@ -65,4 +65,34 @@ describe('Module 9 exact post-merge resolution', () => {
     await resolveRefactorPostMerge({ repo_root: f.root, program: f.program, final_main_sha: f.finalMain, final_worktree_digest: D('worktree'), items: [{ candidateVerification: f.candidate, binding: f.binding, acceptanceReceiptLocator: '.repo-harness/acceptance.json', mergeReceiptLocator: '.repo-harness/merge.json', mergeReceiptSha256: D('merge') }], expected_current_sha256: f.current.current_sha256, idempotency_key: 'post', observed_at: NOW, env: f.env }, { verify: () => { throw new RefactorProviderError('refactor_provider_version_mismatch', 'missing'); }, recommendations: () => [recommendation('accepted')] });
     expect(() => rebuildRefactorBoard({ repo_root: f.root, program: f.program, head_sha: f.candidateHead, env: f.env }, { recommendations: () => [recommendation('accepted')] })).toThrow('not an ancestor');
   });
+});
+
+function postRequest(f: Awaited<ReturnType<typeof fixture>>) {
+  return { repo_root: f.root, program: f.program, final_main_sha: f.finalMain, final_worktree_digest: D('worktree'), items: [{ candidateVerification: f.candidate, binding: f.binding, acceptanceReceiptLocator: '.repo-harness/acceptance.json', mergeReceiptLocator: '.repo-harness/merge.json', mergeReceiptSha256: D('merge') }], expected_current_sha256: f.current.current_sha256, idempotency_key: 'post', observed_at: NOW, env: f.env } as const;
+}
+test('resumes provider resolution after a persisted measurement and interrupted lifecycle write', async () => {
+  const f = await fixture(); const request = postRequest(f); let verifies = 0; let resolves = 0; let resolved = false;
+  const deps = { verify: (r: RefactorVerificationRequestV1) => { verifies++; return { disposition: 'resolved', evidence: resolution(r, f.finalMain, 'resolved') } as never; }, resolve: () => { if (++resolves === 1) throw new Error('interrupted resolve'); resolved = true; }, recommendations: () => [recommendation(resolved ? 'resolved' : 'accepted')] };
+  await expect(resolveRefactorPostMerge(request, deps)).rejects.toThrow('interrupted resolve');
+  expect(readRefactorProgramStatus(f.root, 'rf-post', f.env).current.state).toBe('post_merge_measuring');
+  expect((await resolveRefactorPostMerge(request, deps)).stage).toBe('resolved');
+  expect(verifies).toBe(1); expect(resolves).toBe(2);
+});
+test('requires resolved provider readback after the lifecycle operation', async () => {
+  const f = await fixture();
+  await expect(resolveRefactorPostMerge(postRequest(f), { verify: (r) => ({ disposition: 'resolved', evidence: resolution(r, f.finalMain, 'resolved') }) as never, resolve: () => {}, recommendations: () => [recommendation('accepted')] })).rejects.toThrow('resolved');
+  expect(readRefactorProgramStatus(f.root, 'rf-post', f.env).current.state).toBe('post_merge_measuring');
+});
+test('measures the final main after a prior work-package merge', async () => {
+  const f = await fixture(); execFileSync('git', ['commit', '--allow-empty', '-qm', 'later main'], { cwd: f.root });
+  const final = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.root, encoding: 'utf8' }).trim(); let resolved = false;
+  const result = await resolveRefactorPostMerge({ ...postRequest(f), final_main_sha: final }, { verify: (r) => ({ disposition: 'resolved', evidence: resolution(r, final, 'resolved') }) as never, resolve: () => { resolved = true; }, recommendations: () => [recommendation(resolved ? 'resolved' : 'accepted')] });
+  expect(result.stage).toBe('resolved');
+});
+test('board projection rejects a symlink ancestor without writing outside the repository', async () => {
+  const f = await fixture(); const outside = mkdtempSync(join(tmpdir(), 'refactor-board-outside-')); roots.push(outside);
+  mkdirSync(join(f.root, 'tasks/workstreams'), { recursive: true }); symlinkSync(outside, join(f.root, 'tasks/workstreams/refactor'));
+  writeFileSync(join(outside, 'rf-post.md'), 'keep');
+  expect(() => rebuildRefactorBoard({ repo_root: f.root, program: f.program, head_sha: f.finalMain, env: f.env }, { recommendations: () => [recommendation('accepted')] })).toThrow('unsafe');
+  expect(readFileSync(join(outside, 'rf-post.md'), 'utf8')).toBe('keep'); expect(existsSync(join(outside, 'rf-post.board.v1.json'))).toBe(false);
 });

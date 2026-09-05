@@ -97,8 +97,11 @@ function assertOperationEnabled(repoRoot: string, program: RefactorProgramDefini
   if (Date.parse(grant.expires_at) <= Date.now()) fail('refactor_program_authorization_stale', 'program authorization expired');
   const currentTarget = targetRevision(repoRoot, grant.target_ref);
   if (operation !== 'mark_stale' && currentTarget !== grant.target_revision) {
-    if (ownedTargetRevision !== currentTarget) fail('refactor_program_authorization_stale', 'authorized target ref moved');
-    if (operation === 'begin_plan') {
+    if (operation === 'begin_execute' || operation === 'begin_verify') {
+      const planned = rebuild(paths(repoRoot, program.program_id), program).events.find((event) => event.operation === 'begin_plan');
+      if (planned?.evidence_refs[0] !== currentTarget) fail('refactor_program_authorization_stale', 'target differs from the owned materialization');
+    } else if (ownedTargetRevision !== currentTarget) fail('refactor_program_authorization_stale', 'authorized target ref moved');
+    else if (operation === 'begin_plan') {
       let parent: string;
       try { parent = execFileSync('git', ['rev-parse', '--verify', `${currentTarget}^1`], { cwd: repoRoot, encoding: 'utf8' }).trim(); }
       catch (error) { return fail('refactor_program_authorization_stale', 'materialized target has no verifiable parent', error); }
