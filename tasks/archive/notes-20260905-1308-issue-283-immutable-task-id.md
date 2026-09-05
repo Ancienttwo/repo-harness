@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-05 13:08
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260905-1308
+> **Archive Projection V1**: `plans/plan-20260902-2101-issue-283-immutable-task-id.md` => `plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md` => `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md` => `tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md` => `tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md`
+
 # Implementation Notes: issue-283-immutable-task-id
 
 > **Substantive Change SHA256**: `sha256:ffac7efab092c0771884012aa4c2a57ba492c67c5a6ee51906d358b91f0556e6`
@@ -9,9 +19,9 @@
 > **Substantive Change SHA256**: `sha256:52b7b28904beb8a7ccf762fb2717dd1cb2f07d7e4b6fc8234eac3fce3a0f3292`
 
 > **Status**: Active
-> **Plan**: plans/plan-20260902-2101-issue-283-immutable-task-id.md
-> **Contract**: tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md
-> **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
+> **Plan**: plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
+> **Contract**: tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md
+> **Review**: tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
 > **Substantive Change SHA256**: `sha256:dace28cd70d3a8953c34f4291fc6b035ebae382b6508ce48dc6e48305746005c`

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 13:08
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260905-1308
+> **Archive Projection V1**: `plans/plan-20260902-2101-issue-283-immutable-task-id.md` => `plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md` => `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md` => `tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md` => `tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md`
+
 # Task Review: issue-283-immutable-task-id
 
 > **Status**: Pending
-> **Plan**: plans/plan-20260902-2101-issue-283-immutable-task-id.md
-> **Contract**: tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md
-> **Notes File**: tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md
+> **Plan**: plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
+> **Contract**: tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md
+> **Notes File**: tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-02 21:01
 > **Recommendation**: fail
@@ -26,7 +36,7 @@
 ## Mode Evidence
 
 - Selected route: planning -> contract execution in an isolated worktree.
-- P1/P2/P3 evidence: captured in `plans/plan-20260902-2101-issue-283-immutable-task-id.md` `## Captured Planning Output`; the deviation from the issue's recommended row shape and the version-domain choice are argued in `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md`.
+- P1/P2/P3 evidence: captured in `plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md` `## Captured Planning Output`; the deviation from the issue's recommended row shape and the version-domain choice are argued in `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`.
 - Root cause or plan evidence: not a bugfix contract; the defect is the identity derivation itself, documented in issue #283 and in `docs/architecture/shared-coordination-plane.md` section 2.
 
 ## Verification Evidence
@@ -35,7 +45,7 @@
 - Commands run: the nine commands listed on the Human Review Card, all inside this worktree.
 - Manual checks: `bun src/cli/index.ts sprint migrate-schema --sprint plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md --target-ref HEAD` against real repo state; it refused with `row 10 task_id=713faba2... lease=completing` and left both the sprint and the carrier untouched, which is the live-lease refusal the migration contract requires.
 - Supporting artifacts: `tests/unit/sprint-schema-v2-identity.test.ts` (identity/revision properties, fail-closed cases, Work Graph join), `tests/unit/sprint-schema-migrate.test.ts` (byte-golden rewrite plus real-repo migration, live-lease refusal, receipt bindings), `tests/sprint-backlog-grammar-drift.test.ts` with two new schema 2 fixtures binding the awk authority to the TypeScript projection.
-- Implementation notes reviewed: `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md`.
+- Implementation notes reviewed: `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`.
 - Run snapshot: `.ai/harness/runs/`.
 
 ## Acceptance Receipt Projection
@@ -85,7 +95,7 @@
 ## Retest Steps
 
 - Re-run: `bun run check:type`; `bun test --timeout 60000`; `bun run check:state-boundaries`; `repo-harness run check-task-workflow --strict`.
-- Re-check: `repo-harness run verify-contract --contract tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md --strict`.
+- Re-check: `repo-harness run verify-contract --contract tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md --strict`.
 
 ## Summary
 
