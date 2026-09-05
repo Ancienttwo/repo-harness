@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
 > **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
 > **Review**: tasks/reviews/20260905-1413-fleet-board-card-containment.review.md
-> **Last Updated**: 2026-09-05 16:05
+> **Last Updated**: 2026-09-05 17:45
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -25,26 +25,39 @@
   than once per repository. The statuses are read once for the repository but
   joined against per-card delivery receipts, so only a per-card re-read can
   observe that specific join being torn.
-- The Task Board send keeps its registry fence by re-reading the registry
-  without a lock inside the task lock and comparing `registryRevision`. Taking
-  the registry lock there would restore the machine-global lock underneath the
-  per-task lock, which is exactly the ordering this change removes; the registry
-  writer publishes whole documents by rename, so a lock-free read observes one
-  complete revision.
+- The Task Board send holds the task lock as the outer lock and takes the
+  registry authorization lock for one short critical section that re-asserts
+  registration plus `access_mode` and performs `writeImmutableEvent`. Checking
+  authorization and then publishing outside that lock leaves a revoke-after-check
+  window: an unlocked re-read cannot see a revocation that commits between the
+  read and the write. The check and the write therefore share one critical
+  section of the same lock revocation must take.
+- Deadlock proof for the task -> registry nesting:
+  `rg -n "withRepoHarnessRegistryAuthorizationLock" src` shows one definition in
+  `src/effects/repo-registry.ts` and one product caller in
+  `src/effects/fleet/task-message-request.ts`; `src/effects/repo-registry.ts`
+  imports no lease, inbox, or coordination module and never calls `withTaskLock`
+  or `withInboxTaskLock`, and the only caller-supplied hook run under that lock
+  (`applyRepoHarnessRegistryBatch`'s `beforeCommit`, used by
+  `src/cli/mcp/setup.ts:751`) writes a config file, so no path holds the registry
+  lock and then waits for a task lock.
 - `TaskInboxAuthorityRejection` exists so the caller's own typed authority
   failure crosses `withInboxTaskLock` unchanged. Without it the Task Inbox
   module flattened a `repository_read_only` rejection into
-  `task_message_unreadable`, which named the wrong cause.
+  `task_message_unreadable`, which named the wrong cause. It wraps only failures
+  raised before the publication callback starts, so a genuine write failure keeps
+  this module's own vocabulary.
 
 ## Deviations From Plan Or Spec
 
-- The plan's transport decision is implemented, but the additive
-  `FleetBoardCardV1.error` and `FleetBoardCountsV1.unclassified` fields are
-  required members of the type the browser shares, so `bun run check:type`
-  reports six errors in `src/operator-web/types.ts` and
-  `src/operator-web/fixture.ts`. That surface is a declared non-goal and is not
-  in this contract's Allowed Paths, so it is left to the sibling browser work
-  package. `bun run build:operator-web` is unaffected.
+- The additive `FleetBoardCardV1.error` and `FleetBoardCountsV1.unclassified`
+  fields are required members of the type `src/operator-web` shares, so the
+  branch could not type-check without the browser transport decoding them. The
+  minimal blocking fix is in scope: `decodeCard` reuses the existing
+  `decodeError` allowlist for the card error and `decodeOperatorFleetSnapshot`
+  requires `counts.unclassified`, plus the demo fixture literals. Board chips,
+  composer copy, i18n, and styling for the new fields stay with the sibling
+  browser package.
 - Two existing tests encoded the old lock order and had to change meaning, not
   just shape. `tests/effects/operator-task-message.test.ts` no longer asserts
   that a sender holding registry authorization publishes ahead of a waiting
@@ -66,7 +79,8 @@
 |--------|----------|--------|
 | Drop the post-await deadline relabel entirely | Rejected | An injected collector can return after being aborted; the in-flight token still needs to discard that result |
 | Re-read the Agent Runtime store once per repository | Rejected | The torn join is per card, so a repository-level compare would report the wrong cards changed |
-| Re-take the registry lock inside the task lock | Rejected | Restores registry-under-task ordering, which is the deadlock shape being removed |
+| Keep the unlocked authority re-read inside the task lock | Rejected | A revocation committing between the read and the write is unobservable, so the send published against a read-only repository |
+| Restore the original registry -> task order | Rejected | The proof above shows task -> registry closes no cycle, and the original order held a machine-global lock across canonical Git I/O and a five-second task-lock wait |
 | Keep `assertEventCanonical` throwing in scans and filter its error at the fleet card | Rejected | The stale event would still hide every other message of that task from every other caller |
 
 ## Open Questions
@@ -77,7 +91,8 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Pre-fix artifacts: `.ai/harness/runs/pre-fix-fleet-board-card-containment.log`,
+- Pre-fix artifacts: `.ai/harness/runs/pre-fix-operator-task-message-publication-authority.log`,
+  `.ai/harness/runs/pre-fix-fleet-board-card-containment.log`,
   `.ai/harness/runs/pre-fix-fleet-board-projection.log`,
   `.ai/harness/runs/pre-fix-operator-fleet-snapshot.log`,
   `.ai/harness/runs/pre-fix-task-inbox-revision-skip.log`,
@@ -91,6 +106,10 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 
 - An additive field on a type shared with `src/operator-web` is not additive at
   the type level: the browser decoder and its fixture construct that type by
-  literal, so every core field addition needs the browser package in the same
-  slice or an explicit follow-up. Promote to `tasks/lessons.md` if a second
-  work package hits the same wall.
+  literal, so every core field addition has to land the browser decode in the
+  same slice. Promote to `tasks/lessons.md` if a second work package hits the
+  same wall.
+- Splitting a lock to fix an ordering problem moves the write out of the
+  authority's critical section unless the write is deliberately put back inside
+  it. "Check under the lock, then release, then write" is a revoke-after-check
+  window, not a fence. Promote to `tasks/lessons.md` if it recurs.

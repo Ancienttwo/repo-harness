@@ -1,15 +1,15 @@
 # Task Contract: fleet-board-card-containment
 
-> **Status**: Fulfilled
+> **Status**: Active
 > **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
 > **Task Profile**: bugfix
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-05 15:40
+> **Last Updated**: 2026-09-05 17:35
 > **Review File**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
 > **Notes File**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:90257428749442ca0f918e76db281c384950fbdbc02723fd8a5650df0076e01f`
+> **Substantive Change SHA256**: `sha256:607d42561928b8cfd3b80501e7c4ecbcafffb76d9e869cbada1ee55bb9653148`
 
 ## Why
 
@@ -38,11 +38,14 @@ machine-global registry authorization lock across the per-task lock.
   event-loop yields plus deadline preemption bookkeeping; provider limiter slot
   transfer; registry authority realpath comparison; Agent Runtime read folded into
   card consistency; registry/task lock order in the operator write.
-- Out of scope: browser chips and browser decoding of the additive card `error`
-  and `counts.unclassified` fields (`src/operator-web/**`); deriving the
-  claim-scope canonical fence from the lease record; `task_label` null versus
-  empty-cell ambiguity; R1 delivery/reachability contributing to
-  `attention_owner`.
+- Also in scope, as the one blocking out-of-scope fix: the browser transport
+  decode of the two additive fields in `src/operator-web/types.ts` and
+  `src/operator-web/fixture.ts`, because they are required members of the type
+  the browser shares and the branch must type-check on its own.
+- Out of scope: browser board chips, composer copy, i18n, and styling for the
+  new fields; deriving the claim-scope canonical fence from the lease record;
+  `task_label` null versus empty-cell ambiguity; R1 delivery/reachability
+  contributing to `attention_owner`.
 - Taste constraints: keep the public repository/card error vocabulary closed and
   message-normalized; never invent field values for a failed observation.
 
@@ -63,20 +66,23 @@ produces `status: 'ok'` with a typed card error.
 
 ## Root Cause Evidence
 
-- root_cause: `src/effects/fleet/board.ts:307-314` let `collectBounded` rethrow the
-  first card observation error out of `collectRepository`, and `collectFleetBoard`
-  (`:460-462`) mapped that throw to a repository-level `repositoryError`, so one
-  `MergeReadinessError('receipt_unavailable')` on one reviewing card produced
-  `status: 'unreadable'` with `cards: []` for the whole repository; the same path
-  turned one superseded-revision inbox event, thrown by `assertEventCanonical`
-  (`src/effects/fleet/task-inbox.ts:603-607`), into a permanently unreadable
-  repository card.
-- repro: `bun test --timeout 60000 tests/effects/fleet-board.test.ts` on the unfixed
-  source; the containment guard builds a two-card reviewing fixture whose second
-  publication receipt cache is absent and observes `status: 'unreadable'` with zero
-  cards instead of one readable card beside one failed card.
-- regression_guard: tests/effects/fleet-board.test.ts
-- pre_fix_failure_artifact: .ai/harness/runs/pre-fix-fleet-board-card-containment.log
+- card containment pre-fix artifact: `.ai/harness/runs/pre-fix-fleet-board-card-containment.log`
+  captures the same work package's first defect, where `src/effects/fleet/board.ts:307-314`
+  let `collectBounded` rethrow the first card observation error out of
+  `collectRepository` and `collectFleetBoard` mapped it to a repository-level
+  `repositoryError`, so one missing publication receipt produced `status: 'unreadable'`
+  with `cards: []` for the whole repository.
+- root_cause: `src/effects/fleet/task-message-request.ts` released the registry
+  authorization lock after resolving the repository and then re-checked that authority
+  with an unlocked read at the top of the task-lock section, so a `read_only` revocation
+  committing between that re-check and `writeImmutableEvent` was never observed and the
+  operator send returned `created: true` against a repository that was already read only.
+- repro: `bun test --timeout 60000 tests/effects/operator-task-message.test.ts` on the
+  unfixed source; the guard pauses the sender's canonical `git show` only while the task
+  lock is held, commits a `read_only` revocation, releases the barrier, and observes
+  `{ ok: true, created: true }` instead of `repository_read_only`.
+- regression_guard: tests/effects/operator-task-message.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/pre-fix-operator-task-message-publication-authority.log
 
 ## Workflow Inventory
 
@@ -111,6 +117,10 @@ allowed_paths:
   - src/effects/fleet/task-inbox.ts
   - src/effects/fleet/task-message-request.ts
   - src/effects/operator/fleet-collector-process.ts
+  # Blocking type-level fix only: the two additive fields are required members of
+  # the transport type this browser package constructs by literal.
+  - src/operator-web/types.ts
+  - src/operator-web/fixture.ts
   - tests/
   - docs/architecture/
   - plans/plan-20260905-1413-fleet-board-card-containment.md
@@ -185,6 +195,7 @@ exit_criteria:
     - bash scripts/check-task-workflow.sh --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun run build:operator-web
+    - bun run check:type
 ```
 
 ## Acceptance Notes (Human Review)
@@ -203,15 +214,15 @@ exit_criteria:
   clock has since passed the deadline; a registered path under a symlinked
   ancestor or with a trailing separator is valid authority while a symlinked leaf
   is still rejected.
-- Regression risks: `bun run check:type` reports six errors inside
-  `src/operator-web/**` because the additive `FleetBoardCardV1.error` and
-  `FleetBoardCountsV1.unclassified` fields are required by the shared transport
-  type while the browser decoder and its demo fixture still construct the
-  pre-additive literals. That surface is this work package's declared non-goal
-  and is not in Allowed Paths, so the decoder change belongs to the sibling
-  browser work package. Two existing lock-order assertions changed meaning:
-  a revocation that lands while a publication waits for the task lock now wins,
-  and a blocked canonical read no longer pins the machine-global registry lock.
+- Regression risks: the operator write now nests registry inside task. The
+  nesting is one-directional: `withRepoHarnessRegistryAuthorizationLock` has one
+  product caller, nothing `src/effects/repo-registry.ts` runs under that lock
+  acquires a task lock, and its only caller-supplied hook writes a config file,
+  so no cycle exists. Three existing assertions changed meaning: a revocation
+  that lands while a publication waits for the task lock now wins, a blocked
+  canonical read no longer pins the machine-global registry lock, and the
+  browser decoder now requires `counts.unclassified` and a nullable card
+  `error` in the payload it accepts.
 
 ## Rollback Point
 

@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
 > **Notes File**: tasks/notes/20260905-1413-fleet-board-card-containment.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-09-05 16:20
+> **Last Updated**: 2026-09-05 17:55
 > **Recommendation**: pending
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -16,11 +16,11 @@
 
 - Verdict: pending
 - Change type: code-change
-- Intended files changed: `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, plus their tests
-- Actual files changed: the five source files above, `tests/effects/fleet-board.test.ts`, `tests/unit/fleet-board.test.ts`, `tests/unit/operator-fleet-snapshot.test.ts`, `tests/unit/task-inbox-v1.test.ts`, `tests/effects/operator-task-message.test.ts`, `tests/cli/operator-serve.test.ts`, `tests/operator-web/operator-ui.test.tsx`, `tests/operator-web/operator-interactions.test.tsx`
-- Commands passed: focused fleet/inbox/operator suites, `bun run build:operator-web`, `bash scripts/check-deploy-sql-order.sh`, `bash scripts/check-architecture-sync.sh`, `bash scripts/check-task-sync.sh`, `bash scripts/check-task-workflow.sh --strict`, `bun scripts/inspect-project-state.ts --repo . --format text`, `bun src/cli/index.ts init --repo . --dry-run`, full `bun test --timeout 60000`
-- Residual risks: `bun run check:type` reports six errors inside `src/operator-web/**`, which this contract may not edit; the browser decoder and its demo fixture must accept the additive card `error` and `counts.unclassified` fields in the sibling work package
-- Reviewer action required: inspect diff and card, and decide whether the sibling browser package lands before merge
+- Intended files changed: `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, the blocking type-level additions in `src/operator-web/types.ts` and `src/operator-web/fixture.ts`, plus their tests
+- Actual files changed: the seven source files above, `tests/effects/fleet-board.test.ts`, `tests/unit/fleet-board.test.ts`, `tests/unit/operator-fleet-snapshot.test.ts`, `tests/unit/task-inbox-v1.test.ts`, `tests/effects/operator-task-message.test.ts`, `tests/cli/operator-serve.test.ts`, `tests/operator-web/operator-ui.test.tsx`, `tests/operator-web/operator-interactions.test.tsx`
+- Commands passed: focused fleet/inbox/operator suites, `bun run check:type`, `bun run build:operator-web`, `bash scripts/check-deploy-sql-order.sh`, `bash scripts/check-architecture-sync.sh`, `bash scripts/check-task-sync.sh`, `bash scripts/check-task-workflow.sh --strict`, `bun scripts/inspect-project-state.ts --repo . --format text`, `bun src/cli/index.ts init --repo . --dry-run`, full `bun test --timeout 60000`
+- Residual risks: the operator write nests the registry authorization lock inside the task lock; the one-directional proof is recorded in the notes file
+- Reviewer action required: inspect diff and card
 - Rollback: revert the two commits on `codex/fleet-board-card-containment`
 
 ## Mode Evidence
@@ -64,15 +64,18 @@
 - Inbox scans skip superseded-revision events; `TaskInboxListResult` gains
   `superseded_revision_count`. Callers naming one exact event still fail closed.
 - A revocation that lands while an operator publication waits for the task lock
-  now wins instead of being serialized behind the send.
+  now wins instead of being serialized behind the send, including one that
+  commits after the send has already taken the task lock: the authority re-check
+  and `writeImmutableEvent` share one registry-lock critical section.
 - A blocked canonical read no longer pins the machine-global registry lock.
+- The browser transport decodes a nullable card `error` against the existing
+  closed error allowlist and requires `counts.unclassified`.
 
 ## Residual Risks / Follow-ups
 
-- `bun run check:type`: six errors in `src/operator-web/types.ts` (`decodeCard`,
-  `decodeSnapshot` counts) and `src/operator-web/fixture.ts` (card override and
-  three counts literals). Owned by the sibling browser work package together with
-  the board chips for the new fields.
+- Board chips, composer copy, i18n, and styling for the card `error` and
+  `counts.unclassified` fields are still owned by the sibling browser work
+  package; this branch only makes the transport decode them.
 
 ## Scorecard
 
@@ -85,12 +88,12 @@
 
 ## Failing Items
 
-- `bun run check:type` (out of contract scope; see Residual Risks)
+- None.
 
 ## Retest Steps
 
 - Re-run: `bun test --timeout 60000 tests/effects/fleet-board.test.ts tests/unit/fleet-board.test.ts tests/unit/operator-fleet-snapshot.test.ts tests/unit/task-inbox-v1.test.ts tests/effects/task-inbox.test.ts tests/effects/operator-task-message.test.ts tests/cli/operator-serve.test.ts`
-- Re-check: `bun run build:operator-web` and the repository-integrity checks in the contract exit criteria
+- Re-check: `bun run check:type`, `bun run build:operator-web`, and the repository-integrity checks in the contract exit criteria
 
 ## Summary
 
@@ -98,4 +101,5 @@
   counts the rows it cannot classify, superseded inbox events are skipped instead
   of aborting every scan, the round deadline can preempt a synchronous card
   phase, and the operator write no longer holds the machine-global registry lock
-  across the per-task lock.
+  across the per-task lock while still publishing inside that lock's critical
+  section.
