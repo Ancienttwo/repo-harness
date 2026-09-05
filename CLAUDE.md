@@ -58,18 +58,12 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 
 ## Required Checks
 
-Choose verification from the complete diff and risk, not merely because a task is closing. Do not run the full suite for every small change.
-
-- Docs-only, ledger, or archive changes: run `git diff --check`, plus task-sync/workflow checks when workflow artifacts changed. Check affected links/paths. No full suite or typecheck is required when executable behavior is unchanged.
-- Isolated code changes: run the regression and affected test suites, plus `bun run check:type` for TypeScript changes. Run generator/mirror checks when their inputs or outputs change.
-- High-risk, cross-module, shared-contract, hook/runtime, authorization, publication, migration, or release changes: run the full verification set below. Escalate to it when the impact boundary cannot be established.
-- Active contracts and CI may require stronger checks; do not weaken an accepted criterion to obtain a pass. Before running, name the selected scope and reason; report exact commands, results, and any unrun checks. Do not rerun an unchanged suite solely for a docs/ledger closeout after it already passed against the same executable source.
-
-Full verification set (conditional on the scope above, not an every-task checklist):
+Verification is risk-scoped. The active task contract's `exit_criteria` is the
+source of truth for behavior-specific checks; run focused tests for every
+changed behavior. The following repository-integrity checks are required for
+substantive repository changes:
 
 ```bash
-bun run check:type
-bun test --timeout 60000
 bash scripts/check-deploy-sql-order.sh
 bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
@@ -77,6 +71,36 @@ bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
 bun src/cli/index.ts init --repo . --dry-run
 ```
+
+Use focused regression tests and the repository-integrity checks above by
+default, including small code and test changes. Run the full
+`bun test --timeout 60000` suite only when the active contract or release gate
+explicitly requires it, or observed cross-module impact cannot be covered by
+named focused checks. A code/test path, diff size, review depth, or changed
+verification script alone is not sufficient justification. Before an expensive
+run, state the uncovered risk, why narrower checks are insufficient, and the
+expected cost. When authoring a contract, apply these same conditions before
+adding a full-suite criterion; copying an unconditional command is not a risk
+assessment.
+
+Freeze the implementation before final acceptance. Execute required expensive
+criteria once through `verify-sprint --prepare-acceptance`; declare eligible
+deterministic criteria in `criterion_reuse` so unchanged retries consume the
+existing exact-context pass. Reviewers consume that evidence rather than
+independently rerunning the suite. Do not list the same test coverage twice in
+the final contract; focused development runs are separate from final acceptance.
+Record changed paths, checks run or reused, and why that coverage is sufficient.
+CI and explicit release gates retain their required checks.
+
+After a passing full suite, a subsequent bounded change does not automatically
+require another full run. Retain the baseline run identity, inspect the actual
+delta, and run its regression/affected checks. The parent updates the contract's
+final criteria to that delta coverage when the full-suite trigger no longer
+applies, recording the baseline and coverage rationale in Acceptance Notes.
+Do not waive an explicit user/release requirement. An old full-suite pass remains
+baseline evidence for its original subject, never a full-suite pass for the new
+subject. Repeat the full suite only for an uncovered integration risk or an
+explicit requirement for that new subject; a cache miss alone is not a trigger.
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract

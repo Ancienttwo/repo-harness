@@ -1407,7 +1407,12 @@ else
 
     contract_file="$(derive_contract_path "$active_plan")"
     if [[ ! -f "$contract_file" ]]; then
-      report_issue "Active $plan_status plan is missing its task contract: $contract_file"
+      # The canonical resolver owns separate-contract requirements and rejects
+      # missing required contracts. Do not impose strict ceremony on standard.
+      if ! resolved_profile="$(repo-harness state resolve --json --field workflow_profile)" \
+        || [[ ! "$resolved_profile" =~ ^(lite|standard|strict)$ ]]; then
+        report_issue "Active $plan_status plan has no task contract and canonical state resolution did not admit that state: $contract_file"
+      fi
     elif ! grep -Eq '^> \*\*Capability ID\*\*: .+' "$contract_file"; then
       report_issue "Active task contract is missing a capability binding: $contract_file"
     fi

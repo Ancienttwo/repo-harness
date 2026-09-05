@@ -125,6 +125,22 @@ delegation:
 
 ## Exit Criteria (Machine Verifiable)
 
+Choose the smallest checks that cover the changed behavior. Add a full suite
+only for an explicit release requirement or an observed cross-module coverage
+gap; state that reason and expected cost in Acceptance Notes. Do not duplicate
+coverage between `tests_pass` and `commands_succeed`. Before the first run,
+list eligible deterministic criteria in `criterion_reuse`; eligibility requires
+all inputs to be bound by the frozen subject/toolchain context. Leave external
+or mutable-state criteria ineligible. The canonical acceptance runner owns the
+expensive execution; workers and reviewers consume its evidence.
+
+If a full suite already passed before a bounded follow-up edit, preserve its
+run identity as baseline evidence and choose focused checks for the actual delta.
+The parent revises these criteria and records the baseline plus coverage rationale
+in Acceptance Notes, unless an explicit user/release requirement still requires
+a full run on the new subject. A cache miss alone does not justify another full
+suite; never label the old subject's pass as a full pass for the new subject.
+
 ```yaml
 exit_criteria:
   files_exist:
@@ -136,13 +152,9 @@ exit_criteria:
     - path: tests/unit/{{TASK_SLUG}}.test.ts
   commands_succeed:
     - bun run check:type
-# Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
-# criteria whose inputs are fully bound by the frozen subject/toolchain context.
-# criterion_reuse:
-#   tests_pass:
-#     - path/to/deterministic.test.ts
-#   commands_succeed:
-#     - bun test --timeout 60000
+criterion_reuse:
+  tests_pass: []
+  commands_succeed: []
 ```
 
 ## Acceptance Notes (Human Review)

@@ -596,7 +596,7 @@ function runPerPathGuards(
       && contractAllowsPath(activeContract, effective.allowed_paths, filePath),
   );
   const workflowProfile = workflowProfileOrNull(effective);
-  if (!workflowProfile) {
+  if (!effective || !workflowProfile) {
     out(ctx, `[WorkflowProfileGuard] Unable to resolve a deterministic workflow profile for ${filePath}`);
     structuredError(
       ctx,
@@ -624,7 +624,7 @@ function runPerPathGuards(
   }
 
   // ---- plan_gate -----------------------------------------------------------
-  runEditPlanGate(ctx, filePath, workflowProfile);
+  runEditPlanGate(ctx, filePath, effective);
 
   // ---- strict_contract / strict_worktree ----------------------------------
   if (workflowProfile === 'strict' && isRepoScopedPath(filePath) && !isWorkflowSurfacePath(filePath)) {
@@ -749,7 +749,8 @@ function editPlanGateMode(ctx: Ctx): string {
   return policyGet(ctx.repoRoot, ['guards', 'edit_plan_gate'], 'enforce');
 }
 
-function runEditPlanGate(ctx: Ctx, filePath: string, workflowProfile: WorkflowProfile): void {
+function runEditPlanGate(ctx: Ctx, filePath: string, effective: EffectiveState): void {
+  const workflowProfile = effective.workflow_profile;
   const mode = editPlanGateMode(ctx);
   if (mode === 'off') return;
   if (!isRepoScopedPath(filePath)) return;
@@ -774,15 +775,17 @@ function runEditPlanGate(ctx: Ctx, filePath: string, workflowProfile: WorkflowPr
 
   const gatePlan = getActivePlan(ctx);
   if (!gatePlan || !fileExists(ctx.repoRoot, gatePlan)) {
-    out(ctx, `[PlanStatusGuard] No active plan covers implementation edit: ${filePath}`);
+    const reason = `Implementation edit to ${filePath} without an active plan; current workflow profile: ${workflowProfile}. Reasons: ${effective.profile_reasons.join(', ')}. State revision: ${effective.state_revision}. Earlier session guidance is a snapshot; current edit-time requirements apply.`;
+    const fix = `Capture the approved planning output with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved${workflowProfile === 'strict' ? ' --execute' : ''}.`;
+    out(ctx, `[PlanStatusGuard] ${reason}`);
     if (mode === 'advice') {
-      out(ctx, '[PlanStatusGuard] Advisory: capture the approved plan with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute');
+      out(ctx, `[PlanStatusGuard] Advisory: ${fix}`);
     } else {
       structuredError(
         ctx,
         'PlanStatusGuard',
-        `Implementation edit to ${filePath} without an active plan.`,
-        'Capture the approved planning output with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute, or set policy .guards.edit_plan_gate to advice/off for this repo.',
+        reason,
+        fix,
         'missing_artifact',
       );
       exit(2);

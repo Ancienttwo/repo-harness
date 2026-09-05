@@ -12,6 +12,18 @@
 
 ## Active Lessons
 
+- Date: 2026-09-05
+- Triggered by correction: a historical lite SessionStart message prohibited plan authoring after the current edit scope had already become standard and PlanStatusGuard required a plan.
+- Mistake pattern: interpreting snapshot ceremony guidance as a permanent session restriction, then reporting a conflict without resolving the current edit scope.
+- Prevention rule: lite means no required ceremony for the observed scope, not a ban on user-requested planning. Resolve the proposed edit plus current diff before acting; current risk requirements supersede historical snapshot guidance. Missing-plan diagnostics must name the current profile, reasons and revision and direct standard to one approved plan without disabling the guard.
+- Where to apply next time: Effective State projections, SessionStart guidance, edit-time guards, and task continuation.
+
+- Date: 2026-09-05
+- Triggered by correction: small tasks and repeated acceptance attempts were running expensive full suites despite existing exact-context criterion reuse.
+- Mistake pattern: broad path-based full-suite rules, worker self-execution followed by canonical execution, and reuse declarations left as template comments made the same coverage run repeatedly.
+- Prevention rule: justify full-suite necessity by an explicit acceptance/release requirement or an observed gap in focused coverage. Freeze code and declare deterministic reuse eligibility before the canonical acceptance run; worker, reviewer, and closeout consume its subject-bound evidence. After a full pass, bounded edits need focused delta checks and an explicit parent revision of final criteria, not an automatic full rerun on every new subject hash. Preserve the old run as baseline evidence without claiming it passed on the new subject. Keep stateful checks non-reusable. A generic review helper must execute a selected command, not infer a full suite from a manifest.
+- Where to apply next time: contract authoring, delegated worker/verifier prompts, Waza verification, and final acceptance retries.
+
 - Date: 2026-08-31
 - Triggered by correction: implementation of public Issues #231-#240 against their declared baseline `5da1963` found that #236's native relay/JSON-envelope symbols and #235's `operations.ts` patch path did not exist at that commit; title/body uniqueness and issue completeness had been verified, but the cited executable authority had not.
 - Mistake pattern: treating a well-structured issue body plus a matching commit label as sufficient evidence that its paths, symbols, and runtime boundary exist, then dispatching implementation before reopening those authorities at the exact baseline.
@@ -69,7 +81,7 @@
 - Date: 2026-07-20
 - Triggered by correction: the P0 package's dispatch-scoped test groups were all green locally, but full-suite CI failed on `tests/state/loop-semantics-characterization.test.ts` — a file no scoped group had ever run.
 - Mistake pattern: treating a curated test subset as ship evidence; scoped groups leave CI blind spots exactly where cross-surface interactions live.
-- Prevention rule: use root `AGENTS.md#Required Checks` and the active contract's exit criteria as the verification authority. Product/runtime source, tests, shared machine-executed contracts, test infrastructure, and package/release changes require the full suite; focused groups support iteration but do not replace that gate. Documentation and ledger-only changes use their relevant checks and repository-integrity checks, recording the changed paths and why narrower verification is sufficient.
+- Prevention rule: use root `AGENTS.md#Required Checks` and the active contract's exit criteria as the verification authority. Require the full suite only for an explicit contract/release gate or an observed cross-module risk that named focused checks cannot cover; code or test paths alone do not establish that need. Documentation and ledger-only changes use their relevant checks and repository-integrity checks, recording the changed paths and why narrower verification is sufficient.
 - Where to apply next time: delegated implementation dispatches and final verification; reference the owning verification policy instead of copying an unconditional full-suite instruction into every packet.
 
 - Date: 2026-07-20
