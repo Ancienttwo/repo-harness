@@ -64,6 +64,66 @@ export interface OperatorApiErrorV1 {
   readonly next_action: string;
 }
 
+/**
+ * Every typed failure code the three routes this bundle calls can return, plus
+ * the codes the browser raises for itself. The set is closed so board copy can
+ * be owned by the client dictionary; a code outside it is a server ahead of
+ * this bundle and is rendered as a labelled passthrough, never as board copy.
+ *
+ * `code` on the wire stays `string`: this list is a copy contract, not a
+ * decoder, and a stricter transport type would turn a newer server's typed
+ * error into an undecodable payload.
+ */
+export const OPERATOR_API_ERROR_CODES = [
+  // Raised in the browser.
+  'operator_api_unavailable',
+  'operator_payload_invalid',
+  'operator_collaboration_payload_invalid',
+  'collaboration_repository_mismatch',
+  'task_message_response_invalid',
+  'task_message_unavailable',
+  // GET /api/v1/fleet/snapshot
+  'fleet_snapshot_timeout',
+  'fleet_snapshot_unavailable',
+  'fleet_registry_unavailable',
+  'fleet_registry_invalid',
+  'fleet_board_argument_invalid',
+  'fleet_watch_aborted_before_first_snapshot',
+  // GET /api/v1/collaboration/{repository}/snapshot
+  'collaboration_snapshot_unavailable',
+  'collaboration_snapshot_busy',
+  'collaboration_snapshot_timeout',
+  // POST /api/v1/fleet/tasks/{repository}/{task}/messages
+  'task_message_timeout',
+  'task_message_invalid',
+  'task_message_unreadable',
+  'task_message_transition_invalid',
+  'task_message_envelope_too_large',
+  'task_message_body_too_large',
+  'message_id_conflict',
+  'task_revision_mismatch',
+  'canonical_source_stale',
+  'canonical_sprint_unavailable',
+  'task_not_found',
+  'task_not_pending',
+  'task_unowned',
+  'claim_mismatch',
+  'recipient_unavailable',
+  'repository_read_only',
+  // Shared across the routes above.
+  'registry_unavailable',
+  'repository_not_found',
+  'invalid_request',
+  'host_not_allowed',
+  'origin_not_allowed',
+  'method_not_allowed',
+  'not_found',
+  'operator_assets_unavailable',
+  'operator_server_unavailable',
+] as const;
+
+export type OperatorApiErrorCode = typeof OPERATOR_API_ERROR_CODES[number];
+
 export interface OperatorApiErrorEnvelopeV1 {
   readonly error: OperatorApiErrorV1;
 }
@@ -207,7 +267,8 @@ function isNullableString(value: unknown): value is string | null {
 const SNAPSHOT_CONSISTENCIES = ['stable', 'changed_during_read', 'degraded'] as const;
 const COLUMNS = ['available', 'working', 'in_review', 'ready_to_merge', 'done'] as const;
 const ATTENTION_OWNERS = ['user', 'agent', 'external', 'none'] as const;
-const ERROR_CODES = [
+/** The closed repository failure vocabulary, exported so board copy can cover it. */
+export const OPERATOR_REPOSITORY_ERROR_CODES = [
   'repo_unreadable',
   'repo_authority_invalid',
   'repo_snapshot_changed',
@@ -349,7 +410,7 @@ function requireExactKeys(value: UnknownRecord, expected: readonly string[]): vo
 function decodeError(value: unknown): OperatorFleetRepositoryV1['error'] {
   if (value === null) return null;
   const error = requireRecord(value);
-  if (!isOneOf(error.code, ERROR_CODES) || !hasRequiredString(error.message)) throw new OperatorPayloadError();
+  if (!isOneOf(error.code, OPERATOR_REPOSITORY_ERROR_CODES) || !hasRequiredString(error.message)) throw new OperatorPayloadError();
   return Object.freeze({ code: error.code, message: error.message });
 }
 
@@ -413,7 +474,9 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const addressedToCurrentClaim = requireBoolean(inbox.addressed_to_current_claim);
   const deliveryState = requireOneOf(inbox.delivery_state, ['pending', 'delivered', 'acknowledged', 'failed', 'reconciliation_required'] as const);
   const runtimeReachability = requireOneOf(inbox.runtime_reachability, ['reachable', 'unavailable', 'unknown'] as const);
-  const effectSha256 = requireNullableString(inbox.effect_sha256);
+  // The board renders this as a copyable identifier, so an arbitrary non-empty
+  // string would be presented as evidence it is not.
+  const effectSha256 = inbox.effect_sha256 === null ? null : requireSha256(inbox.effect_sha256);
   const failureClass = inbox.failure_class === null ? null : requireOneOf(inbox.failure_class, [
     'none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable',
     'receipt_missing', 'receipt_mismatch', 'unknown',

@@ -4,12 +4,15 @@ import {
   decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
   decodeOperatorTaskMessageResponse,
+  OPERATOR_API_ERROR_CODES,
   OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
+  OPERATOR_REPOSITORY_ERROR_CODES,
   OperatorCollaborationPayloadError,
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { translate } from '../../src/operator-web/i18n';
+import { operatorFixtures } from '../../src/operator-web/fixture';
+import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
 
 const taskId = 'a'.repeat(64);
 const taskRevision = 'b'.repeat(64);
@@ -115,6 +118,44 @@ describe('operator browser payload contracts', () => {
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard(changes))).toThrow(OperatorPayloadError);
   });
 
+  // `effect_sha256` is rendered as a copyable identifier, so a value that is
+  // merely a non-empty string is not enough: it must be the prefixed digest the
+  // runtime effect store writes, or explicitly absent.
+  test.each([
+    ['unprefixed digest', 'e'.repeat(64)],
+    ['short digest', `sha256:${'e'.repeat(63)}`],
+    ['uppercase digest', `sha256:${'E'.repeat(64)}`],
+    ['prose', 'effect evidence unavailable'],
+  ])('rejects a %s in inbox.effect_sha256', (_name, effectSha256) => {
+    const payload = validFleetPayload();
+    const repositories = payload.repositories as Array<Record<string, unknown>>;
+    const cards = repositories[0]!.cards as Array<Record<string, unknown>>;
+    cards[0] = { ...cards[0], inbox: { ...(cards[0]!.inbox as Record<string, unknown>), effect_sha256: effectSha256 } };
+    expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+  });
+
+  test('accepts a prefixed effect digest and its explicit absence', () => {
+    const digest = `sha256:${'e'.repeat(64)}`;
+    const payload = validFleetPayload();
+    const repositories = payload.repositories as Array<Record<string, unknown>>;
+    const cards = repositories[0]!.cards as Array<Record<string, unknown>>;
+    cards[0] = { ...cards[0], inbox: { ...(cards[0]!.inbox as Record<string, unknown>), effect_sha256: digest } };
+
+    expect(decodeOperatorFleetSnapshot(payload).repositories[0]?.cards[0]?.inbox.effect_sha256).toBe(digest);
+    expect(decodeOperatorFleetSnapshot(validFleetPayload()).repositories[0]?.cards[0]?.inbox.effect_sha256).toBeNull();
+  });
+
+  // The browser fixture is the payload the UI suites render. If the production
+  // decoder would reject it, every UI assertion is made against a document the
+  // board can never receive.
+  test.each(Object.keys(operatorFixtures) as Array<keyof typeof operatorFixtures>)(
+    'decodes the %s fixture unchanged',
+    (name) => {
+      const fixture = operatorFixtures[name];
+      expect(decodeOperatorFleetSnapshot(fixture)).toEqual(fixture);
+    },
+  );
+
   test.each([
     ['unreadable repository with a card', { status: 'unreadable', snapshot_consistency: 'degraded', error: { code: 'repo_unreadable', message: 'unreadable' } }],
     ['unreadable repository with stable consistency', { status: 'unreadable', snapshot_consistency: 'stable', cards: [], error: { code: 'repo_unreadable', message: 'unreadable' } }],
@@ -210,7 +251,37 @@ describe('operator browser payload contracts', () => {
   });
 
   test('provides runtime-effect recovery copy in both operator locales', () => {
-    expect(translate('en', 'repo.error.runtimeEffectUnreadable')).toContain('Reconcile runtime delivery evidence');
-    expect(translate('zh', 'repo.error.runtimeEffectUnreadable')).toContain('reconcile runtime 投递证据');
+    expect(translate('en', 'repo.error.repo_runtime_effect_unreadable')).toContain('Reconcile runtime delivery evidence');
+    expect(translate('zh', 'repo.error.repo_runtime_effect_unreadable')).toContain('reconcile runtime 投递证据');
+  });
+
+  // Every repository error code the transport can carry is client-owned copy.
+  // The server sentence is a diagnostic contract, not board copy, so leaving a
+  // code unlocalized is what put nine English sentences in the Chinese board.
+  test.each([...OPERATOR_REPOSITORY_ERROR_CODES])('localizes repository error %s in both locales', (code) => {
+    const key = `repo.error.${code}` as OperatorMessageKey;
+    expect(isOperatorMessageKey(`repo.error.${code}`)).toBe(true);
+    expect(translate('en', key).length).toBeGreaterThan(0);
+    expect(translate('zh', key)).not.toBe(translate('en', key));
+  });
+
+  // The API error catalogue is closed on the client too: every code the three
+  // routes the browser calls can return has its own localized sentence and
+  // recovery action, so nothing reaches the board as an untranslated fallback.
+  test.each([...OPERATOR_API_ERROR_CODES])('localizes API error %s in both locales', (code) => {
+    for (const suffix of ['message', 'action'] as const) {
+      const key = `error.${code}.${suffix}`;
+      expect(isOperatorMessageKey(key)).toBe(true);
+      expect(translate('en', key as OperatorMessageKey).length).toBeGreaterThan(0);
+      expect(translate('zh', key as OperatorMessageKey).length).toBeGreaterThan(0);
+    }
+    expect(translate('zh', `error.${code}.message` as OperatorMessageKey))
+      .not.toBe(translate('en', `error.${code}.message` as OperatorMessageKey));
+  });
+
+  test('keeps an unknown code out of the dictionary so it fails open as a labelled passthrough', () => {
+    expect(isOperatorMessageKey('error.not_a_real_operator_code.message')).toBe(false);
+    expect(translate('en', 'error.untranslated').length).toBeGreaterThan(0);
+    expect(translate('zh', 'error.untranslated')).not.toBe(translate('en', 'error.untranslated'));
   });
 });
