@@ -172,6 +172,7 @@ function createFleetRaceFixture(): FleetRaceFixture {
   writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repo, sprintPath), [
     '# Fleet process race sprint',
+    '> **Status**: Executing',
     '> **Backlog Schema**: 2',
     '',
     '## Backlog',
@@ -244,6 +245,7 @@ function createFixture(): Fixture {
   mkdirSync(join(primary, 'plans/sprints'), { recursive: true });
   writeFileSync(join(primary, SPRINT_PATH), [
     '# Acquire fixture',
+    '> **Status**: Executing',
     '> **Backlog Schema**: 2',
     '',
     '## Backlog',
@@ -445,6 +447,7 @@ const EFFECT_START: ContractWorktreeStartV1 = {
 function effectSprintText(): string {
   return [
     '# Effect fixture',
+    '> **Status**: Executing',
     '> **Backlog Schema**: 2',
     '',
     '## Backlog',

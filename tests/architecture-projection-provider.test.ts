@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,14 +45,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.5.6', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.5.7', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.5.6', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.5.7', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -93,7 +93,7 @@ function vendorArchctx(root: string, version: string): string {
   return binary;
 }
 
-function capabilities(version = '0.5.6') {
+function capabilities(version = '0.5.7') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
@@ -207,6 +207,65 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 }
 
 describe('package-local ArchContext projection provider', () => {
+  test('bounds a real provider process tree whose descendant keeps captured pipes open', () => {
+    const f = fixture();
+    const descendantPidPath = join(f.root, 'descendant.pid');
+    writeFileSync(f.binary, [
+      "const { spawn } = require('node:child_process');",
+      "const { writeFileSync } = require('node:fs');",
+      "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)\"], { stdio: ['ignore', 'inherit', 'inherit'] });",
+      "writeFileSync(process.env.ARCHCTX_DESCENDANT_PID_PATH, String(child.pid));",
+      "setInterval(() => {}, 1000);",
+      '',
+    ].join('\n'));
+    const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
+    const script = join(f.root, 'provider-timeout.ts');
+    writeFileSync(script, [
+      `import { archctxCapabilities } from ${JSON.stringify(providerModule)};`,
+      `const started = Date.now();`,
+      `try {`,
+      `  archctxCapabilities(${JSON.stringify(f.repoRoot)}, { consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: '${ARCHCTX_REQUIRED_VERSION}', timeoutMs: 500 }, env: { ...process.env, ARCHCTX_DESCENDANT_PID_PATH: ${JSON.stringify(descendantPidPath)} }, deadlineMs: Date.now() + 500 });`,
+      `  process.exitCode = 2;`,
+      `} catch (error) {`,
+      `  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);`,
+      `  const pid = Number((await import('node:fs')).readFileSync(${JSON.stringify(descendantPidPath)}, 'utf8'));`,
+      `  let descendantAlive = true;`,
+      `  try { process.kill(pid, 0); } catch { descendantAlive = false; }`,
+      `  if (descendantAlive) try { process.kill(pid, 'SIGKILL'); } catch { descendantAlive = false; }`,
+      `  console.log(String(error));`,
+      `  console.log('descendant_alive=' + descendantAlive);`,
+      `  console.log('elapsed=' + (Date.now() - started));`,
+      `}`,
+      '',
+    ].join('\n'));
+    const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 4_000, killSignal: 'SIGKILL' });
+    expect((result.error as NodeJS.ErrnoException | undefined)?.code).not.toBe('ETIMEDOUT');
+    if (result.status !== 0) throw new Error(`provider timeout fixture failed: ${result.stderr || result.stdout}`);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('descendant_alive=false');
+  });
+
+  test('charges Node runtime selection to the caller deadline', () => {
+    const f = fixture();
+    const slowNode = join(f.root, 'slow-node');
+    writeFileSync(slowNode, '#!/bin/sh\nsleep 2\necho v24.18.0\n');
+    chmodSync(slowNode, 0o755);
+    const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
+    const script = join(f.root, 'node-deadline.ts');
+    writeFileSync(script, [
+      `import { resolveCompatibleNodeRuntime } from ${JSON.stringify(providerModule)};`,
+      `try {`,
+      `  resolveCompatibleNodeRuntime({ PATH: '', REPO_HARNESS_NODE_BIN: ${JSON.stringify(slowNode)} }, () => [], { deadlineMs: Date.now() + 100 });`,
+      `  process.exitCode = 2;`,
+      `} catch (error) { console.log(String(error)); }`,
+      '',
+    ].join('\n'));
+    const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 3_500, killSignal: 'SIGKILL' });
+    expect((result.error as NodeJS.ErrnoException | undefined)?.code).not.toBe('ETIMEDOUT');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('architecture projection timeout before Node runtime selection');
+  });
+
   test('exposes only signal-bound acceptance, proof reconciliation, and approved stale retirement as CLI authorities', () => {
     const command = buildArchitectureProjectionCommand();
     for (const name of ['check', 'plan', 'apply', 'adopt']) {
@@ -267,7 +326,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.5.6');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.5.7');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -512,7 +571,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.5.6');
+    expect(readback.packages.contracts.version).toBe('0.5.7');
     expect(Object.keys(readback.packages.contracts).sort()).toEqual(['file', 'name', 'version']);
     expect(Object.keys(readback.packages.archctx).sort()).toEqual(['file', 'name', 'version']);
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');

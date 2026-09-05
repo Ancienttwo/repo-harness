@@ -409,6 +409,42 @@ describe('migrate-schema command', () => {
     expect(receipt.work_graph_sha256_after).toBe(sha256(after));
   });
 
+  test('a migrated id colliding with a live sibling carrier is refused before any write', () => {
+    const root = repoFixture();
+    const before = readFileSync(join(root, SPRINT_PATH), 'utf-8');
+    const duplicateId = deriveLegacyTaskId({
+      repoIdentity: resolveRepoIdentity(root),
+      sprintPath: SPRINT_PATH,
+      taskCell: 'first work package',
+    });
+    const siblingPath = 'plans/sprints/live-sibling.sprint.md';
+    writeFileSync(join(root, siblingPath), [
+      '# Sprint: Live Sibling',
+      '',
+      '> **Status**: Approved',
+      '> **Backlog Schema**: 2',
+      '',
+      '## Backlog',
+      '',
+      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+      '|---|----|--------|------|------|------------|------|',
+      `| 1 | ${duplicateId} | [ ] | sibling task | contract | sibling tests pass | (pending) |`,
+      '',
+    ].join('\n'));
+    execFileSync('git', ['add', siblingPath], { cwd: root });
+    execFileSync('git', ['commit', '-m', 'add live sibling'], { cwd: root });
+
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      processMigrationDependencies(root),
+    );
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain(`task id ${duplicateId}`);
+    expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(before);
+    expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
+  });
+
   test('a live non-released lease refuses the whole migration and touches nothing', () => {
     const root = repoFixture();
     const repoIdentity = resolveRepoIdentity(root);

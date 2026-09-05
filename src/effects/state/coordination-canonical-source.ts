@@ -17,6 +17,11 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { readdirSync } from 'fs';
 import { resolveGitCommonDirectory } from '../git/common-directory';
+import { assertUniqueCanonicalTaskIds } from '../../core/state/coordination-identity';
+import {
+  SPRINT_BACKLOG_SCHEMA_V2,
+  sprintBacklogSchema,
+} from '../../core/state/sprint-backlog-rows';
 import {
   evidenceContractComplete,
   markdownHeader,
@@ -26,6 +31,10 @@ import {
   planStatusFromText,
 } from '../../core/state/artifact-parsers';
 import { readText, repoPath } from './collect-state-inputs';
+
+const DEFAULT_SPRINTS_DIRECTORY = 'plans/sprints';
+const SPRINT_STATUSES = new Set(['Draft', 'Approved', 'Executing', 'Done', 'Archived']);
+const LIVE_SPRINT_STATUSES = new Set(['Approved', 'Executing']);
 
 export function resolveRepoIdentity(cwd: string): string {
   return resolveGitCommonDirectory(cwd);
@@ -269,6 +278,111 @@ function git(cwd: string, args: readonly string[]): string {
   });
 }
 
+function canonicalSprintsDirectory(cwd: string, commit: string): string {
+  const policyText = readCanonicalFileAtCommit(cwd, commit, '.ai/harness/policy.json');
+  if (policyText === null) return DEFAULT_SPRINTS_DIRECTORY;
+  let policy: unknown;
+  try {
+    policy = JSON.parse(policyText);
+  } catch (error) {
+    throw new Error(`canonical workflow policy is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (policy === null || typeof policy !== 'object' || Array.isArray(policy)) {
+    throw new Error('canonical workflow policy is not an object');
+  }
+  const configured = (policy as { sprints?: { dir?: unknown } }).sprints?.dir;
+  if (configured === undefined) return DEFAULT_SPRINTS_DIRECTORY;
+  if (typeof configured !== 'string' || configured.trim().length === 0) {
+    throw new Error('canonical workflow policy .sprints.dir is not a non-empty string');
+  }
+  const directory = configured.trim().replace(/\/+$/, '');
+  if (unsafeSprintPath(directory)) {
+    throw new Error(`canonical workflow policy has unsafe .sprints.dir: ${JSON.stringify(configured)}`);
+  }
+  return directory;
+}
+
+function isLiveSprint(sprintPath: string, text: string): boolean {
+  const match = text.match(/^> \*\*Status\*\*:[\t ]*(.*)\r?$/m);
+  if (match === null) {
+    throw new Error(`canonical sprint ${sprintPath} is missing required > **Status**: metadata`);
+  }
+  const status = match[1]!.trim();
+  if (!SPRINT_STATUSES.has(status)) {
+    throw new Error(`canonical sprint ${sprintPath} has unknown status '${status}'`);
+  }
+  return LIVE_SPRINT_STATUSES.has(status);
+}
+
+export interface CanonicalSprintIdentityValidationInput {
+  /** Exact commit whose live Sprint carriers define the shared lease namespace. */
+  readonly commit: string;
+  /** The carrier being read or proposed; this content replaces its commit bytes. */
+  readonly sprintPath: string;
+  readonly sprintText: string;
+}
+
+/**
+ * Validate a proposed carrier against every live carrier at one fixed commit.
+ *
+ * Materializers call this with their candidate Sprint content before CAS.  It
+ * reads the sibling carriers from `commit`, substitutes the proposed content
+ * only for `sprintPath`, and never consults the mutable worktree.
+ */
+export function assertCanonicalSprintTaskIdsUniqueAtCommit(
+  cwd: string,
+  input: CanonicalSprintIdentityValidationInput,
+): void {
+  if (!/^[0-9a-f]{40,64}$/.test(input.commit)) {
+    throw new Error(`unsafe canonical commit: ${JSON.stringify(input.commit)}`);
+  }
+  if (unsafeSprintPath(input.sprintPath)) {
+    throw new Error(`unsafe canonical sprint path: ${JSON.stringify(input.sprintPath)}`);
+  }
+  const directory = canonicalSprintsDirectory(cwd, input.commit);
+  const prefix = `${directory}/`;
+  const paths = git(cwd, ['ls-tree', '-r', '--name-only', input.commit, '--', directory])
+    .split(/\r?\n/)
+    .filter((path) => path.startsWith(prefix)
+      && !path.slice(prefix.length).includes('/')
+      && path.endsWith('.sprint.md'))
+    .sort();
+  const carriers = new Map<string, string>();
+  for (const path of paths) {
+    if (path === input.sprintPath) {
+      carriers.set(path, input.sprintText);
+      continue;
+    }
+    const text = readCanonicalFileAtCommit(cwd, input.commit, path);
+    if (text === null) throw new Error(`canonical sprint ${path} is absent at ${input.commit}`);
+    carriers.set(path, text);
+  }
+  if (!input.sprintPath.startsWith(prefix) || input.sprintPath.slice(prefix.length).includes('/') || !input.sprintPath.endsWith('.sprint.md')) {
+    throw new Error(`canonical sprint ${input.sprintPath} is outside policy sprint directory ${directory}`);
+  }
+  carriers.set(input.sprintPath, input.sprintText);
+  const repoIdentity = resolveRepoIdentity(cwd);
+  assertUniqueCanonicalTaskIds([...carriers]
+    .filter(([sprintPath, text]) => isLiveSprint(sprintPath, text))
+    // Schema 1 has no persisted ID authority to compare. Its explicit
+    // migration and completing-residue reconciliation read the canonical raw
+    // bytes, while every execution identity projection remains fail-closed in
+    // projectCanonicalTasks. The migration validates the rewritten schema 2
+    // carrier against this same cross-carrier namespace before publishing it.
+    .filter(([sprintPath, text]) => {
+      try {
+        return sprintBacklogSchema(text) === SPRINT_BACKLOG_SCHEMA_V2;
+      } catch (error) {
+        throw new Error(`canonical sprint ${sprintPath} has invalid backlog schema: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    })
+    .map(([sprintPath, sprintText]) => ({
+      repoIdentity,
+      sprintPath,
+      sprintText,
+    })));
+}
+
 /**
  * Read one repo-relative file at one already-resolved commit, or `null` when
  * the commit does not carry it.
@@ -322,14 +436,28 @@ export function readCanonicalSprint(
     return { ok: false, error: `canonical target ref resolved to an unexpected commit: ${commit}` };
   }
 
+  let text: string;
   try {
     // `git show <sha>:<path>` takes one object name, so no `--` separator is
     // available here; both halves are validated above instead.
-    return { ok: true, commit, text: git(cwd, ['show', `${commit}:${source.sprintPath}`]) };
+    text = git(cwd, ['show', `${commit}:${source.sprintPath}`]);
   } catch {
     return {
       ok: false,
       error: `canonical sprint ${source.sprintPath} is absent at ${source.targetRef} (${commit})`,
     };
   }
+  try {
+    assertCanonicalSprintTaskIdsUniqueAtCommit(cwd, {
+      commit,
+      sprintPath: source.sprintPath,
+      sprintText: text,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: `canonical sprint task identity is invalid at ${commit}: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  return { ok: true, commit, text };
 }

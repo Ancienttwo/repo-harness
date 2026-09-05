@@ -55,7 +55,7 @@ function fixture(): Fixture {
   git(root, 'config', 'user.email', 'task-inbox-staging@test.invalid');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: task inbox staging', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: task inbox staging', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves staging isolation | (pending) |`, '',

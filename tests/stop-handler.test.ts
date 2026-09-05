@@ -177,7 +177,7 @@ describe('runStopHandler', () => {
     expect(freshnessOnly.stdout).not.toContain('Strict projection failure gate blocked Stop');
 
     const strictRoot = fixture();
-    writeFileSync(join(strictRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.5.6","projection_failure_gate":"strict"}}\n');
+    writeFileSync(join(strictRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.5.7","projection_failure_gate":"strict"}}\n');
     const strict = runStopHandler({ collector: collector(strictRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
     expect(strict.exitCode).toBe(0);
     expect(JSON.parse(strict.stdout).decision).toBe('block');
@@ -190,7 +190,7 @@ describe('runStopHandler', () => {
     expect(deadLetter.stdout).toContain('retry-dead-letter --job-id job-test --json');
 
     const invalidGateRoot = fixture();
-    writeFileSync(join(invalidGateRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.5.6","projection_failure_gate":"block"}}\n');
+    writeFileSync(join(invalidGateRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.5.7","projection_failure_gate":"block"}}\n');
     const invalidGate = runStopHandler({ collector: collector(invalidGateRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
     expect(invalidGate.stdout).toContain('Strict projection failure gate blocked Stop');
     expect(invalidGate.stdout).toContain('projection policy invalid');
@@ -517,6 +517,28 @@ describe('runStopHandler', () => {
     ]);
     expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(head);
   }, 30_000);
+
+  test('bounds a slow cascade child and retains the unacknowledged drift range', () => {
+    const { cwd, head } = gitFixture();
+    advanceArchitectureDriftCursor(cwd, head);
+    writeFileSync(join(cwd, 'slow.ts'), 'export const slow = true;\n');
+    git(cwd, ['add', 'slow.ts']);
+    git(cwd, ['commit', '-m', 'change']);
+    const stubRoot = mkdtempSync(join(tmpdir(), 'repo-harness-slow-cascade-'));
+    fixtures.push(stubRoot);
+    const stubCli = join(stubRoot, 'stub.ts');
+    writeFileSync(stubCli, 'await Bun.sleep(1500);\n');
+    let calls = 0;
+    const start = Date.now();
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { ...process.env, REPO_HARNESS_CLI: stubCli, HOOK_RUN_ID: 'bounded-cascade' },
+      dependencies: { wallClockMs: () => calls++ === 0 ? 0 : 19_900 },
+    });
+    expect(Date.now() - start).toBeLessThan(1400);
+    expect(result.stderr).toContain('architecture cascade');
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(head);
+  }, 10_000);
 
   test('commits the exact four-target projection once before the single state resolution', () => {
     const cwd = fixture();

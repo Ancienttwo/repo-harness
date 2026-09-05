@@ -36,6 +36,7 @@ import {
   type SprintSchemaMigrationReceiptV1,
 } from '../../core/state/sprint-schema-migration';
 import {
+  assertCanonicalSprintTaskIdsUniqueAtCommit,
   readCanonicalFileAtCommit,
   readCanonicalSprint,
   resolveRepoIdentity,
@@ -103,6 +104,7 @@ export interface MigrateSprintSchemaDependencies {
   readonly fs: MigrationFileSystem;
   readonly repoIdentity: (cwd: string) => string;
   readonly readCanonicalSprint: typeof readCanonicalSprint;
+  readonly assertCanonicalSprintTaskIdsUniqueAtCommit: typeof assertCanonicalSprintTaskIdsUniqueAtCommit;
   /** The Work Graph carrier must be compared against the canonical commit too. */
   readonly readFileAtCommit: typeof readCanonicalFileAtCommit;
   readonly readLease: typeof readLease;
@@ -130,6 +132,7 @@ export function processMigrationDependencies(repoRoot: string): MigrateSprintSch
     repoRoot,
     repoIdentity: resolveRepoIdentity,
     readCanonicalSprint,
+    assertCanonicalSprintTaskIdsUniqueAtCommit,
     readFileAtCommit: readCanonicalFileAtCommit,
     readLease,
     withBacklogLock,
@@ -275,6 +278,15 @@ export function migrateSprintSchemaCommand(
     } catch (error) {
       if (error instanceof SprintSchemaMigrationError) return refuse(error.message);
       throw error;
+    }
+    try {
+      deps.assertCanonicalSprintTaskIdsUniqueAtCommit(repoRoot, {
+        commit: canonical.commit,
+        sprintPath,
+        sprintText: afterBytes,
+      });
+    } catch (error) {
+      return refuse(`migrated ${sprintPath} would violate canonical task identity: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     // The carrier is a sibling of the sprint on the same commit, so it is read

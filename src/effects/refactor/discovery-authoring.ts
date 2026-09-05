@@ -1,4 +1,4 @@
-import { lstatSync } from 'fs';
+import { lstatSync, realpathSync } from 'fs';
 import { resolve, sep } from 'path';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { RecommendationV3, RefactorProposalV1, RefactorRequestV1 } from 'archctx-contracts';
@@ -50,14 +50,14 @@ export function projectRefactorDiscovery(scan: RefactorScanResultV1, lifecycleRe
 }
 
 function assertProposalFiles(repoRootInput: string, proposal: RefactorProposalV1): void {
-  const repoRoot = resolve(repoRootInput);
+  const repoRoot = realpathSync(resolve(repoRootInput));
   for (const path of proposal.scopePaths) {
     const absolute = resolve(repoRoot, path);
     if (absolute === repoRoot || !absolute.startsWith(`${repoRoot}${sep}`)) {
       throw new RefactorDiscoveryError('refactor_proposal_scope_invalid', `proposal scope path is not a repository file: ${path}`);
     }
     try {
-      if (!lstatSync(absolute).isFile()) throw new Error('not a file');
+      if (realpathSync(absolute) !== absolute || !lstatSync(absolute).isFile()) throw new Error('not a file');
     } catch {
       throw new RefactorDiscoveryError('refactor_proposal_scope_invalid', `proposal scope path is not a file: ${path}`);
     }

@@ -114,7 +114,7 @@ sequenceDiagram
 
 - No local module statistics, dependency analysis, cycle detection, refactor scoring, or scale inference.
 - No copied recommendation status or locally synthesized resolution.
-- Materialization re-reads ArchContext lifecycle authority and accepts only exact `recommendationId` + fingerprint pairs whose current status is `accepted`.
+- Materialization re-reads ArchContext lifecycle authority and accepts only exact `recommendationId` + fingerprint pairs whose current status is `accepted`, and binds Program scale, affected nodes, assessment, proposal, baseline and major-change reasons to the complete recommendation payload.
 - Every generated Work Package ID must be present in the account-level ProgramAuthorization allowlist.
 - Every mutating program transition is append-only, idempotent by exact event identity, and rejected on conflicting replay.
 - Candidate worktrees cannot relax the target revision's policy or authorization.
@@ -124,12 +124,13 @@ sequenceDiagram
 - Workflow route is a pure three-input projection of provider-owned scale, scale reason codes, and major-change reasons; a supplied route is accepted only when it equals that projection.
 - Materialization never creates a Lease: it writes only Program bindings, canonical Sprint tasks, Work Packages, Plans, and their exact acceptance and rollback references.
 - One affected architecture node maps to one Work Package, one rollback boundary, and one repo-scoped concurrency key; dependency topology must validate before the Git CAS.
-- A failed CAS leaves the append-only program at `materializing`; replay recognizes only the exact authorized child commit and finishes the `planning` transition idempotently.
+- A failed CAS leaves the append-only program at `materializing`; replay recognizes only the exact authorized child commit and finishes the `planning` transition idempotently. Execution and verification accept only that durable materialization revision while the grant stays pinned to its original baseline.
 - Completion requires Cutover Closure plus exact post-merge ArchContext measurement.
 - Candidate verification preserves the fixed four-gate order. A closure failure prevents provider and acceptance calls; an unavailable Stage 2 provider is recorded explicitly and never weakens Contract, closure, or AcceptanceReceipt gates.
-- Execution bindings contain only immutable references. Candidate verification is a separate receipt because PR and merge identities do not exist at preverify time; no nullable or lifecycle fields represent a partial binding.
-- Refactor Board joins Program, recommendation readback, execution bindings, and resolution evidence by exact recommendation ID plus digest; duplicate authorities fail closed.
-- Merge observation alone is `merged_pending_measurement`. Only provider evidence bound to the exact final-main commit may resolve a card, while stale evidence requires reconciliation and all other non-resolved dispositions require follow-up.
+- Execution bindings contain only immutable references. The PR head must equal the verified candidate; the shared merge predicate proves ancestry or an absorbed squash. Candidate verification is a separate receipt because PR and merge identities do not exist at preverify time; no nullable or lifecycle fields represent a partial binding.
+- Program and execution bindings identify recommendations by ID plus fingerprint. Provider resolution evidence has a different opaque recommendation digest and joins by unique recommendation ID after exact recommendation readback. Duplicate authorities fail closed.
+- Merge observation alone is `merged_pending_measurement`. A card resolves only when provider evidence binds the exact final-main commit and provider lifecycle readback is `resolved`; every recorded merge must be an ancestor of that final main. A persisted measurement retries an interrupted provider lifecycle write, while stale evidence requires reconciliation and all other non-resolved dispositions require follow-up.
+- The public discovery selection binds exact recommendation ID and fingerprint. Git supplies regular-file paths from the scan HEAD to the bounded author; upstream owns the structural interpretation. Board writes reject symlink ancestors.
 - Discovery re-reads ArchContext lifecycle state and excludes exact resolved or superseded recommendation identities before assigning candidate aliases.
 - Runtime policy is an intent ceiling, not activation evidence: shadow requires the shadow rung, active execution requires `active_module`, and cross-module materialization additionally requires `active_cross_module`.
 - Activation events are append-only, advance exactly one rung, and bind the fixed canary receipt subset to the same repository and exact target revision. Architecture intervention retains its independent human approval at every rung.

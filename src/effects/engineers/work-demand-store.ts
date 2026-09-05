@@ -8,7 +8,9 @@ import {
   deriveWorkDemandTransitionId, foldWorkDemandCurrent, validateWorkDemand, validateWorkDemandCurrent,
   validateWorkDemandEvent, type AcceptedWorkDemandProjectionV1, type MaterializedWorkDemandReceiptV1,
   type WorkDemandActorV1, type WorkDemandCurrentV1, type WorkDemandEventV1, type WorkDemandTransition, type WorkDemandV1,
+  validateMaterializedWorkDemandReceipt,
 } from '../../core/engineers/work-demand';
+import { canonicalMessageBytes, canonicalMessageDigest } from '../../core/messages/mechanics';
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -32,7 +34,7 @@ function key(id: string): string {
 function digest(value: string): string { if (!/^sha256:[0-9a-f]{64}$/u.test(value)) fail('work_demand_store_unsafe_path', 'digest is invalid'); return value.slice(7); }
 function paths(repoRoot: string, id: string) {
   const common = resolveGitCommonDirectory(repoRoot); const root = join(common, ROOT); const state = join(root, 'state', key(id));
-  return { common, root, state, current: join(state, 'current.json'), lock: `${ROOT}/locks/${key(id)}.lock` };
+  return { common, root, state, current: join(state, 'current.json'), publication: join(state, 'publication.json'), lock: `${ROOT}/locks/${key(id)}.lock`, publicationLock: `${ROOT}/publication-locks/${key(id)}.lock` };
 }
 function ensure(path: string): void { mkdirSync(path, { recursive: true, mode: 0o700 }); const s = lstatSync(path); if (!s.isDirectory() || s.isSymbolicLink()) fail('work_demand_store_unsafe_path', `unsafe directory: ${path}`); }
 function prepare(p: ReturnType<typeof paths>): void { for (const path of [p.root, ...(['requests','events','transitions','projections','state'] as const).map(x => join(p.root,x)), p.state]) ensure(path); }
@@ -55,6 +57,42 @@ function validateEngineer(repoRoot:string,demand:WorkDemandV1,actor:WorkDemandAc
   const status=readEngineerBindingStatus(repoRoot,principal.engineer_id,principal.engineer_contract_revision); const binding=status.binding;
   if(!binding||status.current.state!=='active'||binding.state!=='active'||binding.binding_id!==principal.binding_id||binding.binding_generation!==principal.binding_generation||binding.engineer_contract_revision!==principal.engineer_contract_revision) fail('work_demand_store_conflict','Engineer actor does not match exact current Binding');
 }
+
+export interface WorkDemandPublicationIntentV1 {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness-work-demand-publication-intent';
+  readonly demand_id: string;
+  readonly demand_sha256: string;
+  readonly projection_sha256: string;
+  readonly target_ref: string;
+  readonly expected_target_commit: string;
+  readonly materialized_commit: string;
+  readonly receipt: MaterializedWorkDemandReceiptV1;
+  readonly publication_sha256: string;
+}
+
+function buildPublicationIntent(input: Omit<WorkDemandPublicationIntentV1, 'protocol'|'kind'|'publication_sha256'>): WorkDemandPublicationIntentV1 {
+  key(input.demand_id); digest(input.demand_sha256); digest(input.projection_sha256);
+  if (!/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._\/-]*$/u.test(input.target_ref) || input.target_ref.includes('..')) fail('work_demand_store_unsafe_path','publication target ref is invalid');
+  if (!/^[0-9a-f]{40,64}$/u.test(input.expected_target_commit) || !/^[0-9a-f]{40,64}$/u.test(input.materialized_commit)) fail('work_demand_store_conflict','publication commit is invalid');
+  const receipt=validateMaterializedWorkDemandReceipt(input.receipt);
+  if(receipt.demand_id!==input.demand_id||receipt.demand_sha256!==input.demand_sha256||receipt.projection_sha256!==input.projection_sha256||receipt.materialized_commit!==input.materialized_commit)fail('work_demand_store_conflict','publication receipt does not match exact intent');
+  const basis=Object.freeze({protocol:1 as const,kind:'repo-harness-work-demand-publication-intent' as const,demand_id:input.demand_id,demand_sha256:input.demand_sha256,projection_sha256:input.projection_sha256,target_ref:input.target_ref,expected_target_commit:input.expected_target_commit,materialized_commit:input.materialized_commit,receipt});
+  return Object.freeze({...basis,publication_sha256:canonicalMessageDigest(basis)});
+}
+
+function validatePublicationIntent(value:unknown):WorkDemandPublicationIntentV1 {
+  if(!value||typeof value!=='object'||Array.isArray(value))fail('work_demand_store_conflict','publication intent is invalid');
+  const row=value as Record<string,unknown>;const fields=['protocol','kind','demand_id','demand_sha256','projection_sha256','target_ref','expected_target_commit','materialized_commit','receipt','publication_sha256'].sort();
+  if(JSON.stringify(Object.keys(row).sort())!==JSON.stringify(fields)||row.protocol!==1||row.kind!=='repo-harness-work-demand-publication-intent')fail('work_demand_store_conflict','publication intent fields are invalid');
+  const built=buildPublicationIntent(row as unknown as Omit<WorkDemandPublicationIntentV1,'protocol'|'kind'|'publication_sha256'>);
+  if(row.publication_sha256!==built.publication_sha256||canonicalMessageBytes(row)!==canonicalMessageBytes(built as unknown as Record<string,unknown>))fail('work_demand_store_conflict','publication intent digest is stale');
+  return built;
+}
+
+export function withWorkDemandPublicationLock<T>(repoRootInput:string,demandId:string,operation:()=>T):T {const p=paths(resolve(repoRootInput),demandId);return withExclusiveDirectoryLock(p.common,p.publicationLock,operation,{reclaimStaleEmptyDirectory:true,reclaimStaleOwner:true});}
+export function readWorkDemandPublicationIntent(repoRootInput:string,demandId:string):WorkDemandPublicationIntentV1|null {const p=paths(resolve(repoRootInput),demandId);return existsSync(p.publication)?parse(p.publication,validatePublicationIntent,value=>canonicalMessageBytes(value as unknown as Record<string,unknown>)):null;}
+export function persistWorkDemandPublicationIntent(repoRootInput:string,input:Omit<WorkDemandPublicationIntentV1,'protocol'|'kind'|'publication_sha256'>):WorkDemandPublicationIntentV1 {const value=buildPublicationIntent(input);const p=paths(resolve(repoRootInput),value.demand_id);prepare(p);const bytes=Buffer.from(`${canonicalMessageBytes(value as unknown as Record<string,unknown>)}\n`);if(existsSync(p.publication)){const stored=parse(p.publication,validatePublicationIntent,item=>canonicalMessageBytes(item as unknown as Record<string,unknown>));if(stored.publication_sha256!==value.publication_sha256)fail('work_demand_store_conflict','WorkDemand already has a different publication intent');return stored;}atomic(p.publication,bytes);return value;}
 
 export interface WorkDemandAcceptanceInput extends Omit<AcceptedWorkDemandProjectionV1,'protocol'|'kind'|'demand_id'|'demand_sha256'|'accepted_from_current_digest'|'work_package_revision'|'projection_sha256'> {}
 export interface TransitionWorkDemandInput { readonly repo_root:string; readonly demand:WorkDemandV1; readonly idempotency_key:string; readonly transition:WorkDemandTransition; readonly expected_current_digest:string|null; readonly actor:WorkDemandActorV1; readonly acceptance:WorkDemandAcceptanceInput|null; readonly materialization_receipt:MaterializedWorkDemandReceiptV1|null; readonly crash_hook?:(boundary:'after_event_fsync'|'after_current_fsync')=>void; }

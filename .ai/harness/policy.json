@@ -135,7 +135,7 @@
     "projection_provider": "archctx",
     "projection_apply": "automatic",
     "projection_failure_gate": "strict",
-    "projection_version": "0.5.6",
+    "projection_version": "0.5.7",
     "projection_timeout_ms": 120000,
     "freshness_gate": "strict",
     "gate_min_severity": "medium",
@@ -153,7 +153,7 @@
     "proposal_author": "local",
     "stages": {
       "scan": {
-        "provider_version": "0.5.6",
+        "provider_version": "0.5.7",
         "required_features": [
           "module-statistics-v1",
           "refactor-assessment-v1",
@@ -161,7 +161,7 @@
         ]
       },
       "verify": {
-        "provider_version": "0.5.6",
+        "provider_version": "0.5.7",
         "required_features": [
           "refactor-resolution-v1"
         ]

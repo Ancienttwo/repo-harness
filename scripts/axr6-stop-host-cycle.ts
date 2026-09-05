@@ -131,7 +131,7 @@ try {
     schemaVersion: 'repo-harness.axr6-stop-host-cycle/v1',
     status: 'verified',
     installedPackage: { name: 'repo-harness', tarball: basename(repoHarnessTarball) },
-    provider: { name: 'archctx', version: '0.5.6', packageLocal: true, holdMs: HOLD_MS },
+    provider: { name: 'archctx', version: '0.5.7', packageLocal: true, holdMs: HOLD_MS },
     adapters: {
       codex: { stopTimeoutSeconds: adapters.codex.stop.timeout, nonStopTimeoutSeconds: adapters.codex.postEdit.timeout },
       claude: { stopTimeoutSeconds: adapters.claude.stop.timeout, nonStopTimeoutSeconds: adapters.claude.postEdit.timeout },
@@ -180,7 +180,7 @@ function initializeFixture(root: string): void {
     architecture: {
       projection_provider: 'archctx',
       projection_apply: 'automatic',
-      projection_version: '0.5.6',
+      projection_version: '0.5.7',
       projection_timeout_ms: 120000,
       freshness_gate: 'advisory',
     },
@@ -218,7 +218,7 @@ function writeFakeArchctx(root: string): void {
   mkdirSync(dirname(bin), { recursive: true });
   writeFileSync(join(root, 'package.json'), `${JSON.stringify({
     name: 'archctx',
-    version: '0.5.6',
+    version: '0.5.7',
     type: 'module',
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
@@ -231,7 +231,7 @@ const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
   console.log(JSON.stringify({
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.5.6' },
+    package: { name: 'archctx', version: '0.5.7' },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
       projectionResult: 'archcontext.projection-result/v2',

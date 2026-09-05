@@ -1,4 +1,4 @@
-import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from 'fs';
+import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { createHash, randomUUID } from 'crypto';
 
@@ -100,6 +100,27 @@ export function persistIssueAuthoringSession(repoRoot: string, campaignId: strin
     readIssueBatchIntent(repoRoot, campaignId, groupNumber, session.intent_sha256);
     immutable(join(value.sessions, `${session.session_sha256.slice('sha256:'.length)}.json`), Buffer.from(`${canonicalIssueAuthoringSessionBytes(session)}\n`, 'utf8'));
     return session;
+  }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+export function assertIssueAuthoringSourceSession(
+  repoRoot: string,
+  campaignId: string,
+  groupNumber: number,
+  intentSha256: string,
+  sessionRef: string,
+): IssueAuthoringSessionV1 {
+  const value = paths(repoRoot, campaignId, groupNumber);
+  return withExclusiveDirectoryLock(value.root, value.lock, () => {
+    readIssueBatchIntent(repoRoot, campaignId, groupNumber, intentSha256);
+    if (!existsSync(value.sessions)) fail('issue_batch_not_found', 'source session does not belong to the issue batch intent');
+    for (const entry of readdirSync(value.sessions, { withFileTypes: true })) {
+      if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('issue_batch_unsafe', `unexpected issue authoring session entry: ${entry.name}`);
+      const session = parse(join(value.sessions, entry.name), validateIssueAuthoringSession, canonicalIssueAuthoringSessionBytes);
+      if (entry.name !== `${session.session_sha256.slice('sha256:'.length)}.json`) fail('issue_batch_conflict', 'issue authoring session filename does not bind its immutable content');
+      if (session.session_ref === sessionRef && session.intent_sha256 === intentSha256) return session;
+    }
+    return fail('issue_batch_not_found', 'source session does not belong to the issue batch intent');
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 

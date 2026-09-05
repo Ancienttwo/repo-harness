@@ -78,7 +78,7 @@ function fixture(): string {
   writeFileSync(join(root, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(root, sprintPath), [
-    '# Sprint: demo', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: demo', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|---|---|---|---|---|',
     `| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |`, '',

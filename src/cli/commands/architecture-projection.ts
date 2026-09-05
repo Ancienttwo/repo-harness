@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { Command } from 'commander';
 import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequestV1 } from '../../core/architecture/projection';
-import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, loadArchitectureProjectionPolicy, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
 import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
 import { publishLatestArchitectureProjectionRestamp } from '../../effects/architecture/restamp-publication';
@@ -51,10 +51,11 @@ export function buildArchitectureProjectionCommand(): Command {
       const changedSet = computeArchitectureDriftChangedSet(root);
       for (const warning of changedSet.warnings) process.stderr.write(`${warning}\n`);
       const driftEvent = architectureDriftSourceEvent(changedSet);
+      const deadlineMs = Date.now() + loadArchitectureProjectionPolicy(root).timeoutMs;
       const result = drainArchitectureProjectionJobs(root, { sourceEvents: driftEvent ? [driftEvent] : [] });
       if (result.status === 'disabled') {
         for (const changedPath of changedSet.paths) {
-          const cascade = processArchitectureCascade(root, process.env, changedPath);
+          const cascade = processArchitectureCascade(root, process.env, changedPath, { deadlineMs, nowMs: Date.now });
           if (!cascade.ok) throw new Error(cascade.error);
         }
       }

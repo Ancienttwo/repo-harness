@@ -1,7 +1,7 @@
 import { recommendationV3InvariantIssues, type RecommendationV3 } from 'archctx-contracts';
 
 import { canonicalMessageDigest } from '../messages/mechanics';
-import { validateRefactorProgram, type RefactorProgramV1 } from './program';
+import { assertRefactorProgramRecommendationAuthority, validateRefactorProgram, type RefactorProgramV1 } from './program';
 
 export interface RefactorArchitectureInterventionV1 {
   readonly programId: string;
@@ -32,6 +32,7 @@ export function projectRefactorArchitectureIntervention(
   const issues = recommendationV3InvariantIssues(recommendation);
   if (issues.length) invalid(`recommendation readback is invalid: ${issues.join('; ')}`);
   if (recommendation.status !== 'accepted' || recommendation.category !== 'refactor_proposal' || recommendation.payload.scale !== 'architecture') invalid('architecture recommendation is not accepted');
+  assertRefactorProgramRecommendationAuthority(program, [recommendation]);
   const binding = program.bindings.find((entry) => entry.recommendationId === recommendation.recommendationId);
   if (!binding || binding.recommendationDigest !== recommendation.fingerprint || binding.executionBoundary !== 'architecture_intervention') invalid('architecture recommendation does not match its Program binding');
   if (!same(program.affectedNodeIds, recommendation.payload.affectedNodeIds) || !same(program.majorChangeReasons, recommendation.payload.majorChangeReasons)) invalid('architecture recommendation disagrees with the Program assessment projection');

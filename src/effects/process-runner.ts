@@ -2,7 +2,11 @@ import { spawnSync } from "child_process";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { PROCESS_SUPERVISOR_TERMINATION_GRACE_MS, taskkillAttemptSucceeded } from "./process-supervisor";
+import {
+  PROCESS_SUPERVISOR_FLAG,
+  PROCESS_SUPERVISOR_TERMINATION_GRACE_MS,
+  taskkillAttemptSucceeded,
+} from "./process-supervisor";
 
 export interface ProcessOutputRedaction {
   readonly pattern: RegExp;
@@ -39,7 +43,14 @@ export interface ProcessRunResult {
 export const DEFAULT_PROCESS_TIMEOUT_MS = 120_000;
 export const DEFAULT_PROCESS_MAX_OUTPUT_BYTES = 64 * 1024;
 export const DEFAULT_PROCESS_MAX_BUFFER_BYTES = 1024 * 1024;
-const PROCESS_SUPERVISOR = join(import.meta.dir, "process-supervisor.ts");
+declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
+const IS_SINGLE_FILE_HOOK_BUNDLE = typeof REPO_HARNESS_BUNDLED_CLI_VERSION === "string";
+const PROCESS_SUPERVISOR = IS_SINGLE_FILE_HOOK_BUNDLE
+  ? import.meta.path
+  : join(import.meta.dir, "process-supervisor.ts");
+const PROCESS_SUPERVISOR_PREFIX_ARGS = IS_SINGLE_FILE_HOOK_BUNDLE
+  ? [PROCESS_SUPERVISOR_FLAG]
+  : [];
 const PROCESS_SUPERVISOR_HARD_TIMEOUT_SLACK_MS = 1_000;
 const PROCESS_SUPERVISOR_HARD_TIMEOUT_OVERHEAD_MS = PROCESS_SUPERVISOR_TERMINATION_GRACE_MS
   + PROCESS_SUPERVISOR_HARD_TIMEOUT_SLACK_MS;
@@ -148,6 +159,7 @@ function runSupervisedProcess(
   try {
     const supervisorArgs = [
       PROCESS_SUPERVISOR,
+      ...PROCESS_SUPERVISOR_PREFIX_ARGS,
       "--metadata", receiptPath,
       "--parent-pid", String(process.pid),
       "--timeout-ms", String(timeoutMs),

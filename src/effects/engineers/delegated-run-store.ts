@@ -156,6 +156,12 @@ export interface DelegatedRunStatus {
   readonly result: WorkerResultV1 | null;
 }
 
+export interface DelegatedRunDispatchAuthority {
+  readonly intent: DelegatedRunIntentV1;
+  readonly admission: DelegationAdmissionReceiptV1;
+  readonly envelope: DelegationEnvelopeV1;
+}
+
 export interface AdmitReadOnlyDelegationInput {
   readonly repo_root: string;
   readonly envelope: DelegationEnvelopeV1;
@@ -992,6 +998,19 @@ export function readDelegatedRunStatus(repoRoot: string, id: string): DelegatedR
   const current = readCurrent(repoRoot, dispatchId(id));
   const intent = readDelegatedRunIntent(repoRoot, current.intent_sha256);
   return status(repoRoot, intent, current);
+}
+
+export function readDelegatedRunDispatchAuthority(repoRoot: string, id: string): DelegatedRunDispatchAuthority {
+  const status = readDelegatedRunStatus(repoRoot, id);
+  const admission = readDelegationAdmissionReceipt(repoRoot, status.intent.admission_receipt_sha256);
+  const envelope = readDelegationEnvelope(repoRoot, admission.envelope_sha256);
+  if (admission.decision !== 'admitted'
+    || admission.admission_receipt_sha256 !== status.intent.admission_receipt_sha256
+    || envelope.envelope_sha256 !== admission.envelope_sha256
+    || envelope.delegation_id !== status.intent.delegation_id) {
+    fail('delegated_run_conflict', 'dispatch does not resolve to one exact admitted delegation authority');
+  }
+  return Object.freeze({ intent: status.intent, admission, envelope });
 }
 
 export function readCodexProcessReceipt(repoRoot: string, receiptSha256: string): CodexProcessReceiptV1 { return readProcessReceipt(repoRoot, receiptSha256); }

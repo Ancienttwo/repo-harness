@@ -27,6 +27,7 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain("## Task Management Protocol");
     expect(output).toContain("## Coding Constraints");
     expect(output).toContain("## Quality & Safety");
+    expect(output).toContain("do not run the full suite for every small change");
     expect(output).toContain("## Deep Docs Index");
     expect(output).toContain("### First Principles");
     expect(output).toContain("### Single Source of Truth");
@@ -73,6 +74,11 @@ describe("AGENTS Target Assembly", () => {
 
     expect(claude.toLowerCase()).toContain("verification");
     expect(agents.toLowerCase()).toContain("verification");
+    for (const output of [claude, agents]) {
+      expect(output).toContain("Docs-only or ledger-closeout");
+      expect(output).toContain("High-risk, cross-module");
+      expect(output).toContain("preserve stronger contract and CI requirements");
+    }
     expect(claude.toLowerCase()).toContain("plan");
     expect(agents.toLowerCase()).toContain("plan");
     expect(claude.toLowerCase()).toContain("product truth");

@@ -58,12 +58,18 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 
 ## Required Checks
 
-Verification is risk-scoped. The active task contract's `exit_criteria` is the
-source of truth for behavior-specific checks; run focused tests for every
-changed behavior. The following repository-integrity checks are required for
-substantive repository changes:
+Choose verification from the complete diff and risk, not merely because a task is closing. Do not run the full suite for every small change.
+
+- Docs-only, ledger, or archive changes: run `git diff --check`, plus task-sync/workflow checks when workflow artifacts changed. Check affected links/paths. No full suite or typecheck is required when executable behavior is unchanged.
+- Isolated code changes: run the regression and affected test suites, plus `bun run check:type` for TypeScript changes. Run generator/mirror checks when their inputs or outputs change.
+- High-risk, cross-module, shared-contract, hook/runtime, authorization, publication, migration, or release changes: run the full verification set below. Escalate to it when the impact boundary cannot be established.
+- Active contracts and CI may require stronger checks; do not weaken an accepted criterion to obtain a pass. Before running, name the selected scope and reason; report exact commands, results, and any unrun checks. Do not rerun an unchanged suite solely for a docs/ledger closeout after it already passed against the same executable source.
+
+Full verification set (conditional on the scope above, not an every-task checklist):
 
 ```bash
+bun run check:type
+bun test --timeout 60000
 bash scripts/check-deploy-sql-order.sh
 bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
@@ -71,15 +77,6 @@ bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
 bun src/cli/index.ts init --repo . --dry-run
 ```
-
-Run the full `bun test --timeout 60000` suite when product/runtime source,
-tests, shared machine-executed contracts, test infrastructure, package/release
-behavior, or the active contract requires it. For `docs-only` and
-`ledger-closeout` changes limited to documentation and workflow artifacts, do
-not run the full suite by default; run the relevant focused checks and the
-repository-integrity checks above. When the full suite is skipped, record the
-changed paths, checks run, and the reason the narrower verification is
-sufficient.
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract

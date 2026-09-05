@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
 
 import { sealProgramAuthorization, type ProgramBudgetLimitV1 } from '../../src/core/automation/budget';
 import { buildDevelopmentCampaignDefinition } from '../../src/core/automation/development-campaign';
+import { readBrowserBinding } from '../../src/cli/chatgpt-browser/binding';
 import type { BrowserConsultInput, BrowserConsultResult } from '../../src/cli/chatgpt-browser/types';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { appendDevelopmentCampaignEvent, createDevelopmentCampaign, readDevelopmentCampaignStatus } from '../../src/effects/automation/development-campaign-store';
@@ -18,7 +19,7 @@ const hex = (seed: string): string => new Bun.CryptoHasher('sha256').update(seed
 const observedAt = '2026-09-05T00:00:00.000Z';
 const limits: ProgramBudgetLimitV1 = { max_agent_turns: 10, max_successful_acquisitions: 2, max_runner_invocations: 10, max_provider_failures: 2, max_consecutive_no_progress_steps: 2, max_repair_cycles: 2, max_wall_clock_seconds: 3600, max_input_tokens: null, max_output_tokens: null, max_cost_micros: null };
 
-function fixture() {
+function fixture(groupCount: 1 | 2 = 1) {
   const root = mkdtempSync(join(tmpdir(), 'gpt-pro-authoring-'));
   const home = mkdtempSync(join(tmpdir(), 'gpt-pro-authoring-home-'));
   const profile = mkdtempSync(join(tmpdir(), 'gpt-pro-profile-'));
@@ -27,12 +28,12 @@ function fixture() {
   execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
   mkdirSync(join(root, '.ai', 'harness'), { recursive: true });
-  writeFileSync(join(root, '.ai', 'harness', 'policy.json'), `${JSON.stringify({ development_campaign: { version: 1, mode: 'shadow', limits: { maximum_group_count: 1, maximum_issues_per_group: 10, maximum_parallel_tasks: 2 } }, external_sources: { version: 1, mode: 'manual', github: { enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [1] }, limits: { max_pages: 1, max_issues: 10, max_body_bytes: 4096, max_total_bytes: 65536, deadline_ms: 1000 } } } })}\n`);
+  writeFileSync(join(root, '.ai', 'harness', 'policy.json'), `${JSON.stringify({ development_campaign: { version: 1, mode: 'shadow', limits: { maximum_group_count: groupCount, maximum_issues_per_group: 10, maximum_parallel_tasks: 2 } }, external_sources: { version: 1, mode: 'manual', github: { enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [1] }, limits: { max_pages: 1, max_issues: 10, max_body_bytes: 4096, max_total_bytes: 65536, deadline_ms: 1000 } } } })}\n`);
   mkdirSync(join(root, '.repo-harness'), { recursive: true });
   writeFileSync(join(root, '.repo-harness', 'chatgpt-browser.local.json'), `${JSON.stringify({ version: 1, product: 'chatgpt', profileDir: profile, profileDirectory: 'Profile 13', selectedProfilePath: join(profile, 'Profile 13'), browserChannel: 'chrome', chatgptUrl: 'https://chatgpt.com/', updatedAt: observedAt })}\n`);
   execFileSync('git', ['add', '.ai'], { cwd: root }); execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const authorization = sealProgramAuthorization({ authorization_id: 'authorization-1', repository_id: 'repo-1', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign: { campaign_id: 'campaign-1', group_count: 1, issues_per_group: 10, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 13', require_fresh_main_audit: true }, issued_by: 'owner', issued_at: observedAt, expires_at: '2027-09-05T00:00:00.000Z' });
+  const authorization = sealProgramAuthorization({ authorization_id: 'authorization-1', repository_id: 'repo-1', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign: { campaign_id: 'campaign-1', group_count: groupCount, issues_per_group: 10, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 13', require_fresh_main_audit: true }, issued_by: 'owner', issued_at: observedAt, expires_at: '2027-09-05T00:00:00.000Z' });
   const env = { ...process.env, REPO_HARNESS_HOME: home };
   mintProgramAuthorization({ repo_root: root, authorization, env });
   const campaign = buildDevelopmentCampaignDefinition({ campaign_id: 'campaign-1', authorization_id: authorization.authorization_id, authorization_sha256: authorization.authorization_sha256, repository_id: authorization.repository_id, target_ref: authorization.target_ref, target_revision: authorization.target_revision, created_at: observedAt });
@@ -49,6 +50,98 @@ function result(input: BrowserConsultInput, sessionId: string, status: BrowserCo
 }
 
 describe('GPT Pro issue batch authoring effect', () => {
+  test('uses the injected browser binding authority before persisting and dispatching', async () => {
+    const f = fixture();
+    const binding = readBrowserBinding(f.root);
+    rmSync(join(f.root, '.repo-harness', 'chatgpt-browser.local.json'));
+    let bindingReads = 0;
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: (repoRoot) => { expect(repoRoot).toBe(f.root); bindingReads += 1; return binding; },
+      now: () => observedAt,
+      consult: async (input) => {
+        expect(bindingReads).toBe(1);
+        expect(input.profileDir).toBe(binding.binding!.profileDir);
+        expect(input.profileDirectory).toBe('Profile 13');
+        expect(existsSync(join(issueBatchGroupStoreRoot(f.root, 'campaign-1', 1), 'intent.json'))).toBe(true);
+        return result(input, 'injected-binding-session', 'completed', true);
+      },
+    });
+    expect(started.session.session_ref).toBe('injected-binding-session');
+    expect(started.browser.paths.output).toBe('output.md');
+  });
+
+  test('rejects a continuation source session owned by another intent before browser execution', async () => {
+    const f = fixture(2);
+    const first = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: readBrowserBinding,
+      now: () => observedAt,
+      consult: async (input) => result(input, 'session-group-1'),
+    });
+    const second = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 2, env: f.env }, {
+      readBinding: readBrowserBinding,
+      now: () => observedAt,
+      consult: async (input) => result(input, 'session-group-2'),
+    });
+    let browserCalls = 0;
+    await expect(continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: first.intent.intent_sha256, source_session_ref: second.session.session_ref, operation: 'fill_missing', requested_slots: ['01'], env: f.env }, {
+      readBinding: readBrowserBinding,
+      followup: async (input) => { browserCalls += 1; return result(input, 'must-not-run'); },
+    })).rejects.toThrow('source session does not belong to the issue batch intent');
+    expect(browserCalls).toBe(0);
+  });
+
+  test('rejects stale or expired authority before start persistence or browser execution', async () => {
+    for (const condition of ['moved', 'expired'] as const) {
+      const f = fixture();
+      if (condition === 'moved') {
+        writeFileSync(join(f.root, 'README.md'), '# moved target\n');
+        execFileSync('git', ['add', 'README.md'], { cwd: f.root });
+        execFileSync('git', ['commit', '-qm', 'move target'], { cwd: f.root });
+      }
+      const originalNow = Date.now;
+      if (condition === 'expired') Date.now = () => Date.parse('2028-09-05T00:00:00.000Z');
+      let browserCalls = 0;
+      try {
+        await expect(startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: readBrowserBinding,
+          consult: async (input) => { browserCalls += 1; return result(input, 'must-not-run'); },
+        })).rejects.toThrow(condition === 'moved' ? 'authorized target ref moved' : 'campaign authorization expired');
+        expect(browserCalls).toBe(0);
+        expect(existsSync(join(issueBatchGroupStoreRoot(f.root, 'campaign-1', 1), 'intent.json'))).toBe(false);
+      } finally {
+        Date.now = originalNow;
+      }
+    }
+  });
+
+  test('rejects stale or expired authority before continuation browser execution', async () => {
+    for (const condition of ['moved', 'expired'] as const) {
+      const f = fixture();
+      const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: readBrowserBinding,
+        now: () => observedAt,
+        consult: async (input) => result(input, `session-${condition}`),
+      });
+      if (condition === 'moved') {
+        writeFileSync(join(f.root, 'README.md'), '# moved target\n');
+        execFileSync('git', ['add', 'README.md'], { cwd: f.root });
+        execFileSync('git', ['commit', '-qm', 'move target'], { cwd: f.root });
+      }
+      const originalNow = Date.now;
+      if (condition === 'expired') Date.now = () => Date.parse('2028-09-05T00:00:00.000Z');
+      let browserCalls = 0;
+      try {
+        await expect(continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: started.session.session_ref, operation: 'fill_missing', requested_slots: ['01'], env: f.env }, {
+      readBinding: readBrowserBinding,
+          followup: async (input) => { browserCalls += 1; return result(input, 'must-not-run'); },
+        })).rejects.toThrow(condition === 'moved' ? 'authorized target ref moved' : 'campaign authorization expired');
+        expect(browserCalls).toBe(0);
+      } finally {
+        Date.now = originalNow;
+      }
+    }
+  });
+
   test('persists the exact intent before browser, forces secret scan, and has no local Issue-create surface', async () => {
     const f = fixture();
     const effectSource = readFileSync(join(import.meta.dir, '..', '..', 'src', 'effects', 'automation', 'gpt-pro-issue-authoring.ts'), 'utf8');
@@ -56,6 +149,7 @@ describe('GPT Pro issue batch authoring effect', () => {
     expect(effectSource).not.toContain('gh issue create');
     let captured: BrowserConsultInput | null = null;
     const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: readBrowserBinding,
       now: () => observedAt,
       consult: async (input) => {
         captured = input;
@@ -74,17 +168,17 @@ describe('GPT Pro issue batch authoring effect', () => {
 
   test('reattaches for missing-slot fill and exact Issue edit without creating a local Issue', async () => {
     const f = fixture();
-    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { now: () => observedAt, consult: async (input) => result(input, 'session-initial', 'completed', true) });
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { readBinding: readBrowserBinding, now: () => observedAt, consult: async (input) => result(input, 'session-initial', 'completed', true) });
     const calls: Array<{ sessionId: string; prompt: string; secretScan?: boolean }> = [];
     const followup = async (input: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => {
       calls.push({ sessionId: input.sessionId, prompt: input.prompt, secretScan: input.requireSecretScan });
       return result(input, `session-${calls.length + 1}`, 'completed', true);
     };
-    const filled = await continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: started.session.session_ref, operation: 'fill_missing', requested_slots: ['08', '09', '10'], env: f.env }, { now: () => '2026-09-05T00:10:00.000Z', followup });
+    const filled = await continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: started.session.session_ref, operation: 'fill_missing', requested_slots: ['08', '09', '10'], env: f.env }, { readBinding: readBrowserBinding, now: () => '2026-09-05T00:10:00.000Z', followup });
     expect(filled.session).toMatchObject({ operation: 'fill_missing', requested_slots: ['08', '09', '10'], source_session_ref: 'session-initial' });
     expect(calls[0]!.prompt).not.toContain('slot=07');
     expect(calls[0]!.secretScan).toBe(true);
-    const edited = await continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: filled.session.session_ref, operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: 'issue-103', env: f.env }, { now: () => '2026-09-05T00:20:00.000Z', followup });
+    const edited = await continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: filled.session.session_ref, operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: 'issue-103', env: f.env }, { readBinding: readBrowserBinding, now: () => '2026-09-05T00:20:00.000Z', followup });
     expect(edited.session).toMatchObject({ operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: 'issue-103' });
     expect(calls[1]!.prompt).toContain('Edit existing GitHub Issue issue-103');
     expect(calls[1]!.prompt).toContain('Do not create a new Issue');
@@ -92,7 +186,7 @@ describe('GPT Pro issue batch authoring effect', () => {
 
   test('records browser timeout/failure as unverified and does not advance batch or campaign state', async () => {
     const f = fixture();
-    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { now: () => observedAt, consult: async (input) => result(input, 'session-timeout', 'failed') });
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { readBinding: readBrowserBinding, now: () => observedAt, consult: async (input) => result(input, 'session-timeout', 'failed') });
     expect(started.session).toMatchObject({ browser_status: 'failed', verification: 'unverified' });
     expect(readDevelopmentCampaignStatus(f.root, 'campaign-1', f.env).current.state).toBe('group_preparing');
   });
@@ -101,8 +195,8 @@ describe('GPT Pro issue batch authoring effect', () => {
     const f = fixture();
     let browserCalls = 0;
     const consult = async (input: BrowserConsultInput) => { browserCalls += 1; return result(input, `session-${browserCalls}`); };
-    await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { now: () => observedAt, consult });
-    await expect(startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { now: () => '2026-09-05T00:01:00.000Z', consult })).rejects.toThrow('different immutable bytes');
+    await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { readBinding: readBrowserBinding, now: () => observedAt, consult });
+    await expect(startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { readBinding: readBrowserBinding, now: () => '2026-09-05T00:01:00.000Z', consult })).rejects.toThrow('different immutable bytes');
     expect(browserCalls).toBe(1);
   });
 });

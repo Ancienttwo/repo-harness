@@ -809,7 +809,7 @@ function runRepoHarnessHelper(
   env: NodeJS.ProcessEnv,
   helper: string,
   args: readonly string[],
-  timeoutMs: number | null,
+  timeoutMs: number,
 ): { status: number; stdout: string; stderr: string; timedOut: boolean } {
   const cli = env.REPO_HARNESS_CLI;
   let command: string;
@@ -820,15 +820,6 @@ function runRepoHarnessHelper(
   } else {
     command = 'repo-harness';
     commandArgs = ['run', helper, ...args];
-  }
-  if (timeoutMs === null) {
-    const result = spawnSync(command, [...commandArgs], { cwd: repoRoot, encoding: 'utf-8', env });
-    return {
-      status: result.status ?? 1,
-      stdout: result.stdout ?? '',
-      stderr: result.stderr ?? result.error?.message ?? '',
-      timedOut: false,
-    };
   }
   const result = runProcess(command, commandArgs, { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
   return {
@@ -841,20 +832,20 @@ function runRepoHarnessHelper(
 
 /** capability-context's own 3-tier fallback (post-edit-guard.sh:73-93) --
  * NOT `run <helper>` shaped, ported as its own function. */
-function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv): { status: number } {
+function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number): { status: number } {
   const args = ['capability-context', 'request', '--from-latest-architecture-event'];
   const cli = env.REPO_HARNESS_CLI;
   if (cli && existsSync(cli) && commandAvailable('bun', env)) {
-    const result = spawnSync('bun', [cli, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
+    const result = runProcess('bun', [cli, ...args], { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
     return { status: result.status ?? 1 };
   }
   if (commandAvailable('repo-harness', env)) {
-    const result = spawnSync('repo-harness', args, { cwd: repoRoot, encoding: 'utf-8', env });
+    const result = runProcess('repo-harness', args, { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
     return { status: result.status ?? 1 };
   }
   const localCli = join(repoRoot, 'src/cli/index.ts');
   if (commandAvailable('bun', env) && existsSync(localCli)) {
-    const result = spawnSync('bun', [localCli, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
+    const result = runProcess('bun', [localCli, ...args], { cwd: repoRoot, env, inheritEnv: false, processGroup: true, timeoutMs });
     return { status: result.status ?? 1 };
   }
   return { status: 1 };
@@ -874,20 +865,34 @@ export type ArchitectureCascadeResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: string };
 
-export function processArchitectureCascade(repoRoot: string, env: NodeJS.ProcessEnv, filePath: string): ArchitectureCascadeResult {
+export function processArchitectureCascade(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv,
+  filePath: string,
+  budget: { readonly deadlineMs: number; readonly nowMs: () => number },
+): ArchitectureCascadeResult {
+  const remaining = () => Math.max(0, budget.deadlineMs - budget.nowMs());
+  const expired = (): ArchitectureCascadeResult => ({ ok: false, error: `legacy architecture cascade deadline exhausted before ${filePath}; drift retained for retry` });
+  if (remaining() <= 0) return expired();
   if (!repoHarnessRunnerAvailable(env)) {
     return { ok: false, error: `legacy architecture cascade runner is unavailable for ${filePath}` };
   }
-  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath], null);
+  const queueBudget = remaining();
+  if (queueBudget <= 0) return expired();
+  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath], queueBudget);
   if (result.status !== 0) {
     return { ok: false, error: `legacy architecture cascade failed for ${filePath}: architecture-queue exited ${result.status}` };
   }
   if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
-    const contextSync = runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest'], null);
+    const contextBudget = remaining();
+    if (contextBudget <= 0) return expired();
+    const contextSync = runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest'], contextBudget);
     if (contextSync.status !== 0) {
       return { ok: false, error: `legacy architecture cascade failed for ${filePath}: context-contract-sync exited ${contextSync.status}` };
     }
-    const capabilityContext = runCapabilityContextRequest(repoRoot, env);
+    const capabilityBudget = remaining();
+    if (capabilityBudget <= 0) return expired();
+    const capabilityContext = runCapabilityContextRequest(repoRoot, env, capabilityBudget);
     if (capabilityContext.status !== 0) {
       return { ok: false, error: `legacy architecture cascade failed for ${filePath}: capability-context exited ${capabilityContext.status}` };
     }

@@ -42,7 +42,7 @@ function fixture(): Fixture {
   writeFileSync(join(root, 'README.md'), 'fixture\n');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: inbox', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: inbox', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves delivery | (pending) |`, '',

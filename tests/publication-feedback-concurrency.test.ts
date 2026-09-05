@@ -74,7 +74,7 @@ function fixture(): Fixture {
   git(root, 'config', 'user.email', 'feedback@test.invalid');
   mkdirSync(join(root, 'plans', 'sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT), [
-    '# Sprint: feedback', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: feedback', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK}`)} | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',

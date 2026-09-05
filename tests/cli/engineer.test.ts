@@ -54,6 +54,7 @@ function graphFixture(): string {
   const rollback = '{"rollback":"wp-a"}\n';
   const repositoryId = repoHarnessRepoIdFor(root);
   writeFileSync(join(root, 'plans/sprints/demo.sprint.md'), `# Sprint: demo
+> **Status**: Executing
 > **Backlog Schema**: 2
 
 ## Backlog

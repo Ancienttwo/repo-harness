@@ -103,7 +103,7 @@ function installPublicationGuardFixture(state: 'completing' | 'reviewing'): Publ
   mkdirSync(join(primary, 'plans/sprints'), { recursive: true });
   mkdirSync(join(primary, 'docs'), { recursive: true });
   writeFileSync(join(primary, PUBLICATION_GUARD_SPRINT), [
-    '# Publication guard sprint', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Publication guard sprint', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '| --- |----| --- | --- | --- | --- | --- |',
     `| 1 | ${fixtureTaskId(`${PUBLICATION_GUARD_TASK}`)} | [ ] | ${PUBLICATION_GUARD_TASK} | contract | remediation tests pass | (pending) |`, '',

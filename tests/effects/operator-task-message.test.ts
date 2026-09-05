@@ -45,7 +45,7 @@ function fixture(): Fixture {
   mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${SPRINT_PATH}\n`);
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: operator message', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: operator message', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
@@ -307,7 +307,7 @@ describe('operator task-message effect fence', () => {
 
   test('rejects a completed canonical row even when its task revision is unchanged', () => withFixture((value) => {
     writeFileSync(join(value.root, SPRINT_PATH), [
-      '# Sprint: operator message', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+      '# Sprint: operator message', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
       '| # | ID | Status | Task | Mode | Acceptance | Plan |',
       '|---|----|--------|------|------|------------|------|',
       `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
@@ -428,7 +428,7 @@ describe('operator task-message effect fence', () => {
       await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
 
       writeFileSync(join(value.root, SPRINT_PATH), [
-        '# Sprint: operator message', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+        '# Sprint: operator message', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
         '| # | ID | Status | Task | Mode | Acceptance | Plan |',
         '|---|----|--------|------|------|------------|------|',
         `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',

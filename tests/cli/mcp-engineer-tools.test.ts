@@ -89,7 +89,7 @@ function schedulingFixture(): { repoRoot: string; home: string; repositoryId: st
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
   writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repoRoot, sprintPath), [
-    '# Sprint: demo', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: demo', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|---|---|---|---|---|',
     `| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |`,

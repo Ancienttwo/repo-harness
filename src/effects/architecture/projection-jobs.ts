@@ -12,7 +12,7 @@ const MAX_ATTEMPTS = 3;
  * cannot be reclaimed while its orphaned provider may still be running. */
 const RUNNING_STALE_MS = 150_000;
 
-export type ProjectionJobFailureKind = 'preflight' | 'reconciliation' | 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
+export type ProjectionJobFailureKind = 'preflight' | 'reconciliation' | 'host-budget' | 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
 
 export interface ArchitectureProjectionJobV1 {
   schemaVersion: 'repo-harness.architecture-projection-job/v1';
@@ -455,12 +455,12 @@ export function failArchitectureProjectionJob(
     const failed: ArchitectureProjectionJobV1 = {
       ...job,
       status: 'pending',
-      attempt: failure.kind === 'preflight' || failure.kind === 'reconciliation' ? Math.max(0, job.attempt - 1) : job.attempt,
+      attempt: failure.kind === 'preflight' || failure.kind === 'reconciliation' || failure.kind === 'host-budget' ? Math.max(0, job.attempt - 1) : job.attempt,
       ownerPid: undefined,
       updatedAt: now.toISOString(),
       lastFailure: { ...failure, at: now.toISOString() },
     };
-    if (failure.kind !== 'preflight' && failure.kind !== 'reconciliation' && (failure.kind === 'permanent' || failed.attempt >= MAX_ATTEMPTS)) {
+    if (failure.kind !== 'preflight' && failure.kind !== 'reconciliation' && failure.kind !== 'host-budget' && (failure.kind === 'permanent' || failed.attempt >= MAX_ATTEMPTS)) {
       const deadLetter: ArchitectureProjectionDeadLetterV1 = {
         schemaVersion: 'repo-harness.architecture-projection-dead-letter/v1',
         job: failed,

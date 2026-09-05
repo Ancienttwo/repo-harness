@@ -1,7 +1,7 @@
 import { canonicalMessageDigest } from '../../core/messages/mechanics';
 import { buildAutomationControllerRun, type AutomationControllerPolicyV1 } from '../../core/automation/controller';
 import { workEnvelopeSha256, type EngineerPrincipalV1 } from '../../core/engineers/principal-claim';
-import type { AutomationControllerCurrentV1, AutomationControllerOperation, AutomationControllerStepReceiptV1 } from '../../core/automation/controller';
+import type { AutomationControllerCurrentV1, AutomationControllerOperation, AutomationControllerPrincipalV1, AutomationControllerStepReceiptV1 } from '../../core/automation/controller';
 import {
   AutomationBudgetStoreError,
   appendAutomationUsage,
@@ -19,7 +19,7 @@ import { attemptIdentity } from '../../core/engineers/automation-attempt';
 import { recordTaskAutomationAttemptOutcome, recordTaskAutomationAttemptStart } from '../engineers/automation-attempt-store';
 import { resolveEngineerPrincipal } from '../engineers/principal';
 import { acquireNextScheduledEngineerTask, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
-import { dispatchDelegatedRun, type DelegatedRunStatus } from '../engineers/delegated-run-store';
+import { dispatchDelegatedRun, readDelegatedRunDispatchAuthority, type DelegatedRunDispatchAuthority, type DelegatedRunStatus } from '../engineers/delegated-run-store';
 import { repoHarnessAuthorizationRevision } from '../repo-registry';
 import { readLease } from '../state/coordination-lease-store';
 import { renewLeaseLiveness } from '../state/coordination-lease-liveness-store';
@@ -46,6 +46,7 @@ export interface AutomationControllerRunDependencies {
   readonly authorizationRevision: typeof repoHarnessAuthorizationRevision;
   readonly acquireNext: typeof acquireNextScheduledEngineerTask;
   readonly dispatch: typeof dispatchDelegatedRun;
+  readonly readDispatchAuthority: typeof readDelegatedRunDispatchAuthority;
   readonly readBudget: typeof readAutomationBudgetStatus;
   readonly reserveBudget: typeof reserveAutomationBudget;
   readonly appendUsage: typeof appendAutomationUsage;
@@ -72,6 +73,7 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   authorizationRevision: repoHarnessAuthorizationRevision,
   acquireNext: acquireNextControllerTask,
   dispatch: dispatchControllerRun,
+  readDispatchAuthority: readDelegatedRunDispatchAuthority,
   readBudget: readAutomationBudgetStatus,
   reserveBudget: reserveAutomationBudget,
   appendUsage: appendAutomationUsage,
@@ -151,6 +153,31 @@ function transientAcquisition(result: AcquireNextScheduledEngineerTaskResult): b
       && result.fleet.fleet?.ok === false && (result.fleet.fleet.error === 'offer_stale' || result.fleet.fleet.error === 'claim_failed')));
 }
 
+function assertDispatchAuthority(
+  dispatchId: string,
+  authority: DelegatedRunDispatchAuthority,
+  context: NonNullable<AutomationControllerStepReceiptV1['attempt_context']>,
+  acquiredEnvelopeSha256: string | null,
+  principal: AutomationControllerPrincipalV1,
+): void {
+  const parent = authority.envelope.parent;
+  const engineer = authority.envelope.engineer;
+  if (authority.intent.dispatch_id !== dispatchId
+    || acquiredEnvelopeSha256 === null
+    || parent.task_id !== context.task_id
+    || parent.task_revision !== context.task_revision
+    || parent.claim_id !== context.claim_id
+    || parent.lease_generation !== context.lease_generation
+    || parent.work_envelope_sha256 !== acquiredEnvelopeSha256
+    || engineer.engineer_id !== context.engineer_id
+    || engineer.engineer_id !== principal.engineer_id
+    || engineer.binding_id !== principal.binding_id
+    || engineer.binding_generation !== context.binding_generation
+    || engineer.binding_generation !== principal.binding_generation) {
+    throw new Error('delegated dispatch does not match acquired authority');
+  }
+}
+
 export function stepAutomationController(input: StepAutomationControllerInput, overrides: Partial<AutomationControllerRunDependencies> = {}): AutomationControllerStepResult {
   const deps = { ...defaultDependencies, ...overrides }; const status = readAutomationControllerStatus(input.repo_root, input.run_id); const run = status.run;
   const startedAt = deps.now().getTime(); let current = status.current; let steps = 0; let acquisition: AcquireNextScheduledEngineerTaskResult | null = null; let dispatched: DelegatedRunStatus | null = null;
@@ -198,19 +225,23 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
   }
   if (current.state === 'executing' && room()) {
     if (!input.dispatch_id) return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
+    const context=deps.readAttemptContext(input.repo_root,run.run_id); if(context===null) throw new Error('controller execution is missing its acquired attempt context');
+    const head=deps.readHeadEvent(input.repo_root,run.run_id);
+    const acquiredEnvelopeSha256=(head.operation==='acquired'||head.operation==='begin_dispatch')?head.receipt.work_envelope_sha256:null;
+    const authority=deps.readDispatchAuthority(input.repo_root,input.dispatch_id);
+    assertDispatchAuthority(input.dispatch_id,authority,context,acquiredEnvelopeSha256,run.principal);
     let reservation;
     try { reservation = deps.reserveBudget({ repo_root: input.repo_root, automation_run_id: run.run_id, expected_budget_sha256: run.budget_sha256, idempotency_key: `${input.idempotency_key}:dispatch`, operation: 'dispatch', unit_kind: 'execute', unit_id: run.run_id, attempt: 1, provider: null }); }
     catch (error) { if (error instanceof AutomationBudgetStoreError) { current = budgetRefusal(input.repo_root, run.run_id, current, input.idempotency_key, error, at()); return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps + 1 }); } throw error; }
-    const context=deps.readAttemptContext(input.repo_root,run.run_id); if(context===null) throw new Error('controller execution is missing its acquired attempt context');
     const { retry_policy, ...attemptContext } = context;
     const started=deps.startAttempt({ repo_root:input.repo_root, ...attemptContext, controller_run_id:run.run_id, dispatch_id:input.dispatch_id, policy:retry_policy, started_at:at() });
     const identity=attemptIdentity(started.attempt);
-    if (deps.readHeadEvent(input.repo_root,run.run_id).operation === 'begin_dispatch') {
+    if (head.operation === 'begin_dispatch') {
       const endedAt=at(); deps.completeAttempt({ repo_root:input.repo_root, work_package_id:context.work_package_id, work_package_revision:context.work_package_revision, policy:retry_policy, identity_sha256:identity, outcome:'reconciliation_required', ended_at:endedAt, runtime_effect_id:null, evidence_refs:[`controller-event:${current.current_event_sha256}`] });
       current=append(input.repo_root,run.run_id,current,`${input.idempotency_key}:attempt-reconciliation`,'require_reconciliation',endedAt,receipt('require_reconciliation','dispatch_outcome_unknown',{dispatch_id:input.dispatch_id,evidence_refs:[started.attempt.attempt_sha256]}),'operator','controller_reconciliation_required'); steps+=1;
       return Object.freeze({run_id:run.run_id,current,acquisition,dispatch:dispatched,steps_executed:steps});
     }
-    current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-dispatch`, 'begin_dispatch', at(), receipt('begin_dispatch', 'reserved', { dispatch_id: input.dispatch_id, evidence_refs: [reservation.reservation_sha256] })); steps += 1;
+    current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-dispatch`, 'begin_dispatch', at(), receipt('begin_dispatch', 'reserved', { work_envelope_sha256: acquiredEnvelopeSha256, dispatch_id: input.dispatch_id, evidence_refs: [reservation.reservation_sha256] })); steps += 1;
     try { dispatched = deps.dispatch({ repo_root: input.repo_root, dispatch_id: input.dispatch_id, observed_at: at(), protected_paths: run.protected_paths }); }
     catch (error) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-unknown`, 'require_reconciliation', at(), receipt('require_reconciliation', 'dispatch_outcome_unknown', { dispatch_id: input.dispatch_id }), 'operator', 'controller_reconciliation_required'); throw error; }
     const outcome = dispatched.current.state === 'completed' ? 'progress' : dispatched.current.state === 'failed' ? 'provider_failure' : 'no_progress';

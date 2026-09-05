@@ -141,6 +141,28 @@ describe('operator web control board', () => {
     expect(markup).not.toContain('data-state="empty"');
   });
 
+  // Without a snapshot the board has observed no protocol at all. Printing the
+  // constant the bundle was compiled against would state a fact about a
+  // document that was never read.
+  test('states an unobserved protocol and sequence as absent, not as the compiled constant', () => {
+    const markup = renderToStaticMarkup(
+      <OperatorApp
+        initialLocale="en"
+        initialState={{
+          kind: 'fatal',
+          error: {
+            code: 'operator_api_unavailable',
+            message: 'Fleet snapshot unavailable',
+            next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
+          },
+        }}
+      />,
+    );
+
+    expect(markup).toContain('protocol — · sequence —');
+    expect(markup).not.toContain('protocol 3');
+  });
+
   test('keeps empty, changed-during-read, and repo-degraded semantics explicit', () => {
     expect(snapshotViewKind(emptySnapshot)).toBe('empty');
     expect(snapshotViewKind(changedDuringReadSnapshot)).toBe('changed-during-read');

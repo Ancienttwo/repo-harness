@@ -17,7 +17,13 @@ import {
   taskDisplayLabel,
   taskKey,
 } from '../../src/operator-web/App';
-import { collaborationSnapshot, degradedSnapshot, fixtureTasks, stableSnapshot } from '../../src/operator-web/fixture';
+import {
+  collaborationSnapshot,
+  degradedSnapshot,
+  fixtureTasks,
+  leaseStateSnapshot,
+  stableSnapshot,
+} from '../../src/operator-web/fixture';
 import {
   localeFromNavigatorLanguage,
   OPERATOR_LOCALE_STORAGE_KEY,
@@ -89,19 +95,63 @@ function paneText(): string {
   return document.querySelector('.detail-pane')?.textContent ?? '';
 }
 
-/** The browser decoder follows the write-route identity contract. */
-function decodableSnapshot(snapshot: OperatorFleetSnapshotV1): OperatorFleetSnapshotV1 {
-  return {
-    ...snapshot,
-    repositories: snapshot.repositories.map((repository) => ({
-      ...repository,
-      cards: repository.cards.map((card) => ({
-        ...card,
-        task_revision: card.task_id,
-        claim_id: card.claim_id === null ? null : '123e4567-e89b-42d3-a456-426614174012',
-      })),
-    })),
+/**
+ * The contrast guard reads the shipped stylesheet rather than a copy of its
+ * hex values, so a token edit that drops the write control below AA fails here
+ * instead of only in a browser.
+ */
+function cssVariables(css: string): ReadonlyMap<string, string> {
+  const start = css.indexOf(':root {');
+  const block = css.slice(start, css.indexOf('\n}', start));
+  const variables = new Map<string, string>();
+  for (const [, name, value] of block.matchAll(/(--[\w-]+):\s*([^;]+);/gu)) variables.set(name, value.trim());
+  return variables;
+}
+
+function cssDeclarations(css: string, selector: string): ReadonlyMap<string, string> {
+  const escaped = selector.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+  const match = css.match(new RegExp(String.raw`(?:^|\n)${escaped}\s*\{([^}]*)\}`, 'u'));
+  if (!match) throw new Error(`selector not found: ${selector}`);
+  const declarations = new Map<string, string>();
+  for (const [, property, value] of match[1]!.matchAll(/([\w-]+):\s*([^;]+);/gu)) {
+    declarations.set(property.trim(), value.trim());
+  }
+  return declarations;
+}
+
+function resolveCssColor(value: string, variables: ReadonlyMap<string, string>): string {
+  let resolved = value.trim();
+  for (let hops = 0; resolved.startsWith('var(') && hops < 8; hops += 1) {
+    const name = resolved.slice(4, resolved.indexOf(')')).trim();
+    const next = variables.get(name);
+    if (next === undefined) throw new Error(`unresolved css variable: ${name}`);
+    resolved = next.trim();
+  }
+  if (!/^#[0-9a-f]{6}$/iu.test(resolved)) throw new Error(`not a hex colour: ${resolved}`);
+  return resolved;
+}
+
+function relativeLuminance(hex: string): number {
+  const channel = (raw: number): number => {
+    const value = raw / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   };
+  return 0.2126 * channel(Number.parseInt(hex.slice(1, 3), 16))
+    + 0.7152 * channel(Number.parseInt(hex.slice(3, 5), 16))
+    + 0.0722 * channel(Number.parseInt(hex.slice(5, 7), 16));
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const left = relativeLuminance(foreground);
+  const right = relativeLuminance(background);
+  return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+}
+
+function filterChipCount(label: string): number {
+  const chip = Array.from(document.querySelectorAll('.worklist__filters button'))
+    .find((candidate) => candidate.textContent?.startsWith(label));
+  if (!chip) throw new Error(`filter chip not found: ${label}`);
+  return Number(chip.querySelector('span')?.textContent);
 }
 
 beforeEach(() => {
@@ -374,7 +424,7 @@ describe('operator web interactions', () => {
   });
 
   test('rejects malformed nested payloads before they reach React rendering', async () => {
-    const malformed = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
+    const malformed = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
     const repositories = malformed.repositories as Array<Record<string, unknown>>;
     const cards = repositories[0].cards as Array<Record<string, unknown>>;
     const feedback = cards[0].feedback as Record<string, unknown>;
@@ -400,20 +450,20 @@ describe('operator web interactions', () => {
   });
 
   test('rejects protocol 2 rather than applying a browser compatibility path', () => {
-    const stale = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
+    const stale = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
     stale.protocol = 2;
     expect(() => decodeOperatorFleetSnapshot(stale)).toThrow('Fleet snapshot response is invalid');
   });
 
   test('decodes the sprint task label and index and fails closed on a malformed one', () => {
-    const decoded = decodeOperatorFleetSnapshot(decodableSnapshot(stableSnapshot));
+    const decoded = decodeOperatorFleetSnapshot(stableSnapshot);
     expect(decoded.repositories[0]?.cards[2]).toMatchObject({
       task_id: fixtureTasks.review.task_id,
       task_label: fixtureTasks.review.task_label,
       task_index: fixtureTasks.review.task_index,
     });
 
-    const unlabelled = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
+    const unlabelled = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
     const unlabelledCards = ((unlabelled.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
     unlabelledCards[2].task_label = null;
     unlabelledCards[2].task_index = null;
@@ -436,7 +486,7 @@ describe('operator web interactions', () => {
   });
 
   test('reconstructs a closed browser payload and rejects malformed digest and Git OID fields', () => {
-    const withExtras = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
+    const withExtras = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
     const repositories = withExtras.repositories as Array<Record<string, unknown>>;
     const cards = repositories[0].cards as Array<Record<string, unknown>>;
     const readiness = cards[2].merge_readiness as Record<string, unknown>;
@@ -459,7 +509,7 @@ describe('operator web interactions', () => {
     expect(decoded.repositories[0]).not.toBe(repositories[0]);
     expect(decoded.repositories[0]?.cards[2]).not.toBe(cards[2]);
 
-    const degradedWithExtra = structuredClone(decodableSnapshot(degradedSnapshot)) as unknown as Record<string, unknown>;
+    const degradedWithExtra = structuredClone(degradedSnapshot) as unknown as Record<string, unknown>;
     const degradedRepositories = degradedWithExtra.repositories as Array<Record<string, unknown>>;
     (degradedRepositories.at(-1)?.error as Record<string, unknown>).future_secret = 'error-secret';
     expect(JSON.stringify(decodeOperatorFleetSnapshot(degradedWithExtra))).not.toContain('error-secret');
@@ -691,6 +741,66 @@ describe('operator web interactions', () => {
     for (const selector of carrotSelectors) expect(selector.startsWith('.composer__')).toBe(true);
   });
 
+  test('keeps the one write control at WCAG AA in default, hover, focus, and disabled states', async () => {
+    const css = await Bun.file('src/operator-web/styles.css').text();
+    const variables = cssVariables(css);
+    const base = cssDeclarations(css, '.composer__send');
+    const hover = cssDeclarations(css, '.composer__send:hover:not(:disabled)');
+    const disabled = cssDeclarations(css, '.composer__send:disabled');
+
+    const baseForeground = resolveCssColor(base.get('color')!, variables);
+    const baseBackground = resolveCssColor(base.get('background')!, variables);
+
+    // A translucent disabled state composites the control against whatever is
+    // behind it, which is how a 4.5:1 pair silently becomes a 2.5:1 one.
+    expect(disabled.get('opacity')).toBe('1');
+    // Focus draws a ring outside the control instead of repainting it, so the
+    // focused pair is the default pair.
+    expect(cssDeclarations(css, 'button:focus-visible, a:focus-visible').has('background')).toBe(false);
+
+    const states = [
+      ['default', baseForeground, baseBackground],
+      ['hover', resolveCssColor(hover.get('color') ?? base.get('color')!, variables), resolveCssColor(hover.get('background')!, variables)],
+      ['focus', baseForeground, baseBackground],
+      ['disabled', resolveCssColor(disabled.get('color')!, variables), resolveCssColor(disabled.get('background')!, variables)],
+    ] as const;
+    for (const [state, foreground, background] of states) {
+      expect({ state, meetsAA: contrastRatio(foreground, background) >= 4.5 }).toEqual({ state, meetsAA: true });
+    }
+  });
+
+  test('counts cards in the All filter and repositories in the unreadable filter', async () => {
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(degradedSnapshot)} initialLocale="en" />);
+
+    const cards = degradedSnapshot.repositories.flatMap((repository) => repository.cards).length;
+    const unreadable = degradedSnapshot.repositories.filter((repository) => repository.status === 'unreadable').length;
+    expect(cards).toBeGreaterThan(0);
+    expect(unreadable).toBeGreaterThan(0);
+
+    // The All chip used to sum repositories into the card total, so a fleet
+    // with many unreadable repositories reported hundreds of phantom tasks.
+    expect(filterChipCount('All')).toBe(cards);
+    expect(filterChipCount('Unreadable repos')).toBe(unreadable);
+    expect(document.querySelector('.operator-statusbar [data-fact="repositories"]')?.textContent)
+      .toContain(`${degradedSnapshot.counts.unreadable} unreadable`);
+  });
+
+  test('keeps an unreadable repository visible on a board that carries no cards', async () => {
+    const unreadableOnly = {
+      ...degradedSnapshot,
+      repositories: degradedSnapshot.repositories.filter((repository) => repository.status === 'unreadable'),
+      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1 },
+    } as OperatorFleetSnapshotV1;
+
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(unreadableOnly)} initialLocale="en" />);
+
+    expect(filterChipCount('All')).toBe(0);
+    expect(document.querySelector('.worklist')?.textContent).toContain('repo-unreadable');
+    expect(document.querySelector('.empty-inline')).toBeNull();
+  });
+
   /**
    * The stylesheet guard above only covers rules that go through the carrot
    * token. Brand orange written as a literal in component source would bypass
@@ -715,6 +825,8 @@ describe('operator web interactions', () => {
 });
 
 describe('operator web task message composer', () => {
+  /** The claim short id the composer prints is the tail of the real UUID. */
+  const blockedClaim = fixtureTasks.blocked.claim_id.slice(-8);
   const composerToggle = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.composer__toggle')!;
   const composerPanel = (): Element | null => document.querySelector('.composer__panel');
   const sendButton = (): HTMLButtonElement => {
@@ -855,13 +967,13 @@ describe('operator web task message composer', () => {
     expect(panel?.textContent).toContain('untrusted data');
     expect(panel?.textContent).toContain('may ignore it');
     expect(panel?.textContent).toContain('0 / 8192 bytes');
-    expect(panel?.textContent).toContain('claim …-blocked · gen 3');
+    expect(panel?.textContent).toContain(`claim …${blockedClaim} · gen 3`);
     expect(panel?.textContent).toContain('writes: task message only · no lease, no merge');
   });
 
   test('UX-operator-task-message-v1-P2 derives scope from the observed lease instead of offering a choice', async () => {
     await openComposerFor(fixtureTasks.blocked.task_label);
-    expect(sendButton().textContent).toBe('Send to owner — claim …-blocked · gen 3');
+    expect(sendButton().textContent).toBe(`Send to owner — claim …${blockedClaim} · gen 3`);
     expect(composerPanel()?.textContent).not.toContain('waits for the next claimant');
 
     await act(async () => root?.unmount());
@@ -1286,6 +1398,37 @@ describe('operator web task message composer', () => {
     }
   });
 
+  test('Escape inside the composer keeps a non-empty draft and stays the close key everywhere else', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    await typeMessage('the base moved, rebase first');
+    const textarea = document.querySelector('#composer-body') as unknown as HTMLTextAreaElement;
+
+    // Escape is the IME candidate-cancel key. Closing the drawer on it would
+    // unmount the composer and take the draft and its message id with it.
+    await act(async () => {
+      textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
+    });
+    expect(composerPanel()).not.toBeNull();
+    expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value)
+      .toBe('the base moved, rebase first');
+
+    await act(async () => {
+      document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
+    });
+    expect(composerPanel()).toBeNull();
+  });
+
+  test('Escape from an empty composer still closes the pane', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    const textarea = document.querySelector('#composer-body') as unknown as HTMLTextAreaElement;
+
+    await act(async () => {
+      textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
+    });
+    expect(composerPanel()).toBeNull();
+    expect(document.querySelector('.detail-pane [data-slot="composer"]')).toBeNull();
+  });
+
   test('translates the whole composer and mirrors the protocol body limit', async () => {
     expect(TASK_MESSAGE_BODY_LIMIT_BYTES).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
 
@@ -1297,9 +1440,115 @@ describe('operator web task message composer', () => {
     expect(panel).toContain('不可信数据');
     expect(panel).toContain('字节');
     expect(panel).toContain('先把消息写出来再发');
-    expect(sendButton().textContent).toBe('发给持有者 — claim …-blocked · gen 3');
+    expect(sendButton().textContent).toBe(`发给持有者 — claim …${blockedClaim} · gen 3`);
     // Identity and the write boundary contract stay untranslated.
-    expect(panel).toContain('claim …-blocked');
-    expect(panel).toContain('writes: task message only · no lease, no merge');
+    expect(panel).toContain(`claim …${blockedClaim}`);
+    // The write boundary is board copy, not identity, so it follows the locale.
+    expect(panel).toContain('只写任务消息');
+    expect(panel).not.toContain('writes: task message only · no lease, no merge');
+  });
+});
+
+describe('operator web composer target truth', () => {
+  const composerToggle = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.composer__toggle')!;
+  const composerPanel = (): Element | null => document.querySelector('.composer__panel');
+  const sendButton = (): HTMLButtonElement => {
+    const button = document.querySelector('[data-write-action="task-message"]');
+    if (!(button instanceof window.HTMLButtonElement)) throw new Error('send button not found');
+    return button as unknown as HTMLButtonElement;
+  };
+
+  /**
+   * The server accepts claim-scoped delivery only for a `bound` lease, so a task
+   * held under any other state still queues on the task. The scope is therefore
+   * correct and the copy was not: the board claimed nobody held a task whose
+   * claim it was printing two panels higher.
+   */
+  const heldCases = [
+    { task: fixtureTasks.reserving, group: 'Agent working', lease: 'reserving', zhLease: '预留中' },
+    { task: fixtureTasks.completing, group: 'Agent working', lease: 'completing', zhLease: '收尾中' },
+    { task: fixtureTasks.reviewing, group: 'Agent working', lease: 'reviewing', zhLease: '审查中' },
+    { task: fixtureTasks.reviewingUnpublished, group: 'Unclassified', lease: 'reviewing', zhLease: '审查中' },
+    { task: fixtureTasks.leaseUnknown, group: 'Unclassified', lease: 'unknown', zhLease: '未知' },
+  ] as const;
+
+  async function openLeaseStateComposer(
+    label: string,
+    group: string,
+    props: Partial<React.ComponentProps<typeof OperatorApp>> = {},
+  ): Promise<void> {
+    installDom(true);
+    await mount(
+      <OperatorApp initialState={projectSnapshotViewState(leaseStateSnapshot)} initialLocale="en" {...props} />,
+    );
+    await act(async () => buttonWithText(group).click());
+    await act(async () => buttonWithText(label).click());
+    await act(async () => composerToggle().click());
+  }
+
+  test.each([...heldCases])('names the $lease holder instead of claiming the task is unheld', async (entry) => {
+    const claim = entry.task.claim_id.slice(-8);
+    await openLeaseStateComposer(entry.task.task_label, entry.group);
+
+    const panel = composerPanel()?.textContent ?? '';
+    expect(panel).toContain(`…${claim}`);
+    expect(panel).toContain('gen 3');
+    expect(panel).toContain(entry.lease);
+    expect(composerToggle().textContent).toContain(`…${claim}`);
+    expect(sendButton().textContent).toContain(`…${claim}`);
+
+    expect(panel).not.toContain('Nobody holds this task now');
+    expect(panel).not.toContain('no current claim');
+    expect(composerToggle().textContent).not.toContain('Queue message for next claimant');
+    expect(sendButton().textContent).not.toBe('Send to the next claimant');
+  });
+
+  test.each([...heldCases])('names the $lease holder in Chinese too', async (entry) => {
+    const claim = entry.task.claim_id.slice(-8);
+    await openLeaseStateComposer(entry.task.task_label, entry.group);
+    await act(async () => buttonWithText('中').click());
+
+    const panel = composerPanel()?.textContent ?? '';
+    expect(panel).toContain(`…${claim}`);
+    expect(panel).toContain(entry.zhLease);
+    expect(panel).not.toContain('Nobody holds this task now');
+    expect(panel).not.toContain('waits for the next claimant');
+  });
+
+  test('keeps the envelope task-scoped while naming the holder', async () => {
+    const submitted: TaskMessageRequestV1[] = [];
+    const entry = heldCases[0];
+    await openLeaseStateComposer(entry.task.task_label, entry.group, {
+      sendMessage: async (request) => { submitted.push(request); },
+    });
+
+    const textarea = document.querySelector('#composer-body') as unknown as HTMLTextAreaElement;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+    await act(async () => {
+      textarea.dispatchEvent(new window.Event('focusin', { bubbles: true }) as unknown as Event);
+      setter?.call(textarea, 'the reservation never bound');
+      textarea.dispatchEvent(new window.Event('keyup', { bubbles: true }) as unknown as Event);
+    });
+    await act(async () => sendButton().click());
+
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]).toMatchObject({
+      scope: 'task',
+      expected_claim_id: null,
+      expected_generation: null,
+      expected_task_revision: entry.task.task_revision,
+    });
+  });
+
+  test('still says nobody holds an unheld task', async () => {
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+    await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
+    await act(async () => composerToggle().click());
+
+    const panel = composerPanel()?.textContent ?? '';
+    expect(panel).toContain('waits for the next claimant');
+    expect(panel).toContain('no current claim');
+    expect(sendButton().textContent).toBe('Send to the next claimant');
   });
 });

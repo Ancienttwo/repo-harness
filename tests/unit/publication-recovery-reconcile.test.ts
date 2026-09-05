@@ -54,7 +54,7 @@ interface Fixture {
 function writeSprint(root: string, status: '[ ]' | '[x]'): void {
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: reconcile', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: reconcile', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK}`)} | ${status} | ${TASK} | contract | reconcile tests | (pending) |`, '',

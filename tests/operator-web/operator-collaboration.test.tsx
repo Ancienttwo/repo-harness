@@ -20,6 +20,7 @@ import {
   offCollaborationSnapshot,
   stableSnapshot,
 } from '../../src/operator-web/fixture';
+import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorCollaborationSnapshot,
   projectSnapshotViewState,
@@ -370,6 +371,56 @@ describe('operator collaboration surface', () => {
     expect(markup).toContain('Check the repository collaboration store');
     expect(markup).not.toContain('No lane has a signal in this snapshot.');
     expect(markup).not.toContain('Nobody has published to this repository.');
+  });
+
+  test('renders a typed collaboration failure in the operator locale, not the server sentence', () => {
+    const failed = {
+      kind: 'failed',
+      repository_id: 'repo_a5b76eee64af71c3',
+      error: {
+        code: 'collaboration_snapshot_timeout',
+        message: 'The collaboration snapshot timed out.',
+        next_action: 'Refresh the collaboration panel and retry.',
+      },
+    } as const;
+    const chinese = renderToStaticMarkup(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="zh"
+        initialCollaboration={failed}
+      />,
+    );
+
+    expect(chinese).not.toContain('The collaboration snapshot timed out.');
+    expect(chinese).not.toContain('Refresh the collaboration panel and retry.');
+    expect(chinese).toContain('协作');
+  });
+
+  /**
+   * The transport error catalogue is closed, but a server ahead of this bundle
+   * could still name a code the dictionary does not carry. That sentence is
+   * shown, and labelled as the server's own English rather than board copy.
+   */
+  test('labels an unknown error code as an untranslated server message', () => {
+    const failed = {
+      kind: 'failed',
+      repository_id: 'repo_a5b76eee64af71c3',
+      error: {
+        code: 'collaboration_snapshot_from_a_newer_server',
+        message: 'A newer server refused the read.',
+        next_action: 'Upgrade the operator UI bundle.',
+      },
+    } as const;
+    const chinese = renderToStaticMarkup(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="zh"
+        initialCollaboration={failed}
+      />,
+    );
+
+    expect(chinese).toContain('A newer server refused the read.');
+    expect(chinese).toContain(translate('zh', 'error.untranslated'));
   });
 
   test('keeps "nothing read yet" and "read and empty" apart', () => {

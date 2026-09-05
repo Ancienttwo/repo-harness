@@ -1,4 +1,6 @@
 import {
+  OPERATOR_COLLABORATION_PROTOCOL,
+  OPERATOR_COLLABORATION_SNAPSHOT_KIND,
   projectOperatorCollaborationSnapshot,
   type OperatorCollaborationSnapshotV1,
 } from '../../core/operator/collaboration-snapshot';
@@ -26,7 +28,8 @@ import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 export type OperatorCollaborationErrorCode =
   | 'registry_unavailable'
   | 'repository_not_found'
-  | 'collaboration_snapshot_unavailable';
+  | 'collaboration_snapshot_unavailable'
+  | 'collaboration_repository_mismatch';
 
 export class OperatorCollaborationError extends Error {
   constructor(
@@ -42,6 +45,37 @@ export class OperatorCollaborationError extends Error {
 export interface ReadOperatorCollaborationSnapshotInput {
   readonly env?: NodeJS.ProcessEnv;
   readonly repository_id: string;
+}
+
+/**
+ * The board asks about one repository by id and must be answered about that
+ * repository. The id in a snapshot is derived from the resolved root while the
+ * request names a registry id, so the two are separate derivations that only
+ * agree while the registry is intact; a document that disagrees is refused
+ * rather than relabelled, because relabelling would show one repository's lanes
+ * under another repository's name. The same assertion guards the worker payload
+ * on the far side of the process boundary, where an unrelated or replayed
+ * message could otherwise be accepted as this repository's answer.
+ */
+export function assertOperatorCollaborationSnapshotIdentity(
+  snapshot: OperatorCollaborationSnapshotV1,
+  repositoryId: string,
+): void {
+  if (snapshot === null
+    || typeof snapshot !== 'object'
+    || snapshot.protocol !== OPERATOR_COLLABORATION_PROTOCOL
+    || snapshot.kind !== OPERATOR_COLLABORATION_SNAPSHOT_KIND) {
+    throw new OperatorCollaborationError(
+      'collaboration_repository_mismatch',
+      `collaboration snapshot for repository ${repositoryId} is not an operator collaboration snapshot`,
+    );
+  }
+  if (snapshot.repository_id !== repositoryId) {
+    throw new OperatorCollaborationError(
+      'collaboration_repository_mismatch',
+      `collaboration snapshot answered repository ${snapshot.repository_id} for requested repository ${repositoryId}`,
+    );
+  }
 }
 
 function registeredRepositoryRoot(input: ReadOperatorCollaborationSnapshotInput): string {
@@ -82,7 +116,7 @@ export function readOperatorCollaborationSnapshot(
       error,
     );
   }
-  return projectOperatorCollaborationSnapshot({
+  const projected = projectOperatorCollaborationSnapshot({
     snapshot: collection.snapshot,
     mode: collection.mode,
     // Assigned straight across, so the projection's restated source vocabulary
@@ -90,4 +124,6 @@ export function readOperatorCollaborationSnapshot(
     degraded_sources: collection.degraded_sources,
     changed_sources: collection.changed_sources,
   });
+  assertOperatorCollaborationSnapshotIdentity(projected, input.repository_id);
+  return projected;
 }

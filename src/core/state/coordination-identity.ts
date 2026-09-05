@@ -190,6 +190,30 @@ export function projectCanonicalTasks(input: CanonicalSprintInput): CanonicalTas
   });
 }
 
+/**
+ * Prove that the shared coordination plane has one owner for every task id.
+ *
+ * `projectCanonicalTasks` protects one file.  Callers that read a set of live
+ * canonical Sprint carriers use this small composition guard before any lease
+ * or task-subject operation can address the id.  Completed rows remain in
+ * their live Sprint on purpose: changing a row's status never releases its
+ * persisted identity for another row to reuse.
+ */
+export function assertUniqueCanonicalTaskIds(inputs: readonly CanonicalSprintInput[]): void {
+  const owners = new Map<string, string>();
+  for (const input of inputs) {
+    for (const task of projectCanonicalTasks(input)) {
+      const owner = owners.get(task.task_id);
+      if (owner !== undefined) {
+        throw new SprintSchemaError(
+          `task id ${task.task_id} is shared by live canonical sprints ${owner} and ${input.sprintPath}`,
+        );
+      }
+      owners.set(task.task_id, input.sprintPath);
+    }
+  }
+}
+
 export type CanonicalTaskLookup =
   | { readonly ok: true; readonly task: CanonicalTask }
   | { readonly ok: false; readonly error: string };

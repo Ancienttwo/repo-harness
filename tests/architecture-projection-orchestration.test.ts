@@ -25,7 +25,7 @@ import { inspectArchitectureProjectionAcceptanceState } from '../src/effects/arc
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const digest = (token: string) => `sha256:${token.repeat(64).slice(0, 64)}` as const;
-const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.5.6', timeoutMs: 120_000 };
+const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.5.7', timeoutMs: 120_000 };
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-axr6-'));
@@ -36,7 +36,7 @@ function fixture() {
   mkdirSync(join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src'), { recursive: true });
   mkdirSync(join(consumerRoot, 'node_modules/archctx/bin'), { recursive: true });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.5.6', projection_timeout_ms: 120000 } })}\n`);
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.5.7', projection_timeout_ms: 120000 } })}\n`);
   writeFileSync(join(repoRoot, '.archcontext/model/nodes/root.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
 id: capability.test.root
@@ -58,7 +58,7 @@ extensions:
   writeFileSync(join(repoRoot, 'src/index.ts'), 'export const value = 1;\n');
   writeFileSync(join(repoRoot, 'AGENTS.md'), '# agents\n');
   writeFileSync(join(repoRoot, 'CLAUDE.md'), '# claude\n');
-  writeFileSync(join(consumerRoot, 'node_modules/archctx/package.json'), `${JSON.stringify({ name: 'archctx', version: '0.5.6', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(consumerRoot, 'node_modules/archctx/package.json'), `${JSON.stringify({ name: 'archctx', version: '0.5.7', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   writeFileSync(join(consumerRoot, 'node_modules/archctx/bin/archctx'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(consumerRoot, 'node_modules/archctx/bin/archctx'), 0o755);
   execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
@@ -73,7 +73,7 @@ extensions:
 function capabilities(): ArchctxProcessResult {
   return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.5.6' },
+    package: { name: 'archctx', version: '0.5.7' },
     protocols: { projectionRequest: 'archcontext.projection-request/v1', projectionResult: 'archcontext.projection-result/v2', architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1' },
     renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
     features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-protocol-v2'],
@@ -320,6 +320,33 @@ describe('durable architecture projection orchestration', () => {
     const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs });
     expect(result.status).toBe('succeeded');
     expect(timeouts).toEqual([10_000, 110_000]);
+  });
+
+  test('does not replace the host deadline with a fresh provider budget', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/deadline.ts', session_id: 'host-deadline' }) });
+    let clockMs = 0;
+    const timeouts: number[] = [];
+    const run: RunArchctxProcess = (_binary, args, options) => {
+      timeouts.push(options.timeoutMs);
+      if (args[0] === 'capabilities') {
+        clockMs = 1_000;
+        return capabilities();
+      }
+      clockMs = 20_000;
+      return { status: null, signal: 'SIGTERM', stdout: '', stderr: 'timed out' };
+    };
+    const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs, deadlineMs: 20_000 });
+    expect(timeouts).toEqual([10_000, 19_000]);
+    expect(result.status).toBe('retry-pending');
+    expect(result.acknowledgeSourceEvents).toBe(false);
+    expect(result.queue.pending).toBe(1);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      clockMs = 0;
+      const retry = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs, deadlineMs: 20_000 });
+      expect(retry.status).toBe('retry-pending');
+      expect(retry.queue.deadLetters).toBe(0);
+    }
   });
 
   test('retains source events on process failure and dead-letters the third attempt', () => {

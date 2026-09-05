@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { Icon } from './icons';
 import { CarrotMark, DunkieMark, HookMark } from './marks';
 import {
   DEFAULT_OPERATOR_LOCALE,
   formatRelativeAge,
+  isOperatorMessageKey,
+  translate,
   useLocale,
   type OperatorLocale,
   type OperatorMessageKey,
@@ -17,15 +19,16 @@ import {
   decodeOperatorTaskMessageResponse,
   OPERATOR_COLUMNS,
   OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
-  OPERATOR_FLEET_PAYLOAD_PROTOCOL,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
   snapshotViewKind,
+  type OperatorApiErrorCode,
   type OperatorApiErrorV1,
   type OperatorCollaborationSnapshotV1,
   type OperatorCollaborationSource,
   type OperatorFleetCardV1,
   type OperatorFleetColumn,
+  type OperatorFleetErrorV1,
   type OperatorFleetRepositoryV1,
   type OperatorFleetSnapshotV1,
   type OperatorSnapshotViewState,
@@ -48,11 +51,51 @@ export interface OperatorAppProps {
   readonly initialLocale?: OperatorLocale;
 }
 
-const DEFAULT_API_ERROR: OperatorApiErrorV1 = {
-  code: 'operator_api_unavailable',
-  message: 'Fleet snapshot unavailable',
-  next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
-};
+/**
+ * A typed error the browser raises for itself. Its sentences are read out of the
+ * dictionary rather than restated here, so the board and a rejected promise
+ * cannot disagree about what the same code means.
+ */
+function clientApiError(code: OperatorApiErrorCode): OperatorApiErrorV1 {
+  return Object.freeze({
+    code,
+    message: translate(DEFAULT_OPERATOR_LOCALE, `error.${code}.message` as OperatorMessageKey),
+    next_action: translate(DEFAULT_OPERATOR_LOCALE, `error.${code}.action` as OperatorMessageKey),
+  });
+}
+
+const DEFAULT_API_ERROR: OperatorApiErrorV1 = clientApiError('operator_api_unavailable');
+
+export interface LocalizedApiError {
+  readonly message: string;
+  readonly next_action: string;
+  /** False when the sentence below is the server's own English, not board copy. */
+  readonly localized: boolean;
+}
+
+/**
+ * Error copy is client-owned and keyed by the typed code. A code outside the
+ * closed set belongs to a server ahead of this bundle: its English sentence is
+ * shown, and labelled as the server's rather than presented as board copy.
+ */
+export function localizeApiError(error: OperatorApiErrorV1, t: OperatorTranslate): LocalizedApiError {
+  const messageKey = `error.${error.code}.message`;
+  const actionKey = `error.${error.code}.action`;
+  if (isOperatorMessageKey(messageKey) && isOperatorMessageKey(actionKey)) {
+    return { message: t(messageKey), next_action: t(actionKey), localized: true };
+  }
+  return { message: error.message, next_action: error.next_action, localized: false };
+}
+
+function ApiErrorText({ error, t }: { readonly error: OperatorApiErrorV1; readonly t: OperatorTranslate }) {
+  const localized = localizeApiError(error, t);
+  return (
+    <>
+      {localized.message} {localized.next_action}
+      {!localized.localized && <> ({t('error.untranslated')})</>}
+    </>
+  );
+}
 
 function isTypedApiError(value: unknown): value is OperatorApiErrorV1 {
   if (!value || typeof value !== 'object') return false;
@@ -387,7 +430,7 @@ function SnapshotNotice({
     return (
       <div className="operator-notice operator-notice--danger" role="alert">
         <Icon name="alert" size={18} />
-        <div><strong>{t('notice.staleTitle')}</strong><span>{state.error.message}. {state.error.next_action}</span></div>
+        <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={state.error} t={t} /></span></div>
         <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('notice.retry')}</button>
       </div>
     );
@@ -486,14 +529,29 @@ function WorklistRow({
   );
 }
 
-const RUNTIME_EFFECT_ERROR_CODE = 'repo_runtime_effect_unreadable';
+/**
+ * The server sentence for a repository failure is a diagnostic contract, not
+ * board copy. Every code in the closed vocabulary therefore has its own entry
+ * here, which the type checker requires to stay exhaustive.
+ */
+const REPOSITORY_ERROR_KEYS: Readonly<Record<OperatorFleetErrorV1['code'], OperatorMessageKey>> = {
+  repo_unreadable: 'repo.error.repo_unreadable',
+  repo_authority_invalid: 'repo.error.repo_authority_invalid',
+  repo_snapshot_changed: 'repo.error.repo_snapshot_changed',
+  repo_board_unavailable: 'repo.error.repo_board_unavailable',
+  repo_publication_unreadable: 'repo.error.repo_publication_unreadable',
+  repo_readiness_unavailable: 'repo.error.repo_readiness_unavailable',
+  repo_feedback_unreadable: 'repo.error.repo_feedback_unreadable',
+  repo_inbox_unreadable: 'repo.error.repo_inbox_unreadable',
+  repo_runtime_effect_unreadable: 'repo.error.repo_runtime_effect_unreadable',
+  repo_collection_timeout: 'repo.error.repo_collection_timeout',
+};
 
 function repositoryErrorMessage(
   error: NonNullable<OperatorFleetRepositoryV1['error']>,
   t: OperatorTranslate,
 ): string {
-  if (error.code !== RUNTIME_EFFECT_ERROR_CODE) return error.message;
-  return t('repo.error.runtimeEffectUnreadable');
+  return t(REPOSITORY_ERROR_KEYS[error.code]);
 }
 
 function UnreadableRepositoryRow({
@@ -541,7 +599,13 @@ function Worklist({
    */
   const [groupOverrides, setGroupOverrides] = useState<Partial<Record<WorklistGroupId, boolean>>>({});
   const automaticCollapsed = useMemo(() => new Set(defaultCollapsedGroups(groups)), [groups]);
-  const total = groups.reduce((sum, group) => sum + group.count, 0);
+  /**
+   * Cards and unreadable repositories are different populations. Summing the
+   * per-group counts made the All chip claim one task per unreadable
+   * repository, so each population is counted where it is labelled.
+   */
+  const cardTotal = groups.reduce((sum, group) => sum + group.cards.length, 0);
+  const repositoryTotal = groups.reduce((sum, group) => sum + group.repositories.length, 0);
   const visible = groups.filter((group) => filter === 'all' || group.id === filter);
 
   const isCollapsed = (id: WorklistGroupId): boolean => groupOverrides[id] ?? automaticCollapsed.has(id);
@@ -557,7 +621,7 @@ function Worklist({
       </div>
       <div className="worklist__filters" role="group" aria-label={t('worklist.filters')}>
         <button type="button" aria-pressed={filter === 'all'} className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>
-          {t('worklist.filterAll')}<span>{total}</span>
+          {t('worklist.filterAll')}<span>{cardTotal}</span>
         </button>
         {groups.map((group) => (
           <button
@@ -576,7 +640,7 @@ function Worklist({
           </button>
         ))}
       </div>
-      {total === 0 ? (
+      {cardTotal + repositoryTotal === 0 ? (
         <div className="empty-inline"><Icon name="check" size={16} /><span>{t('worklist.empty')}</span></div>
       ) : (
         <div className="worklist__groups">
@@ -838,17 +902,9 @@ export type CollaborationViewState =
       readonly error: OperatorApiErrorV1;
     };
 
-const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = {
-  code: 'collaboration_snapshot_unavailable',
-  message: 'The collaboration store cannot be read.',
-  next_action: 'Check the repository collaboration store, then refresh the board.',
-};
+const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_snapshot_unavailable');
 
-const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = {
-  code: 'collaboration_repository_mismatch',
-  message: 'The collaboration response does not match the requested repository.',
-  next_action: COLLABORATION_UNAVAILABLE_ERROR.next_action,
-};
+const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_repository_mismatch');
 
 function assertCollaborationRepository(
   snapshot: OperatorCollaborationSnapshotV1,
@@ -1160,7 +1216,7 @@ export function CollaborationPane({
           <Icon name="alert" size={16} />
           <div>
             <strong>{t('collab.failedTitle')}</strong>
-            <span>{state.error.message} {state.error.next_action}</span>
+            <span><ApiErrorText error={state.error} t={t} /></span>
           </div>
         </div>
       </section>
@@ -1208,14 +1264,7 @@ export function CollaborationPane({
  */
 export const TASK_MESSAGE_BODY_LIMIT_BYTES = 8 * 1024;
 
-/** The whole board writes exactly here, and only here. */
-export const OPERATOR_WRITE_BOUNDARY = 'writes: task message only · no lease, no merge';
-
-const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = {
-  code: 'task_message_unavailable',
-  message: 'The task message could not be sent',
-  next_action: 'Refresh the board to re-observe the task, then retry.',
-};
+const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = clientApiError('task_message_unavailable');
 
 const OWNER_GONE_CODES: readonly string[] = ['claim_mismatch', 'recipient_unavailable', 'task_unowned'];
 const STALE_FENCE_CODES: readonly string[] = [
@@ -1272,6 +1321,62 @@ export function taskMessageBodyBytes(body: string): number {
 export function composerScope(card: OperatorFleetCardV1): 'task' | 'claim' {
   return card.lease_state === 'bound' && card.claim_id !== null ? 'claim' : 'task';
 }
+
+type OperatorLeaseState = OperatorFleetCardV1['lease_state'];
+
+/**
+ * What the composer is actually addressing.
+ *
+ * `claim` is the frozen draft fence, so a refresh cannot retarget an open
+ * draft. `held` is the case the board used to deny: the task carries a live
+ * claim, the lease is not one the server will deliver a claim-scoped message
+ * to, and the message therefore queues on the task while a holder exists.
+ * `unheld` is the only case in which nobody holds the task.
+ */
+export type ComposerTarget =
+  | { readonly kind: 'claim'; readonly claim: string; readonly generation: number | null }
+  | {
+      readonly kind: 'held';
+      readonly lease_state: OperatorLeaseState;
+      readonly claim: string;
+      readonly generation: number | null;
+    }
+  | { readonly kind: 'unheld'; readonly lease_state: OperatorLeaseState };
+
+export function composerTarget(card: OperatorFleetCardV1, fence: TaskMessageFenceV1): ComposerTarget {
+  if (fence.expected_claim_id !== null) {
+    return { kind: 'claim', claim: fence.expected_claim_id, generation: fence.expected_generation };
+  }
+  if (card.claim_id !== null) {
+    return { kind: 'held', lease_state: card.lease_state, claim: card.claim_id, generation: card.generation };
+  }
+  return { kind: 'unheld', lease_state: card.lease_state };
+}
+
+/**
+ * One sentence per lease state on both sides of the claim question. The
+ * exhaustive records are what keep a state from silently reusing another
+ * state's sentence.
+ */
+const HELD_TARGET_KEYS: Readonly<Record<OperatorLeaseState, OperatorMessageKey>> = {
+  available: 'composer.held.available',
+  reserving: 'composer.held.reserving',
+  bound: 'composer.held.bound',
+  completing: 'composer.held.completing',
+  reviewing: 'composer.held.reviewing',
+  released: 'composer.held.released',
+  unknown: 'composer.held.unknown',
+};
+
+const UNHELD_TARGET_KEYS: Readonly<Record<OperatorLeaseState, OperatorMessageKey>> = {
+  available: 'composer.unheld.available',
+  reserving: 'composer.unheld.reserving',
+  bound: 'composer.unheld.bound',
+  completing: 'composer.unheld.completing',
+  reviewing: 'composer.unheld.reviewing',
+  released: 'composer.unheld.released',
+  unknown: 'composer.unheld.unknown',
+};
 
 function composerFence(card: OperatorFleetCardV1): TaskMessageFenceV1 {
   const scope = composerScope(card);
@@ -1361,6 +1466,7 @@ function Composer({
   boardUnstable,
   sequence,
   onSent,
+  onDraftChange,
   sendMessage,
   t,
 }: {
@@ -1369,6 +1475,8 @@ function Composer({
   readonly boardUnstable: boolean;
   readonly sequence: number;
   readonly onSent: () => void;
+  /** Reports whether discarding this panel would destroy operator text. */
+  readonly onDraftChange: (hasDraft: boolean) => void;
   readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
   readonly t: OperatorTranslate;
 }) {
@@ -1398,7 +1506,10 @@ function Composer({
     board_unstable: boardUnstable,
     body_bytes: bytes,
   });
-  const claimShort = fence.expected_claim_id === null ? '' : fence.expected_claim_id.slice(-8);
+  const target = composerTarget(card, fence);
+  const claimShort = target.kind === 'unheld' ? '' : target.claim.slice(-8);
+  const targetGeneration = target.kind === 'unheld' ? '—' : target.generation ?? '—';
+  const leaseLabel = t(`lease.${card.lease_state}` as OperatorMessageKey);
   const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
   const sent = sentAt !== null && sentAt === sequence;
   const recovery = composerRecovery(error);
@@ -1410,6 +1521,11 @@ function Composer({
     && repository.snapshot_consistency === 'stable'
     && card.snapshot_consistency === 'stable'
   ));
+
+  useEffect(() => {
+    onDraftChange(open && body.length > 0);
+    return () => onDraftChange(false);
+  }, [open, body, onDraftChange]);
 
   const beginDraft = () => ({ message_id: crypto.randomUUID(), fence: observedFence });
 
@@ -1482,12 +1598,25 @@ function Composer({
         onClick={toggle}
       >
         <Icon name="chevron" size={15} className={open ? 'is-open' : ''} />
-        <span id="composer-heading">{scope === 'claim' ? t('composer.toggleClaim') : t('composer.toggleTask')}</span>
+        <span id="composer-heading">
+          {target.kind === 'claim'
+            ? t('composer.toggleClaim')
+            : target.kind === 'held'
+              ? t('composer.toggleHeld', { claim: claimShort })
+              : t('composer.toggleTask')}
+        </span>
       </button>
       {open && (
         <div className="composer__panel" id="composer-panel">
           <p className="composer__untrusted">{t('composer.untrusted')}</p>
-          {scope === 'task' && <p className="composer__scope-note">{t('composer.taskScope')}</p>}
+          {target.kind === 'held' && (
+            <p className="composer__scope-note">
+              {t(HELD_TARGET_KEYS[target.lease_state], { claim: claimShort, generation: targetGeneration })}
+            </p>
+          )}
+          {target.kind === 'unheld' && (
+            <p className="composer__scope-note">{t(UNHELD_TARGET_KEYS[target.lease_state])}</p>
+          )}
           <label className="composer__label" htmlFor="composer-body">{t('composer.bodyLabel')}</label>
           <textarea
             className="composer__body"
@@ -1507,14 +1636,16 @@ function Composer({
             {t('composer.bytes', { used: bytes, max: TASK_MESSAGE_BODY_LIMIT_BYTES })}
           </p>
           <p className="composer__fence">
-            {scope === 'claim'
-              ? `${t('composer.fenceClaim', { claim: claimShort, generation: fence.expected_generation ?? '—', consistency })} · rev ${fence.expected_task_revision}`
-              : `${t('composer.fenceTask', { consistency })} · rev ${fence.expected_task_revision}`}
+            {target.kind === 'claim'
+              ? `${t('composer.fenceClaim', { claim: claimShort, generation: targetGeneration, consistency })} · rev ${fence.expected_task_revision}`
+              : target.kind === 'held'
+                ? `${t('composer.fenceHeld', { claim: claimShort, generation: targetGeneration, state: leaseLabel, consistency })} · rev ${fence.expected_task_revision}`
+                : `${t('composer.fenceTask', { consistency })} · rev ${fence.expected_task_revision}`}
           </p>
           {block !== null && <p className="composer__blocked" role="status">{blockedMessage(block, t)}</p>}
           {error && (
             <div className="composer__error" role="alert">
-              <p>{OWNER_GONE_CODES.includes(error.code) ? t('composer.ownerGone') : `${error.message}. ${error.next_action}`}</p>
+              <p>{OWNER_GONE_CODES.includes(error.code) ? t('composer.ownerGone') : <ApiErrorText error={error} t={t} />}</p>
               {recovery === 'rebind' && (
                 <>
                   <p>{t('composer.rebindHint')}</p>
@@ -1554,11 +1685,13 @@ function Composer({
           >
             {sending
               ? t('composer.sending')
-              : scope === 'claim'
-                ? t('composer.send', { claim: claimShort, generation: fence.expected_generation ?? '—' })
-                : t('composer.sendTask')}
+              : target.kind === 'claim'
+                ? t('composer.send', { claim: claimShort, generation: targetGeneration })
+                : target.kind === 'held'
+                  ? t('composer.sendHeld', { claim: claimShort, generation: targetGeneration, state: leaseLabel })
+                  : t('composer.sendTask')}
           </button>
-          <p className="composer__boundary">{OPERATOR_WRITE_BOUNDARY}</p>
+          <p className="composer__boundary">{t('composer.boundary')}</p>
         </div>
       )}
     </section>
@@ -1610,7 +1743,11 @@ function DetailPane({
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const composerDraftRef = useRef(false);
   const cardKey = card ? taskKey(card) : null;
+  const reportComposerDraft = useCallback((hasDraft: boolean) => {
+    composerDraftRef.current = hasDraft;
+  }, []);
 
   useEffect(() => {
     if (!cardKey || typeof document === 'undefined') return;
@@ -1620,6 +1757,14 @@ function DetailPane({
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // Escape is the IME candidate-cancel key. Closing the pane on it while
+        // the composer holds text would unmount the panel and take the draft
+        // and its retry-bearing message id with it. The close button, the
+        // scrim, and Escape from anywhere else all still close the pane.
+        const node = event.target as { readonly closest?: (selector: string) => unknown } | null;
+        const insideComposer = typeof node?.closest === 'function'
+          && node.closest('.composer__panel') !== null;
+        if (insideComposer && composerDraftRef.current) return;
         event.preventDefault();
         onClose();
         return;
@@ -1716,6 +1861,7 @@ function DetailPane({
             boardUnstable={boardUnstable}
             sequence={snapshot.sequence}
             onSent={onSent}
+            onDraftChange={reportComposerDraft}
             sendMessage={sendMessage}
             t={t}
           />
@@ -1737,9 +1883,9 @@ function EmptyFleet({ t }: { readonly t: OperatorTranslate }) {
   );
 }
 
-function LoadingState() {
+function LoadingState({ t }: { readonly t: OperatorTranslate }) {
   return (
-    <section className="loading-board" aria-label="Loading Fleet board">
+    <section className="loading-board" aria-label={t('loading.boardLabel')}>
       <span className="loading-board__mascot"><HookMark height={40} /></span>
       <div className="loading-board__line loading-board__line--wide" />
       <div className="loading-board__rows">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>
@@ -1753,8 +1899,7 @@ function FatalState({ error, onRetry, t }: { readonly error: OperatorApiErrorV1;
       <span className="fatal-state__mark"><Icon name="alert" size={22} /></span>
       <p className="detail-eyebrow">{t('fatal.eyebrow')}</p>
       <h2 id="fatal-heading">{t('fatal.title')}</h2>
-      <p>{error.message}</p>
-      <code>{error.next_action}</code>
+      <p><ApiErrorText error={error} t={t} /></p>
       <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('fatal.retry')}</button>
     </section>
   );
@@ -1920,7 +2065,7 @@ export function OperatorApp({
       <div className="operator-main">
         <main className="operator-content">
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
-          {state.kind === 'loading' && state.previous === null ? <LoadingState />
+          {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />
               : snapshot ? (
                 snapshotViewKind(snapshot) === 'empty'
@@ -1955,7 +2100,9 @@ export function OperatorApp({
           <HookMark height={20} />
         </span>
         <span>repo-harness operator</span>
-        <span>{t('footer.protocol', { protocol: snapshot?.protocol ?? OPERATOR_FLEET_PAYLOAD_PROTOCOL, sequence: snapshot?.sequence ?? '—' })}</span>
+        {/* Without an observed snapshot there is no protocol to report; the
+            constant this bundle compiled against is not one. */}
+        <span>{t('footer.protocol', { protocol: snapshot?.protocol ?? '—', sequence: snapshot?.sequence ?? '—' })}</span>
         <span className="operator-footer__right">observe-only · one write: task message</span>
       </footer>
     </div>
