@@ -34,8 +34,11 @@
 
 - The plan lists the decoder-valid fixture as an implementation step. It landed
   in the RED commit instead, so each guard fails on its own defect rather than
-  on a module that cannot load. The pre-fix artifacts show 15 named failures
-  across the four files, not one import error.
+  on a module that cannot load. The pre-fix artifacts show 15 `(fail)` lines in
+  `operator-interactions.log`, 2 in `operator-collaboration.log`, and 1 in
+  `operator-ui.log`; `operator-web-types.log` is still a module-load failure
+  (`SyntaxError: Export named 'OPERATOR_API_ERROR_CODES' not found`). All four
+  runs record `PRE_FIX_EXIT=1`.
 - The footer's `observe-only · one write: task message` literal stays
   untranslated. The plan's finding names only `OPERATOR_WRITE_BOUNDARY`, and
   `operator-interactions.test.tsx` pins that footer string in `zh` as a
