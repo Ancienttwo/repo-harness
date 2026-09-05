@@ -32,4 +32,9 @@ Durable reading entrypoint: docs/researches/2026-09-05-test-name-risk-floor.md.
 - Task-sync initially requested the exact substantive digest; bound above for final validation. No waiver or guard setting changed.
 - Quick diff review: 12 source lines plus focused tests; both production callers share the policy. Directory, production-file, capability, operation, explicit-override and unknown-input protection retained. No second classifier found.
 - Coverage is sufficient for this pure policy boundary and its state/hook consumers; no full suite or provider evaluation required. Existing user dirty changes are not used as verification evidence.
-- Runtime activation is separate: this source commit does not replace the globally installed package or alter downstream project policy.
+- Global runtime activation completed with explicit user approval. Candidate was built from the previously installed 0.18.0 package plus `eb287895:src/core/workflow/profile.ts`; npm tarball comparison and post-install file hashes both show exactly two changed files: that classifier and `dist/hook-entry.js`. Previous verification-scope repairs remain byte-identical.
+- Installed hook SHA256: `7e3eb08aaa5789410703b7f8220c7abd18b4336bed8d94ec70878091d416c563`.
+- Candidate and installed CLI/hook smokes: original test path alone -> lite / hook exit 0; four-file scope -> standard / hook exit 2 without required plan; auth-directory test -> strict / hook exit 2 without required contract. No guard settings changed.
+- Actual `aip-main-open` installed CLI readback for the original target path with its branch diff: standard. `repo-harness doctor --json`: 12 ok, 0 warn, 0 fail, 1 not applicable; both host adapters ready.
+- Existing duplicate repo-harness keys in Bun global package/lock manifests emitted package-manager warnings; installation succeeded. That pre-existing configuration issue was not repaired in this slice.
+- Package version remains 0.18.0; no registry publish, git push or downstream policy change. A baseline rollback tarball was retained in the activation scratch directory.

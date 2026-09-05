@@ -30,3 +30,13 @@ after it, including the real state CLI and PreEdit hook. See
 This repair changes neither edit_plan_gate policy nor Stop/ship requirements.
 The reported historical Stop failure and downstream advice configuration are not
 claimed repaired by this classifier change.
+
+## Installed runtime verification
+
+After explicit approval, the global 0.18.0 runtime was updated with the classifier
+from `eb287895` and its rebuilt hook bundle. All other installed package files
+retain their previous bytes. Installed CLI and hook checks preserve lite /
+standard / strict boundaries; the original `aip-main-open` branch scope now
+resolves standard. Both host adapters passed doctor (12 ok, 0 warn, 0 fail).
+Detailed activation evidence is in
+`tasks/archive/review-20260905-test-name-risk-floor.md`.
