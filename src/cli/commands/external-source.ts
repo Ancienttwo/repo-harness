@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../../effects/repo-registry';
-import { ExternalSourcePolicyError } from '../../effects/external-sources/policy';
+import { ExternalSourcePolicyError, readExternalSourcesPolicy } from '../../effects/external-sources/policy';
 import { ExternalSourceRefreshError, listExternalSourceProjection, refreshExternalSource } from '../../effects/external-sources/refresh';
 import { ExternalSourceStoreError } from '../../effects/external-sources/store';
 import { bindExternalSource, externalSourceContext, listExternalSourceBindings } from '../../effects/external-sources/binding';
@@ -57,7 +57,7 @@ function outputDocument(value: unknown, format: Format, label: string): void {
 function refresh(options: Options): void {
   try {
     const repo = registeredRepository(options.repo);
-    const result = refreshExternalSource({ repo_root: repo.path, registered_repository_id: repo.id });
+    const result = refreshExternalSource({ repo_root: repo.path, registered_repository_id: repo.id, policy: readExternalSourcesPolicy(repo.path) });
     output(result.projection, options.format, 'ExternalSourceProjectionV1');
   } catch (error) {
     outputError(error);

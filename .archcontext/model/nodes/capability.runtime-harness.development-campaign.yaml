@@ -16,9 +16,14 @@ responsibilities:
   - Reserve every heartbeat mutation durably before invocation and separate orphan reason comments from not_planned closure across steps.
   - Validate exact-SHA readback and consume the existing budget terminal before projecting adopted slots into canonical Sprint and WorkGraph schemas.
   - Publish Sprint, WorkGraph and issue manifest through one candidate Git ref transaction; never acquire claims or merge main during intake.
+  - Hand canonical adopted Issues to one authorized local planning session, then consume exact source binding and existing TaskOffer readiness with hard feature and protection guards.
   - Keep Task, Lease, Claim, Work Graph, semantic acceptance and delivery publication authority in their existing capabilities.
 source:
   include:
+    - "src/core/automation/campaign-planning.ts"
+    - "src/effects/automation/campaign-planning.ts"
+    - "src/effects/automation/campaign-planning-proof.ts"
+    - "src/effects/automation/campaign-planning-store.ts"
     - "src/core/automation/development-campaign.ts"
     - "src/core/automation/issue-batch.ts"
     - "src/core/automation/connector-challenge.ts"
@@ -67,6 +72,9 @@ source:
             - id: sink.development-campaign.step
               path: "src/effects/automation/campaign-step.ts"
               symbol: "runCampaignStep"
+            - id: sink.development-campaign.planning
+              path: "src/effects/automation/campaign-planning.ts"
+              symbol: "runCampaignPlanningStep"
         - name: "runCampaignAdopt"
           sinks:
             - id: sink.development-campaign.adopt

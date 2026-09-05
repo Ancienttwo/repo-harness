@@ -102,6 +102,8 @@ export interface ResolvedHelper {
 }
 
 export interface RunHelperOptions {
+  /** Apply the existing package/runtime trust fence to this authority-sensitive invocation. */
+  trustedPackage?: true;
   helper: string;
   args?: readonly string[];
   cwd?: string;
@@ -362,8 +364,9 @@ function resolveHelperContext(
   helper: string,
   cwd: string,
   env: NodeJS.ProcessEnv,
+  trustedPackage = false,
 ): ResolvedHelperContext {
-  const protectedHelper = isProtectedHelper(helper);
+  const protectedHelper = trustedPackage || isProtectedHelper(helper);
   const protectedRuntime = protectedHelper ? resolveProtectedHelperPlatform() : null;
   const repoRoot = resolveRepoRoot(cwd, env, protectedHelper, protectedRuntime);
   const helperRuntime = resolveHelperRuntime(env, !protectedHelper);
@@ -382,10 +385,10 @@ export function resolveHelper(helper: string, cwd = process.cwd(), env: NodeJS.P
 
 export function runHelper(opts: RunHelperOptions): RunHelperResult {
   const cwd = opts.cwd ?? process.cwd();
-  const env = { ...process.env, ...(opts.env ?? {}) };
+  const env = opts.trustedPackage ? (opts.env ?? process.env) : { ...process.env, ...(opts.env ?? {}) };
   let context: ResolvedHelperContext;
   try {
-    context = resolveHelperContext(opts.helper, cwd, env);
+    context = resolveHelperContext(opts.helper, cwd, env, opts.trustedPackage);
   } catch (error) {
     return {
       exitCode: 1,
@@ -405,7 +408,7 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
   }
 
   const args = [...(opts.args ?? [])];
-  const protectedHelper = isProtectedHelper(opts.helper);
+  const protectedHelper = opts.trustedPackage || isProtectedHelper(opts.helper);
   const trustedBash = context.runtime?.bashBin ?? 'bash';
   const trustedGit = context.runtime?.gitBin ?? 'git';
   const command = resolved.fileName.endsWith('.sh') ? trustedBash : process.execPath;

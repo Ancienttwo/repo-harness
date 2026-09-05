@@ -1,3 +1,4 @@
+import { readExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
@@ -141,16 +142,16 @@ describe('GitHub external-source adapter', () => {
     let tick = 0;
     const now = () => new Date(Date.parse('2026-08-31T00:00:00.000Z') + (tick++ * 1000));
     try {
-      const first = refreshExternalSource({ repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
-      const repeated = refreshExternalSource({ repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
+      const first = refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
+      const repeated = refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
       expect(first.projection.issues).toHaveLength(1);
       expect(repeated.projection.issues).toHaveLength(1);
       expect(repeated.projection.latest_attempt?.outcome).toBe('complete');
-      const changed = refreshExternalSource({ repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('later'), now });
+      const changed = refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('later'), now });
       expect(changed.projection.issues).toHaveLength(1);
       expect(changed.projection.issues[0].source_drift).toBe(true);
-      expect(() => refreshExternalSource({ repo_root: root, registered_repository_id: 'repo_1', runner: () => { throw new GithubAdapterError('rate_limit', '429', 'unavailable'); }, now })).toThrow(ExternalSourceRefreshError);
-      try { refreshExternalSource({ repo_root: root, registered_repository_id: 'repo_1', runner: () => { throw new GithubAdapterError('rate_limit', '429', 'unavailable'); }, now }); }
+      expect(() => refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: () => { throw new GithubAdapterError('rate_limit', '429', 'unavailable'); }, now })).toThrow(ExternalSourceRefreshError);
+      try { refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: () => { throw new GithubAdapterError('rate_limit', '429', 'unavailable'); }, now }); }
       catch (error) { expect((error as ExternalSourceRefreshError).receipt?.outcome).toBe('unavailable'); }
     } finally { rmSync(root, { recursive: true, force: true }); }
   });

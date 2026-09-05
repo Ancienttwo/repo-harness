@@ -6,6 +6,11 @@ import { ConnectorChallengeError } from '../../core/automation/connector-challen
 import { readBrowserBinding } from '../chatgpt-browser/binding';
 import { runBrowserConsult, runBrowserFollowup, readSession } from '../chatgpt-browser/engine';
 import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { runHelper } from '../runtime/helper-runner';
+import { runCampaignPlanningStep } from '../../effects/automation/campaign-planning';
+import { CampaignPlanningError } from '../../core/automation/campaign-planning';
+import { readIssueBatchIntent, readIssueBatchAdoptionArtifact } from '../../effects/automation/issue-batch-store';
 
 import { buildDevelopmentCampaignDefinition } from '../../core/automation/development-campaign';
 import { readStoredProgramAuthorization } from '../../effects/automation/grant-store';
@@ -40,11 +45,11 @@ function output(value: unknown): void {
 
 function outputError(error: unknown): void {
   const code = error instanceof CampaignArgumentError ? error.code
-    : error instanceof DevelopmentCampaignStoreError || error instanceof DevelopmentCampaignPolicyError
+    : error instanceof CampaignPlanningError || error instanceof DevelopmentCampaignStoreError || error instanceof DevelopmentCampaignPolicyError
       || error instanceof GptProIssueAuthoringError || error instanceof IssueBatchStoreError || error instanceof IssueBatchProtocolError
       || error instanceof AutomationBudgetStoreError || error instanceof IssueBatchAdoptionError || error instanceof ConnectorChallengeError || error instanceof CampaignStepError || error instanceof IssueBatchObserverError || error instanceof IssueBatchReconcileError ? error.code
       : 'campaign_unavailable';
-  process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
+  process.stderr.write(`${JSON.stringify({ ok: false, ...(error instanceof CampaignPlanningError ? { outcome: code === 'feature_surface_detected' ? 'feature_route_required' : code === 'protected_surface_detected' ? 'human_attention_required' : code } : {}), error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof CampaignArgumentError ? 2 : 1;
 }
 
@@ -126,7 +131,26 @@ export async function runCampaignAuthorFollowup(raw: { readonly repo?: string; r
   }, { readBinding: readBrowserBinding, followup: runBrowserFollowup }));
 }
 
-export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; readonly campaignId?: string; readonly groupNumber?: string; readonly intentSha256?: string; readonly idempotencyKey?: string }): Promise<void> {
+export function runCampaignPlanningPreflight(repo: string, contract: string) {
+  const root = resolve(repo);
+  const result = runHelper({ helper: 'contract-run', args: ['preflight', '--repo', root, '--contract', contract, '--json'], cwd: root, trustedPackage: true, stdio: 'pipe' });
+  if (result.exitCode !== 0) throw new CampaignPlanningError('planning_failed', result.stderr || result.stdout || 'contract preflight failed');
+  const parsed = JSON.parse(result.stdout || '{}');
+  if (parsed.status !== 'preflight_pass' || parsed.brief_preflight?.ok !== true || !Array.isArray(parsed.brief_preflight.evidence)) throw new CampaignPlanningError('planning_failed', 'contract preflight evidence is unavailable');
+  return parsed.brief_preflight;
+
+}
+
+export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; readonly campaignId?: string; readonly groupNumber?: string; readonly intentSha256?: string; readonly idempotencyKey?: string; readonly host?: string; readonly sessionId?: string; readonly planningResult?: string }): Promise<void> {
+  const root = raw.repo?.trim() || process.cwd();
+  const intent = readIssueBatchIntent(root, required(raw.campaignId, '--campaign-id'), groupNumber(raw.groupNumber), required(raw.intentSha256, '--intent-sha256'));
+  if (readIssueBatchAdoptionArtifact(root, intent, 'publication')) {
+    if (raw.host !== 'claude' && raw.host !== 'codex') throw new CampaignArgumentError('post-adoption step requires --host claude|codex');
+    output(runCampaignPlanningStep({ repo_root: root, campaign_id: intent.campaign_id, group_number: intent.group_number, intent_sha256: intent.intent_sha256,
+      host: raw.host, session_id: required(raw.sessionId, '--session-id'), idempotency_key: required(raw.idempotencyKey, '--idempotency-key'), ...(raw.planningResult ? { result: requestJson(raw.planningResult) } : {}),
+    }, { preflight: runCampaignPlanningPreflight }));
+    return;
+  }
   output(await runCampaignStep({
     repo_root: raw.repo?.trim() || process.cwd(),
     campaign_id: required(raw.campaignId, '--campaign-id'),
@@ -175,12 +199,15 @@ export function buildCampaignCommand(): Command {
     .option('--dry-run', 'Render the scanned follow-up without opening a browser')
     .action(async (options) => { try { await runCampaignAuthorFollowup(options); } catch (error) { outputError(error); } });
   command.command('step')
-    .description('Observe an in-flight Issue batch and perform at most one reserved external mutation')
+    .description('Observe authoring or hand one canonical adopted task to its local planning session')
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--campaign-id <id>', 'Development campaign id')
     .requiredOption('--group-number <number>', 'Authorized group number')
     .requiredOption('--intent-sha256 <digest>', 'Persisted IssueBatchIntentV1 digest')
     .requiredOption('--idempotency-key <key>', 'Stable step identity for crash-safe replay')
+    .option('--host <host>', 'Authorized local planning host: claude or codex')
+    .option('--session-id <id>', 'Exact local parent session owning adopted group planning')
+    .option('--planning-result <path>', 'Closed local planning outcome and evidence JSON')
     .action(async (options) => { try { await runCampaignHeartbeatStep(options); } catch (error) { outputError(error); } });
   command.command('adopt')
     .description('Verify exact-SHA readback, seal authoring and publish an atomic repair batch candidate')

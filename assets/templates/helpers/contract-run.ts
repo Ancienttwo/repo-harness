@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
+import { createHash } from "crypto";
 
 // Sibling of the existing bounded process runner (scripts/run-bounded-verifier-command.ts,
 // mirrored to assets/templates/helpers/run-bounded-verifier-command.ts): both live next to
@@ -48,6 +49,8 @@ interface DelegationContract {
 }
 
 interface BriefPreflight {
+  evidence: { path: string; sha256: string }[];
+  task_profile: string;
   ok: boolean;
   issues: string[];
   failure_class:
@@ -607,7 +610,17 @@ function runBriefPreflight(markdown: string, repo: string): BriefPreflight {
             ? "unenforceable_delegation_constraint"
             : null;
 
-  return { ok: issues.length === 0, issues, failure_class: failureClass };
+  const evidence: { path: string; sha256: string }[] = [];
+  if (issues.length === 0 && readHeader(markdown, "Task Profile") === "bugfix") {
+    const section = sectionBody(markdown, "Root Cause Evidence");
+    for (const field of ["regression_guard", "pre_fix_failure_artifact"] as const) {
+      const path = parseRootCauseField(section, field);
+      const file = repoPath(repo, path);
+      if (!existsSync(file)) continue;
+      evidence.push({ path, sha256: `sha256:${createHash("sha256").update(readFileSync(file)).digest("hex")}` });
+    }
+  }
+  return { ok: issues.length === 0, issues, failure_class: failureClass, evidence, task_profile: readHeader(markdown, "Task Profile") };
 }
 
 // Sentinel exit code the bounded runner writes when the deadline fires (see

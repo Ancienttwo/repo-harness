@@ -66,6 +66,7 @@ import {
 } from '../state/coordination-claim-token';
 import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 import { resolveBoard } from '../state/resolve-board';
+import { campaignTaskPlanProof } from '../automation/campaign-planning-proof';
 
 type TaskOfferPlanFailure = NonNullable<ClassifyTaskOfferInput['plan_failure']>;
 
@@ -200,7 +201,7 @@ function buildTaskOffer(
 export function collectRepoTaskOffers(
   repo: RepoHarnessRegisteredRepo,
   registry: RepoHarnessRegistrySnapshot,
-  options: Pick<FleetOffersOptions, 'now_ms' | 'board_reader' | 'plan_reader'> = {},
+  options: Pick<FleetOffersOptions, 'env' | 'now_ms' | 'board_reader' | 'plan_reader'> = {},
 ): RepoTaskOffers | null {
   const sprintPath = readActiveSprintPath(repo.path);
   if (sprintPath === null) return null;
@@ -225,6 +226,7 @@ export function collectRepoTaskOffers(
         taskCell: card.task,
       });
     }
+    if (proofResult?.ok) proofResult = campaignTaskPlanProof(repo.path, card.task_id, card.task_revision, proofResult, options.env, targetRef);
     return buildTaskOffer(repo, registry, board, card, index, proofResult);
   });
   return Object.freeze({
@@ -387,6 +389,7 @@ export interface FleetAcquireDependencies {
     readonly sprintPath: string;
   }) => CanonicalSprintRead;
   readonly readPlanProof: typeof readCanonicalTaskPlanProof;
+  readonly campaignPlanProof: typeof campaignTaskPlanProof;
   readonly repoIdentity: typeof resolveRepoIdentity;
 }
 
@@ -451,6 +454,7 @@ function acquisitionDependencies(overrides: Partial<FleetAcquireDependencies> = 
     readLease,
     readCanonicalSprint,
     readPlanProof: readCanonicalTaskPlanProof,
+    campaignPlanProof: campaignTaskPlanProof,
     repoIdentity: resolveRepoIdentity,
     ...overrides,
   };
@@ -680,6 +684,8 @@ function revalidateClaimAuthority(
         : `plan or contract proof became invalid after claim: ${proof.error}`),
     };
   }
+  const campaignProof = deps.campaignPlanProof(repo.path, offer.task_id, offer.task_revision, proof, options.env, offer.canonical_target.ref);
+  if (!campaignProof.ok) return { ok: false, result: failure('offer_stale', `campaign planning authority changed after claim: ${campaignProof.error}`) };
   return { ok: true, task: task.task.row.task };
 }
 

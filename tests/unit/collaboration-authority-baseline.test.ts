@@ -375,6 +375,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
   },
   {
+    module: 'src/core/automation/campaign-planning.ts',
+    fails: ['C-1'],
+    evidence: 'local planning evidence plane: binds the authorized host handoff and declared repair scope; existing TaskOffer, external-source binding, Claim and Lease own all execution readiness and acquisition authority',
+  },
+  {
     module: 'src/core/automation/campaign-authoring-budget.ts',
     fails: ['C-1'],
     evidence: 'automation cost evidence plane: seals campaign authoring reservations and usage in the existing budget ledger for BRC6 consumption; it owns no Task/Claim, Lease, Publication, Acceptance, or Delegation wire identity',

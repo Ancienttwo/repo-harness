@@ -539,6 +539,7 @@ function buildEffectDependencies(
     readonly tokenError?: Error;
     readonly claimRace?: boolean;
     readonly authorizationStaleAfterClaim?: boolean;
+    readonly campaignStaleAt?: number;
   } = {},
 ): { readonly dependencies: Partial<FleetAcquireDependencies>; readonly calls: string[]; readonly released: string[] } {
   const fixture = effectFixture();
@@ -547,6 +548,7 @@ function buildEffectDependencies(
   let lease: LeaseOwnerRecord | null = fixture.claimed;
   let claimAttempts = 0;
   let registryReads = 0;
+  let campaignReads = 0;
   const dependencies: Partial<FleetAcquireDependencies> = {
     collectOffers: (() => {
       calls.push('collect');
@@ -591,6 +593,12 @@ function buildEffectDependencies(
       calls.push('proof');
       return { ok: true, proof: { ...fixture.proof, projectable: true as const } };
     }) as FleetAcquireDependencies['readPlanProof'],
+    campaignPlanProof: ((_root, _task, _revision, proof) => {
+      campaignReads++;
+      return campaignReads === options.campaignStaleAt
+        ? { ok: false, code: 'plan_not_projectable', error: 'source drift', candidates: [] }
+        : proof;
+    }),
     bind: (() => {
       calls.push('bind');
       lease = {
@@ -696,4 +704,13 @@ describe('fleet acquire mutation orchestration', () => {
     expect(fixture.released).toEqual(['claim-effect']);
     expect(fixture.calls).not.toContain('bind');
   });
+});
+
+test.each([1, 2])('campaign source drift at post-claim authority check %i releases ownership before projection', check => {
+  const fixture = buildEffectDependencies({ campaignStaleAt: check });
+  const result = acquireFleetTask({ dependencies: fixture.dependencies, session_id: 'effect-session' });
+  expect(result).toMatchObject({ ok: false, error: 'offer_stale' });
+  expect(fixture.released).toEqual(['claim-effect']);
+  expect(fixture.calls).not.toContain('project');
+  expect(fixture.calls.includes('token')).toBe(check === 2);
 });

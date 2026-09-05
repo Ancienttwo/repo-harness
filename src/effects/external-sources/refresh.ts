@@ -12,7 +12,7 @@ import {
   type GithubCommandRunner,
   type GithubRepositoryIdentityV1,
 } from './github';
-import { readExternalSourcesPolicy, requireManualGithubPolicy } from './policy';
+import { requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from './policy';
 import {
   listExternalSourceRefreshReceipts,
   listProviderIssueObservations,
@@ -64,12 +64,13 @@ function projection(repoRoot: string, registeredRepositoryId: string): ExternalS
 export function refreshExternalSource(input: {
   readonly repo_root: string;
   readonly registered_repository_id: string;
+  readonly policy: ExternalSourcesPolicyV1;
   readonly runner?: GithubCommandRunner;
   readonly now?: () => Date;
 }): ExternalSourceRefreshResultV1 {
   const now = input.now ?? (() => new Date());
   const startedAt = timestamp(now);
-  const policy = requireManualGithubPolicy(readExternalSourcesPolicy(input.repo_root));
+  const policy = requireManualGithubPolicy(input.policy);
   let identity: GithubRepositoryIdentityV1 | null = null;
   let pages = 0;
   let issuesSeen = 0;

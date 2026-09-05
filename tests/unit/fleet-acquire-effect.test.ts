@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -96,6 +97,8 @@ function board(cards: readonly BoardCardV1[], consistency: 'stable' | 'changed_d
 function fixtureRepo(id: string, accessMode: 'read_only' | 'read_write'): RepoHarnessRegisteredRepo {
   const root = mkdtempSync(join(tmpdir(), 'fleet-offer-effect-'));
   roots.push(root);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['-c', 'user.name=Fleet fixture', '-c', 'user.email=fleet@example.test', 'commit', '--allow-empty', '-qm', 'seed noncampaign repository'], { cwd: root });
   mkdirSync(join(root, '.ai', 'harness', 'sprint'), { recursive: true });
   writeFileSync(join(root, '.ai', 'harness', 'sprint', 'active-sprint'), `${SPRINT_PATH}\n`);
   writeFileSync(join(root, '.ai', 'harness', 'policy.json'), JSON.stringify({

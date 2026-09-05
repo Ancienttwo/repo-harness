@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-06T01:58:18+0800 -->
+<!-- updated_at: 2026-09-06T04:00:26+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-09-06T01:58:18+0800
-> **Source Branch**: codex/ci-gate-closeout
-> **Source Commit**: e467217c
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-09-06T04:00:26+0800
+> **Source Branch**: codex/brc7-local-planning-handoff
+> **Source Commit**: 2a281a13
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-92f7266c0259: plans/plan-20260906-0134-brc7-local-planning-handoff.md
-- linked-worktree-92f7266c0259: active-worktree owner -> self
+- linked-worktree-3f716106ccee: plans/plan-20260906-0233-ci-isolate-discover-tsx.md
+- linked-worktree-3f716106ccee: active-worktree owner -> self
+- linked-worktree-279f22d4e2ce: plans/plan-20260906-0338-context-files-ci-step.md
+- linked-worktree-279f22d4e2ce: active-worktree owner -> self
+- linked-worktree-37f25a48fe33: plans/plan-20260906-0323-context-map-drift-check.md
+- linked-worktree-37f25a48fe33: active-worktree owner -> self
+- linked-worktree-614f5719c922: plans/plan-20260906-0305-persistent-claude-review.md
+- linked-worktree-614f5719c922: active-worktree owner -> self
+- linked-worktree-6f3a8ac79bea: plans/plan-20260906-0257-route-eval-ci-gate.md
+- linked-worktree-6f3a8ac79bea: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -52,20 +60,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
-R  plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md -> plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
-R  tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md -> tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md
-R  tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md -> tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md
-R  tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md -> tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md
-A  tasks/archive/todo-20260906-0158-ci-test-gate-aggregate-failures.md
-M  tasks/current.md
-M  tasks/todos.md
+ D plans/plan-20260906-0134-brc7-local-planning-handoff.md
+ D tasks/contracts/20260906-0134-brc7-local-planning-handoff.contract.md
+ D tasks/notes/20260906-0134-brc7-local-planning-handoff.notes.md
+ D tasks/reviews/20260906-0134-brc7-local-planning-handoff.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260906-0134-brc7-local-planning-handoff.md
+?? tasks/archive/contract-20260906-0400-brc7-local-planning-handoff.md
+?? tasks/archive/notes-20260906-0400-brc7-local-planning-handoff.md
+?? tasks/archive/review-20260906-0400-brc7-local-planning-handoff.md
+?? tasks/archive/todo-20260906-0400-brc7-local-planning-handoff.md
 ```
 
 ## Source Artifacts
