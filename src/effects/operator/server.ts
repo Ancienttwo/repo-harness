@@ -11,6 +11,7 @@ import {
 } from '../../core/operator/fleet-snapshot';
 import {
   OperatorCollaborationError,
+  assertOperatorCollaborationSnapshotIdentity,
   type OperatorCollaborationErrorCode,
   type ReadOperatorCollaborationSnapshotInput,
 } from './collaboration';
@@ -67,13 +68,23 @@ const TASK_MESSAGE_REQUEST_FIXED_BYTES = Buffer.byteLength(JSON.stringify({
 }), 'utf8') - Buffer.byteLength(JSON.stringify(''), 'utf8');
 export const OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES =
   TASK_MESSAGE_REQUEST_FIXED_BYTES + (TASK_MESSAGE_BODY_MAX_BYTES * 6) + Buffer.byteLength(JSON.stringify(''), 'utf8');
-const TASK_MESSAGE_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/messages$/u;
+/**
+ * The dispatcher's own matchers, exported so the inventory below and the test
+ * that gates it compare the values `handleRequest` matches on rather than a
+ * second copy of the same strings.
+ */
+export const OPERATOR_HEALTH_PATH = '/healthz' as const;
+export const OPERATOR_FLEET_SNAPSHOT_PATH = '/api/v1/fleet/snapshot' as const;
+export const OPERATOR_API_PATH_PREFIX = '/api' as const;
+/** The static fallback has no path shape of its own; it is whatever is left. */
+export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
+export const OPERATOR_TASK_MESSAGE_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/messages$/u;
 /**
  * The repository id is matched loosely and resolved strictly, the same split the
  * task-message route already uses: the registry is the authority on which ids
  * exist, and duplicating its shape here would be a second opinion about it.
  */
-const COLLABORATION_SNAPSHOT_ROUTE = /^\/api\/v1\/collaboration\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
+export const OPERATOR_COLLABORATION_SNAPSHOT_ROUTE = /^\/api\/v1\/collaboration\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../dist/operator-ui',
@@ -98,16 +109,16 @@ export interface OperatorRouteV1 {
  * declaring it here is caught by the same test that counts the writes.
  */
 export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
-  Object.freeze({ id: 'health', method: 'GET', pattern: '/healthz', write: false }),
-  Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: '/api/v1/fleet/snapshot', write: false }),
+  Object.freeze({ id: 'health', method: 'GET', pattern: OPERATOR_HEALTH_PATH, write: false }),
+  Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: OPERATOR_FLEET_SNAPSHOT_PATH, write: false }),
   Object.freeze({
     id: 'collaboration_snapshot',
     method: 'GET',
-    pattern: COLLABORATION_SNAPSHOT_ROUTE.source,
+    pattern: OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source,
     write: false,
   }),
-  Object.freeze({ id: 'static_asset', method: 'GET', pattern: '/*', write: false }),
-  Object.freeze({ id: 'task_message', method: 'POST', pattern: TASK_MESSAGE_ROUTE.source, write: true }),
+  Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
+  Object.freeze({ id: 'task_message', method: 'POST', pattern: OPERATOR_TASK_MESSAGE_ROUTE.source, write: true }),
 ] as const);
 
 export type OperatorServerHost = '127.0.0.1' | '::1';
@@ -208,11 +219,23 @@ function jsonHeaders(): Record<string, string> {
   };
 }
 
+/**
+ * A Content-Security-Policy governs a document, and the only documents this
+ * server serves are the static ones. JSON responses deliberately carry none:
+ * they are already served `nosniff`, so a browser cannot execute them as a
+ * document, and a policy attached to a non-document would be a header a reader
+ * has to reason about for no boundary it protects.
+ */
+export const OPERATOR_STATIC_CONTENT_SECURITY_POLICY = "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'" as const;
+
+/** Every method the server implements, on every resource that refuses one. */
+const OPERATOR_ALLOWED_METHODS = 'GET, HEAD, POST' as const;
+
 function staticHeaders(contentType: string): Record<string, string> {
   return {
     'Cache-Control': 'no-store',
     'Content-Type': contentType,
-    'Content-Security-Policy': "default-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+    'Content-Security-Policy': OPERATOR_STATIC_CONTENT_SECURITY_POLICY,
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
@@ -224,14 +247,52 @@ function sendJson(
   status: number,
   body: unknown,
   headOnly = false,
+  extraHeaders: Readonly<Record<string, string>> = {},
 ): void {
   const payload = JSON.stringify(body);
   response.writeHead(status, {
     ...jsonHeaders(),
+    ...extraHeaders,
     'Content-Length': Buffer.byteLength(payload).toString(),
   });
   if (headOnly) response.end();
   else response.end(payload);
+}
+
+const OPERATOR_REFUSAL_PATH_MAX_CHARS = 200;
+
+/**
+ * The request target as the refusal log may state it: the path only, with the
+ * query string dropped and the value JSON-quoted so a client-supplied control
+ * character cannot forge a second log line.
+ */
+function refusalPath(request: IncomingMessage): string {
+  const target = request.url ?? '/';
+  const queryAt = target.indexOf('?');
+  const path = queryAt < 0 ? target : target.slice(0, queryAt);
+  return JSON.stringify(path.slice(0, OPERATOR_REFUSAL_PATH_MAX_CHARS));
+}
+
+/**
+ * Refusals are invisible otherwise: an operator watching a board that silently
+ * drops writes has nothing to look at. The line carries the decision and
+ * nothing that could leak the request — no body, no headers, and in particular
+ * no Origin, since the refused Origin is exactly the attacker-controlled string
+ * a log reader would then be tempted to trust. stdout stays the single bound
+ * URL line the CLI contract prints.
+ */
+function sendRefusal(
+  request: IncomingMessage,
+  response: ServerResponse,
+  status: number,
+  body: OperatorErrorResponseV1,
+  headOnly = false,
+  extraHeaders: Readonly<Record<string, string>> = {},
+): void {
+  process.stderr.write(
+    `${OPERATOR_SERVICE_NAME} refused method=${request.method ?? 'GET'} status=${status} code=${body.error.code} path=${refusalPath(request)}\n`,
+  );
+  sendJson(response, status, body, headOnly, extraHeaders);
 }
 
 function errorBody(
@@ -310,6 +371,11 @@ const COLLABORATION_FAILURES: Readonly<Record<OperatorCollaborationErrorCode, Pu
   collaboration_snapshot_unavailable: {
     status: 503,
     message: 'The collaboration store cannot be read.',
+    next_action: OPERATOR_COLLABORATION_ACTION,
+  },
+  collaboration_repository_mismatch: {
+    status: 500,
+    message: 'The collaboration snapshot does not belong to the requested repository.',
     next_action: OPERATOR_COLLABORATION_ACTION,
   },
 });
@@ -402,7 +468,8 @@ function collaborationWorkerResponse(value: unknown): OperatorCollaborationWorke
     && 'code' in value
     && (value.code === 'registry_unavailable'
       || value.code === 'repository_not_found'
-      || value.code === 'collaboration_snapshot_unavailable')
+      || value.code === 'collaboration_snapshot_unavailable'
+      || value.code === 'collaboration_repository_mismatch')
   ) {
     return { ok: false, code: value.code };
   }
@@ -445,6 +512,12 @@ function readDefaultCollaborationSnapshot(
           ),
         });
       } else if (response.ok) {
+        try {
+          assertOperatorCollaborationSnapshotIdentity(response.snapshot, input.repository_id);
+        } catch (error) {
+          finish({ ok: false, error });
+          return;
+        }
         finish({ ok: true, snapshot: response.snapshot });
       } else {
         finish({
@@ -1235,6 +1308,20 @@ function contentType(pathname: string): string {
   }
 }
 
+/**
+ * The write accepts exactly one representation. Origin equality is the CSRF
+ * barrier and stays ahead of this check, but a simple cross-site form post can
+ * only ever declare a form media type, so refusing anything but JSON removes
+ * the shape entirely rather than relying on one header alone. Parameters are
+ * allowed because a browser appends `charset`; duplicated Content-Type headers
+ * arrive joined and fail closed.
+ */
+function isJsonRequest(request: IncomingMessage): boolean {
+  const declared = request.headers['content-type'];
+  if (typeof declared !== 'string') return false;
+  return declared.split(';', 1)[0]!.trim().toLowerCase() === 'application/json';
+}
+
 function fileIfSafe(root: string, pathname: string): string | null {
   let decoded: string;
   try {
@@ -1296,6 +1383,7 @@ export async function startOperatorServer(
   let nextSnapshotSequence = 1;
   let activeFleetCanceller: (() => void) | null = null;
   let activeFleetSubscribers = 0;
+  let activeTaskMessageWriters = 0;
   const activeTaskMessageCancellers = new Set<() => void>();
   const activeTaskMessageCompletions = new Set<Promise<void>>();
   const activeCollaborationRequestCancellers = new Set<() => void>();
@@ -1430,7 +1518,20 @@ export async function startOperatorServer(
         signal: controller.signal,
       }))).then(projectOperatorFleetSnapshot);
     inFlight = pending;
-    const cancelFleet = () => controller.abort();
+    /**
+     * Cancellation retires the shared observation immediately, exactly as the
+     * collaboration path drops its observation the moment it is cancelled. The
+     * collector's abort path is not instantaneous — it drains a cleanup grace
+     * period and then waits for the process group to disappear — so a request
+     * that arrives inside that window would otherwise be handed the dying
+     * promise and answered with its failure. A page reload right after the
+     * previous page closed its connection is exactly that request.
+     */
+    const cancelFleet = () => {
+      if (inFlight === pending) inFlight = null;
+      if (activeFleetCanceller === cancelFleet) activeFleetCanceller = null;
+      controller.abort();
+    };
     activeFleetCanceller = cancelFleet;
     pending.then(
       () => {
@@ -1478,7 +1579,7 @@ export async function startOperatorServer(
       if (clientDisconnected || response.destroyed) return;
       finished = true;
       const failure = publicFleetError(error);
-      sendJson(response, failure.status, failure.body, headOnly);
+      sendRefusal(request, response, failure.status, failure.body, headOnly);
     } finally {
       finished = true;
       release();
@@ -1493,6 +1594,21 @@ export async function startOperatorServer(
     repositoryId: string,
     taskId: string,
   ): Promise<void> => {
+    /**
+     * The write is bounded by the same `max_concurrency` the collaboration
+     * reads are, and for the same reason: each admitted write owns a child
+     * process. There is no queue, because the board only ever has one send in
+     * flight, so a caller above the cap is not a browser waiting its turn.
+     */
+    if (activeTaskMessageWriters >= maxConcurrency) {
+      sendRefusal(request, response, 503, errorBody(
+        'task_message_busy',
+        'The task message service is busy.',
+        'Wait for the current message to finish, then send it again.',
+      ), false, { 'Retry-After': '1' });
+      return;
+    }
+    activeTaskMessageWriters += 1;
     let resolveCompletion!: () => void;
     const completion = new Promise<void>((resolvePending) => { resolveCompletion = resolvePending; });
     activeTaskMessageCompletions.add(completion);
@@ -1535,13 +1651,13 @@ export async function startOperatorServer(
         }
         finished = true;
         if (read.reason === 'envelope_too_large') {
-          sendJson(response, 413, errorBody(
+          sendRefusal(request, response, 413, errorBody(
             'task_message_envelope_too_large',
             'The task message request envelope is too large.',
             'Shorten the request, then send it again.',
           ));
         } else {
-          sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
+          sendRefusal(request, response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
         }
         return;
       }
@@ -1550,18 +1666,18 @@ export async function startOperatorServer(
         parsed = JSON.parse(read.text);
       } catch (_error) {
         finished = true;
-        sendJson(response, 400, errorBody('invalid_request', 'The request body is not valid JSON.', OPERATOR_REOBSERVE_ACTION));
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The request body is not valid JSON.', OPERATOR_REOBSERVE_ACTION));
         return;
       }
       const payload = decodeTaskMessageRequest(parsed);
       if (payload === null) {
         finished = true;
-        sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
         return;
       }
       if (Buffer.byteLength(payload.body, 'utf-8') > OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES) {
         finished = true;
-        sendJson(response, 413, errorBody(
+        sendRefusal(request, response, 413, errorBody(
           'task_message_body_too_large',
           `The message body must be at most ${OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES} bytes.`,
           'Shorten the message, then send it again.',
@@ -1601,9 +1717,10 @@ export async function startOperatorServer(
       finished = true;
       if (timeoutExpired) response.shouldKeepAlive = false;
       const failure = publicTaskMessageError(timeoutExpired ? new OperatorTaskMessageTimeoutError() : error);
-      sendJson(response, failure.status, failure.body);
+      sendRefusal(request, response, failure.status, failure.body);
     } finally {
       finished = true;
+      activeTaskMessageWriters -= 1;
       clearTimeout(timer);
       activeTaskMessageCancellers.delete(cancelForServerClose);
       activeTaskMessageCompletions.delete(completion);
@@ -1624,7 +1741,7 @@ export async function startOperatorServer(
       observation = acquireCollaborationObservation(repositoryId);
     } catch (error) {
       const failure = publicCollaborationError(error);
-      sendJson(response, failure.status, failure.body, headOnly);
+      sendRefusal(request, response, failure.status, failure.body, headOnly);
       return;
     }
     let finished = false;
@@ -1665,7 +1782,7 @@ export async function startOperatorServer(
       if (clientDisconnected || serverClosing || response.destroyed) return;
       finished = true;
       const failure = publicCollaborationError(error);
-      sendJson(response, failure.status, failure.body, headOnly);
+      sendRefusal(request, response, failure.status, failure.body, headOnly);
     } finally {
       finished = true;
       release();
@@ -1681,7 +1798,7 @@ export async function startOperatorServer(
     const expectedAuthority = expectedRequestAuthority(host, request);
     const requestHost = request.headers.host?.trim().toLowerCase();
     if (expectedAuthority === null || requestHost !== expectedAuthority) {
-      sendJson(response, 421, errorBody('host_not_allowed', 'The request Host is not allowed.'), headOnly);
+      sendRefusal(request, response, 421, errorBody('host_not_allowed', 'The request Host is not allowed.'), headOnly);
       return;
     }
     const expectedOrigin = `http://${expectedAuthority}`;
@@ -1690,7 +1807,7 @@ export async function startOperatorServer(
       // A read may come from curl; the one write may not. A browser always
       // sends Origin on POST, so a missing header is never the board itself.
       if (method === 'POST') {
-        sendJson(response, 403, errorBody(
+        sendRefusal(request, response, 403, errorBody(
           'origin_required',
           'The request Origin is required for writes.',
           'Send the message from the operator board on this loopback origin.',
@@ -1698,11 +1815,13 @@ export async function startOperatorServer(
         return;
       }
     } else if (requestOrigin !== expectedOrigin) {
-      sendJson(response, 403, errorBody('origin_not_allowed', 'The request Origin is not allowed.'), headOnly);
+      sendRefusal(request, response, 403, errorBody('origin_not_allowed', 'The request Origin is not allowed.'), headOnly);
       return;
     }
     if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
-      sendJson(response, 405, errorBody('method_not_allowed', 'Only GET, HEAD, and POST are supported.'), false);
+      sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only GET, HEAD, and POST are supported.'), false, {
+        Allow: OPERATOR_ALLOWED_METHODS,
+      });
       return;
     }
 
@@ -1710,30 +1829,42 @@ export async function startOperatorServer(
     try {
       url = new URL(request.url ?? '/', expectedOrigin);
       if (url.origin !== expectedOrigin) {
-        sendJson(response, 421, errorBody('host_not_allowed', 'The request URL authority is not allowed.'), headOnly);
+        sendRefusal(request, response, 421, errorBody('host_not_allowed', 'The request URL authority is not allowed.'), headOnly);
         return;
       }
     } catch (_error) {
-      sendJson(response, 400, errorBody('invalid_request', 'The request URL is invalid.'), headOnly);
+      sendRefusal(request, response, 400, errorBody('invalid_request', 'The request URL is invalid.'), headOnly);
       return;
     }
     const pathname = url.pathname;
 
-    const taskMessageRoute = TASK_MESSAGE_ROUTE.exec(pathname);
+    const taskMessageRoute = OPERATOR_TASK_MESSAGE_ROUTE.exec(pathname);
     if (method === 'POST' && taskMessageRoute === null) {
-      sendJson(response, 405, errorBody('method_not_allowed', 'Only the task message route accepts POST.'), false);
+      sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only the task message route accepts POST.'), false, {
+        Allow: OPERATOR_ALLOWED_METHODS,
+      });
       return;
     }
     if (taskMessageRoute !== null) {
       if (method !== 'POST') {
-        sendJson(response, 405, errorBody('method_not_allowed', 'The task message route accepts POST only.'), false);
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The task message route accepts POST only.'), false, {
+          Allow: OPERATOR_ALLOWED_METHODS,
+        });
+        return;
+      }
+      if (!isJsonRequest(request)) {
+        sendRefusal(request, response, 415, errorBody(
+          'unsupported_media_type',
+          'The task message request must be sent as application/json.',
+          'Send the message from the operator board on this loopback origin.',
+        ));
         return;
       }
       await handleTaskMessage(request, response, taskMessageRoute[1]!, taskMessageRoute[2]!);
       return;
     }
 
-    if (pathname === '/healthz') {
+    if (pathname === OPERATOR_HEALTH_PATH) {
       const health: OperatorHealthResponseV1 = {
         ok: true,
         service: OPERATOR_SERVICE_NAME,
@@ -1743,20 +1874,28 @@ export async function startOperatorServer(
       return;
     }
 
-    if (pathname === '/api/v1/fleet/snapshot') {
+    if (pathname === OPERATOR_FLEET_SNAPSHOT_PATH) {
       await handleFleetSnapshot(request, response, headOnly);
       return;
     }
 
-    const collaborationRoute = COLLABORATION_SNAPSHOT_ROUTE.exec(pathname);
+    const collaborationRoute = OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.exec(pathname);
     if (collaborationRoute !== null) {
       // POST reached 405 above; this route reads and nothing else.
       await handleCollaborationSnapshot(request, response, collaborationRoute[1]!, headOnly);
       return;
     }
 
-    if (pathname === '/api' || pathname.startsWith('/api/')) {
-      sendJson(response, 404, errorBody('not_found', 'The requested operator API route does not exist.'), headOnly);
+    /**
+     * The API prefix is claimed case-insensitively while the routes above stay
+     * exact, because the static fallback resolves case-insensitively on macOS
+     * and Windows: `/API/v1/fleet/snapshot` matched no API route, fell through
+     * to the SPA shell, and answered a navigation with 200 HTML. Anything under
+     * the API prefix that reached here is a missing API route and says so.
+     */
+    const apiPathname = pathname.toLowerCase();
+    if (apiPathname === OPERATOR_API_PATH_PREFIX || apiPathname.startsWith(`${OPERATOR_API_PATH_PREFIX}/`)) {
+      sendRefusal(request, response, 404, errorBody('not_found', 'The requested operator API route does not exist.'), headOnly);
       return;
     }
 
@@ -1764,9 +1903,9 @@ export async function startOperatorServer(
     const file = requestedFile ?? (isHtmlNavigation(request, pathname) ? fallbackIndex(staticRoot) : null);
     if (file === null) {
       if (pathname === '/' || isHtmlNavigation(request, pathname)) {
-        sendJson(response, 503, errorBody('operator_assets_unavailable', 'Operator UI assets are unavailable.', OPERATOR_ASSET_ACTION), headOnly);
+        sendRefusal(request, response, 503, errorBody('operator_assets_unavailable', 'Operator UI assets are unavailable.', OPERATOR_ASSET_ACTION), headOnly);
       } else {
-        sendJson(response, 404, errorBody('not_found', 'The requested operator asset does not exist.'), headOnly);
+        sendRefusal(request, response, 404, errorBody('not_found', 'The requested operator asset does not exist.'), headOnly);
       }
       return;
     }
@@ -1775,7 +1914,7 @@ export async function startOperatorServer(
     try {
       body = readFileSync(file);
     } catch (_error) {
-      sendJson(response, 503, errorBody('operator_assets_unavailable', 'Operator UI assets are unavailable.', OPERATOR_ASSET_ACTION), headOnly);
+      sendRefusal(request, response, 503, errorBody('operator_assets_unavailable', 'Operator UI assets are unavailable.', OPERATOR_ASSET_ACTION), headOnly);
       return;
     }
     const headers = {
@@ -1793,7 +1932,7 @@ export async function startOperatorServer(
         response.destroy();
         return;
       }
-      sendJson(response, 500, errorBody('operator_server_unavailable', 'Operator server failed to handle the request.'));
+      sendRefusal(request, response, 500, errorBody('operator_server_unavailable', 'Operator server failed to handle the request.'));
     });
   });
 
