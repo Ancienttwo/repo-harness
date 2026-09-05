@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
@@ -21,7 +22,7 @@ function run(cwd: string, args: string[], env?: Record<string, string>) {
   return spawnSync(args[0], args.slice(1), {
     cwd,
     encoding: "utf-8",
-    env: { ...processEnv, ...env },
+    env: { ...processEnv, PATH: `${join(cwd, ".git", "task-sync-bin")}:${processEnv.PATH}`, ...env },
   });
 }
 
@@ -43,6 +44,8 @@ function setupRepo(): string {
   copyFileSync(HELPER, join(cwd, "scripts", "check-task-sync.sh"));
   expect(run(cwd, ["chmod", "+x", "scripts/check-task-sync.sh"]).status).toBe(0);
   expect(run(cwd, ["git", "init"]).status).toBe(0);
+  mkdirSync(join(cwd, ".git", "task-sync-bin"));
+  writeFileSync(join(cwd, ".git", "task-sync-bin", "repo-harness"), "#!/bin/sh\nprintf 'standard\\n'\n", { mode: 0o755 });
   expect(run(cwd, ["git", "config", "user.email", "test@example.com"]).status).toBe(0);
   expect(run(cwd, ["git", "config", "user.name", "Test User"]).status).toBe(0);
 
@@ -60,6 +63,65 @@ function setupRepo(): string {
 }
 
 describe("check-task-sync helper", () => {
+  test("admits a real lite template edit without creating workflow artifacts", () => {
+    const cwd = setupRepo();
+    try {
+      const cli = join(cwd, ".git", "task-sync-bin", "repo-harness");
+      rmSync(cli);
+      symlinkSync(join(ROOT, "src", "cli", "index.ts"), cli);
+      mkdirSync(join(cwd, "assets", "reference-configs"), { recursive: true });
+      writeFileSync(join(cwd, "assets", "reference-configs", "rules.md"), "# Concise global rules\n");
+      const resolved = run(cwd, ["repo-harness", "state", "resolve", "--json", "--field", "workflow_profile", "--target-path", "./assets/reference-configs/rules.md"]);
+      expect(resolved.status).toBe(0);
+      expect(resolved.stdout.trim()).toBe("lite");
+      const before = run(cwd, ["git", "status", "--porcelain"]).stdout;
+      const result = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Resolved lite profile");
+      expect(run(cwd, ["git", "status", "--porcelain"]).stdout).toBe(before);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("includes base-range strict paths even when HEAD is clean", () => {
+    const cwd = setupRepo();
+    try {
+      const cli = join(cwd, ".git", "task-sync-bin", "repo-harness");
+      rmSync(cli);
+      symlinkSync(join(ROOT, "src", "cli", "index.ts"), cli);
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      mkdirSync(join(cwd, "docs", "auth"), { recursive: true });
+      writeFileSync(join(cwd, "docs", "auth", "runbook.md"), "# Auth boundary\n");
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      expect(run(cwd, ["git", "add", "."]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "change"]).status).toBe(0);
+      const result = run(cwd, ["bash", "scripts/check-task-sync.sh"], { REPO_HARNESS_DIFF_BASE: base });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("Resolved strict profile");
+      expect(result.stdout).toContain("Substantive diff lacks canonical workflow evidence");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test.each([
+    ["printf 'lite\\n'; exit 1", "resolution failed"],
+    ["exit 0", "Invalid workflow profile"],
+    ["printf 'unknown\\n'", "Invalid workflow profile"],
+  ])("fails closed for an unusable resolver: %s", (body, diagnostic) => {
+    const cwd = setupRepo();
+    try {
+      writeFileSync(join(cwd, ".git", "task-sync-bin", "repo-harness"), `#!/bin/sh\n${body}\n`);
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      const result = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(diagnostic);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("validates waivers with no substantive paths under bash 3.2 set -u", () => {
     const cwd = setupRepo();
     try {

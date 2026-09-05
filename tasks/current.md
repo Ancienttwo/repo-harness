@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T03:49:04+0800 -->
+<!-- updated_at: 2026-09-05T11:52:28+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-09-05T03:49:04+0800
-> **Source Branch**: detached
-> **Source Commit**: 41f52197
+> **Updated At**: 2026-09-05T11:52:28+0800
+> **Source Branch**: main
+> **Source Commit**: 60a0224d
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: sprint-progress
+> **Reason**: lite-task-sync-delivery
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260905-0452-lite-task-sync.md
+- Plan Status: Review
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260905-0452-lite-task-sync.md
+- .: active-worktree owner -> self
 - linked-worktree-350aaa0d5495: plans/plan-20260905-0342-review-boundary-repairs.md
 - linked-worktree-350aaa0d5495: active-worktree owner -> self
 ## Active Sprint
@@ -51,43 +53,28 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=completed, current_slice=completed-20260828-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 26 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
-M  .archcontext/model/flows/flow.development-campaign.lifecycle.yaml
-M  .archcontext/model/nodes/capability.runtime-harness.development-campaign.yaml
-M  .archcontext/model/nodes/component.development-campaign.journal.yaml
-M  .archcontext/model/relations/relation.development-campaign.journal.yaml
-M  assets/skills/repo-harness-chatgpt/SKILL.md
-A  assets/skills/repo-harness-chatgpt/references/campaign-issues.md
-M  docs/architecture/.projection-manifest.json
-M  docs/architecture/changelog.md
-M  docs/architecture/decisions/index.md
-M  docs/architecture/diagrams/architecture.likec4
-M  docs/architecture/diagrams/architecture.mmd
-M  docs/architecture/diagrams/architecture.structurizr.json
-M  docs/architecture/index.md
-M  docs/architecture/modules/runtime-harness/development-campaign.md
-M  plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md
-M  src/cli/commands/campaign.ts
-M  src/core/automation/budget.ts
-A  src/core/automation/issue-batch.ts
-A  src/effects/automation/gpt-pro-issue-authoring.ts
-A  src/effects/automation/issue-batch-store.ts
-UU tasks/current.md
-M  tests/cli/development-campaign.test.ts
-M  tests/effects/development-campaign-store.test.ts
-A  tests/effects/gpt-pro-issue-authoring.test.ts
-M  tests/skill-surface/chatgpt-package.test.ts
-A  tests/unit/issue-batch.test.ts
+ M assets/reference-configs/global-working-rules.md
+ M assets/reference-configs/harness-overview.md
+ M assets/templates/helpers/check-task-sync.sh
+ M docs/architecture/.projection-manifest.json
+ M docs/reference-configs/global-working-rules.md
+ M docs/reference-configs/harness-overview.md
+ M scripts/check-task-sync.sh
+ M tasks/current.md
+ M tests/check-task-sync.test.ts
+ M tests/helper-scripts.test.ts
+?? plans/plan-20260905-0452-lite-task-sync.md
 ```
 
 ## Source Artifacts

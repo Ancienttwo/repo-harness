@@ -332,6 +332,35 @@ if [[ "${#waiver_files[@]}" -gt 0 ]]; then
   if [[ "$waiver_status" -eq 2 ]]; then exit 1; fi
 fi
 
+# The state resolver owns risk and ceremony policy. Pass the complete diff
+# inventory, including base-only and documentation paths, so a clean HEAD or
+# the substantive-path filter cannot hide strict-category signals.
+if ! command -v repo-harness >/dev/null 2>&1; then
+  echo "[task-sync] Workflow profile resolution failed: repo-harness is required." >&2
+  exit 1
+fi
+profile_paths=()
+for file in "${changed_files[@]}"; do
+  profile_paths+=("./$file")
+done
+if ! workflow_profile="$(repo-harness state resolve --json --field workflow_profile --target-path "${profile_paths[@]}")"; then
+  echo "[task-sync] Workflow profile resolution failed; no lite exemption admitted." >&2
+  exit 1
+fi
+case "$workflow_profile" in
+  lite)
+    echo "[task-sync] Resolved lite profile; no workflow artifact required ($substantive_digest)."
+    exit 0
+    ;;
+  standard|strict)
+    echo "[task-sync] Resolved $workflow_profile profile; diff-bound workflow evidence is required."
+    ;;
+  *)
+    echo "[task-sync] Invalid workflow profile from state resolver; expected lite, standard, or strict." >&2
+    exit 1
+    ;;
+esac
+
 echo "[task-sync] Substantive diff lacks canonical workflow evidence bound to $substantive_digest."
 if [[ -n "${REPO_HARNESS_DIFF_BASE:-}" ]]; then
   echo "[task-sync] Diff range: ${REPO_HARNESS_DIFF_MODE:-direct}:${REPO_HARNESS_DIFF_BASE}..HEAD plus working tree."

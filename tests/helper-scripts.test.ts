@@ -7390,6 +7390,9 @@ describe("diff-bound task synchronization", () => {
     writeFileSync(join(cwd, "tasks/current.md"), "# Current Status Snapshot\n\nUnrelated existing state.\n");
     initGitRepo(cwd);
     commitAll(cwd, "seed");
+    const profileBin = join(cwd, ".git", "task-sync-bin");
+    mkdirSync(profileBin);
+    writeFileSync(join(profileBin, "repo-harness"), "#!/bin/sh\nprintf 'standard\\n'\n", { mode: 0o755 });
     return { cwd, base: run("git", ["rev-parse", "HEAD"], cwd).stdout.trim() };
   }
 
@@ -7397,6 +7400,7 @@ describe("diff-bound task synchronization", () => {
     return run("bash", ["scripts/check-task-sync.sh"], cwd, {
       REPO_HARNESS_DIFF_BASE: base,
       REPO_HARNESS_DIFF_MODE: mode,
+      PATH: `${join(cwd, ".git", "task-sync-bin")}:${process.env.PATH}`,
     });
   }
 
@@ -7406,7 +7410,7 @@ describe("diff-bound task synchronization", () => {
     return match![0]!;
   }
 
-  test("a substantive push-parent diff requires an exact identity-bound canonical artifact", () => {
+  test("a standard-profile push-parent diff requires an exact identity-bound canonical artifact", () => {
     const { cwd, base } = taskSyncFixture("helper-task-sync-bound-artifact");
     try {
       writeFileSync(join(cwd, "src/app.ts"), "export const value = 2;\n");
