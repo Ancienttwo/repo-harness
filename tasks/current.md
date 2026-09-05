@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T13:13:58+0800 -->
+<!-- updated_at: 2026-09-05T13:28:46+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-09-05T13:13:58+0800
+> **Updated At**: 2026-09-05T13:28:46+0800
 > **Source Branch**: codex/task-ledger-closeout
-> **Source Commit**: 9fd46384
+> **Source Commit**: 3ca1a8d3
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: task-ledger-closeout
+> **Reason**: task-ledger-closeout-integration
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -61,18 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 7 changed/untracked path(s)
 
 ```
-AM docs/researches/20260905-task-ledger-closeout.md
-R  plans/plan-20260904-0517-acceptance-redaction-idempotence.md -> plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md
-RM plans/plan-20260905-0452-lite-task-sync.md -> plans/archive/plan-20260905-0452-lite-task-sync.md
-R  tasks/contracts/20260904-0517-acceptance-redaction-idempotence.contract.md -> tasks/archive/contract-20260905-1312-acceptance-redaction-idempotence.md
-R  tasks/notes/20260904-0517-acceptance-redaction-idempotence.notes.md -> tasks/archive/notes-20260905-1312-acceptance-redaction-idempotence.md
-R  tasks/reviews/20260904-0517-acceptance-redaction-idempotence.review.md -> tasks/archive/review-20260905-1312-acceptance-redaction-idempotence.md
-A  tasks/archive/todo-20260905-1312-acceptance-redaction-idempotence.md
-A  tasks/archive/todo-20260905-1312-lite-task-sync.md
-M  tasks/current.md
+ M docs/researches/20260905-task-ledger-closeout.md
+R  plans/plan-20260902-2101-issue-283-immutable-task-id.md -> plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
+R  tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md -> tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md
+R  tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md -> tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md
+R  tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md -> tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md
+A  tasks/archive/todo-20260905-1308-issue-283-immutable-task-id.md
+UU tasks/current.md
 ```
 
 ## Source Artifacts

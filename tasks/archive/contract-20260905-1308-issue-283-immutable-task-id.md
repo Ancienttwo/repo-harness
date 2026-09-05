@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-05 13:08
+> **Related Plan**: plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260905-1308
+> **Archive Projection V1**: `plans/plan-20260902-2101-issue-283-immutable-task-id.md` => `plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md` => `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md` => `tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md`
+> **Archive Projection V1**: `tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md` => `tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md`
+
 # Task Contract: issue-283-immutable-task-id
 
 > **Status**: Partial
-> **Plan**: plans/plan-20260902-2101-issue-283-immutable-task-id.md
+> **Plan**: plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-02 21:01
-> **Review File**: `tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md`
-> **Notes File**: `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md`
+> **Review File**: `tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md`
+> **Notes File**: `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -89,10 +99,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260902-2101-issue-283-immutable-task-id.md`
+- Source plan: `plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md`
-- Notes file: `tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md`
+- Review file: `tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md`
+- Notes file: `tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -136,9 +146,9 @@ allowed_paths:
   - AGENTS.md
   - CLAUDE.md
   - tasks/todos.md
-  - tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md
-  - tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
-  - tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md
+  - tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md
+  - tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md
+  - tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md
 ```
 
 ## Evidence Requirements
@@ -186,11 +196,11 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - plans/plan-20260902-2101-issue-283-immutable-task-id.md
+    - plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
   artifacts_exist:
-    - tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md
-    - tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
-    - tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md
+    - tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md
+    - tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md
+    - tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md
   tests_pass:
     - path: tests/unit/sprint-schema-v2-identity.test.ts
     - path: tests/unit/sprint-schema-migrate.test.ts
