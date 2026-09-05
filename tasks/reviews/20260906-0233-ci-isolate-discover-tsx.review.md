@@ -1,24 +1,24 @@
 # Task Review: ci-isolate-discover-tsx
 
-> **Status**: Pending
+> **Status**: Complete
 > **Plan**: plans/plan-20260906-0233-ci-isolate-discover-tsx.md
 > **Contract**: tasks/contracts/20260906-0233-ci-isolate-discover-tsx.contract.md
 > **Notes File**: tasks/notes/20260906-0233-ci-isolate-discover-tsx.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-06 02:33
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 86139c45
 
 ## Human Review Card
 
-- Verdict: pending
+- Verdict: pass
 - Change type: bugfix
 - Intended files changed: `scripts/lib/ci-run-tests.sh`, `tests/check-ci-isolate-aggregation.test.ts`, plus this work package's plan/contract/review/notes and `tasks/todos.md`
 - Actual files changed: `scripts/lib/ci-run-tests.sh`, `tests/check-ci-isolate-aggregation.test.ts`, `plans/plan-20260906-0233-ci-isolate-discover-tsx.md`, `tasks/contracts/20260906-0233-ci-isolate-discover-tsx.contract.md`, `tasks/reviews/20260906-0233-ci-isolate-discover-tsx.review.md`, `tasks/notes/20260906-0233-ci-isolate-discover-tsx.notes.md`, `tasks/todos.md`
-- Commands passed: `bun test --timeout 60000 tests/check-ci-isolate-aggregation.test.ts tests/bootstrap-files.test.ts` (18 pass / 0 fail); `verify-contract --strict` (total=22 failed=0); the six repository-integrity checks; `bun run check:helpers`; one full `bun test --timeout 60000`
+- Commands passed: `bun test --timeout 60000 tests/check-ci-isolate-aggregation.test.ts tests/bootstrap-files.test.ts` (18 pass / 0 fail); `verify-contract --strict` (total=22 failed=0); the six repository-integrity checks (all exit 0); CI-mode `check-task-sync` bound `sha256:ce746420...`; `bun run check:helpers` OK; one full `bun test --timeout 60000` (4467 pass / 4 skip / 0 fail across 361 files); `git merge-tree` clean against main 29b3fd12
 - Residual risks: the CI `Test` job now runs three additional `tests/operator-web/*.test.tsx` suites, so the job gets longer and any pre-existing failure there surfaces as a new CI red
 - Reviewer action required: inspect diff and card
 - Rollback: revert the discovery predicate and the guard case together (base main 29b3fd12)
@@ -32,7 +32,7 @@
 ## Verification Evidence
 
 - Waza `/check` run: not run; acceptance is owned by the ship gate
-- Commands run: guard + `tests/bootstrap-files.test.ts`; discovery readback (`361` files, including the three `tests/operator-web/*.test.tsx` paths); `bun run check:helpers`; `check-deploy-sql-order`, `check-architecture-sync`, `check-task-sync`, `check-task-workflow --strict`, `inspect-project-state`, `init --dry-run`; CI-mode `check-task-sync` with the digest bound; one full `bun test --timeout 60000`
+- Commands run: guard + `tests/bootstrap-files.test.ts` (18/18); discovery readback (`361` files with the widened predicate against `358` for the old one, including the three `tests/operator-web/*.test.tsx` paths); a bash 3.2 runtime probe of the isolate loop printing both the `.test.ts` and the `.test.tsx` line; `bun run check:helpers`; `check-deploy-sql-order`, `check-architecture-sync`, `check-task-sync`, `check-task-workflow --strict`, `inspect-project-state`, `init --dry-run`; CI-mode `check-task-sync` bound `sha256:ce746420...`; `verify-contract --strict` (22/22); one full `bun test --timeout 60000` (4467 pass / 4 skip / 0 fail across 361 files); `git merge-tree` clean against main 29b3fd12
 - Manual checks: no packaged mirror of `scripts/lib/ci-run-tests.sh` exists (`check:helpers` OK, repo-wide `run_bun_tests` scan finds only the lib and `scripts/check-ci.sh`)
 - Supporting artifacts: `/tmp/rh-tb/tsx/full.log`, `/tmp/rh-tb/tsx/discovered.txt`, `.ai/harness/evidence/pre-fix/check-ci-isolate-discover-tsx.log`
 - Implementation notes reviewed: `tasks/notes/20260906-0233-ci-isolate-discover-tsx.notes.md`
@@ -60,16 +60,17 @@
 
 ## Residual Risks / Follow-ups
 
+- The CI `Test` job now runs three more suites, so it takes longer and a latent `tests/operator-web` failure would surface as a new red.
 - The pre-fix artifact lives under the gitignored `.ai/harness/evidence/` root, so it is worktree-local and not reviewable from the PR diff.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
+| Functionality | 9/10 | Widened predicate discovers 361 files against 358 before; the three `tests/operator-web/*.test.tsx` paths appear in the readback and the bash 3.2 runtime probe prints both loop lines. |
+| Product depth | 8/10 | Closes the CI blind spot at its source and pins it with a guard case; the full suite (4467 pass / 4 skip / 0 fail across 361 files) confirms the newly discovered suites are green. |
+| Design quality | 8/10 | One-line predicate change inside the existing loop; sort order, `BUN_TEST_FILES` branch, aggregation, and the empty-match guard are untouched. |
+| Code quality | 9/10 | Guard 18/18 with `tests/bootstrap-files.test.ts`; `check:helpers` OK, six integrity checks exit 0, `verify-contract --strict` 22/22, CI-mode task-sync bound `sha256:ce746420...`, merge-tree clean vs main 29b3fd12. |
 
 ## Failing Items
 
@@ -82,4 +83,4 @@
 
 ## Summary
 
-- The isolate-mode CI loop now discovers `*.test.tsx`, closing the gap that hid the three `tests/operator-web` suites from CI. Verdict is left pending for the ship gate.
+- The isolate-mode CI loop now discovers `*.test.tsx`, closing the gap that hid the three `tests/operator-web` suites from CI. The ship gate passed at 86139c45; verdict is pass.

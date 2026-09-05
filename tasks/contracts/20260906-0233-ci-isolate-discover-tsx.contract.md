@@ -161,7 +161,8 @@ exit_criteria:
     - path: tests/check-ci-isolate-aggregation.test.ts
     - path: tests/bootstrap-files.test.ts
   commands_succeed:
-    - test "$(find tests -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | LC_ALL=C sort | wc -l | tr -d ' ')" = "361"
+    - list="$(find tests -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | LC_ALL=C sort)"; for p in tests/operator-web/operator-collaboration.test.tsx tests/operator-web/operator-interactions.test.tsx tests/operator-web/operator-ui.test.tsx; do printf '%s\n' "$list" | grep -qxF "$p" || exit 1; done
+    - test "$(find tests -type f -name '*.test.tsx' | LC_ALL=C sort | wc -l | tr -d ' ')" -gt 0
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
@@ -176,6 +177,7 @@ criterion_reuse:
 ## Acceptance Notes (Human Review)
 
 - Functional behavior: isolate-mode discovery now matches bun's own file set (361 files), so the three `tests/operator-web/*.test.tsx` suites run in CI's `Test` job.
+- Recorded count evidence (head 86139c45): the discovery list held 361 files, equal to the `Ran 4471 tests across 361 files` figure from the full `bun test --timeout 60000` run. The count is recorded here rather than pinned in an exit criterion, because any new test file on main would change it without indicating a discovery regression.
 - Edge cases: the explicit `BUN_TEST_FILES` branch is untouched; the `no test files matched` guard and `LC_ALL=C sort` ordering are unchanged.
 - Regression risks: the CI `Test` job now executes three additional suites, lengthening the job; a pre-existing failure in those suites would surface as a new CI red.
 - Coverage rationale: one full `bun test --timeout 60000` run supplies the `across M files` figure the discovery readback is compared against, so the full suite is both the coverage check and the readback source.

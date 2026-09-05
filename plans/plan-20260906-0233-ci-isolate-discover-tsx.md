@@ -146,9 +146,3 @@ Make the isolate-mode CI test loop discover `*.test.tsx` files so the three `tes
 ## Annotations
 
 - None.
-
-## Task Breakdown
-- [x] RED: add the tsx-discovery case; capture `bun test <guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>`.
-- [x] GREEN: change the find predicate.
-- [x] Fill the contract (Task Profile bugfix, Root Cause Evidence, Allowed Paths, Exit Criteria, Change Assessment oracles as `{id,kind,paths}` objects with `deterministic_test` and `runtime_readback`), clear `[NOTE]` placeholders, tick boxes.
-- [x] Verification: the guard + `tests/bootstrap-files.test.ts`; runtime readback `BUN_TEST_ISOLATE_FILES=1 bash -c 'set -euo pipefail; source scripts/lib/ci-run-tests.sh; run_bun_tests'` is too slow for a readback (whole suite) — instead readback the discovery alone: `find tests -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | LC_ALL=C sort | wc -l` equals the count bun reports in `bun test --timeout 60000` (`Ran N tests across M files`), and the three operator-web tsx paths appear in the sorted list; six repository-integrity checks; CI-mode `check-task-sync` digest bound; one full `bun test --timeout 60000`.
