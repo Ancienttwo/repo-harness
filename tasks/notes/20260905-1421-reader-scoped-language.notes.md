@@ -1,6 +1,6 @@
 # Implementation Notes: reader-scoped-language
 
-> **Substantive Change SHA256**: `sha256:ca98318cfe34cb908f28e8c124cc9832477b961fa3c1948cd184c4d54e4c01a7`
+> **Substantive Change SHA256**: `sha256:f2d51af870ca9c222ac0a24dc9bf416ddbe26db053f7ec8348ca630f76302730`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260905-1421-reader-scoped-language.md
