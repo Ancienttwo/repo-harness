@@ -28,6 +28,9 @@ bun run check:helpers
 echo "[ci] reference-configs projection"
 bun run check:reference-configs
 
+echo "[ci] route eval (TS arm)"
+bun run check:route-eval
+
 echo "[ci] tests"
 run_bun_tests
 

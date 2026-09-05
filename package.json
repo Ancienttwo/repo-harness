@@ -51,6 +51,7 @@
     "check:reference-configs": "bun scripts/sync-reference-configs.ts --check",
     "check:archctx-integration": "bun scripts/axr5-archctx-clean-room.ts",
     "check:state-boundaries": "bun scripts/check-state-boundaries.ts",
+    "check:route-eval": "bun scripts/route-nl-vs-ts-eval.ts --check-ts-arm",
     "check:ci": "bash scripts/check-ci.sh",
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",

@@ -6,8 +6,13 @@ import { spawnSync } from "child_process";
 import {
   buildRouteReport,
   buildScenarioPack,
+  checkTsArm,
   expectedNlDecisions,
   normalizeRouteAction,
+  REQUIRED_ACTION_COVERAGE,
+  REQUIRED_INTENT_COVERAGE,
+  ROUTE_NL_ALLOWED_ACTIONS,
+  ROUTE_NL_ALLOWED_INTENTS,
   ROUTE_SCENARIOS,
   runTsArm,
   validateReport,
@@ -45,6 +50,57 @@ describe("route-nl-vs-ts eval", () => {
     }
   });
 
+  test("--check-ts-arm passes on the shipped corpus and fails on a flipped expectation", () => {
+    const run = spawnSync(process.execPath, [SCRIPT, "--check-ts-arm"], {
+      cwd: ROOT,
+      encoding: "utf-8",
+    });
+    expect(run.stdout + run.stderr).toContain("route-eval ts-arm");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain(`covered intents ${REQUIRED_INTENT_COVERAGE.length}/${REQUIRED_INTENT_COVERAGE.length}`);
+    expect(run.stdout).toContain(`covered actions ${REQUIRED_ACTION_COVERAGE.length}/${REQUIRED_ACTION_COVERAGE.length}`);
+    expect(run.stdout).toContain("missing intents: (none)");
+    expect(run.stdout).toContain("missing actions: (none)");
+    expect(run.stdout).not.toContain("MISMATCH");
+
+    const flipped = ROUTE_SCENARIOS.map((scenario, index) =>
+      index === 0
+        ? { ...scenario, expected: { ...scenario.expected, action: "done_gate" as const } }
+        : scenario,
+    );
+    const flippedResult = checkTsArm(flipped);
+    expect(flippedResult.ok).toBe(false);
+    expect(flippedResult.mismatchCount).toBe(1);
+    expect(flippedResult.scenarioLines[0]).toContain("MISMATCH");
+    expect(flippedResult.summaryLines.join("\n")).toContain("result=fail");
+  }, 30_000);
+
+  test("ROUTE_SCENARIOS covers the pinned intent and action floors", () => {
+    const result = checkTsArm();
+
+    expect(result.missingIntents).toEqual([]);
+    expect(result.missingActions).toEqual([]);
+    expect(result.mismatchCount).toBe(0);
+    expect(result.ok).toBe(true);
+
+    for (const intent of REQUIRED_INTENT_COVERAGE) {
+      expect(ROUTE_NL_ALLOWED_INTENTS, intent).toContain(intent);
+    }
+    for (const action of REQUIRED_ACTION_COVERAGE) {
+      expect(ROUTE_NL_ALLOWED_ACTIONS, action).toContain(action);
+    }
+  });
+
+  test("every scenario cites a non-empty lessonSource", () => {
+    const ids = new Set<string>();
+    for (const scenario of ROUTE_SCENARIOS) {
+      expect(scenario.lessonSource.trim().length, scenario.id).toBeGreaterThan(0);
+      expect(scenario.prompt.trim().length, scenario.id).toBeGreaterThan(0);
+      expect(ids.has(scenario.id), scenario.id).toBe(false);
+      ids.add(scenario.id);
+    }
+  });
+
   test("matching NL decisions produce a go report with compliance and token metrics", () => {
     const report = buildRouteReport({
       agent: "unit",
@@ -66,48 +122,26 @@ describe("route-nl-vs-ts eval", () => {
     expect(normalizeRouteAction("capture_pending_plan")).toBe("plan_capture_pending_advice");
     expect(normalizeRouteAction("scaffold_contract")).toBe("plan_execution_scaffold_advice");
 
-    const decisions = [
-      {
-        scenario_id: "done-future-wording",
-        intent: "review_release",
-        action: "allow",
-      },
-      {
-        scenario_id: "review-hook-bug-mention",
-        intent: "review_release",
-        action: "allow",
-      },
-      {
-        scenario_id: "strip-injected-context",
-        intent: "planning_discussion",
-        action: "allow",
-      },
-      {
-        scenario_id: "stale-active-marker",
-        intent: "general_execution",
-        action: "emit_stale_marker_advice",
-      },
-      {
-        scenario_id: "fresh-pending-plan-capture",
-        intent: "plan_execution_projection",
-        action: "capture_pending_plan",
-      },
-      {
-        scenario_id: "draft-plan-approval",
-        intent: "plan_execution_projection",
-        action: "request_plan_capture_approval",
-      },
-      {
-        scenario_id: "approved-plan-missing-contract",
-        intent: "plan_execution_projection",
-        action: "scaffold_contract",
-      },
-      {
-        scenario_id: "done-artifact-gate",
-        intent: "done",
-        action: "enter_done_gate",
-      },
-    ];
+    // Keep this independent of the corpus size: start from the expected route
+    // table and rewrite only the entries whose alias behavior is under test.
+    const actionAliases: Record<string, string> = {
+      "stale-active-marker": "emit_stale_marker_advice",
+      "fresh-pending-plan-capture": "capture_pending_plan",
+      "draft-plan-approval": "request_plan_capture_approval",
+      "approved-plan-missing-contract": "scaffold_contract",
+      "done-artifact-gate": "enter_done_gate",
+    };
+    // Non-execution allow scenarios stay compliant under a different advisory
+    // intent label, which is the leniency the NL arm relies on.
+    const intentOverrides: Record<string, string> = {
+      "done-future-wording": "review_release",
+      "strip-injected-context": "planning_discussion",
+    };
+    const decisions = expectedNlDecisions().map((decision) => ({
+      ...decision,
+      intent: intentOverrides[decision.scenario_id] ?? decision.intent,
+      action: actionAliases[decision.scenario_id] ?? decision.action,
+    }));
 
     const report = buildRouteReport({
       agent: "claude-alias-unit",

@@ -95,6 +95,19 @@ Allowed `action` values:
 - `done_evidence_contract_block`
 - `done_gate`
 
+## CI Gate
+
+`bun run check:route-eval` (`scripts/route-nl-vs-ts-eval.ts --check-ts-arm`, wired
+as the `[ci] route eval (TS arm)` step in `scripts/check-ci.sh`) replays every
+`ROUTE_SCENARIOS` entry through the TypeScript prompt guard, prints one line per
+scenario plus an intent/action coverage summary, and exits non-zero on any
+mismatch or on coverage below the pinned `REQUIRED_INTENT_COVERAGE` /
+`REQUIRED_ACTION_COVERAGE` constants. The TS arm is the pinned oracle: it runs
+on every PR without a provider, and a classifier change that moves any covered
+intent or action fails CI. The NL arm stays operator-invoked through
+`evals/evals.json`, because it needs a live agent reading this table; its
+`--decisions` / `--check-report` modes and the report protocol are unchanged.
+
 ## Decision Rules
 
 1. If intent is `done`, run the completion gate:

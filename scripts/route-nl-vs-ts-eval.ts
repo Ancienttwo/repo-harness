@@ -217,7 +217,343 @@ export const ROUTE_SCENARIOS: RouteScenario[] = [
       action: "done_gate",
     },
   },
+  {
+    id: "none-completion-token-substring",
+    title: "An English completionToken substring is not a done claim",
+    lessonSource: "tests/prompt-handler.test.ts completionToken substring regression",
+    prompt: "refresh the completionToken cache",
+    state: baseState,
+    expected: {
+      intent: "none",
+      action: "allow",
+    },
+  },
+  {
+    id: "review-acceptance-checklist",
+    title: "Acceptance checklist prompts stay review/advisory, not implementation",
+    lessonSource:
+      "docs/researches/20260612-legacy-research-notes.md 2026-05-30 Review/Check Prompt Guard Boundary",
+    prompt: "验收开始：基于 active plan 执行 checklist，告诉对方模型验收什么。",
+    state: baseState,
+    expected: {
+      intent: "review_release",
+      action: "allow",
+    },
+  },
+  {
+    id: "review-tooling-before-merge",
+    title: "Reviewing tooling before merge routes to review, not health or execution",
+    lessonSource: "tests/cli/prompt-intents.test.ts review of tooling routes to /check",
+    prompt: "review the hook framework before merge",
+    state: baseState,
+    expected: {
+      intent: "review_release",
+      action: "allow",
+    },
+  },
+  {
+    id: "planning-start-think-command",
+    title: "A /think planning prompt starts planning without implementation intent",
+    lessonSource: "tests/cli/prompt-intents.test.ts plan-start derivations",
+    prompt: "/think 出一个登录重构方案",
+    state: baseState,
+    expected: {
+      intent: "planning_start",
+      action: "allow",
+    },
+  },
+  {
+    id: "planning-start-plain-feature",
+    title: "A plain English feature request is a plan start, not execution",
+    lessonSource: "tests/cli/prompt-intents.test.ts UX feature guard advisory corpus",
+    prompt: "build a dashboard",
+    state: baseState,
+    expected: {
+      intent: "planning_start",
+      action: "allow",
+    },
+  },
+  {
+    id: "planning-discussion-pending-fresh",
+    title: "Follow-up discussion on a fresh pending plan stays conversational",
+    lessonSource:
+      "docs/researches/20260612-legacy-research-notes.md 2026-05-30 Pending Plan Orchestration Capture Boundary",
+    prompt: "继续讨论这个 plan 的边界，我觉得执行门禁太机械了",
+    state: { ...baseState, pending: "fresh" },
+    expected: {
+      intent: "planning_discussion",
+      action: "allow",
+    },
+  },
+  {
+    id: "passive-worktree-status",
+    title: "A pasted worktree progress line is passive status, not execution",
+    lessonSource: "tests/cli/prompt-intents.test.ts CJK punctuation locale regression",
+    prompt: [
+      "plan-to-todo 已按项目规则开了隔离 worktree：/tmp/x，分支 codex/demo。",
+      "实现会在这个 worktree 里完成。",
+    ].join("\n"),
+    state: baseState,
+    expected: {
+      intent: "passive_worktree_status",
+      action: "allow",
+    },
+  },
+  {
+    id: "passive-completion-report",
+    title: "A retrospective completion report is passive evidence, not a done claim",
+    lessonSource:
+      "docs/reference-configs/loop-engine-nl-decision-table.md Intent Classes (passive_completion_report); prompt from the retrospective-completion-report hook regression in 8eb6c724",
+    prompt: [
+      "现在已补：",
+      "Repo 内归档：docs/PRD.md",
+      "并已复跑：",
+      "npm run build 通过",
+      "npm run lint 通过",
+    ].join("\n"),
+    state: baseState,
+    expected: {
+      intent: "passive_completion_report",
+      action: "allow",
+    },
+  },
+  {
+    id: "passive-next-slice-report",
+    title: "A 下一刀 summary is planning context, not an execution command",
+    lessonSource:
+      "docs/researches/20260612-legacy-research-notes.md 2026-05-31 Approved Plan Projection Prompt Boundary (下一刀 summaries)",
+    prompt: "下一刀，明显就是Plan呀",
+    state: baseState,
+    expected: {
+      intent: "passive_next_slice_report",
+      action: "allow",
+    },
+  },
+  {
+    id: "embedded-approved-plan-no-active",
+    title: "An embedded approved plan without an active plan requires one first",
+    lessonSource:
+      "tests/cli/prompt-intents.test.ts embedded approved plan detection; docs/reference-configs/loop-engine-nl-decision-table.md rule 4",
+    prompt: "Implement this plan: do the thing",
+    state: baseState,
+    expected: {
+      intent: "embedded_approved_plan",
+      action: "plan_status_no_active_block",
+    },
+  },
+  {
+    id: "plan-shaped-markdown-draft",
+    title: "Plan-shaped markdown against a Draft plan reports not-approved",
+    lessonSource:
+      "tests/cli/prompt-intents.test.ts plan-shaped markdown detection; docs/reference-configs/loop-engine-nl-decision-table.md rule 6",
+    prompt: ["# Plan: demo", "", "## Summary", "", "P1 component map", ""].join("\n"),
+    state: { ...baseState, plan: "draft" },
+    expected: {
+      intent: "embedded_approved_plan",
+      action: "plan_status_not_approved_block",
+    },
+  },
+  {
+    id: "bug-fix-ignores-pending-plan",
+    title: "Bug-fix execution never captures a pending design discussion",
+    lessonSource:
+      "tests/cli/prompt-guard-decision.test.ts no-active-plan bug-fix carve-out; prompt from tests/cli/prompt-intents.test.ts direct-modification corpus",
+    prompt: "请直接修改 debug 输出格式并提交",
+    state: { ...baseState, pending: "fresh" },
+    expected: {
+      intent: "bug_fix_execution",
+      action: "plan_status_no_active_block",
+    },
+  },
+  {
+    id: "general-execution-spec-missing",
+    title: "Execution without docs/spec.md blocks at the spec gate",
+    lessonSource: "docs/reference-configs/loop-engine-nl-decision-table.md rule 3",
+    prompt: "开始执行",
+    state: { ...baseState, spec: "missing" },
+    expected: {
+      intent: "general_execution",
+      action: "spec_block",
+    },
+  },
+  {
+    id: "general-execution-no-active-plan",
+    title: "Generic execution without an active plan blocks",
+    lessonSource: "tests/cli/prompt-intents.test.ts verdict protocol regression",
+    prompt: "开始执行",
+    state: baseState,
+    expected: {
+      intent: "general_execution",
+      action: "plan_status_no_active_block",
+    },
+  },
+  {
+    id: "linked-worktree-execution",
+    title: "Execution while the marker points at a linked worktree routes there",
+    lessonSource:
+      "docs/researches/20260612-legacy-research-notes.md 2026-05-31 WorktreeExecutionGate boundary; docs/reference-configs/loop-engine-nl-decision-table.md rule 4",
+    prompt: "开始执行",
+    state: { ...baseState, worktree: "linked_target" },
+    expected: {
+      intent: "general_execution",
+      action: "worktree_execution_advice",
+    },
+  },
+  {
+    id: "plan-projection-missing-active",
+    title: "Explicit plan execution without an active plan asks for capture",
+    lessonSource: "tests/cli/prompt-guard-decision.test.ts hook-entry projection regression",
+    prompt: "开始执行这个方案",
+    state: baseState,
+    expected: {
+      intent: "plan_execution_projection",
+      action: "plan_capture_missing_active_advice",
+    },
+  },
+  {
+    id: "approved-plan-incomplete-evidence",
+    title: "An approved plan with an incomplete Evidence Contract blocks execution",
+    lessonSource: "docs/reference-configs/loop-engine-nl-decision-table.md rule 7",
+    prompt: "开始执行",
+    state: {
+      ...baseState,
+      plan: "approved",
+      contractPath: "present",
+      evidence: "incomplete",
+    },
+    expected: {
+      intent: "general_execution",
+      action: "evidence_contract_block",
+    },
+  },
+  {
+    id: "approved-plan-generic-execution-no-contract",
+    title: "Generic execution on an approved plan without a contract blocks",
+    lessonSource:
+      "tests/cli/prompt-guard-decision.test.ts approved plan without contract blocks generic execution",
+    prompt: "开始执行",
+    state: {
+      ...baseState,
+      plan: "approved",
+      contractPath: "present",
+      evidence: "complete",
+    },
+    expected: {
+      intent: "general_execution",
+      action: "contract_missing_block",
+    },
+  },
+  {
+    id: "executing-plan-with-contract-allows",
+    title: "Executing plan with a present contract allows at the prompt layer",
+    lessonSource: "docs/reference-configs/loop-engine-nl-decision-table.md rule 7 final bullet",
+    prompt: "开始执行",
+    state: {
+      ...baseState,
+      plan: "executing",
+      contract: "present",
+      contractPath: "present",
+      evidence: "complete",
+    },
+    expected: {
+      intent: "general_execution",
+      action: "allow",
+    },
+  },
+  {
+    id: "done-missing-active-plan",
+    title: "A Chinese done claim without an active plan requires one",
+    lessonSource:
+      "tests/cli/prompt-intents.test.ts done classifier; tests/cli/prompt-guard-decision.test.ts done quality-gate states",
+    prompt: "任务完成了",
+    state: baseState,
+    expected: {
+      intent: "done",
+      action: "done_missing_active_plan",
+    },
+  },
+  {
+    id: "done-contract-path-missing",
+    title: "A /done claim without a derived contract path requires projection",
+    lessonSource: "docs/reference-configs/loop-engine-nl-decision-table.md rule 1",
+    prompt: "/done",
+    state: { ...baseState, plan: "draft" },
+    expected: {
+      intent: "done",
+      action: "done_contract_path_missing",
+    },
+  },
+  {
+    id: "done-missing-contract",
+    title: "A done claim without the contract file requires the active contract",
+    lessonSource: "tests/cli/prompt-guard-decision.test.ts done quality-gate states",
+    prompt: "done",
+    state: { ...baseState, plan: "approved", contractPath: "present" },
+    expected: {
+      intent: "done",
+      action: "done_missing_contract",
+    },
+  },
+  {
+    id: "done-evidence-contract-block",
+    title: "A done claim with an incomplete Evidence Contract blocks",
+    lessonSource: "tests/cli/prompt-guard-decision.test.ts done quality-gate states",
+    prompt: "done",
+    state: {
+      ...baseState,
+      plan: "approved",
+      contract: "present",
+      contractPath: "present",
+      evidence: "incomplete",
+    },
+    expected: {
+      intent: "done",
+      action: "done_evidence_contract_block",
+    },
+  },
 ];
+
+/**
+ * Pinned coverage floors for the `--check-ts-arm` CI gate. These are explicit
+ * lists, not projections of the vocabularies: adding a vocabulary entry is a
+ * deliberate decision that must also decide whether the prompt layer can reach
+ * it. Actions the TS arm cannot reach from a prompt plus PromptGuardState are
+ * excluded here and recorded under `## Unreachable Actions` in the owning plan.
+ */
+export const REQUIRED_INTENT_COVERAGE: readonly PromptGuardIntent[] = Object.freeze([
+  "done",
+  "planning_start",
+  "planning_discussion",
+  "review_release",
+  "passive_worktree_status",
+  "passive_completion_report",
+  "passive_next_slice_report",
+  "none",
+  "embedded_approved_plan",
+  "bug_fix_execution",
+  "plan_execution_projection",
+  "general_execution",
+]);
+
+export const REQUIRED_ACTION_COVERAGE: readonly PromptGuardAction[] = Object.freeze([
+  "allow",
+  "spec_block",
+  "stale_active_plan_advice",
+  "plan_capture_pending_advice",
+  "worktree_execution_advice",
+  "plan_capture_missing_active_advice",
+  "plan_status_no_active_block",
+  "plan_capture_draft_advice",
+  "plan_status_not_approved_block",
+  "evidence_contract_block",
+  "plan_execution_scaffold_advice",
+  "contract_missing_block",
+  "done_missing_active_plan",
+  "done_contract_path_missing",
+  "done_missing_contract",
+  "done_evidence_contract_block",
+  "done_gate",
+]);
 
 const STATE_ENV: Record<keyof PromptGuardState, string> = {
   spec: "PROMPT_GUARD_SPEC_STATE",
@@ -321,6 +657,75 @@ export function expectedNlDecisions(): RouteNlDecision[] {
 
 export function runTsArm(scenario: RouteScenario): PromptGuardVerdict {
   return withStateEnv(scenario.state, () => runPromptGuardVerdictFromPrompt(scenario.prompt));
+}
+
+export interface TsArmCheckResult {
+  readonly ok: boolean;
+  readonly mismatchCount: number;
+  readonly scenarioLines: string[];
+  readonly summaryLines: string[];
+  readonly coveredIntents: string[];
+  readonly coveredActions: string[];
+  readonly missingIntents: string[];
+  readonly missingActions: string[];
+}
+
+/**
+ * TS-arm CI gate: replay every scenario through the current prompt guard and
+ * compare against the pinned expectation, then assert the corpus still covers
+ * the pinned intent/action floors. Accepts an explicit scenario list so tests
+ * can prove the gate fails on a flipped expectation without mutating the
+ * shipped corpus.
+ */
+export function checkTsArm(scenarios: readonly RouteScenario[] = ROUTE_SCENARIOS): TsArmCheckResult {
+  const scenarioLines: string[] = [];
+  const coveredIntents = new Set<string>();
+  const coveredActions = new Set<string>();
+  let mismatchCount = 0;
+
+  for (const scenario of scenarios) {
+    const verdict = runTsArm(scenario);
+    const matched =
+      verdict.intent === scenario.expected.intent && verdict.action === scenario.expected.action;
+    if (matched) {
+      coveredIntents.add(scenario.expected.intent);
+      coveredActions.add(scenario.expected.action);
+    } else {
+      mismatchCount += 1;
+    }
+    scenarioLines.push(
+      [
+        matched ? "OK      " : "MISMATCH",
+        scenario.id,
+        `expected=${scenario.expected.intent}/${scenario.expected.action}`,
+        `actual=${verdict.intent}/${verdict.action}`,
+      ].join(" "),
+    );
+  }
+
+  const missingIntents = REQUIRED_INTENT_COVERAGE.filter((intent) => !coveredIntents.has(intent));
+  const missingActions = REQUIRED_ACTION_COVERAGE.filter((action) => !coveredActions.has(action));
+  const ok = mismatchCount === 0 && missingIntents.length === 0 && missingActions.length === 0;
+
+  const summaryLines = [
+    `route-eval ts-arm scenarios=${scenarios.length} mismatches=${mismatchCount}`,
+    `covered intents ${REQUIRED_INTENT_COVERAGE.length - missingIntents.length}/${REQUIRED_INTENT_COVERAGE.length}`,
+    `covered actions ${REQUIRED_ACTION_COVERAGE.length - missingActions.length}/${REQUIRED_ACTION_COVERAGE.length}`,
+    `missing intents: ${missingIntents.length === 0 ? "(none)" : missingIntents.join(", ")}`,
+    `missing actions: ${missingActions.length === 0 ? "(none)" : missingActions.join(", ")}`,
+    `result=${ok ? "pass" : "fail"}`,
+  ];
+
+  return {
+    ok,
+    mismatchCount,
+    scenarioLines,
+    summaryLines,
+    coveredIntents: [...coveredIntents],
+    coveredActions: [...coveredActions],
+    missingIntents: [...missingIntents],
+    missingActions: [...missingActions],
+  };
 }
 
 function actionIsAllow(action: string | null): boolean {
@@ -641,6 +1046,15 @@ function main(): void {
 
   if (args["emit-scenarios"]) {
     console.log(JSON.stringify(buildScenarioPack(), null, 2));
+    return;
+  }
+
+  if (args["check-ts-arm"]) {
+    const result = checkTsArm();
+    for (const line of [...result.scenarioLines, ...result.summaryLines]) {
+      console.log(line);
+    }
+    if (!result.ok) process.exitCode = 1;
     return;
   }
 
