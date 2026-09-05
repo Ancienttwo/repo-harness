@@ -70,3 +70,14 @@ describe('Module 8 candidate verification order', () => {
     expect(order).toEqual(['contract', 'closure', 'provider', 'acceptance']); expect(receipt.candidateVerify).toBe('verify_stage_unavailable'); expect(receipt.candidateVerifyResultSha256).toBeNull();
   });
 });
+
+test('a single-task candidate still requires whole-recommendation resolution', async () => {
+  const f = fixture(); let acceptanceCalled = false;
+  await expect(verifyRefactorCandidate({ repo_root: f.root, program: f.program, recommendation_id: 'recommendation.verify', candidate_head_sha: f.head, candidate_worktree_digest: D('worktree'), task_id: TASK, contract_path: f.contractPath, cutover_locator: '.ai/harness/checks/cutover.json', authority_home: f.home, expected_current_sha256: f.current.current_sha256, idempotency_key: 'verify', observed_at: NOW, env: f.env }, {
+    verify_contract: () => ({ reportBytes: Buffer.from('pass') }),
+    verify_cutover: () => ({ status: 'closed', contractSha256: f.contractSha.slice(7), headSha: f.head, closureSha256: H('closure') }) as never,
+    verify_candidate: () => ({ disposition: 'not_improved', evidence: { recommendationId: 'recommendation.verify', verifiedHeadSha: f.head } }) as never,
+    verify_acceptance: async () => { acceptanceCalled = true; throw new Error('must not run'); },
+  })).rejects.toThrow('measurement');
+  expect(acceptanceCalled).toBe(false);
+});

@@ -3,7 +3,7 @@
 > **Status**: in_progress
 > **Capability ID**: `runtime-harness-refactor-program`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/refactor-program.md`
-> **Substantive Change SHA256**: `sha256:801c2dfac2c8810bd49831b8625d715f100cf8bf600621016b1157779912af13`
+> **Substantive Change SHA256**: `sha256:74caed12b5bd536856882e0484288a9257d4aa11f35b07af951fa0e25a43668f`
 
 ## Verified state
 
@@ -17,4 +17,4 @@
 
 ## Remaining acceptance
 
-The historical Canary 7 live-identity defect was fixed upstream in `ab5ccb8` and is included in 0.5.7 (published source `517cc5efe4f09e48e5dfb9ab6b2fad44fa547022`). The consumer audit repairs are recorded in `docs/researches/20260905-refactor-057-audit-repairs.md`. Published-package lifecycle smoke and consumer AXR5 0.5.7 verification now pass. Before activation, repair the pre-existing one-recommendation-to-many-Work-Packages mapping gap documented in the audit record, then refresh the complete ten-canary set for the final installed consumer revision and observe each activation rung in disposable repositories. Only successful acceptance permits this repository to enter `shadow`.
+The historical Canary 7 live-identity defect was fixed upstream in `ab5ccb8` and is included in 0.5.7 (published source `517cc5efe4f09e48e5dfb9ab6b2fad44fa547022`). The consumer audit repairs are recorded in `docs/researches/20260905-refactor-057-audit-repairs.md`. Published-package lifecycle smoke and consumer AXR5 0.5.7 verification now pass. The one-recommendation-to-many-Work-Packages mapping is closed by the consumer composition regression documented in `docs/researches/20260905-refactor-multi-work-package.md`. Before activation, refresh the complete ten-canary set for the final installed consumer revision and observe each activation rung in disposable repositories. Only successful acceptance permits this repository to enter `shadow`.

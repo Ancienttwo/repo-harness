@@ -41,10 +41,10 @@ describe('Refactor Module 6 materialization contract', () => {
     const value = fixture(); const secondTask = 'c'.repeat(64);
     value.program = buildRefactorProgram({ ...value.program, scale: 'cross_module', routeReasonCodes: ['multi-node-scope'], route: 'cross_module_refactor', affectedNodeIds: ['runtime.refactor', 'workflow.materialization'], bindings: [
       { ...value.program.bindings[0], executionBoundary: 'cross_module_stage' },
-      { recommendationId: 'rec-2', recommendationDigest: D('rec-2'), candidateAlias: 'C02', workPackageId: 'rf-1-workflow', taskRef: `${SPRINT}#${secondTask}`, executionBoundary: 'cross_module_stage' },
+      { recommendationId: 'rec-1', recommendationDigest: D('rec'), candidateAlias: 'C01', workPackageId: 'rf-1-workflow', taskRef: `${SPRINT}#${secondTask}`, executionBoundary: 'cross_module_stage' },
     ] });
     value.artifacts.push({ path: 'plans/policies/rf-2.json', bytes: 'accept-2' }, { path: 'plans/rollback/rf-2.json', bytes: 'rollback-2' });
-    value.units.push({ ...value.units[0], recommendationId: 'rec-2', architectureNodeId: 'workflow.materialization', taskId: secondTask, taskText: 'Refactor workflow module', planPath: 'plans/plan-rf-2.md', planBytes: '# Plan 2\n', dependsOnWorkPackageIds: ['rf-1-runtime'], requiredAcceptance: [{ gate: 'module', policy_id: 'rf-2', policy_ref: 'plans/policies/rf-2.json', policy_revision: D('accept-2') }], rollbackBoundary: { kind: 'work_package', boundary_id: 'rf-1-workflow', boundary_ref: 'plans/rollback/rf-2.json', boundary_revision: D('rollback-2') } });
+    value.units.push({ ...value.units[0], recommendationId: 'rec-1', architectureNodeId: 'workflow.materialization', taskId: secondTask, taskText: 'Refactor workflow module', planPath: 'plans/plan-rf-2.md', planBytes: '# Plan 2\n', dependsOnWorkPackageIds: ['rf-1-runtime'], requiredAcceptance: [{ gate: 'module', policy_id: 'rf-2', policy_ref: 'plans/policies/rf-2.json', policy_revision: D('accept-2') }], rollbackBoundary: { kind: 'work_package', boundary_id: 'rf-1-workflow', boundary_ref: 'plans/rollback/rf-2.json', boundary_revision: D('rollback-2') } });
     const output = projectRefactorMaterialization(value);
     expect(output.workGraph.work_packages[1].depends_on[0].work_package_id).toBe('rf-1-runtime');
     expect(output.workGraph.work_packages.map((entry) => entry.concurrency.key)).toEqual(['runtime.refactor', 'workflow.materialization']);

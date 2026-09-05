@@ -5,7 +5,7 @@ import { join, resolve } from 'path';
 
 import { canonicalRefactorExecutionBindingBytes, validateRefactorExecutionBinding, type RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
 import { canonicalRefactorCandidateVerificationReceiptBytes, validateRefactorCandidateVerificationReceipt, type RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
-import { validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
+import { refactorProgramBindingForTask, validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readRefactorCandidateVerificationReceipt } from './candidate-verification';
 import { assertRefactorProgramDigest, readRefactorProgramStatus } from './program-store';
@@ -24,7 +24,7 @@ export function appendRefactorExecutionBinding(input: { readonly repo_root: stri
   assertRefactorProgramDigest(readRefactorProgramStatus(input.repo_root, program.programId, input.env ?? process.env), program.programDigest);
   const candidate = readRefactorCandidateVerificationReceipt(input.repo_root, program.programId, suppliedCandidate.receiptSha256);
   if (canonicalRefactorCandidateVerificationReceiptBytes(candidate) !== canonicalRefactorCandidateVerificationReceiptBytes(suppliedCandidate)) fail('refactor_execution_binding_conflict', 'execution binding does not use the stored candidate verification receipt');
-  const programBinding = program.bindings.find((entry) => entry.recommendationId === binding.recommendationId);
+  const programBinding = refactorProgramBindingForTask(program, binding.recommendationId, binding.taskId);
   if (!programBinding || programBinding.recommendationDigest !== binding.recommendationDigest) fail('refactor_execution_binding_conflict', 'execution binding does not belong to the Refactor Program');
   if (candidate.recommendationId !== binding.recommendationId || candidate.recommendationDigest !== binding.recommendationDigest || candidate.taskId !== binding.taskId || candidate.taskRevision !== binding.taskRevision
     || candidate.contractPath !== binding.contractPath || candidate.contractSha256 !== binding.contractSha256 || candidate.cutoverClosureSha256 !== binding.cutoverClosureSha256 || candidate.acceptanceReceiptSha256 !== binding.acceptanceReceiptSha256) fail('refactor_execution_binding_conflict', 'execution binding does not match its candidate verification receipt');

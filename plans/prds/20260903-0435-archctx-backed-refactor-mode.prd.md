@@ -752,3 +752,11 @@ You are implementing this PRD.
 - **10x 時最先失敗的三處。** 其一，program event chain 的線性掃描：program 數上升後 projection 重建會變慢，解法是 content-addressed 索引與 per-program 投影，GC 只清 terminal runtime cache、絕不刪 binding。其二，closure gate 的殘留掃描：selector 數 × 檔案數是乘積關係，解法是把掃描限縮在 contract allowed paths 與 diff 觸及檔案，而不是全倉庫掃。其三，`maximum_parallel_modules` 與 node 粒度 concurrency key 的組合會在大型 cross-module program 上成為吞吐瓶頸——正確解法是拆小 program，不是放寬 concurrency key。
 - **provider 呼叫是外部 I/O，必須有預算。** scan 走既有 `projection_timeout_ms` 的 1000..120000 邊界；一次 program 的 provider 呼叫次數應有上限並記入 event chain，避免重試風暴打到上游。GPT Pro lane 的呼叫成本更高，`proposal_author = gpt_pro` 必須有每 program 的次數上限。
 - **兩階段 provider 的代價是狀態空間變大。** Stage 2 不可用時 Module 8 的預驗跳過、Module 9 的測量停在 `merged_pending_measurement`——這兩條路徑必須有獨立測試，否則會退化成「Stage 2 永遠不可用也沒人發現」。
+
+## Approved execution mapping clarification (2026-09-05)
+
+A single accepted recommendation may map to several Work Packages in RefactorProgramV1. Repeat the same recommendation ID/fingerprint/alias across distinct Work Package IDs and canonical task references; canonical Sprint and WorkGraph retain task and scheduling authority. Module/proof routes remain one unit, and each materialized unit retains its distinct node and rollback boundary.
+
+Candidate verification is task-scoped. For a recommendation with several mapped tasks, resolved/partially_resolved/not_improved provider measurements can pass the candidate gate after exact Contract and Cutover Closure verification and before AcceptanceReceipt; stale/regressed fail. One-task candidates still require resolved. Candidate success never projects a final recommendation lifecycle result.
+
+Final-main verification requires every mapped task's persisted execution evidence and aggregates four references per task in Program order. Verify and resolve once per recommendation at the final current target HEAD. Board keeps one card per Work Package/task reference and requires all mapped executions before projecting recommendation resolution. See `docs/researches/20260905-refactor-multi-work-package.md` for consumer evidence and activation limits.
