@@ -230,7 +230,7 @@ export const changedDuringReadSnapshot: OperatorFleetSnapshotV1 = {
       }),
     ], { snapshot_consistency: 'changed_during_read' }),
   ],
-  counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 },
+  counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 1 },
   source_snapshot_sha256: `sha256:${'c'.repeat(64)}`,
 };
 
@@ -279,7 +279,7 @@ export const leaseStateSnapshot: OperatorFleetSnapshotV1 = {
   registry_revision: `sha256:${'3'.repeat(64)}`,
   sequence: 22,
   repositories: leaseStateRepositories,
-  counts: { available: 0, working: 2, in_review: 1, ready_to_merge: 0, done: 0, unreadable: 0 },
+  counts: { available: 0, working: 2, in_review: 1, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 2 },
   source_snapshot_sha256: `sha256:${'7'.repeat(64)}`,
 };
 

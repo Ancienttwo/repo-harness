@@ -115,6 +115,7 @@ export const OPERATOR_API_ERROR_CODES = [
   'repository_not_found',
   'invalid_request',
   'host_not_allowed',
+  'origin_required',
   'origin_not_allowed',
   'method_not_allowed',
   'not_found',
