@@ -40,7 +40,7 @@
     },
     "allowed_paths": [],
     "next_action": null,
-    "guidance": "brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)",
+    "guidance": "brief -> edit -> targeted test; no workflow artifacts are required for the currently observed scope. User-requested planning is allowed. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
       "checks",
