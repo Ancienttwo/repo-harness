@@ -18,6 +18,7 @@
 ## Deviations From Plan Or Spec
 
 - `scripts/check-ci.sh` is not a projected helper (`bun run check:helpers` reports the same 56 helpers before and after), so `assets/templates/helpers/` was left untouched as the plan allowed.
+- The substantive-change digest only binds once the branch contains main's tip, because CI resolves the merge-base against the PR merge ref; locally `REPO_HARNESS_DIFF_BASE=origin/main` agrees with CI only while the branch point equals main's tip, so main had to be merged in before rebinding.
 
 ## Tradeoffs Considered
 

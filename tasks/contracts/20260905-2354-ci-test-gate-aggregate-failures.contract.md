@@ -10,7 +10,7 @@
 > **Review File**: `tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md`
 > **Notes File**: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:b637a977abc04da2f69d8f2856fbe170104365ddd064a940ccdcd507027dd5dd`
+> **Substantive Change SHA256**: `sha256:7b0f8704a8345cb43e501bc06199240887ea62074a403ce78642f853b96955de`
 
 ## Why
 
