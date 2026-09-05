@@ -14,11 +14,17 @@ responsibilities:
   - Keep Issue creation and body edits inside the secret-scanned GPT Pro browser lane; local code may only observe provider state and must never infer success from browser completion or timeout.
   - Reconcile complete provider snapshots against exact body markers and strict metadata; unavailable, incomplete, ambiguous and drifted sources fail closed.
   - Reserve every heartbeat mutation durably before invocation and separate orphan reason comments from not_planned closure across steps.
-  - Keep Task, Lease, Claim, Work Graph, acceptance, publication and merge authority in their existing capabilities.
+  - Validate exact-SHA readback and consume the existing budget terminal before projecting adopted slots into canonical Sprint and WorkGraph schemas.
+  - Publish Sprint, WorkGraph and issue manifest through one candidate Git ref transaction; never acquire claims or merge main during intake.
+  - Keep Task, Lease, Claim, Work Graph, semantic acceptance and delivery publication authority in their existing capabilities.
 source:
   include:
     - "src/core/automation/development-campaign.ts"
     - "src/core/automation/issue-batch.ts"
+    - "src/core/automation/connector-challenge.ts"
+    - "src/core/automation/issue-batch-adoption.ts"
+    - "src/effects/automation/issue-batch-adoption.ts"
+    - "src/effects/automation/issue-batch-publication.ts"
     - "src/core/automation/issue-batch-reconcile.ts"
     - "src/effects/automation/development-campaign-policy.ts"
     - "src/effects/automation/development-campaign-store.ts"
@@ -61,6 +67,11 @@ source:
             - id: sink.development-campaign.step
               path: "src/effects/automation/campaign-step.ts"
               symbol: "runCampaignStep"
+        - name: "runCampaignAdopt"
+          sinks:
+            - id: sink.development-campaign.adopt
+              path: "src/effects/automation/issue-batch-adoption.ts"
+              symbol: "adoptIssueBatch"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

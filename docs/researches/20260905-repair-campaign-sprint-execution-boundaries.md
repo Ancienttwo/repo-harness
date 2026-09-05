@@ -20,7 +20,7 @@ BRC5 的 metadata/parser 与 provider observation 冻结后，BRC6 才能消费�
 
 ## 后续 adoption 与预算接线
 
-PRD Module 5 与已解决的 Connector probe 均要求 `challenge_verified`；BRC6 行的 `bundle_only` 为旧文本残留。BRC4 的 `session.verification` 当前来自模型验证，并不是 exact SHA Connector challenge。因此 BRC6 必须在消费处建立 challenge authority，不能把模型验证升级为读回证明。
+PRD Module 5 与已解决的 Connector probe 均要求 `challenge_verified`；BRC6 Sprint 行已同步移除旧 `bundle_only` 文本。BRC4 的 `session.verification` 当前来自模型验证，并不是 exact SHA Connector challenge。因此 BRC6 必须在消费处建立 challenge authority，不能把模型验证升级为读回证明。
 
 #287 的 task attempt identity 包含 Task、Claim、Lease、Work Package 和 dispatch；GPT authoring round 尚无这些对象。BRC9 不得为复用 TaskAutomationAttemptV1 而伪造 Task/Lease，也不得建立另一套与现有预算竞争的计数权威。预算绑定和 authoring receipt 的职责必须在该行的执行 plan 中冻结。
 
@@ -51,3 +51,11 @@ GitHub's [Update an issue](https://docs.github.com/en/rest/issues/issues#update-
 `challenge` 走同一 run 的 provider_invocation admission，不增加 authoring rounds，但不能越过 global budget stop。BRC6 先完成 challenge，再封口并消费最终证据；full batch 也必须封闭 authoring，而非只看当前在途数量为零。这个 slice 没有声称独立的 BRC9 provider-call / controller-step 限额、per-task repair accounting 或 transient streak 已完成。
 
 Authoring effect 先预留、后调用、先保存 session、再结算。只有浏览器 `completed` 自动结算；`failed` 可能是超时，其他非 completed 状态均保留 reservation，等待现有对账机制。Heartbeat 在预算 admission 之后才记录它自己的 provider mutation reservation，避免额度拒绝被误记为已经尝试 edit。若之后 journal CAS 失败，则无浏览器调用，预算 reservation 仍需通过显式 not-started reconciliation 收口。
+
+## BRC6 intake 与 publication 边界
+
+`campaign adopt` 消费同一个预算 run：challenge 先完成并保存不可变结果，随后结算、final seal 和 terminal ledger verification。封口后重新观察 provider，拒绝相对封口前快照的 source drift。BRC5 的 unfilled/source projections 可以作为对账输入，journal 数量不能成为预算权威。
+
+WorkGraph 必填 acceptance、rollback 和 retry 策略由 `--publication-policy` 指向 exact main 的 JSON 文件提供；引用文档也须内容 digest 匹配。它与 provider Issue metadata 是不同的明确输入，不相互猜测。
+
+Sprint rows、WorkGraph 与 `tasks/campaigns/<campaign_id>/group-<number>.issues.json` 在同一 temporary Git index 中构成一个 commit。ref transaction 同时 verify exact canonical target 并 create candidate ref；不修改用户 index/worktree，不更新 main。TaskOffer 仅通过既有 canonical board 投影在人工整合后出现，仍需 BRC7 的本地 planning proof 才能 execution-ready。

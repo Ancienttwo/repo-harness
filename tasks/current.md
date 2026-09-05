@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T23:16:18+0800 -->
+<!-- updated_at: 2026-09-06T01:16:19+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-09-05T23:16:18+0800
-> **Source Branch**: codex/task-board-closeout
-> **Source Commit**: 2d30fb37
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-09-06T01:16:19+0800
+> **Source Branch**: codex/brc6-adoption-atomic-materialization
+> **Source Commit**: 6f5f9058
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,10 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-1630334cfafa: plans/plan-20260905-1446-verification-scope-profile-consistency.md
-- linked-worktree-1630334cfafa: active-worktree owner -> self
-- linked-worktree-d0f3cc06ebef: plans/plan-20260905-1455-isolated-worktree-readiness.md
-- linked-worktree-d0f3cc06ebef: active-worktree owner -> self
+- linked-worktree-a5bde60a3df6: plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+- linked-worktree-a5bde60a3df6: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -50,18 +48,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=completed, current_slice=completed-20260828-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: 接线 campaign adopt、权限阶梯与现有 canonical Offer 投影，完成聚焦验证与 canonical 验收。
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md
+ D tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md
+ D tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md
+ D tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md
+?? tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md
+?? tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md
+?? tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md
+?? tasks/archive/todo-20260906-0116-brc6-adoption-atomic-materialization.md
 ```
 
 ## Source Artifacts

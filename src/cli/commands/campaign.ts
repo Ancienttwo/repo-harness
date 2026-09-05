@@ -1,6 +1,10 @@
 import { Command } from 'commander';
+import { AutomationBudgetStoreError } from '../../effects/automation/budget-store';
+import { adoptIssueBatch } from '../../effects/automation/issue-batch-adoption';
+import { IssueBatchAdoptionError } from '../../core/automation/issue-batch-adoption';
+import { ConnectorChallengeError } from '../../core/automation/connector-challenge';
 import { readBrowserBinding } from '../chatgpt-browser/binding';
-import { runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
+import { runBrowserConsult, runBrowserFollowup, readSession } from '../chatgpt-browser/engine';
 import { readFileSync } from 'fs';
 
 import { buildDevelopmentCampaignDefinition } from '../../core/automation/development-campaign';
@@ -38,7 +42,7 @@ function outputError(error: unknown): void {
   const code = error instanceof CampaignArgumentError ? error.code
     : error instanceof DevelopmentCampaignStoreError || error instanceof DevelopmentCampaignPolicyError
       || error instanceof GptProIssueAuthoringError || error instanceof IssueBatchStoreError || error instanceof IssueBatchProtocolError
-      || error instanceof CampaignStepError || error instanceof IssueBatchObserverError || error instanceof IssueBatchReconcileError ? error.code
+      || error instanceof AutomationBudgetStoreError || error instanceof IssueBatchAdoptionError || error instanceof ConnectorChallengeError || error instanceof CampaignStepError || error instanceof IssueBatchObserverError || error instanceof IssueBatchReconcileError ? error.code
       : 'campaign_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof CampaignArgumentError ? 2 : 1;
@@ -132,6 +136,13 @@ export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; re
   }, { readBinding: readBrowserBinding, followup: runBrowserFollowup }));
 }
 
+export async function runCampaignAdopt(raw: { readonly repo?: string; readonly campaignId?: string; readonly groupNumber?: string; readonly intentSha256?: string; readonly sprintPath?: string; readonly publicationPolicy?: string; readonly dryRun?: boolean; readonly gitleaksBin?: string }): Promise<void> {
+  output(await adoptIssueBatch({ repo_root: raw.repo?.trim() || process.cwd(), campaign_id: required(raw.campaignId, '--campaign-id'),
+    group_number: groupNumber(raw.groupNumber), intent_sha256: required(raw.intentSha256, '--intent-sha256'), sprint_path: required(raw.sprintPath, '--sprint-path'),
+    publication_policy_path: required(raw.publicationPolicy, '--publication-policy'), dry_run: raw.dryRun === true, gitleaks_bin: raw.gitleaksBin?.trim(),
+  }, { readBinding: readBrowserBinding, followup: runBrowserFollowup, readSession }));
+}
+
 export function buildCampaignCommand(): Command {
   const command = new Command('campaign').description('Operate the authorized development campaign state machine');
   command.command('start')
@@ -171,5 +182,16 @@ export function buildCampaignCommand(): Command {
     .requiredOption('--intent-sha256 <digest>', 'Persisted IssueBatchIntentV1 digest')
     .requiredOption('--idempotency-key <key>', 'Stable step identity for crash-safe replay')
     .action(async (options) => { try { await runCampaignHeartbeatStep(options); } catch (error) { outputError(error); } });
+  command.command('adopt')
+    .description('Verify exact-SHA readback, seal authoring and publish an atomic repair batch candidate')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--campaign-id <id>', 'Development campaign id')
+    .requiredOption('--group-number <number>', 'Authorized group number')
+    .requiredOption('--intent-sha256 <digest>', 'Persisted issue intent digest')
+    .requiredOption('--sprint-path <path>', 'Exact-main Sprint path')
+    .requiredOption('--publication-policy <path>', 'Exact-main JSON acceptance, rollback and retry policy')
+    .option('--gitleaks-bin <path>', 'Mandatory prompt scanner binary')
+    .option('--dry-run', 'Verify adoption without publishing Task, WorkGraph, manifest or refs')
+    .action(async options => { try { await runCampaignAdopt(options); } catch (error) { outputError(error); } });
   return command;
 }

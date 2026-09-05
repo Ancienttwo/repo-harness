@@ -346,6 +346,16 @@ interface ExcludedModule {
  */
 const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
   {
+    module: 'src/core/automation/connector-challenge.ts',
+    fails: ['C-1'],
+    evidence: 'exact-content readback evidence for campaign intake; owns no Task/Claim, Lease, Publication, Acceptance, or Delegation wire identity',
+  },
+  {
+    module: 'src/core/automation/issue-batch-adoption.ts',
+    fails: ['C-1'],
+    evidence: 'campaign intake projection, like WorkDemand; downstream scheduling consumes canonical Sprint and WorkGraph authorities, never the adoption receipt as Task/Claim or delivery publication authority',
+  },
+  {
     module: 'src/core/automation/controller.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'automation orchestration evidence plane (issue #279): journals bounded observations and calls existing acquire/dispatch authorities, but grants no claim, moves no lease generation, and publishes or accepts nothing',
