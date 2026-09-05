@@ -20,6 +20,6 @@ Only the fixture changes; runtime deadline behavior and assertions stay intact.
 ## Verification
 
 - `bun test --timeout 60000 tests/architecture-projection-provider.test.ts`: 23 pass, 0 fail, exit 0; `/tmp/refactor-ci-deadline-green.log` and `/tmp/refactor-ci-deadline-result.json`.
-- Quick diff readback confirms one fixture string and its explanatory comment changed. No runtime source or gate weakening.
+- The isolated repair changed one fixture string and its explanatory comment. Concurrent upstream PR #319 published the same absolute sleep correction as `c76d1e66`; integration retained that upstream test verbatim, including its 4-second outer watchdog. No runtime source or gate weakening.
 - Focused verification is sufficient for this test utility lookup correction; no full-suite or repeated external review is warranted.
 - Durable reading entrypoint: `docs/researches/20260905-refactor-057-audit-repairs.md`.

@@ -248,7 +248,6 @@ describe('package-local ArchContext projection provider', () => {
   test('charges Node runtime selection to the caller deadline', () => {
     const f = fixture();
     const slowNode = join(f.root, 'slow-node');
-    // The probe deliberately clears PATH, including lookup of fixture utilities.
     writeFileSync(slowNode, '#!/bin/sh\n/bin/sleep 2\necho v24.18.0\n');
     chmodSync(slowNode, 0o755);
     const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
@@ -261,7 +260,7 @@ describe('package-local ArchContext projection provider', () => {
       `} catch (error) { console.log(String(error)); }`,
       '',
     ].join('\n'));
-    const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 3_500, killSignal: 'SIGKILL' });
+    const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 4_000, killSignal: 'SIGKILL' });
     expect((result.error as NodeJS.ErrnoException | undefined)?.code).not.toBe('ETIMEDOUT');
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('architecture projection timeout before Node runtime selection');
