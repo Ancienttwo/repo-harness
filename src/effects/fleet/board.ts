@@ -364,7 +364,7 @@ async function collectBounded<T, U>(
   return output;
 }
 
-function createFleetProviderObservationLimiter(maxConcurrency: number): FleetProviderObservationLimiter {
+export function createFleetProviderObservationLimiter(maxConcurrency: number): FleetProviderObservationLimiter {
   let active = 0;
   const waiting: Array<() => void> = [];
   const release = () => {

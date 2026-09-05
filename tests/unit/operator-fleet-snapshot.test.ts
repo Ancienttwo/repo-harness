@@ -37,6 +37,7 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
             feedback: { pending_count: 1, no_progress: false, repair_actions: [] },
             inbox: { unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null },
             snapshot_consistency: 'changed_during_read',
+            error: null,
           },
         ],
         error: null,
@@ -125,6 +126,67 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     expect(JSON.stringify(projected)).not.toContain('secret=redacted');
   });
 
+  test('carries the unclassified count and one failed card error through the transport view', () => {
+    const source = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry',
+      sequence: 3,
+      observed_at: '2026-09-05T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a',
+        repo_root: '/private/workspaces/repo-a',
+        access_mode: 'read_write',
+        status: 'ok',
+        snapshot_consistency: 'stable',
+        cards: [
+          {
+            task_id: 'a'.repeat(64),
+            task_revision: 'b'.repeat(64),
+            task_label: 'observe one registered repository',
+            task_index: 1,
+            task_state: 'pending',
+            lease_state: 'available',
+            claim_id: null,
+            generation: null,
+            current_publication: null,
+            merge_readiness: null,
+            execution_readiness: 'execution_ready',
+            feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
+            inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null },
+            snapshot_consistency: 'stable',
+            error: null,
+          },
+          {
+            task_id: 'c'.repeat(64),
+            task_revision: 'b'.repeat(64),
+            task_label: 'observe a damaged card',
+            task_index: 2,
+            task_state: 'pending',
+            lease_state: 'available',
+            claim_id: null,
+            generation: null,
+            current_publication: null,
+            merge_readiness: null,
+            execution_readiness: null,
+            feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
+            inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null },
+            snapshot_consistency: 'stable',
+            error: { code: 'repo_inbox_unreadable', message: 'inbox stderr /private/agent-root' },
+          },
+        ],
+        error: null,
+      }],
+    });
+
+    const projected = projectOperatorFleetSnapshot(source);
+    expect(projected.counts.unclassified).toBe(1);
+    expect(projected.repositories[0]?.cards[1]).toMatchObject({
+      column: null,
+      error: { code: 'repo_inbox_unreadable', message: 'repository inbox observation is unavailable' },
+    });
+    expect(projected.repositories[0]?.cards[0]?.error).toBeNull();
+    expect(JSON.stringify(projected)).not.toContain('/private/agent-root');
+  });
+
   test('rejects an unsupported Fleet protocol before crossing the browser boundary', () => {
     const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV1;
     expect(() => projectOperatorFleetSnapshot(invalid)).toThrow('unsupported Fleet snapshot protocol');
@@ -155,6 +217,12 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     ]);
     expect(Object.keys(projected.repositories[0] ?? {}).sort()).toEqual([
       'access_mode', 'cards', 'error', 'repository_id', 'snapshot_consistency', 'status',
+    ]);
+    expect(Object.keys(projected.repositories[0]?.cards[0] ?? {}).sort()).toEqual([
+      'attention_owner', 'blocker_codes', 'claim_id', 'column', 'error', 'execution_readiness',
+      'feedback', 'generation', 'head_sha', 'inbox', 'lease_state', 'merge_readiness',
+      'publication_id', 'repository_id', 'snapshot_consistency', 'task_id', 'task_index',
+      'task_label', 'task_revision',
     ]);
   });
 });

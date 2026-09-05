@@ -21,7 +21,6 @@ const MESSAGE_TWO = '123e4567-e89b-42d3-a456-426614174011';
 const PROJECT_ROOT = resolve(import.meta.dir, '../..');
 const TASK_MESSAGE_REQUEST_MODULE = resolve(import.meta.dir, '../../src/effects/fleet/task-message-request.ts');
 const REGISTRY_MODULE = resolve(import.meta.dir, '../../src/effects/repo-registry.ts');
-const LEASE_STORE_MODULE = resolve(import.meta.dir, '../../src/effects/state/coordination-lease-store.ts');
 
 interface Fixture {
   readonly root: string;
@@ -191,25 +190,6 @@ function operatorMessageWorker(value: Fixture, messageId: string, env: Record<st
   });
 }
 
-function taskLockHolder(value: Fixture, readyPath: string, releasePath: string): ReturnType<typeof Bun.spawn> {
-  const script = `
-    import { existsSync, writeFileSync } from 'node:fs';
-    const { withTaskLock } = await import(process.env.LEASE_STORE_MODULE);
-    withTaskLock(process.env.REPO_ROOT, process.env.TASK_ID, () => {
-      writeFileSync(process.env.READY_PATH, 'ready\\n');
-      const wait = new Int32Array(new SharedArrayBuffer(4));
-      while (!existsSync(process.env.RELEASE_PATH)) Atomics.wait(wait, 0, 0, 5);
-    });
-  `;
-  return spawnWorker(script, {
-    LEASE_STORE_MODULE,
-    REPO_ROOT: value.root,
-    TASK_ID: value.taskId,
-    READY_PATH: readyPath,
-    RELEASE_PATH: releasePath,
-  });
-}
-
 function readWorkerPayload(result: { readonly status: number; readonly stdout: string; readonly stderr: string }): Record<string, unknown> {
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout) as Record<string, unknown>;
@@ -335,41 +315,40 @@ describe('operator task-message effect fence', () => {
     expectNoInboxArtifacts(value, MESSAGE_ONE);
   }), 30_000);
 
-  test('lets a sender that holds registry authorization publish before a waiting revocation', async () => withFixtureAsync(async (value) => {
-    const lockReadyPath = join(value.home, 'task-lock-ready');
-    const lockReleasePath = join(value.home, 'task-lock-release');
-    const lockHolder = taskLockHolder(value, lockReadyPath, lockReleasePath);
-    await waitFor(() => existsSync(lockReadyPath), 'task lock holder');
-
-    const sender = operatorMessageWorker(value, MESSAGE_ONE);
-    const registryLockPath = `${repoHarnessRegisteredReposPath({ REPO_HARNESS_HOME: value.home })}.lock`;
-    await waitFor(() => {
-      if (!existsSync(registryLockPath)) return false;
-      try {
-        return JSON.parse(readFileSync(registryLockPath, 'utf8')).pid === sender.pid;
-      } catch {
-        return false;
-      }
-    }, 'sender registry authorization lock');
-
-    const revoker = registryRevoker(value);
-    writeFileSync(lockReleasePath, 'release\n');
-
-    const [lockResult, senderResult, revokerResult] = await Promise.all([
-      workerResult(lockHolder),
-      workerResult(sender),
-      workerResult(revoker),
-    ]);
-    expect(lockResult.status, lockResult.stderr).toBe(0);
-    expect(readWorkerPayload(senderResult)).toMatchObject({ ok: true, result: { created: true } });
-    expect(revokerResult.status, revokerResult.stderr).toBe(0);
-    expect(JSON.parse(readFileSync(join(value.home, 'registered-repos.json'), 'utf8'))).toMatchObject({
-      repos: [{ accessMode: 'read_only' }],
-    });
-    expect(existsSync(taskInboxEventPath(value.root, value.taskId, MESSAGE_ONE))).toBe(true);
-  }), 30_000);
-
   if (process.platform !== 'win32') {
+    test('never holds the registry authorization lock while a publication waits for the task lock', async () => withFixtureAsync(async (value) => {
+      const gitReadyPath = join(value.home, 'initial-sprint-read');
+      const gitReleasePath = join(value.home, 'release-initial-sprint-read');
+      const bin = pausedGitBin(value, gitReadyPath, gitReleasePath);
+      const sender = operatorMessageWorker(value, MESSAGE_ONE, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
+
+      const registryLockPath = `${repoHarnessRegisteredReposPath({ REPO_HARNESS_HOME: value.home })}.lock`;
+      expect(existsSync(registryLockPath)).toBe(false);
+
+      writeFileSync(gitReleasePath, 'release\n');
+      const senderResult = await workerResult(sender);
+      expect(readWorkerPayload(senderResult)).toMatchObject({ ok: true, result: { created: true } });
+      expect(existsSync(taskInboxEventPath(value.root, value.taskId, MESSAGE_ONE))).toBe(true);
+    }), 30_000);
+
+    test('rejects a revocation that lands between registry authorization and the locked publication', async () => withFixtureAsync(async (value) => {
+      const gitReadyPath = join(value.home, 'initial-sprint-read');
+      const gitReleasePath = join(value.home, 'release-initial-sprint-read');
+      const bin = pausedGitBin(value, gitReadyPath, gitReleasePath);
+      const sender = operatorMessageWorker(value, MESSAGE_ONE, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
+
+      const revoker = registryRevoker(value);
+      const revokerResult = await workerResult(revoker);
+      expect(revokerResult.status, revokerResult.stderr).toBe(0);
+
+      writeFileSync(gitReleasePath, 'release\n');
+      const senderResult = await workerResult(sender);
+      expect(readWorkerPayload(senderResult)).toMatchObject({ ok: false, code: 'repository_read_only' });
+      expectNoInboxArtifacts(value, MESSAGE_ONE);
+    }), 30_000);
+
     test('rejects an active-sprint change captured between source resolution and the task lock', async () => withFixtureAsync(async (value) => {
       const gitReadyPath = join(value.home, 'initial-sprint-read');
       const gitReleasePath = join(value.home, 'release-initial-sprint-read');
