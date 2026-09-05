@@ -58,9 +58,9 @@ Write comments, commits, and PR text from the final diff. Comments explain non-o
 
 ## Completion Summary Rule
 
-For non-trivial completed tasks, include a short `下一刀` section only for a verified bottleneck, risk, failing check, deployment/review gap, or active-plan item materially affecting the goal. It must be one concrete, bounded next slice derived from verified state: active plan, todo, handoff, failing checks, review gaps, deployment state, unresolved risk, or observed system behavior.
+For non-trivial completed tasks, include a short `Next cut` section only for a verified bottleneck, risk, failing check, deployment/review gap, or active-plan item materially affecting the goal. It must be one concrete, bounded next slice derived from verified state: active plan, todo, handoff, failing checks, review gaps, deployment state, unresolved risk, or observed system behavior.
 
-Use `建议切 <方向>。理由是 <未闭环点>。入口是 <路径/命令/验证面>。`; explain why that slice is sufficient. Omit speculative polish and post-completion permission questions.
+Use `Next cut: <direction>. Reason: <open loop>. Entry: <path/command/verification surface>.`; explain why that slice is sufficient. Omit speculative polish and post-completion permission questions.
 
 ## Research Delegation
 

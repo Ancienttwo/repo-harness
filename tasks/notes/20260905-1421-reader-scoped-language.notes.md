@@ -1,6 +1,6 @@
 # Implementation Notes: reader-scoped-language
 
-> **Substantive Change SHA256**: `sha256:45a08c6c0d94eced906f2ec9780db1386ca7823f20edfc6afbb528de1ad3d020`
+> **Substantive Change SHA256**: `sha256:b0185a534845cc494a21dc7d0246e167377134afea1fa46b1c6f594f46b3ed08`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260905-1421-reader-scoped-language.md
@@ -11,11 +11,14 @@
 
 ## Design Decisions
 
-- ...
+- The init question is one datum with two projections: the host-level reporting sentence in the managed global-rules block, and the repo-level `.ai/harness/policy.json#documentation.language`. The `custom` preset carries a free-text reporting sentence with no enum value, so it maps documents to `en` rather than deriving a language from that text.
+- `defaultPolicy` takes the language as a required argument and rejects anything outside `en | zh-CN | follow-user`; `planStandardAdoption` re-validates the merged value so an invalid value already stored in an adopted repo fails closed instead of being silently replaced by the default.
+- Root context and `document-generation.md` point at the policy field instead of copying its value, so there is no projection to drift-check.
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Contract `allowed_paths` gained `.ai/harness/policy.json`: this repo is a self-host source checkout, so `init --repo .` is a documented no-op and the new `documentation.language` field has to be hand-added to the repo's own policy the way earlier policy fields landed.
+- `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json` were left untouched; their `documentation` block only describes reference-config projection and does not enumerate policy `documentation` fields.
 
 ## Tradeoffs Considered
 

@@ -279,7 +279,28 @@ function jsonContent(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-export function defaultPolicy(documentationProfile: string): JsonObject {
+export const DOCUMENTATION_LANGUAGES = ["en", "zh-CN", "follow-user"] as const;
+
+export type DocumentationLanguage = (typeof DOCUMENTATION_LANGUAGES)[number];
+
+/**
+ * Human-facing document language is one repo-level datum. It is authored by
+ * `REPO_HARNESS_DOCUMENTATION_LANGUAGE` at init and stored in
+ * `.ai/harness/policy.json#documentation.language`; both the incoming env value
+ * and an already-stored value are rejected fail-closed rather than silently
+ * falling back to the default, because a silent default would make a typo look
+ * like a deliberate English choice.
+ */
+function requireDocumentationLanguage(value: unknown): DocumentationLanguage {
+  if (typeof value === "string" && (DOCUMENTATION_LANGUAGES as readonly string[]).includes(value)) {
+    return value as DocumentationLanguage;
+  }
+  throw new Error(
+    `invalid documentation language ${JSON.stringify(value)}: REPO_HARNESS_DOCUMENTATION_LANGUAGE and .ai/harness/policy.json#documentation.language accept only ${DOCUMENTATION_LANGUAGES.join(" | ")}`,
+  );
+}
+
+export function defaultPolicy(documentationProfile: string, documentationLanguage: string): JsonObject {
   return {
     version: 1,
     active_plan: {
@@ -349,6 +370,7 @@ export function defaultPolicy(documentationProfile: string): JsonObject {
     },
     documentation: {
       profile: documentationProfile,
+      language: requireDocumentationLanguage(documentationLanguage),
       reference_source: "user-level-runtime-docs",
       reference_stub_marker: "<!-- repo-harness: reference-config-stub v1 -->",
       reference_resolver: "repo-harness docs path <doc-id>",
@@ -407,6 +429,7 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 - Treat \`docs/spec.md\` as product truth; \`tasks/current.md\` is derived state and \`tasks/todos.md\` is the deferred-goal ledger.
 - Keep current execution in the active plan's \`## Task Breakdown\`; use contracts, reviews, notes, workstreams, and handoff artifacts for durable progress.
 - Read \`.ai/context/capabilities.json\` and \`.ai/context/context-map.json\` before adding scoped agent context.
+- Write human-facing documents (\`docs/\`, \`plans/prds/\`, design briefs) in the language set by \`.ai/harness/policy.json#documentation.language\`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.
 - Keep \`_ref/\` ignored external reference material and \`_ops/\` ignored local operations state.
 `;
 }
@@ -755,8 +778,11 @@ function addActivePlanMigration(repoRoot: string, operations: AdoptionOperation[
 export function planStandardAdoption(opts: StandardPlanOptions): { operations: AdoptionOperation[]; warnings: AdoptionWarning[] } {
   const operations: AdoptionOperation[] = [];
   const documentationProfile = opts.env?.REPO_HARNESS_DOCUMENTATION_PROFILE ?? "minimal-agentic";
+  const documentationLanguage = opts.env?.REPO_HARNESS_DOCUMENTATION_LANGUAGE ?? "en";
   const policyCurrent = jsonFile(opts.repoRoot, ".ai/harness/policy.json");
-  const policy = deepMergeDefaults(defaultPolicy(documentationProfile), policyCurrent);
+  const policy = deepMergeDefaults(defaultPolicy(documentationProfile, documentationLanguage), policyCurrent);
+  const mergedDocumentation = isObject(policy.documentation) ? policy.documentation : {};
+  requireDocumentationLanguage(mergedDocumentation.language);
   delete policy.hook_source;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};

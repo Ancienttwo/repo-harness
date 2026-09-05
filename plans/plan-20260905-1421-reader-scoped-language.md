@@ -129,14 +129,51 @@ Verification:
 - Full bun test --timeout 60000 before closeout because product source changes.
 
 ## Task Breakdown
-- [ ] Phase 1: delete orphan Chinese templates and the metro advisory, make design-brief and helper headers English, English-only hook advisories, English obsidian-memory body and geju terms, sync reference-config mirror, update coupled tests.
-- [ ] Phase 2: add policy.json documentation.language with fail-closed validation and env pass-through, rename the init question and wire both projections, add the root-context and document-generation rules, render the completion-summary label per reporting preset, update coupled tests and snapshots.
-- [ ] Run focused tests, repository integrity checks, the CJK residue audit, and the full Bun suite; record results in this plan.
+- [x] Phase 1: delete orphan Chinese templates and the metro advisory, make design-brief and helper headers English, English-only hook advisories, English obsidian-memory body and geju terms, sync reference-config mirror, update coupled tests.
+- [x] Phase 2: add policy.json documentation.language with fail-closed validation and env pass-through, rename the init question and wire both projections, add the root-context and document-generation rules, render the completion-summary label per reporting preset, update coupled tests and snapshots.
+- [x] Run focused tests, repository integrity checks, the CJK residue audit, and the full Bun suite; record results in this plan.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Phase 1: delete orphan Chinese templates and the metro advisory, make design-brief and helper headers English, English-only hook advisories, English obsidian-memory body and geju terms, sync reference-config mirror, update coupled tests.
-- [ ] Phase 2: add policy.json documentation.language with fail-closed validation and env pass-through, rename the init question and wire both projections, add the root-context and document-generation rules, render the completion-summary label per reporting preset, update coupled tests and snapshots.
-- [ ] Run focused tests, repository integrity checks, the CJK residue audit, and the full Bun suite; record results in this plan.
+- [x] Phase 1: delete orphan Chinese templates and the metro advisory, make design-brief and helper headers English, English-only hook advisories, English obsidian-memory body and geju terms, sync reference-config mirror, update coupled tests.
+- [x] Phase 2: add policy.json documentation.language with fail-closed validation and env pass-through, rename the init question and wire both projections, add the root-context and document-generation rules, render the completion-summary label per reporting preset, update coupled tests and snapshots.
+- [x] Run focused tests, repository integrity checks, the CJK residue audit, and the full Bun suite; record results in this plan.
+
+## Verification Results
+
+Run on 2026-09-05 against `codex/reader-scoped-language` with Phase 1 and Phase 2 applied.
+
+| Check | Result |
+|-------|--------|
+| `bun run check:type` | pass (no diagnostics) |
+| `bun run check:reference-configs` | pass (projection OK: 23 docs, sha256:7527b9c8) |
+| `bun run check:helpers` | pass (projection OK: 56 helpers) |
+| `bun test --timeout 60000` on the 11 coupled files | 303 pass / 0 fail, 3934 expect() calls |
+| `bun test --timeout 60000` (full suite) | 4191 pass / 4 skip / 0 fail across 349 files, 54189 expect() calls |
+| `bash scripts/check-deploy-sql-order.sh` | pass |
+| `bash scripts/check-architecture-sync.sh` | pass (blocking=0) |
+| `bash scripts/check-task-workflow.sh --strict` | pass |
+| `bun scripts/inspect-project-state.ts --repo . --format text` | pass (no drift signals) |
+| `bun src/cli/index.ts init --repo . --dry-run` | pass, 0 operations (self-host source checkout no-op) |
+
+The coupled files are `tests/cli/init.test.ts`, `tests/cli/adoption-plan.test.ts`,
+`tests/global-working-rules-distribution.test.ts`, `tests/scaffold-parity.test.ts`,
+`tests/bootstrap-files.test.ts`, `tests/create-project-dirs.runtime.test.ts`,
+`tests/workflow-contract.test.ts`, `tests/initializer-question-pack.test.ts`,
+`tests/helper-scripts.test.ts`, `tests/ux-feature-guardrail.test.ts`, and
+`tests/hook-contracts.test.ts`.
+
+`init --repo . --dry-run` cannot show this repo gaining `documentation.language`:
+`planAdoption` returns the `self-host-source-noop` warning for the repo-harness
+source checkout, so the field was added directly to `.ai/harness/policy.json` the
+way earlier policy fields landed here. Downstream authoring is covered by
+`tests/cli/adoption-plan.test.ts` "documentation language policy datum".
+
+CJK residue audit (`rg -n -uu '[\p{Han}]' assets/ src/ --glob '!src/operator-web/i18n.ts'`)
+leaves only the allowed set: hook intent/utterance regex literals and their comments in
+`src/cli/hook/{prompt-intents,prompt-router,subagent-handler,stop-handler}.ts`, skill
+`description`/`when_to_use` trigger phrases in `assets/skills/{repo-harness-chatgpt,repo-harness-cross-review,claude-plan,obsidian-memory}`,
+the init option label in `src/cli/commands/init.ts`, and the completion-summary
+substitution literal `COMPLETION_SUMMARY_LABEL_ZH`.

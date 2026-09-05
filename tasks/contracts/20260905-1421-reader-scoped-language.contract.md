@@ -77,6 +77,7 @@ allowed_paths:
   - assets/
   - scripts/
   - .ai/harness/workflow-contract.json
+  - .ai/harness/policy.json
   - tasks/todos.md
   - tasks/contracts/20260905-1421-reader-scoped-language.contract.md
   - tasks/reviews/20260905-1421-reader-scoped-language.review.md

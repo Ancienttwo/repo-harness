@@ -6457,7 +6457,7 @@ describe("Workflow helper scripts", () => {
       // scripts/lib/project-init-lib.sh and src/core/adoption/standard-plan.ts. Assert it stays
       // identical to the TS default so it cannot silently diverge again.
       const fallbackPolicy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      const tsDefaultPolicy = defaultPolicy("minimal-agentic") as Record<string, any>;
+      const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;
       expect(fallbackPolicy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
