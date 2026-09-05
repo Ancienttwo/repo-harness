@@ -1,5 +1,7 @@
 # Implementation Notes: reader-scoped-language
 
+> **Substantive Change SHA256**: `sha256:45a08c6c0d94eced906f2ec9780db1386ca7823f20edfc6afbb528de1ad3d020`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260905-1421-reader-scoped-language.md
 > **Contract**: tasks/contracts/20260905-1421-reader-scoped-language.contract.md

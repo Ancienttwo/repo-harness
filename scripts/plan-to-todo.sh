@@ -715,13 +715,13 @@ maybe_advise_contract_brief_preflight() {
   fi
 }
 
-# Advisory-only geju (格局) freeze reminder at projection time. geju judgment stays
+# Advisory-only geju freeze reminder at projection time. geju judgment stays
 # live, pre-contract exploration; only its output (thesis/direction/falsifier)
 # belongs in the contract. This MUST NOT affect exit code -- callers append
 # `|| true` -- it only nudges the author to freeze geju output into the
 # just-rendered contract before delegating.
 maybe_advise_geju_freeze() {
-  echo "[Geju] If this task came from a 格局/geju pass, freeze its output into the contract before delegating:" >&2
+  echo "[Geju] If this task came from a geju pass, freeze its output into the contract before delegating:" >&2
   echo "[Geju]   thesis + high-level direction -> ## Why ; falsifier + cheapest proof point -> ## Falsifier" >&2
   echo "[Geju] Live geju is pre-contract exploration only; once frozen, the contract is authoritative." >&2
 }
