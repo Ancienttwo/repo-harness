@@ -101,3 +101,11 @@ describe('development campaign CLI', () => {
     expect(conflictingGrant.stderr).toContain('campaign_conflict');
   });
 });
+
+ test('campaign adopt declares its required exact-main publication policy and bounded inputs', () => {
+   const help = run(['campaign', 'adopt', '--help']);
+   expect(help.status).toBe(0);
+   expect(help.stdout).toContain('--publication-policy');
+   const missing = run(['campaign', 'adopt']);
+   expect(missing.status).not.toBe(0);
+ });

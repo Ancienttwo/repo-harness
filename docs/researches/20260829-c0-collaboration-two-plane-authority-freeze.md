@@ -646,3 +646,10 @@ its primary component, and moved the ledger through
   is not retro-fitted to the observation.
 
 > **Substantive Change SHA256**: `sha256:2db29e25cac199834d23e640afec55a70aa1ab50fdde9574796128997e9704ac`
+
+BRC6 intake evidence additions use the same closed-scan criterion:
+
+| Module | Fails | Evidence |
+|---|---|---|
+| `src/core/automation/connector-challenge.ts` | C-1 | Exact-content readback proof for campaign intake; no delivery-plane identity or semantic acceptance verdict. |
+| `src/core/automation/issue-batch-adoption.ts` | C-1 | Intake projection, like WorkDemand; canonical Sprint and WorkGraph remain Task authority, and delivery Publication receipts remain separate. |

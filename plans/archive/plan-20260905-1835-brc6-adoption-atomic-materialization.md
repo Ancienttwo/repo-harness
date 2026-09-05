@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-06 01:16
+> **Related Plan**: plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260906-0116
+> **Archive Projection V1**: `plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md` => `plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md` => `tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md` => `tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md` => `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md`
+
 # Plan: BRC6 Adoption 与三文件原子 materialization
 
-> **Status**: Draft
+> **Status**: Archived
 > **Created**: 20260905-1835
 > **Slug**: brc6-adoption-atomic-materialization
 > **Planning Source**: waza-think
@@ -12,9 +22,9 @@
 > **Rollback Surface**: Withdraw unpublished candidate; human revert of the single materialization commit after integration
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md`
-> **Task Review**: `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md`
-> **Implementation Notes**: `tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md`
+> **Task Review**: `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md`
+> **Implementation Notes**: `tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md`
 
 ## Agentic Routing
 - Selected route: planning
@@ -28,16 +38,16 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md`
-- Sprint contract: `tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md`
-- Sprint review: `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md`
-- Implementation notes: `tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md`
+- Active plan: `plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md`
+- Sprint contract: `tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md`
+- Sprint review: `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md`
+- Implementation notes: `tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md` `allowed_paths`
+- Scope authority: `tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md`.
 
 ## Approach
 ### Strategy
@@ -66,11 +76,11 @@ See captured planning output.
 | Captured plan lacks enough detail | Medium | Execution may need clarification | Stop before implementation if the captured output contradicts repo rules or lacks concrete file targets |
 
 ## Task Contracts
-- Contract file: `tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md`
-- Review file: `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md`
-- Implementation notes file: `tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md`
+- Contract file: `tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md`
+- Review file: `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md`
+- Implementation notes file: `tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md --strict`
 - Active plan rule: this captured plan is written to `.ai/harness/active-plan` and the owning worktree is written to `.ai/harness/active-worktree` unless --no-active is used. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -80,18 +90,18 @@ See captured planning output.
 
 ## Promotion Gate
 
-- **Merge/PR unit**: Captured plan `plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Merge/PR unit**: Captured plan `plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
 - **Rollback surface**: Withdraw unpublished candidate; human revert of the single materialization commit after integration
 - **Verification boundary**: Adoption proof, three-file atomic publication, replay and canonical visibility fixtures
-- **Review/acceptance boundary**: `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md` must record pass against the captured acceptance criteria.
+- **Review/acceptance boundary**: `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
 - **Why not checklist row**: verification_boundary
 
 ## Evidence Contract
 
-- **State/progress path**: `plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md`, `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md`, and `tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md`
+- **State/progress path**: `plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md`, `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md`, and `tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md`
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
-- **Evaluator rubric**: `tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md` must record a passing Waza /check style recommendation
+- **Evaluator rubric**: `tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
 - **Rollback surface**: Withdraw unpublished candidate; human revert of the single materialization commit after integration
 
@@ -99,7 +109,7 @@ See captured planning output.
 
 ### 目标与授权范围
 
-本轮只完成 BRC6 规划。BRC5 已在 main 落地；本计划保持 Draft，因为 上游 authoring-round exhaustion 消费契约已有候选实现，但已通过上游 final prepare，仍待 owner acceptance 与合入 main。不得据此创建执行 contract、启动 worktree 或修改 runtime。执行准入条件是下述上游契约落地主线并通过其行为验收，再将对应实际 API/类型名填入本计划、冻结 execution contract。这里的 Draft 表示依赖未满足，不表示允许执行者自行选择预算语义。
+用户已批准执行 BRC6；预算前置已通过 canonical finish 合入本地 main 2be1268bad1339fb00ed34bb90d1b8523dd43f95。依赖准入解除，按本计划创建 contract 与独立 worktree 完成实现验收。
 
 BRC6 是一个独立 work-package：同一次 adoption 将有效 Issue slots 投影为 Sprint rows、Work Graph 和 issue manifest，以一个提交发布。成功条件包含 partial batch、Connector challenge、身份/依赖校验、崩溃恢复和重复调用；不包含 BRC7 planning、BRC8 dispatch、BRC9 全量预算控制或 BRC10+ closure/audit。
 
@@ -146,13 +156,13 @@ complete provider snapshot -> BRC5 reconciliation
 
 最小语义要求：绑定 repository、campaign、group、intent、authorization digest、budget revision；明确 authoring-round 上限及计费单位；pre-Task attempt 身份不要求 Task/Claim/Lease；原子 reserve/settle 和幂等 replay；可证明 rounds exhausted，并证明没有 pending/in-flight authoring，封闭此 group/intent 的进一步 authoring admission。已冻结计费为 initial/fill_missing/edit_issue 各一轮，授权必填 max_authoring_rounds_per_group；challenge 不计轮但走同一 run 的 provider_invocation 预算。group/intent 封口只禁止 authoring，round 耗尽不升级成 global stop。provider-call 与 round 不等价。
 
-上游验收必须覆盖：并发争用最后一个 round 只能成功一次；重复 reservation/settlement 不重复扣费；reserve 后崩溃不会误报 quiescent/exhausted；在途响应未终结不许 partial adoption；budget revision/authorization/intent 不匹配拒绝；耗尽决定后不能重新打开同 intent authoring；已完成满 batch 不需要伪造 exhausted。候选提交 783e3364 已提供下面的消费接口；其 final prepare 已通过，owner acceptance 与合入尚未完成，因此生产接线/验收准入仍关闭。BRC9 的 campaign-step/provider-call 全部预算、任务 repair 次数与 transient streak 不塞进 BRC6。
+上游验收必须覆盖：并发争用最后一个 round 只能成功一次；重复 reservation/settlement 不重复扣费；reserve 后崩溃不会误报 quiescent/exhausted；在途响应未终结不许 partial adoption；budget revision/authorization/intent 不匹配拒绝；耗尽决定后不能重新打开同 intent authoring；已完成满 batch 不需要伪造 exhausted。候选提交 783e3364 已提供下面的消费接口；其 Owner Acceptance 与 canonical finish 已完成，预算前置在 main 2be1268b 可用。BRC9 的 campaign-step/provider-call 全部预算、任务 repair 次数与 transient streak 不塞进 BRC6。
 
-### 上游候选交接：783e3364（prepare 通过，待 owner acceptance，未合入）
+### 上游交接：main 2be1268b（Owner Acceptance 与 canonical finish 完成）
 
-已读取预算 worktree 的候选提交 `783e3364` 中 `docs/researches/20260905-repair-campaign-sprint-execution-boundaries.md`，按最终 kind/retry 语义更新本计划。上游交接报告 full suite PASS、final verify-sprint prepare PASS（`run-20260905T212755-54698`），review 的 P1/P2 findings 已修复；仍等待 owner acceptance，尚未合入。本任务未重跑这些检查，也不将 prepare PASS 等同 owner acceptance 或 merged。
+已读取预算 worktree 的候选提交 `783e3364` 中 `docs/researches/20260905-repair-campaign-sprint-execution-boundaries.md`，按最终 kind/retry 语义更新本计划。上游交接报告 full suite PASS、final verify-sprint prepare PASS（`run-20260905T212755-54698`），review 的 P1/P2 findings 已修复；后续已完成 Owner Acceptance 并合入 main 2be1268b。本任务未重跑这些检查，也不将 prepare PASS 等同 owner acceptance 或 merged。
 
-此前架构 reconciliation 阻塞及候选 015bf1af 的失败验收已由上游后续工作替代，历史证据保留在预算 worktree 的 notes/run 中，不再列作当前阻塞。BRC6 继续保留 Draft 与执行准入，待 owner acceptance、canonical 合入和最终接口确认后再冻结 execution contract；不修改预算 owner 的代码、验收与研究文档。
+此前架构 reconciliation 阻塞及候选 015bf1af 的失败验收已由上游后续工作替代，历史证据保留在预算 worktree 的 notes/run 中，不再列作当前阻塞。BRC6 依赖已解除，按用户本轮执行授权冻结 execution contract；不修改预算 owner 的代码、验收与研究文档。
 
 | 实际 API | BRC6 消费方式 |
 |---|---|
@@ -169,11 +179,11 @@ campaign reservation 的 kind 固定为 `repo-harness-campaign-automation-reserv
 
 其中 terminal binding 为 `repo_root`、`automation_run_id`、`expected_budget_sha256`、`campaign_id`、`group_number: 1 或 2 或 3`、`intent_sha256` 和可选 `env`。repository/grant 绑定由 run 中的预算授权验证，BRC6 仍核对其与 intent/当前授权一致。过期 revision、身份不符、terminal 缺失或内容不一致必须拒绝。
 
-独立工作可以据此完善 adoption 输入/拒绝矩阵、challenge 与三文件事务设计；实际 runtime 接线仍等待上游验收合入及最终签名确认。不会修改上游 budget core/store 或 campaign authoring/step。完整 BRC9 的其余预算维度不在本计划范围。
+本轮实现 adoption 输入/拒绝矩阵、challenge 与三文件事务，消费已合入接口。不会修改上游 budget core/store 或 campaign authoring/step。完整 BRC9 的其余预算维度不在本计划范围。
 
 ### BRC6 具体接口与文件面
 
-预计涉及超过 8 个文件（实现、测试、文档），但仅三个运行职责：adoption/challenge core、publication effect、CLI。以下新文件为计划目标，尚未创建。
+预计涉及超过 8 个文件（实现、测试、文档），但仅三个运行职责：adoption/challenge core、publication effect、CLI。以下文件承载实现职责。
 
 | 文件 | 责任 |
 |---|---|
@@ -182,13 +192,15 @@ campaign reservation 的 kind 固定为 `repo-harness-campaign-automation-reserv
 | `src/effects/automation/issue-batch-adoption.ts` | 读取授权、预算决定、session、snapshot，调用现有 reconciliation；组织 challenge 与发布 |
 | `src/effects/automation/issue-batch-publication.ts` | 三文件 temporary-index commit、durable intent、candidate ref CAS、崩溃恢复 |
 | `src/effects/automation/issue-batch-store.ts` | 复用 group store 路径和锁，保存 challenge/publication 恢复材料 |
-| `src/cli/commands/campaign.ts` | `campaign adopt --repo --campaign-id --group-number --intent-sha256 --sprint-path --dry-run`；CLI 注入 browser binding/followup，effect 不反向依赖 CLI |
+| `src/cli/commands/campaign.ts` | `campaign adopt --repo --campaign-id --group-number --intent-sha256 --sprint-path --publication-policy --dry-run`；CLI 注入 browser binding/followup，effect 不反向依赖 CLI |
 | `tests/unit/issue-batch-adoption.test.ts`、`tests/unit/connector-challenge.test.ts` | 纯协议与拒绝路径 |
 | `tests/effects/issue-batch-adoption.test.ts`、`tests/effects/issue-batch-publication.test.ts` | 上游依赖 fixture、权限、三文件原子性与恢复 |
 | `tests/cli/development-campaign.test.ts` | 参数、结构化错误和注入接线 |
 | `docs/researches/20260905-repair-campaign-sprint-execution-boundaries.md`、对应 architecture module、Sprint/contract/review | 固化最终边界与验收，按 canonical workflow 同步/归档 |
 
-adopt 的外部输入只引用本地已存权威，不接受客户端声明 connector_evidence 或 exhausted。target Sprint 必须属于授权的 repository/scope、已使用持久 task_id 且存在有效 Work Graph。manifest 固定在 `tasks/campaigns/<campaign_id>/group-<group_number>.issues.json`，包含 PRD adoption receipt 及 slot→task_id/work_package_id 映射；路径由通过协议校验的身份派生。task_id 使用现有 canonical identity 规则，首轮生成后持久化于 publication intent，replay 不再分配。
+adopt 的外部输入只引用本地已存权威，不接受客户端声明 connector_evidence 或 exhausted。target Sprint 必须属于授权的 repository/scope、已使用持久 task_id 且存在有效 Work Graph。manifest 固定在 `tasks/campaigns/<campaign_id>/group-<group_number>.issues.json`，包含 PRD adoption receipt 及 slot→task_id/work_package_id 映射；路径由通过协议校验的身份派生。task_id 首次发布使用随机 256-bit ID，持久化于 publication intent 后不再分配；现有 canonical identity validator 负责 join 校验。
+
+WorkGraph 必填策略由 `--publication-policy` 显式引用 exact main 的 JSON 文件提供，严格包含 required_acceptance、rollback_boundary、retry_policy。acceptance/rollback 引用也须是 exact main 的 regular file 且内容 hash 匹配，缺失拒绝；不从 Issue metadata、其他任务或本地默认值推导执行策略。
 
 ### Connector challenge
 
@@ -209,22 +221,15 @@ challenge 属于 provider 调用，必须经上游现有调用 admission 路径�
 
 执行 contract 应包含新 core/effect tests、现有 issue-batch/reconcile/observer/campaign-step/CLI、issue-285-work-demand-materialization 与 scheduling schema 回归，`bun run check:type`、`bun run check:state-boundaries`，及根 AGENTS 的六项 integrity checks。Offer fixture 证明候选 ref 上零新增 Offer、人工合入后才按持久 task_id 投影且仍需 planning；fixture apply 与 `init --dry-run` 保持同一 TS operation model。最终验收冻结 candidate 与 target 后一次执行；full-suite 是否需要由当时有效 contract 和已确认的未覆盖风险决定，不复制历史全量要求。
 
-本轮只修改计划与 Sprint 文档，运行根六项 integrity checks，不跑全量或真实 GPT。BRC6 runtime 完成后回滚是撤回未合入候选；若已经人工合入，人工 revert 那个三文件提交并按既有 canonical workflow 处理已出现任务，不能自动删除已经 Claim 的任务或关闭 provider Issue。协议实现代码按同一 work-package revert，不提供长期双读迁移。
-
-## Task Breakdown
-
-- [ ] 消费已合入的上游 authoring exhaustion/admission 契约，确认上述准入验收，冻结 BRC6 execution contract。
-- [ ] 实现 challenge 与 adoption 纯协议及拒绝路径，保持现有 metadata 与 budget 权威。
-- [ ] 实现三文件原子 candidate publication、稳定身份和 crash/replay 恢复。
-- [ ] 接线 campaign adopt、权限阶梯与现有 canonical Offer 投影，完成聚焦验证与 canonical 验收。
+本轮实施 runtime 与 tests，按执行 contract 验证，不自动进行真实 GPT 调用。BRC6 runtime 完成后回滚是撤回未合入候选；若已经人工合入，人工 revert 那个三文件提交并按既有 canonical workflow 处理已出现任务，不能自动删除已经 Claim 的任务或关闭 provider Issue。协议实现代码按同一 work-package revert，不提供长期双读迁移。
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] 消费已合入的上游 authoring exhaustion/admission 契约，确认上述准入验收，冻结 BRC6 execution contract。
-- [ ] 实现 challenge 与 adoption 纯协议及拒绝路径，保持现有 metadata 与 budget 权威。
-- [ ] 实现三文件原子 candidate publication、稳定身份和 crash/replay 恢复。
+- [x] 消费已合入的上游 authoring exhaustion/admission 契约，确认上述准入验收，冻结 BRC6 execution contract。
+- [x] 实现 challenge 与 adoption 纯协议及拒绝路径，保持现有 metadata 与 budget 权威。
+- [x] 实现三文件原子 candidate publication、稳定身份和 crash/replay 恢复。
 - [ ] 接线 campaign adopt、权限阶梯与现有 canonical Offer 投影，完成聚焦验证与 canonical 验收。
 
 ## Planning Verification Results

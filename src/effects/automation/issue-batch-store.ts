@@ -192,3 +192,51 @@ export function listIssueBatchJournalRecords(repoRoot: string, campaignId: strin
   }));
 }
 export function issueBatchGroupStoreRoot(repoRoot: string, campaignId: string, groupNumber: number): string { return paths(repoRoot, campaignId, groupNumber).group; }
+
+export type IssueBatchAdoptionArtifact = 'challenge' | 'response' | 'completed-response' | 'seal-sources' | 'adoption' | 'publication';
+function adoptionArtifactPath(value: ReturnType<typeof paths>, name: IssueBatchAdoptionArtifact): string {
+  if (!['challenge', 'response', 'completed-response', 'seal-sources', 'adoption', 'publication'].includes(name)) fail('issue_batch_unsafe', 'invalid adoption artifact');
+  return join(value.group, 'adoption', `${name}.json`);
+}
+/** Each named artifact is immutable; the caller owns its schema and verifies authority on reuse. */
+export function persistIssueBatchAdoptionArtifact(repoRoot: string, intent: IssueBatchIntentV1, name: IssueBatchAdoptionArtifact, record: Record<string, unknown>): void {
+  const value = paths(repoRoot, intent.campaign_id, intent.group_number);
+  withExclusiveDirectoryLock(value.root, value.lock, () => {
+    readIssueBatchIntent(repoRoot, intent.campaign_id, intent.group_number, intent.intent_sha256);
+    ensure(value.root, join(value.group, 'adoption'));
+    const basis = { intent_sha256: intent.intent_sha256, name, record };
+    immutable(adoptionArtifactPath(value, name), Buffer.from(`${canonicalMessageBytes({ ...basis, artifact_sha256: canonicalMessageDigest(basis) })}\n`));
+  }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+export function readIssueBatchAdoptionArtifact(repoRoot: string, intent: IssueBatchIntentV1, name: IssueBatchAdoptionArtifact): Record<string, unknown> | null {
+  const value = paths(repoRoot, intent.campaign_id, intent.group_number);
+  const path = adoptionArtifactPath(value, name);
+  if (!existsSync(path)) return null;
+  const bytes = regular(path).toString('utf8');
+  const parsed = JSON.parse(bytes);
+  const { artifact_sha256: digest, ...basis } = parsed;
+  if (basis.intent_sha256 !== intent.intent_sha256 || basis.name !== name || !basis.record || typeof basis.record !== 'object'
+    || canonicalMessageDigest(basis) !== digest || `${canonicalMessageBytes(parsed)}\n` !== bytes) fail('issue_batch_conflict', 'adoption artifact identity differs');
+  return basis.record;
+}
+export function withIssueBatchPublicationLock<T>(repoRoot: string, intent: IssueBatchIntentV1, fn: () => T): T {
+  const value = paths(repoRoot, intent.campaign_id, intent.group_number);
+  return withExclusiveDirectoryLock(value.root, `${value.lock}-publication`, fn, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+/** BRC6 serializes snapshot staging with seal creation; only a budget terminal freezes the staged source set. */
+export function withIssueBatchSealSources<T>(repoRoot: string, intent: IssueBatchIntentV1, sources: Record<string, unknown>, readTerminal: () => T | null, sealTerminal: () => T): T {
+  const value = paths(repoRoot, intent.campaign_id, intent.group_number);
+  return withExclusiveDirectoryLock(value.root, `${value.lock}-seal`, () => {
+    const terminal = readTerminal();
+    const existing = readIssueBatchAdoptionArtifact(repoRoot, intent, 'seal-sources');
+    if (terminal !== null) {
+      if (!existing || canonicalMessageBytes(existing) !== canonicalMessageBytes(sources)) fail('issue_batch_conflict', 'sealed provider source revisions differ or are unavailable');
+      return terminal;
+    }
+    // A failed or interrupted pre-seal attempt grants no authority over later authorized authoring.
+    if (existing) { unlinkSync(adoptionArtifactPath(value, 'seal-sources')); fsyncDirectory(join(value.group, 'adoption')); }
+    persistIssueBatchAdoptionArtifact(repoRoot, intent, 'seal-sources', sources);
+    return sealTerminal();
+  }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
