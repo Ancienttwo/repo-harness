@@ -10,6 +10,7 @@ import {
   type IssueAuthoringSessionV1,
   type IssueBatchIntentV1,
 } from '../../core/automation/issue-batch';
+import { canonicalMessageBytes, canonicalMessageDigest } from '../../core/messages/mechanics';
 import { developmentCampaignStoreRoot } from './development-campaign-store';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
@@ -33,7 +34,12 @@ function paths(repoRoot: string, campaignId: string, groupNumber: number) {
   const root = resolve(developmentCampaignStoreRoot(repoRoot));
   const campaign = join(root, createHash('sha256').update(safeSegment(campaignId, 'campaign id'), 'utf8').digest('hex'));
   const group = join(campaign, 'groups', groupSegment(groupNumber));
-  return { root, campaign, group, intent: join(group, 'intent.json'), sessions: join(group, 'authoring-sessions'), lock: `${relative(root, group)}/locks/authoring.lock` };
+  const heartbeat = join(group, 'heartbeat');
+  return {
+    root, campaign, group, intent: join(group, 'intent.json'), sessions: join(group, 'authoring-sessions'), heartbeat,
+    reservations: join(heartbeat, 'reservations'), results: join(heartbeat, 'results'), receipts: join(heartbeat, 'receipts'),
+    lock: `${relative(root, group)}/locks/authoring.lock`,
+  };
 }
 function fsyncDirectory(path: string): void { const fd = openSync(path, constants.O_RDONLY); try { fsyncSync(fd); } finally { closeSync(fd); } }
 function ensure(root: string, target: string): void {
@@ -89,6 +95,7 @@ export function readIssueBatchIntent(repoRoot: string, campaignId: string, group
   const value = paths(repoRoot, campaignId, groupNumber);
   if (!/^sha256:[0-9a-f]{64}$/u.test(intentSha256)) fail('issue_batch_unsafe', 'intent digest is invalid');
   const intent = parse(value.intent, validateIssueBatchIntent, canonicalIssueBatchIntentBytes);
+  if (intent.campaign_id !== campaignId || intent.group_number !== groupNumber) fail('issue_batch_not_found', 'issue batch intent is stored under another campaign group');
   if (intent.intent_sha256 !== intentSha256) fail('issue_batch_not_found', 'issue batch intent digest does not name the group intent');
   return intent;
 }
@@ -101,6 +108,19 @@ export function persistIssueAuthoringSession(repoRoot: string, campaignId: strin
     immutable(join(value.sessions, `${session.session_sha256.slice('sha256:'.length)}.json`), Buffer.from(`${canonicalIssueAuthoringSessionBytes(session)}\n`, 'utf8'));
     return session;
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+export function listIssueAuthoringSessions(repoRoot: string, campaignId: string, groupNumber: number, intentSha256?: string): readonly IssueAuthoringSessionV1[] {
+  const value = paths(repoRoot, campaignId, groupNumber);
+  if (!existsSync(value.sessions)) return Object.freeze([]);
+  const sessions = readdirSync(value.sessions, { withFileTypes: true }).map((entry) => {
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('issue_batch_unsafe', `unexpected authoring session entry: ${entry.name}`);
+    const session = parse(join(value.sessions, entry.name), validateIssueAuthoringSession, canonicalIssueAuthoringSessionBytes);
+    if (entry.name !== `${session.session_sha256.slice('sha256:'.length)}.json`) fail('issue_batch_conflict', 'authoring session filename does not bind its immutable content');
+    return session;
+  }).filter((session) => intentSha256 === undefined || session.intent_sha256 === intentSha256)
+    .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.session_sha256.localeCompare(right.session_sha256));
+  return Object.freeze(sessions);
 }
 
 export function assertIssueAuthoringSourceSession(
@@ -124,4 +144,51 @@ export function assertIssueAuthoringSourceSession(
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 
+export type IssueBatchJournalCategory = 'reservations' | 'results' | 'receipts';
+
+function journalDirectory(value: ReturnType<typeof paths>, category: IssueBatchJournalCategory): string {
+  if (category === 'reservations') return value.reservations;
+  if (category === 'results') return value.results;
+  if (category === 'receipts') return value.receipts;
+  return fail('issue_batch_unsafe', 'journal category is invalid');
+}
+
+/** The campaign step owns and validates the canonical record schema; this store only supplies atomic immutable bytes. */
+export function persistIssueBatchJournalRecord(repoRoot: string, campaignId: string, groupNumber: number, category: IssueBatchJournalCategory, digest: string, canonicalBytes: string): string {
+  if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) fail('issue_batch_unsafe', 'journal digest is invalid');
+  if (!canonicalBytes.endsWith('\n')) fail('issue_batch_unsafe', 'journal bytes must be canonical and newline terminated');
+  const value = paths(repoRoot, campaignId, groupNumber);
+  return withExclusiveDirectoryLock(value.root, value.lock, () => {
+    ensure(value.root, value.campaign); ensure(value.root, value.group); ensure(value.root, value.heartbeat);
+    const directory = journalDirectory(value, category); ensure(value.root, directory);
+    const target = join(directory, `${digest.slice('sha256:'.length)}.json`);
+    immutable(target, Buffer.from(canonicalBytes, 'utf8'));
+    return target;
+  }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+export function listIssueBatchJournalRecords(repoRoot: string, campaignId: string, groupNumber: number, category: IssueBatchJournalCategory): readonly unknown[] {
+  const value = paths(repoRoot, campaignId, groupNumber);
+  const directory = journalDirectory(value, category);
+  if (!existsSync(directory)) return Object.freeze([]);
+  return Object.freeze(readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('issue_batch_unsafe', `unexpected heartbeat journal entry: ${entry.name}`);
+    let parsed: unknown;
+    try { parsed = JSON.parse(regular(join(directory, entry.name)).toString('utf8')); }
+    catch (error) { return fail('issue_batch_conflict', `heartbeat journal record is malformed: ${entry.name}`, error); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) fail('issue_batch_conflict', `heartbeat journal record is not an object: ${entry.name}`);
+    const value = parsed as Record<string, unknown>;
+    const digestField = category === 'reservations' ? 'reservation_sha256' : category === 'results' ? 'result_sha256' : 'step_receipt_sha256';
+    const storedDigest = value[digestField];
+    if (typeof storedDigest !== 'string') fail('issue_batch_conflict', `heartbeat journal record has no ${digestField}: ${entry.name}`);
+    const { [digestField]: _digest, ...basis } = value;
+    if (canonicalMessageDigest(basis) !== storedDigest || entry.name !== `${storedDigest.slice('sha256:'.length)}.json`) {
+      fail('issue_batch_conflict', `heartbeat journal record content identity is invalid: ${entry.name}`);
+    }
+    if (!regular(join(directory, entry.name)).equals(Buffer.from(`${canonicalMessageBytes(value)}\n`, 'utf8'))) {
+      fail('issue_batch_conflict', `heartbeat journal record is non-canonical: ${entry.name}`);
+    }
+    return parsed;
+  }));
+}
 export function issueBatchGroupStoreRoot(repoRoot: string, campaignId: string, groupNumber: number): string { return paths(repoRoot, campaignId, groupNumber).group; }

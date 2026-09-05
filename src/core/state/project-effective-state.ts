@@ -23,7 +23,7 @@ import type {
 } from './types';
 
 const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
-  lite: 'brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)',
+  lite: 'brief -> edit -> targeted test; no workflow artifacts are required for the currently observed scope. User-requested planning is allowed',
   standard: 'at most one active plan artifact; no contract, notes, or todos scaffolding beyond it',
   strict: 'full envelope: plan, contract, notes, and checks as required',
 };
@@ -383,7 +383,9 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     profile_signals: input.riskResolution.ok ? input.riskResolution.signals : null,
     allowed_paths: allowedPaths,
     next_action: nextAction,
-    guidance: workflowProfile ? CEREMONY_GUIDANCE[workflowProfile] : null,
+    guidance: workflowProfile
+      ? `${CEREMONY_GUIDANCE[workflowProfile]}. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.`
+      : null,
     blockers,
     stale_sources: uniqueSorted(staleSources),
     conflicting_sources: uniqueSorted(conflictingSources),

@@ -70,6 +70,7 @@ export interface ContinueIssueBatchAuthoringInput extends StartIssueBatchAuthori
   readonly operation: 'fill_missing' | 'edit_issue';
   readonly requested_slots: readonly IssueBatchSlot[];
   readonly provider_issue_id?: string;
+  readonly provider_issue_url?: string;
 }
 
 function fail(code: GptProIssueAuthoringError['code'], message: string): never { throw new GptProIssueAuthoringError(code, message); }
@@ -83,12 +84,25 @@ function markerExamples(intent: Pick<IssueBatchIntentV1, 'campaign_id' | 'group_
   return slots.map((slot) => `Slot ${slot}:\n${renderIssueBatchMarker(intent.campaign_id, intent.group_number, slot)}`).join('\n\n');
 }
 
-export function buildIssueAuthoringPrompt(intent: Omit<IssueBatchIntentV1, 'prompt_sha256' | 'intent_sha256'>, operation: IssueAuthoringOperation, requestedSlots: readonly IssueBatchSlot[], providerIssueId: string | null): string {
+function providerIssueUrl(value: string | undefined, repository: string): string | null {
+  const input = value?.trim();
+  if (!input) return null;
+  let parsed: URL;
+  try { parsed = new URL(input); }
+  catch { return null; }
+  const escapedRepository = repository.split('/').map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('/');
+  const issuePath = new RegExp(`^/${escapedRepository}/issues/[1-9]\\d*$`, 'u');
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.port !== '' || parsed.username !== '' || parsed.password !== ''
+    || parsed.search !== '' || parsed.hash !== '' || !issuePath.test(parsed.pathname)) return null;
+  return parsed.toString();
+}
+
+export function buildIssueAuthoringPrompt(intent: Omit<IssueBatchIntentV1, 'prompt_sha256' | 'intent_sha256'>, operation: IssueAuthoringOperation, requestedSlots: readonly IssueBatchSlot[], providerIssueId: string | null, providerIssueUrl: string | null): string {
   const action = operation === 'initial'
     ? `Create exactly one GitHub Issue for each listed slot: ${requestedSlots.join(', ')}.`
     : operation === 'fill_missing'
       ? `In the existing authoring conversation, create Issues only for these missing slots: ${requestedSlots.join(', ')}. Do not edit or duplicate any other slot.`
-      : `Edit existing GitHub Issue ${providerIssueId} so its body has the exact marker for slot ${requestedSlots[0]}. Do not create a new Issue.`;
+      : `Edit only the GitHub Issue at exact URL ${providerIssueUrl}, whose opaque GitHub database ID is exactly ${providerIssueId}. Read that exact URL first and verify its database ID is exactly ${providerIssueId}; if it differs or cannot be verified, stop without editing. Update its body with the exact marker for slot ${requestedSlots[0]}. Do not create a new Issue.`;
   return [
     'You are the GPT Pro Issue Author for a bounded repo-harness repair campaign.',
     `Target GitHub repository: ${intent.provider_repository}`,
@@ -99,7 +113,7 @@ export function buildIssueAuthoringPrompt(intent: Omit<IssueBatchIntentV1, 'prom
     'You may read that exact commit and create the requested Issues, or edit only the explicitly named Issue. Do not change code, branches, PRs, labels, milestones, assignees, or close Issues.',
     'The title prefix is display-only. The body marker below is the sole slot authority. Copy it exactly; do not add hashes, digests, or extra keys inside the marker.',
     markerExamples(intent, requestedSlots),
-    'Each Issue body must also state the audit baseline and contain strict JSON metadata with protocol=1, kind=repo-harness-campaign-issue-metadata, issue_kind, primary_capability, priority, depends_on_slots, and suspected_paths.',
+    'Each Issue body must also state the audit baseline and contain exactly one fenced ```json metadata object with protocol=1, kind=repo-harness-campaign-issue-metadata, issue_kind, primary_capability, priority, depends_on_slots, and suspected_paths.',
     'Do not claim success for an Issue you did not observe GitHub create or update. Return a concise action log; the local controller will independently read GitHub.',
   ].join('\n\n');
 }
@@ -149,7 +163,7 @@ export async function startIssueBatchAuthoring<Result extends IssueAuthoringBrow
     chrome_profile_directory: value.authorization.campaign!.chrome_profile_directory,
     created_at: createdAt, expires_at: value.authorization.expires_at,
   };
-  const prompt = buildIssueAuthoringPrompt({ ...draft, protocol: 1, kind: 'repo-harness-issue-batch-intent' }, 'initial', slots, null);
+  const prompt = buildIssueAuthoringPrompt({ ...draft, protocol: 1, kind: 'repo-harness-issue-batch-intent' }, 'initial', slots, null, null);
   const intent = buildIssueBatchIntent({ ...draft, prompt_sha256: messageSha256(prompt) });
   persistIssueBatchIntent(value.repoRoot, intent);
   const result = await deps.consult(browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input));
@@ -166,9 +180,10 @@ export async function continueIssueBatchAuthoring<Result extends IssueAuthoringB
   assertIssueAuthoringSourceSession(value.repoRoot, input.campaign_id, input.group_number, intent.intent_sha256, input.source_session_ref);
   const requested = exactSlots(input.requested_slots, intent);
   const providerIssueId = input.operation === 'edit_issue' ? input.provider_issue_id?.trim() || null : null;
-  if (input.operation === 'edit_issue' && (requested.length !== 1 || providerIssueId === null)) fail('issue_authoring_invalid', 'edit_issue requires one slot and provider_issue_id');
-  if (input.operation === 'fill_missing' && input.provider_issue_id !== undefined) fail('issue_authoring_invalid', 'fill_missing forbids provider_issue_id');
-  const prompt = buildIssueAuthoringPrompt(intent, input.operation, requested, providerIssueId);
+  const locator = input.operation === 'edit_issue' ? providerIssueUrl(input.provider_issue_url, intent.provider_repository) : null;
+  if (input.operation === 'edit_issue' && (requested.length !== 1 || providerIssueId === null || locator === null)) fail('issue_authoring_invalid', 'edit_issue requires one slot, provider_issue_id, and an exact provider_issue_url');
+  if (input.operation === 'fill_missing' && (input.provider_issue_id !== undefined || input.provider_issue_url !== undefined)) fail('issue_authoring_invalid', 'fill_missing forbids provider_issue_id and provider_issue_url');
+  const prompt = buildIssueAuthoringPrompt(intent, input.operation, requested, providerIssueId, locator);
   const result = await deps.followup({
     ...browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input),
     sessionId: input.source_session_ref,

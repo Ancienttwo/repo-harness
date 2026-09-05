@@ -44,6 +44,26 @@ describe('development campaign CLI', () => {
     expect(result.stdout).toContain('status');
     expect(result.stdout).toContain('author');
     expect(result.stdout).toContain('author-followup');
+    expect(result.stdout).toContain('step');
+  });
+
+  test('requires exact persisted intent and stable step identity', () => {
+    const help = run(['campaign', 'step', '--help']);
+    expect(help.status, help.stderr).toBe(0);
+    expect(help.stdout).toContain('--intent-sha256');
+    expect(help.stdout).toContain('--idempotency-key');
+    const missing = run(['campaign', 'step', '--campaign-id', 'campaign-cli', '--group-number', '1']);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain('--intent-sha256');
+  });
+
+  test('requires an exact Issue URL for an edit author-followup request', () => {
+    const f = fixture();
+    const request = join(f.root, 'author-followup.json');
+    writeFileSync(request, `${JSON.stringify({ campaign_id: 'campaign-cli', group_number: 1, intent_sha256: 'sha256:abc', operation: 'edit_issue', provider_issue_id: '201', requested_slots: ['01'], source_session_ref: 'session-1' })}\n`);
+    const result = run(['campaign', 'author-followup', '--repo', f.root, '--request', request], f.env);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('author follow-up request fields are invalid');
   });
 
   test('starts from one stored ProgramAuthorizationV1 and reads the rebuilt status', () => {

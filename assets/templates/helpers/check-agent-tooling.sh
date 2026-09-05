@@ -252,6 +252,8 @@ function run(command, args, options = {}) {
   return {
     ok: result.status === 0 && !result.error,
     status: result.status,
+    signal: result.signal ?? null,
+    error_code: result.error?.code ?? null,
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
     error: result.error ? String(result.error.message || result.error) : "",
@@ -1580,12 +1582,26 @@ function resolveCodeGraphBinary() {
   };
 }
 
-function codeGraphVersion(binPath) {
+function codeGraphProbe(binPath, args, timeoutMs, probes) {
+  const result = run(binPath, args, { timeoutMs });
+  probes.push({
+    bin_path: binPath,
+    args,
+    status: result.status,
+    signal: result.signal,
+    error: result.error,
+    error_code: result.error_code,
+    timed_out: result.timed_out,
+  });
+  return result;
+}
+
+function codeGraphVersion(binPath, probes) {
   if (!binPath) return null;
-  const result = run(binPath, ["--version"], { timeoutMs: 1000 });
+  const result = codeGraphProbe(binPath, ["--version"], 1000, probes);
   if (result.ok) return result.stdout.trim() || null;
   if (result.timed_out) {
-    const retry = run(binPath, ["--version"], { timeoutMs: 1000 });
+    const retry = codeGraphProbe(binPath, ["--version"], 1000, probes);
     if (retry.ok) return retry.stdout.trim() || null;
   }
   return null;
@@ -1594,9 +1610,10 @@ function codeGraphVersion(binPath) {
 function detectCodeGraph() {
   const resolution = resolveCodeGraphBinary();
   const cliPresent = Boolean(resolution.bin_path);
-  const version = codeGraphVersion(resolution.bin_path);
+  const probes = [];
+  const version = codeGraphVersion(resolution.bin_path, probes);
   const globalVersion = resolution.global_bin_path && resolution.global_bin_path !== resolution.bin_path
-    ? codeGraphVersion(resolution.global_bin_path)
+    ? codeGraphVersion(resolution.global_bin_path, probes)
     : resolution.source === "global"
       ? version
       : null;
@@ -1612,7 +1629,7 @@ function detectCodeGraph() {
   }
 
   const selectedMcpConfigured = SELECTED_HOSTS.every((host) => mcpHosts[host]?.status === "configured");
-  const statusResult = cliPresent ? run(resolution.bin_path, ["status", "."], { timeoutMs: 1500 }) : null;
+  const statusResult = cliPresent ? codeGraphProbe(resolution.bin_path, ["status", "."], 1500, probes) : null;
   const statusOutput = `${statusResult?.stdout || ""}\n${statusResult?.stderr || ""}`;
   const projectIndexStatus = cliPresent ? parseCodeGraphProjectStatus(statusOutput) : "unavailable";
   const indexInitialized = fs.existsSync(path.join(REPO_ROOT, ".codegraph"))
@@ -1661,6 +1678,7 @@ function detectCodeGraph() {
     local_bin_path: resolution.local_bin_path,
     global_bin_path: resolution.global_bin_path,
     global_fallback_used: resolution.global_fallback_used,
+    probes,
     version,
     local_version: localVersion,
     global_version: globalVersion,

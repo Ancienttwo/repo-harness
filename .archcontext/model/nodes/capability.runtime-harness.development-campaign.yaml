@@ -12,14 +12,19 @@ responsibilities:
   - Serialize mutation across processes and treat identical replay as idempotent while rejecting conflicting replay.
   - Persist an exact repository/ref/base-SHA IssueBatchIntent before every initial GPT Pro browser call, then keep fill and edit follow-ups bound to that immutable intent and session lineage.
   - Keep Issue creation and body edits inside the secret-scanned GPT Pro browser lane; local code may only observe provider state and must never infer success from browser completion or timeout.
-  - Keep Task, Lease, Claim, Work Graph, acceptance, publication, merge, and provider mutation authority in their existing capabilities.
+  - Reconcile complete provider snapshots against exact body markers and strict metadata; unavailable, incomplete, ambiguous and drifted sources fail closed.
+  - Reserve every heartbeat mutation durably before invocation and separate orphan reason comments from not_planned closure across steps.
+  - Keep Task, Lease, Claim, Work Graph, acceptance, publication and merge authority in their existing capabilities.
 source:
   include:
     - "src/core/automation/development-campaign.ts"
     - "src/core/automation/issue-batch.ts"
+    - "src/core/automation/issue-batch-reconcile.ts"
     - "src/effects/automation/development-campaign-policy.ts"
     - "src/effects/automation/development-campaign-store.ts"
     - "src/effects/automation/issue-batch-store.ts"
+    - "src/effects/automation/issue-batch-observer.ts"
+    - "src/effects/automation/campaign-step.ts"
     - "src/effects/automation/gpt-pro-issue-authoring.ts"
     - "src/cli/commands/campaign.ts"
   entrypoints:
@@ -51,6 +56,11 @@ source:
             - id: sink.development-campaign.issue-authoring-followup
               path: "src/effects/automation/gpt-pro-issue-authoring.ts"
               symbol: "continueIssueBatchAuthoring"
+        - name: "runCampaignHeartbeatStep"
+          sinks:
+            - id: sink.development-campaign.step
+              path: "src/effects/automation/campaign-step.ts"
+              symbol: "runCampaignStep"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
@@ -58,4 +68,5 @@ extensions:
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/unit/development-campaign-core.test.ts tests/unit/development-campaign-policy.test.ts tests/unit/issue-batch.test.ts tests/effects/development-campaign-store.test.ts tests/effects/gpt-pro-issue-authoring.test.ts tests/cli/development-campaign.test.ts --timeout 60000"
+    - "bun test tests/unit/issue-batch-reconcile.test.ts tests/effects/issue-batch-observer.test.ts tests/effects/campaign-step.test.ts --timeout 60000"
     - "bun run check:type"

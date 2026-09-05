@@ -94,18 +94,17 @@ export function projectRefactorMaterialization(input: ProjectRefactorMaterializa
 
   input.units.forEach((unit, index) => exact(unit, ['recommendationId', 'architectureNodeId', 'taskId', 'taskText', 'acceptanceText', 'planPath', 'planBytes', 'kind', 'primaryCapability', 'dependsOnWorkPackageIds', 'priority', 'requiredAcceptance', 'rollbackBoundary', 'retryPolicy'], `units[${index}]`));
   input.artifacts.forEach((artifact, index) => { exact(artifact, ['path', 'bytes'], `artifacts[${index}]`); if (typeof artifact.bytes !== 'string') invalid(`artifacts[${index}].bytes must be a string`); });
-  unique(input.units.map((unit) => unit.recommendationId), 'unit recommendationId');
   unique(input.units.map((unit) => unit.architectureNodeId), 'unit architectureNodeId');
   unique(input.units.map((unit) => unit.taskId), 'unit taskId');
   unique(input.units.map((unit) => unit.planPath), 'unit planPath');
   unique(input.artifacts.map((artifact) => artifact.path), 'artifact path');
   const artifactByPath = new Map(input.artifacts.map((artifact) => [safePath(artifact.path, 'artifact.path'), artifact]));
-  const bindingByRecommendation = new Map(program.bindings.map((binding) => [binding.recommendationId, binding]));
+  const bindingByTaskRef = new Map(program.bindings.map((binding) => [binding.taskRef, binding]));
   const workPackageIds = new Set(program.bindings.map((binding) => binding.workPackageId));
 
   const workPackages = input.units.map((unit) => {
-    const binding = bindingByRecommendation.get(unit.recommendationId);
-    if (!binding) invalid(`unit ${unit.recommendationId} has no binding`);
+    const binding = bindingByTaskRef.get(`${input.sprintPath}#${unit.taskId}`);
+    if (!binding || binding.recommendationId !== unit.recommendationId) invalid(`unit ${unit.recommendationId} has no binding`);
     if (!program.affectedNodeIds.includes(unit.architectureNodeId)) invalid(`unit ${unit.recommendationId} names an unaffected architecture node`);
     const expectedBoundary = program.route === 'cross_module_refactor' ? 'cross_module_stage' : program.route === 'architecture_intervention' ? 'architecture_intervention' : 'module';
     if (binding.executionBoundary !== expectedBoundary) invalid(`binding ${binding.recommendationId} has the wrong execution boundary`);

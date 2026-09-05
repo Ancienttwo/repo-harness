@@ -21,8 +21,23 @@ NEW_FEATURE_FLOW:
 BUG_FIX_FLOW:
   1. Reproduce with test
   2. Fix root cause
-  3. Re-run full verification
+  3. Run the regression guard and affected focused checks
+  4. Expand verification only for an explicit acceptance requirement or an observed coverage gap
 ```
+
+#### Verification Scope
+
+Use the project's required checks and the active contract as the verification
+scope. A small code/test edit does not by itself require the full suite. Before
+adding a full-suite criterion, identify the cross-module risk that named focused
+checks cannot cover, or the explicit release requirement. Freeze code before
+expensive acceptance, declare eligible deterministic criteria in `criterion_reuse`,
+and consume current subject-bound evidence across worker, review, and closeout.
+Do not duplicate test coverage across `tests_pass` and `commands_succeed`.
+After a full pass, bounded follow-up edits use the recorded baseline plus focused
+delta checks. The parent revises final criteria when the full-suite trigger no
+longer applies; a cache miss or changed hash alone does not require another full
+run. Never claim the old full pass covers the new subject.
 
 #### Artifact Hygiene
 

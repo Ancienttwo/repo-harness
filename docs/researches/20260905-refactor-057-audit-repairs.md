@@ -69,3 +69,7 @@
 - 本轮 final-main 回归只证明较早 merge 的测量/完成边界；测试使用真实持久化 candidate receipt，不通过改写已物化 Program 伪造多 Work Package 的成功。跨模块 materialization 的 live E2E 尚未闭环。
 
 下一切片应修订 recommendation → Work Package 的一对多执行映射，并贯通 materialization、execution-binding、final-main resolution 后再跑现有 activation canary 集。保持 activation off，避免把已修复的 module/shadow 边界等同于整个跨模块功能已激活。
+
+## Node deadline 测试的空 PATH 边界
+
+Node runtime probe 会继承测试指定的空 `PATH`。其 fake Node 脚本若使用相对命令 `sleep`，Linux 上会跳过预期延迟并立即输出有效版本，令 deadline 回归失真。该 fixture 使用 `/bin/sleep` 后，原有真实子进程超时断言和 provider 文件的 23 项测试通过；运行时代码未变。

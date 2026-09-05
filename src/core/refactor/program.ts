@@ -104,7 +104,14 @@ export function buildRefactorProgram(input: ProgramBuildInput): RefactorProgramV
   if ((input.proposalDigest === null) !== (proposalAuthor === null) || (input.proposalDigest === null) !== (input.scale === null)) invalid('proposal, author, and scale presence must agree');
   const affectedNodeIds = input.affectedNodeIds.map((entry, index) => text(entry, `affectedNodeIds[${index}]`, /^[a-z][a-z0-9.-]{1,255}$/u)); unique(affectedNodeIds, 'affectedNodeIds');
   const bindings = input.bindings.map(binding);
-  for (const field of ['recommendationId', 'recommendationDigest', 'candidateAlias', 'workPackageId', 'taskRef'] as const) unique(bindings.map((entry) => entry[field]), `bindings.${field}`);
+  for (const field of ['workPackageId', 'taskRef'] as const) unique(bindings.map((entry) => entry[field]), `bindings.${field}`);
+  const recommendations = new Map<string, RefactorProgramBindingV1>();
+  for (const entry of bindings) {
+    const previous = recommendations.get(entry.recommendationId);
+    if (previous && (previous.recommendationDigest !== entry.recommendationDigest || previous.candidateAlias !== entry.candidateAlias)) invalid('repeated recommendation identity must have a consistent fingerprint and alias');
+    recommendations.set(entry.recommendationId, entry);
+  }
+  for (const field of ['recommendationDigest', 'candidateAlias'] as const) unique([...recommendations.values()].map((entry) => entry[field]), `recommendations.${field}`);
   const basis = {
     protocol: REFACTOR_PROGRAM_PROTOCOL,
     programId: text(input.programId, 'programId', /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u),
@@ -125,6 +132,13 @@ export function validateRefactorProgram(value: unknown): RefactorProgramV1 {
   const built = buildRefactorProgram(input as unknown as ProgramBuildInput);
   if (input.programDigest !== built.programDigest) invalid('programDigest is stale');
   return built;
+}
+
+/** Task identity is owned by the canonical Sprint; Program only references it. */
+export function refactorProgramBindingForTask(program: RefactorProgramV1, recommendationId: string, taskId: string): RefactorProgramBindingV1 | undefined {
+  if (!/^[a-f0-9]{64}$/u.test(taskId)) return undefined;
+  const matches = program.bindings.filter((entry) => entry.recommendationId === recommendationId && entry.taskRef.endsWith(`#${taskId}`));
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 function same(left: readonly string[], right: readonly string[]): boolean {

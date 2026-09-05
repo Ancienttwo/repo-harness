@@ -7,7 +7,7 @@ import type { RefactorVerificationRequestV1 } from 'archctx-contracts';
 
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { buildRefactorCandidateVerificationReceipt, canonicalRefactorCandidateVerificationReceiptBytes, validateRefactorCandidateVerificationReceipt, type RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
-import { validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
+import { refactorProgramBindingForTask, validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
 import { assertCanonicalSprintTaskIdsUniqueAtCommit } from '../state/coordination-canonical-source';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -86,7 +86,7 @@ export async function verifyRefactorCandidate(input: {
   else if (status.current.state !== 'verifying') fail('refactor_candidate_verification_conflict', `program is ${status.current.state}, not executing or verifying`);
   const head = execFileSync('git', ['rev-parse', '--verify', `${input.candidate_head_sha}^{commit}`], { cwd: root, encoding: 'utf8' }).trim();
   if (head !== input.candidate_head_sha) fail('refactor_candidate_verification_conflict', 'candidate head is not an exact commit');
-  const binding = program.bindings.find((entry) => entry.recommendationId === input.recommendation_id); if (!binding) fail('refactor_candidate_verification_conflict', 'recommendation is not bound by the Program');
+  const binding = refactorProgramBindingForTask(program, input.recommendation_id, input.task_id); if (!binding) fail('refactor_candidate_verification_conflict', 'recommendation is not bound by the Program');
   const contractPath = realpathSync(resolve(root, input.contract_path)); const contractRelative = relative(root, contractPath).replaceAll('\\', '/');
   if (!contractRelative || contractRelative.startsWith(`..${sep}`) || contractRelative !== input.contract_path || !lstatSync(contractPath).isFile() || lstatSync(contractPath).isSymbolicLink()) fail('refactor_candidate_verification_conflict', 'contract path is not an exact regular repository file');
   const contractBytes = readFileSync(contractPath); const contractSha = sha(contractBytes);
@@ -104,7 +104,10 @@ export async function verifyRefactorCandidate(input: {
   let verifyStatus: 'passed' | 'verify_stage_unavailable' = 'passed'; let verifyDigest: string | null;
   try {
     const result = (dependencies.verify_candidate ?? ((value, repo) => runRefactorVerify(value, repo, { ...input.provider_options, env: input.env })))(request, root);
-    if (result.disposition !== 'resolved' || result.evidence === null || result.evidence.recommendationId !== binding.recommendationId || result.evidence.verifiedHeadSha !== head) fail('refactor_candidate_verification_failed', 'candidate refactor verification did not resolve the bound recommendation');
+    // A task can close its own cutover before the aggregate recommendation improves.
+    const staged = program.bindings.filter((entry) => entry.recommendationId === binding.recommendationId).length > 1;
+    const admitted = result.disposition === 'resolved' || (staged && (result.disposition === 'partially_resolved' || result.disposition === 'not_improved'));
+    if (!admitted || result.evidence === null || result.evidence.recommendationId !== binding.recommendationId || result.evidence.verifiedHeadSha !== head) fail('refactor_candidate_verification_failed', 'candidate refactor verification did not pass the bound recommendation measurement');
     verifyDigest = sha(canonicalize(result as never));
   } catch (error) {
     if (!(error instanceof RefactorProviderError) || error.code !== 'refactor_provider_version_mismatch') throw error;

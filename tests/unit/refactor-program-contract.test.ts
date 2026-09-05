@@ -10,6 +10,16 @@ const base = () => ({
 });
 
 describe('Module 6 RefactorProgramV1', () => {
+  test('fans one exact recommendation out to distinct Work Packages without changing its authority', () => {
+    const first = base().bindings[0]!;
+    const second = { ...first, workPackageId: 'refactor-program-c02', taskRef: 'Refactor C02' };
+    const input = { ...base(), scale: 'cross_module' as const, route: 'cross_module_refactor' as const, routeReasonCodes: ['multi-node-scope'] as const, bindings: [first, second] };
+    expect(validateRefactorProgram(buildRefactorProgram(input)).bindings).toHaveLength(2);
+    expect(() => buildRefactorProgram({ ...input, bindings: [first, { ...second, recommendationDigest: D('5') }] })).toThrow('consistent');
+    expect(() => buildRefactorProgram({ ...input, bindings: [first, { ...second, candidateAlias: 'C02' }] })).toThrow('consistent');
+    expect(() => buildRefactorProgram({ ...input, bindings: [first, { ...second, recommendationId: 'rec-2' }] })).toThrow('unique');
+  });
+
   test('seals the PRD field set without recommendation lifecycle state', () => {
     const program = buildRefactorProgram(base());
     expect(validateRefactorProgram(JSON.parse(canonicalRefactorProgramBytes(program)))).toEqual(program);

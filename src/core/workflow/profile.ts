@@ -136,6 +136,17 @@ function normalizedTokens(value: string): ReadonlySet<string> {
   );
 }
 
+function pathRiskTokens(path: string): ReadonlySet<string> {
+  const normalized = path.replaceAll('\\', '/');
+  // A test basename describes the scenario under verification, not an owned
+  // runtime boundary. Retain its directories; capability and operation signals
+  // are scanned independently, including for tests of high-risk behavior.
+  const boundary = /\.(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/iu.test(normalized)
+    ? normalized.slice(0, Math.max(0, normalized.lastIndexOf('/')))
+    : normalized;
+  return normalizedTokens(boundary);
+}
+
 function intersects(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
   for (const value of left) {
     if (right.has(value)) return true;
@@ -152,7 +163,7 @@ function strictCategoriesFor(
   const operationCategory = STRICT_OPERATION_CATEGORIES[operationKind];
   if (operationCategory) categories.add(operationCategory);
 
-  const tokenSets = [...targetPaths, ...capabilityIds].map(normalizedTokens);
+  const tokenSets = [...targetPaths.map(pathRiskTokens), ...capabilityIds.map(normalizedTokens)];
   for (const category of STRICT_CATEGORY_ORDER) {
     if (category === 'destructive') continue;
     const categoryTokens = STRICT_CATEGORY_TOKENS[category];

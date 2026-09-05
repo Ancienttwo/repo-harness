@@ -8,7 +8,7 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import { projectRefactorBoard, renderRefactorBoardMarkdown, type RefactorBoardV1 } from '../../core/refactor/board';
 import { validateRefactorCandidateVerificationReceipt, type RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
 import { validateRefactorExecutionBinding, type RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
-import { validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
+import { refactorProgramBindingForTask, validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
 import { assertRefactorVerificationRequest, RefactorProviderError, type RefactorVerifyResultV1 } from '../../core/refactor/provider-contract';
 import { readRefactorRecommendationRecords, recordRefactorResolution, runRefactorVerify } from './archctx-provider';
 import { appendRefactorExecutionBinding, readRefactorExecutionBindings } from './execution-binding-store';
@@ -75,11 +75,22 @@ export async function resolveRefactorPostMerge(input: {
   const finalMain = execFileSync('git', ['rev-parse', '--verify', `${input.final_main_sha}^{commit}`], { cwd: root, encoding: 'utf8' }).trim(); if (finalMain !== input.final_main_sha || execFileSync('git', ['rev-parse', '--verify', `${status.program.target_ref}^{commit}`], { cwd: root, encoding: 'utf8' }).trim() !== finalMain) fail('refactor_post_merge_stale', 'final main is not the exact current target ref');
   if (input.items.length !== program.bindings.length) fail('refactor_post_merge_failed', 'post-merge evidence must cover every Program binding');
   assertSha256(input.final_worktree_digest, 'final_worktree_digest');
-  const expectedKeys = new Set(program.bindings.map((entry) => `${entry.recommendationId}\0${entry.recommendationDigest}`)); const suppliedKeys = new Set<string>();
-  for (const item of input.items) { const binding = validateRefactorExecutionBinding(item.binding); const key = `${binding.recommendationId}\0${binding.recommendationDigest}`; if (!expectedKeys.has(key) || suppliedKeys.has(key)) fail('refactor_post_merge_failed', 'post-merge evidence does not exactly cover Program bindings'); suppliedKeys.add(key); assertSha256(item.mergeReceiptSha256, 'mergeReceiptSha256'); }
+  const itemsByTaskRef = new Map<string, RefactorPostMergeItemV1>();
+  for (const item of input.items) {
+    const binding = validateRefactorExecutionBinding(item.binding);
+    const mapped = refactorProgramBindingForTask(program, binding.recommendationId, binding.taskId);
+    if (!mapped || mapped.recommendationDigest !== binding.recommendationDigest || itemsByTaskRef.has(mapped.taskRef)) fail('refactor_post_merge_failed', 'post-merge evidence does not exactly cover Program bindings');
+    itemsByTaskRef.set(mapped.taskRef, item); assertSha256(item.mergeReceiptSha256, 'mergeReceiptSha256');
+  }
+  const groups = new Map<string, RefactorPostMergeItemV1[]>();
+  for (const mapped of program.bindings) {
+    const item = itemsByTaskRef.get(mapped.taskRef);
+    if (!item) fail('refactor_post_merge_failed', 'post-merge evidence must cover every Program binding');
+    const group = groups.get(mapped.recommendationId) ?? []; group.push(item); groups.set(mapped.recommendationId, group);
+  }
   assertMergedInto(root, input.items.map((item) => item.binding), finalMain);
   for (const item of input.items) appendRefactorExecutionBinding({ repo_root: root, program, candidate_verification: validateRefactorCandidateVerificationReceipt(item.candidateVerification), binding: item.binding, env: input.env });
-  if (status.current.state === 'verifying') { const next = appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: input.expected_current_sha256, idempotency_key: `${input.idempotency_key}:merge`, operation: 'begin_merge', evidence_refs: input.items.map((entry) => entry.binding.bindingSha256), observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env }); status = { ...status, current: next.current, events: [...status.events, next.event] }; }
+  if (status.current.state === 'verifying') { const next = appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: input.expected_current_sha256, idempotency_key: `${input.idempotency_key}:merge`, operation: 'begin_merge', evidence_refs: program.bindings.map((entry) => itemsByTaskRef.get(entry.taskRef)!.binding.bindingSha256), observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env }); status = { ...status, current: next.current, events: [...status.events, next.event] }; }
   if (status.current.state === 'merging') { const next = appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: status.current.current_sha256, idempotency_key: `${input.idempotency_key}:measure`, operation: 'begin_post_merge_measure', evidence_refs: [finalMain], observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env }); status = { ...status, current: next.current, events: [...status.events, next.event] }; }
   if (!['post_merge_measuring', 'resolving', 'complete', 'reconciliation_required'].includes(status.current.state)) fail('refactor_post_merge_failed', `program is ${status.current.state}, not ready for post-merge measurement`);
   let providerUnavailable = false; let stale = false;
@@ -96,15 +107,19 @@ export async function resolveRefactorPostMerge(input: {
     if (existingResolutions.has(entry.recommendationId)) fail('refactor_post_merge_failed', `duplicate resolution evidence: ${entry.recommendationId}`);
     existingResolutions.set(entry.recommendationId, entry);
   }
-  for (const item of input.items) {
-    const candidate = validateRefactorCandidateVerificationReceipt(item.candidateVerification); const binding = validateRefactorExecutionBinding(item.binding);
+  for (const items of groups.values()) {
+    const binding = items[0]!.binding;
     authorityFor(binding);
-    const refs = [
-      { kind: 'task_contract' as const, locator: binding.contractPath, sha256: binding.contractSha256.slice('sha256:'.length) },
-      { kind: 'cutover_closure' as const, locator: candidate.cutoverClosureLocator, sha256: binding.cutoverClosureSha256.slice('sha256:'.length) },
-      { kind: 'acceptance_receipt' as const, locator: item.acceptanceReceiptLocator, sha256: binding.acceptanceReceiptSha256.slice('sha256:'.length) },
-      { kind: 'merge_receipt' as const, locator: item.mergeReceiptLocator, sha256: item.mergeReceiptSha256.slice('sha256:'.length) },
-    ];
+    // Program order makes retries independent of caller item ordering.
+    const refs = items.flatMap((item) => {
+      const candidate = validateRefactorCandidateVerificationReceipt(item.candidateVerification); const binding = item.binding;
+      return [
+        { kind: 'task_contract' as const, locator: binding.contractPath, sha256: binding.contractSha256.slice('sha256:'.length) },
+        { kind: 'cutover_closure' as const, locator: candidate.cutoverClosureLocator, sha256: binding.cutoverClosureSha256.slice('sha256:'.length) },
+        { kind: 'acceptance_receipt' as const, locator: item.acceptanceReceiptLocator, sha256: binding.acceptanceReceiptSha256.slice('sha256:'.length) },
+        { kind: 'merge_receipt' as const, locator: item.mergeReceiptLocator, sha256: item.mergeReceiptSha256.slice('sha256:'.length) },
+      ];
+    });
     const request: RefactorVerificationRequestV1 = { schemaVersion: 'archcontext.refactor-verification-request/v1', recommendationId: binding.recommendationId, expectedHeadSha: finalMain, expectedWorktreeDigest: input.final_worktree_digest, executionEvidenceRefs: refs };
     assertRefactorVerificationRequest(request);
     let evidence = existingResolutions.get(binding.recommendationId);

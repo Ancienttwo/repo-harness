@@ -203,6 +203,40 @@ function edit(cwd: string, filePath: string, options: { readonly env?: NodeJS.Pr
 }
 
 describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process without a subprocess', () => {
+  test('a lite snapshot yields to current standard edit guidance without weakening the plan gate', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-profile-transition-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      mkdirSync(join(cwd, 'docs'), { recursive: true });
+      writeFileSync(join(cwd, 'docs/spec.md'), '# spec\n');
+      const before = resolveEffectiveState(cwd, Date.now());
+      expect(before.workflow_profile).toBe('lite');
+      expect(edit(cwd, 'src/one.ts').exitCode).toBe(0);
+
+      const result = invoke(cwd, { tool_name: 'apply_patch', tool_input: { command: [
+        '*** Begin Patch',
+        ...['one', 'two', 'three', 'four', 'five'].flatMap((name) => [
+          `*** Add File: src/${name}.ts`, '+export {};',
+        ]),
+        '*** End Patch',
+      ].join('\n') } });
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('PlanStatusGuard');
+      expect(result.stderr).toContain('current workflow profile: standard');
+      expect(result.stderr).toContain('Earlier session guidance is a snapshot');
+      expect(result.stderr).not.toContain('advice/off');
+      expect(result.stderr).not.toContain('--execute');
+      expect(before.guidance).not.toContain('do not author plan');
+
+      const raised = edit(cwd, 'src/one.ts', { profile: 'standard' });
+      expect(raised.exitCode).toBe(2);
+      expect(raised.stderr).toContain('current workflow profile: standard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('worktree warning: primary working tree, no enforcement marker -> exit 0, warns, does not block', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-worktree-warn-')));
     try {

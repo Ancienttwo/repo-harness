@@ -16,6 +16,9 @@ import { DevelopmentCampaignPolicyError } from '../../effects/automation/develop
 import { continueIssueBatchAuthoring, startIssueBatchAuthoring, GptProIssueAuthoringError } from '../../effects/automation/gpt-pro-issue-authoring';
 import { IssueBatchStoreError } from '../../effects/automation/issue-batch-store';
 import { IssueBatchProtocolError, type IssueBatchSlot } from '../../core/automation/issue-batch';
+import { runCampaignStep, CampaignStepError } from '../../effects/automation/campaign-step';
+import { IssueBatchObserverError } from '../../effects/automation/issue-batch-observer';
+import { IssueBatchReconcileError } from '../../core/automation/issue-batch-reconcile';
 
 class CampaignArgumentError extends Error {
   readonly code = 'invalid_argument' as const;
@@ -34,7 +37,8 @@ function output(value: unknown): void {
 function outputError(error: unknown): void {
   const code = error instanceof CampaignArgumentError ? error.code
     : error instanceof DevelopmentCampaignStoreError || error instanceof DevelopmentCampaignPolicyError
-      || error instanceof GptProIssueAuthoringError || error instanceof IssueBatchStoreError || error instanceof IssueBatchProtocolError ? error.code
+      || error instanceof GptProIssueAuthoringError || error instanceof IssueBatchStoreError || error instanceof IssueBatchProtocolError
+      || error instanceof CampaignStepError || error instanceof IssueBatchObserverError || error instanceof IssueBatchReconcileError ? error.code
       : 'campaign_unavailable';
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: error instanceof Error ? error.message : String(error) })}\n`);
   process.exitCode = error instanceof CampaignArgumentError ? 2 : 1;
@@ -104,7 +108,7 @@ export async function runCampaignAuthorFollowup(raw: { readonly repo?: string; r
   const operation = request.operation;
   if (operation !== 'fill_missing' && operation !== 'edit_issue') throw new CampaignArgumentError('author follow-up operation must be fill_missing or edit_issue');
   const expected = operation === 'edit_issue'
-    ? ['campaign_id', 'group_number', 'intent_sha256', 'operation', 'provider_issue_id', 'requested_slots', 'source_session_ref']
+    ? ['campaign_id', 'group_number', 'intent_sha256', 'operation', 'provider_issue_id', 'provider_issue_url', 'requested_slots', 'source_session_ref']
     : ['campaign_id', 'group_number', 'intent_sha256', 'operation', 'requested_slots', 'source_session_ref'];
   if (JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(expected)) throw new CampaignArgumentError('author follow-up request fields are invalid');
   if (!Array.isArray(request.requested_slots) || !request.requested_slots.every((entry) => typeof entry === 'string')) throw new CampaignArgumentError('author follow-up requested_slots must be an array of strings');
@@ -113,7 +117,18 @@ export async function runCampaignAuthorFollowup(raw: { readonly repo?: string; r
     group_number: groupNumber(typeof request.group_number === 'number' ? String(request.group_number) : undefined), intent_sha256: requestString(request.intent_sha256, 'request.intent_sha256'),
     source_session_ref: requestString(request.source_session_ref, 'request.source_session_ref'), operation,
     requested_slots: request.requested_slots as IssueBatchSlot[], provider_issue_id: operation === 'edit_issue' ? requestString(request.provider_issue_id, 'request.provider_issue_id') : undefined,
+    provider_issue_url: operation === 'edit_issue' ? requestString(request.provider_issue_url, 'request.provider_issue_url') : undefined,
     dry_run: raw.dryRun === true, gitleaks_bin: raw.gitleaksBin?.trim(),
+  }, { readBinding: readBrowserBinding, followup: runBrowserFollowup }));
+}
+
+export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; readonly campaignId?: string; readonly groupNumber?: string; readonly intentSha256?: string; readonly idempotencyKey?: string }): Promise<void> {
+  output(await runCampaignStep({
+    repo_root: raw.repo?.trim() || process.cwd(),
+    campaign_id: required(raw.campaignId, '--campaign-id'),
+    group_number: groupNumber(raw.groupNumber),
+    intent_sha256: required(raw.intentSha256, '--intent-sha256'),
+    idempotency_key: required(raw.idempotencyKey, '--idempotency-key'),
   }, { readBinding: readBrowserBinding, followup: runBrowserFollowup }));
 }
 
@@ -148,5 +163,13 @@ export function buildCampaignCommand(): Command {
     .option('--gitleaks-bin <path>', 'Exact gitleaks binary used for mandatory prompt scanning')
     .option('--dry-run', 'Render the scanned follow-up without opening a browser')
     .action(async (options) => { try { await runCampaignAuthorFollowup(options); } catch (error) { outputError(error); } });
+  command.command('step')
+    .description('Observe an in-flight Issue batch and perform at most one reserved external mutation')
+    .option('--repo <path>', 'Repository root', '.')
+    .requiredOption('--campaign-id <id>', 'Development campaign id')
+    .requiredOption('--group-number <number>', 'Authorized group number')
+    .requiredOption('--intent-sha256 <digest>', 'Persisted IssueBatchIntentV1 digest')
+    .requiredOption('--idempotency-key <key>', 'Stable step identity for crash-safe replay')
+    .action(async (options) => { try { await runCampaignHeartbeatStep(options); } catch (error) { outputError(error); } });
   return command;
 }
