@@ -74,6 +74,12 @@
   fails closed at the task-lock re-check. `tests/cli/operator-serve.test.ts` now
   asserts the registry lock is *free* while a worker is stuck in a blocked
   canonical read.
+- Merging `main` made `> **Status**:` required metadata on every live canonical
+  sprint carrier (`isLiveSprint` in `src/effects/state/coordination-canonical-source.ts`).
+  Two sprint fixtures this branch authored predate that contract and omitted the
+  line, so the board collector reported `repo_board_unavailable` and the inbox
+  scan threw instead of skipping. Both fixtures now declare
+  `> **Status**: Executing`; no product behavior changed.
 - `superseded_revision_count` needs no CLI surfacing work. `repo-harness fleet
   inbox list --json` writes `JSON.stringify(result)` of the whole
   `listTaskInbox` return (`src/cli/commands/fleet.ts:857-866`), so the new

@@ -9,7 +9,7 @@
 > **Review File**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
 > **Notes File**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:2f1e7aa3b4114e80c545915aa0a3cce284048bde959b823d1e9e946121afea27`
+> **Substantive Change SHA256**: `sha256:3d4c5272cea19548e7efa049a578614ebc78445bded0150080828db4d0fd9e20`
 
 ## Why
 
