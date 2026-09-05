@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-05 22:22
+> **Related Plan**: plans/archive/plan-20260905-1421-reader-scoped-language.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260905-2222
+> **Archive Projection V1**: `plans/plan-20260905-1421-reader-scoped-language.md` => `plans/archive/plan-20260905-1421-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1421-reader-scoped-language.notes.md` => `tasks/archive/notes-20260905-2222-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1421-reader-scoped-language.contract.md` => `tasks/archive/contract-20260905-2222-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1421-reader-scoped-language.review.md` => `tasks/archive/review-20260905-2222-reader-scoped-language.md`
+
 # Task Contract: reader-scoped-language
 
 > **Status**: Active
-> **Plan**: plans/plan-20260905-1421-reader-scoped-language.md
+> **Plan**: plans/archive/plan-20260905-1421-reader-scoped-language.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-05 14:21
-> **Review File**: `tasks/reviews/20260905-1421-reader-scoped-language.review.md`
-> **Notes File**: `tasks/notes/20260905-1421-reader-scoped-language.notes.md`
+> **Review File**: `tasks/archive/review-20260905-2222-reader-scoped-language.md`
+> **Notes File**: `tasks/archive/notes-20260905-2222-reader-scoped-language.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -17,7 +27,7 @@ Shipped templates, skills, and hook advisories mix Chinese and English by accide
 
 ## Goal
 
-Agent-facing shipped surfaces are English-only, and human-facing document language is a single repo-level datum `.ai/harness/policy.json#documentation.language` (enum `en | zh-CN | follow-user`, default `en`) chosen at init, referenced (not copied) by the generated root context and document-generation rules. Follow `plans/plan-20260905-1421-reader-scoped-language.md` Captured Planning Output for exact file targets.
+Agent-facing shipped surfaces are English-only, and human-facing document language is a single repo-level datum `.ai/harness/policy.json#documentation.language` (enum `en | zh-CN | follow-user`, default `en`) chosen at init, referenced (not copied) by the generated root context and document-generation rules. Follow `plans/archive/plan-20260905-1421-reader-scoped-language.md` Captured Planning Output for exact file targets.
 
 ## Scope
 
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260905-1421-reader-scoped-language.md`
+- Source plan: `plans/archive/plan-20260905-1421-reader-scoped-language.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260905-1421-reader-scoped-language.review.md`
-- Notes file: `tasks/notes/20260905-1421-reader-scoped-language.notes.md`
+- Review file: `tasks/archive/review-20260905-2222-reader-scoped-language.md`
+- Notes file: `tasks/archive/notes-20260905-2222-reader-scoped-language.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -79,9 +89,9 @@ allowed_paths:
   - .ai/harness/workflow-contract.json
   - .ai/harness/policy.json
   - tasks/todos.md
-  - tasks/contracts/20260905-1421-reader-scoped-language.contract.md
-  - tasks/reviews/20260905-1421-reader-scoped-language.review.md
-  - tasks/notes/20260905-1421-reader-scoped-language.notes.md
+  - tasks/archive/contract-20260905-2222-reader-scoped-language.md
+  - tasks/archive/review-20260905-2222-reader-scoped-language.md
+  - tasks/archive/notes-20260905-2222-reader-scoped-language.md
   - .ai/context/capabilities.json
   - .claude/templates/
   - src/
@@ -136,7 +146,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260905-1421-reader-scoped-language.notes.md
+    - tasks/archive/notes-20260905-2222-reader-scoped-language.md
   tests_pass:
     - path: tests/ux-feature-guardrail.test.ts
     - path: tests/global-working-rules-distribution.test.ts

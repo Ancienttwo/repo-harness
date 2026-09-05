@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T18:16:38+0800 -->
+<!-- updated_at: 2026-09-05T22:22:19+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-09-05T18:16:38+0800
-> **Source Branch**: codex/brc5-heartbeat-observation-slot-reconciliation
-> **Source Commit**: c7c3af76
+> **Status**: Active
+> **Updated At**: 2026-09-05T22:22:19+0800
+> **Source Branch**: codex/reader-scoped-language-closeout
+> **Source Commit**: 71010315
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -33,18 +33,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - linked-worktree-1630334cfafa: plans/plan-20260905-1446-verification-scope-profile-consistency.md
 - linked-worktree-1630334cfafa: active-worktree owner -> self
+- linked-worktree-e25e5a5c1ff9: plans/plan-20260905-1841-campaign-authoring-budget-prerequisite.md
+- linked-worktree-e25e5a5c1ff9: active-worktree owner -> self
 - linked-worktree-4814bcc3b8ae: plans/plan-20260905-1413-fleet-board-card-containment.md
 - linked-worktree-4814bcc3b8ae: active-worktree owner -> self
 - linked-worktree-d0f3cc06ebef: plans/plan-20260905-1455-isolated-worktree-readiness.md
 - linked-worktree-d0f3cc06ebef: active-worktree owner -> self
-- linked-worktree-3c68d2f8ab1f: plans/plan-20260905-1414-operator-server-write-gate.md
-- linked-worktree-3c68d2f8ab1f: active-worktree owner -> self
-- linked-worktree-eb28736aab52: plans/plan-20260905-1414-operator-web-composer-truth.md
-- linked-worktree-eb28736aab52: active-worktree owner -> self
 - linked-worktree-72f833bf03af: plans/plan-20260905-1421-reader-scoped-language.md
 - linked-worktree-72f833bf03af: active-worktree owner -> self
-- linked-worktree-8f331a836add: plans/plan-20260905-1631-verify-context-diagnostics.md
-- linked-worktree-8f331a836add: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -60,26 +56,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=completed, current_slice=completed-20260828-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Preserve full-suite baseline `3958ce3f` (4363 pass, 0 fail, 4 skip), then run current-subject BRC5 and main-integration delta tests, type/boundary and repository integrity checks under the revised contract; do not relabel the historical full pass.
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260905-1156-brc5-heartbeat-observation-slot-reconciliation.md
- D tasks/contracts/20260905-1156-brc5-heartbeat-observation-slot-reconciliation.contract.md
- D tasks/notes/20260905-1156-brc5-heartbeat-observation-slot-reconciliation.notes.md
- D tasks/reviews/20260905-1156-brc5-heartbeat-observation-slot-reconciliation.review.md
-?? plans/archive/plan-20260905-1156-brc5-heartbeat-observation-slot-reconciliation.md
-?? tasks/archive/contract-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
-?? tasks/archive/notes-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
-?? tasks/archive/review-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
-?? tasks/archive/todo-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
+ D plans/plan-20260905-1421-reader-scoped-language.md
+ D tasks/contracts/20260905-1421-reader-scoped-language.contract.md
+ M tasks/current.md
+ D tasks/notes/20260905-1421-reader-scoped-language.notes.md
+ D tasks/reviews/20260905-1421-reader-scoped-language.review.md
+?? plans/archive/plan-20260905-1421-reader-scoped-language.md
+?? tasks/archive/contract-20260905-2222-reader-scoped-language.md
+?? tasks/archive/notes-20260905-2222-reader-scoped-language.md
+?? tasks/archive/review-20260905-2222-reader-scoped-language.md
+?? tasks/archive/todo-20260905-2222-reader-scoped-language.md
 ```
 
 ## Source Artifacts
