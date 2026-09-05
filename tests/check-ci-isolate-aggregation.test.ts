@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -40,6 +40,29 @@ function runIsolatedGate(files: string[]): RunResult {
       ...process.env,
       BUN_TEST_ISOLATE_FILES: "1",
       BUN_TEST_FILES: files.join(" "),
+      BUN_TEST_TIMEOUT_MS: "60000",
+      BUN_TEST_MAX_CONCURRENCY: "1",
+    },
+  });
+  return {
+    status: typeof result.status === "number" ? result.status : -1,
+    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+  };
+}
+
+// Discovery mode drops BUN_TEST_FILES so the loop falls through to the lib's
+// own `find tests` scan. That scan is relative to the working directory, so the
+// gate is exercised from a throwaway `tests`-shaped root while the library is
+// still sourced by absolute path.
+function runDiscoveredGate(cwd: string): RunResult {
+  const script = `set -euo pipefail; source ${JSON.stringify(LIB_PATH)}; run_bun_tests`;
+  const result = spawnSync("bash", ["-c", script], {
+    cwd,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      BUN_TEST_ISOLATE_FILES: "1",
+      BUN_TEST_FILES: "",
       BUN_TEST_TIMEOUT_MS: "60000",
       BUN_TEST_MAX_CONCURRENCY: "1",
     },
@@ -101,6 +124,26 @@ describe("ci isolate-mode test loop", () => {
       expect(result.status).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("discovers .test.tsx files alongside .test.ts files", () => {
+    const root = mkdtempSync(join(tmpdir(), "rh-ci-discover-"));
+    try {
+      const testsDir = join(root, "tests");
+      mkdirSync(testsDir);
+      writeTestFile(testsDir, "a.test.ts", true);
+      writeTestFile(testsDir, "b.test.tsx", true);
+
+      const result = runDiscoveredGate(root);
+
+      expect(result.output).toContain("[ci] test tests/a.test.ts");
+      // bun discovers .test.tsx on its own, so a loop that skips it hides those
+      // suites from the gate while they still pass locally.
+      expect(result.output).toContain("[ci] test tests/b.test.tsx");
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
