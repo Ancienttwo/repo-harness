@@ -24,9 +24,12 @@
   --paper-100: #F4EEE1;
   --paper-200: #EAE1CF;
   --paper-300: #DBCFB6;
-  /* Carrot is the write accent. Nothing in this read-only board may use it. */
-  --carrot-500: #E8742C;
+  /* Carrot is the write accent. Nothing outside the composer may paint with it.
+     The send button pairs 700/800 with --text-inverse because 600 carries the
+     brand at 3.8:1, below the AA floor for the board's one write control. */
   --carrot-600: #CC5F1C;
+  --carrot-700: #A54B15;
+  --carrot-800: #8A3E11;
   --codex-50: #E8EFFB;
   --codex-500: #2D5BB8;
   --codex-600: #244C9E;
@@ -270,9 +273,11 @@ code, .mono-value { font-family: var(--font-mono); }
 .composer__blocked { color: var(--attention-user-text); font-size: 12px; }
 .composer__error { color: var(--danger-text); font-size: 12px; }
 .composer__sent { color: var(--green-600); font-size: 12px; }
-.composer__send { color: var(--text-inverse); background: var(--carrot-600); }
-.composer__send:hover:not(:disabled) { background: var(--carrot-500); }
-.composer__send:disabled { cursor: not-allowed; }
+.composer__send { color: var(--text-inverse); background: var(--carrot-700); }
+.composer__send:hover:not(:disabled) { background: var(--carrot-800); }
+/* Opaque on purpose: the shared button's .6 alpha composites this pair against
+   the panel and drops a 5.4:1 control to 2.6:1. */
+.composer__send:disabled { cursor: not-allowed; opacity: 1; color: var(--text-muted); border-color: var(--border-default); background: var(--surface-sunken); }
 .composer__boundary { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
 
 .stage-matrix__scroll { overflow-x: auto; }

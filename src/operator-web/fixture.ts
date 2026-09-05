@@ -48,12 +48,35 @@ function mergeReadiness(
 export interface FixtureTask {
   readonly slug: string;
   readonly task_id: string;
+  readonly task_revision: string;
+  readonly claim_id: string;
   readonly task_label: string;
   readonly task_index: number;
 }
 
+/**
+ * Identity is derived from the same 16-hex seed as the task id so the fixture
+ * satisfies the production decoder without a test-side rewrite, and so a task
+ * never shares its revision digest with its id. The derivation is arithmetic
+ * rather than a hash because this module must stay free of Node `crypto`.
+ */
+function revisionDigest(seed: string): string {
+  return [...seed].reverse().join('').repeat(4);
+}
+
+function claimUuid(seed: string): string {
+  return `${seed.slice(0, 8)}-${seed.slice(8, 12)}-4${seed.slice(12, 15)}-8${seed.slice(1, 4)}-${seed.slice(4, 16)}`;
+}
+
 function fixtureTask(slug: string, seed: string, label: string, index: number): FixtureTask {
-  return { slug, task_id: seed.repeat(4), task_label: label, task_index: index };
+  return {
+    slug,
+    task_id: seed.repeat(4),
+    task_revision: revisionDigest(seed),
+    claim_id: claimUuid(seed),
+    task_label: label,
+    task_index: index,
+  };
 }
 
 export const fixtureTasks = {
@@ -65,6 +88,11 @@ export const fixtureTasks = {
   console: fixtureTask('console', 'f52c8093a6d71b4e', 'Console adoption planner dry run parity', 1),
   changed: fixtureTask('changed', '81becf4207d3a596', 'WP5 snapshot consistency propagation', 6),
   blocked: fixtureTask('blocked', '3f9a52c7e08b41d6', 'WP6 base moved during review', 7),
+  reserving: fixtureTask('reserving', '5d0c8b1e63f47a29', 'WP7 lease reservation fence audit', 8),
+  completing: fixtureTask('completing', 'c81704ba9e2d635f', 'WP8 completion receipt writeback', 9),
+  reviewing: fixtureTask('reviewing', '6b2f95d1a0c473e8', 'WP9 review publication pointer check', 10),
+  reviewingUnpublished: fixtureTask('reviewing-unpublished', '0e7c3a19f5b82d64', 'WP10 review without a publication', 11),
+  leaseUnknown: fixtureTask('lease-unknown', 'bd483f6c0a91e527', 'WP11 unreadable lease state probe', 12),
 } as const;
 
 function card(
@@ -76,10 +104,10 @@ function card(
   return {
     repository_id: repositoryId,
     task_id: task.task_id,
-    task_revision: `rev-${task.slug}`,
+    task_revision: task.task_revision,
     task_label: task.task_label,
     task_index: task.task_index,
-    claim_id: column === 'available' || column === 'done' ? null : `claim-${task.slug}`,
+    claim_id: column === 'available' || column === 'done' ? null : task.claim_id,
     generation: column === 'available' || column === 'done' ? null : 3,
     column,
     attention_owner: 'none',
@@ -152,7 +180,6 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
   ]),
   repository('repo-console', [
     card('repo-console', fixtureTasks.console, 'working', {
-      task_revision: 'r18',
       attention_owner: 'user',
       feedback: { pending_count: 2, no_progress: true, repair_actions: ['resume_same_owner', 'explicit_takeover'] },
       inbox: { ...baseInbox, unread_count: 2, addressed_to_current_claim: true },
@@ -225,11 +252,41 @@ export const degradedSnapshot: OperatorFleetSnapshotV1 = {
   source_snapshot_sha256: `sha256:${'d'.repeat(64)}`,
 };
 
+/**
+ * The lease states a healthy board reaches that `stableSnapshot` does not.
+ *
+ * Every card here carries a live `claim_id` and `generation` while its lease is
+ * something other than `bound`, which is the exact shape the composer has to
+ * describe truthfully: the server accepts claim-scoped delivery only for a
+ * bound lease, so the message still queues on the task while a holder exists.
+ * `reviewing` appears twice because a review with a publication and a review
+ * without one are different rows, not the same row with a missing field.
+ */
+const leaseStateRepositories: readonly OperatorFleetRepositoryV1[] = [
+  repository('repo-harness', [
+    card('repo-harness', fixtureTasks.reserving, 'working', { lease_state: 'reserving' }),
+    card('repo-harness', fixtureTasks.completing, 'working', { lease_state: 'completing' }),
+    card('repo-harness', fixtureTasks.reviewing, 'in_review', { lease_state: 'reviewing' }),
+    card('repo-harness', fixtureTasks.reviewingUnpublished, null, { lease_state: 'reviewing' }),
+    card('repo-harness', fixtureTasks.leaseUnknown, null, { lease_state: 'unknown' }),
+  ]),
+];
+
+export const leaseStateSnapshot: OperatorFleetSnapshotV1 = {
+  ...stableSnapshot,
+  registry_revision: `sha256:${'3'.repeat(64)}`,
+  sequence: 22,
+  repositories: leaseStateRepositories,
+  counts: { available: 0, working: 2, in_review: 1, ready_to_merge: 0, done: 0, unreadable: 0 },
+  source_snapshot_sha256: `sha256:${'7'.repeat(64)}`,
+};
+
 export const operatorFixtures = {
   stable: stableSnapshot,
   empty: emptySnapshot,
   changedDuringRead: changedDuringReadSnapshot,
   degraded: degradedSnapshot,
+  leaseStates: leaseStateSnapshot,
 } as const;
 
 /**
