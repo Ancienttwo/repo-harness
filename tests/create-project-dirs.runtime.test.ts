@@ -440,7 +440,7 @@ describe("create-project-dirs runtime smoke", () => {
       // above) and src/core/adoption/standard-plan.ts (defaultPolicy, TS-generated) are two
       // independently hardcoded sources for the same agentic_development.routing map. Assert
       // they stay identical so the maps cannot silently diverge again.
-      const tsDefaultPolicy = defaultPolicy("minimal-agentic") as Record<string, any>;
+      const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;
       expect(policy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
       expect(policy.agentic_development.due_diligence.levels).toEqual([
         "P1_GLOBAL_ARCHITECTURE",

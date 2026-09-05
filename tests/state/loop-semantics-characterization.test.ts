@@ -646,7 +646,7 @@ function captureEdit(profile: Profile): Record<string, unknown> {
       ordering: observedSourceOrder(MUTATION_GUARD_SOURCE, [
         { name: 'resolve_effective_state', marker: 'ctx.collector.getPreEditEffectiveState(allTargetPaths)' },
         { name: 'contract_scope', marker: 'const activeContract = effective?.contract?.path ?? null;' },
-        { name: 'plan_gate', marker: 'runEditPlanGate(ctx, filePath, workflowProfile);' },
+        { name: 'plan_gate', marker: 'runEditPlanGate(ctx, filePath, effective);' },
         { name: 'strict_contract', marker: '[StrictContractGuard] Strict profile requires an active contract for' },
         { name: 'strict_worktree', marker: '[StrictWorktreeGuard] Strict profile requires an isolated contract worktree for' },
       ]),

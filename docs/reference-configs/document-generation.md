@@ -28,6 +28,7 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - Do not create root `specs/`; use `docs/spec.md` for stable product intent, `interfaces/` for machine-consumed runtime boundaries, and tests for executable behavior.
 - Do not duplicate workflow rules already indexed in `docs/reference-configs/`.
 - Prefer short docs that name sources, owners, and verification commands.
+- Write human-facing documents (`docs/`, `plans/prds/`, design briefs) in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.
 - Use `plans/plan-*.md` plus contract/review/notes only for `Artifact Level: work-package` boundaries. Sprint rows, red/green steps, and local run traces stay in the active plan, sprint backlog, or ignored `.ai/harness/*` runtime state.
 - Let capability `CLAUDE.md` and `AGENTS.md` carry local contract projections; root docs stay concise.
 - Keep complete workstream TODOs in `tasks/workstreams/<domain>/<capability>/`; contract blocks should link to them instead of becoming task logs.

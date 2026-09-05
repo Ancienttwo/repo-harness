@@ -60,6 +60,7 @@ import {
   recordCutoverInstalled,
 } from "../../effects/state/coordination-cutover";
 import type { AdoptionMode } from "../../core/adoption/modes";
+import type { DocumentationLanguage } from "../../core/adoption/standard-plan";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
@@ -68,12 +69,15 @@ const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
 const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
 const GLOBAL_RULES_SELF_NOTE =
   "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->";
+const COMPLETION_SUMMARY_LABEL_EN = "Next cut";
+const COMPLETION_SUMMARY_LABEL_ZH = "下一刀";
 
 export type InitBrainMode = "manifest-only" | "skip";
 export type ReportingLanguagePreset = "follow" | "zh-CN" | "en" | "custom";
 
 export interface GlobalContextOptions {
   reportLanguageInstruction: string;
+  reportLanguagePreset: ReportingLanguagePreset;
 }
 
 /**
@@ -293,6 +297,18 @@ function languageInstruction(preset: ReportingLanguagePreset, custom?: string): 
   return "Use the user's language for reports; keep technical terms in English.";
 }
 
+/**
+ * The single init question drives two projections: the host-level reporting
+ * sentence and the repo-level human-facing document language. A custom
+ * reporting sentence carries no enum value, so generated documents keep the
+ * repo default instead of inventing a language from free text.
+ */
+function documentationLanguageForPreset(preset: ReportingLanguagePreset): DocumentationLanguage {
+  if (preset === "follow") return "follow-user";
+  if (preset === "zh-CN") return "zh-CN";
+  return "en";
+}
+
 function readGlobalRulesTemplate(sourceRoot: string): string {
   const file = join(sourceRoot, "assets", "reference-configs", "global-working-rules.md");
   const raw = readFileSync(file, "utf-8");
@@ -300,9 +316,19 @@ function readGlobalRulesTemplate(sourceRoot: string): string {
   return match?.[1] ?? raw;
 }
 
-function renderGlobalRules(sourceRoot: string, instruction: string): string {
+/**
+ * The completion-summary label is the one phrase in the managed block that a
+ * Chinese-reporting user reads as a literal section title, so it is rendered in
+ * the reporting language while the rest of the template stays English.
+ */
+function renderCompletionSummaryLabel(template: string, preset: ReportingLanguagePreset): string {
+  if (preset !== "zh-CN") return template;
+  return template.replaceAll(COMPLETION_SUMMARY_LABEL_EN, COMPLETION_SUMMARY_LABEL_ZH);
+}
+
+function renderGlobalRules(sourceRoot: string, instruction: string, preset: ReportingLanguagePreset): string {
   const template = readGlobalRulesTemplate(sourceRoot);
-  const rendered = template.replace(
+  const rendered = renderCompletionSummaryLabel(template, preset).replace(
     /^- Use the user's language for reports; keep technical terms in English\.$/m,
     `- ${instruction}`,
   );
@@ -368,7 +394,7 @@ export function writeGlobalContextFiles(
     return { step: "global working rules", status: "failed", detail: "HOME is required to resolve host context files" };
   }
 
-  const block = renderGlobalRules(sourceRoot, opts.reportLanguageInstruction);
+  const block = renderGlobalRules(sourceRoot, opts.reportLanguageInstruction, opts.reportLanguagePreset);
   const targets: string[] = [];
   if (target === "codex" || target === "both") targets.push(join(home, ".codex", "AGENTS.md"));
   if (target === "claude" || target === "both") targets.push(join(home, ".claude", "CLAUDE.md"));
@@ -1034,12 +1060,20 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
     const languagePreset = await askChoice<ReportingLanguagePreset>(
       rl,
       output,
-      "Reporting language",
+      "Human-facing language",
       [
-        { label: "Follow user's language", value: "follow", detail: "Keep technical terms in English" },
-        { label: "中文", value: "zh-CN", detail: "Write reports in Chinese" },
-        { label: "English", value: "en", detail: "Write reports in English" },
-        { label: "Custom instruction", value: "custom", detail: "Write an exact sentence" },
+        {
+          label: "Follow user's language",
+          value: "follow",
+          detail: "Chat reports and generated docs follow the user; technical terms stay English",
+        },
+        { label: "中文", value: "zh-CN", detail: "Write chat reports and generated docs in Chinese" },
+        { label: "English", value: "en", detail: "Write chat reports and generated docs in English" },
+        {
+          label: "Custom instruction",
+          value: "custom",
+          detail: "Write an exact reporting sentence; generated docs stay English",
+        },
       ],
       0,
     );
@@ -1053,6 +1087,7 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
           )
         : undefined;
     const reportLanguageInstruction = languageInstruction(languagePreset, customInstruction);
+    const documentationLanguage = documentationLanguageForPreset(languagePreset);
 
     let customBrainPath = opts.brainRoot;
     let brainChoices = brainLocationChoices(opts.env, customBrainPath);
@@ -1098,6 +1133,7 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       `repo=${repoRoot}`,
       `target=${target}`,
       `reporting=${reportLanguageInstruction}`,
+      `documentation_language=${documentationLanguage}`,
       `brainRoot=${(brainChoice as BrainRootChoice).root}`,
       `brainMode=${brainMode}`,
       `externalSkills=${externalSkills}`,
@@ -1127,7 +1163,8 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       codegraph,
       configureCodegraphMcp: codegraph,
       syncCodegraph: codegraph,
-      globalContext: { reportLanguageInstruction },
+      env: { ...(opts.env ?? process.env), REPO_HARNESS_DOCUMENTATION_LANGUAGE: documentationLanguage },
+      globalContext: { reportLanguageInstruction, reportLanguagePreset: languagePreset },
       brainRoot: (brainChoice as BrainRootChoice).root,
       brainMode,
     });

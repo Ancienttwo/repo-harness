@@ -48,10 +48,10 @@ doc owns the interpretation rules and hard stops. Fill every template field; do
 not restate the schema in a PRD, contract, sidecar, or local checklist, and do
 not create a parallel guard artifact.
 
-Instruction and payload are never interchangeable. For example, in “把 XXX 加入
-记忆”, “加入记忆” is the requested action and `XXX` is the payload. Storing the
-carrier sentence is a behavior change, not a reasonable interpretation. When the
-payload is ambiguous, stop and ask; do not infer a replacement value.
+Instruction and payload are never interchangeable. For example, in “add XXX to
+memory”, “add to memory” is the requested action and `XXX` is the payload. Storing
+the carrier sentence is a behavior change, not a reasonable interpretation. When
+the payload is ambiguous, stop and ask; do not infer a replacement value.
 
 ## Hard Stops
 

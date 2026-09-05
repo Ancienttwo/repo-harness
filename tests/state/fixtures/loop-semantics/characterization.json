@@ -6,7 +6,7 @@
   "esa_goldens": [
     {
       "scenario": "idle-inspect",
-      "source_sha256": "42755fedaae1d6421e5f013f2236e943d3807a63b24f90abd717bc5c7f6056d4",
+      "source_sha256": "e2be47fec22cd86da0f76d0a37d2b301da341970e2c484d13cde0f420d3ea8b3",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "lite",
@@ -14,7 +14,7 @@
     },
     {
       "scenario": "missing-contract",
-      "source_sha256": "eb632f07283d0577e184520ff237670a8295eff9c592718753cd9b811ceacab8",
+      "source_sha256": "d168f124a429ceb24e19dff0cf74c464a9795bc328ce6e37eb547381d3456cf1",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "standard",
@@ -22,7 +22,7 @@
     },
     {
       "scenario": "executing-fresh-evidence",
-      "source_sha256": "878fabb76d6f9d994654d7449cbf7ca83d7ebd884dbc1c33a4b64b1adac689a7",
+      "source_sha256": "3fd46a92535d8be205d1442a8121be22c0aa5b6848657c70869efa8c9d81b6ae",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "standard",
@@ -30,7 +30,7 @@
     },
     {
       "scenario": "explicit-strict-without-path-signals",
-      "source_sha256": "a4079d7fdcf96ac970909b5bd47cb752ae4ed418a24c03f3735e171458a86ca0",
+      "source_sha256": "72c1b49825b1b3f7ed58fe81222c5d5f70a16ea1dd28c7611942474e100cfecc",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "strict",
