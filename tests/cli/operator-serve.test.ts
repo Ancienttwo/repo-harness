@@ -9,6 +9,7 @@ import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import type { OperatorCollaborationSnapshotV1 } from '../../src/core/operator/collaboration-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { OperatorCollaborationError } from '../../src/effects/operator/collaboration';
 import {
   OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES,
   OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES,
@@ -831,16 +832,23 @@ describe('operator serve command and HTTP boundary', () => {
     let started = false;
     let abortObserved = false;
     let healthy = false;
+    let collectCalls = 0;
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
       collect_fleet_board: async (options) => {
+        collectCalls += 1;
         if (healthy) return snapshot(options?.sequence ?? 1);
         started = true;
         return new Promise<never>((_resolve, reject) => {
           options?.signal?.addEventListener('abort', () => {
             abortObserved = true;
-            reject(new Error('cancelled Fleet fixture'));
+            // The production collector settles long after the abort signal: it
+            // drains a cleanup grace period and then waits for the collector
+            // process group to disappear. A fixture that rejects inside the
+            // abort listener hides the reload race entirely, because the shared
+            // in-flight promise is already gone by the time a retry arrives.
+            setTimeout(() => reject(new Error('cancelled Fleet fixture')), 300);
           }, { once: true });
         });
       },
@@ -862,8 +870,12 @@ describe('operator serve command and HTTP boundary', () => {
       socket.destroy();
       await waitFor(() => abortObserved, 'Fleet client disconnect did not abort collection');
       healthy = true;
+      // A page reload lands here: the cancelled collection has not settled yet,
+      // so a shared in-flight promise would hand this request the dying one.
       const retry = await fetch(`${server.url}/api/v1/fleet/snapshot`);
       expect(retry.status).toBe(200);
+      expect(await retry.json()).toMatchObject({ kind: 'operator_fleet_snapshot' });
+      expect(collectCalls).toBe(2);
     } finally {
       socket.destroy();
       await server.close();
@@ -1008,6 +1020,192 @@ describe('operator serve command and HTTP boundary', () => {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
       rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('bounds concurrent task-message writes and refuses above the admission cap', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-admission-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    let started = 0;
+    let releaseFirst!: (result: SendOperatorTaskMessageResult) => void;
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      max_concurrency: 1,
+      collect_fleet_board: async () => snapshot(),
+      send_task_message: () => new Promise<SendOperatorTaskMessageResult>((resolveSend) => {
+        started += 1;
+        releaseFirst = resolveSend;
+      }),
+    });
+    const url = `${server.url}${messagePath('repo-write')}`;
+    const headers = { 'Content-Type': 'application/json', Origin: server.url };
+    const first = fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
+    try {
+      await waitFor(() => started === 1, 'first task-message write did not start');
+      const overloaded = await fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
+      expect(overloaded.status).toBe(503);
+      expect(overloaded.headers.get('retry-after')).toBe('1');
+      expect(await overloaded.json()).toMatchObject({
+        error: {
+          code: 'task_message_busy',
+          message: 'The task message service is busy.',
+        },
+      });
+      expect(started).toBe(1);
+
+      releaseFirst(sendResult());
+      expect((await first).status).toBe(201);
+    } finally {
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('requires an application/json media type on the one write route', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    const harness = await startWriteServer(async () => sendResult(), calls);
+    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    try {
+      for (const declared of ['text/plain;charset=UTF-8', 'application/x-www-form-urlencoded', 'application/jsonish']) {
+        const refused = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': declared, Origin: harness.server.url },
+          body: taskMessagePayload(),
+        });
+        expect(refused.status).toBe(415);
+        expect(await refused.json()).toMatchObject({
+          error: {
+            code: 'unsupported_media_type',
+            message: 'The task message request must be sent as application/json.',
+          },
+        });
+      }
+      expect(calls).toEqual([]);
+
+      const parameterized = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'Application/JSON; charset=utf-8', Origin: harness.server.url },
+        body: taskMessagePayload(),
+      });
+      expect(parameterized.status).toBe(201);
+      expect(calls).toHaveLength(1);
+
+      // Origin is the CSRF barrier and stays ahead of the media-type check.
+      const foreignOrigin = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', Origin: 'http://attacker.example' },
+        body: taskMessagePayload(),
+      });
+      expect(foreignOrigin.status).toBe(403);
+      expect(await foreignOrigin.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
+      expect(calls).toHaveLength(1);
+    } finally {
+      await stopWriteServer(harness);
+    }
+  });
+
+  test('turns a collaboration repository identity mismatch into a typed refusal', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-echo-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      collect_fleet_board: async () => snapshot(),
+      read_collaboration_snapshot: async () => {
+        throw new OperatorCollaborationError(
+          'collaboration_repository_mismatch',
+          'collaboration snapshot for /private/tmp/other-repo answered repo-other',
+        );
+      },
+    });
+    try {
+      const response = await fetch(`${server.url}/api/v1/collaboration/repo-write/snapshot`);
+      expect(response.status).toBe(500);
+      const body = await response.json() as { error: { code: string; message: string; next_action: string } };
+      expect(body.error.code).toBe('collaboration_repository_mismatch');
+      expect(body.error.message).toBe('The collaboration snapshot does not belong to the requested repository.');
+      expect(body.error.next_action.length).toBeGreaterThan(0);
+      expect(JSON.stringify(body)).not.toContain('/private/tmp/other-repo');
+      expect(JSON.stringify(body)).not.toContain('repo-other');
+    } finally {
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps a case-variant API path off the SPA shell and pins the refusal headers', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-headers-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      collect_fleet_board: async () => snapshot(),
+    });
+    try {
+      for (const variant of ['/API/v1/fleet/snapshot', '/Api/v1/collaboration/repo-write/snapshot', '/API']) {
+        const response = await fetch(`${server.url}${variant}`, { headers: { Accept: 'text/html' } });
+        expect(response.status).toBe(404);
+        expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+        const text = await response.text();
+        expect(text).not.toContain('<main>operator</main>');
+        expect(JSON.parse(text)).toMatchObject({ error: { code: 'not_found' } });
+      }
+
+      const document = await fetch(`${server.url}/`);
+      expect(document.status).toBe(200);
+      expect(document.headers.get('content-security-policy')).toBe(
+        "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+      );
+
+      const options = await fetch(`${server.url}/api/v1/fleet/snapshot`, { method: 'OPTIONS' });
+      expect(options.status).toBe(405);
+      expect(options.headers.get('allow')).toBe('GET, HEAD, POST');
+      expect(options.headers.get('content-security-policy')).toBeNull();
+      expect(await options.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
+    } finally {
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('logs one stderr line per refusal without the body, headers, or Origin', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    const harness = await startWriteServer(async () => sendResult(), calls);
+    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    const captured: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    try {
+      process.stderr.write = ((chunk: unknown) => {
+        captured.push(typeof chunk === 'string' ? chunk : String(chunk));
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        const refused = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain', Origin: harness.server.url },
+          body: taskMessagePayload('confidential-operator-body'),
+        });
+        expect(refused.status).toBe(415);
+        await waitFor(() => captured.length > 0, 'refusal was not logged');
+        const accepted = await fetch(`${harness.server.url}/healthz`);
+        expect(accepted.status).toBe(200);
+      } finally {
+        process.stderr.write = originalWrite;
+      }
+      const lines = captured.join('').split('\n').filter((line) => line.length > 0);
+      expect(lines).toHaveLength(1);
+      const line = lines[0]!;
+      expect(line).toContain('method=POST');
+      expect(line).toContain('status=415');
+      expect(line).toContain('code=unsupported_media_type');
+      expect(line).toContain(messagePath('repo-write'));
+      expect(line).not.toContain('confidential-operator-body');
+      expect(line).not.toContain(harness.server.url);
+      expect(line).not.toContain('text/plain');
+      expect(calls).toEqual([]);
+    } finally {
+      await stopWriteServer(harness);
     }
   });
 });
