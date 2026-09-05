@@ -33,6 +33,8 @@ run_bun_tests
 
 echo "[ci] workflow checks"
 bash scripts/check-deploy-sql-order.sh
+echo "[ci] context files"
+bash scripts/check-context-files.sh
 bash scripts/check-architecture-sync.sh
 if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${REPO_HARNESS_DIFF_BASE:-}" ]]; then
   echo "[ci] GitHub Actions must provide REPO_HARNESS_DIFF_BASE for diff-bound workflow evidence." >&2
