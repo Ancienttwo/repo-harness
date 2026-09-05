@@ -94,6 +94,45 @@ describe('workflow runtime profile risk floor', () => {
     expect(result.reasons).toContain(`risk-floor:strict:${category}`);
   });
 
+  test.each([
+    'apps/web/e2e/anonymous-research-auth.spec.ts',
+    'tests/session.test.tsx',
+    'tests/payment.spec.js',
+    'tests/security.test.mjs',
+    'tests/schema.spec.cts',
+    'tests/migration.test.cjs',
+    'tests/deploy.spec.mts',
+    'tests/release.test.jsx',
+    'tests/api.spec.ts',
+    'tests\\anonymous-auth.spec.ts',
+  ])('test basename does not establish a strict boundary: %s', (path) => {
+    expect(resolveWorkflowProfile({ targetPaths: [path] })).toMatchObject({
+      ok: true, profile: 'lite', signals: { targetPathCount: 1, strictCategories: [] },
+    });
+    expect(resolveWorkflowProfile({ targetPaths: ['src/home.ts'], strictScanPaths: [path] }))
+      .toMatchObject({ ok: true, profile: 'lite' });
+  });
+
+  test('test names do not suppress independent strict signals or medium scope', () => {
+    const targetPaths = ['apps/web/e2e/anonymous-research-auth.spec.ts', 'src/home.ts', 'src/locale.ts', 'src/messages.ts'];
+    expect(resolveWorkflowProfile({ targetPaths })).toMatchObject({
+      ok: true, profile: 'standard', signals: { targetPathCount: 4, strictCategories: [] },
+    });
+    for (const input of [
+      { targetPaths, operationKind: 'auth' as const },
+      { targetPaths, capabilityIds: ['auth-session'] },
+      { targetPaths: [...targetPaths, 'src/auth.ts'] },
+      { targetPaths, strictScanPaths: ['docs/auth/runbook.md'] },
+      { targetPaths: ['src/auth/login.test.ts'] },
+      { targetPaths: ['tests/security/login.spec.ts'] },
+      { targetPaths: ['tests/auth.spec.json'] },
+      { targetPaths: ['tests/auth.ts'] },
+      { targetPaths: ['src/auth/session.test.ts'], explicitOverride: 'lite' as const },
+    ]) {
+      expect(resolveWorkflowProfile(input).riskFloor).toBe('strict');
+    }
+  });
+
   // Every strict-category target path above also happens to be an
   // implementation-surface path -- true for these specific fixtures, but NOT
   // a general invariant of STRICT_CATEGORY_TOKENS' matching logic (a pure
