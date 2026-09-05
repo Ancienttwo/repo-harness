@@ -62,6 +62,7 @@ export interface EffectiveStateInputs {
   readonly currentWorktree: string;
   readonly worktreeOwner: string | null;
   readonly worktreeOwnerIsCurrent: boolean;
+  readonly isolatedContractWorktree: boolean;
   readonly handoffPath: string;
   readonly handoffText: string | null;
   readonly resumePath: string;
@@ -311,9 +312,8 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     ? (() => {
         const satisfiedRequirements: ArtifactRequirementKey[] = [];
         if (input.contractText) satisfiedRequirements.push('separate_contract');
-        if (input.worktreeOwnerIsCurrent) {
-          satisfiedRequirements.push('isolated_contract_worktree', 'worktree_boundary');
-        }
+        if (input.worktreeOwnerIsCurrent) satisfiedRequirements.push('worktree_boundary');
+        if (input.isolatedContractWorktree) satisfiedRequirements.push('isolated_contract_worktree');
         if (reviewFreshness === 'fresh') satisfiedRequirements.push('fresh_review');
         if (externalFreshness === 'fresh') satisfiedRequirements.push('external_acceptance');
         if (checksFreshness === 'fresh') {

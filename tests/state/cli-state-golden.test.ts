@@ -85,6 +85,9 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
       ? sourceHash(cwd, state.active_sprint.path)
       : sha256('missing:active-sprint-file'),
     task_identity: sha256(state.task_id ?? 'missing:task-id'),
+    // These characterization fixtures are primary checkouts, so matching
+    // ownership cannot satisfy strict isolation.
+    ...(state.workflow_profile === 'strict' ? { isolated_contract_worktree: sha256('false') } : {}),
   });
   expect(state.source_hashes.authority_revision).toBe(expectedAuthorityRevision);
   expect(state.authority_revision).toBe(expectedAuthorityRevision);

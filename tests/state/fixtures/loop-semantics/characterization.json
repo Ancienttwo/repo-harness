@@ -30,7 +30,7 @@
     },
     {
       "scenario": "explicit-strict-without-path-signals",
-      "source_sha256": "72c1b49825b1b3f7ed58fe81222c5d5f70a16ea1dd28c7611942474e100cfecc",
+      "source_sha256": "e6a68aa425e4f945311e37d91da967d9a63a7cd8ee87e1acc1f285b4543911bf",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "strict",

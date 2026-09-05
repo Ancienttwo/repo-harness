@@ -639,12 +639,15 @@ function runPerPathGuards(
       );
       exit(2);
     }
-    if (!isLinkedWorktree(ctx.repoRoot)) {
+    const isolation = effective?.readiness?.ok
+      ? effective.readiness.requirements.edit.find((entry) => entry.key === 'isolated_contract_worktree')
+      : null;
+    if (!isolation?.satisfied) {
       out(ctx, `[StrictWorktreeGuard] Strict profile requires an isolated contract worktree for ${filePath}`);
       structuredError(
         ctx,
         'StrictWorktreeGuard',
-        `Strict workflow edit to ${filePath} is not running in a linked contract worktree.`,
+        `Strict workflow edit to ${filePath} requires a linked worktree owned by the active contract.`,
         'Start or enter the contract worktree before editing high-risk implementation paths.',
         'state_violation',
       );
