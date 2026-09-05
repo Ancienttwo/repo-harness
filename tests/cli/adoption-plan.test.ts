@@ -557,3 +557,92 @@ describe("init command cutover", () => {
     }
   }, 30_000);
 });
+
+/**
+ * `documentation.language` is the only datum deciding human-facing document
+ * language. These cases pin its default, its env authoring path, its
+ * fail-closed rejection, and the fact that an adopted repo's stored choice
+ * survives re-planning.
+ */
+describe("documentation language policy datum", () => {
+  function plannedPolicy(repo: string, env?: NodeJS.ProcessEnv): Record<string, any> {
+    const plan = planAdoption({ repoRoot: repo, mode: "standard", env });
+    const operation = plan.operations.find((entry) => entry.path === ".ai/harness/policy.json");
+    if (!operation || operation.kind !== "writeFile") {
+      throw new Error("expected a writeFile operation for .ai/harness/policy.json");
+    }
+    return JSON.parse(operation.content);
+  }
+
+  test("defaults to en", () => {
+    const repo = tempRepo();
+    try {
+      expect(plannedPolicy(repo).documentation.language).toBe("en");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("REPO_HARNESS_DOCUMENTATION_LANGUAGE authors the planned value", () => {
+    const repo = tempRepo();
+    try {
+      expect(plannedPolicy(repo, { REPO_HARNESS_DOCUMENTATION_LANGUAGE: "zh-CN" }).documentation.language).toBe("zh-CN");
+      expect(plannedPolicy(repo, { REPO_HARNESS_DOCUMENTATION_LANGUAGE: "follow-user" }).documentation.language).toBe(
+        "follow-user",
+      );
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("rejects a value outside the enum instead of falling back to the default", () => {
+    const repo = tempRepo();
+    try {
+      expect(() => plannedPolicy(repo, { REPO_HARNESS_DOCUMENTATION_LANGUAGE: "zh-TW" })).toThrow(
+        /REPO_HARNESS_DOCUMENTATION_LANGUAGE/,
+      );
+      expect(() => plannedPolicy(repo, { REPO_HARNESS_DOCUMENTATION_LANGUAGE: "zh-TW" })).toThrow(
+        /en \| zh-CN \| follow-user/,
+      );
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("rejects an invalid stored value and preserves a valid one across re-planning", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(
+        join(repo, ".ai/harness/policy.json"),
+        JSON.stringify({ version: 1, documentation: { language: "zh-CN" } }, null, 2),
+      );
+      expect(plannedPolicy(repo).documentation.language).toBe("zh-CN");
+
+      writeFileSync(
+        join(repo, ".ai/harness/policy.json"),
+        JSON.stringify({ version: 1, documentation: { language: "klingon" } }, null, 2),
+      );
+      expect(() => plannedPolicy(repo)).toThrow(/documentation\.language/);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("generated root context points at the policy field instead of copying its value", () => {
+    const repo = tempRepo();
+    try {
+      const plan = planAdoption({ repoRoot: repo, mode: "standard" });
+      for (const path of ["CLAUDE.md", "AGENTS.md"]) {
+        const operation = plan.operations.find((entry) => entry.path === path);
+        if (!operation || operation.kind !== "writeFile") throw new Error(`expected a writeFile operation for ${path}`);
+        expect(operation.content).toContain(
+          "- Write human-facing documents (`docs/`, `plans/prds/`, design briefs) in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.",
+        );
+        expect(operation.content).not.toContain("documentation.language: ");
+      }
+    } finally {
+      cleanup(repo);
+    }
+  });
+});

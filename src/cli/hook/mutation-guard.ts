@@ -682,7 +682,7 @@ function runPerPathGuards(
   // ---- AssetLayer advisory --------------------------------------------------
   if (ASSET_LAYER_PATTERN.test(filePath)) {
     out(ctx, `[AssetLayer] Immutable file detected: ${filePath}`);
-    out(ctx, '  资产层文件被修改，需同步重写下游实现。');
+    out(ctx, '  Asset-layer file changed; regenerate the downstream projection.');
   }
 
   // ---- TDD/BDD reminder ------------------------------------------------------

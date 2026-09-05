@@ -248,11 +248,6 @@ function emitAdvisories(out: string[], filePath: string, base: string, dir: stri
     out.push('  Check: docs/architecture.md source tree may need updating\n');
   }
 
-  if (base === 'metro.config.js' || base === 'metro.config.ts') {
-    out.push('[DocDrift] Metro config changed\n');
-    out.push('  Check: docs/guides/metro-esm-gotchas.md may need updating\n');
-  }
-
   if (base === 'tsconfig.json' && /(^|\/)(packages|apps)\//.test(dir)) {
     out.push(`[DocDrift] TypeScript config changed in ${basename(dir)}\n`);
     out.push('  Check: docs/packages.md may need updating\n');

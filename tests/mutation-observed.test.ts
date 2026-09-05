@@ -648,7 +648,7 @@ describe('mutation-observed: advisory stdout parity', () => {
     }
   }, 30_000);
 
-  test('turbo.json and metro config advisories match the base script verbatim', () => {
+  test('turbo.json and wrangler advisories match the base script verbatim', () => {
     const cwd = tmpWorkspace('mo-advisories-misc');
     try {
       initRepo(cwd);
@@ -657,7 +657,7 @@ describe('mutation-observed: advisory stdout parity', () => {
       expect(turbo.stdout).toContain('[DocDrift] Turborepo config changed');
 
       const metro = runMutationObserved({ collector, input: editPayload('metro.config.js') });
-      expect(metro.stdout).toContain('[DocDrift] Metro config changed');
+      expect(metro.stdout).not.toContain('[DocDrift]');
 
       const wrangler = runMutationObserved({ collector, input: editPayload('apps/api/wrangler.staging.toml') });
       expect(wrangler.stdout).toContain('[DocDrift] Wrangler config changed: wrangler.staging.toml');

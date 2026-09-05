@@ -19,35 +19,35 @@ The UX Feature Guard section below is the behavior/authority hand-off to BDD;
 do not create a parallel guard artifact.
 -->
 
-## Purpose & Audience (頁面目的與受眾)
+## Purpose & Audience
 
 - Page/surface:
 - Primary audience:
 - Job to be done:
 
-## UX Feature Guard (行為前圍欄)
+## UX Feature Guard
 
-- Requested outcome (使用者可見結果):
-- Frozen behavior / rules that must not change (不可改變的玩法與語義):
-- Requested action (指令):
-- Exact payload acted on (資料內容; if none, write `N/A`):
-- Forbidden extras / non-goals (禁止新增):
+- Requested outcome:
+- Frozen behavior / rules that must not change:
+- Requested action:
+- Exact payload acted on (if none, write `N/A`):
+- Forbidden extras / non-goals:
 
-### Role-aware User-visible Concept Boundary (角色可見概念邊界)
+### Role-aware User-visible Concept Boundary
 
-- Audience / role for this surface (可見角色):
-- Allowed visible concepts (允許可見的概念範圍):
-- Required outcome/recovery concepts that must stay visible (必須保留的結果與復原概念):
-- Backstage-only concepts that must never appear as user-visible (僅限後台，不得對使用者可見):
-- Role-gated exceptions, or `none` (角色限定例外，無則填 `none`):
-- Authority for each exception, or `N/A` (每個例外的核准依據，無則填 `N/A`):
+- Audience / role for this surface:
+- Allowed visible concepts:
+- Required outcome/recovery concepts that must stay visible:
+- Backstage-only concepts that must never appear as user-visible:
+- Role-gated exceptions, or `none`:
+- Authority for each exception, or `N/A`:
 
 `UX-{{SLUG}}-N1` (the negative/non-goal scenario below) derives from the
 backstage-only and non-goal fields above: it asserts that a backstage-only
 concept or forbidden extra must NOT surface, not merely that some unrelated
 input is invalid.
 
-### Authority & Reuse Map (權威與復用)
+### Authority & Reuse Map
 
 Name exact repo paths. A new surface needs a concrete mismatch or cross-module
 invariant; “cleaner” and “easier” are not justification.
@@ -56,7 +56,7 @@ invariant; “cleaner” and “easier” are not justification.
 |------------------------|------------------------------------|---------------------------------|---------------------------|
 |                        |                                    |                                 |                           |
 
-### Observable & Copy Contract (可觀測狀態與文案)
+### Observable & Copy Contract
 
 - Happy/loading/empty states that can actually occur:
 - Invalid/unavailable state: (what happened, where, next action)
@@ -76,58 +76,58 @@ they do not invent missing product rules.
 Carry these IDs unchanged into the task contract, test names/tags, and review
 evidence. Those surfaces prove the scenarios; they do not redefine them.
 
-## Reference Sources (參考來源:學什麼/避什麼)
+## Reference Sources (what to learn / what to avoid)
 
 Name concrete products, sites, or design systems — not vague adjectives. Mark unverifiable claims `[UNVERIFIED]`.
 
-| Source | Learn (學什麼) | Avoid (避什麼) |
+| Source | Learn | Avoid |
 |--------|----------------|-----------------|
 |        |                |                 |
 
-## Color (色彩)
+## Color
 
 - Palette:
 - Usage rules: (which color for which state/action; contrast/accessibility floor)
 
-## Typography (字型排印)
+## Typography
 
 - Typeface(s):
 - Scale / weights:
 - Language-specific notes: (for example CJK pairing, line-height)
 
-## Layout (佈局)
+## Layout
 
 - Grid / breakpoints:
 - Spacing scale:
 - Key components and hierarchy:
 
-## Motion (動效)
+## Motion
 
 - Trigger -> effect pairs:
 - Duration / easing:
 - What must stay static:
 
-## Anti-patterns (明確禁止清單)
+## Anti-patterns
 
-List concrete things this design must NOT do. Vague taste complaints ("不好看") are not acceptable entries; name the specific pattern.
+List concrete things this design must NOT do. Vague taste complaints ("it looks ugly") are not acceptable entries; name the specific pattern.
 
 -
 
-## Confirmation Checklist (確認標準)
+## Confirmation Checklist
 
 Every item must be checked before this brief unblocks sprint/contract execution.
 
-- [ ] Value proposition is clear (價值主張清晰)
-- [ ] Primary reference is decided (主參考已定)
-- [ ] Color is accurate to the reference (色彩準確)
-- [ ] Anti-pattern / don't list is explicit (明確的 don't 清單)
-- [ ] Motion spec is explicit (動效規格明確)
-- [ ] Product rules/non-goals are frozen; instruction and payload are separate (玩法不變，指令與內容分離)
-- [ ] Existing component/domain authorities have exact reuse paths; every new surface is justified (優先復用現有權威)
-- [ ] Positive, negative, and authority-failure Given/When/Then scenarios are explicit and fail loudly (BDD 場景完整且錯誤可見)
-- [ ] Role-aware visible/backstage-only concept boundary is explicit; `UX-{{SLUG}}-N1` matches a backstage-only or non-goal concept (角色可見/僅限後台概念邊界明確，N1 對應非目標或僅限後台概念)
+- [ ] Value proposition is clear
+- [ ] Primary reference is decided
+- [ ] Color is accurate to the reference
+- [ ] Anti-pattern / don't list is explicit
+- [ ] Motion spec is explicit
+- [ ] Product rules/non-goals are frozen; instruction and payload are separate
+- [ ] Existing component/domain authorities have exact reuse paths; every new surface is justified
+- [ ] Positive, negative, and authority-failure Given/When/Then scenarios are explicit and fail loudly
+- [ ] Role-aware visible/backstage-only concept boundary is explicit; `UX-{{SLUG}}-N1` matches a backstage-only or non-goal concept
 
-## Preview Attachment (可選)
+## Preview Attachment
 
 Optional. Reference an imagegen-generated preview or screenshot here; imagegen-type skills are enhancers for this brief, never a substitute for the checklist above. `design-proposal` can run the peer-research -> boundary-freeze -> STIMULUS-preview -> taste-refinement pipeline ahead of this section; it is an optional enhancer too, never a substitute for this brief or the Confirmation Checklist.
 

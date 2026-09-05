@@ -61,7 +61,7 @@ describe("UX feature pre-implementation guard", () => {
     expect(designBriefProjection(copies[1])).toBe(template);
     expect(designBriefProjection(copies[2])).toBe(template);
     for (const copy of copies) {
-      expect(copy).toContain("## UX Feature Guard (行為前圍欄)");
+      expect(copy).toContain("## UX Feature Guard");
       expect(copy).toContain("Exact payload acted on");
       expect(copy).toContain("### Authority & Reuse Map");
       expect(copy).toContain("### Observable & Copy Contract");

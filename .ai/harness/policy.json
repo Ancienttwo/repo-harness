@@ -296,6 +296,7 @@
   },
   "documentation": {
     "profile": "minimal-agentic",
+    "language": "en",
     "reference_source": "user-level-runtime-docs",
     "reference_stub_marker": "<!-- repo-harness: reference-config-stub v1 -->",
     "reference_resolver": "repo-harness docs path <doc-id>",
