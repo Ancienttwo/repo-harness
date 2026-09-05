@@ -1,20 +1,20 @@
 # Task Review: operator-server-write-gate
 
-> **Status**: Pending
+> **Status**: Complete
 > **Plan**: plans/plan-20260905-1414-operator-server-write-gate.md
 > **Contract**: tasks/contracts/20260905-1414-operator-server-write-gate.contract.md
 > **Notes File**: tasks/notes/20260905-1414-operator-server-write-gate.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 14:14
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 27c7de3c
 
 ## Human Review Card
 
-- Verdict: pending
+- Verdict: pass
 - Change type: bugfix
 - Intended files changed: `src/effects/operator/server.ts`,
   `src/effects/operator/collaboration.ts`, `tests/cli/operator-serve.test.ts`,
@@ -29,7 +29,7 @@
 - Residual risks: the write admission bound is new refusal behavior on a route
   that previously accepted unbounded concurrency.
 - Reviewer action required: inspect diff and card
-- Rollback: revert the three commits on `codex/operator-server-write-gate`.
+- Rollback: revert the branch's commits on `codex/operator-server-write-gate` together.
 
 ## Mode Evidence
 
@@ -53,7 +53,9 @@
   `REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh`;
   `bash scripts/check-task-workflow.sh --strict`;
   `bun scripts/inspect-project-state.ts --repo . --format text`;
-  `bun src/cli/index.ts init --repo . --dry-run`; `bun test --timeout 60000`.
+  `bun src/cli/index.ts init --repo . --dry-run`; `bun test --timeout 60000`;
+  `bun src/cli/index.ts run verify-contract --contract tasks/contracts/20260905-1414-operator-server-write-gate.contract.md --strict`
+  (27/27 Fulfilled).
 - Manual checks: live loopback probe against `bun src/cli/index.ts operator
   serve --port 0` — an aborted snapshot followed immediately by a re-request
   answered `HTTP/1.1 200 OK`; a `text/plain` POST answered `415 Unsupported
@@ -100,17 +102,28 @@
   because the strict registry reader already refuses an entry whose id is not
   derived from its canonical path. The assertion is a structural guard on the
   worker boundary, not a live failure mode.
-- `verify-contract --strict` could not be run: the repository-wide
-  `expensive-run.lock` was held throughout by a live peer worktree.
+- During the collector's abort drain (up to 5.5 s), a reconnect starts a second
+  collector. Nothing but the reload rate bounds how many overlap: the Fleet path
+  has no admission counter of the kind the collaboration path carries.
+- Write admission and collaboration admission read the same `max_concurrency`
+  value but keep separate counters, so the aggregate child-process budget is
+  2x `max_concurrency` plus the Fleet collector.
+- The write admission counter is incremented outside the `try` whose `finally`
+  releases it (`src/effects/operator/server.ts` ~1613 vs ~1643), with the
+  request's cancellation and timeout setup in between. None of those statements
+  throws in practice, so no counter leak is reachable today, but the release is
+  not structurally bound to the acquire.
+- The pre-fix evidence lives under gitignored `.ai/harness/evidence/` and does
+  not travel with the branch; a later reader sees the claim, not the artifact.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
+| Functionality | 9/10 | All seven plan defects are fixed and each is pinned by a live probe: the reload race answers 200 with sequence 2, `text/plain` with a good Origin is 415 while no Origin is still 403 `origin_required`, `/API/v1/fleet/snapshot` is a JSON 404, `OPTIONS` is 405 with `Allow: GET, HEAD, POST`, the CSP carries `base-uri 'none'` and `form-action 'none'`, and 9 refusals produced 9 stderr lines with stdout holding exactly 1 line. Held back from 10 by the unbounded collector overlap during the abort drain. |
+| Product depth | 8/10 | The refusals are typed, named, and retryable where retry is the right answer (`503 task_message_busy` with `Retry-After: 1`), and the operator-visible surface — one stdout line, one stderr line per refusal — stays legible under load. The child-process budget is still 2x `max_concurrency` across two counters rather than one declared number. |
+| Design quality | 8/10 | One `sendRefusal()` wrapper makes the logged set exactly the refused set, and the identity assertion is one exported rule at two call sites instead of a duplicated comparison. The write admission counter's acquire and release are adjacent by convention rather than structurally paired. |
+| Code quality | 9/10 | `tsc` clean, `vite` operator-web build ok, focused set 51 pass / 2 skip / 0 fail, full suite 4192 pass / 4 skip / 0 fail, the six repository-integrity checks exit 0 plus CI-mode `check-task-sync` exit 0, and `verify-contract --strict` reports 27/27 Fulfilled. |
 
 ## Failing Items
 

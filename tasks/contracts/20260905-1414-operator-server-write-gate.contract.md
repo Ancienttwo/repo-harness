@@ -1,6 +1,6 @@
 # Task Contract: operator-server-write-gate
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260905-1414-operator-server-write-gate.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -10,7 +10,7 @@
 > **Review File**: `tasks/reviews/20260905-1414-operator-server-write-gate.review.md`
 > **Notes File**: `tasks/notes/20260905-1414-operator-server-write-gate.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:b4e68c870f69635d4cb39086be563f819a83beb0147099d224276410de36f302`
+> **Substantive Change SHA256**: `sha256:823b80ff4f808689792de8371a84ff0c4eb6950c5a2c80556aef7393ce2ed6f1`
 
 ## Why
 
@@ -195,8 +195,10 @@ exit_criteria:
   and `form-action`; every 405 carries `Allow`; every non-2xx writes one stderr
   line and stdout stays the single bound-URL line.
 - Edge cases: Origin checks stay ahead of the media-type check, so a foreign
-  Origin with `text/plain` is still 403 and never 415; a duplicated
-  `Content-Type` header arrives joined and fails closed; the refusal path is
+  Origin with `text/plain` is still 403 and never 415; Node keeps the first
+  `content-type` value and drops later duplicates, so a duplicated header cannot
+  widen the gate — a non-JSON first value is refused with 415, and a JSON first
+  value still has to pass the body decoder; the refusal path is
   JSON-quoted and truncated to 200 characters so a control character in the
   request target cannot forge a second log line.
 - Regression risks: the write admission bound is new refusal behavior on a route
@@ -206,5 +208,5 @@ exit_criteria:
 ## Rollback Point
 
 - Commit / checkpoint: main 1a9a5ae1 (branch base)
-- Revert strategy: revert the two commits on `codex/operator-server-write-gate`
+- Revert strategy: revert the branch's commits on `codex/operator-server-write-gate`
   together; the server change and its guards share one rollback surface.

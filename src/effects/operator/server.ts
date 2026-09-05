@@ -1313,8 +1313,10 @@ function contentType(pathname: string): string {
  * barrier and stays ahead of this check, but a simple cross-site form post can
  * only ever declare a form media type, so refusing anything but JSON removes
  * the shape entirely rather than relying on one header alone. Parameters are
- * allowed because a browser appends `charset`; duplicated Content-Type headers
- * arrive joined and fail closed.
+ * allowed because a browser appends `charset`. Node keeps the first
+ * `content-type` value and drops later duplicates, so a duplicate cannot widen
+ * this gate: a non-JSON first value is refused with 415, and a JSON first value
+ * still has to pass the body decoder.
  */
 function isJsonRequest(request: IncomingMessage): boolean {
   const declared = request.headers['content-type'];

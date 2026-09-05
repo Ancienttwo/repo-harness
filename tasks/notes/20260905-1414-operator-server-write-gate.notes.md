@@ -21,6 +21,11 @@
 - The write admission bound has no queue. Collaboration queues because several
   repositories can legitimately be observed at once; the board only ever has one
   send in flight, so a caller above the cap is not a browser waiting its turn.
+- Write admission and collaboration admission read the same `max_concurrency`
+  value but keep separate counters, so the aggregate child-process budget is
+  2x `max_concurrency` plus the Fleet collector; that is deliberate, because the
+  browser has at most one write in flight and the two paths bound unrelated
+  workloads.
 
 ## Deviations From Plan Or Spec
 
