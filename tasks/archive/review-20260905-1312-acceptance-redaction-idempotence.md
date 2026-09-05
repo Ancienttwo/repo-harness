@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 13:12
+> **Related Plan**: plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260905-1312
+> **Archive Projection V1**: `plans/plan-20260904-0517-acceptance-redaction-idempotence.md` => `plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md`
+> **Archive Projection V1**: `tasks/notes/20260904-0517-acceptance-redaction-idempotence.notes.md` => `tasks/archive/notes-20260905-1312-acceptance-redaction-idempotence.md`
+> **Archive Projection V1**: `tasks/contracts/20260904-0517-acceptance-redaction-idempotence.contract.md` => `tasks/archive/contract-20260905-1312-acceptance-redaction-idempotence.md`
+> **Archive Projection V1**: `tasks/reviews/20260904-0517-acceptance-redaction-idempotence.review.md` => `tasks/archive/review-20260905-1312-acceptance-redaction-idempotence.md`
+
 # Task Review: acceptance-redaction-idempotence
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260904-0517-acceptance-redaction-idempotence.md
-> **Contract**: tasks/contracts/20260904-0517-acceptance-redaction-idempotence.contract.md
-> **Notes File**: tasks/notes/20260904-0517-acceptance-redaction-idempotence.notes.md
+> **Plan**: plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md
+> **Contract**: tasks/archive/contract-20260905-1312-acceptance-redaction-idempotence.md
+> **Notes File**: tasks/archive/notes-20260905-1312-acceptance-redaction-idempotence.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-04 05:17
 > **Recommendation**: pass

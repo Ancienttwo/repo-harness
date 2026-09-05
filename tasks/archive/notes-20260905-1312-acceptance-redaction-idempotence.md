@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-05 13:12
+> **Related Plan**: plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260905-1312
+> **Archive Projection V1**: `plans/plan-20260904-0517-acceptance-redaction-idempotence.md` => `plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md`
+> **Archive Projection V1**: `tasks/notes/20260904-0517-acceptance-redaction-idempotence.notes.md` => `tasks/archive/notes-20260905-1312-acceptance-redaction-idempotence.md`
+> **Archive Projection V1**: `tasks/contracts/20260904-0517-acceptance-redaction-idempotence.contract.md` => `tasks/archive/contract-20260905-1312-acceptance-redaction-idempotence.md`
+> **Archive Projection V1**: `tasks/reviews/20260904-0517-acceptance-redaction-idempotence.review.md` => `tasks/archive/review-20260905-1312-acceptance-redaction-idempotence.md`
+
 # Implementation Notes: acceptance-redaction-idempotence
 
 > **Status**: Active
-> **Plan**: plans/plan-20260904-0517-acceptance-redaction-idempotence.md
-> **Contract**: tasks/contracts/20260904-0517-acceptance-redaction-idempotence.contract.md
-> **Review**: tasks/reviews/20260904-0517-acceptance-redaction-idempotence.review.md
+> **Plan**: plans/archive/plan-20260904-0517-acceptance-redaction-idempotence.md
+> **Contract**: tasks/archive/contract-20260905-1312-acceptance-redaction-idempotence.md
+> **Review**: tasks/archive/review-20260905-1312-acceptance-redaction-idempotence.md
 > **Last Updated**: 2026-09-04 06:33
 > **Lifecycle**: notes
 

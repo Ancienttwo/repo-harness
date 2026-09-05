@@ -1,6 +1,13 @@
+> **Archived**: 2026-09-05 13:12
+> **Related Plan**: plans/archive/plan-20260905-0452-lite-task-sync.md
+> **Outcome**: Superseded
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260905-1312
+> **Archive Projection V1**: `plans/plan-20260905-0452-lite-task-sync.md` => `plans/archive/plan-20260905-0452-lite-task-sync.md`
+
 # Plan: Align lite task synchronization with runtime profile
 
-> **Status**: Review
+> **Status**: Archived
 > **Substantive Change SHA256**: `sha256:18187caa23bcccb8dcce25661f9b1e7f0892fe9c0842a6b439e9577155a52555`
 > **Created**: 20260905-0452
 > **Slug**: lite-task-sync
@@ -13,9 +20,6 @@
 > **Rollback Surface**: Revert only task-sync scripts, related tests, and the approved global-rule template diff
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260905-0452-lite-task-sync.contract.md`
-> **Task Review**: `tasks/reviews/20260905-0452-lite-task-sync.review.md`
-> **Implementation Notes**: `tasks/notes/20260905-0452-lite-task-sync.notes.md`
 
 ## Agentic Routing
 - Selected route: planning
@@ -29,7 +33,7 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260905-0452-lite-task-sync.md`
+- Active plan: `plans/archive/plan-20260905-0452-lite-task-sync.md`
 - Sprint contract: `tasks/contracts/20260905-0452-lite-task-sync.contract.md`
 - Sprint review: `tasks/reviews/20260905-0452-lite-task-sync.review.md`
 - Implementation notes: `tasks/notes/20260905-0452-lite-task-sync.notes.md`
@@ -38,7 +42,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/20260905-0452-lite-task-sync.contract.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260905-0452-lite-task-sync.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260905-0452-lite-task-sync.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260905-0452-lite-task-sync.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260905-0452-lite-task-sync.md`.
 
 ## Approach
 ### Strategy
@@ -81,7 +85,7 @@ See captured planning output.
 
 ## Promotion Gate
 
-- **Merge/PR unit**: Captured plan `plans/plan-20260905-0452-lite-task-sync.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Merge/PR unit**: Captured plan `plans/archive/plan-20260905-0452-lite-task-sync.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
 - **Rollback surface**: Revert only task-sync scripts, related tests, and the approved global-rule template diff
 - **Verification boundary**: Focused task-sync tests, full Bun suite, and repository integrity checks
 - **Review/acceptance boundary**: `tasks/reviews/20260905-0452-lite-task-sync.review.md` must record pass against the captured acceptance criteria.
@@ -90,7 +94,7 @@ See captured planning output.
 
 ## Evidence Contract
 
-- **State/progress path**: `plans/plan-20260905-0452-lite-task-sync.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260905-0452-lite-task-sync.contract.md`, `tasks/reviews/20260905-0452-lite-task-sync.review.md`, and `tasks/notes/20260905-0452-lite-task-sync.notes.md`
+- **State/progress path**: `plans/archive/plan-20260905-0452-lite-task-sync.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260905-0452-lite-task-sync.contract.md`, `tasks/reviews/20260905-0452-lite-task-sync.review.md`, and `tasks/notes/20260905-0452-lite-task-sync.notes.md`
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
 - **Evaluator rubric**: `tasks/reviews/20260905-0452-lite-task-sync.review.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
@@ -103,11 +107,6 @@ P2: An assets/reference-configs Markdown edit resolves to lite, but the old task
 P3: Admit only a successful lite result without artifacts. Preserve exact diff identity, standard/strict evidence requirements, malformed-waiver rejection, and fail-closed resolver errors. Do not change profile thresholds or guard policy. The extra CLI call reuses existing risk authority; large diffs retain standard/strict requirements.
 
 Scope: finish the task-sync script pair, tests/check-task-sync.test.ts and tests/helper-scripts.test.ts; preserve and validate the approved global-working-rules template and mirror. Document the resulting task-sync contract in the existing reference documentation. No unrelated runtime refactor or host-policy change.
-
-## Task Breakdown
-- [x] Update the remaining legacy evidence fixtures to explicitly exercise standard-profile admission.
-- [x] Run focused regression tests and full Bun tests; report remaining failures without broadening scope.
-- [x] Bind this approved change to its actual substantive digest, run repository checks, and report the final state.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -125,3 +124,9 @@ Scope: finish the task-sync script pair, tests/check-task-sync.test.ts and tests
 - Remaining failure: `tests/unit/candidate-bound-global-runtime-reconciliation.test.ts:233`, candidate authority replaces a predecessor Stop timeout and preserves an unmanaged hook. The isolated rerun passed without a code change; the full-run failure remains unexplained. No runtime reconciliation code was changed in this slice.
 - Repository integrity: deploy SQL order, architecture sync, task sync, strict task workflow, project-state inspection, and init dry-run passed. Helper and reference-config projections are synchronized.
 - Implementation is complete. Delivery to main is authorized with the recorded full-suite failure; keep the unresolved verification finding visible and do not represent the isolated rerun as a passing full suite.
+
+## Historical Closeout
+
+Implementation landed on main in `7fe02beb`; ancestry was checked on 2026-09-05. The original contract, review, and notes paths named in the captured workflow were never tracked with this delivery and are absent. Their declaring metadata is removed; the captured workflow text remains historical context, not a requirement to manufacture those artifacts.
+
+Archive this plan as Superseded by the landed implementation. This does not assert a sealed terminal receipt or a passing full suite. Preserve the unexplained full-suite failure recorded above. Durable disposition: `docs/researches/20260905-task-ledger-closeout.md`.
