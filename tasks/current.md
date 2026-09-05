@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T13:28:46+0800 -->
+<!-- updated_at: 2026-09-05T13:29:18+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-09-05T13:28:46+0800
-> **Source Branch**: codex/task-ledger-closeout
-> **Source Commit**: 3ca1a8d3
+> **Updated At**: 2026-09-05T13:29:18+0800
+> **Source Branch**: main
+> **Source Commit**: abce7923
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: task-ledger-closeout-integration
+> **Reason**: task-ledger-closeout-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -57,20 +57,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: clean
 
 ```
- M docs/researches/20260905-task-ledger-closeout.md
-R  plans/plan-20260902-2101-issue-283-immutable-task-id.md -> plans/archive/plan-20260902-2101-issue-283-immutable-task-id.md
-R  tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md -> tasks/archive/contract-20260905-1308-issue-283-immutable-task-id.md
-R  tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md -> tasks/archive/notes-20260905-1308-issue-283-immutable-task-id.md
-R  tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md -> tasks/archive/review-20260905-1308-issue-283-immutable-task-id.md
-A  tasks/archive/todo-20260905-1308-issue-283-immutable-task-id.md
-UU tasks/current.md
+(none)
 ```
 
 ## Source Artifacts
