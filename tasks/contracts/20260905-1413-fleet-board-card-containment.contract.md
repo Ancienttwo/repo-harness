@@ -5,11 +5,11 @@
 > **Task Profile**: bugfix
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-05 17:35
+> **Last Updated**: 2026-09-05 16:52
 > **Review File**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
 > **Notes File**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:1c833dc36fd235517ec1b4bd75207700591f34b53f87f8c281bf16b40144c255`
+> **Substantive Change SHA256**: `sha256:2f1e7aa3b4114e80c545915aa0a3cce284048bde959b823d1e9e946121afea27`
 
 ## Why
 
@@ -207,27 +207,35 @@ exit_criteria:
   `counts.unclassified` reports every card with no sound column. An inbox scan
   skips superseded-revision events and reports `superseded_revision_count`; a
   caller naming one exact event and revision still fails closed. The operator
-  write releases the registry authorization lock before taking the task lock and
-  re-proves the same registry revision under that lock.
+  write nests the two locks task-outer, registry-inner. One short registry-lock
+  critical section runs before the task lock and does nothing but resolve the
+  repository from the strict registry snapshot: registered, `read_write`, and
+  its canonical path. A second registry-lock critical section runs inside the
+  task lock and re-proves that same registration, `access_mode`, and path
+  before performing `writeImmutableEvent`. There is no registry-revision fence:
+  neither `registryRevision` nor `authorizationRevision` is read, and equality
+  of the resolved path under the lock is the whole proof.
 - Edge cases: round preemption is never contained at the card boundary, so a
   deadline or abort still fails the whole repository; a repository that returned
   its observation before the round aborted keeps its result even if the round
   clock has since passed the deadline; a registered path under a symlinked
   ancestor or with a trailing separator is valid authority while a symlinked leaf
   is still rejected.
-- Regression risks: the operator write now nests registry inside task. The
-  nesting is one-directional: `withRepoHarnessRegistryAuthorizationLock` has one
-  product caller, nothing `src/effects/repo-registry.ts` runs under that lock
-  acquires a task lock, and its only caller-supplied hook writes a config file,
-  so no cycle exists. Three existing assertions changed meaning: a revocation
-  that lands while a publication waits for the task lock now wins, a blocked
-  canonical read no longer pins the machine-global registry lock, and the
-  browser decoder now requires `counts.unclassified` and a nullable card
-  `error` in the payload it accepts.
+- Regression risks: the operator write now takes the task lock outside the
+  registry lock, so the registry lock is held only for the two short critical
+  sections above. That nesting is one-directional:
+  `withRepoHarnessRegistryAuthorizationLock` has one product caller, nothing
+  `src/effects/repo-registry.ts` runs under that lock acquires a task lock, and
+  its only caller-supplied hook writes a config file, so no cycle exists. Three
+  existing assertions changed meaning: a revocation that lands while a
+  publication waits for the task lock now wins, a blocked canonical read no
+  longer pins the machine-global registry lock, and the browser decoder now
+  requires `counts.unclassified` and a nullable card `error` in the payload it
+  accepts.
 
 ## Rollback Point
 
 - Commit / checkpoint: `1a9a5ae1` (branch base on `main`)
-- Revert strategy: revert the fleet board, task inbox, task message request, and
-  transport projection commits on `codex/fleet-board-card-containment` together
-  with their tests; no persisted artifact format changes, so no data migration.
+- Revert strategy: revert the branch's commits together — the fleet board, task
+  inbox, task message request, and transport projection changes plus their
+  tests; no persisted artifact format changes, so no data migration.

@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
 > **Notes File**: tasks/notes/20260905-1413-fleet-board-card-containment.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-09-05 17:55
+> **Last Updated**: 2026-09-05 16:52
 > **Recommendation**: pending
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -17,11 +17,11 @@
 - Verdict: pending
 - Change type: code-change
 - Intended files changed: `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, the blocking type-level additions in `src/operator-web/types.ts` and `src/operator-web/fixture.ts`, plus their tests
-- Actual files changed: the seven source files above, `tests/effects/fleet-board.test.ts`, `tests/unit/fleet-board.test.ts`, `tests/unit/operator-fleet-snapshot.test.ts`, `tests/unit/task-inbox-v1.test.ts`, `tests/effects/operator-task-message.test.ts`, `tests/cli/operator-serve.test.ts`, `tests/operator-web/operator-ui.test.tsx`, `tests/operator-web/operator-interactions.test.tsx`
+- Actual files changed: source — `src/core/fleet/board.ts`, `src/core/operator/fleet-snapshot.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, `src/operator-web/types.ts`, `src/operator-web/fixture.ts`, `src/operator-web/i18n.ts`; tests — `tests/effects/fleet-board.test.ts`, `tests/unit/fleet-board.test.ts`, `tests/unit/operator-fleet-snapshot.test.ts`, `tests/unit/task-inbox-v1.test.ts`, `tests/effects/operator-task-message.test.ts`, `tests/cli/operator-serve.test.ts`, `tests/unit/operator-web-types.test.ts`, `tests/operator-web/operator-ui.test.tsx`, `tests/operator-web/operator-interactions.test.tsx`; workflow artifacts — `plans/plan-20260905-1413-fleet-board-card-containment.md`, `tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md`, `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`, `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`, `tasks/todos.md`
 - Commands passed: focused fleet/inbox/operator suites, `bun run check:type`, `bun run build:operator-web`, `bash scripts/check-deploy-sql-order.sh`, `bash scripts/check-architecture-sync.sh`, `bash scripts/check-task-sync.sh`, `bash scripts/check-task-workflow.sh --strict`, `bun scripts/inspect-project-state.ts --repo . --format text`, `bun src/cli/index.ts init --repo . --dry-run`, full `bun test --timeout 60000`
 - Residual risks: the operator write nests the registry authorization lock inside the task lock; the one-directional proof is recorded in the notes file
 - Reviewer action required: inspect diff and card
-- Rollback: revert the two commits on `codex/fleet-board-card-containment`
+- Rollback: revert the branch's commits on `codex/fleet-board-card-containment` together
 
 ## Mode Evidence
 

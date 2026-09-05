@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
 > **Contract**: tasks/contracts/20260905-1413-fleet-board-card-containment.contract.md
 > **Review**: tasks/reviews/20260905-1413-fleet-board-card-containment.review.md
-> **Last Updated**: 2026-09-05 17:45
+> **Last Updated**: 2026-09-05 16:52
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -50,6 +50,15 @@
 
 ## Deviations From Plan Or Spec
 
+- The plan decided the lock order the other way: resolve the repository under
+  the registry lock, release it, take the task lock, and carry the registry
+  revision forward as a fence. The shipped code inverts that to task-outer,
+  registry-inner, and replaces the fence with a second registry-lock critical
+  section that re-proves registration, `access_mode`, and path and performs the
+  write inside it. The plan's order left the re-check unlocked, which is the
+  revoke-after-check window the external reviewer reproduced: a revocation
+  landing between the release and the write was still published against the
+  authorization it had already lost.
 - The additive `FleetBoardCardV1.error` and `FleetBoardCountsV1.unclassified`
   fields are required members of the type `src/operator-web` shares, so the
   branch could not type-check without the browser transport decoding them. The
@@ -65,6 +74,11 @@
   fails closed at the task-lock re-check. `tests/cli/operator-serve.test.ts` now
   asserts the registry lock is *free* while a worker is stuck in a blocked
   canonical read.
+- `superseded_revision_count` needs no CLI surfacing work. `repo-harness fleet
+  inbox list --json` writes `JSON.stringify(result)` of the whole
+  `listTaskInbox` return (`src/cli/commands/fleet.ts:857-866`), so the new
+  counter is already in the rendered output and there is no deferred item to
+  carry.
 - `createFleetProviderObservationLimiter` is exported so the slot-transfer
   invariant has a deterministic unit guard; the release window it protects is
   one microtask wide and cannot be reproduced through the provider fixture.
