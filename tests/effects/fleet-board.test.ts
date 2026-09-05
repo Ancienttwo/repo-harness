@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
   collectFleetBoard,
+  createFleetProviderObservationLimiter,
   productionFleetBoardDependencies,
   watchFleetBoard,
   type FleetBoardDependencies,
@@ -62,6 +63,7 @@ function card(index: number): FleetBoardCardInputV1 {
     current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready',
     feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
     inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null }, snapshot_consistency: 'stable',
+    error: null,
   };
 }
 
@@ -73,7 +75,11 @@ function shellSingleQuoted(value: string): string {
   return `'${value.replace(/'/gu, "'\\\"'\\\"'")}'`;
 }
 
-function createReviewingProviderFixture(root: string, cards: number): { readonly repo: RepoHarnessRegisteredRepo; readonly gh_bin: string; readonly counter_dir: string } {
+function createReviewingProviderFixture(
+  root: string,
+  cards: number,
+  options: { readonly omit_receipt_for?: number } = {},
+): { readonly repo: RepoHarnessRegisteredRepo; readonly gh_bin: string; readonly counter_dir: string } {
   const sprintPath = 'plans/sprints/fleet-provider.sprint.md';
   const taskNames = Array.from({ length: cards }, (_, index) => `observe provider card ${index + 1}`);
   git(root, 'init', '-b', 'main');
@@ -114,7 +120,9 @@ function createReviewingProviderFixture(root: string, cards: number): { readonly
       provider: 'github', provider_repo_id: 'R_fleet_provider', pr_number: index + 1,
       pr_url: `https://example.invalid/pr/${index + 1}`, created_at: '2026-08-23T00:00:00.000Z',
     });
-    writePublicationReceiptCache(root, receipt);
+    // One card observes a publication whose receipt cache is absent: the
+    // fixture's damaged card, not a damaged repository.
+    if (options.omit_receipt_for !== index + 1) writePublicationReceiptCache(root, receipt);
     const owner = buildLeaseOwnerRecord({
       claimId, taskId, taskRevision, sprintPath, targetRef: 'main', generation: 1,
       sessionId: `fleet-provider-session-${index + 1}`, sourceWorktree: root,
@@ -169,6 +177,32 @@ function createReviewingProviderFixture(root: string, cards: number): { readonly
     },
     gh_bin: ghBin,
     counter_dir: counterDir,
+  };
+}
+
+
+function createPlainBoardFixture(root: string, rows: number, repoId: string): RepoHarnessRegisteredRepo {
+  const sprintPath = 'plans/sprints/fleet-plain.sprint.md';
+  git(root, 'init', '-b', 'main');
+  git(root, 'config', 'user.name', 'Fleet Plain Test');
+  git(root, 'config', 'user.email', 'fleet-plain@test.invalid');
+  mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
+  mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
+  const rowNames = Array.from({ length: rows }, (_, index) => `observe plain card ${index + 1}`);
+  writeFileSync(join(root, sprintPath), [
+    '# Fleet plain fixture', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    ...rowNames.map((task, index) => `| ${index + 1} | ${fixtureTaskId(task)} | [ ] | ${task} | inline | plain observation remains read only | (pending) |`),
+    '',
+  ].join('\n'));
+  writeFileSync(join(root, 'README.md'), 'fixture\n');
+  git(root, 'add', '.');
+  git(root, 'commit', '-m', 'plain fixture');
+  return {
+    id: repoId, path: realpathSync(root), accessMode: 'read_only', source: 'manual',
+    registeredAt: '2026-09-05T00:00:00.000Z', lastSeenAt: '2026-09-05T00:00:00.000Z',
   };
 }
 
@@ -418,6 +452,156 @@ describe('fleet board collector', () => {
     expect(JSON.stringify(inbox)).not.toContain('/private/task-inbox');
     expect(JSON.stringify(inbox)).not.toContain('secret=redacted');
   });
+
+
+  test('contains one card-internal observation failure and keeps every sibling card of that repository', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fleet-board-card-containment-'));
+    const previousGhBin = process.env.REPO_HARNESS_GH_BIN;
+    const previousCounter = process.env.FLEET_PROVIDER_COUNTER_DIR;
+    try {
+      const fixture = createReviewingProviderFixture(root, 2, { omit_receipt_for: 2 });
+      process.env.REPO_HARNESS_GH_BIN = fixture.gh_bin;
+      process.env.FLEET_PROVIDER_COUNTER_DIR = fixture.counter_dir;
+      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000 }, {
+        read_registry: () => registry([fixture.repo]),
+        collect_repository: productionFleetBoardDependencies.collect_repository,
+      });
+      const repository = result.repositories[0]!;
+
+      expect(repository.status).toBe('ok');
+      expect(repository.cards).toHaveLength(2);
+      const failed = repository.cards.filter((entry) => entry.error !== null);
+      const readable = repository.cards.filter((entry) => entry.error === null);
+      expect(failed).toHaveLength(1);
+      expect(failed[0]).toMatchObject({
+        column: null,
+        merge_readiness: null,
+        execution_readiness: null,
+        error: { code: 'repo_publication_unreadable', message: 'repository publication observation is unavailable' },
+      });
+      expect(failed[0]?.blocker_codes).toEqual([]);
+      expect(readable).toHaveLength(1);
+      expect(readable[0]?.column).not.toBeNull();
+      expect(repository.snapshot_consistency).toBe('degraded');
+      expect(result.counts.unclassified).toBe(1);
+      expect(result.counts.unreadable).toBe(0);
+      expect(JSON.stringify(result)).not.toContain('receipt is unavailable');
+    } finally {
+      if (previousGhBin === undefined) delete process.env.REPO_HARNESS_GH_BIN;
+      else process.env.REPO_HARNESS_GH_BIN = previousGhBin;
+      if (previousCounter === undefined) delete process.env.FLEET_PROVIDER_COUNTER_DIR;
+      else process.env.FLEET_PROVIDER_COUNTER_DIR = previousCounter;
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('keeps a repository that completed its observation even when the round clock passed the deadline', async () => {
+    const repos = [repo(0), repo(1)];
+    const dependencies: FleetBoardDependencies = {
+      read_registry: () => registry(repos),
+      // The first repository holds the event loop past the round deadline and
+      // still finishes: the deadline timer cannot have preempted it.
+      collect_repository: async (entry, _registry, options) => {
+        const until = Date.now() + options.timeout_ms + 50;
+        while (Date.now() < until) { /* model a blocking synchronous repository */ }
+        return {
+          repository_id: entry.id, repo_root: entry.path, access_mode: entry.accessMode,
+          status: 'ok', snapshot_consistency: 'stable', cards: [card(Number(entry.id.slice(-2)))], error: null,
+        };
+      },
+    };
+
+    const result = await collectFleetBoard({ max_concurrency: 1, timeout_ms: 1_000 }, dependencies);
+    expect(result.repositories.find((entry) => entry.repository_id === 'repo-00')).toMatchObject({ status: 'ok' });
+    expect(result.repositories.find((entry) => entry.repository_id === 'repo-00')?.cards).toHaveLength(1);
+    expect(result.repositories.find((entry) => entry.repository_id === 'repo-01')).toMatchObject({
+      status: 'unreadable', error: { code: 'repo_collection_timeout' },
+    });
+  }, 10_000);
+
+  test('returns to the event loop while collecting one repository so the round deadline can preempt it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fleet-board-yield-'));
+    try {
+      const entry = createPlainBoardFixture(root, 40, 'repo-yield');
+      const dependencies: FleetBoardDependencies = {
+        read_registry: () => registry([entry]),
+        collect_repository: productionFleetBoardDependencies.collect_repository,
+      };
+      let ticks = 0;
+      const ticker = setInterval(() => { ticks += 1; }, 1);
+      try {
+        const result = await collectFleetBoard({ max_concurrency: 1, timeout_ms: 30_000 }, dependencies);
+        expect(result.repositories[0]?.cards).toHaveLength(40);
+      } finally {
+        clearInterval(ticker);
+      }
+      expect(ticks).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('never publishes a free provider slot between waking a waiter and admitting it', async () => {
+    const limiter = createFleetProviderObservationLimiter(1);
+    let active = 0;
+    let maximum = 0;
+    const observe = async () => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await Promise.resolve();
+      active -= 1;
+    };
+    let resolveFirst!: () => void;
+    const first = new Promise<void>((resolve) => { resolveFirst = resolve; });
+    const held = limiter.run(() => first);
+    const waiting = limiter.run(observe);
+    // Runs in the same resolution turn as the limiter's own release, which is
+    // exactly the window a decrement-then-wake release leaves open.
+    const admitted = first.then(() => limiter.run(observe));
+    resolveFirst();
+
+    await Promise.all([held, waiting, admitted]);
+    expect(maximum).toBe(1);
+  });
+
+  if (process.platform !== 'win32') {
+    test('accepts a registered path under a symlinked ancestor and rejects a symlinked repository leaf', async () => {
+      const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-board-authority-')));
+      try {
+        mkdirSync(join(root, 'actual'), { recursive: true });
+        symlinkSync(join(root, 'actual'), join(root, 'aliased'));
+        const repoRoot = join(root, 'aliased', 'repo');
+        mkdirSync(repoRoot, { recursive: true });
+        const entry = createPlainBoardFixture(repoRoot, 1, 'repo-aliased');
+        const aliased: RepoHarnessRegisteredRepo = { ...entry, id: 'repo-aliased', path: repoRoot };
+
+        const underSymlinkedAncestor = await collectFleetBoard({ timeout_ms: 5_000 }, {
+          read_registry: () => registry([aliased]),
+          collect_repository: productionFleetBoardDependencies.collect_repository,
+        });
+        expect(underSymlinkedAncestor.repositories[0]).toMatchObject({ status: 'ok' });
+        expect(underSymlinkedAncestor.repositories[0]?.cards).toHaveLength(1);
+
+        const withTrailingSeparator = await collectFleetBoard({ timeout_ms: 5_000 }, {
+          read_registry: () => registry([{ ...aliased, id: 'repo-trailing', path: `${repoRoot}/` }]),
+          collect_repository: productionFleetBoardDependencies.collect_repository,
+        });
+        expect(withTrailingSeparator.repositories[0]).toMatchObject({ status: 'ok' });
+
+        const leaf = join(root, 'repo-leaf-link');
+        symlinkSync(repoRoot, leaf);
+        const symlinkedLeaf = await collectFleetBoard({ timeout_ms: 5_000 }, {
+          read_registry: () => registry([{ ...aliased, id: 'repo-leaf', path: leaf }]),
+          collect_repository: productionFleetBoardDependencies.collect_repository,
+        });
+        expect(symlinkedLeaf.repositories[0]).toMatchObject({
+          status: 'unreadable', error: { code: 'repo_authority_invalid' },
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }, 30_000);
+  }
 
   test('watch emits immediate sequential snapshots with monotonic sequence and no overlap', async () => {
     const controller = new AbortController();

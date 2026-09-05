@@ -25,6 +25,7 @@ function card(overrides: Partial<FleetBoardCardInputV1> = {}): FleetBoardCardInp
     feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
     inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null },
     snapshot_consistency: 'stable',
+    error: null,
     ...overrides,
   };
 }
@@ -114,7 +115,7 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     const second = snapshot('2026-08-23T00:01:00.000Z', 2);
     expect(first.repositories.map((entry) => entry.repository_id)).toEqual(['repo-a', 'repo-z']);
     expect(first.snapshot_sha256).toBe(second.snapshot_sha256);
-    expect(first.counts).toEqual({ available: 2, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 });
+    expect(first.counts).toEqual({ available: 2, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 });
   });
 
   test('rolls a changed card up through its repository and the Fleet snapshot', () => {
@@ -203,6 +204,59 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(result.snapshot_consistency).toBe('degraded');
     expect(result.counts.unreadable).toBe(1);
     expect(result.repositories[0]).toMatchObject({ status: 'unreadable', cards: [], error: { code: 'repo_unreadable' } });
+  });
+
+  test('counts a card with no sound classification instead of dropping it from the fleet totals', () => {
+    const result = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable',
+        cards: [
+          card({ task_id: '1'.repeat(64) }),
+          card({ task_id: '2'.repeat(64), execution_readiness: 'planning_required' }),
+        ],
+        error: null,
+      }],
+    });
+
+    expect(result.counts).toEqual({
+      available: 1, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 1,
+    });
+    expect(result.repositories[0]?.cards).toHaveLength(2);
+  });
+
+  test('keeps a failed card beside its readable siblings and never classifies it', () => {
+    const result = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable',
+        cards: [
+          card({ task_id: '1'.repeat(64) }),
+          card({
+            task_id: '2'.repeat(64),
+            error: { code: 'repo_inbox_unreadable', message: 'inbox stderr /private/agent-root token=super-secret' },
+          }),
+        ],
+        error: null,
+      }],
+    });
+    const repository = result.repositories[0]!;
+
+    expect(repository.status).toBe('ok');
+    expect(repository.snapshot_consistency).toBe('degraded');
+    expect(repository.cards[0]).toMatchObject({ column: 'available', error: null });
+    expect(repository.cards[1]).toMatchObject({
+      column: null,
+      error: { code: 'repo_inbox_unreadable', message: 'repository inbox observation is unavailable' },
+    });
+    expect(result.counts.available).toBe(1);
+    expect(result.counts.unclassified).toBe(1);
+    expect(result.counts.unreadable).toBe(0);
+    const rendered = JSON.stringify(result);
+    expect(rendered).not.toContain('/private/agent-root');
+    expect(rendered).not.toContain('super-secret');
   });
 
   test('redacts repository causes to the closed public error vocabulary', () => {

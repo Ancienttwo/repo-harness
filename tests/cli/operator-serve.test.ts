@@ -571,7 +571,10 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await timedOut.json()).toMatchObject({ error: { code: 'task_message_timeout' } });
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
       const registryLockPath = `${repoHarnessRegisteredReposPath(registry.env)}.lock`;
-      expect(existsSync(registryLockPath)).toBe(true);
+      // The blocked worker is past registry authorization and stuck in this
+      // repository's canonical read, so the machine-global registry lock is
+      // free for every other repository while it hangs.
+      expect(existsSync(registryLockPath)).toBe(false);
       expect(existsSync(join(repoRoot, '.git/repo-harness/coordination/v1/locks/tasks', `${TASK_ID}.lock`))).toBe(false);
       expect(existsSync(join(repoRoot, '.git/repo-harness/task-inbox/v1', TASK_ID, 'events'))).toBe(false);
 

@@ -208,6 +208,62 @@ describe('Task Inbox V1 common-directory effects', () => {
     }).deliveries).toEqual([]);
   }));
 
+  test('skips a stored event whose canonical revision drifted instead of failing every scan', () => withFixture((value) => {
+    const stale = message(value, '123e4567-e89b-42d3-a456-426614174020', 'task', 'written before the row was edited', '2026-08-23T05:00:00Z', 'user');
+    sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: stale });
+
+    writeFileSync(join(value.root, SPRINT_PATH), [
+      '# Sprint: inbox', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
+      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+      '|---|----|--------|------|------|------------|------|',
+      `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves delivery and repair | (pending) |`, '',
+    ].join('\n'));
+    git(value.root, 'add', SPRINT_PATH);
+    git(value.root, 'commit', '-m', 'edit the acceptance cell');
+    const nextRevision = deriveTaskRevision({
+      taskCell: TASK_CELL, taskId: value.task_id, modeCell: 'contract', acceptanceCell: 'proves delivery and repair',
+    });
+    expect(nextRevision).not.toBe(value.task_revision);
+
+    const recipient = { kind: 'user', id: 'alice' } as const;
+    const listing = listTaskInbox({
+      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, recipient,
+    });
+    expect(listing.entries).toEqual([]);
+    expect(listing.superseded_revision_count).toBe(1);
+
+    expect(deliverTaskInbox({
+      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, recipient,
+      delivery_channel: 'manual', delivered_at: '2026-08-23T06:00:00Z',
+    }).deliveries).toEqual([]);
+
+    expect(summarizeTaskInboxForFleet({
+      repo_root: value.root, task_id: value.task_id, task_revision: nextRevision, current_claim: null,
+    })).toEqual({ unread_count: 0, addressed_to_current_claim: false, snapshot_consistency: 'stable' });
+
+    const current = buildTaskMessageEvent({
+      message_id: '123e4567-e89b-42d3-a456-426614174021',
+      task_id: value.task_id,
+      task_revision: nextRevision,
+      scope: 'task',
+      target_claim_id: null,
+      target_generation: null,
+      sender_kind: 'user',
+      sender_id: 'alice',
+      sender_trust: 'local_operator',
+      audience: 'user',
+      body: 'written after the row was edited',
+      created_at: '2026-08-23T06:01:00Z',
+      in_reply_to: null,
+    });
+    sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: current });
+    const relisted = listTaskInbox({
+      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, recipient,
+    });
+    expect(relisted.entries.map((entry) => entry.event.message_id)).toEqual([current.message_id]);
+    expect(relisted.superseded_revision_count).toBe(1);
+  }));
+
   test('fails closed on a symlinked immutable event instead of following it', () => withFixture((value) => {
     const event = message(value, '123e4567-e89b-42d3-a456-426614174013', 'task', 'ordinary task scope');
     const stored = sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event });

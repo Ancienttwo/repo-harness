@@ -1,4 +1,6 @@
+import { createHash } from 'crypto';
 import { lstatSync, realpathSync } from 'fs';
+import { sep } from 'path';
 
 import {
   projectFleetBoardSnapshot,
@@ -6,6 +8,7 @@ import {
   type FleetBoardCardInputV1,
   type FleetBoardErrorCode,
   type FleetBoardFeedbackSummaryV1,
+  type FleetBoardInboxSummaryV1,
   type FleetBoardProjectionInputV1,
   type FleetBoardSnapshotV1,
   type FleetRepositoryBoardInputV1,
@@ -106,24 +109,39 @@ function repositoryError(repo: RepoHarnessRegisteredRepo, code: FleetBoardErrorC
   });
 }
 
+/** A trailing separator would make `lstatSync` follow a symlinked leaf. */
+function registeredAuthorityPath(path: string): string {
+  let normalized = path;
+  while (normalized.length > 1 && (normalized.endsWith(sep) || normalized.endsWith('/'))) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
+/**
+ * The invariant this protects is that the registry entry itself names a real
+ * directory rather than a symlink someone can repoint. A registered path may
+ * legitimately sit under a symlinked ancestor (macOS `/tmp` and `/var`) or
+ * carry a trailing separator, so comparing the resolved path against the
+ * registered string rejects valid authorities without protecting anything.
+ */
 function assertRepositoryAuthority(repo: RepoHarnessRegisteredRepo): void {
+  const path = registeredAuthorityPath(repo.path);
   let stat;
   try {
-    stat = lstatSync(repo.path);
+    stat = lstatSync(path);
   } catch (error) {
     throw new FleetRepositoryError('repo_unreadable', `cannot inspect registry repository ${repo.id}`, error);
   }
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw new FleetRepositoryError('repo_authority_invalid', `registry repository ${repo.id} is not a direct directory authority`);
   }
-  let resolved: string;
   try {
-    resolved = realpathSync(repo.path);
+    // Resolvability probe only: the authority invariant is the lstat above, and
+    // the resolved path is deliberately discarded.
+    realpathSync(path);
   } catch (error) {
     throw new FleetRepositoryError('repo_unreadable', `cannot resolve registry repository ${repo.id}`, error);
-  }
-  if (resolved !== repo.path) {
-    throw new FleetRepositoryError('repo_authority_invalid', `registry repository ${repo.id} canonical path changed`);
   }
 }
 
@@ -144,6 +162,31 @@ function feedbackSummary(repoRoot: string, publicationId: string): {
 
 function emptyFeedback(): FleetBoardFeedbackSummaryV1 {
   return Object.freeze({ pending_count: 0, no_progress: false, repair_actions: Object.freeze([]) });
+}
+
+function emptyInbox(): FleetBoardInboxSummaryV1 {
+  return Object.freeze({
+    unread_count: 0,
+    addressed_to_current_claim: false,
+    delivery_state: 'pending',
+    runtime_reachability: 'unknown',
+    effect_sha256: null,
+    failure_class: null,
+  });
+}
+
+/** Identity of one Agent Runtime effect-store read, for A/B tear detection. */
+function runtimeEffectsRevision(statuses: readonly AgentRuntimeEffectStatus[]): string {
+  return createHash('sha256').update(JSON.stringify(statuses), 'utf-8').digest('hex');
+}
+
+/**
+ * One macrotask boundary. A repository's card phase is otherwise a chain of
+ * already-resolved promises, so the round's deadline timer and abort could not
+ * run until the whole repository finished holding the event loop.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => { setImmediate(resolve); });
 }
 
 function mapRepositoryError(error: unknown): FleetBoardErrorCode {
@@ -182,7 +225,9 @@ async function cardInput(
   options: FleetRepositoryCollectionOptions,
   boardConsistency: 'stable' | 'changed_during_read',
   runtimeEffects: readonly AgentRuntimeEffectStatus[],
+  runtimeRevision: string,
 ): Promise<FleetBoardCardInputV1> {
+  await yieldToEventLoop();
   assertCollectionActive(options.signal, options.deadline_exceeded);
   const currentPublication = card.claim?.current_publication ?? null;
   let readiness = null;
@@ -222,6 +267,12 @@ async function cardInput(
     current_claim: card.claim === null ? null : { claim_id: card.claim.claim_id, generation: card.claim.generation },
     statuses: runtimeEffects,
   });
+  // The runtime statuses were read once for the repository but joined against
+  // this card's receipts just now; re-reading the store is what makes a torn
+  // join observable instead of silently labelled stable.
+  const runtimeConsistency = runtimeEffectsRevision(observeAgentRuntimeEffects(repo.path)) === runtimeRevision
+    ? 'stable'
+    : 'changed_during_read';
   return Object.freeze({
     task_id: card.task_id,
     task_revision: card.task_revision,
@@ -243,8 +294,48 @@ async function cardInput(
       addressed_to_current_claim: inbox.addressed_to_current_claim,
       ...runtime,
     }),
-    snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency, feedbackConsistency),
+    snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency, feedbackConsistency, runtimeConsistency),
+    error: null,
   });
+}
+
+/**
+ * A card whose own observation threw keeps only what the board already proved
+ * -- identity, row cells, lease pointer -- and reports every observation-derived
+ * field in its empty form. Nothing is invented to fill the failed read.
+ */
+function failedCardInput(
+  card: ReturnType<typeof resolveBoard>['cards'][number],
+  boardConsistency: 'stable' | 'changed_during_read',
+  code: FleetBoardErrorCode,
+): FleetBoardCardInputV1 {
+  const currentPublication = card.claim?.current_publication ?? null;
+  return Object.freeze({
+    task_id: card.task_id,
+    task_revision: card.task_revision,
+    task_label: rowTaskLabel(card.task),
+    task_index: rowTaskIndex(card.row_index),
+    task_state: card.task_state,
+    lease_state: card.lease_state,
+    claim_id: card.claim?.claim_id ?? null,
+    generation: card.claim?.generation ?? null,
+    current_publication: currentPublication === null ? null : {
+      publication_id: currentPublication.publication_id,
+      head_sha: currentPublication.head_sha,
+    },
+    merge_readiness: null,
+    execution_readiness: null,
+    feedback: emptyFeedback(),
+    inbox: emptyInbox(),
+    snapshot_consistency: boardConsistency,
+    error: Object.freeze({ code, message: fleetBoardErrorMessage(code) }),
+  });
+}
+
+/** Round-level preemption is never contained at the card boundary. */
+function isCollectionPreemption(error: unknown): boolean {
+  return error instanceof FleetBoardError
+    || (error instanceof FleetRepositoryError && error.code === 'repo_collection_timeout');
 }
 
 /**
@@ -264,8 +355,11 @@ function cardInputConsistency(
   board: 'stable' | 'changed_during_read',
   inbox: 'stable' | 'changed_during_read',
   feedback: 'stable' | 'changed_during_read',
+  runtime: 'stable' | 'changed_during_read',
 ): 'stable' | 'changed_during_read' {
-  return board === 'stable' && inbox === 'stable' && feedback === 'stable' ? 'stable' : 'changed_during_read';
+  return board === 'stable' && inbox === 'stable' && feedback === 'stable' && runtime === 'stable'
+    ? 'stable'
+    : 'changed_during_read';
 }
 
 async function collectRepository(
@@ -304,14 +398,18 @@ async function collectRepository(
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     const offers = offerIndex(offered?.offers ?? []);
     const runtimeEffects = observeAgentRuntimeEffects(repo.path);
-    const cards = await collectBounded(board.cards, options.max_concurrency, async (card) => cardInput(
-      repo,
-      card,
-      offers,
-      { ...options, signal: controller.signal },
-      board.snapshot_consistency,
-      runtimeEffects,
-    ));
+    const runtimeRevision = runtimeEffectsRevision(runtimeEffects);
+    const cardOptions = { ...options, signal: controller.signal };
+    const cards = await collectBounded(board.cards, options.max_concurrency, async (card) => {
+      try {
+        return await cardInput(repo, card, offers, cardOptions, board.snapshot_consistency, runtimeEffects, runtimeRevision);
+      } catch (error) {
+        // One damaged card is one damaged card. Only round preemption, which
+        // owns no card of its own, still fails the whole repository.
+        if (isCollectionPreemption(error)) throw error;
+        return failedCardInput(card, board.snapshot_consistency, mapRepositoryError(error));
+      }
+    });
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     return Object.freeze({
       repository_id: repo.id,
@@ -364,17 +462,21 @@ async function collectBounded<T, U>(
   return output;
 }
 
-function createFleetProviderObservationLimiter(maxConcurrency: number): FleetProviderObservationLimiter {
+export function createFleetProviderObservationLimiter(maxConcurrency: number): FleetProviderObservationLimiter {
   let active = 0;
   const waiting: Array<() => void> = [];
   const release = () => {
-    active -= 1;
-    waiting.shift()?.();
+    // Hand the slot straight to the waiter. Decrementing first publishes a
+    // free slot that a later run() can take before the woken waiter resumes,
+    // which admits one observation more than the round's cap.
+    const next = waiting.shift();
+    if (next === undefined) active -= 1;
+    else next();
   };
   return Object.freeze({
     async run<T>(observe: () => Promise<T>): Promise<T> {
       if (active >= maxConcurrency) await new Promise<void>((resolve) => waiting.push(resolve));
-      active += 1;
+      else active += 1;
       try {
         return await observe();
       } finally {
@@ -410,8 +512,13 @@ export async function collectFleetBoard(
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) controller.abort();
+  const inFlight = new Set<object>();
+  const preempted = new Set<object>();
   const deadline = setTimeout(() => {
     deadlineExceeded = true;
+    // Only repositories still observing when the round aborts lose their
+    // result; one that already returned holds a complete observation.
+    for (const token of inFlight) preempted.add(token);
     controller.abort();
   }, timeoutMs);
   try {
@@ -438,6 +545,7 @@ export async function collectFleetBoard(
     assertCollectionActive(controller.signal, deadlineExceededNow);
     const providerLimiter = createFleetProviderObservationLimiter(maxConcurrency);
     const repositories = await collectBounded(registry.repos, maxConcurrency, async (repo) => {
+      await yieldToEventLoop();
       if (deadlineExceededNow() || controller.signal.aborted) {
         return repositoryError(
           repo,
@@ -445,6 +553,8 @@ export async function collectFleetBoard(
           new Error(deadlineExceededNow() ? 'fleet collection round deadline exceeded' : 'fleet collection was aborted'),
         );
       }
+      const token = {};
+      inFlight.add(token);
       try {
         const collected = await dependencies.collect_repository(repo, registry, {
           now_ms: nowMs,
@@ -454,11 +564,13 @@ export async function collectFleetBoard(
           deadline_exceeded: deadlineExceededNow,
           provider_limiter: providerLimiter,
         });
-        return deadlineExceededNow()
+        return preempted.has(token)
           ? repositoryError(repo, 'repo_collection_timeout', new Error('fleet collection round deadline exceeded'))
           : collected;
       } catch (error) {
         return repositoryError(repo, deadlineExceededNow() ? 'repo_collection_timeout' : mapRepositoryError(error), error);
+      } finally {
+        inFlight.delete(token);
       }
     });
     if (options.signal?.aborted) throw collectionAbortError(() => false);

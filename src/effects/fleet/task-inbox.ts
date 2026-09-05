@@ -56,6 +56,21 @@ export interface SendTaskMessageInput {
   readonly event: TaskMessageEventV1;
 }
 
+export interface SendTaskBoardMessageInput extends SendTaskMessageInput {
+  /**
+   * Runs the final publication inside the caller's registry authorization
+   * lock, after re-proving that authority.
+   *
+   * The task lock stays outside it, so this send never holds the
+   * machine-global registry lock while it waits up to the task-lock budget or
+   * across canonical Git reads. Checking authorization and then publishing
+   * outside that lock would leave a window where a revocation commits between
+   * the check and the write, so the check and the write are one critical
+   * section of the same lock a revocation must take.
+   */
+  readonly with_registry_authority: <T>(publish: () => T) => T;
+}
+
 export interface TaskInboxListInput {
   readonly repo_root: string;
   readonly task_id: string;
@@ -98,6 +113,8 @@ export interface TaskInboxEventEntry {
 export interface TaskInboxListResult {
   readonly task_id: string;
   readonly entries: readonly TaskInboxEventEntry[];
+  /** Audience-matching events skipped because their task revision is superseded. */
+  readonly superseded_revision_count: number;
 }
 
 export interface TaskInboxDelivery {
@@ -148,10 +165,23 @@ function fail(code: TaskInboxErrorCode, message: string, cause?: unknown): never
   throw new TaskInboxError(code, message, cause);
 }
 
+/**
+ * A rejection raised by a caller-supplied authority check. This module owns the
+ * Task Inbox error vocabulary, not the caller's, so its reason crosses the lock
+ * boundary unchanged instead of being flattened into `task_message_unreadable`.
+ */
+class TaskInboxAuthorityRejection extends Error {
+  constructor(readonly reason: unknown) {
+    super('the task inbox caller rejected its own authority before publication');
+    this.name = 'TaskInboxAuthorityRejection';
+  }
+}
+
 function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T): T {
   try {
     return withTaskLock(repoRoot, taskId, action);
   } catch (error) {
+    if (error instanceof TaskInboxAuthorityRejection) throw error.reason;
     throw asInboxError(error, 'task_message_unreadable', `cannot operate task inbox under the task lock for ${taskId}`);
   }
 }
@@ -600,10 +630,28 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
   return receipt;
 }
 
-function assertEventCanonical(event: TaskMessageEventV1, taskId: string, revision: string): void {
+function assertEventStored(event: TaskMessageEventV1, taskId: string): void {
   if (event.task_id !== taskId) fail('task_message_unreadable', `task message event ${event.message_id} is in the wrong task directory`);
-  if (event.task_revision !== revision) fail('task_revision_mismatch', `task message event ${event.message_id} revision is stale`);
   if (Buffer.byteLength(event.body, 'utf-8') > TASK_MESSAGE_BODY_MAX_BYTES) fail('task_message_unreadable', `task message event ${event.message_id} body exceeds its limit`);
+}
+
+/** Fails closed where the caller names one exact event and revision. */
+function assertEventCanonical(event: TaskMessageEventV1, taskId: string, revision: string): void {
+  assertEventStored(event, taskId);
+  if (event.task_revision !== revision) fail('task_revision_mismatch', `task message event ${event.message_id} revision is stale`);
+}
+
+/**
+ * A scan reads every stored event of one task. Editing the sprint row's Task,
+ * Mode, or Acceptance cell drifts `task_revision`, so an event written before
+ * that edit is no longer addressed to the canonical task: it is skipped, and
+ * is neither listed, delivered, nor counted. Aborting the whole scan instead
+ * let one superseded event hide the entire inbox permanently -- and, through
+ * the fleet card's inbox observation, the entire repository.
+ */
+function isCurrentRevisionEvent(event: TaskMessageEventV1, taskId: string, revision: string): boolean {
+  assertEventStored(event, taskId);
+  return event.task_revision === revision;
 }
 
 function isGloballySatisfied(repoRoot: string, taskId: string, event: TaskMessageEventV1): boolean {
@@ -649,7 +697,7 @@ function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskIn
   const revisionParts: string[] = [];
   let unreadCount = 0;
   for (const event of events) {
-    assertEventCanonical(event, input.task_id, input.task_revision);
+    if (!isCurrentRevisionEvent(event, input.task_id, input.task_revision)) continue;
     revisionParts.push(canonicalTaskMessageEventBytes(event));
     const receipts = listReceipts(input.repo_root, input.task_id, event.message_id);
     for (const receipt of receipts) revisionParts.push(canonicalTaskMessageDeliveryReceiptBytes(receipt));
@@ -698,6 +746,7 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
 function sendTaskMessageWithAuthority(
   input: SendTaskMessageInput,
   requireActiveTaskBoardAuthority: boolean,
+  withRegistryAuthority: (<T>(publish: () => T) => T) | null,
 ): TaskInboxSendResult {
   let event: TaskMessageEventV1;
   try {
@@ -705,6 +754,21 @@ function sendTaskMessageWithAuthority(
   } catch (error) {
     throw asInboxError(error, 'task_message_invalid', 'task message event is invalid');
   }
+  const publish = (): TaskInboxSendResult => {
+    if (withRegistryAuthority === null) return writeImmutableEvent(input.repo_root, event);
+    let authorized = false;
+    try {
+      return withRegistryAuthority(() => {
+        authorized = true;
+        return writeImmutableEvent(input.repo_root, event);
+      });
+    } catch (error) {
+      // Only the caller's own authority rejection crosses this module's error
+      // vocabulary unchanged; a failure of the write itself is ours.
+      if (authorized) throw error;
+      throw new TaskInboxAuthorityRejection(error);
+    }
+  };
   return withInboxTaskLock(input.repo_root, event.task_id, () => {
     if (requireActiveTaskBoardAuthority) {
       assertCanonicalSourceIsActive(input.repo_root, input.canonical_source);
@@ -720,7 +784,7 @@ function sendTaskMessageWithAuthority(
         fail('claim_mismatch', `task ${event.task_id} claim scope does not match current owner`);
       }
     }
-    return writeImmutableEvent(input.repo_root, event);
+    return publish();
   });
 }
 
@@ -730,15 +794,15 @@ function sendTaskMessageWithAuthority(
  * claim/generation under lock.
  */
 export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResult {
-  return sendTaskMessageWithAuthority(input, false);
+  return sendTaskMessageWithAuthority(input, false, null);
 }
 
 /**
  * Task Board's only write. Its captured source and pending-row authority are
  * both revalidated under the task lock immediately before publication.
  */
-export function sendTaskBoardMessage(input: SendTaskMessageInput): TaskInboxSendResult {
-  return sendTaskMessageWithAuthority(input, true);
+export function sendTaskBoardMessage(input: SendTaskBoardMessageInput): TaskInboxSendResult {
+  return sendTaskMessageWithAuthority(input, true, input.with_registry_authority);
 }
 
 /** Read-only projection for a canonical recipient. It never marks delivery. */
@@ -746,10 +810,14 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
   assertTaskId(input.task_id);
   return withInboxTaskLock(input.repo_root, input.task_id, () => {
     const expectedRevision = recipientTaskRevision(input);
+    let supersededRevisionCount = 0;
     const entries = listEvents(input.repo_root, input.task_id)
       .filter((event) => audienceMatches(event, input.recipient))
       .map((event) => {
-        assertEventCanonical(event, input.task_id, expectedRevision);
+        if (!isCurrentRevisionEvent(event, input.task_id, expectedRevision)) {
+          supersededRevisionCount += 1;
+          return null;
+        }
         if (event.scope === 'claim' && (input.recipient.kind !== 'claim'
           || event.target_claim_id !== input.recipient.claim_id
           || event.target_generation !== input.recipient.generation)) return null;
@@ -760,7 +828,7 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
         } satisfies TaskInboxEventEntry;
       })
       .filter((entry): entry is TaskInboxEventEntry => entry !== null);
-    return { task_id: input.task_id, entries };
+    return { task_id: input.task_id, entries, superseded_revision_count: supersededRevisionCount };
   });
 }
 
@@ -812,7 +880,7 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
     let pendingCount = 0;
     let renderedBodyBytes = 0;
     for (const event of listEvents(input.repo_root, input.task_id)) {
-      assertEventCanonical(event, input.task_id, expectedRevision);
+      if (!isCurrentRevisionEvent(event, input.task_id, expectedRevision)) continue;
       if (!audienceMatches(event, recipient)) continue;
       if (event.scope === 'claim' && recipient.kind === 'claim'
         && (event.target_claim_id !== recipient.claim_id || event.target_generation !== recipient.generation)) {

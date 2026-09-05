@@ -92,6 +92,12 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
       failure_class: card.inbox.failure_class,
     }),
     snapshot_consistency: card.snapshot_consistency,
+    error: card.error === null
+      ? null
+      : Object.freeze({
+          code: card.error.code,
+          message: fleetBoardErrorMessage(card.error.code),
+        }),
   });
 }
 
@@ -144,6 +150,7 @@ export function projectOperatorFleetSnapshot(
       ready_to_merge: snapshot.counts.ready_to_merge,
       done: snapshot.counts.done,
       unreadable: snapshot.counts.unreadable,
+      unclassified: snapshot.counts.unclassified,
     }),
     source_snapshot_sha256: sourceSnapshotSha256,
   });

@@ -84,6 +84,31 @@ function registeredRepositoryRoot(
   return repository.path;
 }
 
+/**
+ * The task lock stays outside this lock, and this lock covers exactly the
+ * re-check plus the write.
+ *
+ * Nesting is safe in one direction only. `withRepoHarnessRegistryAuthorizationLock`
+ * has one product caller (this file), and nothing `src/effects/repo-registry.ts`
+ * runs under that lock acquires a task lock: it imports no lease, inbox, or
+ * coordination module, and the only caller-supplied hook under it
+ * (`applyRepoHarnessRegistryBatch`'s `beforeCommit`, used by `src/cli/mcp/setup.ts`)
+ * writes a config file. So no path holds the registry lock and then waits for a
+ * task lock, and task -> registry cannot close a cycle.
+ */
+function withRegistryAuthorizedPublication<T>(
+  input: SendOperatorTaskMessageInput,
+  expectedRepoRoot: string,
+  publish: () => T,
+): T {
+  return withRepoHarnessRegistryAuthorizationLock({ env: input.env }, (snapshot) => {
+    if (registeredRepositoryRoot(input, snapshot) !== expectedRepoRoot) {
+      throw new OperatorTaskMessageError('repository_not_found', `repository ${input.repository_id} moved since the board snapshot`);
+    }
+    return publish();
+  });
+}
+
 interface CanonicalTaskContext {
   readonly source: { readonly targetRef: string; readonly sprintPath: string };
   readonly task_id: string;
@@ -139,57 +164,65 @@ function asOperatorTaskMessageError(error: unknown, fallback: OperatorTaskMessag
  */
 export function sendOperatorTaskMessage(input: SendOperatorTaskMessageInput): SendOperatorTaskMessageResult {
   try {
-    return withRepoHarnessRegistryAuthorizationLock({ env: input.env }, (snapshot) => {
-      const repoRoot = registeredRepositoryRoot(input, snapshot);
-      if (input.scope === 'task' && (input.expected_claim_id !== null || input.expected_generation !== null)) {
-        throw new OperatorTaskMessageError('task_message_invalid', 'task-scoped messages cannot carry a claim fence');
-      }
-      if (input.scope === 'claim' && (input.expected_claim_id === null || input.expected_generation === null)) {
-        throw new OperatorTaskMessageError('task_message_invalid', 'claim-scoped messages require a claim fence');
-      }
-      const context = canonicalTaskContext(repoRoot, input.task_id, input.expected_task_revision);
-      const owner = input.scope === 'claim' ? readLease(repoRoot, context.task_id).record : null;
-      if (input.scope === 'claim' && owner === null) {
-        throw new OperatorTaskMessageError('recipient_unavailable', `task ${context.task_id} has no current owner lease`);
-      }
-      if (input.scope === 'claim'
-        && (owner!.claim_id !== input.expected_claim_id || owner!.generation !== input.expected_generation)) {
-        throw new OperatorTaskMessageError('claim_mismatch', `task ${context.task_id} owner changed since the board snapshot`);
-      }
-      try {
-        const event = buildTaskMessageEvent({
-          message_id: input.message_id,
-          task_id: context.task_id,
-          task_revision: context.task_revision,
-          scope: input.scope,
-          target_claim_id: owner === null ? null : owner.claim_id,
-          target_generation: owner === null ? null : owner.generation,
-          sender_kind: OPERATOR_TASK_MESSAGE_SENDER_KIND,
-          sender_id: OPERATOR_TASK_MESSAGE_SENDER_ID,
-          sender_trust: 'local_operator',
-          audience: 'owner',
-          body: input.body,
-          created_at: new Date().toISOString(),
-          in_reply_to: null,
-        });
-        const result = sendTaskBoardMessage({
-          repo_root: repoRoot,
-          canonical_source: context.source,
-          event,
-        });
-        return Object.freeze({
-          repository_id: input.repository_id,
-          task_id: event.task_id,
-          message_id: event.message_id,
-          scope: event.scope,
-          target_claim_id: event.target_claim_id,
-          target_generation: event.target_generation,
-          created: result.created,
-        });
-      } catch (error) {
-        throw asOperatorTaskMessageError(error, 'task_message_invalid');
-      }
-    });
+    if (input.scope === 'task' && (input.expected_claim_id !== null || input.expected_generation !== null)) {
+      throw new OperatorTaskMessageError('task_message_invalid', 'task-scoped messages cannot carry a claim fence');
+    }
+    if (input.scope === 'claim' && (input.expected_claim_id === null || input.expected_generation === null)) {
+      throw new OperatorTaskMessageError('task_message_invalid', 'claim-scoped messages require a claim fence');
+    }
+    // Resolving and authorizing one registered repository is all this first
+    // critical section does. Holding the registry lock across this
+    // repository's canonical reads and its per-task lock blocked every other
+    // repository's registry work for as long as one task lock stayed
+    // contended; the authority is re-proved, under the same lock, around the
+    // write itself.
+    const repoRoot = withRepoHarnessRegistryAuthorizationLock(
+      { env: input.env },
+      (snapshot) => registeredRepositoryRoot(input, snapshot),
+    );
+    const context = canonicalTaskContext(repoRoot, input.task_id, input.expected_task_revision);
+    const owner = input.scope === 'claim' ? readLease(repoRoot, context.task_id).record : null;
+    if (input.scope === 'claim' && owner === null) {
+      throw new OperatorTaskMessageError('recipient_unavailable', `task ${context.task_id} has no current owner lease`);
+    }
+    if (input.scope === 'claim'
+      && (owner!.claim_id !== input.expected_claim_id || owner!.generation !== input.expected_generation)) {
+      throw new OperatorTaskMessageError('claim_mismatch', `task ${context.task_id} owner changed since the board snapshot`);
+    }
+    try {
+      const event = buildTaskMessageEvent({
+        message_id: input.message_id,
+        task_id: context.task_id,
+        task_revision: context.task_revision,
+        scope: input.scope,
+        target_claim_id: owner === null ? null : owner.claim_id,
+        target_generation: owner === null ? null : owner.generation,
+        sender_kind: OPERATOR_TASK_MESSAGE_SENDER_KIND,
+        sender_id: OPERATOR_TASK_MESSAGE_SENDER_ID,
+        sender_trust: 'local_operator',
+        audience: 'owner',
+        body: input.body,
+        created_at: new Date().toISOString(),
+        in_reply_to: null,
+      });
+      const result = sendTaskBoardMessage({
+        repo_root: repoRoot,
+        canonical_source: context.source,
+        event,
+        with_registry_authority: (publish) => withRegistryAuthorizedPublication(input, repoRoot, publish),
+      });
+      return Object.freeze({
+        repository_id: input.repository_id,
+        task_id: event.task_id,
+        message_id: event.message_id,
+        scope: event.scope,
+        target_claim_id: event.target_claim_id,
+        target_generation: event.target_generation,
+        created: result.created,
+      });
+    } catch (error) {
+      throw asOperatorTaskMessageError(error, 'task_message_invalid');
+    }
   } catch (error) {
     if (error instanceof OperatorTaskMessageError) throw error;
     throw asOperatorTaskMessageError(error, 'registry_unavailable');

@@ -115,6 +115,7 @@ export const OPERATOR_API_ERROR_CODES = [
   'repository_not_found',
   'invalid_request',
   'host_not_allowed',
+  'origin_required',
   'origin_not_allowed',
   'method_not_allowed',
   'not_found',
@@ -482,6 +483,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
     'receipt_missing', 'receipt_mismatch', 'unknown',
   ] as const);
   const snapshotConsistency = requireOneOf(card.snapshot_consistency, ['stable', 'changed_during_read'] as const);
+  const error = decodeError(card.error);
   return Object.freeze({
     repository_id: repositoryId,
     task_id: taskId,
@@ -512,6 +514,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
       failure_class: failureClass,
     }),
     snapshot_consistency: snapshotConsistency,
+    error,
   });
 }
 
@@ -689,6 +692,7 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
     ready_to_merge: requireNonNegativeInteger(counts.ready_to_merge),
     done: requireNonNegativeInteger(counts.done),
     unreadable: requireNonNegativeInteger(counts.unreadable),
+    unclassified: requireNonNegativeInteger(counts.unclassified),
   });
   const repositories = requireArray(snapshot.repositories).map(decodeRepository);
   const leastHealthyRepository = repositories.some((repository) => repository.snapshot_consistency === 'degraded')
