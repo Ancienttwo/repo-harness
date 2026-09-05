@@ -98,7 +98,7 @@ describe('development campaign Git-common-dir journal', () => {
   test('serializes identical campaign creation across real processes', async () => {
     const f = fixture(policy('active'));
     const cli = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
-    const args = [cli, 'campaign', 'start', '--repo', f.root, '--authorization-sha256', f.authorization.authorization_sha256, '--idempotency-key', 'process-create', '--observed-at', observedAt];
+    const args = [cli, 'campaign', 'start', '--repo', f.root, '--authorization-sha256', f.authorization.authorization_sha256, '--idempotency-key', 'process-create'];
     const run = async () => {
       const child = Bun.spawn([process.execPath, ...args], { env: f.env, stdout: 'pipe', stderr: 'pipe' });
       const [status, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
@@ -108,5 +108,35 @@ describe('development campaign Git-common-dir journal', () => {
     expect(results.map((entry) => entry.status), results.map((entry) => entry.stderr).join('\n')).toEqual([0, 0]);
     expect(results[0]!.stdout).toBe(results[1]!.stdout);
     expect(readDevelopmentCampaignStatus(f.root, 'campaign-1', f.env).events).toHaveLength(1);
+  });
+
+  test('preserves read-only inspection and terminal reconciliation after target movement or expiry', () => {
+    const moved = fixture(policy('active'));
+    const created = createDevelopmentCampaign({ repo_root: moved.root, campaign: moved.definition, idempotency_key: 'create-1', env: moved.env });
+    writeFileSync(join(moved.root, 'README.md'), '# moved target\n');
+    execFileSync('git', ['add', 'README.md'], { cwd: moved.root });
+    execFileSync('git', ['commit', '-qm', 'legitimate merge movement'], { cwd: moved.root });
+
+    expect(readDevelopmentCampaignStatus(moved.root, 'campaign-1', moved.env).current).toMatchObject({ revision: 1, state: 'authorized' });
+    expect(() => appendDevelopmentCampaignEvent({ repo_root: moved.root, campaign_id: 'campaign-1', expected_current_sha256: created.current.current_sha256, idempotency_key: 'prepare-after-move', operation: 'prepare_group', observed_at: observedAt, env: moved.env })).toThrow('authorized target ref moved');
+    const reconciled = appendDevelopmentCampaignEvent({ repo_root: moved.root, campaign_id: 'campaign-1', expected_current_sha256: created.current.current_sha256, idempotency_key: 'reconcile-after-move', operation: 'require_reconciliation', observed_at: observedAt, env: moved.env });
+    expect(reconciled.current).toMatchObject({ revision: 2, state: 'reconciliation_required' });
+    expect(appendDevelopmentCampaignEvent({ repo_root: moved.root, campaign_id: 'campaign-1', expected_current_sha256: reconciled.current.current_sha256, idempotency_key: 'stop-after-move', operation: 'stop', observed_at: observedAt, env: moved.env }).current).toMatchObject({ revision: 3, state: 'stopped' });
+
+    const expired = fixture(policy('active'));
+    const expiredCreated = createDevelopmentCampaign({ repo_root: expired.root, campaign: expired.definition, idempotency_key: 'create-1', env: expired.env });
+    expect(() => appendDevelopmentCampaignEvent({ repo_root: expired.root, campaign_id: 'campaign-1', expected_current_sha256: expiredCreated.current.current_sha256, idempotency_key: 'expire-before-expiry', operation: 'expire_authorization', observed_at: observedAt, env: expired.env })).toThrow('campaign authorization has not expired');
+    writeFileSync(join(expired.root, 'README.md'), '# moved after authorization\n');
+    execFileSync('git', ['add', 'README.md'], { cwd: expired.root });
+    execFileSync('git', ['commit', '-qm', 'move target before expiry recording'], { cwd: expired.root });
+    const originalNow = Date.now;
+    Date.now = () => Date.parse('2028-09-05T00:00:00.000Z');
+    try {
+      expect(readDevelopmentCampaignStatus(expired.root, 'campaign-1', expired.env).current).toMatchObject({ revision: 1, state: 'authorized' });
+      expect(() => appendDevelopmentCampaignEvent({ repo_root: expired.root, campaign_id: 'campaign-1', expected_current_sha256: expiredCreated.current.current_sha256, idempotency_key: 'prepare-after-expiry', operation: 'prepare_group', observed_at: '2028-09-05T00:00:00.000Z', env: expired.env })).toThrow('campaign authorization expired');
+      expect(appendDevelopmentCampaignEvent({ repo_root: expired.root, campaign_id: 'campaign-1', expected_current_sha256: expiredCreated.current.current_sha256, idempotency_key: 'expire-after-expiry', operation: 'expire_authorization', observed_at: '2028-09-05T00:00:00.000Z', env: expired.env }).current).toMatchObject({ revision: 2, state: 'authorization_expired' });
+    } finally {
+      Date.now = originalNow;
+    }
   });
 });

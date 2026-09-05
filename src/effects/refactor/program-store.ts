@@ -182,6 +182,13 @@ export function readRefactorProgramStatus(repoRootInput: string, programId: stri
   return Object.freeze({ program, current: rebuilt.current, events: Object.freeze(rebuilt.events) });
 }
 
+export function assertRefactorProgramDigest(status: ReturnType<typeof readRefactorProgramStatus>, programDigest: string): void {
+  const materializationEvents = status.events.filter((event) => event.operation === 'begin_plan');
+  if (materializationEvents.length !== 1 || materializationEvents[0]!.evidence_refs[1] !== programDigest) {
+    fail('refactor_program_conflict', 'Program semantics differ from the immutable materialized Program');
+  }
+}
+
 export function listRefactorPrograms(repoRootInput: string): readonly string[] {
   const root = join(resolveGitCommonDirectory(resolve(repoRootInput)), ROOT, 'programs'); if (!existsSync(root)) return Object.freeze([]);
   return Object.freeze(readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => Buffer.from(entry.name, 'hex').toString('utf8')).filter((entry) => PROGRAM_ID.test(entry)).sort());

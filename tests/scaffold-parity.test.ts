@@ -125,6 +125,9 @@ describe("create-project-dirs scaffold parity", () => {
       expect(agents).toContain("Treat scanners as leads, not authority");
       expect(agents).toContain("Choose the smallest instruction stack that changes behavior");
       expect(agents).toContain("## Decision Protocol");
+      expect(agents).toContain("Do not run the full suite for every small change");
+      expect(agents).toContain("docs-only or ledger-closeout");
+      expect(agents).toContain("High-risk, cross-module, or release changes");
       expect(agents).toContain("complete P1/P2/P3 before design decisions or code edits");
       expect(agents).toContain("do not implement until the user approves");
       expect(agents).toContain("re-derives an authority's semantics");

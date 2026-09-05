@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -207,6 +207,65 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 }
 
 describe('package-local ArchContext projection provider', () => {
+  test('bounds a real provider process tree whose descendant keeps captured pipes open', () => {
+    const f = fixture();
+    const descendantPidPath = join(f.root, 'descendant.pid');
+    writeFileSync(f.binary, [
+      "const { spawn } = require('node:child_process');",
+      "const { writeFileSync } = require('node:fs');",
+      "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)\"], { stdio: ['ignore', 'inherit', 'inherit'] });",
+      "writeFileSync(process.env.ARCHCTX_DESCENDANT_PID_PATH, String(child.pid));",
+      "setInterval(() => {}, 1000);",
+      '',
+    ].join('\n'));
+    const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
+    const script = join(f.root, 'provider-timeout.ts');
+    writeFileSync(script, [
+      `import { archctxCapabilities } from ${JSON.stringify(providerModule)};`,
+      `const started = Date.now();`,
+      `try {`,
+      `  archctxCapabilities(${JSON.stringify(f.repoRoot)}, { consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: '${ARCHCTX_REQUIRED_VERSION}', timeoutMs: 500 }, env: { ...process.env, ARCHCTX_DESCENDANT_PID_PATH: ${JSON.stringify(descendantPidPath)} }, deadlineMs: Date.now() + 500 });`,
+      `  process.exitCode = 2;`,
+      `} catch (error) {`,
+      `  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);`,
+      `  const pid = Number((await import('node:fs')).readFileSync(${JSON.stringify(descendantPidPath)}, 'utf8'));`,
+      `  let descendantAlive = true;`,
+      `  try { process.kill(pid, 0); } catch { descendantAlive = false; }`,
+      `  if (descendantAlive) try { process.kill(pid, 'SIGKILL'); } catch { descendantAlive = false; }`,
+      `  console.log(String(error));`,
+      `  console.log('descendant_alive=' + descendantAlive);`,
+      `  console.log('elapsed=' + (Date.now() - started));`,
+      `}`,
+      '',
+    ].join('\n'));
+    const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 4_000, killSignal: 'SIGKILL' });
+    expect((result.error as NodeJS.ErrnoException | undefined)?.code).not.toBe('ETIMEDOUT');
+    if (result.status !== 0) throw new Error(`provider timeout fixture failed: ${result.stderr || result.stdout}`);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('descendant_alive=false');
+  });
+
+  test('charges Node runtime selection to the caller deadline', () => {
+    const f = fixture();
+    const slowNode = join(f.root, 'slow-node');
+    writeFileSync(slowNode, '#!/bin/sh\nsleep 2\necho v24.18.0\n');
+    chmodSync(slowNode, 0o755);
+    const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
+    const script = join(f.root, 'node-deadline.ts');
+    writeFileSync(script, [
+      `import { resolveCompatibleNodeRuntime } from ${JSON.stringify(providerModule)};`,
+      `try {`,
+      `  resolveCompatibleNodeRuntime({ PATH: '', REPO_HARNESS_NODE_BIN: ${JSON.stringify(slowNode)} }, () => [], { deadlineMs: Date.now() + 100 });`,
+      `  process.exitCode = 2;`,
+      `} catch (error) { console.log(String(error)); }`,
+      '',
+    ].join('\n'));
+    const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 3_500, killSignal: 'SIGKILL' });
+    expect((result.error as NodeJS.ErrnoException | undefined)?.code).not.toBe('ETIMEDOUT');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('architecture projection timeout before Node runtime selection');
+  });
+
   test('exposes only signal-bound acceptance, proof reconciliation, and approved stale retirement as CLI authorities', () => {
     const command = buildArchitectureProjectionCommand();
     for (const name of ['check', 'plan', 'apply', 'adopt']) {

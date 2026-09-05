@@ -25,6 +25,7 @@ import { spawnSync } from 'child_process';
 const ROOT = join(import.meta.dir, '..', '..');
 const HOOK_ENTRY = join(ROOT, 'src/cli/hook-entry.ts');
 const DETACHED_TOOLING_POPULATE_FLAG = '--detached-tooling-populate';
+const PROCESS_SUPERVISOR_FLAG = '--process-supervisor';
 
 const temporaryRoots: string[] = [];
 
@@ -101,6 +102,48 @@ function buildBundle(define: string | null): string {
   return outfile;
 }
 
+function runBundledSupervisor(
+  bundle: string,
+  metadataPath: string,
+  timeoutMs: number,
+  command: string,
+  args: readonly string[],
+) {
+  return spawnSync('bun', [
+    bundle,
+    PROCESS_SUPERVISOR_FLAG,
+    '--metadata', metadataPath,
+    '--parent-pid', String(process.pid),
+    '--timeout-ms', String(timeoutMs),
+    '--capture-bytes', '65536',
+    '--stdio', 'pipe',
+    '--', command, ...args,
+  ], {
+    cwd: ROOT,
+    encoding: 'utf-8',
+    timeout: 5_000,
+    killSignal: 'SIGKILL',
+  });
+}
+
+function processGroupExists(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
 describe('hook-entry single-file bundle', () => {
   test('unbundled hook entry dispatches the detached tooling populate', () => {
     const fixture = populateFixture();
@@ -111,6 +154,70 @@ describe('hook-entry single-file bundle', () => {
     const fixture = populateFixture();
     expectPopulateRan(runDetachedPopulate(buildBundle('0.0.0-test'), fixture), fixture);
   }, 30_000);
+
+  test('bundled hook entry supervises a successful child through bundled re-entry', () => {
+    const root = temporaryRoot();
+    const metadataPath = join(root, 'receipt.json');
+    const result = runBundledSupervisor(
+      buildBundle('0.0.0-test'),
+      metadataPath,
+      2_000,
+      process.execPath,
+      ['-e', 'process.stdout.write("supervised-ok")'],
+    );
+
+    expect(result.status, `stdout=${result.stdout}\nstderr=${result.stderr}`).toBe(0);
+    expect(result.stdout).toBe('supervised-ok');
+    expect(JSON.parse(readFileSync(metadataPath, 'utf-8'))).toMatchObject({
+      status: 0,
+      timedOut: false,
+      completed: true,
+    });
+  }, 30_000);
+
+  test.skipIf(process.platform === 'win32')(
+    'bundled hook entry kills a TERM-resistant descendant on timeout',
+    () => {
+      const root = temporaryRoot();
+      const metadataPath = join(root, 'receipt.json');
+      const descendantPidPath = join(root, 'descendant.pid');
+      const target = [
+        "const { spawn } = require('child_process');",
+        "process.on('SIGTERM', () => {});",
+        `const child = spawn(process.execPath, ['-e', ${JSON.stringify("process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)")}], { stdio: 'inherit' });`,
+        `require('fs').writeFileSync(${JSON.stringify(descendantPidPath)}, String(child.pid));`,
+        'setInterval(() => {}, 1000);',
+      ].join('\n');
+      const result = runBundledSupervisor(
+        buildBundle('0.0.0-test'),
+        metadataPath,
+        100,
+        process.execPath,
+        ['-e', target],
+      );
+      let processGroupPid: number | null = null;
+      try {
+        const receipt = JSON.parse(readFileSync(metadataPath, 'utf-8')) as {
+          timedOut: boolean;
+          completed: boolean;
+          processGroupPid: number;
+        };
+        processGroupPid = receipt.processGroupPid;
+        const descendantPid = Number(readFileSync(descendantPidPath, 'utf-8'));
+
+        expect(result.status, `stdout=${result.stdout}\nstderr=${result.stderr}`).toBe(1);
+        expect(receipt).toMatchObject({ timedOut: true, completed: true });
+        expect(Number.isSafeInteger(descendantPid) && descendantPid > 0).toBe(true);
+        expect(processExists(descendantPid)).toBe(false);
+        expect(processGroupExists(processGroupPid)).toBe(false);
+      } finally {
+        if (processGroupPid !== null && processGroupExists(processGroupPid)) {
+          process.kill(-processGroupPid, 'SIGKILL');
+        }
+      }
+    },
+    30_000,
+  );
 
   test('bundle keeps the shebang and survives without the eliminated bootstrap', () => {
     const bundle = readFileSync(buildBundle('0.0.0-test'), 'utf-8');

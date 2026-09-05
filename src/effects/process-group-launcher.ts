@@ -20,6 +20,8 @@ interface LauncherResult {
   readonly spawnError: string;
 }
 
+export const PROCESS_GROUP_LAUNCHER_FLAG = '--process-group-launcher';
+
 function usage(): never {
   process.stderr.write('Usage: process-group-launcher.ts --result <path> --command <command> [args...]\n');
   process.exit(2);
@@ -67,10 +69,10 @@ async function launch(options: LauncherOptions): Promise<number> {
   return completion.code ?? 1;
 }
 
-if (import.meta.main) {
-  const options = parseArgs(process.argv.slice(2));
+export async function runProcessGroupLauncherCli(argv: readonly string[]): Promise<number> {
+  const options = parseArgs(argv);
   try {
-    process.exitCode = await launch(options);
+    return await launch(options);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     try {
@@ -79,6 +81,8 @@ if (import.meta.main) {
       // The supervisor reports a missing launcher result if this also fails.
     }
     process.stderr.write(`${message}\n`);
-    process.exitCode = 1;
+    return 1;
   }
 }
+
+if (import.meta.main) process.exitCode = await runProcessGroupLauncherCli(process.argv.slice(2));

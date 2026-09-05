@@ -322,6 +322,33 @@ describe('durable architecture projection orchestration', () => {
     expect(timeouts).toEqual([10_000, 110_000]);
   });
 
+  test('does not replace the host deadline with a fresh provider budget', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/deadline.ts', session_id: 'host-deadline' }) });
+    let clockMs = 0;
+    const timeouts: number[] = [];
+    const run: RunArchctxProcess = (_binary, args, options) => {
+      timeouts.push(options.timeoutMs);
+      if (args[0] === 'capabilities') {
+        clockMs = 1_000;
+        return capabilities();
+      }
+      clockMs = 20_000;
+      return { status: null, signal: 'SIGTERM', stdout: '', stderr: 'timed out' };
+    };
+    const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs, deadlineMs: 20_000 });
+    expect(timeouts).toEqual([10_000, 19_000]);
+    expect(result.status).toBe('retry-pending');
+    expect(result.acknowledgeSourceEvents).toBe(false);
+    expect(result.queue.pending).toBe(1);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      clockMs = 0;
+      const retry = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs, deadlineMs: 20_000 });
+      expect(retry.status).toBe('retry-pending');
+      expect(retry.queue.deadLetters).toBe(0);
+    }
+  });
+
   test('retains source events on process failure and dead-letters the third attempt', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/failing.ts', session_id: 'failure' }) });

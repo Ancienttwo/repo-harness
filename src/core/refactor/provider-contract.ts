@@ -56,10 +56,7 @@ export interface RefactorVerifyResultV1 {
   evidence: RefactorResolutionEvidenceV1 | null;
 }
 
-export interface RefactorRecommendationAuthorityV1 {
-  recommendationId: string;
-  recommendationDigest: string;
-}
+export type RefactorRecommendationAuthorityV1 = RecommendationV3;
 
 export interface RefactorRecommendationReadbackV1 {
   readonly headSha: string;
@@ -181,7 +178,7 @@ export function assertRefactorRecommendationReadback(value: unknown, expectedHea
 
 export function assertAcceptedRefactorRecommendations(value: unknown, expectedHeadSha: string): readonly RefactorRecommendationAuthorityV1[] {
   const readback = assertRefactorRecommendationReadback(value, expectedHeadSha);
-  return Object.freeze(readback.recommendations.filter((entry) => entry.status === 'accepted').map((entry) => Object.freeze({ recommendationId: entry.recommendationId, recommendationDigest: entry.fingerprint })));
+  return Object.freeze(readback.recommendations.filter((entry) => entry.status === 'accepted'));
 }
 
 export function assertRefactorResolutionRecord(value: unknown, recommendationId: string): RefactorResolutionRecordResultV1 {

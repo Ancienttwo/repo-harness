@@ -103,6 +103,7 @@ const PEER_BRANCH = 'codex/wp3-peer';
 /** `backlogRows()` only scans between `## Backlog` and the next `## ` heading. */
 const SPRINT_TEXT = [
   '# WP3 fixture sprint',
+  '> **Status**: Executing',
   '> **Backlog Schema**: 2',
   '',
   '## Backlog',

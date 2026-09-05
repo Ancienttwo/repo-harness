@@ -68,7 +68,7 @@ function installFixture(): Fixture {
   git(root, 'config', 'user.email', 'lifecycle@test.invalid');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: lifecycle', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: lifecycle', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | lifecycle tests | (pending) |`, '',

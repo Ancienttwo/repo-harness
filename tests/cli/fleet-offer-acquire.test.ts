@@ -141,6 +141,7 @@ function acquireFixture(): AcquireFixture {
   writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repo, sprintPath), [
     '# CLI acquire sprint',
+    '> **Status**: Executing',
     '> **Backlog Schema**: 2',
     '',
     '## Backlog',

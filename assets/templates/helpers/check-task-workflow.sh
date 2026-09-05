@@ -181,6 +181,16 @@ extract_status() {
     | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
+extract_sprint_status() {
+  local file="$1"
+  awk '/^> \*\*Status\*\*:[[:space:]]*/ {
+    sub(/^> \*\*Status\*\*:[[:space:]]*/, "")
+    gsub(/\r/, "")
+    print
+    exit
+  }' "$file" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
 plan_field_value() {
   local file="$1"
   local label="$2"
@@ -608,6 +618,30 @@ sprint_ready_error() {
   fi
 
   [[ "$missing" -eq 0 ]]
+}
+
+# Lease and task-message subjects are keyed by persisted ID alone, while Sprint
+# files are independent carriers.  Reuse the schema-2 row shape above across
+# the complete live set so the strict working-tree gate catches a collision
+# before a canonical read can reach shared coordination state.
+live_sprint_task_id_collision_error() {
+  LC_ALL=C awk -F '|' '
+    FNR == 1 { schema_two = 0; in_section = 0 }
+    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { schema_two = 1; next }
+    /^## Backlog[[:space:]]*$/ { in_section = 1; next }
+    in_section && /^## / { in_section = 0; next }
+    in_section && schema_two && /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
+      id = $3
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+      if (id ~ /^[0-9a-f]{64}$/) {
+        if (id in owner && owner[id] != FILENAME) {
+          printf "duplicate live Sprint task id %s in %s and %s\n", id, owner[id], FILENAME
+        } else {
+          owner[id] = FILENAME
+        }
+      }
+    }
+  ' "$@"
 }
 
 prd_ready_error() {
@@ -1248,10 +1282,11 @@ if [[ -d "plans/prds" ]]; then
   done < <(find plans/prds -maxdepth 1 -type f -name '*.prd.md' 2>/dev/null | sort)
 fi
 
+live_sprint_files=()
 if [[ -d "$sprints_dir" ]]; then
   while IFS= read -r sprint_file; do
     [[ -n "$sprint_file" ]] || continue
-    sprint_status="$(extract_status "$sprint_file")"
+    sprint_status="$(extract_sprint_status "$sprint_file")"
     if [[ -z "$sprint_status" ]]; then
       report_issue "Sprint is missing a '**Status**' line: $sprint_file"
       continue
@@ -1261,11 +1296,23 @@ if [[ -d "$sprints_dir" ]]; then
       continue
     fi
     if [[ "$sprint_status" == "Approved" || "$sprint_status" == "Executing" ]]; then
+      live_sprint_files+=("$sprint_file")
       if ! sprint_error="$(sprint_ready_error "$sprint_file")"; then
         report_issue "Sprint $sprint_file is not execution-ready: ${sprint_error//$'\n'/; }"
       fi
     fi
   done < <(find "$sprints_dir" -maxdepth 1 -type f -name '*.sprint.md' 2>/dev/null | sort)
+fi
+
+if [[ "$strict" -eq 1 && "${#live_sprint_files[@]}" -gt 1 ]]; then
+  if ! live_sprint_collisions="$(live_sprint_task_id_collision_error "${live_sprint_files[@]}")"; then
+    report_issue "Could not validate live Sprint task ids"
+  elif [[ -n "$live_sprint_collisions" ]]; then
+    while IFS= read -r live_sprint_collision; do
+      [[ -n "$live_sprint_collision" ]] || continue
+      report_issue "$live_sprint_collision"
+    done <<<"$live_sprint_collisions"
+  fi
 fi
 
 if [[ "$sprints_dir" != "$legacy_sprints_dir" && -d "$legacy_sprints_dir" ]]; then

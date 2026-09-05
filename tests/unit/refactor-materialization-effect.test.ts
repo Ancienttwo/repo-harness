@@ -4,6 +4,7 @@ import { execFileSync } from 'child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { RecommendationV3 } from 'archctx-contracts';
 
 import { sealProgramAuthorization } from '../../src/core/automation/budget';
 import { buildRefactorProgram } from '../../src/core/refactor/program';
@@ -32,9 +33,10 @@ function fixture() {
   const definition = buildRefactorProgramDefinition({ program_id: 'rf-1', authorization_id: authorization.authorization_id, authorization_sha256: authorization.authorization_sha256, repository_id: authorization.repository_id, target_ref: authorization.target_ref, target_revision: revision, base_main_sha: revision, created_at: OBSERVED });
   let current = createRefactorProgram({ repo_root: root, program: definition, idempotency_key: 'create', env }).current;
   for (const [index, operation] of (['begin_scan', 'observe', 'begin_authoring', 'assess', 'begin_route'] as const).entries()) current = appendRefactorProgramEvent({ repo_root: root, program_id: 'rf-1', expected_current_sha256: current.current_sha256, idempotency_key: `step-${index}`, operation, observed_at: `2026-09-04T02:0${index + 1}:00.000Z`, env }).current;
-  const sprint = 'plans/sprints/rf-1.sprint.md'; const program = buildRefactorProgram({ programId: 'rf-1', baseMainSha: revision, providerStage: 'scan', statisticsSnapshotDigest: D('stats'), assessmentDigest: D('assessment'), proposalDigest: D('proposal'), proposalAuthor: { kind: 'agent', source: 'gpt_pro' }, scale: 'module', routeReasonCodes: ['single-node-scope'], majorChangeReasons: [], route: 'module_refactor', affectedNodeIds: ['runtime.refactor'], bindings: [{ recommendationId: 'rec-1', recommendationDigest: D('rec'), candidateAlias: 'C01', workPackageId: 'rf-runtime', taskRef: `${sprint}#${TASK}`, executionBoundary: 'module' }] });
+  const sprint = 'plans/sprints/rf-1.sprint.md'; const program = buildRefactorProgram({ programId: 'rf-1', baseMainSha: revision, providerStage: 'scan', statisticsSnapshotDigest: D('stats'), assessmentDigest: D('assessment'), proposalDigest: D('proposal'), proposalAuthor: { kind: 'developer', source: 'manual' }, scale: 'module', routeReasonCodes: ['single-node-scope'], majorChangeReasons: [], route: 'module_refactor', affectedNodeIds: ['runtime.refactor'], bindings: [{ recommendationId: 'rec-1', recommendationDigest: D('rec'), candidateAlias: 'C01', workPackageId: 'rf-runtime', taskRef: `${sprint}#${TASK}`, executionBoundary: 'module' }] });
   const artifacts = [{ path: 'plans/policies/rf-runtime.json', bytes: 'acceptance\n' }, { path: 'plans/rollback/rf-runtime.json', bytes: 'rollback\n' }];
-  const request = { repo_root: root, expected_current_sha256: current.current_sha256, idempotency_key: 'materialize', observed_at: '2026-09-04T02:10:00.000Z', program, sprint_path: sprint, sprint_title: 'Refactor rf-1', program_path: 'plans/refactors/rf-1.refactor-program.v1.json', units: [{ recommendationId: 'rec-1', architectureNodeId: 'runtime.refactor', taskId: TASK, taskText: 'Refactor runtime', acceptanceText: 'Module acceptance passes', planPath: 'plans/plan-rf-runtime.md', planBytes: '# Plan\n', kind: 'implementation' as const, primaryCapability: 'capability.runtime-harness.refactor-program', dependsOnWorkPackageIds: [], priority: 50, requiredAcceptance: [{ gate: 'module' as const, policy_id: 'rf-runtime', policy_ref: artifacts[0].path, policy_revision: D(artifacts[0].bytes) }], rollbackBoundary: { kind: 'work_package' as const, boundary_id: 'rf-runtime', boundary_ref: artifacts[1].path, boundary_revision: D(artifacts[1].bytes) }, retryPolicy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'] as const, backoff: { kind: 'exponential' as const, initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' as const } }], artifacts, env, now: () => '2026-09-04T02:10:00.000Z', recommendation_authority_reader: () => [{ recommendationId: 'rec-1', recommendationDigest: D('rec') }] };
+  const recommendation: RecommendationV3 = { schemaVersion: 'archcontext.recommendation/v3', recommendationId: 'rec-1', runId: 'run-1', fingerprint: D('rec'), subject: 'runtime.refactor', status: 'accepted', confidence: 'high', enforcement: 'checkpoint', risk: 'low', uncertainty: 'low', evidenceBindingIds: [], explanation: [], authoredBy: { kind: 'developer', id: 'owner', source: 'manual' }, subjectSelectorId: 'runtime.refactor', relations: {}, createdAt: OBSERVED, updatedAt: OBSERVED, category: 'refactor_proposal', payload: { assessmentDigest: D('assessment'), proposalDigest: D('proposal'), scale: 'module', affectedNodeIds: ['runtime.refactor'], majorChangeReasons: [], baselineSnapshotDigest: D('stats'), targetOutcomes: [], killList: [] } };
+  const request = { repo_root: root, expected_current_sha256: current.current_sha256, idempotency_key: 'materialize', observed_at: '2026-09-04T02:10:00.000Z', program, sprint_path: sprint, sprint_title: 'Refactor rf-1', program_path: 'plans/refactors/rf-1.refactor-program.v1.json', units: [{ recommendationId: 'rec-1', architectureNodeId: 'runtime.refactor', taskId: TASK, taskText: 'Refactor runtime', acceptanceText: 'Module acceptance passes', planPath: 'plans/plan-rf-runtime.md', planBytes: '# Plan\n', kind: 'implementation' as const, primaryCapability: 'capability.runtime-harness.refactor-program', dependsOnWorkPackageIds: [], priority: 50, requiredAcceptance: [{ gate: 'module' as const, policy_id: 'rf-runtime', policy_ref: artifacts[0].path, policy_revision: D(artifacts[0].bytes) }], rollbackBoundary: { kind: 'work_package' as const, boundary_id: 'rf-runtime', boundary_ref: artifacts[1].path, boundary_revision: D(artifacts[1].bytes) }, retryPolicy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'] as const, backoff: { kind: 'exponential' as const, initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' as const } }], artifacts, env, now: () => '2026-09-04T02:10:00.000Z', recommendation_authority_reader: () => [recommendation] };
   return { root, env, request };
 }
 
@@ -63,6 +65,20 @@ describe('Module 6 atomic Refactor Program materialization', () => {
     const unauthorized = fixture();
     const program = buildRefactorProgram({ ...unauthorized.request.program, bindings: [{ ...unauthorized.request.program.bindings[0]!, workPackageId: 'not-authorized' }] });
     expect(() => materializeRefactorProgram({ ...unauthorized.request, program })).toThrow('work package is not authorized');
+  });
+
+  test('rejects caller-authored Program semantics that disagree with the accepted provider payload', () => {
+    const scale = fixture();
+    const architecture = { ...scale.request.recommendation_authority_reader()[0]!, enforcement: 'complete', payload: { ...scale.request.recommendation_authority_reader()[0]!.payload, scale: 'architecture', majorChangeReasons: ['ownership-changed'] } } as RecommendationV3;
+    expect(() => materializeRefactorProgram({ ...scale.request, recommendation_authority_reader: () => [architecture] })).toThrow('disagree with the accepted recommendation');
+
+    const nodes = fixture();
+    const otherNode = { ...nodes.request.recommendation_authority_reader()[0]!, payload: { ...nodes.request.recommendation_authority_reader()[0]!.payload, affectedNodeIds: ['workflow.materialization'] } } as RecommendationV3;
+    expect(() => materializeRefactorProgram({ ...nodes.request, recommendation_authority_reader: () => [otherNode] })).toThrow('disagree with the accepted recommendation');
+
+    const reasons = fixture();
+    const otherReasons = { ...reasons.request.recommendation_authority_reader()[0]!, payload: { ...reasons.request.recommendation_authority_reader()[0]!.payload, majorChangeReasons: ['ownership-changed'] } } as RecommendationV3;
+    expect(() => materializeRefactorProgram({ ...reasons.request, recommendation_authority_reader: () => [otherReasons] })).toThrow('disagree with the accepted recommendation');
   });
 
   test('does not advance the target ref when creation crashes before CAS', () => {

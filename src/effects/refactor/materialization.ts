@@ -5,11 +5,12 @@ import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 
 import { projectWorkGraph, validateWorkGraphTopology } from '../../core/engineers/scheduling';
-import { canonicalRefactorProgramBytes, validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
+import { assertRefactorProgramRecommendationAuthority, canonicalRefactorProgramBytes, validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
 import { projectRefactorMaterialization, type RefactorMaterializationArtifactV1, type RefactorMaterializationUnitV1 } from '../../core/refactor/materialization';
 import { loadRefactorPolicyAtRevision } from '../../core/refactor/policy';
 import { readRefactorActivationLevel } from './activation-store';
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
+import { assertCanonicalSprintTaskIdsUniqueAtCommit } from '../state/coordination-canonical-source';
 import { BACKLOG_TABLE_HEADER, BACKLOG_TABLE_SEPARATOR, SPRINT_BACKLOG_SCHEMA_HEADER } from '../../core/state/sprint-backlog-rows';
 import type { RefactorRecommendationAuthorityV1 } from '../../core/refactor/provider-contract';
 import { readStoredProgramAuthorization } from '../automation/grant-store';
@@ -85,8 +86,7 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
   } else {
     if (input.architecture_signal_id !== undefined) fail('refactor_materialization_conflict', 'architecture acceptance is forbidden for a non-architecture route');
     const readAuthority = input.recommendation_authority_reader ?? ((head, repo) => readAcceptedRefactorRecommendations(head, repo, { env: input.env }));
-    const accepted = new Set(readAuthority(current, root).map((entry) => `${entry.recommendationId}\u0000${entry.recommendationDigest}`));
-    for (const binding of program.bindings) if (!accepted.has(`${binding.recommendationId}\u0000${binding.recommendationDigest}`)) fail('refactor_materialization_conflict', `recommendation is not accepted by ArchContext: ${binding.recommendationId}`);
+    assertRefactorProgramRecommendationAuthority(program, readAuthority(current, root));
   }
   if (status.current.state === 'routing' || (status.current.state === 'architecture_approval_required' && program.route === 'architecture_intervention')) {
     status = { ...status, ...appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: input.expected_current_sha256, idempotency_key: `${input.idempotency_key}:materializing`, operation: 'begin_materialize', observed_at: input.observed_at, env: input.env }) };
@@ -95,6 +95,7 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
   const programBytes = `${canonicalRefactorProgramBytes(program)}\n`;
   const projection = projectRefactorMaterialization({ repositoryId: status.program.repository_id, sprintPath, sprintSchema: 2, firstRowIndex: 1, maximumModulesPerProgram: policy.maximum_modules_per_program, program, units: input.units, artifacts: input.artifacts });
   const sprint = sprintBytes(input.sprint_title, input.observed_at, projection.rows);
+  assertCanonicalSprintTaskIdsUniqueAtCommit(root, { commit: current, sprintPath, sprintText: sprint });
   const tasks = projectCanonicalTasks({ repoIdentity: status.program.repository_id, sprintPath, sprintText: sprint }).map((task, index) => ({ task_id: task.task_id, task_revision: task.task_revision, task_ref: task.row.task, status: task.row.status, row_order: index + 1 }));
   validateWorkGraphTopology([projectWorkGraph(projection.workGraph, tasks)]);
   const architectureWrites = architectureReceipt === null ? [] : architectureReceipt.result.files.filter((entry) => entry.action === 'create' || entry.action === 'update').map((entry) => {

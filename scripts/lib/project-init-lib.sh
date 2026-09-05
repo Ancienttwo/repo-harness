@@ -2247,7 +2247,11 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 
 - Prefer platform or standard-library features, then existing dependencies and repo patterns, before adding dependencies, files, or abstractions.
 - Preserve user-authored files; do not overwrite existing `CLAUDE.md` or `AGENTS.md` except when explicitly applying an approved scaffold or syncing the controlled architecture block.
-- After substantive changes, run focused checks for the touched area plus `bash scripts/check-task-sync.sh` and `bash scripts/check-task-workflow.sh --strict` when those scripts exist.
+- Do not run the full suite for every small change. Select checks from the complete diff, repo commands, active contract, and CI; report the selected scope, reason, exact commands, and results.
+- For docs-only or ledger-closeout changes with no executable impact, check diff hygiene, affected links/paths, and task-sync/workflow consistency when workflow artifacts changed. No full suite or typecheck is required solely for closeout.
+- For isolated code changes, run the regression and affected suites, plus relevant type/lint/build checks. For generator or template changes, generate a fixture and check the affected mirrors.
+- High-risk, cross-module, or release changes require the full repo verification set; this includes shared contracts, auth, publication, migrations, and hooks/runtime. Use full verification when the impact boundary is uncertain, and never weaken explicit contract or CI criteria.
+- Run `bash scripts/check-task-sync.sh` and `bash scripts/check-task-workflow.sh --strict` when workflow artifacts changed and those scripts exist. A passed suite need not be repeated for a subsequent docs/ledger-only closeout against unchanged executable source.
 - Report what changed, why it was the smallest coherent change, verification evidence, and any concrete residual risk.
 EOF_ROOT_CONTEXT
 }

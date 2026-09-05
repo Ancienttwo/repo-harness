@@ -28,7 +28,7 @@ function harness(observations = [observation()]): { deps: ExternalSourceBindingD
     registry: () => ({ registryPath: '/registry', registryRevision: `sha256:${'d'.repeat(64)}`, authorizationRevision: 4, repos: [repo] }),
     observations: () => observations,
     receipts: () => written,
-    canonical: () => ({ ok: true, commit: 'e'.repeat(40), text: `# Sprint\n\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|---|---|---|---|---|\n| 1 | ${TASK_ID} | [ ] | ${TASK} | contract | tests pass | plan |\n` }),
+    canonical: () => ({ ok: true, commit: 'e'.repeat(40), text: `# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|---|---|---|---|---|\n| 1 | ${TASK_ID} | [ ] | ${TASK} | contract | tests pass | plan |\n` }),
     plan: () => ({ ok: true, proof: PLAN }),
     repoIdentity: () => '/git/common',
     write: (_root, receipt) => { const existing = written.find((entry) => entry.binding_id === receipt.binding_id); if (existing) return existing; written.push(receipt); return receipt; },

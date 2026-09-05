@@ -83,7 +83,7 @@ function createReviewingProviderFixture(root: string, cards: number): { readonly
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(root, sprintPath), [
-    '# Fleet provider fixture', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Fleet provider fixture', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     ...taskNames.map((task, index) => `| ${index + 1} | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | inline | provider observation remains read only | (pending) |`),
@@ -185,7 +185,7 @@ describe('fleet board collector', () => {
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
       writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
       writeFileSync(join(repoRoot, sprintPath), [
-        '# Fleet fixture', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+        '# Fleet fixture', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
         '| # | ID | Status | Task | Mode | Acceptance | Plan |',
         '|---|----|--------|------|------|------------|------|',
         `| 1 | ${fixtureTaskId('inspect one registered repository')} | [ ] | inspect one registered repository | inline | projection is read only | (pending) |`, '',

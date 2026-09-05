@@ -11,13 +11,17 @@ import { validateRefactorProgram, type RefactorProgramV1 } from '../../core/refa
 import { assertRefactorVerificationRequest, RefactorProviderError, type RefactorVerifyResultV1 } from '../../core/refactor/provider-contract';
 import { readRefactorRecommendationRecords, recordRefactorResolution, runRefactorVerify } from './archctx-provider';
 import { appendRefactorExecutionBinding, readRefactorExecutionBindings } from './execution-binding-store';
-import { appendRefactorProgramEvent, readRefactorProgramStatus } from './program-store';
+import { appendRefactorProgramEvent, assertRefactorProgramDigest, readRefactorProgramStatus } from './program-store';
 import { persistRefactorResolution, readRefactorResolutions } from './resolution-store';
 
 export class RefactorPostMergeResolutionError extends Error { constructor(readonly code: 'refactor_post_merge_stale' | 'refactor_post_merge_failed', message: string, readonly cause?: unknown) { super(message); this.name = 'RefactorPostMergeResolutionError'; } }
 function fail(code: RefactorPostMergeResolutionError['code'], message: string, cause?: unknown): never { throw new RefactorPostMergeResolutionError(code, message, cause); }
 function atomic(path: string, bytes: string): void { mkdirSync(dirname(path), { recursive: true }); const temp = `${path}.${process.pid}.${Date.now()}.tmp`; writeFileSync(temp, bytes, { mode: 0o600 }); renameSync(temp, path); }
 function assertSha256(value: string, label: string): void { if (!/^sha256:[a-f0-9]{64}$/u.test(value)) fail('refactor_post_merge_failed', `${label} must be an exact sha256 digest`); }
+function assertBindingReachable(root: string, binding: RefactorExecutionBindingV1, head: string): void {
+  try { execFileSync('git', ['merge-base', '--is-ancestor', binding.mergeCommitSha, head], { cwd: root, stdio: 'ignore' }); }
+  catch (error) { fail('refactor_post_merge_stale', `merge commit is not an ancestor of final main: ${binding.recommendationId}`, error); }
+}
 
 export interface RefactorPostMergeItemV1 {
   readonly candidateVerification: RefactorCandidateVerificationReceiptV1; readonly binding: RefactorExecutionBindingV1;
@@ -36,8 +40,11 @@ function writeBoard(root: string, board: RefactorBoardV1): { readonly jsonPath: 
 
 export function rebuildRefactorBoard(input: { readonly repo_root: string; readonly program: RefactorProgramV1; readonly head_sha: string; readonly env?: NodeJS.ProcessEnv }, dependencies: Pick<RefactorPostMergeDependencies, 'recommendations'> = {}): { readonly board: RefactorBoardV1; readonly jsonPath: string; readonly markdownPath: string } {
   const root = realpathSync(input.repo_root); const program = validateRefactorProgram(input.program); const head = execFileSync('git', ['rev-parse', '--verify', `${input.head_sha}^{commit}`], { cwd: root, encoding: 'utf8' }).trim(); if (head !== input.head_sha) fail('refactor_post_merge_stale', 'board head is not an exact commit');
+  assertRefactorProgramDigest(readRefactorProgramStatus(root, program.programId, input.env ?? process.env), program.programDigest);
+  const bindings = readRefactorExecutionBindings(root, program.programId);
+  for (const binding of bindings) assertBindingReachable(root, binding, head);
   const recommendations = (dependencies.recommendations ?? ((value, repo) => readRefactorRecommendationRecords(value, repo, { env: input.env }).recommendations))(head, root);
-  const board = projectRefactorBoard({ program, recommendations, bindings: readRefactorExecutionBindings(root, program.programId), resolutions: readRefactorResolutions(root, program.programId) });
+  const board = projectRefactorBoard({ program, measuredHeadSha: head, recommendations, bindings, resolutions: readRefactorResolutions(root, program.programId) });
   return Object.freeze({ board, ...writeBoard(root, board) });
 }
 
@@ -46,11 +53,14 @@ export async function resolveRefactorPostMerge(input: {
   readonly items: readonly RefactorPostMergeItemV1[]; readonly expected_current_sha256: string; readonly idempotency_key: string; readonly observed_at: string; readonly env?: NodeJS.ProcessEnv;
 }, dependencies: RefactorPostMergeDependencies = {}): Promise<{ readonly board: RefactorBoardV1; readonly jsonPath: string; readonly markdownPath: string; readonly stage: 'resolved' | 'follow_up_required' | 'merged_pending_measurement' | 'reconciliation_required' }> {
   const root = realpathSync(input.repo_root); const program = validateRefactorProgram(input.program); let status = readRefactorProgramStatus(root, program.programId, input.env ?? process.env);
+  assertRefactorProgramDigest(status, program.programDigest);
   const finalMain = execFileSync('git', ['rev-parse', '--verify', `${input.final_main_sha}^{commit}`], { cwd: root, encoding: 'utf8' }).trim(); if (finalMain !== input.final_main_sha || execFileSync('git', ['rev-parse', '--verify', `${status.program.target_ref}^{commit}`], { cwd: root, encoding: 'utf8' }).trim() !== finalMain) fail('refactor_post_merge_stale', 'final main is not the exact current target ref');
   if (input.items.length !== program.bindings.length) fail('refactor_post_merge_failed', 'post-merge evidence must cover every Program binding');
   assertSha256(input.final_worktree_digest, 'final_worktree_digest');
   const expectedKeys = new Set(program.bindings.map((entry) => `${entry.recommendationId}\0${entry.recommendationDigest}`)); const suppliedKeys = new Set<string>();
-  for (const item of input.items) { const binding = validateRefactorExecutionBinding(item.binding); const key = `${binding.recommendationId}\0${binding.recommendationDigest}`; if (!expectedKeys.has(key) || suppliedKeys.has(key)) fail('refactor_post_merge_failed', 'post-merge evidence does not exactly cover Program bindings'); suppliedKeys.add(key); assertSha256(item.mergeReceiptSha256, 'mergeReceiptSha256'); appendRefactorExecutionBinding({ repo_root: root, program, candidate_verification: validateRefactorCandidateVerificationReceipt(item.candidateVerification), binding }); }
+  for (const item of input.items) { const binding = validateRefactorExecutionBinding(item.binding); const key = `${binding.recommendationId}\0${binding.recommendationDigest}`; if (!expectedKeys.has(key) || suppliedKeys.has(key)) fail('refactor_post_merge_failed', 'post-merge evidence does not exactly cover Program bindings'); suppliedKeys.add(key); assertSha256(item.mergeReceiptSha256, 'mergeReceiptSha256');
+    assertBindingReachable(root, binding, finalMain);
+    appendRefactorExecutionBinding({ repo_root: root, program, candidate_verification: validateRefactorCandidateVerificationReceipt(item.candidateVerification), binding, env: input.env }); }
   if (status.current.state === 'verifying') { const next = appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: input.expected_current_sha256, idempotency_key: `${input.idempotency_key}:merge`, operation: 'begin_merge', evidence_refs: input.items.map((entry) => entry.binding.bindingSha256), observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env }); status = { ...status, current: next.current, events: [...status.events, next.event] }; }
   if (status.current.state === 'merging') { const next = appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: status.current.current_sha256, idempotency_key: `${input.idempotency_key}:measure`, operation: 'begin_post_merge_measure', evidence_refs: [finalMain], observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env }); status = { ...status, current: next.current, events: [...status.events, next.event] }; }
   if (!['post_merge_measuring', 'resolving', 'complete', 'reconciliation_required'].includes(status.current.state)) fail('refactor_post_merge_failed', `program is ${status.current.state}, not ready for post-merge measurement`);
@@ -80,7 +90,7 @@ export async function resolveRefactorPostMerge(input: {
   if (stale && status.current.state === 'post_merge_measuring') appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: status.current.current_sha256, idempotency_key: `${input.idempotency_key}:reconcile`, operation: 'require_reconciliation', evidence_refs: [finalMain], observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env });
   else if (!providerUnavailable && status.current.state === 'post_merge_measuring') appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: status.current.current_sha256, idempotency_key: `${input.idempotency_key}:resolve`, operation: 'begin_resolve', evidence_refs: readRefactorResolutions(root, program.programId).map((entry) => entry.resolutionDigest), observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env });
   const recommendations = (dependencies.recommendations ?? ((head, repo) => readRefactorRecommendationRecords(head, repo, { env: input.env }).recommendations))(finalMain, root);
-  const board = projectRefactorBoard({ program, recommendations, bindings: readRefactorExecutionBindings(root, program.programId), resolutions: readRefactorResolutions(root, program.programId) });
+  const board = projectRefactorBoard({ program, measuredHeadSha: finalMain, recommendations, bindings: readRefactorExecutionBindings(root, program.programId), resolutions: readRefactorResolutions(root, program.programId) });
   const { jsonPath, markdownPath } = writeBoard(root, board);
   const results = new Set(board.cards.map((entry) => entry.architectureResult)); const stage = providerUnavailable ? 'merged_pending_measurement' : stale ? 'reconciliation_required' : results.size === 1 && results.has('resolved') ? 'resolved' : 'follow_up_required';
   if (stage === 'resolved') { const current = readRefactorProgramStatus(root, program.programId, input.env ?? process.env).current; if (current.state === 'resolving') appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: current.current_sha256, idempotency_key: `${input.idempotency_key}:complete`, operation: 'complete', evidence_refs: [board.boardDigest], observed_at: input.observed_at, owned_target_revision: finalMain, env: input.env }); }

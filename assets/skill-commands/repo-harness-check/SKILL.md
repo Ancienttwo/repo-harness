@@ -11,7 +11,7 @@ Use this command when the user asks whether the harness, migration, or release s
 ## Protocol
 
 1. Confirm the repo path and report dirty-worktree boundaries.
-2. Read the canonical required-check list from the target repo's root agent context (`CLAUDE.md` for Claude, `AGENTS.md` for Codex) `## Required Checks` section, then run every command listed there through the global/package helper runtime. This self-host source repo may also use root `scripts/` for source-only maintenance commands. Example only, not a fixed list: `bun test`. If `## Required Checks` is missing or empty, report that as the first blocking finding instead of substituting a default list.
+2. Read the canonical verification policy from the target repo's root agent context (`CLAUDE.md` for Claude, `AGENTS.md` for Codex) `## Required Checks` section. Select its applicable tier from the complete diff and risk, state the reason, and run that tier's commands; a command listed under a conditional full-suite tier is not mandatory for every task. Preserve stronger active-contract and CI requirements. Docs-only/ledger closeout does not alone trigger full tests; unknown impact, high-risk, cross-module, and release changes require the full tier. Use the global/package helper runtime where applicable; this self-host repo may use root `scripts/`. If the section is missing or empty, report the missing policy rather than inventing commands. Report exact results and unrun checks, and never claim full-suite validation from focused tests.
 3. Run advisory readiness when available:
    - `repo-harness run check-agent-tooling --host both --json`
 4. Treat missing CodeGraph or missing Codex `health`/`check`/`mermaid` as hard failures.

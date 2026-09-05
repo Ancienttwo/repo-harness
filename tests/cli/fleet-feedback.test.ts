@@ -150,7 +150,7 @@ function fixture(): Fixture {
   git(root, 'config', 'user.email', 'fleet-feedback-cli@test.invalid');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT), [
-    '# Sprint: feedback CLI', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: feedback CLI', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${TASK}`)} | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',
@@ -265,7 +265,7 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
   const taskCell = 'second current reviewing publication';
   const task = 'second current reviewing publication';
   writeFileSync(join(subject.root, sprintPath), [
-    '# Sprint: feedback CLI ambiguity', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: feedback CLI ambiguity', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | provider feedback passes | (pending) |`, '',

@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { readBrowserBinding } from '../chatgpt-browser/binding';
+import { runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import { readFileSync } from 'fs';
 
 import { buildDevelopmentCampaignDefinition } from '../../core/automation/development-campaign';
@@ -56,7 +58,8 @@ export function runCampaignStart(raw: { readonly repo?: string; readonly authori
   const repo = raw.repo?.trim() || process.cwd();
   const authorization = readStoredProgramAuthorization(repo, required(raw.authorizationSha256, '--authorization-sha256'));
   if (authorization.campaign === null) throw new CampaignArgumentError('the stored ProgramAuthorizationV1 has no campaign payload');
-  const createdAt = raw.observedAt?.trim() || new Date().toISOString();
+  const observedAt = raw.observedAt?.trim();
+  const createdAt = observedAt || new Date().toISOString();
   const campaign = buildDevelopmentCampaignDefinition({
     campaign_id: authorization.campaign.campaign_id,
     authorization_id: authorization.authorization_id,
@@ -66,7 +69,12 @@ export function runCampaignStart(raw: { readonly repo?: string; readonly authori
     target_revision: authorization.target_revision,
     created_at: createdAt,
   });
-  output(createDevelopmentCampaign({ repo_root: repo, campaign, idempotency_key: required(raw.idempotencyKey, '--idempotency-key') }));
+  output(createDevelopmentCampaign({
+    repo_root: repo,
+    campaign,
+    idempotency_key: required(raw.idempotencyKey, '--idempotency-key'),
+    reuse_existing_definition: !observedAt,
+  }));
 }
 
 export function runCampaignTransition(raw: { readonly repo?: string; readonly request?: string }): void {
@@ -88,7 +96,7 @@ export async function runCampaignAuthor(raw: { readonly repo?: string; readonly 
   output(await startIssueBatchAuthoring({
     repo_root: raw.repo?.trim() || process.cwd(), campaign_id: required(raw.campaignId, '--campaign-id'),
     group_number: groupNumber(raw.groupNumber), dry_run: raw.dryRun === true, gitleaks_bin: raw.gitleaksBin?.trim(),
-  }));
+  }, { readBinding: readBrowserBinding, consult: runBrowserConsult }));
 }
 
 export async function runCampaignAuthorFollowup(raw: { readonly repo?: string; readonly request?: string; readonly dryRun?: boolean; readonly gitleaksBin?: string }): Promise<void> {
@@ -106,7 +114,7 @@ export async function runCampaignAuthorFollowup(raw: { readonly repo?: string; r
     source_session_ref: requestString(request.source_session_ref, 'request.source_session_ref'), operation,
     requested_slots: request.requested_slots as IssueBatchSlot[], provider_issue_id: operation === 'edit_issue' ? requestString(request.provider_issue_id, 'request.provider_issue_id') : undefined,
     dry_run: raw.dryRun === true, gitleaks_bin: raw.gitleaksBin?.trim(),
-  }));
+  }, { readBinding: readBrowserBinding, followup: runBrowserFollowup }));
 }
 
 export function buildCampaignCommand(): Command {

@@ -4,9 +4,18 @@ import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Writable } from 'stream';
 import { acquireExpensiveRunLock } from './expensive-run-lock';
+import { PROCESS_GROUP_LAUNCHER_FLAG } from './process-group-launcher';
 
 export const PROCESS_SUPERVISOR_TERMINATION_GRACE_MS = 500;
-const PROCESS_GROUP_LAUNCHER = join(import.meta.dir, 'process-group-launcher.ts');
+export const PROCESS_SUPERVISOR_FLAG = '--process-supervisor';
+declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
+const IS_SINGLE_FILE_HOOK_BUNDLE = typeof REPO_HARNESS_BUNDLED_CLI_VERSION === 'string';
+const PROCESS_GROUP_LAUNCHER = IS_SINGLE_FILE_HOOK_BUNDLE
+  ? import.meta.path
+  : join(import.meta.dir, 'process-group-launcher.ts');
+const PROCESS_GROUP_LAUNCHER_PREFIX_ARGS = IS_SINGLE_FILE_HOOK_BUNDLE
+  ? [PROCESS_GROUP_LAUNCHER_FLAG]
+  : [];
 
 // Set when an exception interrupts TERM/grace/KILL cleanup before the target
 // process group's absence can be confirmed. Mirrors PRESERVE_EXPENSIVE_RUN_LOCK
@@ -232,6 +241,7 @@ async function superviseTarget(options: SupervisorOptions): Promise<number> {
   const launcherResultPath = `${options.metadataPath}.launcher.json`;
   const child = spawn(process.execPath, [
     PROCESS_GROUP_LAUNCHER,
+    ...PROCESS_GROUP_LAUNCHER_PREFIX_ARGS,
     '--result', launcherResultPath,
     '--command', options.command,
     ...options.args,
@@ -445,10 +455,10 @@ async function supervise(options: SupervisorOptions): Promise<number> {
   }
 }
 
-if (import.meta.main) {
-  const options = parseArgs(process.argv.slice(2));
+export async function runProcessSupervisorCli(argv: readonly string[]): Promise<number> {
+  const options = parseArgs(argv);
   try {
-    process.exitCode = await supervise(options);
+    return await supervise(options);
   } catch (error) {
     const processGroupPid = publishedProcessGroupPid(options.metadataPath);
     const result: SupervisorResult = {
@@ -466,6 +476,8 @@ if (import.meta.main) {
     } catch {
       // The parent reports a missing supervisor receipt if this also fails.
     }
-    process.exitCode = 1;
+    return 1;
   }
 }
+
+if (import.meta.main) process.exitCode = await runProcessSupervisorCli(process.argv.slice(2));

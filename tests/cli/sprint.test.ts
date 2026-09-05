@@ -29,6 +29,7 @@ function fixture(): { readonly root: string; readonly home: string } {
   mkdirSync(join(root, 'tasks'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   const sprint = `# Sprint: demo
+> **Status**: Executing
 > **Backlog Schema**: 2
 
 ## Backlog

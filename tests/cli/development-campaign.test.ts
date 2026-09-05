@@ -55,4 +55,29 @@ describe('development campaign CLI', () => {
     expect(status.status, status.stderr).toBe(0);
     expect(JSON.parse(status.stdout).events).toHaveLength(1);
   });
+
+  test('replays an implicit creation time from the first CLI request and rejects explicit identity conflicts', () => {
+    const f = fixture();
+    const args = ['campaign', 'start', '--repo', f.root, '--authorization-sha256', f.authorization.authorization_sha256, '--idempotency-key', 'cli-default-time'];
+    const first = run(args, f.env);
+    const replay = run(args, f.env);
+    expect(first.status, first.stderr).toBe(0);
+    expect(replay.status, replay.stderr).toBe(0);
+    expect(replay.stdout).toBe(first.stdout);
+
+    const conflictingTime = run([...args, '--observed-at', '2030-09-05T00:00:00.000Z'], f.env);
+    expect(conflictingTime.status).toBe(1);
+    expect(conflictingTime.stderr).toContain('campaign_conflict');
+
+    const conflictingKey = run([...args.slice(0, -1), 'another-key'], f.env);
+    expect(conflictingKey.status).toBe(1);
+    expect(conflictingKey.stderr).toContain('campaign_conflict');
+
+    const { protocol: _protocol, kind: _kind, authorization_sha256: _digest, ...alternateInput } = f.authorization;
+    const alternate = sealProgramAuthorization({ ...alternateInput, authorization_id: 'authorization-cli-alternate' });
+    mintProgramAuthorization({ repo_root: f.root, authorization: alternate, env: f.env });
+    const conflictingGrant = run(['campaign', 'start', '--repo', f.root, '--authorization-sha256', alternate.authorization_sha256, '--idempotency-key', 'cli-default-time'], f.env);
+    expect(conflictingGrant.status).toBe(1);
+    expect(conflictingGrant.stderr).toContain('campaign_conflict');
+  });
 });

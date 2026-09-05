@@ -57,7 +57,7 @@ import { HookEffectReconciliationRequired } from './handler-contract';
 // before deciding whether the advisory should ever block, and adding a metric
 // would repeat the `child_processes` completeness problem already on the ledger.
 const UNPLANNED_IMPLEMENTATION_EVIDENCE = '.ai/harness/runs/unplanned-implementation.jsonl';
-const STOP_JOURNAL_DEADLINE_MS = 20_000;
+const STOP_DEFERRED_WORK_BUDGET_MS = 20_000;
 
 function recordUnplannedImplementation(repoRoot: string, now: Date, paths: readonly string[]): void {
   try {
@@ -88,7 +88,7 @@ export interface StopProjectionTarget {
 
 export interface StopHandlerDependencies {
   readonly now?: () => Date;
-  /** Monotonic-enough wall clock for the Stop-wide journal deadline. */
+  /** Wall clock shared by architecture and journal deferred work. */
   readonly wallClockMs?: () => number;
   readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
   /** Invoked once after the complete Stop projection batch commits. */
@@ -685,7 +685,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const env = opts.env ?? process.env;
   const dependencies = opts.dependencies ?? {};
   const wallClockMs = dependencies.wallClockMs ?? Date.now;
-  const journalDeadlineMs = wallClockMs() + STOP_JOURNAL_DEADLINE_MS;
+  const deferredDeadlineMs = wallClockMs() + STOP_DEFERRED_WORK_BUDGET_MS;
   const now = dependencies.now?.() ?? new Date();
   const payload = parsePayload(opts.input);
   if (payload.stop_hook_active === true || payload.stop_hook_active === 'true') {
@@ -713,10 +713,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     }
     const driftEvent = architectureDriftSourceEvent(changedSet);
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
-      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [] });
+      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [], deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
     if (architectureDrain.status === 'disabled') {
       for (const changedPath of changedSet.paths) {
-        const cascade = processArchitectureCascade(repoRoot, env, changedPath);
+        const cascade = processArchitectureCascade(repoRoot, env, changedPath, { deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
         if (!cascade.ok) throw new Error(cascade.error);
       }
     }
@@ -744,7 +744,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     }
   }
   try {
-    consumePendingPostEditEvents(repoRoot, env, { deadlineMs: journalDeadlineMs, nowMs: wallClockMs });
+    consumePendingPostEditEvents(repoRoot, env, { deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     journalSideEffectError = message;

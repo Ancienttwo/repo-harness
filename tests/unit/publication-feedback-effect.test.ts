@@ -248,7 +248,7 @@ function installRepairFixture(): RepairFixture {
   git(root, 'config', 'user.email', 'feedback-repair@test.invalid');
   mkdirSync(join(root, 'plans', 'sprints'), { recursive: true });
   writeFileSync(join(root, REPAIR_SPRINT), [
-    '# Sprint: feedback repair', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Sprint: feedback repair', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     `| 1 | ${fixtureTaskId(`${REPAIR_TASK}`)} | [ ] | ${REPAIR_TASK} | contract | feedback repair tests | (pending) |`,

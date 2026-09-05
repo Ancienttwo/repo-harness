@@ -10,14 +10,10 @@ import {
   type IssueBatchIntentV1,
   type IssueBatchSlot,
 } from '../../core/automation/issue-batch';
-import { readStoredProgramAuthorization } from './grant-store';
-import { readDevelopmentCampaignStatus } from './development-campaign-store';
+import { assertAuthorityBinding, readDevelopmentCampaignStatus } from './development-campaign-store';
 import { readCampaignExternalSourcesPolicyAtRevision } from './development-campaign-policy';
 import { requireManualGithubPolicy } from '../external-sources/policy';
-import { readBrowserBinding } from '../../cli/chatgpt-browser/binding';
-import { runBrowserConsult, runBrowserFollowup } from '../../cli/chatgpt-browser/engine';
-import type { BrowserConsultInput, BrowserConsultResult } from '../../cli/chatgpt-browser/types';
-import { persistIssueAuthoringSession, persistIssueBatchIntent, readIssueBatchIntent } from './issue-batch-store';
+import { assertIssueAuthoringSourceSession, persistIssueAuthoringSession, persistIssueBatchIntent, readIssueBatchIntent } from './issue-batch-store';
 
 const GPT_PRO_MODEL = 'gpt-5.5-pro';
 
@@ -28,9 +24,34 @@ export class GptProIssueAuthoringError extends Error {
   }
 }
 
-export interface IssueAuthoringDependencies {
-  readonly consult?: (input: BrowserConsultInput) => Promise<BrowserConsultResult>;
-  readonly followup?: (input: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => Promise<BrowserConsultResult>;
+export interface IssueAuthoringBrowserInput {
+  readonly repoRoot: string;
+  readonly title: string;
+  readonly prompt: string;
+  readonly provider: 'oracle';
+  readonly model: string;
+  readonly requireSecretScan: true;
+  readonly gitleaksBin?: string;
+  readonly profileDir: string;
+  readonly profileDirectory: string;
+  readonly dryRun: boolean;
+}
+
+export interface IssueAuthoringBrowserResult {
+  readonly sessionId: string;
+  readonly status: IssueAuthoringSessionV1['browser_status'];
+  readonly meta: { readonly model: { readonly verified?: boolean } };
+}
+
+// The caller supplies browser I/O; the effect owns authorization, ordering and persistence.
+export interface IssueAuthoringDependencies<Result extends IssueAuthoringBrowserResult> {
+  readonly readBinding: (repoRoot: string) => {
+    readonly path: string;
+    readonly binding?: { readonly profileDir: string; readonly profileDirectory?: string };
+    readonly error?: string;
+  };
+  readonly consult: (input: IssueAuthoringBrowserInput) => Promise<Result>;
+  readonly followup: (input: IssueAuthoringBrowserInput & { readonly sessionId: string }) => Promise<Result>;
   readonly now?: () => string;
 }
 
@@ -83,21 +104,21 @@ export function buildIssueAuthoringPrompt(intent: Omit<IssueBatchIntentV1, 'prom
   ].join('\n\n');
 }
 
-function context(input: StartIssueBatchAuthoringInput) {
+function context(input: StartIssueBatchAuthoringInput, readBinding: IssueAuthoringDependencies<IssueAuthoringBrowserResult>['readBinding']) {
   const repoRoot = resolve(input.repo_root);
   const status = readDevelopmentCampaignStatus(repoRoot, input.campaign_id, input.env);
   if (status.current.state !== 'group_preparing') fail('issue_authoring_state_invalid', 'issue authoring requires campaign state group_preparing');
-  const authorization = readStoredProgramAuthorization(repoRoot, status.campaign.authorization_sha256, input.env);
+  const authorization = assertAuthorityBinding(repoRoot, status.campaign, input.env ?? process.env);
   if (authorization.campaign === null) fail('issue_authoring_invalid', 'campaign authorization payload is missing');
   if (input.group_number < 1 || input.group_number > authorization.campaign.group_count) fail('issue_authoring_invalid', 'group_number exceeds campaign authorization');
   const externalPolicy = requireManualGithubPolicy(readCampaignExternalSourcesPolicyAtRevision(repoRoot, status.campaign.target_revision));
-  const bindingResult = readBrowserBinding(repoRoot);
+  const bindingResult = readBinding(repoRoot);
   if (bindingResult.error || !bindingResult.binding?.profileDir || !bindingResult.binding.profileDirectory) fail('issue_authoring_profile_mismatch', `ChatGPT browser binding is unavailable: ${bindingResult.error ?? bindingResult.path}`);
   if (bindingResult.binding.profileDirectory !== authorization.campaign.chrome_profile_directory) fail('issue_authoring_profile_mismatch', 'ChatGPT browser profile does not match the campaign authorization');
   return { repoRoot, status, authorization, externalPolicy, binding: bindingResult.binding };
 }
 
-function browserInput(repoRoot: string, prompt: string, profileDir: string, profileDirectory: string, input: StartIssueBatchAuthoringInput): BrowserConsultInput {
+function browserInput(repoRoot: string, prompt: string, profileDir: string, profileDirectory: string, input: StartIssueBatchAuthoringInput): IssueAuthoringBrowserInput {
   return {
     repoRoot, title: `${input.campaign_id} group ${input.group_number} issue authoring`, prompt,
     provider: 'oracle', model: GPT_PRO_MODEL, requireSecretScan: true, gitleaksBin: input.gitleaks_bin,
@@ -105,7 +126,7 @@ function browserInput(repoRoot: string, prompt: string, profileDir: string, prof
   };
 }
 
-function persistSession(repoRoot: string, intent: IssueBatchIntentV1, operation: IssueAuthoringOperation, requestedSlots: readonly IssueBatchSlot[], providerIssueId: string | null, sourceSessionRef: string | null, result: BrowserConsultResult, createdAt: string): IssueAuthoringSessionV1 {
+function persistSession(repoRoot: string, intent: IssueBatchIntentV1, operation: IssueAuthoringOperation, requestedSlots: readonly IssueBatchSlot[], providerIssueId: string | null, sourceSessionRef: string | null, result: IssueAuthoringBrowserResult, createdAt: string): IssueAuthoringSessionV1 {
   return persistIssueAuthoringSession(repoRoot, intent.campaign_id, intent.group_number, buildIssueAuthoringSession({
     intent_sha256: intent.intent_sha256, operation, requested_slots: requestedSlots, provider_issue_id: providerIssueId,
     session_ref: result.sessionId, source_session_ref: sourceSessionRef, browser_status: result.status,
@@ -113,8 +134,8 @@ function persistSession(repoRoot: string, intent: IssueBatchIntentV1, operation:
   }));
 }
 
-export async function startIssueBatchAuthoring(input: StartIssueBatchAuthoringInput, deps: IssueAuthoringDependencies = {}) {
-  const value = context(input);
+export async function startIssueBatchAuthoring<Result extends IssueAuthoringBrowserResult>(input: StartIssueBatchAuthoringInput, deps: Pick<IssueAuthoringDependencies<Result>, 'readBinding' | 'consult' | 'now'>) {
+  const value = context(input, deps.readBinding);
   const createdAt = (deps.now ?? (() => new Date().toISOString()))();
   const slots = Object.freeze(Array.from({ length: value.authorization.campaign!.issues_per_group }, (_, index) => String(index + 1).padStart(2, '0') as IssueBatchSlot));
   const draft = {
@@ -131,23 +152,24 @@ export async function startIssueBatchAuthoring(input: StartIssueBatchAuthoringIn
   const prompt = buildIssueAuthoringPrompt({ ...draft, protocol: 1, kind: 'repo-harness-issue-batch-intent' }, 'initial', slots, null);
   const intent = buildIssueBatchIntent({ ...draft, prompt_sha256: messageSha256(prompt) });
   persistIssueBatchIntent(value.repoRoot, intent);
-  const result = await (deps.consult ?? runBrowserConsult)(browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input));
+  const result = await deps.consult(browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input));
   const session = persistSession(value.repoRoot, intent, 'initial', slots, null, null, result, createdAt);
   return Object.freeze({ intent, session, browser: result });
 }
 
-export async function continueIssueBatchAuthoring(input: ContinueIssueBatchAuthoringInput, deps: IssueAuthoringDependencies = {}) {
-  const value = context(input);
+export async function continueIssueBatchAuthoring<Result extends IssueAuthoringBrowserResult>(input: ContinueIssueBatchAuthoringInput, deps: Pick<IssueAuthoringDependencies<Result>, 'readBinding' | 'followup' | 'now'>) {
+  const value = context(input, deps.readBinding);
   const intent = readIssueBatchIntent(value.repoRoot, input.campaign_id, input.group_number, input.intent_sha256);
   if (intent.repository_id !== value.status.campaign.repository_id || intent.provider_repository !== value.externalPolicy.github.repository
     || intent.target_ref !== value.status.campaign.target_ref || intent.base_main_sha !== value.status.campaign.target_revision
     || intent.chrome_profile_directory !== value.authorization.campaign!.chrome_profile_directory) fail('issue_authoring_invalid', 'issue batch intent binding is stale');
+  assertIssueAuthoringSourceSession(value.repoRoot, input.campaign_id, input.group_number, intent.intent_sha256, input.source_session_ref);
   const requested = exactSlots(input.requested_slots, intent);
   const providerIssueId = input.operation === 'edit_issue' ? input.provider_issue_id?.trim() || null : null;
   if (input.operation === 'edit_issue' && (requested.length !== 1 || providerIssueId === null)) fail('issue_authoring_invalid', 'edit_issue requires one slot and provider_issue_id');
   if (input.operation === 'fill_missing' && input.provider_issue_id !== undefined) fail('issue_authoring_invalid', 'fill_missing forbids provider_issue_id');
   const prompt = buildIssueAuthoringPrompt(intent, input.operation, requested, providerIssueId);
-  const result = await (deps.followup ?? runBrowserFollowup)({
+  const result = await deps.followup({
     ...browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input),
     sessionId: input.source_session_ref,
   });

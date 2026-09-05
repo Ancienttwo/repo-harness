@@ -5,6 +5,8 @@ import {
   type ArchitectureMajorChangeReasonCode,
   type RefactorScale,
   type RefactorScaleReasonCode,
+  recommendationV3InvariantIssues,
+  type RecommendationV3,
 } from 'archctx-contracts';
 
 import {
@@ -123,6 +125,40 @@ export function validateRefactorProgram(value: unknown): RefactorProgramV1 {
   const built = buildRefactorProgram(input as unknown as ProgramBuildInput);
   if (input.programDigest !== built.programDigest) invalid('programDigest is stale');
   return built;
+}
+
+function same(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
+/** Bind caller-supplied execution structure to the complete accepted ArchContext proposal payload. */
+export function assertRefactorProgramRecommendationAuthority(
+  programInput: RefactorProgramV1,
+  recommendations: readonly RecommendationV3[],
+): readonly RecommendationV3[] {
+  const program = validateRefactorProgram(programInput);
+  const matches = program.bindings.map((binding) => {
+    const exactMatches = recommendations.filter((entry) => entry.recommendationId === binding.recommendationId && entry.fingerprint === binding.recommendationDigest);
+    if (exactMatches.length !== 1) invalid(`recommendation is not accepted by ArchContext: ${binding.recommendationId}`);
+    const recommendation = exactMatches[0]!;
+    const issues = recommendationV3InvariantIssues(recommendation);
+    if (issues.length || recommendation.status !== 'accepted' || recommendation.category !== 'refactor_proposal') {
+      invalid(`accepted recommendation is not a valid refactor proposal: ${binding.recommendationId}`);
+    }
+    const payload = recommendation.payload;
+    if (program.statisticsSnapshotDigest !== payload.baselineSnapshotDigest
+      || program.assessmentDigest !== payload.assessmentDigest
+      || program.proposalDigest !== payload.proposalDigest
+      || program.proposalAuthor?.kind !== recommendation.authoredBy.kind
+      || program.proposalAuthor?.source !== recommendation.authoredBy.source
+      || program.scale !== payload.scale
+      || !same(program.affectedNodeIds, payload.affectedNodeIds)
+      || !same(program.majorChangeReasons, payload.majorChangeReasons)) {
+      invalid(`program semantics disagree with the accepted recommendation: ${binding.recommendationId}`);
+    }
+    return recommendation;
+  });
+  return Object.freeze(matches);
 }
 
 export const canonicalRefactorProgramBytes = (value: RefactorProgramV1): string => canonicalMessageBytes(validateRefactorProgram(value) as unknown as Record<string, unknown>);

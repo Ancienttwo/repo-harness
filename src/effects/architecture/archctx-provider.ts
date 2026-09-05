@@ -5,6 +5,7 @@ import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
+import { runProcess } from '../process-runner';
 import { capabilityRegistryFromArchcontextNodes, type ArchcontextNodeFile } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
@@ -85,16 +86,19 @@ export interface ResolvedArchctxPackage {
   version: string;
 }
 
+const ARCHCTX_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
-  const result = spawnSync(binary, [...args], {
+  const result = runProcess(binary, args, {
     cwd: options.cwd,
     env: options.env,
-    encoding: 'utf8',
-    timeout: options.timeoutMs,
-    maxBuffer: 8 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    inheritEnv: false,
+    timeoutMs: options.timeoutMs,
+    maxOutputBytes: ARCHCTX_MAX_OUTPUT_BYTES,
+    redactions: [],
+    processGroup: true,
   });
-  return { status: result.status, signal: result.signal, stdout: result.stdout ?? '', stderr: result.stderr ?? '', ...(result.error ? { error: result.error.message } : {}) };
+  const overflow = Buffer.byteLength(result.stdout, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES || Buffer.byteLength(result.stderr, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES;
+  return { status: overflow ? 1 : result.status, signal: result.signal, stdout: result.stdout, stderr: result.stderr, ...((overflow ? 'archctx output exceeded maxBuffer' : result.error) ? { error: overflow ? 'archctx output exceeded maxBuffer' : result.error } : {}) };
 };
 
 export function loadArchitectureProjectionPolicy(repoRoot: string): ArchitectureProjectionPolicy {
@@ -143,16 +147,28 @@ export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion
 export function resolveCompatibleNodeRuntime(
   env: NodeJS.ProcessEnv,
   trustedCandidateSource: () => readonly string[] = () => trustedNodeCandidates(userInfo().homedir),
+  budget: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'> = {},
 ): string {
+  const version = (candidate: string): string | null => {
+    const result = runProcess(candidate, ['--version'], {
+      env,
+      inheritEnv: false,
+      timeoutMs: remainingTimeout(budget, 5_000, 'Node runtime selection'),
+      maxOutputBytes: 4 * 1024,
+      redactions: [],
+      processGroup: true,
+    });
+    if (result.timedOut && budget.deadlineMs !== undefined) remainingTimeout(budget, 5_000, 'Node runtime selection');
+    return result.ok ? result.stdout.trim().replace(/^v/, '') : null;
+  };
   const explicitRuntime = env.REPO_HARNESS_NODE_BIN?.trim();
   if (explicitRuntime) {
     if (!isAbsolute(explicitRuntime)) throw new Error('REPO_HARNESS_NODE_BIN must be an absolute path');
     const actual = realpathSync(explicitRuntime);
     const stat = statSync(actual);
     if (!stat.isFile() || (stat.mode & 0o111) === 0) throw new Error('REPO_HARNESS_NODE_BIN is not an executable file');
-    const result = spawnSync(actual, ['--version'], { env, encoding: 'utf8', timeout: 5_000 });
-    const version = (result.stdout ?? '').trim().replace(/^v/, '');
-    if (result.status !== 0 || !Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) {
+    const actualVersion = version(actual);
+    if (actualVersion === null || !Bun.semver.satisfies(actualVersion, ARCHCONTEXT_NODE_RANGE)) {
       throw new Error(`REPO_HARNESS_NODE_BIN must satisfy Node ${ARCHCONTEXT_NODE_RANGE}`);
     }
     return actual;
@@ -166,9 +182,8 @@ export function resolveCompatibleNodeRuntime(
     for (const extension of extensions) {
       const candidate = join(directory, `node${extension}`);
       if (!existsSync(candidate)) continue;
-      const result = spawnSync(candidate, ['--version'], { env, encoding: 'utf8', timeout: 5_000 });
-      const version = (result.stdout ?? '').trim().replace(/^v/, '');
-      if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return realpathSync(candidate);
+      const actualVersion = version(candidate);
+      if (actualVersion !== null && Bun.semver.satisfies(actualVersion, ARCHCONTEXT_NODE_RANGE)) return realpathSync(candidate);
     }
   }
   const trustedCandidates = trustedCandidateSource();
@@ -177,9 +192,8 @@ export function resolveCompatibleNodeRuntime(
     const actual = realpathSync(candidate);
     const stat = statSync(actual);
     if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
-    const result = spawnSync(actual, ['--version'], { env, encoding: 'utf8', timeout: 5_000 });
-    const version = (result.stdout ?? '').trim().replace(/^v/, '');
-    if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return actual;
+    const actualVersion = version(actual);
+    if (actualVersion !== null && Bun.semver.satisfies(actualVersion, ARCHCONTEXT_NODE_RANGE)) return actual;
   }
   throw new Error(
     `archctx requires Node ${ARCHCONTEXT_NODE_RANGE}; no compatible node executable was found. `
@@ -198,8 +212,10 @@ function runArchctxProcess(
 ): ArchctxProcessResult {
   const env = options.env ?? process.env;
   if (options.run) return options.run(resolved.binaryPath, args, { cwd, timeoutMs, env });
-  const nodeExecutable = resolveCompatibleNodeRuntime(env, options.trustedNodeCandidateSource);
-  return DEFAULT_RUNNER(nodeExecutable, [resolved.binaryPath, ...args], { cwd, timeoutMs, env });
+  const now = options.nowMs ?? Date.now;
+  const deadlineMs = options.deadlineMs ?? now() + timeoutMs;
+  const nodeExecutable = resolveCompatibleNodeRuntime(env, options.trustedNodeCandidateSource, { deadlineMs, nowMs: now });
+  return DEFAULT_RUNNER(nodeExecutable, [resolved.binaryPath, ...args], { cwd, timeoutMs: remainingTimeout({ deadlineMs, nowMs: now }, timeoutMs, args.join(' ')), env });
 }
 
 /**

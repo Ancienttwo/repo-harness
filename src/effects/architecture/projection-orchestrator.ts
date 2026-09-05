@@ -76,7 +76,7 @@ export function drainArchitectureProjectionJobs(
   }
   if (policy.provider === 'disabled' || policy.applyMode !== 'automatic') return outcome(root, 'disabled', null, eventIds, null, null, true);
   const clock = options.nowMs ?? Date.now;
-  const deadlineMs = clock() + policy.timeoutMs;
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity, clock() + policy.timeoutMs);
   recoverAbandonedArchitectureProjectionJobs(root, now);
   const blocked = architectureProjectionDeadLetterForSourceKeys(root, sourceKeys);
   if (blocked) return outcome(root, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
@@ -152,7 +152,10 @@ export function drainArchitectureProjectionJobs(
     completeArchitectureProjectionJob(root, job, result, refreshReceipts.map((entry) => entry.receiptDigest), now);
     completedResultStatus = result.status;
   } catch (error) {
-    const classified = classify(error);
+    // A host yielding its shorter time slice is not a failed business attempt.
+    const classified = options.deadlineMs !== undefined && clock() >= options.deadlineMs
+      ? { kind: 'host-budget' as const, message: 'host architecture projection budget exhausted; job retained for an explicit drain' }
+      : classify(error);
     let transition: ReturnType<typeof failArchitectureProjectionJob>;
     try {
       transition = failArchitectureProjectionJob(root, job, classified, now);

@@ -199,7 +199,7 @@ function reconcileLaggingCurrentProjection(
   atomic(value.current, Buffer.from(`${canonicalDevelopmentCampaignCurrentBytes(current)}\n`, 'utf8'));
 }
 
-function assertAuthorityBinding(repoRoot: string, campaign: DevelopmentCampaignDefinitionV1, env: NodeJS.ProcessEnv) {
+function readExactAuthorityBinding(repoRoot: string, campaign: DevelopmentCampaignDefinitionV1, env: NodeJS.ProcessEnv) {
   const grant = readStoredProgramAuthorization(repoRoot, campaign.authorization_sha256, env);
   if (grant.campaign === null || grant.campaign.campaign_id !== campaign.campaign_id
     || grant.authorization_id !== campaign.authorization_id || grant.repository_id !== campaign.repository_id
@@ -207,6 +207,11 @@ function assertAuthorityBinding(repoRoot: string, campaign: DevelopmentCampaignD
     fail('campaign_authorization_stale', 'campaign authorization binding is stale');
   }
   if (grant.merge_mode !== 'manual') fail('campaign_authorization_stale', 'development campaign merge_mode must be manual');
+  return grant;
+}
+
+export function assertAuthorityBinding(repoRoot: string, campaign: DevelopmentCampaignDefinitionV1, env: NodeJS.ProcessEnv) {
+  const grant = readExactAuthorityBinding(repoRoot, campaign, env);
   if (Date.parse(grant.expires_at) <= Date.now()) fail('campaign_authorization_stale', 'campaign authorization expired');
   let target: string;
   try { target = execFileSync('git', ['rev-parse', '--verify', `${grant.target_ref}^{commit}`], { cwd: repoRoot, encoding: 'utf8' }).trim(); }
@@ -228,6 +233,21 @@ function requireMutationPolicy(repoRoot: string, campaign: DevelopmentCampaignDe
   return { grant, policy };
 }
 
+const RECORDING_OPERATIONS: ReadonlySet<DevelopmentCampaignOperation> = new Set([
+  'stop',
+  'require_reconciliation',
+  'expire_authorization',
+]);
+
+function hasSameAuthorizationBinding(left: DevelopmentCampaignDefinitionV1, right: DevelopmentCampaignDefinitionV1): boolean {
+  return left.campaign_id === right.campaign_id
+    && left.authorization_id === right.authorization_id
+    && left.authorization_sha256 === right.authorization_sha256
+    && left.repository_id === right.repository_id
+    && left.target_ref === right.target_ref
+    && left.target_revision === right.target_revision;
+}
+
 export interface AppendDevelopmentCampaignEventInput {
   readonly repo_root: string;
   readonly campaign_id: string;
@@ -240,7 +260,12 @@ export interface AppendDevelopmentCampaignEventInput {
 }
 
 function appendLocked(value: ReturnType<typeof paths>, campaign: DevelopmentCampaignDefinitionV1, input: AppendDevelopmentCampaignEventInput) {
-  requireMutationPolicy(input.repo_root, campaign, input.env ?? process.env);
+  if (input.operation === 'expire_authorization') {
+    const grant = readExactAuthorityBinding(input.repo_root, campaign, input.env ?? process.env);
+    if (Date.parse(grant.expires_at) > Date.now()) fail('campaign_authorization_stale', 'campaign authorization has not expired');
+  } else if (!RECORDING_OPERATIONS.has(input.operation)) {
+    requireMutationPolicy(input.repo_root, campaign, input.env ?? process.env);
+  }
   prepare(value);
   const rebuilt = rebuild(value, campaign);
   reconcileLaggingCurrentProjection(value, campaign, rebuilt.events, rebuilt.current);
@@ -276,23 +301,39 @@ function appendLocked(value: ReturnType<typeof paths>, campaign: DevelopmentCamp
   return { event, current };
 }
 
-export function createDevelopmentCampaign(input: { readonly repo_root: string; readonly campaign: DevelopmentCampaignDefinitionV1; readonly idempotency_key: string; readonly env?: NodeJS.ProcessEnv }) {
+export function createDevelopmentCampaign(input: {
+  readonly repo_root: string;
+  readonly campaign: DevelopmentCampaignDefinitionV1;
+  readonly idempotency_key: string;
+  /** Only the CLI's omitted --observed-at form may reuse the existing immutable request. */
+  readonly reuse_existing_definition?: boolean;
+  readonly env?: NodeJS.ProcessEnv;
+}) {
   const repoRoot = resolve(input.repo_root);
-  const campaign = validateDevelopmentCampaignDefinition(input.campaign);
-  const value = paths(repoRoot, campaign.campaign_id);
+  const requestedCampaign = validateDevelopmentCampaignDefinition(input.campaign);
+  const value = paths(repoRoot, requestedCampaign.campaign_id);
   const env = input.env ?? process.env;
-  try { requireDevelopmentCampaignStartPolicy(repoRoot, campaign.target_revision); }
+  try { requireDevelopmentCampaignStartPolicy(repoRoot, requestedCampaign.target_revision); }
   catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
     if (code === 'campaign_mode_disabled') fail('campaign_mode_disabled', (error as Error).message, error);
     if (code === 'campaign_external_sources_disabled') fail('campaign_external_sources_disabled', (error as Error).message, error);
     throw error;
   }
-  requireMutationPolicy(repoRoot, campaign, env);
+  requireMutationPolicy(repoRoot, requestedCampaign, env);
   return withExclusiveDirectoryLock(value.common, value.lock, () => {
+    prepare(value);
+    const storedCampaign = existsSync(value.definition)
+      ? parse(value.definition, validateDevelopmentCampaignDefinition, canonicalDevelopmentCampaignDefinitionBytes)
+      : null;
+    const campaign = input.reuse_existing_definition && storedCampaign !== null
+      ? storedCampaign
+      : requestedCampaign;
+    if (storedCampaign !== null && input.reuse_existing_definition && !hasSameAuthorizationBinding(storedCampaign, requestedCampaign)) {
+      fail('campaign_conflict', 'campaign was created under another authorization binding');
+    }
     requireDevelopmentCampaignStartPolicy(repoRoot, campaign.target_revision);
     requireMutationPolicy(repoRoot, campaign, env);
-    prepare(value);
     immutable(value.definition, Buffer.from(`${canonicalDevelopmentCampaignDefinitionBytes(campaign)}\n`, 'utf8'));
     const existing = rebuild(value, campaign);
     if (existing.current) {
@@ -314,12 +355,11 @@ export function appendDevelopmentCampaignEvent(input: AppendDevelopmentCampaignE
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 
-export function readDevelopmentCampaignStatus(repoRootInput: string, campaignId: string, env: NodeJS.ProcessEnv = process.env) {
+export function readDevelopmentCampaignStatus(repoRootInput: string, campaignId: string, _env: NodeJS.ProcessEnv = process.env) {
   const repoRoot = resolve(repoRootInput);
   const value = paths(repoRoot, campaignId);
   if (!existsSync(value.definition)) fail('campaign_not_found', 'development campaign is missing');
   const campaign = parse(value.definition, validateDevelopmentCampaignDefinition, canonicalDevelopmentCampaignDefinitionBytes);
-  assertAuthorityBinding(repoRoot, campaign, env);
   const rebuilt = rebuild(value, campaign);
   if (!rebuilt.current) fail('campaign_conflict', 'development campaign has no event chain');
   assertCurrentProjection(value, rebuilt.current);

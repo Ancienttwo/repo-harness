@@ -136,6 +136,7 @@ const FROZEN_ROW_IDS = [
 const SPRINT_TEXT = [
   '# Sprint: freeze subject',
   '',
+  '> **Status**: Executing',
   '> **Backlog Schema**: 2',
   '',
   '## Backlog',

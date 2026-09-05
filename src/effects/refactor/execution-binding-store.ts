@@ -4,9 +4,11 @@ import { constants, closeSync, existsSync, lstatSync, mkdirSync, openSync, readF
 import { join } from 'path';
 
 import { canonicalRefactorExecutionBindingBytes, validateRefactorExecutionBinding, type RefactorExecutionBindingV1 } from '../../core/refactor/execution-binding';
-import { validateRefactorCandidateVerificationReceipt, type RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
+import { canonicalRefactorCandidateVerificationReceiptBytes, validateRefactorCandidateVerificationReceipt, type RefactorCandidateVerificationReceiptV1 } from '../../core/refactor/candidate-verification';
 import { validateRefactorProgram, type RefactorProgramV1 } from '../../core/refactor/program';
 import { resolveGitCommonDirectory } from '../git/common-directory';
+import { readRefactorCandidateVerificationReceipt } from './candidate-verification';
+import { assertRefactorProgramDigest, readRefactorProgramStatus } from './program-store';
 
 export class RefactorExecutionBindingStoreError extends Error {
   constructor(readonly code: 'refactor_execution_binding_conflict' | 'refactor_execution_binding_stale' | 'refactor_execution_binding_unsafe', message: string, readonly cause?: unknown) { super(message); this.name = 'RefactorExecutionBindingStoreError'; }
@@ -17,12 +19,16 @@ function directory(root: string, programId: string): string { return join(resolv
 function ensure(path: string): void { mkdirSync(path, { recursive: true, mode: 0o700 }); const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) fail('refactor_execution_binding_unsafe', 'execution binding store is unsafe'); }
 function git(root: string, args: string[]): string { try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); } catch (error) { return fail('refactor_execution_binding_stale', `git ${args[0]} could not verify execution binding`, error); } }
 
-export function appendRefactorExecutionBinding(input: { readonly repo_root: string; readonly program: RefactorProgramV1; readonly candidate_verification: RefactorCandidateVerificationReceiptV1; readonly binding: RefactorExecutionBindingV1 }): RefactorExecutionBindingV1 {
-  const program = validateRefactorProgram(input.program); const candidate = validateRefactorCandidateVerificationReceipt(input.candidate_verification); const binding = validateRefactorExecutionBinding(input.binding);
+export function appendRefactorExecutionBinding(input: { readonly repo_root: string; readonly program: RefactorProgramV1; readonly candidate_verification: RefactorCandidateVerificationReceiptV1; readonly binding: RefactorExecutionBindingV1; readonly env?: NodeJS.ProcessEnv }): RefactorExecutionBindingV1 {
+  const program = validateRefactorProgram(input.program); const suppliedCandidate = validateRefactorCandidateVerificationReceipt(input.candidate_verification); const binding = validateRefactorExecutionBinding(input.binding);
+  assertRefactorProgramDigest(readRefactorProgramStatus(input.repo_root, program.programId, input.env ?? process.env), program.programDigest);
+  const candidate = readRefactorCandidateVerificationReceipt(input.repo_root, program.programId, suppliedCandidate.receiptSha256);
+  if (canonicalRefactorCandidateVerificationReceiptBytes(candidate) !== canonicalRefactorCandidateVerificationReceiptBytes(suppliedCandidate)) fail('refactor_execution_binding_conflict', 'execution binding does not use the stored candidate verification receipt');
   const programBinding = program.bindings.find((entry) => entry.recommendationId === binding.recommendationId);
   if (!programBinding || programBinding.recommendationDigest !== binding.recommendationDigest) fail('refactor_execution_binding_conflict', 'execution binding does not belong to the Refactor Program');
   if (candidate.recommendationId !== binding.recommendationId || candidate.recommendationDigest !== binding.recommendationDigest || candidate.taskId !== binding.taskId || candidate.taskRevision !== binding.taskRevision
     || candidate.contractPath !== binding.contractPath || candidate.contractSha256 !== binding.contractSha256 || candidate.cutoverClosureSha256 !== binding.cutoverClosureSha256 || candidate.acceptanceReceiptSha256 !== binding.acceptanceReceiptSha256) fail('refactor_execution_binding_conflict', 'execution binding does not match its candidate verification receipt');
+  if (candidate.candidateHeadSha !== binding.pullRequestHeadSha) fail('refactor_execution_binding_conflict', 'execution binding pull request head does not match the verified candidate head');
   if (sha(execFileSync('git', ['show', `${candidate.candidateHeadSha}:${binding.planPath}`], { cwd: input.repo_root })) !== binding.planSha256) fail('refactor_execution_binding_stale', 'execution binding plan bytes are stale');
   if (sha(execFileSync('git', ['show', `${candidate.candidateHeadSha}:${binding.contractPath}`], { cwd: input.repo_root })) !== binding.contractSha256) fail('refactor_execution_binding_stale', 'execution binding contract bytes are stale');
   if (git(input.repo_root, ['rev-parse', '--verify', `${binding.pullRequestHeadSha}^{commit}`]) !== binding.pullRequestHeadSha || git(input.repo_root, ['rev-parse', '--verify', `${binding.mergeCommitSha}^{commit}`]) !== binding.mergeCommitSha) fail('refactor_execution_binding_stale', 'execution binding commit identity is stale');

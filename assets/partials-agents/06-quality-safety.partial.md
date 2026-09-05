@@ -1,10 +1,10 @@
 ## Quality & Safety
 
 ### Verification Gate
-- Never mark work done without verification output.
-- Run impact-based checks: typecheck, tests, lint/build.
-- Run `repo-harness run check-task-workflow --strict` before claiming the workflow is clean.
-- Run `repo-harness run verify-contract --contract <active-plan-contract> --strict` before any done/completed response when the active plan has a contract.
+- Select verification from the complete diff and risk; do not run the full suite for every small change. Never mark work done without output: state scope, reason, commands/results, and unrun checks; do not repeat a passed suite solely for docs/ledger closeout against unchanged executable source.
+- Docs-only or ledger-closeout changes with no executable impact need diff/link/path and affected workflow checks, not full tests or typecheck. Isolated code changes need the regression and affected suites plus relevant type/lint/build checks; generator changes need a generated fixture and mirror checks.
+- High-risk, cross-module, shared-contract, hooks/runtime, auth, publication, migration, or release changes require the full repo verification set. Escalate if the impact boundary is uncertain; preserve stronger contract and CI requirements.
+- Before claiming the workflow is clean, run `repo-harness run check-task-workflow --strict`; when the active plan has a contract, also run `repo-harness run verify-contract --contract <active-plan-contract> --strict` before completion.
 - Require the matching `tasks/reviews/<plan-stem>.review.md` to recommend pass before claiming completion.
 - Require the matching `tasks/notes/<plan-stem>.notes.md` to capture material implementation decisions before review.
 
