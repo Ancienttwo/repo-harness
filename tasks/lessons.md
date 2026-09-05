@@ -69,8 +69,8 @@
 - Date: 2026-07-20
 - Triggered by correction: the P0 package's dispatch-scoped test groups were all green locally, but full-suite CI failed on `tests/state/loop-semantics-characterization.test.ts` — a file no scoped group had ever run.
 - Mistake pattern: treating a curated test subset as ship evidence; scoped groups leave CI blind spots exactly where cross-surface interactions live.
-- Prevention rule: an implementation worker runs the FULL `bun test` suite (plus the projection/type/boundary checks) before reporting RESULT; the scoped groups are for iteration speed only, never the final claim.
-- Where to apply next time: every delegated implementation dispatch; put "full suite before reporting" in the packet verbatim.
+- Prevention rule: use root `AGENTS.md#Required Checks` and the active contract's exit criteria as the verification authority. Product/runtime source, tests, shared machine-executed contracts, test infrastructure, and package/release changes require the full suite; focused groups support iteration but do not replace that gate. Documentation and ledger-only changes use their relevant checks and repository-integrity checks, recording the changed paths and why narrower verification is sufficient.
+- Where to apply next time: delegated implementation dispatches and final verification; reference the owning verification policy instead of copying an unconditional full-suite instruction into every packet.
 
 - Date: 2026-07-20
 - Triggered by correction: a gatekeeper advisory claimed the Sprint Contract header fallback was dead code and should be dropped; the worker's counter-evidence (base `derive_contract_path()` carries the identical fallback; non-archived Approved plans exercise it) proved the premise false, and the round-2 gate overruled the advisory.
