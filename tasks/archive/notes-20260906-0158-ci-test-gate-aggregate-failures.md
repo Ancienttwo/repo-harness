@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-06 01:58
+> **Related Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260906-0158
+> **Archive Projection V1**: `plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md` => `plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md` => `tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md` => `tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md` => `tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md`
+
 # Implementation Notes: ci-test-gate-aggregate-failures
 
 > **Status**: Active
-> **Plan**: plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
-> **Contract**: tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md
-> **Review**: tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md
+> **Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Contract**: tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md
+> **Review**: tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md
 > **Last Updated**: 2026-09-05 23:54
 > **Lifecycle**: notes
 

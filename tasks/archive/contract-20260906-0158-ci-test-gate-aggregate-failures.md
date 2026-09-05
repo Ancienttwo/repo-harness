@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-06 01:58
+> **Related Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260906-0158
+> **Archive Projection V1**: `plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md` => `plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md` => `tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md` => `tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md` => `tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md`
+
 # Task Contract: ci-test-gate-aggregate-failures
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-05 23:54
-> **Review File**: `tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md`
-> **Notes File**: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md`
+> **Review File**: `tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Notes File**: `tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 > **Substantive Change SHA256**: `sha256:a7aecd7a4d02994ab8860415580fc7bd9dadfe4f6935b6c17ba35671c70838cf`
 
@@ -47,10 +57,10 @@ If the fail-fast abort came from something other than the per-file loop under `s
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md`
+- Source plan: `plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md`
-- Notes file: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md`
+- Review file: `tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md`
+- Notes file: `tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -75,11 +85,11 @@ allowed_paths:
   - scripts/check-ci.sh
   - scripts/lib/ci-run-tests.sh
   - tests/check-ci-isolate-aggregation.test.ts
-  - plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+  - plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
   - tasks/todos.md
-  - tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md
-  - tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md
-  - tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md
+  - tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md
+  - tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md
+  - tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md
 ```
 
 ## Evidence Requirements
@@ -150,7 +160,7 @@ exit_criteria:
     - path: scripts/lib/ci-run-tests.sh
       pattern: "failed test files"
   artifacts_exist:
-    - tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md
+    - tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md
     - .ai/harness/evidence/pre-fix/check-ci-isolate-aggregation.log
   tests_pass:
     - path: tests/check-ci-isolate-aggregation.test.ts

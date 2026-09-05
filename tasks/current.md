@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-06T01:16:19+0800 -->
+<!-- updated_at: 2026-09-06T01:58:18+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-09-06T01:16:19+0800
-> **Source Branch**: codex/brc6-adoption-atomic-materialization
-> **Source Commit**: 6f5f9058
+> **Status**: Active
+> **Updated At**: 2026-09-06T01:58:18+0800
+> **Source Branch**: codex/ci-gate-closeout
+> **Source Commit**: e467217c
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-a5bde60a3df6: plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
-- linked-worktree-a5bde60a3df6: active-worktree owner -> self
+- linked-worktree-92f7266c0259: plans/plan-20260906-0134-brc7-local-planning-handoff.md
+- linked-worktree-92f7266c0259: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -48,27 +48,24 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=completed, current_slice=completed-20260828-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: 接线 campaign adopt、权限阶梯与现有 canonical Offer 投影，完成聚焦验证与 canonical 验收。
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 7 changed/untracked path(s)
 
 ```
- D plans/plan-20260905-1835-brc6-adoption-atomic-materialization.md
- D tasks/contracts/20260905-1835-brc6-adoption-atomic-materialization.contract.md
- D tasks/notes/20260905-1835-brc6-adoption-atomic-materialization.notes.md
- D tasks/reviews/20260905-1835-brc6-adoption-atomic-materialization.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260905-1835-brc6-adoption-atomic-materialization.md
-?? tasks/archive/contract-20260906-0116-brc6-adoption-atomic-materialization.md
-?? tasks/archive/notes-20260906-0116-brc6-adoption-atomic-materialization.md
-?? tasks/archive/review-20260906-0116-brc6-adoption-atomic-materialization.md
-?? tasks/archive/todo-20260906-0116-brc6-adoption-atomic-materialization.md
+R  plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md -> plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+R  tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md -> tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md
+R  tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md -> tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md
+R  tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md -> tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md
+A  tasks/archive/todo-20260906-0158-ci-test-gate-aggregate-failures.md
+M  tasks/current.md
+M  tasks/todos.md
 ```
 
 ## Source Artifacts

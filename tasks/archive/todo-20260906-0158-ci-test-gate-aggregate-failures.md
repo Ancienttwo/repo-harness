@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-06 01:58
+> **Related Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Outcome**: Superseded
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260906-0158
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-06 00:30
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-06 01:58
+> **Related Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260906-0158
+> **Archive Projection V1**: `plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md` => `plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md` => `tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md` => `tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-2354-ci-test-gate-aggregate-failures.review.md` => `tasks/archive/review-20260906-0158-ci-test-gate-aggregate-failures.md`
+
 # Task Review: ci-test-gate-aggregate-failures
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md
-> **Contract**: tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md
-> **Notes File**: tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md
+> **Plan**: plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md
+> **Contract**: tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md
+> **Notes File**: tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 23:54
 > **Recommendation**: pass
@@ -25,7 +35,7 @@
 
 ## Mode Evidence
 
-- Selected route: planning (captured work-package plan `plans/plan-20260905-2354-ci-test-gate-aggregate-failures.md`)
+- Selected route: planning (captured work-package plan `plans/archive/plan-20260905-2354-ci-test-gate-aggregate-failures.md`)
 - P1/P2/P3 evidence: recorded in the plan's `## Captured Planning Output`; confirmed in this worktree that `scripts/check-ci.sh` is the only caller of the loop and that `check:helpers` projects 56 helpers without `check-ci.sh`
 - Root cause or plan evidence: bugfix profile gate passed all four `Root Cause Evidence` fields; `pre_fix_failure_artifact` shows `PRE_FIX_EXIT=1` and proves the second selected file never ran before the fix
 
@@ -35,7 +45,7 @@
 - Commands run: see Human Review Card `Commands passed`, plus CI-mode `REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh`
 - Manual checks: positive runtime readback `BUN_TEST_ISOLATE_FILES=1 BUN_TEST_FILES="tests/unit/fleet-board.test.ts tests/check-ci-isolate-aggregation.test.ts" bash -c 'source scripts/lib/ci-run-tests.sh; run_bun_tests'` exits 0 with both `[ci] test` lines and no summary; the negative readback with a deliberately failing temp file first exits 1, still runs the second file, and prints `[ci] failed test files (1):` naming only the failing file with `(exit 1)`
 - Supporting artifacts: `.ai/harness/evidence/pre-fix/check-ci-isolate-aggregation.log`
-- Implementation notes reviewed: `tasks/notes/20260905-2354-ci-test-gate-aggregate-failures.notes.md`
+- Implementation notes reviewed: `tasks/archive/notes-20260906-0158-ci-test-gate-aggregate-failures.md`
 - Run snapshot: `.ai/harness/runs/`
 
 ## Acceptance Receipt Projection
@@ -82,7 +92,7 @@
 ## Retest Steps
 
 - Re-run: `bun test --timeout 60000 tests/check-ci-isolate-aggregation.test.ts tests/bootstrap-files.test.ts`
-- Re-check: the negative runtime readback above, then `bun src/cli/index.ts run verify-contract --contract tasks/contracts/20260905-2354-ci-test-gate-aggregate-failures.contract.md --strict`
+- Re-check: the negative runtime readback above, then `bun src/cli/index.ts run verify-contract --contract tasks/archive/contract-20260906-0158-ci-test-gate-aggregate-failures.md --strict`
 
 ## Summary
 
