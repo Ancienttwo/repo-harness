@@ -339,3 +339,10 @@ cross-target command contracts and aggregate line budgets. Synchronize intention
 command changes with parity assertions, and shorten source guidance instead of
 raising the existing line limit. Reproduced on `0d6bc102`: 27 pass / 2 fail;
 repair: 58 pass across the three named files, AGENTS restored to 260 lines.
+
+### 2026-09-05 — A red main hides every later CI failure
+- Date: 2026-09-05
+- Triggered by correction: three consecutive `main` repairs (#319, #321) each exposed the next failure only after the previous one was fixed.
+- Mistake pattern: `check:ci` runs test files one by one and exits at the first failing file, so a single stale golden or fixture masks unrelated regressions landed later. Branch CI runs on the merge result, so a PR inherits every masked failure on `main`.
+- Prevention rule: before opening or rebasing a PR while `main` is red, run the full local suite on `origin/main` (or on the rebased branch) once and fix or report every failing file in one PR; do not chase CI one failing file at a time. A commit that changes guidance text, hook call shapes, or partials must refresh its characterization goldens and parity assertions in the same commit.
+- Where to apply next time: any repair whose CI reason is "the first failing file"; use `bun test --timeout 60000 > <log> 2>&1; echo FULL_EXIT=$?` and read every `(fail)` line before dispatching a fix.

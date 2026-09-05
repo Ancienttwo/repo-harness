@@ -1,11 +1,21 @@
+> **Archived**: 2026-09-05 22:22
+> **Related Plan**: plans/archive/plan-20260905-1421-reader-scoped-language.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260905-2222
+> **Archive Projection V1**: `plans/plan-20260905-1421-reader-scoped-language.md` => `plans/archive/plan-20260905-1421-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1421-reader-scoped-language.notes.md` => `tasks/archive/notes-20260905-2222-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1421-reader-scoped-language.contract.md` => `tasks/archive/contract-20260905-2222-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1421-reader-scoped-language.review.md` => `tasks/archive/review-20260905-2222-reader-scoped-language.md`
+
 # Implementation Notes: reader-scoped-language
 
 > **Substantive Change SHA256**: `sha256:a04800a2bd20d5f8a062a530690b9574d068a0b585b7b071cbf90a904de202d6`
 
 > **Status**: Active
-> **Plan**: plans/plan-20260905-1421-reader-scoped-language.md
-> **Contract**: tasks/contracts/20260905-1421-reader-scoped-language.contract.md
-> **Review**: tasks/reviews/20260905-1421-reader-scoped-language.review.md
+> **Plan**: plans/archive/plan-20260905-1421-reader-scoped-language.md
+> **Contract**: tasks/archive/contract-20260905-2222-reader-scoped-language.md
+> **Review**: tasks/archive/review-20260905-2222-reader-scoped-language.md
 > **Last Updated**: 2026-09-05 14:21
 > **Lifecycle**: notes
 

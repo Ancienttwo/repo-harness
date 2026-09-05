@@ -1,12 +1,22 @@
+> **Archived**: 2026-09-05 22:22
+> **Related Plan**: plans/archive/plan-20260905-1421-reader-scoped-language.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260905-2222
+> **Archive Projection V1**: `plans/plan-20260905-1421-reader-scoped-language.md` => `plans/archive/plan-20260905-1421-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/notes/20260905-1421-reader-scoped-language.notes.md` => `tasks/archive/notes-20260905-2222-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/contracts/20260905-1421-reader-scoped-language.contract.md` => `tasks/archive/contract-20260905-2222-reader-scoped-language.md`
+> **Archive Projection V1**: `tasks/reviews/20260905-1421-reader-scoped-language.review.md` => `tasks/archive/review-20260905-2222-reader-scoped-language.md`
+
 # Task Review: reader-scoped-language
 
 > **Status**: Pending
-> **Plan**: plans/plan-20260905-1421-reader-scoped-language.md
-> **Contract**: tasks/contracts/20260905-1421-reader-scoped-language.contract.md
-> **Notes File**: tasks/notes/20260905-1421-reader-scoped-language.notes.md
+> **Plan**: plans/archive/plan-20260905-1421-reader-scoped-language.md
+> **Contract**: tasks/archive/contract-20260905-2222-reader-scoped-language.md
+> **Notes File**: tasks/archive/notes-20260905-2222-reader-scoped-language.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-05 14:21
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
