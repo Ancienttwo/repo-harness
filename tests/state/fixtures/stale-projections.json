@@ -51,7 +51,7 @@
       "tests/effective-state.test.ts"
     ],
     "next_action": "implement resolver",
-    "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it",
+    "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
       "active_sprint",
