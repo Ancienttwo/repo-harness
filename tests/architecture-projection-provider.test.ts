@@ -248,7 +248,8 @@ describe('package-local ArchContext projection provider', () => {
   test('charges Node runtime selection to the caller deadline', () => {
     const f = fixture();
     const slowNode = join(f.root, 'slow-node');
-    writeFileSync(slowNode, '#!/bin/sh\nsleep 2\necho v24.18.0\n');
+    // The probe deliberately clears PATH, including lookup of fixture utilities.
+    writeFileSync(slowNode, '#!/bin/sh\n/bin/sleep 2\necho v24.18.0\n');
     chmodSync(slowNode, 0o755);
     const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
     const script = join(f.root, 'node-deadline.ts');
