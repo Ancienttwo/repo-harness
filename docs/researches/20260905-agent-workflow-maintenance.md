@@ -113,3 +113,11 @@ S=状态/遗漏/收口；R=接手/恢复；I=Issue 批处理；X=含 interrupted
 - `evals/skill-routing/phase-b-attempt-outcome.json`：污染实验不能据以验收的原始结论。
 
 后续最小产品切片是统一 `isolated_contract_worktree` 判定：同一 primary/linked worktree fixture 同时调用 Effective State 与 guard，消除“state allow、实际拒绝”的明确矛盾。这一边界足以闭环已复现的三轮无效恢复，不需要同时重做权限系统、SessionStart 或 Stop。
+
+## 验证失败的 context 留存
+
+后续回归曾遇到 `verify-sprint` 执行期间 authority 改变，但原日志只有通用提示。脚本清理前后临时 context，run snapshot 仅留下验证前的 `contract.retry_context`；因此事后无法确定变化字段。单独重跑通过不能证明原失败的 writer，也不能替代未完成的全套结果。
+
+`scripts/verify-sprint.sh` 现在仅在已有 `cmp` 判定不一致后，把验证后的实际 context 保存为 `contract.retry_context_guard.observed_context`，并保存排序后的 `changed_fields`；stderr 同时输出字段名。验证前的权威仍位于 `contract.retry_context`，诊断不参与准入、缓存或重用判断。成功时 trace 结构不变；执行后 context 不可用时仍失败，不构造观察值。只保留已有 hash、schema 和 repo root，不保存 raw toolchain basis 或环境内容。
+
+复现入口为 `tests/helper-scripts.test.ts` 的 `verify-sprint rejects a criterion` 系列。源码变化应报告 `subject_sha256`，计划变化应报告 `goal_sha256`，两者同时变化应报告两个字段。`plans/` 原本就被 review subject 的 operational-path 规则排除，不能把计划变化误报为源码 subject 漂移。fixture 执行从 `assets/templates/helpers/` 复制的真实 helper，投影仍由 `scripts/sync-helper-sources.ts` 唯一生成。该失败留存改动只补足未来定位所需的观测，不推定历史偶发失败的根因。

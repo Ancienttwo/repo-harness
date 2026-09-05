@@ -1136,6 +1136,7 @@ fi
 
 criterion_context_gate="unavailable"
 criterion_context_message="No executable contract criteria required a frozen retry identity."
+criterion_context_drift='{}'
 executes_contract_commands="false"
 if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; then
   executes_contract_commands="$(jq -r '.executes_contract_commands // false' "$contract_report" 2>/dev/null || printf false)"
@@ -1159,7 +1160,14 @@ else
     criterion_context_message="Frozen criterion retry identity remained unchanged through contract execution."
   else
     criterion_context_gate="fail"
-    criterion_context_message="Source, target, contract, goal, or toolchain authority changed during contract execution."
+    # Preserve the observed values before EXIT removes the temporary contexts.
+    criterion_context_drift="$(jq -n \
+      --slurpfile before "$criterion_context" \
+      --slurpfile after "$current_criterion_context" \
+      '{observed_context: $after[0], changed_fields: (
+        ($before[0] + $after[0]) | keys | map(. as $key | select($before[0][$key] != $after[0][$key]))
+      )}')"
+    criterion_context_message="Source, target, contract, goal, or toolchain authority changed during contract execution. Changed fields: $(jq -c '.changed_fields' <<< "$criterion_context_drift")."
   fi
 fi
 if [[ "$criterion_context_gate" == "fail" ]]; then
@@ -1350,6 +1358,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --argjson contract_exit "$contract_exit" \
     --arg criterion_context_gate "$criterion_context_gate" \
     --arg criterion_context_message "$criterion_context_message" \
+    --argjson criterion_context_drift "$criterion_context_drift" \
     --arg review_file "${review_file:-}" \
     --arg review_status "$review_status" \
     --arg review_message "$review_message" \
@@ -1442,7 +1451,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         exit_code: $contract_exit,
         report: ($contract_report[0] // {}),
         retry_context: ($criterion_context[0] // {}),
-        retry_context_guard: {status: $criterion_context_gate, message: $criterion_context_message},
+        retry_context_guard: ({status: $criterion_context_gate, message: $criterion_context_message} + $criterion_context_drift),
         task_profile: $task_profile,
         allowed_paths: $allowed_paths
       },
