@@ -485,7 +485,7 @@ describe('fleet board collector', () => {
       expect(repository.snapshot_consistency).toBe('degraded');
       expect(result.counts.unclassified).toBe(1);
       expect(result.counts.unreadable).toBe(0);
-      expect(JSON.stringify(result)).not.toContain(fixture.repo.path);
+      expect(JSON.stringify(result)).not.toContain('receipt is unavailable');
     } finally {
       if (previousGhBin === undefined) delete process.env.REPO_HARNESS_GH_BIN;
       else process.env.REPO_HARNESS_GH_BIN = previousGhBin;

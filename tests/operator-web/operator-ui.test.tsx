@@ -162,7 +162,7 @@ describe('operator web control board', () => {
     const unreadableOnly = {
       ...degradedSnapshot,
       repositories: degradedSnapshot.repositories.filter((repository) => repository.status === 'unreadable'),
-      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1 },
+      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1, unclassified: 0 },
     } as const;
     const markup = renderStable(unreadableOnly);
 

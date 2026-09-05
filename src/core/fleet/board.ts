@@ -76,6 +76,12 @@ export interface FleetBoardCardV1 {
   readonly feedback: FleetBoardFeedbackSummaryV1;
   readonly inbox: FleetBoardInboxSummaryV1;
   readonly snapshot_consistency: Exclude<FleetBoardSnapshotConsistency, 'degraded'>;
+  /**
+   * The failure unit is the card. A card whose own observation threw carries
+   * the typed reason here, is never classified, and never hides the sibling
+   * cards of its repository; the repository stays readable and degraded.
+   */
+  readonly error: FleetBoardErrorV1 | null;
 }
 
 export interface FleetRepositoryBoardV1 {
@@ -95,6 +101,8 @@ export interface FleetBoardCountsV1 {
   readonly ready_to_merge: number;
   readonly done: number;
   readonly unreadable: number;
+  /** Cards with no sound five-column classification, including failed cards. */
+  readonly unclassified: number;
 }
 
 export interface FleetBoardSnapshotV1 {
@@ -124,6 +132,7 @@ export interface FleetBoardCardInputV1 {
   readonly feedback: FleetBoardFeedbackSummaryV1;
   readonly inbox: FleetBoardInboxSummaryV1;
   readonly snapshot_consistency: 'stable' | 'changed_during_read';
+  readonly error: FleetBoardErrorV1 | null;
 }
 
 export interface FleetRepositoryBoardInputV1 {
@@ -197,6 +206,7 @@ export function classifyFleetBoardColumn(input: FleetBoardCardInputV1): FleetBoa
 export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCardInputV1): FleetBoardCardV1 {
   const readinessAttention = input.merge_readiness?.attention_owner ?? 'none';
   const publication = input.current_publication;
+  const error = input.error;
   return Object.freeze({
     repository_id: repositoryId,
     task_id: input.task_id,
@@ -205,7 +215,9 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
     task_index: input.task_index,
     claim_id: input.claim_id,
     generation: input.generation,
-    column: classifyFleetBoardColumn(input),
+    // A failed observation has no sound classification, whatever its partial
+    // inputs happen to allow.
+    column: error === null ? classifyFleetBoardColumn(input) : null,
     attention_owner: attention(
       readinessAttention,
       feedbackAttention(input.feedback),
@@ -231,6 +243,7 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
       failure_class: input.inbox.failure_class,
     }),
     snapshot_consistency: input.snapshot_consistency,
+    error: error === null ? null : Object.freeze({ code: error.code, message: fleetBoardErrorMessage(error.code) }),
   });
 }
 
@@ -292,7 +305,7 @@ export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV1): F
     .map(projectRepository)
     .sort((left, right) => compare(left.repository_id, right.repository_id));
   const counts: { -readonly [Key in keyof FleetBoardCountsV1]: number } = {
-    available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0,
+    available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0,
   };
   let consistency: FleetBoardSnapshotConsistency = 'stable';
   for (const repository of repositories) {
@@ -303,7 +316,10 @@ export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV1): F
     }
     if (repository.snapshot_consistency === 'degraded') consistency = 'degraded';
     else if (repository.snapshot_consistency === 'changed_during_read' && consistency === 'stable') consistency = 'changed_during_read';
-    for (const card of repository.cards) if (card.column !== null) counts[card.column] += 1;
+    for (const card of repository.cards) {
+      if (card.column === null) counts.unclassified += 1;
+      else counts[card.column] += 1;
+    }
   }
   const basis = {
     protocol: FLEET_BOARD_PROTOCOL,
