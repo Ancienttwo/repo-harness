@@ -191,7 +191,7 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string): Re
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   const rowNames = Array.from({ length: rows }, (_, index) => `observe plain card ${index + 1}`);
   writeFileSync(join(root, sprintPath), [
-    '# Fleet plain fixture', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '# Fleet plain fixture', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
     '| # | ID | Status | Task | Mode | Acceptance | Plan |',
     '|---|----|--------|------|------|------------|------|',
     ...rowNames.map((task, index) => `| ${index + 1} | ${fixtureTaskId(task)} | [ ] | ${task} | inline | plain observation remains read only | (pending) |`),

@@ -213,7 +213,7 @@ describe('Task Inbox V1 common-directory effects', () => {
     sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: stale });
 
     writeFileSync(join(value.root, SPRINT_PATH), [
-      '# Sprint: inbox', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+      '# Sprint: inbox', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
       '| # | ID | Status | Task | Mode | Acceptance | Plan |',
       '|---|----|--------|------|------|------------|------|',
       `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves delivery and repair | (pending) |`, '',
