@@ -72,6 +72,7 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     currentWorktree: '/repo',
     worktreeOwner: '/repo',
     worktreeOwnerIsCurrent: true,
+    isolatedContractWorktree: false,
     handoffPath: '.ai/harness/handoff/current.md',
     handoffText: null,
     resumePath: '.ai/harness/handoff/resume.md',

@@ -575,6 +575,51 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
     }
   }, 30_000);
 
+  test.each([
+    { name: 'primary with matching owner', linked: false, owner: 'current', allowed: false },
+    { name: 'linked with matching owner', linked: true, owner: 'current', allowed: true },
+    { name: 'linked without owner', linked: true, owner: 'missing', allowed: false },
+    { name: 'linked with foreign owner', linked: true, owner: 'foreign', allowed: false },
+  ])('strict isolated worktree agreement: $name', ({ linked, owner, allowed }) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-isolation-')));
+    const primary = join(root, 'primary');
+    const cwd = linked ? join(root, 'linked') : primary;
+    try {
+      mkdirSync(primary);
+      initRepo(primary);
+      if (linked) git(primary, ['worktree', 'add', '-b', 'codex/isolation-fixture', cwd]);
+      writePolicy(cwd);
+      mkdirSync(join(cwd, 'docs'), { recursive: true });
+      writeFileSync(join(cwd, 'docs/spec.md'), '# Spec\n');
+      const plan = writeActivePlan(cwd, 'Executing');
+      const contract = 'tasks/contracts/20260720-0000-mutation-guard-fixture.contract.md';
+      mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
+      writeFileSync(join(cwd, contract), [
+        '# Contract', '> **Status**: Active', `> **Plan**: ${plan}`,
+        '> **Workflow Profile**: strict', '', '## Allowed Paths', '',
+        '```yaml', 'allowed_paths:', '  - src/', '```', '',
+      ].join('\n'));
+      if (owner === 'missing') rmSync(join(cwd, '.ai/harness/active-worktree'));
+      if (owner === 'foreign') writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${primary}\n`);
+
+      const state = resolveEffectiveState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'], operationKind: 'edit', explicitOverride: 'strict',
+      });
+      const guard = edit(cwd, 'src/feature.ts', { profile: 'strict' });
+      const readiness = state.readiness;
+      expect(readiness?.ok).toBe(true);
+      if (!readiness?.ok) throw new Error('readiness unavailable');
+      expect(readiness.requirements.edit.find((entry) => entry.key === 'isolated_contract_worktree')?.satisfied).toBe(allowed);
+      expect(readiness.allowedToEdit.decision).toBe(allowed ? 'allow' : 'block');
+      expect(guard.exitCode).toBe(allowed ? 0 : 2);
+      if ((owner === 'current' && !linked) || owner === 'missing') {
+        expect(guard.stdout).toContain('[StrictWorktreeGuard]');
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('gate mode off: no SpecGuard, no PlanStatusGuard, edit passes silently through the plan gate', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-gate-off-')));
     try {

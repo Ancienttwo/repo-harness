@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, onTestFinished, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -32,6 +32,7 @@ import {
   type RepoHarnessRegistryStrictSnapshot,
 } from '../../src/effects/repo-registry';
 import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
+import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
@@ -76,10 +77,12 @@ function shellSingleQuoted(value: string): string {
 }
 
 function createReviewingProviderFixture(
-  root: string,
+  workspaceRoot: string,
   cards: number,
   options: { readonly omit_receipt_for?: number } = {},
 ): { readonly repo: RepoHarnessRegisteredRepo; readonly gh_bin: string; readonly counter_dir: string } {
+  const root = join(workspaceRoot, 'repo');
+  mkdirSync(root);
   const sprintPath = 'plans/sprints/fleet-provider.sprint.md';
   const taskNames = Array.from({ length: cards }, (_, index) => `observe provider card ${index + 1}`);
   git(root, 'init', '-b', 'main');
@@ -150,11 +153,12 @@ function createReviewingProviderFixture(
     });
     providerCases.push(`  ${index + 1}) printf '%s\\n' ${shellSingleQuoted(providerPr)} ;;`);
   }
-  const counterDir = join(root, 'provider-counter');
+  // Provider telemetry must not change the repository subject sampled by readiness.
+  const counterDir = join(workspaceRoot, 'provider-counter');
   mkdirSync(counterDir);
   writeFileSync(join(counterDir, 'active'), '0\n');
   writeFileSync(join(counterDir, 'maximum'), '0\n');
-  const ghBin = join(root, 'fake-gh.sh');
+  const ghBin = join(workspaceRoot, 'fake-gh.sh');
   writeFileSync(ghBin, [
     '#!/bin/sh', 'set -eu', 'counter="${FLEET_PROVIDER_COUNTER_DIR:?}"',
     'lock() { while ! mkdir "$counter/lock" 2>/dev/null; do sleep 0.002; done; }',
@@ -366,26 +370,40 @@ describe('fleet board collector', () => {
     const root = mkdtempSync(join(tmpdir(), 'fleet-board-provider-limit-'));
     const previousGhBin = process.env.REPO_HARNESS_GH_BIN;
     const previousCounter = process.env.FLEET_PROVIDER_COUNTER_DIR;
-    try {
-      const fixture = createReviewingProviderFixture(root, 4);
-      process.env.REPO_HARNESS_GH_BIN = fixture.gh_bin;
-      process.env.FLEET_PROVIDER_COUNTER_DIR = fixture.counter_dir;
-      const dependencies: FleetBoardDependencies = {
-        read_registry: () => registry([fixture.repo]),
-        collect_repository: productionFleetBoardDependencies.collect_repository,
-      };
-      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000 }, dependencies);
-      expect(result.repositories[0]).toMatchObject({ status: 'ok' });
-      expect(result.repositories[0]?.cards).toHaveLength(4);
-      expect(Number.parseInt(readFileSync(join(fixture.counter_dir, 'maximum'), 'utf8'), 10)).toBe(2);
-      expect(readFileSync(join(fixture.counter_dir, 'active'), 'utf8').trim()).toBe('0');
-    } finally {
+    const controller = new AbortController();
+    let collection: Promise<
+      { snapshot: Awaited<ReturnType<typeof collectFleetBoard>> } | { error: unknown }
+    > | undefined;
+    // Bun's test deadline does not cancel the async body. Drain it before
+    // restoring its environment or removing files that provider children use.
+    onTestFinished(async () => {
+      controller.abort();
+      await collection;
       if (previousGhBin === undefined) delete process.env.REPO_HARNESS_GH_BIN;
       else process.env.REPO_HARNESS_GH_BIN = previousGhBin;
       if (previousCounter === undefined) delete process.env.FLEET_PROVIDER_COUNTER_DIR;
       else process.env.FLEET_PROVIDER_COUNTER_DIR = previousCounter;
       rmSync(root, { recursive: true, force: true });
-    }
+    }, 35_000);
+    const fixture = createReviewingProviderFixture(root, 4);
+    const subjectBefore = buildReviewSubject(fixture.repo.path);
+    expect(subjectBefore.status).toBe('ok');
+    process.env.REPO_HARNESS_GH_BIN = fixture.gh_bin;
+    process.env.FLEET_PROVIDER_COUNTER_DIR = fixture.counter_dir;
+    const dependencies: FleetBoardDependencies = {
+      read_registry: () => registry([fixture.repo]),
+      collect_repository: productionFleetBoardDependencies.collect_repository,
+    };
+    collection = collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000, signal: controller.signal }, dependencies)
+      .then(snapshot => ({ snapshot }), error => ({ error }));
+    const outcome = await collection;
+    if (controller.signal.aborted) return;
+    if ('error' in outcome) throw outcome.error;
+    expect(outcome.snapshot.repositories[0]).toMatchObject({ status: 'ok' });
+    expect(outcome.snapshot.repositories[0]?.cards).toHaveLength(4);
+    expect(Number.parseInt(readFileSync(join(fixture.counter_dir, 'maximum'), 'utf8'), 10)).toBe(2);
+    expect(readFileSync(join(fixture.counter_dir, 'active'), 'utf8').trim()).toBe('0');
+    expect(buildReviewSubject(fixture.repo.path)).toEqual(subjectBefore);
   }, 30_000);
 
   test('does not start a repository observation after the outer signal wins before synchronous collection', async () => {

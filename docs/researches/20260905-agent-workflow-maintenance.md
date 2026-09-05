@@ -1,6 +1,6 @@
 # 跨会话工作流维护：真实任务证据与规则裁剪
 
-本轮把重复流程归入一个 host-local `agent-workflow-audit` Skill，自动化只读取证，修正已漂移的指令与记忆。没有增加 runtime、依赖、调度器或第二套 benchmark。项目内改动均为文档；宿主新增 Python stdlib collector 及其测试。
+首轮维护把重复流程归入一个 host-local `agent-workflow-audit` Skill，自动化只读取证，修正已漂移的指令与记忆。首轮没有增加 runtime、依赖、调度器或第二套 benchmark，项目内改动均为文档；宿主新增 Python stdlib collector 及其测试。随后获批的 strict worktree 运行时修复及其独立验证记录见末节。
 
 ## 证据范围
 
@@ -31,7 +31,7 @@
 | Host writer | 恢复任务 → host 返回 `active writer` / `-32600` → 现场有持有 writer 的进程 | 属于 host 恢复问题。一次人工 TERM 成功不构成可自动 kill 的通用步骤 |
 | 文件/环境 | linked worktree 缺 handoff；某次测试遇到 Python 进程挂住并报告 environment failure | 缺文件和环境故障单独报告，不归为产品失败，也不从旧记忆重建事实 |
 | 指令冲突 | lite profile → 全局“所有规划落文件”与旧“所有 worker 全量”同时注入 | 修正过宽文案，不改变 profile 或测试 gate |
-| Worktree 权限判定 | `state resolve` 在 primary worktree 给 edit allow → StrictWorktreeGuard 要求 linked worktree而拒绝 | `tasks/todos.md` 已有真实复现；本轮定位并保留，修复需跨 Effective State/guard 的独立行为切片 |
+| Worktree 权限判定 | `state resolve` 在 primary worktree 给 edit allow → StrictWorktreeGuard 要求 linked worktree而拒绝 | 首轮定位到既有真实复现；随后获批的 Effective State/guard 修复及回归见末节 |
 | 上下文缺口 | SessionStart 的多个 provider 聚成整体 section 后进入预算裁剪 | 已记录于 `tasks/todos.md`。现场预算证据为 1487/1500 tokens，`worktree-backlog-notice` 被丢弃；不能把这一次观测说成全部上下文丢失 |
 | Stop/安装漂移 | 历史 Stop adapter、candidate handoff 与 archive fingerprint 失效 | 当前源码/提交已修复这些具体问题；不再为它们叠加提醒规则 |
 
@@ -66,7 +66,7 @@
 - 一次独立 forward test 在 `default` native child 路由阶段返回 `native-role-routing unavailable`，没有读取 Skill、没有模型行为覆盖，计为环境阻塞。它不同于 Skill 内容失败，不据此修改角色权限或扩大任务。
 - 同一只读请求随后由可用的 native `explorer` 执行：读取新 Skill，运行 collector，核对限定历史及项目指令，返回有来源的恢复/验证处置候选。结果仍为 155 records / 37 sessions，没有写入项目、配置、记忆，没有清理进程或启动完整测试。这是一次真实使用的有限 forward evidence，不构成跨模型有效性结论。
 
-本轮 repo changed paths：`AGENTS.md`、`CLAUDE.md`、两份 `global-working-rules.md`、`tasks/lessons.md` 和本报告。全部是文档/指令说明；没有改动 product/runtime source、测试基础设施或 machine-executed contract。沿用根风险分级，不跑整个 `bun test`；仍执行行为相关检查和六项 repository-integrity checks。
+首轮维护的 repo changed paths：`AGENTS.md`、`CLAUDE.md`、两份 `global-working-rules.md`、`tasks/lessons.md` 和本报告。全部是文档/指令说明；没有改动 product/runtime source、测试基础设施或 machine-executed contract。首轮沿用根风险分级，不跑整个 `bun test`；仍执行行为相关检查和六项 repository-integrity checks。
 
 ## 样本索引
 
@@ -125,3 +125,20 @@ S=状态/遗漏/收口；R=接手/恢复；I=Issue 批处理；X=含 interrupted
 本地主线集成于 `a0bcf49d`，包含独立的验证范围修复 `6c19234e` 和诊断补丁 `be6e90f8`。合并后的六项 helper 回归全部通过，157 条断言覆盖正常复用、收窄后的增量验证、三种 context 漂移、context 不可用和缺少 contract 时的 canonical state 准入。类型检查、helper/reference 投影与 repository-integrity 检查通过；这些命名检查覆盖实际合并边界，没有重复全套测试，也没有将历史中断结果计为通过。
 
 仍存在一个单独的生命周期缺口：standard 单计划任务已能通过工作流检查，但 `scripts/archive-workflow.sh` 的 `completed_archive_gate` 无条件要求 contract、review 和 AcceptanceReceipt，因此不能按现有入口归档这种已完成计划。应在该边界复现并实现与 canonical profile 一致的收口，再归档计划；不能靠补造严格流程产物或跳过现有 gate 来掩盖冲突。
+## Strict worktree 判定的稳定规则
+
+后续修复把 `isolated_contract_worktree` 定义为两个条件同时成立：当前目录是 Git linked worktree，且 active worktree owner 指向当前目录。owner 匹配本身不证明隔离；linked topology 本身也不证明当前任务拥有这个 worktree。
+
+`src/effects/state/resolve-effective-state.ts` 读取 owner 与 Git 的真实 git/common directories，将组合结果纳入 authority revision 和稳定读取确认；`src/core/state/project-effective-state.ts` 投影 requirement；`src/cli/hook/mutation-guard.ts` 消费同一 requirement。`lite` 的 `worktree_boundary` 仍只表达 owner 边界。这一改动没有增加依赖、配置或第二套判定 API；10 倍 strict resolve 调用量下，额外开销首先表现为每次稳定采样的 Git 子进程成本，查询有 5 秒超时。
+
+四个真实 Git fixture 在同一状态下同时调用 resolver 与 guard：primary/current owner、linked/current owner、linked/missing owner、linked/foreign owner。未修复代码实际失败 2 例，分别暴露过度允许的 readiness 与 guard；修复后的相关 107 个测试通过。完整测试还发现旧 strict-primary golden 需要同步该行为；更新其 hash 断言和期望 fixture 后，golden/guard/projector 共 54 个测试重跑通过。未改变 golden normalizer，也没有删除断言。
+
+首轮完整套件运行 39 分 29 秒，结果为 4,186 pass、4 skip、2 fail、1 error；其中 strict golden 已修正。随后获批排查 Fleet provider 超时，确认了测试 fixture 自身污染 subject，以及 Bun 超时后异步函数继续执行这两个边界，修复与证据见下节。最终完整回归被 SIGTERM 中断，不能据此宣称套件中的 Fleet 超时已闭环。代码仍在独立 worktree 中，尚未合并或更新宿主安装；具体 diff 与验证边界见 `tasks/reviews/20260905-isolated-worktree-readiness.review.md`。这一失败案例支持保留 strict 隔离规则，并要求预检查与写入 guard 使用同一份权威事实；它不支持增加新的确认步骤或扩大 SessionStart/Stop 的职责。
+
+## Fleet fixture 的观察边界与超时清理
+
+fake provider 把计数写进被观察的 Git repo，真实调用后 12 个 Effective State source hashes 中只有 `review_subject` 改变，进而改变 `collectLocal` token。readiness 因而把测试自己制造的变化当成业务输入变化并重复采样。修复把 fixture repo 放到临时 workspace 的 `repo/` 子目录，provider script 与 counter 放在仓库外的 sibling 路径。已有四卡、并发上限 2 的测试新增前后完整 review subject 不变断言：旧布局实际失败，新布局通过，没有删除原断言或放宽 30 秒测试期限。
+
+Bun 的外层 test timeout 不会自动取消 async body；只依赖 `finally`，会使迟到断言越过测试边界。测试结束钩子现在先取消 collection、等待其退出，再恢复环境和删除 fixture。强制 8 秒外层超时的真实 fixture probe 仍有一个预期 timeout failure，但紧邻的清理检查通过：4 个已启动 provider PID 全部退出，环境与目录先于下一测试恢复，没有 between-tests 未处理异常。强制终止时 shell trap 未必执行，因此 counter 只作诊断，实际 PID 存活是清理依据。这条生命周期规则不改变产品 provider 的超时、limiter 或终止实现。
+
+74 项相关测试通过（1,100 assertions），typecheck 通过。最终全套在固定基线和冻结 source/test patch 上运行，被 SIGTERM / exit 143 中断，只有 3,315 pass 与 1 fail 的部分日志，没有完整汇总。新失败位于未修改的 `tests/helper-scripts.test.ts:5165`，报告 verify-sprint 执行期间 authority 改变；根因尚未证明。另一个未闭环点是 standard profile 只需一份计划，但 active-plan workflow checker 仍强制 contract。保留这两个失败边界，不补造 contract、不放宽稳定性检查，也不把 isolated passing retry 当作全套通过。相关实现与日志入口集中在上面的 review 中。
