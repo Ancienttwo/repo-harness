@@ -857,13 +857,13 @@ describe("init command", () => {
       const first = writeGlobalContextFiles(
         source,
         "both",
-        { reportLanguageInstruction: "Use Chinese to report to user." },
+        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
         { ...process.env, HOME: home },
       );
       const second = writeGlobalContextFiles(
         source,
         "both",
-        { reportLanguageInstruction: "Use Chinese to report to user." },
+        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
         { ...process.env, HOME: home },
       );
 
@@ -912,7 +912,7 @@ describe("init command", () => {
       const result = writeGlobalContextFiles(
         source,
         "codex",
-        { reportLanguageInstruction: "Use Chinese to report to user." },
+        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
         { ...process.env, HOME: home },
       );
 
@@ -937,7 +937,7 @@ describe("init command", () => {
       const result = writeGlobalContextFiles(
         source,
         "codex",
-        { reportLanguageInstruction: "Use Chinese to report to user." },
+        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
         { ...process.env, HOME: undefined, USERPROFILE: home } as NodeJS.ProcessEnv,
       );
 
@@ -968,7 +968,7 @@ describe("init command", () => {
       const result = writeGlobalContextFiles(
         source,
         "codex",
-        { reportLanguageInstruction: "Use Chinese to report to user." },
+        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
         { ...process.env, HOME: home },
       );
 
@@ -1018,11 +1018,11 @@ describe("init command", () => {
       makeExecutable(join(fakeBin, "bunx"), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
 
       const input = new PassThrough();
-      // Answers, in prompt order: host target, reporting language (English),
-      // brain location, brain mode, external skills confirm, CodeGraph
-      // confirm, final "Proceed" confirm. Blank lines take each prompt's
-      // default (defaults to "yes" for the two new confirms), preserving
-      // today's default-on outcome.
+      // Answers, in prompt order: host target, human-facing language
+      // (English), brain location, brain mode, external skills confirm,
+      // CodeGraph confirm, final "Proceed" confirm. Blank lines take each
+      // prompt's default (defaults to "yes" for the two new confirms),
+      // preserving today's default-on outcome.
       ["\n", "3\n", "\n", "\n", "\n", "\n", "y\n"].forEach((answer, index) => {
         setTimeout(() => input.write(answer), index * 5);
       });
@@ -1058,6 +1058,10 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "global working rules")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "ensure brain root")?.detail).toBe(join(home, "Documents", "brain"));
       expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8")).toContain("Use English to report to user.");
+      expect(outputChunks.join("")).toContain("documentation_language=en");
+      expect(
+        JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf-8")).documentation.language,
+      ).toBe("en");
       expect(readFileSync(bunxLog, "utf-8")).toContain("skills add tw93/Waza");
       expect(readFileSync(codegraphLog, "utf-8")).toContain("codegraph sync .");
       expect(outputChunks.join("")).toContain("externalSkills=true");
@@ -1080,10 +1084,11 @@ describe("init command", () => {
       setupFakeSource(source);
 
       const input = new PassThrough();
-      // Same prompt order as above, but decline both new confirms ("n").
-      // Neither bunx nor codegraph should be invoked, so no fake binaries
-      // are needed on PATH for this run.
-      ["\n", "3\n", "\n", "\n", "n\n", "n\n", "y\n"].forEach((answer, index) => {
+      // Same prompt order as above, but take the default human-facing
+      // language ("Follow user's language") and decline both new confirms
+      // ("n"). Neither bunx nor codegraph should be invoked, so no fake
+      // binaries are needed on PATH for this run.
+      ["\n", "\n", "\n", "\n", "n\n", "n\n", "y\n"].forEach((answer, index) => {
         setTimeout(() => input.write(answer), index * 5);
       });
       setTimeout(() => input.end(), 40);
@@ -1114,6 +1119,15 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "ensure codegraph index")?.detail).toBe("disabled");
       expect(outputChunks.join("")).toContain("externalSkills=false");
       expect(outputChunks.join("")).toContain("CodeGraph=skip");
+      // The single question drives both projections: the host reporting
+      // sentence and the repo-level human-facing document language.
+      expect(outputChunks.join("")).toContain("documentation_language=follow-user");
+      expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8")).toContain(
+        "Use the user's language for reports; keep technical terms in English.",
+      );
+      expect(
+        JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf-8")).documentation.language,
+      ).toBe("follow-user");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
