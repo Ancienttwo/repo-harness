@@ -335,7 +335,18 @@ fi
 # The state resolver owns risk and ceremony policy. Pass the complete diff
 # inventory, including base-only and documentation paths, so a clean HEAD or
 # the substantive-path filter cannot hide strict-category signals.
-if ! command -v repo-harness >/dev/null 2>&1; then
+# The repo-harness source checkout resolves through its own CLI source, the
+# same selection check-architecture-sync.sh makes; every other repo uses the
+# installed CLI.
+repo_root="$(git rev-parse --show-toplevel)"
+repo_harness_cli=()
+if [[ -f "$repo_root/src/cli/index.ts" ]] \
+  && grep -Eq '^  "name": "repo-harness",$' "$repo_root/package.json" 2>/dev/null \
+  && command -v bun >/dev/null 2>&1; then
+  repo_harness_cli=(bun "$repo_root/src/cli/index.ts")
+elif command -v repo-harness >/dev/null 2>&1; then
+  repo_harness_cli=(repo-harness)
+else
   echo "[task-sync] Workflow profile resolution failed: repo-harness is required." >&2
   exit 1
 fi
@@ -343,7 +354,7 @@ profile_paths=()
 for file in "${changed_files[@]}"; do
   profile_paths+=("./$file")
 done
-if ! workflow_profile="$(repo-harness state resolve --json --field workflow_profile --target-path "${profile_paths[@]}")"; then
+if ! workflow_profile="$("${repo_harness_cli[@]}" state resolve --json --field workflow_profile --target-path "${profile_paths[@]}")"; then
   echo "[task-sync] Workflow profile resolution failed; no lite exemption admitted." >&2
   exit 1
 fi
