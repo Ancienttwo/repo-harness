@@ -5226,10 +5226,28 @@ describe("Workflow helper scripts", () => {
       const sourceCriterion = sourceChecks.commands.find((entry: any) => entry.name.startsWith("criterion:commands_succeed:"));
       expect(sourceCriterion.execution).toBe("executed");
       expect(sourceChecks.review_subject_sha256).not.toBe(secondChecks.review_subject_sha256);
+
+      // Narrowed acceptance is a new contract decision; the old full pass
+      // stays bound to its baseline rather than being reused on changed bytes.
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n\nBounded follow-up.\n");
+      const focusedCommand = "test -s docs/spec.md";
+      writeFileSync(contractPath, readFileSync(contractPath, "utf-8").replaceAll(
+        "bun test --timeout 60000", focusedCommand,
+      ));
+      const delta = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv, HOOK_RUN_ID: "fixture-criterion-delta",
+      });
+      expect(delta.status, `${delta.stdout}\n${delta.stderr}`).toBe(0);
+      const deltaChecks = runSnapshotById(cwd, "fixture-criterion-delta", "projection-fixture").content;
+      expect(deltaChecks.review_subject_sha256).not.toBe(sourceChecks.review_subject_sha256);
+      expect(deltaChecks.commands.some((entry: any) => entry.command === "bun test --timeout 60000")).toBe(false);
+      expect(deltaChecks.commands.find((entry: any) => entry.command === focusedCommand).execution).toBe("executed");
+      expect(readFileSync(join(cwd, ".ai/harness/runs/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(4);
+      expect(runSnapshotById(cwd, "fixture-criterion-source", "projection-fixture").content).toEqual(sourceChecks);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 45_000);
 
   test.each([
     {
@@ -7142,6 +7160,39 @@ describe("Workflow helper scripts", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("resume packet references a historical plan");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("check-task-workflow delegates missing-contract admission to canonical state", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-contract-admission");
+    try {
+      copyHelpers(cwd);
+      expect(run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "admission", "--title", "Admission"], cwd).status).toBe(0);
+      writeWorkflowRequiredSurface(cwd);
+      const plan = "plans/plan-20260905-1446-admission.md";
+      writeFileSync(join(cwd, plan), `# Plan\n\n> **Status**: Approved\n\n${promotionGate()}\n\n${evidenceContract()}\n`);
+      writeActivePlan(cwd, plan);
+      const bin = join(cwd, "fixture-bin");
+      mkdirSync(bin);
+      const cli = join(bin, "repo-harness");
+      writeFileSync(cli, '#!/bin/bash\n[[ "$*" == "state resolve --json --field workflow_profile" ]] || exit 9\n[[ "$FIXTURE_STATE" == standard ]] || exit 1\nprintf "standard\\n"\n');
+      chmodSync(cli, 0o755);
+      const env = { PATH: `${bin}:${process.env.PATH}` };
+      const allowed = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd, { ...env, FIXTURE_STATE: "standard" });
+      expect(allowed.status).toBe(0);
+      const denied = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd, { ...env, FIXTURE_STATE: "blocked" });
+      expect(denied.status).toBe(1);
+      expect(denied.stdout).toContain("canonical state resolution did not admit");
+      writeFileSync(cli, '#!/bin/bash\nexit 127\n');
+      const unavailable = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd, env);
+      expect(unavailable.status).toBe(1);
+      expect(unavailable.stdout).toContain("canonical state resolution did not admit");
+      writeFileSync(join(cwd, "tasks/contracts/20260905-1446-admission.contract.md"), "# Contract\n");
+      const malformed = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd, env);
+      expect(malformed.status).toBe(1);
+      expect(malformed.stdout).toContain("missing a capability binding");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

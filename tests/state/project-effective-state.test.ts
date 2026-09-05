@@ -303,9 +303,10 @@ describe('pure Effective State projection', () => {
         contractOverride: profile,
       }));
       expect(state.workflow_profile).toBe(profile);
-      expect(state.guidance).toBe(profile === 'lite'
-        ? 'brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)'
+      expect(state.guidance).toContain(profile === 'lite'
+        ? 'no workflow artifacts are required for the currently observed scope. User-requested planning is allowed'
         : 'full envelope: plan, contract, notes, and checks as required');
+      expect(state.guidance).toContain('Current edit-time requirements supersede earlier snapshot guidance');
     }
   });
 

@@ -112,6 +112,26 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
+  test('test-name risk signals do not promote edits to strict while auth directories still do', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-test-name-')));
+    try {
+      initRepo(cwd);
+      const testPath = 'apps/web/e2e/anonymous-research-auth.spec.ts';
+      expect(resolveStateDirect(cwd, [testPath]).json).toMatchObject({
+        workflow_profile: 'lite', profile_signals: { strictCategories: [] },
+      });
+      expect(preEdit(cwd, testPath).status).toBe(0);
+      expect(resolveStateDirect(cwd, [...FOUR_NORMAL_FILES, testPath]).json).toMatchObject({
+        workflow_profile: 'standard', profile_signals: { targetPathCount: 5, strictCategories: [] },
+      });
+      const authPath = 'src/auth/login.test.ts';
+      expect(resolveStateDirect(cwd, [authPath]).json).toMatchObject({
+        workflow_profile: 'strict', profile_signals: { strictCategories: ['auth'] },
+      });
+      expect(preEdit(cwd, authPath).status).toBe(2);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  }, 30_000);
+
   test('editing a .ts file outside the repo skips the TDD reminder instead of crashing the sandbox', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-')));
     const outside = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-home-')));

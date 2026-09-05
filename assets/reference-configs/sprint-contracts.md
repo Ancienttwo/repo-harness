@@ -207,6 +207,38 @@ Verification is an evidence consumer. `commands_succeed` must not launch profile
 
 A verifier consumes already-produced evidence; it must not become the producer of expensive, runtime-heavy evidence (for example, a full multi-provider/multi-profile benchmark matrix). An authoritative matrix or similarly expensive one-time evidence run belongs outside `commands_succeed`: the author runs it once on a clean checkout before merge and commits the resulting tracked report (for example `evals/harness/reports/profile-comparison.json`/`.md`); the contract then verifies that report's bytes and provenance, not a live re-run.
 
+## Profile Snapshots and Scope Changes
+
+SessionStart's workflow profile describes the state observed at that time.
+PreEdit resolves the proposed edit together with the current implementation diff;
+additional paths, capabilities, or an explicit raised profile may require a
+standard/strict workflow even when the earlier snapshot was lite. Current edit
+authority supersedes historical ceremony guidance. Lite requires no plan but
+allows user-requested planning. A missing-plan guard reports its current profile,
+reasons, and state revision; standard needs one approved plan, while strict
+retains the contract/worktree requirements. Do not resolve this transition by
+disabling guards or treating a cached lite profile as permission to edit.
+
+## Verification Scope and Follow-up Changes
+
+The parent selects final acceptance checks from the observed behavior and the
+project's risk-scoped required checks. A full suite needs an explicit acceptance
+or release requirement, or a named integration risk that focused checks cannot
+cover. Do not duplicate the same coverage in `tests_pass` and `commands_succeed`.
+Eligible deterministic criteria belong in `criterion_reuse` before execution;
+external/mutable-state criteria remain ineligible. The canonical producer is
+`verify-sprint --prepare-acceptance`; workers and reviewers consume its evidence.
+
+After a full pass, a bounded follow-up edit uses baseline evidence plus focused
+delta checks. The parent records the baseline run/subject, changed paths, affected
+checks, and remaining risk in Acceptance Notes, then revises final criteria to
+those checks when no full-suite trigger remains. This is an explicit contract
+scope decision, not reuse of a stale exact-context cache entry. Do not relabel
+the baseline full pass as a full pass for the new subject, and do not remove an
+explicit user/release requirement. An unknown impact or uncovered integration
+risk justifies a broader check; changed metadata, a new hash, or a cache miss
+alone does not. Freeze the revised scope before preparing new acceptance.
+
 ## Cutover Package Discipline
 
 Distilled from the Hook Runtime Diet sprint (HRD-03..05, 2026-07-20). Apply
@@ -222,10 +254,13 @@ authority.
 2. **Falsifier first.** Port the two smallest units first and byte-diff them
    against the base SHA before touching the main body; if they need a
    subprocess or shell-only semantics to stay observable-identical, stop.
-3. **Full suite before reporting.** Scoped test groups are for iteration
-   only. The worker runs the complete `bun test` plus projection/type/
-   boundary checks before claiming RESULT; scoped-green with full-suite-red
-   is a known CI blind-spot pattern.
+3. **Risk-scoped acceptance.** Name the composition and boundary checks for
+   the cutover. Require a full suite only when those focused checks cannot
+   cover an observed cross-module risk or a release gate explicitly requires
+   it. Prepare expensive criteria once through `verify-sprint --prepare-acceptance`
+   after freezing code; declare eligible deterministic criteria in
+   `criterion_reuse` before that run. Workers and reviewers consume its
+   subject-bound results rather than executing independent copies.
 4. **Composition fixtures.** Parity suites must include end-to-end cases
    through the production entrypoint (`runHook()` or equivalent) and
    combined-feature differentials; single-feature fixtures miss joins,

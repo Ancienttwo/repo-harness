@@ -317,12 +317,18 @@ describe("contract-run helper", () => {
       expect(workerPromptContent).toContain("Permission scope: inherit_allowed_paths");
       expect(workerPromptContent).toContain("## Why this task matters");
       expect(workerPromptContent).toContain("## Before you finish (mandatory self-verification)");
+      expect(workerPromptContent).toContain("repo-harness run verify-sprint --prepare-acceptance");
+      expect(workerPromptContent).toContain("criterion_reuse");
+      expect(workerPromptContent).toContain("do not rerun the old full-suite criterion merely because the subject changed");
+      expect(workerPromptContent).not.toContain("Run every command listed under exit_criteria.commands_succeed");
       expect(workerPromptContent).toContain("## Record what you learned");
       expect(workerPromptContent).toContain("## Stop / escalate");
       expect(workerPromptContent).not.toContain("Exemplar:");
       const verifierPromptContent = readFileSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"), "utf-8");
       expect(verifierPromptContent).toContain("## Intent (context only)");
       expect(verifierPromptContent).toContain("Score PASS or FAIL strictly against the Exit Criteria");
+      expect(verifierPromptContent).toContain("subject-bound");
+      expect(verifierPromptContent).not.toContain("re-run any item");
       expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });

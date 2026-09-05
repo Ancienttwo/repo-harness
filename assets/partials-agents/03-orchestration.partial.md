@@ -34,7 +34,7 @@
 ### 6b. Contract Verification
 - Use task contracts in `tasks/contracts/` as completion gates.
 - Use implementation notes in `tasks/notes/` for task-local decisions that should not automatically become memory.
-- Validate exit criteria and the Waza `/check` review recommendation before any done/completed response.
+- Validate exit criteria and the Waza `/check` review recommendation against current subject-bound evidence before claiming contract completion; do not independently rerun tests before each response.
 
 ### 7. Balanced Elegance
 - Redesign hacky non-trivial fixes before shipping.

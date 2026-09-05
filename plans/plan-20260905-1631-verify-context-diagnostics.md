@@ -6,8 +6,8 @@
 > **Artifact Level**: work-package
 > **Promotion Reason**: verification_boundary
 > **Workflow Profile**: standard
-> **Base Revision**: `78bb171628ea8ecc3b33d1f0df763b2acbf14ca0`
-> **Substantive Change SHA256**: `sha256:14215f787f293e819ad6028195f1c74157096435ac5d7d6c4bb77f2c27b1e725`
+> **Base Revision**: `6c19234eb28e09b78614df47b8954c3e2e648414`
+> **Substantive Change SHA256**: `sha256:ae117fed4ad3bbb0552469adeef1a73316082dbdd8a915d2a4e89e33d64dce8c`
 > **Verification Boundary**: Named helper drift, normal acceptance and unavailable-context cases; helper projection and integrity checks; no full suite
 > **Rollback Surface**: Revert only codex/verify-context-diagnostics
 
@@ -24,7 +24,7 @@ write_criterion_context samples before and after verify-contract. cmp already re
 Keep cmp as the admission authority. On a successfully captured mismatching context, augment retry_context_guard with the observed after-context and sorted changed field names; retain before-context at its existing retry_context location and include field names in the failure message. Record only existing context values (hashes, schema and root); do not log toolchain raw inputs or add a second authority, new knob, file store, parser, timeout, or scheduler. Successful and unavailable contexts retain their current trace shape. At 10x scale the extra diagnostic data is bounded to seven fields per failed run, with no extra process on successful runs.
 
 ## Scope
-scripts/verify-sprint.sh; assets/templates/helpers/verify-sprint.sh; tests/helper-scripts.test.ts; this plan; docs/researches/20260905-agent-workflow-maintenance.md. Do not modify the other task's dirty main checkout or the prior strict/Fleet branch. This isolated change covers failure reporting only, not the historical intermittent drift's unknown writer.
+scripts/verify-sprint.sh; assets/templates/helpers/verify-sprint.sh; tests/helper-scripts.test.ts; this plan; docs/researches/20260905-agent-workflow-maintenance.md. The approved integration includes landing the completed verification-scope prerequisite separately before merging this patch into clean local main. Preserve unrelated working changes and the prior strict/Fleet branch. This isolated change covers failure reporting only, not the historical intermittent drift's unknown writer.
 
 ## Task Breakdown
 - [x] Add actual failing assertions for after-context and changed field retention to the existing drift regression.
@@ -75,7 +75,7 @@ Only shell failure reporting and its test change. No TypeScript production code,
 
 ## Workflow Decision
 
-Current state resolution is standard. This plan is the single scope, progress and validation artifact. The local workflow checker still requires a separate contract; that conflict is recorded below and its repair belongs to another task in main.
+Current state resolution is standard. This plan is the single scope, progress and validation artifact. The original checker required a separate contract; the separately committed prerequisite now admits this state through the canonical resolver, and the merged strict workflow check passes.
 
 ## Verification Results
 
@@ -90,4 +90,19 @@ Current state resolution is standard. This plan is the single scope, progress an
 
 ## Integration Boundary
 
-This branch starts at `78bb1716` and excludes the previous strict/Fleet branch. Main still has another task's uncommitted changes, including tests/helper-scripts.test.ts. Preserve those writes; this checkpoint is not a merged or installed-runtime claim.
+This branch starts at `78bb1716` and excludes the previous strict/Fleet branch. The user subsequently approved main integration, including landing the completed verification-scope dependency first as its own commit. Its owning task is completed; the 27 existing changed/untracked paths were copied into a full disposable clone and verified byte-for-byte against `/tmp/verify-context-integration-okcr7mzn/snapshot.json`. Preserve this dependency as a separate rollback unit; do not mix it into the diagnostics implementation commit.
+
+The integration target advanced from `eb287895` to `9fd90f20` through a documentation-only commit. All 27 dependency paths remain identical to the frozen snapshot. Integration verification on the snapshot: 19 assembly/profile/worker-prompt tests and one missing-contract admission test pass; typecheck, helper/reference projections and state-boundaries pass. The primary workflow check also passes. Reuse the dependency's prior wider evidence for unchanged behavior and run the combined helper cases after the merge. No remote push, remote-main update, host installation or full-suite rerun is part of this integration.
+
+The prerequisite landed as `6c19234e`, with all staged blobs verified against the frozen manifest immediately before commit. Merging it into diagnostics commit `be6e90f8` produced no conflicts; the shared helper test retains both the bounded-delta phase and the stable diagnostic-shape assertion.
+
+- Combined helper command: `bun test tests/helper-scripts.test.ts --test-name-pattern 'verify-sprint (rejects a criterion|composes executed|reports unavailable)|check-task-workflow delegates missing-contract' --timeout 60000`.
+- Result: 6 pass, 0 fail, 157 assertions, 35.42 seconds. Log: `/tmp/verify-context-integration-okcr7mzn/combined-helper.log`.
+- Merged typecheck, 56 helper projections, 23 reference projections, shell syntax and whitespace: pass.
+- Merged deploy SQL, strict workflow, project inspector and init dry-run: pass; no drift or planned init operations. Architecture sync passes with pending/running/dead-letters all zero.
+- Task-sync comparison is bound to prerequisite `6c19234e` and the final substantive digest above. Earlier verification results retain their original scope; this combined run covers the actual overlapping test seam.
+- The merge is ready for a compare-and-swap guarded local-main fast-forward. Record its resulting commit before declaring integration complete.
+
+## Archive Boundary
+
+`scripts/archive-workflow.sh:215` still requires an active contract, review and AcceptanceReceipt for every Completed archive; it has no standard single-plan branch. This standard task has no such artifacts. Do not fabricate them or bypass the gate. Main integration can complete independently; plan archival remains a bounded workflow compatibility gap.
