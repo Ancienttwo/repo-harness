@@ -11,7 +11,7 @@ import type { IssueBatchIntentV1, IssueBatchSlot } from '../../core/automation/i
 import type { ProviderIssueObservationV1 } from '../../core/external-sources/issue-observation';
 import type { GithubCommandResult } from '../external-sources/github';
 import { listProviderIssueObservations } from '../external-sources/store';
-import { continueIssueBatchAuthoring, type IssueAuthoringBrowserResult, type IssueAuthoringDependencies } from './gpt-pro-issue-authoring';
+import { prepareIssueBatchAuthoringContinuation, type IssueAuthoringBrowserResult, type IssueAuthoringDependencies } from './gpt-pro-issue-authoring';
 import { readCampaignExternalSourcesPolicyAtRevision } from './development-campaign-policy';
 import { requireManualGithubPolicy } from '../external-sources/policy';
 import {
@@ -493,16 +493,18 @@ export async function runCampaignStep(inputValue: RunCampaignStepInput, deps: Ca
   }
   const targetIssueUrl = target?.url ?? null;
   const targetIssueNumber = target === null ? null : issueNumber(target, intent.provider_repository);
-  const reservation = persistReservation(input, intent, action, requestedSlots, target?.provider_issue_id ?? null, sourceSessionRef, observedAt, expectedJournalSha256, snapshot, reconciliation, now);
-  let evidenceRefs: readonly string[]; let mutationOutcome: CampaignMutationResultV1['outcome'] = 'completed';
-  try {
-    if (action === 'fill_missing' || action === 'edit_issue') {
-      const authored = await continueIssueBatchAuthoring({
+  if (action === 'fill_missing' || action === 'edit_issue') stepAuthority(input, intent, now());
+  const preparedAuthoring = action === 'fill_missing' || action === 'edit_issue' ? prepareIssueBatchAuthoringContinuation({
         repo_root: input.repo_root, campaign_id: input.campaign_id, group_number: input.group_number,
         intent_sha256: intent.intent_sha256, source_session_ref: sourceSessionRef!, operation: action,
         requested_slots: requestedSlots, provider_issue_id: action === 'edit_issue' ? target!.provider_issue_id : undefined,
         provider_issue_url: action === 'edit_issue' ? targetIssueUrl! : undefined, env: input.env,
-      }, { readBinding: deps.readBinding, followup: deps.followup });
+      }, { readBinding: deps.readBinding, followup: deps.followup }) : null;
+  const reservation = persistReservation(input, intent, action, requestedSlots, target?.provider_issue_id ?? null, sourceSessionRef, observedAt, expectedJournalSha256, snapshot, reconciliation, now);
+  let evidenceRefs: readonly string[]; let mutationOutcome: CampaignMutationResultV1['outcome'] = 'completed';
+  try {
+    if (action === 'fill_missing' || action === 'edit_issue') {
+      const authored = await preparedAuthoring!.execute();
       evidenceRefs = [authored.session.session_sha256];
       mutationOutcome = authored.session.browser_status === 'completed' && authored.session.verification === 'verified' ? 'completed' : 'no_progress';
     } else {

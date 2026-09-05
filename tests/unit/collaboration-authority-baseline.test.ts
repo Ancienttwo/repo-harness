@@ -365,6 +365,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
   },
   {
+    module: 'src/core/automation/campaign-authoring-budget.ts',
+    fails: ['C-1'],
+    evidence: 'automation cost evidence plane: seals campaign authoring reservations and usage in the existing budget ledger for BRC6 consumption; it owns no Task/Claim, Lease, Publication, Acceptance, or Delegation wire identity',
+  },
+  {
     module: 'src/core/state/lease-liveness.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'Lease liveness evidence plane (issue #286): classifies expiry and proves reclaim preconditions, but only the existing Lease store can move ownership or increment generation',

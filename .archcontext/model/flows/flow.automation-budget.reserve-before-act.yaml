@@ -15,7 +15,7 @@ steps:
     label: Re-read the budget revision and folded ledger, then decide the next operation under the run lock
     evidence:
       entrypointId: entrypoint.automation-budget.reserve
-      sourceSymbol: reserveAutomationBudget
+      sourceSymbol: reserveAutomationBudgetAdmission
       sinkId: sink.automation-budget.reservation-decision
 outcomes:
   - id: granted

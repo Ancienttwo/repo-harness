@@ -28,8 +28,26 @@ PRD Module 5 与已解决的 Connector probe 均要求 `challenge_verified`；BR
 
 Current `ProgramBudgetLimitV1` has mixed `max_agent_turns` and `max_runner_invocations`, global repair cycles and provider failures. It has no separate campaign-step/authoring-round/provider-call limits or campaign transient-failure streak. `TaskAutomationAttemptOutcome` lacks `not_reproducible`, and its identity requires real Task execution. Existing upstream tests prove their own contracts, not this Sprint's campaign-specific acceptance. Under the Sprint's consume-only boundary, BRC9 remains blocked on that upstream subset. BRC5 may enforce its explicit one-shot metadata repair and persist-first step invariant, but must not invent an authoring-round budget or claim full campaign budget enforcement.
 
-BRC6 的 partial-batch adoption 也直接依赖上述 authoring-round exhaustion 证据；在上游补齐之前，不能仅凭 BRC5 journal 的记录数宣称预算耗尽。现有 `materializeWorkDemand` 是单 Task、Sprint 与 WorkGraph 两文件事务；BRC6 需要一次多 slot、Sprint/WorkGraph/manifest 三文件事务，不能循环调用该单条入口。
+BRC6 的 partial-batch adoption 消费下述预算 store 的 authoring terminal；不能仅凭 BRC5 journal 的记录数宣称预算耗尽。现有 `materializeWorkDemand` 是单 Task、Sprint 与 WorkGraph 两文件事务；BRC6 需要一次多 slot、Sprint/WorkGraph/manifest 三文件事务，不能循环调用该单条入口。
 
 ## Provider endpoint reference
 
 GitHub's [Update an issue](https://docs.github.com/en/rest/issues/issues#update-an-issue) endpoint accepts `state=closed` with `state_reason=not_planned`; [Create an issue comment](https://docs.github.com/en/rest/issues/comments#create-an-issue-comment) is a separate POST. The BRC5 step boundary treats them as separate mutations and validates each response against the exact target.
+
+## BRC6 authoring budget 消费接口
+
+`ProgramAuthorizationV1.campaign.max_authoring_rounds_per_group` 是必填的正整数，明确限制每组已启动的 initial/fill_missing/edit_issue 轮次。非 campaign 授权不增加这项字段；旧 campaign grant 缺少它会拒绝，operator 必须显式签发完整授权并启动新的 campaign，不保留双读兼容路径。
+
+通用 reservation 保持原 `repo-harness-automation-reservation` 的完整字段与 digest 形状；campaign provider invocation 使用独立的 `repo-harness-campaign-automation-reservation`，强制绑定 campaign context。两种类型按 kind 严格验证，缺失上下文不会降级为通用调用，也不改写历史 ledger。
+
+预算与调用证据仍位于既有 automation budget store；`CampaignAuthoringBudgetTerminalV1` 是同一 ledger 的永久封口记录，不是第二个计数器。入口均在 `src/effects/automation/budget-store.ts`：
+
+- `ensureCampaignAuthoringBudget` 复用已锚定的 contract_less grant，确定性绑定每个 repository/campaign 的唯一 run；不伪造 Task、Claim 或 Lease。
+- `reserveCampaignAuthoringBudget` 接收 exact budget digest、campaign_id、group_number、intent_sha256、operation 和 idempotency_key。原子返回 `reserved` 或 `replayed`；重放 reservation 不授权再次执行未知的外部调用。若同一请求的旧尝试已有精确的 `reconciled_not_started` event，则在同一锁内从请求键、旧 reservation 和 event digest 派生下一尝试；并发者只能获得一次新 admission。
+- `appendAutomationUsage` 结算实际完成的调用，幂等消费既有 reservation；显式 not-started reconciliation 才释放未启动的轮次。未知结果保留 open reservation。
+- `sealCampaignAuthoringBudget` 在同一 run lock 内检查 group/intent 证据及无在途调用，持久化 `authoring_exhausted` 或 `authoring_completed`。前者必须证明准确达到轮数上限，后者允许完整 batch 提前结束，不伪造耗尽。
+- `readCampaignAuthoringBudgetTerminal` / `verifyCampaignAuthoringBudgetTerminal` 重读身份、授权、预算 revision 和 ledger 证据，拒绝过期或不一致的凭据。消费端不能只检查 digest 格式或布尔标志。
+
+`challenge` 走同一 run 的 provider_invocation admission，不增加 authoring rounds，但不能越过 global budget stop。BRC6 先完成 challenge，再封口并消费最终证据；full batch 也必须封闭 authoring，而非只看当前在途数量为零。这个 slice 没有声称独立的 BRC9 provider-call / controller-step 限额、per-task repair accounting 或 transient streak 已完成。
+
+Authoring effect 先预留、后调用、先保存 session、再结算。只有浏览器 `completed` 自动结算；`failed` 可能是超时，其他非 completed 状态均保留 reservation，等待现有对账机制。Heartbeat 在预算 admission 之后才记录它自己的 provider mutation reservation，避免额度拒绝被误记为已经尝试 edit。若之后 journal CAS 失败，则无浏览器调用，预算 reservation 仍需通过显式 not-started reconciliation 收口。

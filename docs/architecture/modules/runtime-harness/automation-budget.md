@@ -1,6 +1,6 @@
 # runtime-harness/automation-budget 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:c2706edb663b21b63ac2b455ea991b2d74905fe64f665aee656257343ccaaeab" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:64cfe46f21840023ad2901e4f65c477be96260cdb244598cf151568ba54e82c7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:088fe69fea2cbedab6b94393077a36962836f953a6584f1d02a7e6c84eef4bf5" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c1e5b229aebf173d9e8bbc5f0a987437bff389b987a40047ad056122c24f8de7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.automation-budget`(kind `capability`)
 > **Matched Prefixes**:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
@@ -26,14 +26,14 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:436efd49d7082178d973b8b59763f4c5addf7d80a6f53c46f9b148e0081c376a`).
+- Proof: `proven` (`sha256:bdd7a4de4f6b66369b1a1ba100dfc777b8d669e38a510f36abecd95ba55afdfa`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.automation-budget.reserve` | `src/effects/automation/budget-store.ts#reserveAutomationBudget` | `sink.automation-budget.reservation-decision` → `src/core/automation/budget.ts#evaluateAutomationReservation` |
+| `entrypoint.automation-budget.reserve` | `src/effects/automation/budget-store.ts#reserveAutomationBudgetAdmission` | `sink.automation-budget.reservation-decision` → `src/core/automation/budget.ts#evaluateAutomationReservation` |
 | `entrypoint.automation-budget.reserve` | `src/effects/automation/budget-store.ts#persistStopReceipt` | `sink.automation-budget.stop-receipt` → `src/core/automation/budget.ts#sealAutomationStopReceipt` |
 | `entrypoint.automation-budget.append` | `src/effects/automation/budget-store.ts#commitUsage` | `sink.automation-budget.usage-event` → `src/core/automation/budget.ts#sealAutomationUsageEvent`、`sink.automation-budget.ledger-chain` → `src/core/automation/budget.ts#chainAutomationLedgerDigest` |
 | `entrypoint.automation-budget.project` | `src/effects/automation/budget-store.ts#readAutomationBudgetBoardSlice` | `sink.automation-budget.operator-slice` → `src/core/automation/projection.ts#projectAutomationBudgetSlice` |
@@ -43,7 +43,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `5000–10000` 行
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -60,7 +60,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:436efd49d7082178d973b8b59763f4c5addf7d80a6f53c46f9b148e0081c376a`); selectors `8/8`.
+> **Proof**: `proven` (`sha256:bdd7a4de4f6b66369b1a1ba100dfc777b8d669e38a510f36abecd95ba55afdfa`); selectors `8/8`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -116,3 +116,9 @@ sequenceDiagram
 ## 4. 歷史決策記錄(append-only)
 
 ## Optimization Backlog
+
+## Campaign authoring scope
+
+Campaign authoring reuses the anchored ProgramAuthorization and existing automation run lock, reservation and usage ledger. The required campaign payload field `max_authoring_rounds_per_group` counts admitted initial/fill_missing/edit_issue rounds for one immutable group/intent. It is independent of global stop semantics: a challenge consumes existing provider-invocation limits without consuming an authoring round.
+
+The budget store seals terminal group evidence only after every group provider reservation is settled. The seal permanently closes authoring and binds identity, authorization, exact budget revision and ledger evidence. An unknown browser result remains open until explicit reconciliation; a reservation replay never authorizes a repeated provider call. Consumers read and verify the store's terminal record instead of deriving budget facts from campaign heartbeat/session journals. The API and remaining BRC9 gaps are documented in `docs/researches/20260905-repair-campaign-sprint-execution-boundaries.md`.

@@ -1,5 +1,8 @@
 import { resolve } from 'path';
 
+import { automationDigest, type ProgramAuthorizationV1 } from '../../core/automation/budget';
+import { ensureCampaignAuthoringBudget, reserveCampaignAuthoringBudget, appendAutomationUsage } from './budget-store';
+
 import { messageSha256 } from '../../core/messages/mechanics';
 import {
   buildIssueAuthoringSession,
@@ -18,7 +21,7 @@ import { assertIssueAuthoringSourceSession, persistIssueAuthoringSession, persis
 const GPT_PRO_MODEL = 'gpt-5.5-pro';
 
 export class GptProIssueAuthoringError extends Error {
-  constructor(readonly code: 'issue_authoring_invalid' | 'issue_authoring_state_invalid' | 'issue_authoring_profile_mismatch', message: string) {
+  constructor(readonly code: 'issue_authoring_invalid' | 'issue_authoring_state_invalid' | 'issue_authoring_profile_mismatch' | 'issue_authoring_reconciliation_required', message: string) {
     super(message);
     this.name = 'GptProIssueAuthoringError';
   }
@@ -148,6 +151,48 @@ function persistSession(repoRoot: string, intent: IssueBatchIntentV1, operation:
   }));
 }
 
+function prepareBudgetedAuthoring<Result extends IssueAuthoringBrowserResult>(
+  input: StartIssueBatchAuthoringInput,
+  authorization: ProgramAuthorizationV1,
+  intent: IssueBatchIntentV1,
+  operation: IssueAuthoringOperation,
+  prompt: string,
+  sourceSessionRef: string | null,
+  invoke: () => Promise<Result>,
+  persist: (result: Result) => IssueAuthoringSessionV1,
+) {
+  const admission = input.dry_run === true ? null : (() => {
+    const status = ensureCampaignAuthoringBudget({ repo_root: input.repo_root, authorization, env: input.env });
+    return reserveCampaignAuthoringBudget({
+      repo_root: input.repo_root, automation_run_id: status.budget.automation_run_id,
+      expected_budget_sha256: status.budget.budget_sha256, campaign_id: intent.campaign_id,
+      group_number: intent.group_number as 1 | 2 | 3, intent_sha256: intent.intent_sha256,
+      operation, idempotency_key: automationDigest({ intent_sha256: intent.intent_sha256, operation, prompt, source_session_ref: sourceSessionRef }), env: input.env,
+    });
+  })();
+  if (admission?.disposition === 'replayed') {
+    fail('issue_authoring_reconciliation_required', 'authoring reservation already exists; reconcile its durable result instead of repeating provider I/O');
+  }
+  let invoked = false;
+  return Object.freeze({
+    intent,
+    execute: async () => {
+      if (invoked) fail('issue_authoring_reconciliation_required', 'authoring admission has already been invoked');
+      invoked = true;
+      const result = await invoke();
+      const session = persist(result);
+      if (admission !== null && result.status === 'completed') {
+        appendAutomationUsage({
+          repo_root: input.repo_root, reservation: admission.reservation, env: input.env,
+          outcome: 'progress',
+          evidence_refs: [{ ref: `provider-run:${result.sessionId}`, sha256: automationDigest(session) }],
+        });
+      }
+      return Object.freeze({ intent, session, browser: result });
+    },
+  });
+}
+
 export async function startIssueBatchAuthoring<Result extends IssueAuthoringBrowserResult>(input: StartIssueBatchAuthoringInput, deps: Pick<IssueAuthoringDependencies<Result>, 'readBinding' | 'consult' | 'now'>) {
   const value = context(input, deps.readBinding);
   const createdAt = (deps.now ?? (() => new Date().toISOString()))();
@@ -166,12 +211,13 @@ export async function startIssueBatchAuthoring<Result extends IssueAuthoringBrow
   const prompt = buildIssueAuthoringPrompt({ ...draft, protocol: 1, kind: 'repo-harness-issue-batch-intent' }, 'initial', slots, null, null);
   const intent = buildIssueBatchIntent({ ...draft, prompt_sha256: messageSha256(prompt) });
   persistIssueBatchIntent(value.repoRoot, intent);
-  const result = await deps.consult(browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input));
-  const session = persistSession(value.repoRoot, intent, 'initial', slots, null, null, result, createdAt);
-  return Object.freeze({ intent, session, browser: result });
+  return prepareBudgetedAuthoring(input, value.authorization, intent, 'initial', prompt, null,
+    () => deps.consult(browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input)),
+    (result) => persistSession(value.repoRoot, intent, 'initial', slots, null, null, result, createdAt),
+  ).execute();
 }
 
-export async function continueIssueBatchAuthoring<Result extends IssueAuthoringBrowserResult>(input: ContinueIssueBatchAuthoringInput, deps: Pick<IssueAuthoringDependencies<Result>, 'readBinding' | 'followup' | 'now'>) {
+export function prepareIssueBatchAuthoringContinuation<Result extends IssueAuthoringBrowserResult>(input: ContinueIssueBatchAuthoringInput, deps: Pick<IssueAuthoringDependencies<Result>, 'readBinding' | 'followup' | 'now'>) {
   const value = context(input, deps.readBinding);
   const intent = readIssueBatchIntent(value.repoRoot, input.campaign_id, input.group_number, input.intent_sha256);
   if (intent.repository_id !== value.status.campaign.repository_id || intent.provider_repository !== value.externalPolicy.github.repository
@@ -184,11 +230,15 @@ export async function continueIssueBatchAuthoring<Result extends IssueAuthoringB
   if (input.operation === 'edit_issue' && (requested.length !== 1 || providerIssueId === null || locator === null)) fail('issue_authoring_invalid', 'edit_issue requires one slot, provider_issue_id, and an exact provider_issue_url');
   if (input.operation === 'fill_missing' && (input.provider_issue_id !== undefined || input.provider_issue_url !== undefined)) fail('issue_authoring_invalid', 'fill_missing forbids provider_issue_id and provider_issue_url');
   const prompt = buildIssueAuthoringPrompt(intent, input.operation, requested, providerIssueId, locator);
-  const result = await deps.followup({
-    ...browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input),
-    sessionId: input.source_session_ref,
-  });
-  const createdAt = (deps.now ?? (() => new Date().toISOString()))();
-  const session = persistSession(value.repoRoot, intent, input.operation, requested, providerIssueId, input.source_session_ref, result, createdAt);
-  return Object.freeze({ intent, session, browser: result });
+  return prepareBudgetedAuthoring(input, value.authorization, intent, input.operation, prompt, input.source_session_ref,
+    () => deps.followup({
+      ...browserInput(value.repoRoot, prompt, value.binding.profileDir, value.binding.profileDirectory!, input),
+      sessionId: input.source_session_ref,
+    }),
+    (result) => persistSession(value.repoRoot, intent, input.operation, requested, providerIssueId, input.source_session_ref, result, (deps.now ?? (() => new Date().toISOString()))()),
+  );
+}
+
+export async function continueIssueBatchAuthoring<Result extends IssueAuthoringBrowserResult>(input: ContinueIssueBatchAuthoringInput, deps: Pick<IssueAuthoringDependencies<Result>, 'readBinding' | 'followup' | 'now'>) {
+  return prepareIssueBatchAuthoringContinuation(input, deps).execute();
 }

@@ -31,10 +31,14 @@ import {
   AUTOMATION_ENFORCEMENT_ORDER,
   AUTOMATION_LEDGER_GENESIS,
   AUTOMATION_METRIC_LIMIT_FIELDS,
+  AUTOMATION_RESERVATION_KIND,
   AUTOMATION_RUN_EVIDENCE_SCHEMES,
   AUTOMATION_VERIFIED_USAGE_METRICS,
+  CAMPAIGN_AUTOMATION_RESERVATION_KIND,
   automationEvidenceScheme,
   automationOperationReservation,
+  automationDigest,
+  buildAutomationBudget,
   deriveAutomationConsumption,
   parseContractDelegationBudget,
   addAutomationMetricVectors,
@@ -45,11 +49,15 @@ import {
   foldAutomationLedger,
   requireUnattendedAutomationBudget,
   sealAutomationBudgetCurrent,
+  sealCampaignAutomationReservation,
   sealAutomationReservation,
+  sealAutomationMetricSupport,
   sealAutomationStopReceipt,
   sealAutomationUsageEvent,
   validateAutomationBudget,
+  validateProgramAuthorization,
   validateAutomationBudgetCurrent,
+  validateCampaignAutomationReservationContext,
   validateAutomationMetricVector,
   validateAutomationReservation,
   validateAutomationStopReceipt,
@@ -70,8 +78,22 @@ import {
   type AutomationStopReceiptV1,
   type AutomationUsageAttributionV1,
   type AutomationUsageEventV1,
+  type CampaignAutomationBudgetReservationV1,
+  type CampaignAutomationReservationContextV1,
+  type CampaignAuthoringOperation,
+  type GenericAutomationBudgetReservationV1,
+  type ProgramAuthorizationV1,
   type ProgramUnitKind,
 } from '../../core/automation/budget';
+import {
+  assertCampaignAuthorizationForRun,
+  campaignAuthoringContextKey,
+  campaignAutomationRunId,
+  sealCampaignAuthoringTerminal,
+  validateCampaignAuthoringTerminal,
+  type CampaignAuthoringBudgetTerminalV1,
+  type CampaignAuthoringTerminalReason,
+} from '../../core/automation/campaign-authoring-budget';
 import {
   projectAutomationBudgetSlice,
   type AutomationBudgetBoardSliceV1,
@@ -208,6 +230,15 @@ export const AUTOMATION_RECORD_KINDS: readonly AutomationRecordKindV1[] = Object
     counted: true,
   }),
   Object.freeze({
+    id: 'campaign-terminal',
+    relative_path: 'campaign-terminals',
+    scope: 'run' as const,
+    role: 'durable' as const,
+    write_order: 'published under the run lock after every group authoring reservation has a usage event',
+    drift_faces: Object.freeze([]),
+    counted: false,
+  }),
+  Object.freeze({
     id: 'stop-receipt',
     relative_path: 'stop-receipt.json',
     scope: 'run' as const,
@@ -290,6 +321,7 @@ interface RunPaths extends StorePaths {
   readonly reservationsByDigest: string;
   readonly events: string;
   readonly reconciliations: string;
+  readonly campaignTerminals: string;
   readonly stopReceipt: string;
   readonly lockRelative: string;
 }
@@ -336,6 +368,7 @@ function runPaths(repoRoot: string, runId: string): RunPaths {
     reservationsByDigest: join(run, 'reservations', 'by-digest'),
     events: join(run, 'events'),
     reconciliations: join(run, 'reconciliations'),
+    campaignTerminals: join(run, 'campaign-terminals'),
     stopReceipt: join(run, 'stop-receipt.json'),
     lockRelative: `${AUTOMATION_BUDGET_STORE_RELATIVE_ROOT}/locks/${runId}.lock`,
   });
@@ -390,7 +423,7 @@ function ensureDirectory(common: string, target: string): void {
 }
 
 function prepareRun(paths: RunPaths): void {
-  for (const target of [paths.root, paths.budgets, paths.runs, paths.locks, paths.run, paths.reservations, paths.reservationsByDigest, paths.events, paths.reconciliations]) {
+  for (const target of [paths.root, paths.budgets, paths.runs, paths.locks, paths.run, paths.reservations, paths.reservationsByDigest, paths.events, paths.reconciliations, paths.campaignTerminals]) {
     ensureDirectory(paths.common, target);
   }
 }
@@ -530,7 +563,7 @@ function keyDigest(value: string): string {
  * contract does not, and a run with no contract has to be granted one
  * explicitly rather than getting one by omission.
  */
-function assertBudgetAuthorities(repoRoot: string, budget: AutomationBudgetV1): void {
+function assertBudgetAuthorities(repoRoot: string, budget: AutomationBudgetV1, env: NodeJS.ProcessEnv = process.env): void {
   const grant = budget.authorization;
   if (budget.repository_id !== grant.repository_id) {
     fail('automation_budget_store_invalid', 'automation budget repository_id does not match the grant it cites');
@@ -538,7 +571,7 @@ function assertBudgetAuthorities(repoRoot: string, budget: AutomationBudgetV1): 
   // Re-anchored on every read, not only at publish: a grant an operator revoked
   // or edited must stop the run at the next verb rather than at the next
   // publication, which may never come.
-  assertProgramAuthorizationAnchored(repoRoot, grant);
+  assertProgramAuthorizationAnchored(repoRoot, grant, env);
   if (grant.contract_scope === 'contract_less') {
     if (budget.contract_sha256 !== null || budget.contract_limits !== null) {
       fail('automation_budget_store_invalid', 'a contract-less grant cannot carry task-contract limits');
@@ -606,13 +639,13 @@ function assertTokenLimitsUnenforceable(budget: AutomationBudgetV1): void {
   }
 }
 
-export function readAutomationBudget(repoRoot: string, budgetSha256: string): AutomationBudgetV1 {
+export function readAutomationBudget(repoRoot: string, budgetSha256: string, env: NodeJS.ProcessEnv = process.env): AutomationBudgetV1 {
   const paths = storePaths(repoRoot);
   if (!/^[0-9a-f]{64}$/u.test(budgetSha256)) fail('automation_budget_store_unsafe', 'unsafe automation budget digest');
   const budget = parse(readRaw(join(paths.budgets, `${budgetSha256}.json`), 'automation budget'), validateAutomationBudget, 'automation budget');
   if (budget.budget_sha256 !== budgetSha256) fail('automation_budget_store_invalid', 'automation budget digest does not match its path');
   assertTokenLimitsUnenforceable(budget);
-  assertBudgetAuthorities(repoRoot, budget);
+  assertBudgetAuthorities(repoRoot, budget, env);
   return budget;
 }
 
@@ -682,8 +715,8 @@ export interface AutomationBudgetStatusV1 {
  * the stored projection has not caught up. The opposite direction, a projection
  * counting records the disk does not have, is corruption and throws.
  */
-export function readAutomationBudgetStatus(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
-  return readAutomationBudgetStatusAt(repoRoot, runId, automationStoreNow());
+export function readAutomationBudgetStatus(repoRoot: string, runId: string, env: NodeJS.ProcessEnv = process.env): AutomationBudgetStatusV1 {
+  return readAutomationBudgetStatusAt(repoRoot, runId, automationStoreNow(), env);
 }
 
 /**
@@ -692,12 +725,20 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
  * read renders every time-dependent field from one instant instead of sampling
  * the clock twice and reporting two different moments as one state.
  */
-function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: string): AutomationBudgetStatusV1 {
+function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: string, env: NodeJS.ProcessEnv = process.env): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
   const current = readCurrentOptional(paths);
   if (current === null) fail('automation_budget_store_not_found', `automation run ${runId} has no budget`);
-  const budget = readAutomationBudget(repoRoot, current.budget_sha256);
+  const budget = readAutomationBudget(repoRoot, current.budget_sha256, env);
   if (budget.automation_run_id !== runId) fail('automation_budget_store_invalid', 'automation budget does not belong to this run');
+  for (const entry of jsonEntries(paths.reservations)) {
+    const reservation = parse(
+      readRaw(join(paths.reservations, entry), 'automation reservation'),
+      validateAutomationReservation,
+      'automation reservation',
+    );
+    assertReservationKindForBudget(budget, reservation);
+  }
   const receipt = readStopReceiptOptional(paths);
   if (current.stop_receipt_sha256 !== null && receipt === null) {
     fail('automation_budget_store_invalid', 'automation budget current names a stop receipt that is missing');
@@ -951,8 +992,8 @@ function repairCurrentFromDurableRecords(
  * Every mutating verb enters through here, inside the run lock, so no decision
  * is ever taken against a projection the durable records contradict.
  */
-function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
-  const status = readAutomationBudgetStatusAt(repoRoot, runId, now);
+function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string, env: NodeJS.ProcessEnv = process.env): AutomationBudgetStatusV1 {
+  const status = readAutomationBudgetStatusAt(repoRoot, runId, now, env);
   assertClockNotRegressed(status.stored_current.automation_run_id, status.stored_current.budget_sha256, now, status.stored_current.updated_at, 'dispatch');
   // The filesystem is host-trusted, so an inode timestamp is a lower bound on
   // real time that a frozen host clock cannot sit below. An installed test
@@ -973,11 +1014,11 @@ function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: str
  * An unattended run may not start without a concrete enforceable budget. There
  * is no unlimited default and no advisory mode.
  */
-export function requireUnattendedAutomationRunBudget(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
+export function requireUnattendedAutomationRunBudget(repoRoot: string, runId: string, env: NodeJS.ProcessEnv = process.env): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
   const current = readCurrentOptional(paths);
-  requireUnattendedAutomationBudget(current === null ? null : readAutomationBudget(repoRoot, current.budget_sha256));
-  return readAutomationBudgetStatus(repoRoot, runId);
+  requireUnattendedAutomationBudget(current === null ? null : readAutomationBudget(repoRoot, current.budget_sha256, env));
+  return readAutomationBudgetStatus(repoRoot, runId, env);
 }
 
 /**
@@ -1025,6 +1066,7 @@ function ledgerState(current: AutomationBudgetCurrentV1): AutomationBudgetStateV
 export interface PublishAutomationBudgetInput {
   readonly repo_root: string;
   readonly budget: AutomationBudgetV1;
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -1038,8 +1080,8 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
   assertTokenLimitsUnenforceable(budget);
   // The grant is an authority only if an operator minted it into the harness
   // home; one that travels inside the budget it authorizes is self-issued.
-  assertProgramAuthorizationAnchored(resolve(input.repo_root), budget.authorization);
-  assertBudgetAuthorities(resolve(input.repo_root), budget);
+  assertProgramAuthorizationAnchored(resolve(input.repo_root), budget.authorization, input.env);
+  assertBudgetAuthorities(resolve(input.repo_root), budget, input.env);
   if (Date.parse(budget.created_at) > Date.parse(publishedAt)) {
     fail('automation_budget_store_invalid', 'an automation budget cannot be created in the future of the store clock');
   }
@@ -1053,7 +1095,7 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
     const preexisting = readCurrentOptional(paths);
     const existing = preexisting === null
       ? null
-      : lockedStatus(repoRoot, paths, budget.automation_run_id, publishedAt).current;
+      : lockedStatus(repoRoot, paths, budget.automation_run_id, publishedAt, input.env).current;
     const budgetPath = join(paths.budgets, `${budget.budget_sha256}.json`);
     const encoded = bytes(budget);
     if (!writeExclusive(budgetPath, encoded, 'automation budget') && readRaw(budgetPath, 'automation budget') !== encoded) {
@@ -1086,7 +1128,11 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
     if (existing.stop_receipt_sha256 !== null) {
       fail('automation_budget_store_conflict', 'an exhausted automation run cannot be revised; mint a new run');
     }
-    const previous = readAutomationBudget(repoRoot, existing.budget_sha256);
+    const previous = readAutomationBudget(repoRoot, existing.budget_sha256, input.env);
+    if (previous.authorization.campaign !== null
+      && previous.authorization.authorization_sha256 !== budget.authorization.authorization_sha256) {
+      fail('automation_budget_store_conflict', 'a campaign automation run cannot be rebound to another authorization');
+    }
     if (budget.supersedes_sha256 !== previous.budget_sha256) {
       fail('automation_budget_store_conflict', 'a budget revision must supersede the exact current revision');
     }
@@ -1244,6 +1290,151 @@ function exhaustionRefusal(
 // Reserve
 // ---------------------------------------------------------------------------
 
+function campaignTerminalPath(paths: RunPaths, campaignId: string, groupNumber: number): string {
+  return join(paths.campaignTerminals, `${campaignAuthoringContextKey({ campaign_id: campaignId, group_number: groupNumber as 1 | 2 | 3 })}.json`);
+}
+
+function readCampaignTerminalOptional(
+  paths: RunPaths,
+  campaignId: string,
+  groupNumber: 1 | 2 | 3,
+): CampaignAuthoringBudgetTerminalV1 | null {
+  const path = campaignTerminalPath(paths, campaignId, groupNumber);
+  if (!existsSync(path)) return null;
+  return parse(readRaw(path, 'campaign authoring terminal'), validateCampaignAuthoringTerminal, 'campaign authoring terminal');
+}
+
+interface CampaignGroupLedgerV1 {
+  readonly reservations: readonly CampaignAutomationBudgetReservationV1[];
+  readonly events: readonly AutomationUsageEventV1[];
+  readonly completed_rounds: number;
+  readonly held_rounds: number;
+  readonly open_provider_invocations: number;
+}
+
+function assertReservationKindForBudget(
+  budget: AutomationBudgetV1,
+  reservation: AutomationBudgetReservationV1,
+): void {
+  const campaign = budget.authorization.campaign;
+  if (campaign === null) {
+    if (reservation.kind !== AUTOMATION_RESERVATION_KIND) {
+      fail('automation_budget_store_invalid', 'a non-campaign budget cannot contain a campaign reservation');
+    }
+    return;
+  }
+  if (reservation.operation === 'provider_invocation') {
+    if (reservation.kind !== CAMPAIGN_AUTOMATION_RESERVATION_KIND) {
+      fail('automation_budget_store_invalid', 'a campaign provider invocation requires the campaign reservation kind');
+    }
+    if (reservation.campaign_context.campaign_id !== campaign.campaign_id
+      || reservation.campaign_context.group_number > campaign.group_count) {
+      fail('automation_budget_store_conflict', 'campaign reservation context does not match its budget grant');
+    }
+    return;
+  }
+  if (reservation.kind !== AUTOMATION_RESERVATION_KIND) {
+    fail('automation_budget_store_invalid', 'campaign reservation kind is only valid for provider invocations');
+  }
+}
+
+function assertAdmissionKindForBudget(budget: AutomationBudgetV1, input: ReservationAdmissionInput): void {
+  const campaign = budget.authorization.campaign;
+  if (campaign === null) {
+    if (input.reservation_kind !== 'generic') {
+      fail('automation_budget_store_invalid', 'a non-campaign budget cannot admit a campaign reservation');
+    }
+    return;
+  }
+  if (input.operation === 'provider_invocation') {
+    if (input.reservation_kind !== 'campaign') {
+      fail('automation_budget_store_invalid', 'a campaign provider invocation requires the campaign reservation kind');
+    }
+    return;
+  }
+  if (input.reservation_kind !== 'generic') {
+    fail('automation_budget_store_invalid', 'campaign reservation kind is only valid for provider invocations');
+  }
+}
+
+function campaignGroupLedger(
+  paths: RunPaths,
+  context: CampaignAutomationReservationContextV1,
+): CampaignGroupLedgerV1 {
+  const allReservations = jsonEntries(paths.reservations).map((entry) => (
+    parse(readRaw(join(paths.reservations, entry), 'automation reservation'), validateAutomationReservation, 'automation reservation')
+  ));
+  const groupReservations = allReservations.filter((reservation): reservation is CampaignAutomationBudgetReservationV1 => (
+    reservation.kind === CAMPAIGN_AUTOMATION_RESERVATION_KIND
+      && reservation.campaign_context.campaign_id === context.campaign_id
+      && reservation.campaign_context.group_number === context.group_number
+  ));
+  for (const reservation of groupReservations) {
+    if (reservation.campaign_context.intent_sha256 !== context.intent_sha256) {
+      fail('automation_budget_store_conflict', 'a campaign group is already bound to a different issue-batch intent');
+    }
+  }
+  const allEvents = groupReservations.flatMap((reservation) => {
+    const eventPath = join(paths.events, `${reservation.reservation_sha256}.json`);
+    return existsSync(eventPath)
+      ? [parse(readRaw(eventPath, 'automation usage event'), validateAutomationUsageEvent, 'automation usage event')]
+      : [];
+  });
+  const eventByReservation = new Map(allEvents.map((event) => [event.reservation_sha256, event]));
+  const authoring = groupReservations.filter((reservation) => reservation.campaign_context.operation !== 'challenge');
+  const authoringDigests = new Set(authoring.map((reservation) => reservation.reservation_sha256));
+  const authoringEvents = allEvents.filter((event) => authoringDigests.has(event.reservation_sha256));
+  let completedRounds = 0;
+  let heldRounds = 0;
+  for (const reservation of authoring) {
+    const event = eventByReservation.get(reservation.reservation_sha256);
+    if (event === undefined) heldRounds += 1;
+    else if (event.resolution !== 'reconciled_not_started') completedRounds += 1;
+  }
+  return Object.freeze({
+    reservations: Object.freeze(authoring),
+    events: Object.freeze(authoringEvents),
+    completed_rounds: completedRounds,
+    held_rounds: heldRounds,
+    open_provider_invocations: groupReservations.length - allEvents.length,
+  });
+}
+
+function validateCampaignReservationAdmission(
+  paths: RunPaths,
+  budget: AutomationBudgetV1,
+  input: ReservationAdmissionInput,
+): CampaignAutomationReservationContextV1 | null {
+  const context = input.reservation_kind === 'campaign'
+    ? validateCampaignAutomationReservationContext(input.campaign_context)
+    : null;
+  const campaign = budget.authorization.campaign;
+  if (campaign === null) {
+    if (context !== null) fail('automation_budget_store_invalid', 'a non-campaign budget cannot carry campaign reservation context');
+    return null;
+  }
+  assertCampaignAuthorizationForRun(budget.authorization, budget.automation_run_id);
+  if (input.operation !== 'provider_invocation') {
+    if (context !== null) fail('automation_budget_store_invalid', 'campaign context is only valid for provider invocations');
+    return null;
+  }
+  if (context === null) fail('automation_budget_store_invalid', 'a campaign provider invocation requires campaign reservation context');
+  if (context.campaign_id !== campaign.campaign_id) fail('automation_budget_store_conflict', 'campaign reservation names a different campaign');
+  if (context.group_number > campaign.group_count) fail('automation_budget_store_invalid', 'campaign reservation group_number exceeds the authorized group count');
+  const terminal = readCampaignTerminalOptional(paths, context.campaign_id, context.group_number);
+  if (terminal !== null && terminal.intent_sha256 !== context.intent_sha256) {
+    fail('automation_budget_store_conflict', 'a sealed campaign group is bound to a different issue-batch intent');
+  }
+  const ledger = campaignGroupLedger(paths, context);
+  if (context.operation !== 'challenge') {
+    if (terminal !== null) fail('automation_budget_refused', 'campaign authoring is permanently sealed for this group');
+    if (ledger.completed_rounds + ledger.held_rounds >= campaign.max_authoring_rounds_per_group) {
+      fail('automation_budget_refused', 'campaign authoring round limit is exhausted for this group');
+    }
+  }
+  return context;
+}
+
 export interface ReserveAutomationBudgetInput {
   readonly repo_root: string;
   readonly automation_run_id: string;
@@ -1255,7 +1446,21 @@ export interface ReserveAutomationBudgetInput {
   readonly attempt: number;
   readonly provider: string | null;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
+  readonly env?: NodeJS.ProcessEnv;
 }
+
+interface CampaignReservationAdmissionInput extends Omit<ReserveAutomationBudgetInput, 'attempt'> {
+  readonly reservation_kind: 'campaign';
+  readonly attempt: number;
+  readonly original_idempotency_key: string;
+  readonly campaign_context: CampaignAutomationReservationContextV1;
+}
+
+interface GenericReservationAdmissionInput extends ReserveAutomationBudgetInput {
+  readonly reservation_kind: 'generic';
+}
+
+type ReservationAdmissionInput = GenericReservationAdmissionInput | CampaignReservationAdmissionInput;
 
 /**
  * The one enforcement point. Nothing may claim, dispatch, retry, or call a
@@ -1263,7 +1468,12 @@ export interface ReserveAutomationBudgetInput {
  * that would push any hard metric past its limit is refused before the
  * operation runs.
  */
-export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): AutomationBudgetReservationV1 {
+interface AutomationReservationAdmissionV1 {
+  readonly reservation: AutomationBudgetReservationV1;
+  readonly disposition: 'reserved' | 'replayed';
+}
+
+function reserveAutomationBudgetAdmission(input: ReservationAdmissionInput): AutomationReservationAdmissionV1 {
   const repoRoot = resolve(input.repo_root);
   const paths = runPaths(repoRoot, input.automation_run_id);
   // The counting components come from the operation kind, never from the
@@ -1281,8 +1491,40 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
     // deadline, so a timestamp sampled before lock acquisition is stale by
     // construction.
     const reservedAt = automationStoreNow();
-    const status = lockedStatus(repoRoot, paths, input.automation_run_id, reservedAt);
-    const reservationPath = join(paths.reservations, `${keyDigest(input.idempotency_key)}.json`);
+    const status = lockedStatus(repoRoot, paths, input.automation_run_id, reservedAt, input.env);
+    assertAdmissionKindForBudget(status.budget, input);
+    let effectiveIdempotencyKey = input.idempotency_key;
+    let effectiveAttempt = input.attempt;
+    if (input.reservation_kind === 'campaign') {
+      while (true) {
+        const candidatePath = join(paths.reservations, `${keyDigest(effectiveIdempotencyKey)}.json`);
+        if (!existsSync(candidatePath)) break;
+        const prior = parse(readRaw(candidatePath, 'automation reservation'), validateAutomationReservation, 'automation reservation');
+        if (prior.kind !== CAMPAIGN_AUTOMATION_RESERVATION_KIND
+          || prior.idempotency_key !== effectiveIdempotencyKey
+          || prior.operation !== input.operation
+          || prior.unit_kind !== input.unit_kind
+          || prior.unit_id !== input.unit_id
+          || prior.attempt !== effectiveAttempt
+          || prior.provider !== input.provider
+          || canonicalAutomationJson(prior.campaign_context) !== canonicalAutomationJson(input.campaign_context)) {
+          fail('automation_budget_store_conflict', 'campaign reservation retry chain changes its bound operation context');
+        }
+        const eventPath = join(paths.events, `${prior.reservation_sha256}.json`);
+        if (!existsSync(eventPath)) break;
+        const event = parse(readRaw(eventPath, 'automation usage event'), validateAutomationUsageEvent, 'automation usage event');
+        if (event.resolution !== 'reconciled_not_started') break;
+        effectiveAttempt += 1;
+        effectiveIdempotencyKey = `campaign-retry:${automationDigest({
+          kind: 'repo-harness-campaign-authoring-retry',
+          original_idempotency_key: input.original_idempotency_key,
+          prior_reservation_sha256: prior.reservation_sha256,
+          reconciliation_event_sha256: event.event_sha256,
+          attempt: effectiveAttempt,
+        })}`;
+      }
+    }
+    const reservationPath = join(paths.reservations, `${keyDigest(effectiveIdempotencyKey)}.json`);
     // A stored reservation is closed, open, or nothing this store may act on.
     // The third case cannot survive `lockedStatus`, so reaching it means the
     // durable records and the projection still disagree: fail closed rather
@@ -1290,11 +1532,24 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
     const replay = (): AutomationBudgetReservationV1 | null => {
       if (!existsSync(reservationPath)) return null;
       const stored = parse(readRaw(reservationPath, 'automation reservation'), validateAutomationReservation, 'automation reservation');
-      if (stored.idempotency_key !== input.idempotency_key) {
+      if (stored.idempotency_key !== effectiveIdempotencyKey) {
         fail('automation_budget_store_conflict', 'automation reservation idempotency key collides with a different key');
       }
       if (stored.budget_sha256 !== status.current.budget_sha256) {
         fail('automation_budget_store_conflict', 'automation reservation was granted under a superseded budget revision');
+      }
+      if (stored.operation !== input.operation
+        || stored.unit_kind !== input.unit_kind
+        || stored.unit_id !== input.unit_id
+        || stored.attempt !== effectiveAttempt
+        || stored.provider !== input.provider
+        || stored.kind !== (input.reservation_kind === 'campaign'
+          ? CAMPAIGN_AUTOMATION_RESERVATION_KIND
+          : AUTOMATION_RESERVATION_KIND)
+        || (stored.kind === CAMPAIGN_AUTOMATION_RESERVATION_KIND
+          && (input.reservation_kind !== 'campaign'
+            || canonicalAutomationJson(stored.campaign_context) !== canonicalAutomationJson(input.campaign_context)))) {
+        fail('automation_budget_store_conflict', 'automation reservation replay changes its bound operation context');
       }
       if (existsSync(join(paths.events, `${stored.reservation_sha256}.json`))) return stored;
       if (status.current.open_reservation_sha256s.includes(stored.reservation_sha256)) return stored;
@@ -1308,7 +1563,7 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       state: ledgerState(status.current),
       expected_budget_sha256: input.expected_budget_sha256,
       operation: input.operation,
-      idempotency_key: input.idempotency_key,
+      idempotency_key: effectiveIdempotencyKey,
       reserved,
       now: reservedAt,
     });
@@ -1320,7 +1575,7 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       // receipt exists, nothing proceeds, replay included.
       if (code === 'reconciliation_required') {
         const stored = replay();
-        if (stored !== null) return stored;
+        if (stored !== null) return Object.freeze({ reservation: stored, disposition: 'replayed' as const });
       }
       if (code === 'budget_limit_exceeded' || code === 'budget_expired') {
         persistStopReceipt(
@@ -1339,22 +1594,26 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       );
     }
     const replayed = replay();
-    if (replayed !== null) return replayed;
-    const reservation = sealAutomationReservation({
+    if (replayed !== null) return Object.freeze({ reservation: replayed, disposition: 'replayed' as const });
+    const campaignContext = validateCampaignReservationAdmission(paths, status.budget, input);
+    const commonReservation = {
       automation_run_id: status.budget.automation_run_id,
       budget_sha256: status.budget.budget_sha256,
-      idempotency_key: input.idempotency_key,
+      idempotency_key: effectiveIdempotencyKey,
       operation: input.operation,
       unit_kind: input.unit_kind,
       unit_id: input.unit_id,
-      attempt: input.attempt,
+      attempt: effectiveAttempt,
       provider: input.provider,
       step_index: status.current.next_step_index,
       reserved,
       reserved_at: reservedAt,
       deadline_at: status.budget.deadline_at,
       previous_ledger_sha256: status.current.ledger_sha256,
-    });
+    } as const;
+    const reservation = input.reservation_kind === 'campaign'
+      ? sealCampaignAutomationReservation({ ...commonReservation, campaign_context: campaignContext! })
+      : sealAutomationReservation(commonReservation);
     if (!writeExclusive(
       reservationPath,
       bytes(reservation),
@@ -1380,8 +1639,313 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       updated_at: reservedAt,
     });
     writeAtomic(paths.current, bytes(next), 'automation budget current');
-    return reservation;
+    return Object.freeze({ reservation, disposition: 'reserved' as const });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): GenericAutomationBudgetReservationV1 {
+  const admission = reserveAutomationBudgetAdmission({ ...input, reservation_kind: 'generic' });
+  if (admission.reservation.kind !== AUTOMATION_RESERVATION_KIND) {
+    return fail('automation_budget_store_invalid', 'generic admission returned a campaign reservation');
+  }
+  return admission.reservation;
+}
+
+export interface EnsureCampaignAuthoringBudgetInput {
+  readonly repo_root: string;
+  readonly authorization: ProgramAuthorizationV1;
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+function assertCampaignBudgetBinding(status: AutomationBudgetStatusV1, authorization: ProgramAuthorizationV1): void {
+  const campaign = authorization.campaign!;
+  const expectedGoal = automationDigest({ kind: 'repo-harness-campaign-authoring-goal', repository_id: authorization.repository_id, campaign_id: campaign.campaign_id });
+  const expectedRevision = automationDigest({ target_revision: authorization.target_revision, work_graph_revision: authorization.work_graph_revision });
+  const expectedCapability = automationDigest({ kind: 'repo-harness-campaign-authoring-metric-support', provider: 'gpt-pro', verified_metrics: [] });
+  const budget = status.budget;
+  if (budget.authorization.authorization_sha256 !== authorization.authorization_sha256
+    || budget.automation_run_id !== campaignAutomationRunId({ repository_id: authorization.repository_id, campaign_id: campaign.campaign_id })
+    || budget.goal_id !== expectedGoal
+    || budget.goal_revision !== expectedRevision
+    || budget.repository_id !== authorization.repository_id
+    || budget.engineer_id !== null
+    || budget.claim_id !== null
+    || budget.contract_sha256 !== null
+    || budget.contract_limits !== null
+    || budget.metric_support.provider !== 'gpt-pro'
+    || budget.metric_support.capability_sha256 !== expectedCapability
+    || budget.metric_support.verified_metrics.length !== 0
+    || budget.unattended !== true) {
+    fail('automation_budget_store_conflict', 'campaign automation run does not match its deterministic authorization binding');
+  }
+}
+
+export function ensureCampaignAuthoringBudget(input: EnsureCampaignAuthoringBudgetInput): AutomationBudgetStatusV1 {
+  const repoRoot = resolve(input.repo_root);
+  const authorization = validateProgramAuthorization(input.authorization);
+  const campaign = authorization.campaign;
+  if (campaign === null) fail('automation_budget_store_invalid', 'campaign authoring requires a campaign authorization');
+  const runId = campaignAutomationRunId({
+    repository_id: authorization.repository_id,
+    campaign_id: campaign.campaign_id,
+  });
+  assertCampaignAuthorizationForRun(authorization, runId);
+  const paths = runPaths(repoRoot, runId);
+  const existing = readCurrentOptional(paths);
+  if (existing !== null) {
+    const status = readAutomationBudgetStatus(repoRoot, runId, input.env);
+    assertCampaignBudgetBinding(status, authorization);
+    return status;
+  }
+  const createdAt = automationStoreNow();
+  const support = sealAutomationMetricSupport({
+    provider: 'gpt-pro',
+    capability_sha256: automationDigest({ kind: 'repo-harness-campaign-authoring-metric-support', provider: 'gpt-pro', verified_metrics: [] }),
+    verified_metrics: [],
+    observed_at: createdAt,
+  });
+  const budget = buildAutomationBudget({
+    automation_run_id: runId,
+    goal_id: automationDigest({ kind: 'repo-harness-campaign-authoring-goal', repository_id: authorization.repository_id, campaign_id: campaign.campaign_id }),
+    goal_revision: automationDigest({ target_revision: authorization.target_revision, work_graph_revision: authorization.work_graph_revision }),
+    repository_id: authorization.repository_id,
+    engineer_id: null,
+    claim_id: null,
+    authorization,
+    contract_sha256: null,
+    contract_limits: null,
+    metric_support: support,
+    unattended: true,
+    created_by: authorization.issued_by,
+    created_at: createdAt,
+    supersedes_sha256: null,
+    revision: 1,
+  });
+  try {
+    const published = publishAutomationBudget({ repo_root: repoRoot, budget, env: input.env });
+    assertCampaignBudgetBinding(published, authorization);
+    return published;
+  } catch (error) {
+    if (!(error instanceof AutomationBudgetStoreError) || error.code !== 'automation_budget_store_conflict') throw error;
+    const raced = readAutomationBudgetStatus(repoRoot, runId, input.env);
+    assertCampaignBudgetBinding(raced, authorization);
+    return raced;
+  }
+}
+
+export interface ReserveCampaignAuthoringBudgetInput {
+  readonly repo_root: string;
+  readonly automation_run_id: string;
+  readonly expected_budget_sha256: string;
+  readonly campaign_id: string;
+  readonly group_number: 1 | 2 | 3;
+  readonly intent_sha256: string;
+  readonly operation: CampaignAuthoringOperation | 'challenge';
+  readonly idempotency_key: string;
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+export interface CampaignAuthoringBudgetAdmissionV1 {
+  readonly reservation: CampaignAutomationBudgetReservationV1;
+  readonly disposition: 'reserved' | 'replayed';
+}
+
+export function reserveCampaignAuthoringBudget(
+  input: ReserveCampaignAuthoringBudgetInput,
+): CampaignAuthoringBudgetAdmissionV1 {
+  const admission = reserveAutomationBudgetAdmission({
+    repo_root: input.repo_root,
+    automation_run_id: input.automation_run_id,
+    expected_budget_sha256: input.expected_budget_sha256,
+    idempotency_key: input.idempotency_key,
+    original_idempotency_key: input.idempotency_key,
+    reservation_kind: 'campaign',
+    operation: 'provider_invocation',
+    unit_kind: 'execute',
+    unit_id: `${input.campaign_id}:group:${input.group_number}`,
+    attempt: 1,
+    provider: 'gpt-pro',
+    campaign_context: {
+      campaign_id: input.campaign_id,
+      group_number: input.group_number,
+      intent_sha256: input.intent_sha256,
+      operation: input.operation,
+    },
+    env: input.env,
+  });
+  if (admission.reservation.kind !== CAMPAIGN_AUTOMATION_RESERVATION_KIND) {
+    return fail('automation_budget_store_invalid', 'campaign admission returned a generic reservation');
+  }
+  return Object.freeze({ reservation: admission.reservation, disposition: admission.disposition });
+}
+
+export interface CampaignAuthoringTerminalBindingInput {
+  readonly repo_root: string;
+  readonly automation_run_id: string;
+  readonly expected_budget_sha256: string;
+  readonly campaign_id: string;
+  readonly group_number: 1 | 2 | 3;
+  readonly intent_sha256: string;
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+export interface SealCampaignAuthoringBudgetInput extends CampaignAuthoringTerminalBindingInput {
+  readonly reason: CampaignAuthoringTerminalReason;
+}
+
+function evidenceRef(prefix: string, sha256: string): AutomationEvidenceRefV1 {
+  return Object.freeze({ ref: `${prefix}:${sha256}`, sha256 });
+}
+
+function assertTerminalMatchesLedger(
+  terminal: CampaignAuthoringBudgetTerminalV1,
+  status: AutomationBudgetStatusV1,
+  ledger: CampaignGroupLedgerV1,
+  binding: Pick<CampaignAuthoringTerminalBindingInput, 'automation_run_id' | 'campaign_id' | 'group_number' | 'intent_sha256'>,
+): void {
+  const campaign = status.budget.authorization.campaign;
+  if (campaign === null) fail('automation_budget_store_invalid', 'campaign terminal belongs to a non-campaign budget');
+  if (status.budget.authorization.authorization_sha256 !== terminal.authorization_sha256) {
+    fail('automation_budget_store_conflict', 'campaign terminal authorization is no longer current');
+  }
+  if (terminal.automation_run_id !== binding.automation_run_id
+    || terminal.repository_id !== status.budget.repository_id
+    || terminal.campaign_id !== binding.campaign_id
+    || terminal.group_number !== binding.group_number
+    || terminal.intent_sha256 !== binding.intent_sha256) {
+    fail('automation_budget_store_conflict', 'campaign terminal identity binding does not match the requested group');
+  }
+  if (terminal.budget_sha256 !== status.budget.budget_sha256 || terminal.budget_revision !== status.budget.revision) {
+    fail('automation_budget_store_conflict', 'campaign terminal is bound to a stale budget revision');
+  }
+  if (terminal.ledger_sha256 !== status.current.ledger_sha256) {
+    fail('automation_budget_store_conflict', 'campaign terminal is bound to a stale automation ledger');
+  }
+  if (terminal.max_authoring_rounds !== campaign.max_authoring_rounds_per_group) {
+    fail('automation_budget_store_conflict', 'campaign terminal round bound does not match current authority');
+  }
+  if (ledger.open_provider_invocations !== 0 || ledger.held_rounds !== 0 || ledger.reservations.length !== ledger.events.length) {
+    fail('automation_budget_store_conflict', 'campaign group is not quiescent');
+  }
+  if (terminal.completed_authoring_rounds !== ledger.completed_rounds) {
+    fail('automation_budget_store_invalid', 'campaign terminal authoring count does not match the ledger');
+  }
+  const reservationRefs = ledger.reservations.map((entry) => evidenceRef('automation-reservation', entry.reservation_sha256));
+  const eventRefs = ledger.events.map((entry) => evidenceRef('automation-event', entry.event_sha256));
+  if (canonicalAutomationJson(terminal.reservation_refs) !== canonicalAutomationJson([...reservationRefs].sort((a, b) => a.ref.localeCompare(b.ref)))
+    || canonicalAutomationJson(terminal.event_refs) !== canonicalAutomationJson([...eventRefs].sort((a, b) => a.ref.localeCompare(b.ref)))) {
+    fail('automation_budget_store_invalid', 'campaign terminal evidence refs do not match the current group ledger');
+  }
+  if (terminal.reason === 'authoring_exhausted' && terminal.completed_authoring_rounds !== terminal.max_authoring_rounds) {
+    fail('automation_budget_store_invalid', 'authoring_exhausted terminal does not prove the exact round count');
+  }
+}
+
+export function sealCampaignAuthoringBudget(
+  input: SealCampaignAuthoringBudgetInput,
+): CampaignAuthoringBudgetTerminalV1 {
+  const repoRoot = resolve(input.repo_root);
+  const paths = runPaths(repoRoot, input.automation_run_id);
+  prepareRun(paths);
+  return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
+    const sealedAt = automationStoreNow();
+    const status = lockedStatus(repoRoot, paths, input.automation_run_id, sealedAt, input.env);
+    if (status.current.budget_sha256 !== input.expected_budget_sha256) {
+      fail('automation_budget_store_conflict', 'campaign terminal expected budget revision is stale');
+    }
+    const campaign = assertCampaignAuthorizationForRun(status.budget.authorization, input.automation_run_id);
+    if (campaign.campaign_id !== input.campaign_id || input.group_number > campaign.group_count) {
+      fail('automation_budget_store_conflict', 'campaign terminal binding does not match current authority');
+    }
+    const context = validateCampaignAutomationReservationContext({
+      campaign_id: input.campaign_id,
+      group_number: input.group_number,
+      intent_sha256: input.intent_sha256,
+      operation: 'initial',
+    });
+    const ledger = campaignGroupLedger(paths, context);
+    if (ledger.open_provider_invocations !== 0 || ledger.held_rounds !== 0 || ledger.reservations.length !== ledger.events.length) {
+      fail('automation_budget_store_conflict', 'campaign authoring cannot seal while the group has an unresolved provider invocation');
+    }
+    const path = campaignTerminalPath(paths, input.campaign_id, input.group_number);
+    const existing = readCampaignTerminalOptional(paths, input.campaign_id, input.group_number);
+    if (existing !== null) {
+      if (existing.intent_sha256 !== input.intent_sha256 || existing.reason !== input.reason) {
+        fail('automation_budget_store_conflict', 'campaign group was already sealed with a different binding or reason');
+      }
+      assertTerminalMatchesLedger(existing, status, ledger, input);
+      return existing;
+    }
+    if (input.reason === 'authoring_exhausted' && ledger.completed_rounds !== campaign.max_authoring_rounds_per_group) {
+      fail('automation_budget_store_invalid', 'authoring_exhausted requires the exact configured number of completed rounds');
+    }
+    const terminal = sealCampaignAuthoringTerminal({
+      automation_run_id: input.automation_run_id,
+      repository_id: status.budget.repository_id,
+      campaign_id: input.campaign_id,
+      group_number: input.group_number,
+      intent_sha256: input.intent_sha256,
+      authorization_sha256: status.budget.authorization.authorization_sha256,
+      budget_sha256: status.budget.budget_sha256,
+      budget_revision: status.budget.revision,
+      max_authoring_rounds: campaign.max_authoring_rounds_per_group,
+      completed_authoring_rounds: ledger.completed_rounds,
+      reason: input.reason,
+      reservation_refs: ledger.reservations.map((entry) => evidenceRef('automation-reservation', entry.reservation_sha256)),
+      event_refs: ledger.events.map((entry) => evidenceRef('automation-event', entry.event_sha256)),
+      ledger_sha256: status.current.ledger_sha256,
+      sealed_at: sealedAt,
+    });
+    if (!writeExclusive(path, bytes(terminal), 'campaign authoring terminal')) {
+      fail('automation_budget_store_conflict', 'campaign authoring terminal was created concurrently');
+    }
+    return terminal;
+  }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+export function readCampaignAuthoringBudgetTerminal(
+  input: CampaignAuthoringTerminalBindingInput,
+): CampaignAuthoringBudgetTerminalV1 | null {
+  const repoRoot = resolve(input.repo_root);
+  const paths = runPaths(repoRoot, input.automation_run_id);
+  if (!existsSync(paths.current)) return null;
+  return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
+    const status = lockedStatus(repoRoot, paths, input.automation_run_id, automationStoreNow(), input.env);
+    if (status.current.budget_sha256 !== input.expected_budget_sha256) {
+      fail('automation_budget_store_conflict', 'campaign terminal expected budget revision is stale');
+    }
+    const campaign = assertCampaignAuthorizationForRun(status.budget.authorization, input.automation_run_id);
+    const context = validateCampaignAutomationReservationContext({
+      campaign_id: input.campaign_id,
+      group_number: input.group_number,
+      intent_sha256: input.intent_sha256,
+      operation: 'initial',
+    });
+    if (campaign.campaign_id !== context.campaign_id || context.group_number > campaign.group_count) {
+      fail('automation_budget_store_conflict', 'campaign terminal binding does not match current authority');
+    }
+    const terminal = readCampaignTerminalOptional(paths, context.campaign_id, context.group_number);
+    if (terminal === null) return null;
+    if (terminal.intent_sha256 !== input.intent_sha256) fail('automation_budget_store_conflict', 'campaign terminal intent binding differs');
+    const ledger = campaignGroupLedger(paths, context);
+    assertTerminalMatchesLedger(terminal, status, ledger, input);
+    return terminal;
+  }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
+export interface VerifyCampaignAuthoringBudgetTerminalInput extends CampaignAuthoringTerminalBindingInput {
+  readonly terminal: CampaignAuthoringBudgetTerminalV1;
+}
+
+export function verifyCampaignAuthoringBudgetTerminal(
+  input: VerifyCampaignAuthoringBudgetTerminalInput,
+): CampaignAuthoringBudgetTerminalV1 {
+  const expected = validateCampaignAuthoringTerminal(input.terminal);
+  const stored = readCampaignAuthoringBudgetTerminal(input);
+  if (stored === null || canonicalAutomationJson(stored) !== canonicalAutomationJson(expected)) {
+    fail('automation_budget_store_conflict', 'campaign authoring terminal is missing or differs from the stored authority');
+  }
+  return stored;
 }
 
 // ---------------------------------------------------------------------------
@@ -1398,6 +1962,7 @@ export interface AppendAutomationUsageInput extends AutomationUsageResultV1 {
   readonly repo_root: string;
   readonly reservation: AutomationBudgetReservationV1;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 export interface AutomationUsageCommitV1 {
@@ -1440,8 +2005,9 @@ function commitUsage(
   observedAt: string,
   resolution: AutomationUsageEventV1['resolution'],
   inFlight: readonly AutomationInFlightAuthorityV1[],
+  env: NodeJS.ProcessEnv | undefined,
 ): AutomationUsageCommitV1 {
-  const status = lockedStatus(repoRoot, paths, reservation.automation_run_id, observedAt);
+  const status = lockedStatus(repoRoot, paths, reservation.automation_run_id, observedAt, env);
   // A recorded reconciliation is the decision for this reservation, and it was
   // made durable before any event could be. A later plain append would
   // otherwise charge the caller's cheaper outcome over an operator's recorded
@@ -1525,6 +2091,7 @@ export function appendAutomationUsage(input: AppendAutomationUsageInput): Automa
     observedAt,
     'observed',
     input.in_flight_authority ?? [],
+    input.env,
   ), { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 
@@ -1539,6 +2106,7 @@ export interface ReconcileAutomationReservationInput extends AutomationUsageResu
   readonly resolution: AutomationReconciliationResolution;
   readonly reason: string;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -1585,7 +2153,7 @@ export function reconcileAutomationReservation(
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
     // Same rule: the run is classified before its reconciliation record lands,
     // so a corrupt run refuses without gaining a fourth durable record.
-    lockedStatus(repoRoot, paths, reservation.automation_run_id, reconciledAt);
+    lockedStatus(repoRoot, paths, reservation.automation_run_id, reconciledAt, input.env);
     const evidence = {
       protocol: 1,
       kind: 'repo-harness-automation-reconciliation',
@@ -1606,7 +2174,7 @@ export function reconcileAutomationReservation(
         fail('automation_budget_store_conflict', 'this reservation was already reconciled with different evidence');
       }
     }
-    return commitUsage(repoRoot, paths, reservation, input, reconciledAt, input.resolution, input.in_flight_authority ?? []);
+    return commitUsage(repoRoot, paths, reservation, input, reconciledAt, input.resolution, input.in_flight_authority ?? [], input.env);
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 

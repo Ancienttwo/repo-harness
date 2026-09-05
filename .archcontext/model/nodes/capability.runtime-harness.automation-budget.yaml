@@ -25,7 +25,7 @@ source:
     - id: entrypoint.automation-budget.reserve
       path: "src/effects/automation/budget-store.ts"
       symbols:
-        - name: "reserveAutomationBudget"
+        - name: "reserveAutomationBudgetAdmission"
           sinks:
             - id: sink.automation-budget.reservation-decision
               path: "src/core/automation/budget.ts"

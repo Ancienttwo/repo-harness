@@ -39,7 +39,7 @@ function fixture(policyDocument = policy(), campaignOverrides: Partial<ProgramAu
   writeFileSync(join(root, 'README.md'), '# fixture\n');
   execFileSync('git', ['add', '.'], { cwd: root }); execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const campaign = { campaign_id: 'campaign-1', group_count: 1, issues_per_group: 2, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 13', require_fresh_main_audit: true, ...campaignOverrides } as ProgramAuthorizationCampaignV1;
+  const campaign = { campaign_id: 'campaign-1', group_count: 1, issues_per_group: 2, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 13', max_authoring_rounds_per_group: 5, require_fresh_main_audit: true, ...campaignOverrides } as ProgramAuthorizationCampaignV1;
   const authorization = sealProgramAuthorization({ authorization_id: 'authorization-campaign-1', repository_id: 'repo-fixture', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work-graph'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: limits.max_repair_cycles, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign, issued_by: 'owner', issued_at: observedAt, expires_at: '2027-09-05T00:00:00.000Z' });
   const env = { ...process.env, REPO_HARNESS_HOME: home };
   mintProgramAuthorization({ repo_root: root, authorization, env });

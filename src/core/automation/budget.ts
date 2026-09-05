@@ -20,6 +20,7 @@ export const PROGRAM_AUTHORIZATION_KIND = 'repo-harness-program-authorization' a
 export const AUTOMATION_METRIC_SUPPORT_KIND = 'repo-harness-automation-metric-support' as const;
 export const AUTOMATION_BUDGET_KIND = 'repo-harness-automation-budget' as const;
 export const AUTOMATION_RESERVATION_KIND = 'repo-harness-automation-reservation' as const;
+export const CAMPAIGN_AUTOMATION_RESERVATION_KIND = 'repo-harness-campaign-automation-reservation' as const;
 /** The PRD's wire kind for a budget consumption event; this ledger does not mint a second one. */
 export const AUTOMATION_USAGE_EVENT_KIND = 'repo-harness-program-budget-event' as const;
 export const AUTOMATION_BUDGET_CURRENT_KIND = 'repo-harness-automation-budget-current' as const;
@@ -279,6 +280,7 @@ export interface ProgramAuthorizationCampaignV1 {
   readonly issues_per_group: number;
   readonly allowed_issue_kinds: readonly ['bugfix', 'test_gap'];
   readonly max_parallel_tasks: 1 | 2 | 3;
+  readonly max_authoring_rounds_per_group: number;
   readonly issue_author: 'gpt_pro';
   readonly local_parent_host: 'claude' | 'codex';
   readonly chrome_profile_directory: string;
@@ -289,7 +291,7 @@ function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizat
   if (value === null) return null;
   if (typeof value !== 'object' || Array.isArray(value)) invalid('program authorization campaign must be an object or null');
   const campaign = value as Record<string, unknown>;
-  const expected = ['allowed_issue_kinds', 'campaign_id', 'chrome_profile_directory', 'group_count', 'issue_author', 'issues_per_group', 'local_parent_host', 'max_parallel_tasks', 'require_fresh_main_audit'];
+  const expected = ['allowed_issue_kinds', 'campaign_id', 'chrome_profile_directory', 'group_count', 'issue_author', 'issues_per_group', 'local_parent_host', 'max_authoring_rounds_per_group', 'max_parallel_tasks', 'require_fresh_main_audit'];
   if (JSON.stringify(Object.keys(campaign).sort()) !== JSON.stringify(expected)) invalid('program authorization campaign fields are invalid');
   if (![1, 2, 3].includes(campaign.group_count as number)) invalid('program authorization campaign group_count must be 1, 2, or 3');
   if (!Number.isSafeInteger(campaign.issues_per_group) || (campaign.issues_per_group as number) < 1 || (campaign.issues_per_group as number) > 10) {
@@ -299,6 +301,9 @@ function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizat
     invalid('program authorization campaign allowed_issue_kinds must be exactly ["bugfix","test_gap"]');
   }
   if (![1, 2, 3].includes(campaign.max_parallel_tasks as number)) invalid('program authorization campaign max_parallel_tasks must be 1, 2, or 3');
+  if (!Number.isSafeInteger(campaign.max_authoring_rounds_per_group) || (campaign.max_authoring_rounds_per_group as number) < 1) {
+    invalid('program authorization campaign max_authoring_rounds_per_group must be a positive integer');
+  }
   if (campaign.issue_author !== 'gpt_pro') invalid('program authorization campaign issue_author must be gpt_pro');
   if (campaign.local_parent_host !== 'claude' && campaign.local_parent_host !== 'codex') invalid('program authorization campaign local_parent_host is invalid');
   if (campaign.require_fresh_main_audit !== true) invalid('program authorization campaign require_fresh_main_audit must be true');
@@ -308,6 +313,7 @@ function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizat
     issues_per_group: campaign.issues_per_group as number,
     allowed_issue_kinds: Object.freeze(['bugfix', 'test_gap']) as readonly ['bugfix', 'test_gap'],
     max_parallel_tasks: campaign.max_parallel_tasks as 1 | 2 | 3,
+    max_authoring_rounds_per_group: campaign.max_authoring_rounds_per_group as number,
     issue_author: 'gpt_pro',
     local_parent_host: campaign.local_parent_host as 'claude' | 'codex',
     chrome_profile_directory: typeof campaign.chrome_profile_directory === 'string'
@@ -985,7 +991,7 @@ export function deriveAutomationConsumption(
   });
 }
 
-export interface AutomationBudgetReservationV1 {
+export interface GenericAutomationBudgetReservationV1 {
   readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
   readonly kind: typeof AUTOMATION_RESERVATION_KIND;
   readonly automation_run_id: string;
@@ -1004,19 +1010,77 @@ export interface AutomationBudgetReservationV1 {
   readonly reservation_sha256: string;
 }
 
+export interface CampaignAutomationBudgetReservationV1 {
+  readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
+  readonly kind: typeof CAMPAIGN_AUTOMATION_RESERVATION_KIND;
+  readonly automation_run_id: string;
+  readonly budget_sha256: string;
+  readonly idempotency_key: string;
+  readonly operation: AutomationOperationKind;
+  readonly unit_kind: ProgramUnitKind;
+  readonly unit_id: string;
+  readonly attempt: number;
+  readonly provider: string | null;
+  readonly campaign_context: CampaignAutomationReservationContextV1;
+  readonly step_index: number;
+  readonly reserved: AutomationMetricVectorV1;
+  readonly reserved_at: string;
+  readonly deadline_at: string;
+  readonly previous_ledger_sha256: string;
+  readonly reservation_sha256: string;
+}
+
+export type AutomationBudgetReservationV1 =
+  | GenericAutomationBudgetReservationV1
+  | CampaignAutomationBudgetReservationV1;
+
 const UNIT_KINDS: readonly ProgramUnitKind[] = Object.freeze(['execute', 'review', 'verify', 'integrate', 'merge']);
 const OPERATION_KINDS: readonly AutomationOperationKind[] = Object.freeze(['acquisition', 'dispatch', 'retry', 'provider_invocation']);
 const OUTCOMES: readonly AutomationOutcome[] = Object.freeze(['progress', 'no_progress', 'provider_failure', 'completed']);
 
+export type CampaignAuthoringOperation = 'initial' | 'fill_missing' | 'edit_issue';
+export type CampaignProviderOperation = CampaignAuthoringOperation | 'challenge';
+
+export interface CampaignAutomationReservationContextV1 {
+  readonly campaign_id: string;
+  readonly group_number: 1 | 2 | 3;
+  readonly intent_sha256: string;
+  readonly operation: CampaignProviderOperation;
+}
+
+const CAMPAIGN_PROVIDER_OPERATIONS: readonly CampaignProviderOperation[] = Object.freeze([
+  'initial',
+  'fill_missing',
+  'edit_issue',
+  'challenge',
+]);
+
+export function validateCampaignAutomationReservationContext(
+  value: CampaignAutomationReservationContextV1,
+): CampaignAutomationReservationContextV1 {
+  if (value === null || typeof value !== 'object') invalid('campaign reservation context must be an object');
+  const expected = ['campaign_id', 'group_number', 'intent_sha256', 'operation'];
+  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expected)) invalid('campaign reservation context fields are invalid');
+  if (!CAMPAIGN_PROVIDER_OPERATIONS.includes(value.operation)) invalid('campaign reservation operation is unsupported');
+  return Object.freeze({
+    campaign_id: assertIdentifier(value.campaign_id, 'campaign reservation campaign_id'),
+    group_number: [1, 2, 3].includes(value.group_number) ? value.group_number : invalid('campaign reservation group_number must be 1, 2, or 3'),
+    intent_sha256: typeof value.intent_sha256 === 'string' && /^sha256:[0-9a-f]{64}$/u.test(value.intent_sha256)
+      ? value.intent_sha256
+      : invalid('campaign reservation intent_sha256 must be a canonical message digest'),
+    operation: value.operation,
+  });
+}
+
 export function validateAutomationReservation(value: AutomationBudgetReservationV1): AutomationBudgetReservationV1 {
   if (value === null || typeof value !== 'object') invalid('automation reservation must be an object');
   if (value.protocol !== AUTOMATION_BUDGET_PROTOCOL) invalid('automation reservation protocol is unsupported');
-  if (value.kind !== AUTOMATION_RESERVATION_KIND) invalid('automation reservation kind is unsupported');
+  if (value.kind !== AUTOMATION_RESERVATION_KIND && value.kind !== CAMPAIGN_AUTOMATION_RESERVATION_KIND) {
+    invalid('automation reservation kind is unsupported');
+  }
   if (!OPERATION_KINDS.includes(value.operation)) invalid('automation reservation operation is unsupported');
   if (!UNIT_KINDS.includes(value.unit_kind)) invalid('automation reservation unit_kind is unsupported');
-  const reservation: AutomationBudgetReservationV1 = Object.freeze({
-    protocol: AUTOMATION_BUDGET_PROTOCOL,
-    kind: AUTOMATION_RESERVATION_KIND,
+  const common = {
     automation_run_id: assertDigest(value.automation_run_id, 'reservation automation_run_id'),
     budget_sha256: assertDigest(value.budget_sha256, 'reservation budget_sha256'),
     idempotency_key: assertIdentifier(value.idempotency_key, 'reservation idempotency_key'),
@@ -1031,7 +1095,35 @@ export function validateAutomationReservation(value: AutomationBudgetReservation
     deadline_at: assertTimestamp(value.deadline_at, 'reservation deadline_at'),
     previous_ledger_sha256: assertDigest(value.previous_ledger_sha256, 'reservation previous_ledger_sha256'),
     reservation_sha256: assertDigest(value.reservation_sha256, 'reservation reservation_sha256'),
-  });
+  } as const;
+  const genericFields = [
+    'attempt', 'automation_run_id', 'budget_sha256', 'deadline_at', 'idempotency_key', 'kind', 'operation',
+    'previous_ledger_sha256', 'protocol', 'provider', 'reservation_sha256', 'reserved', 'reserved_at',
+    'step_index', 'unit_id', 'unit_kind',
+  ];
+  const campaignFields = [...genericFields, 'campaign_context'].sort();
+  const actualFields = Object.keys(value).sort();
+  let reservation: AutomationBudgetReservationV1;
+  if (value.kind === AUTOMATION_RESERVATION_KIND) {
+    if (JSON.stringify(actualFields) !== JSON.stringify(genericFields.sort())) {
+      invalid('generic automation reservation fields are invalid');
+    }
+    reservation = Object.freeze({
+      protocol: AUTOMATION_BUDGET_PROTOCOL,
+      kind: AUTOMATION_RESERVATION_KIND,
+      ...common,
+    });
+  } else {
+    if (JSON.stringify(actualFields) !== JSON.stringify(campaignFields)) {
+      invalid('campaign automation reservation fields are invalid');
+    }
+    reservation = Object.freeze({
+      protocol: AUTOMATION_BUDGET_PROTOCOL,
+      kind: CAMPAIGN_AUTOMATION_RESERVATION_KIND,
+      ...common,
+      campaign_context: validateCampaignAutomationReservationContext(value.campaign_context),
+    });
+  }
   if (digestWithout(reservation, 'reservation_sha256') !== reservation.reservation_sha256) {
     invalid('automation reservation digest does not bind its own content');
   }
@@ -1039,15 +1131,31 @@ export function validateAutomationReservation(value: AutomationBudgetReservation
 }
 
 export function sealAutomationReservation(
-  input: Omit<AutomationBudgetReservationV1, 'protocol' | 'kind' | 'reservation_sha256'>,
-): AutomationBudgetReservationV1 {
+  input: Omit<GenericAutomationBudgetReservationV1, 'protocol' | 'kind' | 'reservation_sha256'>,
+): GenericAutomationBudgetReservationV1 {
   const draft = {
     ...withoutFields(input, 'protocol', 'kind', 'reservation_sha256'),
     protocol: AUTOMATION_BUDGET_PROTOCOL,
     kind: AUTOMATION_RESERVATION_KIND,
     reserved: validateAutomationMetricVector(input.reserved, 'reservation reserved'),
   };
-  return validateAutomationReservation({ ...draft, reservation_sha256: automationDigest(draft) } as unknown as AutomationBudgetReservationV1);
+  return validateAutomationReservation({ ...draft, reservation_sha256: automationDigest(draft) } as GenericAutomationBudgetReservationV1) as GenericAutomationBudgetReservationV1;
+}
+
+export function sealCampaignAutomationReservation(
+  input: Omit<CampaignAutomationBudgetReservationV1, 'protocol' | 'kind' | 'reservation_sha256'>,
+): CampaignAutomationBudgetReservationV1 {
+  const draft = {
+    ...withoutFields(input, 'protocol', 'kind', 'reservation_sha256'),
+    protocol: AUTOMATION_BUDGET_PROTOCOL,
+    kind: CAMPAIGN_AUTOMATION_RESERVATION_KIND,
+    campaign_context: validateCampaignAutomationReservationContext(input.campaign_context),
+    reserved: validateAutomationMetricVector(input.reserved, 'reservation reserved'),
+  };
+  return validateAutomationReservation({
+    ...draft,
+    reservation_sha256: automationDigest(draft),
+  } as CampaignAutomationBudgetReservationV1) as CampaignAutomationBudgetReservationV1;
 }
 
 // ---------------------------------------------------------------------------

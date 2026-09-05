@@ -19,7 +19,7 @@ const hex = (seed: string): string => new Bun.CryptoHasher('sha256').update(seed
 const observedAt = '2026-09-05T00:00:00.000Z';
 const limits: ProgramBudgetLimitV1 = { max_agent_turns: 10, max_successful_acquisitions: 2, max_runner_invocations: 10, max_provider_failures: 2, max_consecutive_no_progress_steps: 2, max_repair_cycles: 2, max_wall_clock_seconds: 3600, max_input_tokens: null, max_output_tokens: null, max_cost_micros: null };
 
-function fixture(groupCount: 1 | 2 = 1) {
+function fixture(groupCount: 1 | 2 = 1, authoringRounds = 5) {
   const root = mkdtempSync(join(tmpdir(), 'gpt-pro-authoring-'));
   const home = mkdtempSync(join(tmpdir(), 'gpt-pro-authoring-home-'));
   const profile = mkdtempSync(join(tmpdir(), 'gpt-pro-profile-'));
@@ -33,7 +33,7 @@ function fixture(groupCount: 1 | 2 = 1) {
   writeFileSync(join(root, '.repo-harness', 'chatgpt-browser.local.json'), `${JSON.stringify({ version: 1, product: 'chatgpt', profileDir: profile, profileDirectory: 'Profile 13', selectedProfilePath: join(profile, 'Profile 13'), browserChannel: 'chrome', chatgptUrl: 'https://chatgpt.com/', updatedAt: observedAt })}\n`);
   execFileSync('git', ['add', '.ai'], { cwd: root }); execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const authorization = sealProgramAuthorization({ authorization_id: 'authorization-1', repository_id: 'repo-1', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign: { campaign_id: 'campaign-1', group_count: groupCount, issues_per_group: 10, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 13', require_fresh_main_audit: true }, issued_by: 'owner', issued_at: observedAt, expires_at: '2027-09-05T00:00:00.000Z' });
+  const authorization = sealProgramAuthorization({ authorization_id: 'authorization-1', repository_id: 'repo-1', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign: { campaign_id: 'campaign-1', group_count: groupCount, issues_per_group: 10, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 13', max_authoring_rounds_per_group: authoringRounds, require_fresh_main_audit: true }, issued_by: 'owner', issued_at: observedAt, expires_at: '2027-09-05T00:00:00.000Z' });
   const env = { ...process.env, REPO_HARNESS_HOME: home };
   mintProgramAuthorization({ repo_root: root, authorization, env });
   const campaign = buildDevelopmentCampaignDefinition({ campaign_id: 'campaign-1', authorization_id: authorization.authorization_id, authorization_sha256: authorization.authorization_sha256, repository_id: authorization.repository_id, target_ref: authorization.target_ref, target_revision: authorization.target_revision, created_at: observedAt });
@@ -50,6 +50,53 @@ function result(input: BrowserConsultInput, sessionId: string, status: BrowserCo
 }
 
 describe('GPT Pro issue batch authoring effect', () => {
+  test('dry-run leaves no automation budget ledger', async () => {
+    const f = fixture();
+    const before = readdirSync(join(f.root, '.git', 'repo-harness')).sort();
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env, dry_run: true }, {
+      readBinding: readBrowserBinding, now: () => observedAt,
+      consult: async (input) => { expect(input.dryRun).toBe(true); return result(input, 'dry-run', 'dry_run'); },
+    });
+    expect(started.session.browser_status).toBe('dry_run');
+    expect(readdirSync(join(f.root, '.git', 'repo-harness')).sort()).toEqual(before);
+  });
+
+  test('does not repeat a completed provider call when its budget request key replays', async () => {
+    const f = fixture(); let calls = 0;
+    const input = { repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env };
+    const deps = { readBinding: readBrowserBinding, now: () => observedAt,
+      consult: async (browserInput: BrowserConsultInput) => { calls += 1; return result(browserInput, 'replay-session'); } };
+    await startIssueBatchAuthoring(input, deps);
+    await expect(startIssueBatchAuthoring(input, deps)).rejects.toMatchObject({ code: 'issue_authoring_reconciliation_required' });
+    expect(calls).toBe(1);
+  });
+
+  test('refuses another authoring call after the single authorized round is settled', async () => {
+    const f = fixture(1, 1); let followups = 0;
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: readBrowserBinding, now: () => observedAt, consult: async (input) => result(input, 'last-round'),
+    });
+    await expect(continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1,
+      intent_sha256: started.intent.intent_sha256, source_session_ref: started.session.session_ref,
+      operation: 'fill_missing', requested_slots: ['01'], env: f.env }, {
+      readBinding: readBrowserBinding, followup: async (input) => { followups += 1; return result(input, 'must-not-run'); },
+    })).rejects.toThrow();
+    expect(followups).toBe(0);
+  });
+
+  test('keeps recoverable browser work reserved and rejects another provider call', async () => {
+    const f = fixture(); let followups = 0;
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, {
+      readBinding: readBrowserBinding, now: () => observedAt, consult: async (input) => result(input, 'unknown-round', 'recoverable'),
+    });
+    await expect(continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1,
+      intent_sha256: started.intent.intent_sha256, source_session_ref: started.session.session_ref,
+      operation: 'fill_missing', requested_slots: ['01'], env: f.env }, {
+      readBinding: readBrowserBinding, followup: async (input) => { followups += 1; return result(input, 'must-not-run'); },
+    })).rejects.toThrow();
+    expect(followups).toBe(0);
+  });
+
   test('uses the injected browser binding authority before persisting and dispatching', async () => {
     const f = fixture();
     const binding = readBrowserBinding(f.root);

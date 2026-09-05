@@ -23,12 +23,14 @@ import {
   foldAutomationLedger,
   requireUnattendedAutomationBudget,
   sealAutomationBudgetCurrent,
+  sealCampaignAutomationReservation,
   sealAutomationMetricSupport,
   sealAutomationReservation,
   sealAutomationStopReceipt,
   sealAutomationUsageEvent,
   sealProgramAuthorization,
   validateAutomationBudget,
+  validateAutomationReservation,
   validateAutomationUsageEvent,
   validateProgramAuthorization,
   type AutomationBudgetStateV1,
@@ -123,6 +125,91 @@ function activeState(overrides: Partial<AutomationBudgetStateV1> = {}): Automati
 const NO_TOKENS = { input_tokens: null, output_tokens: null, cost_micros: null } as const;
 
 describe('issue #282 — schema and digest binding', () => {
+  test('the pinned-base generic reservation retains its exact wire shape and digest', () => {
+    const pinnedBase = {
+      protocol: 1 as const,
+      kind: 'repo-harness-automation-reservation' as const,
+      automation_run_id: 'a'.repeat(64),
+      budget_sha256: 'b'.repeat(64),
+      idempotency_key: 'pinned-base-op',
+      operation: 'provider_invocation' as const,
+      unit_kind: 'execute' as const,
+      unit_id: 'wp-pinned',
+      attempt: 1,
+      provider: 'codex',
+      step_index: 1,
+      reserved: automationOperationReservation('provider_invocation', NO_TOKENS),
+      reserved_at: '2026-09-03T00:00:10.000Z',
+      deadline_at: '2026-09-03T01:00:00.000Z',
+      previous_ledger_sha256: AUTOMATION_LEDGER_GENESIS,
+      reservation_sha256: '3009e7289612560c96593c9ca05630d81bec9f5937f12330d8aae021d9788d8b',
+    };
+    expect(validateAutomationReservation(pinnedBase)).toEqual(pinnedBase);
+    const sealed = sealAutomationReservation({
+      automation_run_id: pinnedBase.automation_run_id,
+      budget_sha256: pinnedBase.budget_sha256,
+      idempotency_key: pinnedBase.idempotency_key,
+      operation: pinnedBase.operation,
+      unit_kind: pinnedBase.unit_kind,
+      unit_id: pinnedBase.unit_id,
+      attempt: pinnedBase.attempt,
+      provider: pinnedBase.provider,
+      step_index: pinnedBase.step_index,
+      reserved: pinnedBase.reserved,
+      reserved_at: pinnedBase.reserved_at,
+      deadline_at: pinnedBase.deadline_at,
+      previous_ledger_sha256: pinnedBase.previous_ledger_sha256,
+    });
+    expect(JSON.stringify(sealed)).toBe(JSON.stringify(pinnedBase));
+  });
+
+  test('reservation kinds strictly discriminate campaign context', () => {
+    const generic = sealAutomationReservation({
+      automation_run_id: 'a'.repeat(64),
+      budget_sha256: 'b'.repeat(64),
+      idempotency_key: 'generic-op',
+      operation: 'provider_invocation',
+      unit_kind: 'execute',
+      unit_id: 'wp-generic',
+      attempt: 1,
+      provider: 'codex',
+      step_index: 1,
+      reserved: automationOperationReservation('provider_invocation', NO_TOKENS),
+      reserved_at: '2026-09-03T00:00:10.000Z',
+      deadline_at: '2026-09-03T01:00:00.000Z',
+      previous_ledger_sha256: AUTOMATION_LEDGER_GENESIS,
+    });
+    expect(() => validateAutomationReservation({ ...generic, campaign_context: null } as never))
+      .toThrow(/generic automation reservation fields are invalid/u);
+
+    const campaign = sealCampaignAutomationReservation({
+      automation_run_id: generic.automation_run_id,
+      budget_sha256: generic.budget_sha256,
+      idempotency_key: 'campaign-op',
+      operation: 'provider_invocation',
+      unit_kind: 'execute',
+      unit_id: 'campaign:group:1',
+      attempt: 1,
+      provider: 'gpt-pro',
+      campaign_context: {
+        campaign_id: 'campaign',
+        group_number: 1,
+        intent_sha256: `sha256:${'c'.repeat(64)}`,
+        operation: 'initial',
+      },
+      step_index: 1,
+      reserved: generic.reserved,
+      reserved_at: generic.reserved_at,
+      deadline_at: generic.deadline_at,
+      previous_ledger_sha256: generic.previous_ledger_sha256,
+    });
+    const { campaign_context: _removed, ...withoutContext } = campaign;
+    expect(() => validateAutomationReservation(withoutContext as never))
+      .toThrow(/campaign automation reservation fields are invalid/u);
+    expect(() => validateAutomationReservation({ ...campaign, kind: 'repo-harness-automation-reservation' } as never))
+      .toThrow(/generic automation reservation fields are invalid/u);
+  });
+
   test('an authorization digest binds its own content', () => {
     const grant = authorization();
     expect(validateProgramAuthorization(grant)).toEqual(grant);

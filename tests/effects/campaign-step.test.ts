@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { sealProgramAuthorization, type ProgramBudgetLimitV1 } from '../../src/core/automation/budget';
+import { sealProgramAuthorization, validateAutomationReservation, type ProgramBudgetLimitV1 } from '../../src/core/automation/budget';
 import { buildDevelopmentCampaignDefinition } from '../../src/core/automation/development-campaign';
 import { buildIssueBatchIntent, renderIssueBatchMarker, type IssueBatchIntentV1 } from '../../src/core/automation/issue-batch';
 import { buildExternalSourceRefreshReceipt, buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
 import { readBrowserBinding } from '../../src/cli/chatgpt-browser/binding';
 import type { BrowserConsultInput, BrowserConsultResult } from '../../src/cli/chatgpt-browser/types';
+import { AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, reconcileAutomationReservation } from '../../src/effects/automation/budget-store';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { appendDevelopmentCampaignEvent, createDevelopmentCampaign, readDevelopmentCampaignStatus } from '../../src/effects/automation/development-campaign-store';
 import { startIssueBatchAuthoring } from '../../src/effects/automation/gpt-pro-issue-authoring';
@@ -23,9 +24,17 @@ const roots: string[] = [];
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
 const realIssueBatchStore = { ...issueBatchStore };
+let refuseJournalReservationAtRoot: string | null = null;
 let hiddenJournalReads: { readonly root: string; reservations: number; results: number } | null = null;
 mock.module('../../src/effects/automation/issue-batch-store', () => ({
   ...realIssueBatchStore,
+  persistIssueBatchJournalRecord: (...args: Parameters<typeof issueBatchStore.persistIssueBatchJournalRecord>) => {
+    if (args[0] === refuseJournalReservationAtRoot && args[3] === 'reservations') {
+      refuseJournalReservationAtRoot = null;
+      throw new Error('injected journal reservation refusal before persistence');
+    }
+    return realIssueBatchStore.persistIssueBatchJournalRecord(...args);
+  },
   listIssueBatchJournalRecords: (...args: Parameters<typeof issueBatchStore.listIssueBatchJournalRecords>) => {
     const [root, , , category] = args;
     if (hiddenJournalReads?.root === root && category === 'reservations' && hiddenJournalReads.reservations > 0) {
@@ -39,7 +48,7 @@ mock.module('../../src/effects/automation/issue-batch-store', () => ({
     return realIssueBatchStore.listIssueBatchJournalRecords(...args);
   },
 }));
-afterEach(() => { hiddenJournalReads = null; });
+afterEach(() => { hiddenJournalReads = null; refuseJournalReservationAtRoot = null; });
 const at = '2026-09-05T00:00:00.000Z';
 const later = '2026-09-05T00:10:00.000Z';
 const browserDependencies = { readBinding: readBrowserBinding };
@@ -76,7 +85,7 @@ async function fixture(status: BrowserConsultResult['status'] = 'completed') {
   writeFileSync(join(root, '.repo-harness', 'chatgpt-browser.local.json'), `${JSON.stringify({ version: 1, product: 'chatgpt', profileDir: profile, profileDirectory: 'Profile 1', selectedProfilePath: join(profile, 'Profile 1'), browserChannel: 'chrome', chatgptUrl: 'https://chatgpt.com/', updatedAt: at })}\n`);
   execFileSync('git', ['add', '.ai'], { cwd: root }); execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const authorization = sealProgramAuthorization({ authorization_id: 'auth-1', repository_id: 'repo-1', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign: { campaign_id: 'campaign-1', group_count: 1, issues_per_group: 2, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 1', require_fresh_main_audit: true }, issued_by: 'owner', issued_at: at, expires_at: '2027-09-05T00:00:00.000Z' });
+  const authorization = sealProgramAuthorization({ authorization_id: 'auth-1', repository_id: 'repo-1', target_ref: 'refs/heads/main', target_revision: revision, work_graph_revision: hex('work'), allowed_work_package_ids: ['campaign-1'], allowed_risk_tiers: ['low'], merge_mode: 'manual', allowed_merge_method: 'squash', max_repair_cycles: 2, budget: limits, contract_scope: 'contract_less', contract_path: null, campaign: { campaign_id: 'campaign-1', group_count: 1, issues_per_group: 2, allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 2, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Profile 1', max_authoring_rounds_per_group: 5, require_fresh_main_audit: true }, issued_by: 'owner', issued_at: at, expires_at: '2027-09-05T00:00:00.000Z' });
   const env = { ...process.env, REPO_HARNESS_HOME: home };
   mintProgramAuthorization({ repo_root: root, authorization, env });
   const campaign = buildDevelopmentCampaignDefinition({ campaign_id: 'campaign-1', authorization_id: authorization.authorization_id, authorization_sha256: authorization.authorization_sha256, repository_id: authorization.repository_id, target_ref: authorization.target_ref, target_revision: authorization.target_revision, created_at: at });
@@ -113,6 +122,33 @@ function input(f: Awaited<ReturnType<typeof fixture>>, key: string) {
 }
 
 describe('durable campaign heartbeat step', () => {
+  test('retries the same authoring request after a pre-invocation journal refusal is reconciled not started', async () => {
+    const f = await fixture(); let calls = 0;
+    const deps = {
+      now: () => new Date(later), observe: () => snapshot(f.intent, []),
+      followup: async (request: BrowserConsultInput) => { calls += 1; return browserResult(request, 'replacement-session', 'completed'); },
+    };
+    refuseJournalReservationAtRoot = f.root;
+    await expect(runCampaignStep(input(f, 'journal-refused'), deps)).rejects.toThrow('injected journal reservation refusal');
+    expect(calls).toBe(0);
+    expect(listIssueBatchJournalRecords(f.root, 'campaign-1', 1, 'reservations')).toHaveLength(0);
+    const runs = join(f.root, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs');
+    const reservationDir = join(runs, readdirSync(runs)[0]!, 'reservations');
+    const records = readdirSync(reservationDir).filter((name) => name.endsWith('.json')).map((name) => validateAutomationReservation(JSON.parse(readFileSync(join(reservationDir, name), 'utf8'))));
+    const held = records.find((record) => 'campaign_context' in record && record.campaign_context?.operation === 'fill_missing')!;
+    expect(held).toBeDefined();
+    await expect(runCampaignStep(input(f, 'journal-refused'), deps)).rejects.toThrow();
+    expect(calls).toBe(0);
+    reconcileAutomationReservation({ repo_root: f.root, reservation: held, resolution: 'reconciled_not_started', outcome: 'no_progress',
+      reason: 'journal reservation refused before execute; provider invocation count is zero',
+      evidence_refs: [{ ref: 'provider-run:journal-refused', sha256: hex('no-provider-invocation') }], env: f.env });
+    const retried = await runCampaignStep(input(f, 'journal-refused'), deps);
+    expect(retried.step_receipt).toMatchObject({ action: 'fill_missing', outcome: 'progress' });
+    expect(calls).toBe(1);
+    await runCampaignStep(input(f, 'journal-refused'), deps);
+    expect(calls).toBe(1);
+  });
+
   test('returns idle without a provider read for cancelled authoring', async () => {
     const f = await fixture('cancelled'); let observations = 0;
     const result = await runCampaignStep(input(f, 'idle-1'), { now: () => new Date(later), observe: () => { observations += 1; return snapshot(f.intent, []); } });
@@ -157,7 +193,7 @@ describe('durable campaign heartbeat step', () => {
   });
 
   test('persists before each missing-slot follow-up and replays an idempotency key without repeating its effect', async () => {
-    const f = await fixture('recoverable'); let followups = 0;
+    const f = await fixture(); let followups = 0;
     const observed = snapshot(f.intent, [{ id: '201', number: 1, slot: '01' }]);
     const deps = { ...browserDependencies, now: () => new Date(later), observe: () => observed, followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => { followups += 1; return browserResult(browserInput, 'session-fill', 'completed'); } };
     const first = await runCampaignStep(input(f, 'fill-1'), deps);
@@ -207,7 +243,7 @@ describe('durable campaign heartbeat step', () => {
   test('a failed one-shot metadata edit becomes unfilled and is not retried', async () => {
     const f = await fixture(); let followups = 0;
     const observed = snapshot(f.intent, [{ id: '201', number: 1, slot: '01', valid: false }, { id: '202', number: 2, slot: '02' }]);
-    const deps = { ...browserDependencies, now: () => new Date(later), observe: () => observed, followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => { followups += 1; return browserResult(browserInput, 'session-edit-failed', 'failed', false); } };
+    const deps = { ...browserDependencies, now: () => new Date(later), observe: () => observed, followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => { followups += 1; return browserResult(browserInput, 'session-edit-unverified', 'completed', false); } };
     const edited = await runCampaignStep(input(f, 'edit-invalid'), deps);
     expect(edited.step_receipt).toMatchObject({ action: 'edit_issue', outcome: 'no_progress' });
     const checked = await runCampaignStep(input(f, 'after-edit-failed'), deps);
@@ -226,7 +262,7 @@ describe('durable campaign heartbeat step', () => {
       ...browserDependencies, now: () => new Date(later), observe: () => observed,
       followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => {
         followups += 1;
-        return browserResult(browserInput, `session-edit-${followups}`, 'failed', false);
+        return browserResult(browserInput, `session-edit-${followups}`, 'completed', false);
       },
     };
     await runCampaignStep(input(f, 'first-failed-edit'), deps);
@@ -242,7 +278,7 @@ describe('durable campaign heartbeat step', () => {
     const f = await fixture();
     const before = snapshot(f.intent, [{ id: '201', number: 1, slot: '01', valid: false }]);
     before.observations.forEach((entry) => writeProviderIssueObservation(f.root, entry));
-    await runCampaignStep(input(f, 'repair-baseline-edit'), { ...browserDependencies, now: () => new Date(later), observe: () => before, followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => browserResult(browserInput, 'session-edit-failed', 'failed', false) });
+    await runCampaignStep(input(f, 'repair-baseline-edit'), { ...browserDependencies, now: () => new Date(later), observe: () => before, followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => browserResult(browserInput, 'session-edit-unverified', 'completed', false) });
     const repairedInvalid = snapshot(f.intent, [{ id: '201', number: 1, slot: '01', body_override: `${renderIssueBatchMarker(f.intent.campaign_id, 1, '01')}\nstill invalid` }], '2026-09-05T00:11:00.000Z');
     repairedInvalid.observations.forEach((entry) => writeProviderIssueObservation(f.root, entry));
     const baseline = await runCampaignStep(input(f, 'repair-baseline-observe'), { ...browserDependencies, now: () => new Date('2026-09-05T00:11:00.000Z'), observe: () => repairedInvalid, followup: async (browserInput: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }) => browserResult(browserInput, 'session-fill-after-repair', 'completed') });
