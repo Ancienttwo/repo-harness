@@ -75,6 +75,13 @@ export function developmentCampaignStoreRoot(repoRoot: string): string {
   return resolve(resolveGitCommonDirectory(resolve(repoRoot)), STORE_RELATIVE_ROOT);
 }
 
+/** Serialize a short synchronous campaign authority decision. Never pass an async callback. */
+export function withDevelopmentCampaignLock<T>(repoRootInput: string, campaignId: string, callback: () => T & (T extends PromiseLike<unknown> ? never : unknown)): T {
+  const repoRoot = resolve(repoRootInput);
+  const value = paths(repoRoot, campaignId);
+  return withExclusiveDirectoryLock(value.common, value.lock, callback, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
+}
+
 function fsyncDirectory(path: string): void {
   const fd = openSync(path, constants.O_RDONLY);
   try { fsyncSync(fd); } finally { closeSync(fd); }

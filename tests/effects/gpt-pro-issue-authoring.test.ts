@@ -178,10 +178,22 @@ describe('GPT Pro issue batch authoring effect', () => {
     expect(filled.session).toMatchObject({ operation: 'fill_missing', requested_slots: ['08', '09', '10'], source_session_ref: 'session-initial' });
     expect(calls[0]!.prompt).not.toContain('slot=07');
     expect(calls[0]!.secretScan).toBe(true);
-    const edited = await continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: filled.session.session_ref, operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: 'issue-103', env: f.env }, { readBinding: readBrowserBinding, now: () => '2026-09-05T00:20:00.000Z', followup });
-    expect(edited.session).toMatchObject({ operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: 'issue-103' });
-    expect(calls[1]!.prompt).toContain('Edit existing GitHub Issue issue-103');
+    const edited = await continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: filled.session.session_ref, operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: '201', provider_issue_url: 'https://github.com/acme/widgets/issues/7', env: f.env }, { readBinding: readBrowserBinding, now: () => '2026-09-05T00:20:00.000Z', followup });
+    expect(edited.session).toMatchObject({ operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: '201' });
+    expect(calls[1]!.prompt).toContain('https://github.com/acme/widgets/issues/7');
+    expect(calls[1]!.prompt).toContain('database ID is exactly 201');
     expect(calls[1]!.prompt).toContain('Do not create a new Issue');
+  });
+
+  test('rejects an edit locator that cannot name one exact repository Issue before browser follow-up', async () => {
+    const f = fixture();
+    const started = await startIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, env: f.env }, { readBinding: readBrowserBinding, now: () => observedAt, consult: async (input) => result(input, 'session-initial', 'completed', true) });
+    let followups = 0;
+    await expect(continueIssueBatchAuthoring({ repo_root: f.root, campaign_id: 'campaign-1', group_number: 1, intent_sha256: started.intent.intent_sha256, source_session_ref: started.session.session_ref, operation: 'edit_issue', requested_slots: ['03'], provider_issue_id: '201', provider_issue_url: 'https://github.com/acme/widgets/issues/7?redirect=1', env: f.env }, {
+      readBinding: readBrowserBinding,
+      followup: async (input) => { followups += 1; return result(input, 'must-not-run', 'completed', true); },
+    })).rejects.toMatchObject({ code: 'issue_authoring_invalid' });
+    expect(followups).toBe(0);
   });
 
   test('records browser timeout/failure as unverified and does not advance batch or campaign state', async () => {

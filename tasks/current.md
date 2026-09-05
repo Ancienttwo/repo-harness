@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-05T17:42:13+0800 -->
+<!-- updated_at: 2026-09-05T18:16:38+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-09-05T17:42:13+0800
-> **Source Branch**: codex/refactor-multi-work-package
-> **Source Commit**: 8fc10742
+> **Updated At**: 2026-09-05T18:16:38+0800
+> **Source Branch**: codex/brc5-heartbeat-observation-slot-reconciliation
+> **Source Commit**: c7c3af76
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,8 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - linked-worktree-1630334cfafa: plans/plan-20260905-1446-verification-scope-profile-consistency.md
 - linked-worktree-1630334cfafa: active-worktree owner -> self
-- linked-worktree-3bfe6fd0f253: plans/plan-20260905-1156-brc5-heartbeat-observation-slot-reconciliation.md
-- linked-worktree-3bfe6fd0f253: active-worktree owner -> self
 - linked-worktree-4814bcc3b8ae: plans/plan-20260905-1413-fleet-board-card-containment.md
 - linked-worktree-4814bcc3b8ae: active-worktree owner -> self
 - linked-worktree-d0f3cc06ebef: plans/plan-20260905-1455-isolated-worktree-readiness.md
@@ -62,7 +60,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=completed, current_slice=completed-20260828-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Freeze, accept and merge only this worktree's changes into main.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Preserve full-suite baseline `3958ce3f` (4363 pass, 0 fail, 4 skip), then run current-subject BRC5 and main-integration delta tests, type/boundary and repository integrity checks under the revised contract; do not relabel the historical full pass.
 
 ## Checks
 
@@ -70,19 +68,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260905-1617-refactor-multi-work-package.md
- D tasks/contracts/20260905-1617-refactor-multi-work-package.contract.md
- D tasks/notes/20260905-1617-refactor-multi-work-package.notes.md
- D tasks/reviews/20260905-1617-refactor-multi-work-package.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260905-1617-refactor-multi-work-package.md
-?? tasks/archive/contract-20260905-1742-refactor-multi-work-package.md
-?? tasks/archive/notes-20260905-1742-refactor-multi-work-package.md
-?? tasks/archive/review-20260905-1742-refactor-multi-work-package.md
-?? tasks/archive/todo-20260905-1742-refactor-multi-work-package.md
+ D plans/plan-20260905-1156-brc5-heartbeat-observation-slot-reconciliation.md
+ D tasks/contracts/20260905-1156-brc5-heartbeat-observation-slot-reconciliation.contract.md
+ D tasks/notes/20260905-1156-brc5-heartbeat-observation-slot-reconciliation.notes.md
+ D tasks/reviews/20260905-1156-brc5-heartbeat-observation-slot-reconciliation.review.md
+?? plans/archive/plan-20260905-1156-brc5-heartbeat-observation-slot-reconciliation.md
+?? tasks/archive/contract-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
+?? tasks/archive/notes-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
+?? tasks/archive/review-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
+?? tasks/archive/todo-20260905-1816-brc5-heartbeat-observation-slot-reconciliation.md
 ```
 
 ## Source Artifacts
