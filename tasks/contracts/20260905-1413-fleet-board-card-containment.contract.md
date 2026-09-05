@@ -9,7 +9,7 @@
 > **Review File**: `tasks/reviews/20260905-1413-fleet-board-card-containment.review.md`
 > **Notes File**: `tasks/notes/20260905-1413-fleet-board-card-containment.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:607d42561928b8cfd3b80501e7c4ecbcafffb76d9e869cbada1ee55bb9653148`
+> **Substantive Change SHA256**: `sha256:1c833dc36fd235517ec1b4bd75207700591f34b53f87f8c281bf16b40144c255`
 
 ## Why
 
@@ -189,6 +189,7 @@ exit_criteria:
     - path: tests/cli/fleet-board.test.ts
     - path: tests/cli/fleet-task-inbox.test.ts
     - path: tests/board-snapshot-consistency.test.ts
+    - path: tests/unit/operator-web-types.test.ts
   commands_succeed:
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh

@@ -55,10 +55,11 @@ function validFleetPayload(): Record<string, unknown> {
           failure_class: null,
         },
         snapshot_consistency: 'stable',
+        error: null,
       }],
       error: null,
     }],
-    counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 },
+    counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 },
     source_snapshot_sha256: snapshotDigest,
   };
 }
