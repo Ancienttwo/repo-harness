@@ -1,6 +1,6 @@
 # Task Contract: fleet-board-card-containment
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260905-1413-fleet-board-card-containment.md
 > **Task Profile**: bugfix
 > **Owner**: ancienttwo
