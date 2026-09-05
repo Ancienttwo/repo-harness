@@ -155,7 +155,7 @@ Audit baseline: main 1a9a5ae1, 2026-09-05 five-slice Task Board audit (findings 
 - [x] Implement event-loop yields, deadline re-check, timeout relabel fix, runtime revision in consistency, limiter slot transfer, realpath authority compare.
 - [x] Implement lock-order change in the operator write path.
 - [x] Fill the contract (Goal, Scope, Root Cause Evidence, Allowed Paths, Exit Criteria, Change Assessment oracles as `{id,kind,paths}` objects) and clear every `[NOTE]` placeholder; notes only for non-obvious deviations.
-- [ ] Verification: focused tests above, the six repository-integrity checks, `bun test --timeout 60000` full suite once at the end (log to file), `bun run build:operator-web`.
+- [x] Verification: focused tests above, the six repository-integrity checks, `bun test --timeout 60000` full suite once at the end (log to file), `bun run build:operator-web`.
 
 ## Allowed Paths
 
@@ -183,4 +183,4 @@ Audit baseline: main 1a9a5ae1, 2026-09-05 five-slice Task Board audit (findings 
 - [x] Implement event-loop yields, deadline re-check, timeout relabel fix, runtime revision in consistency, limiter slot transfer, realpath authority compare.
 - [x] Implement lock-order change in the operator write path.
 - [x] Fill the contract (Goal, Scope, Root Cause Evidence, Allowed Paths, Exit Criteria, Change Assessment oracles as `{id,kind,paths}` objects) and clear every `[NOTE]` placeholder; notes only for non-obvious deviations.
-- [ ] Verification: focused tests above, the six repository-integrity checks, `bun test --timeout 60000` full suite once at the end (log to file), `bun run build:operator-web`.
+- [x] Verification: focused tests above, the six repository-integrity checks, `bun test --timeout 60000` full suite once at the end (log to file), `bun run build:operator-web`.
