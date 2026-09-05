@@ -242,6 +242,26 @@ exit "$status"
   return bin;
 }
 
+/** Same barrier, but only for a canonical read taken while the task lock is held. */
+function pausedGitBinUnderTaskLock(value: Fixture, readyPath: string, releasePath: string): string {
+  const bin = join(value.root, 'locked-test-bin');
+  mkdirSync(bin, { recursive: true });
+  const gitPath = join(bin, 'git');
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const taskLockPath = join(value.root, '.git/repo-harness/coordination/v1/locks/tasks', `${value.taskId}.lock`);
+  writeFileSync(gitPath, `#!/bin/sh
+"${realGit}" "$@"
+status=$?
+if [ "$1" = "show" ] && [ "$status" -eq 0 ] && [ -d "${taskLockPath}" ]; then
+  : > "${readyPath}"
+  while [ ! -f "${releasePath}" ]; do sleep 0.01; done
+fi
+exit "$status"
+`);
+  chmodSync(gitPath, 0o700);
+  return bin;
+}
+
 function expectNoInboxArtifacts(value: Fixture, messageId: string): void {
   expect(existsSync(taskInboxEventPath(value.root, value.taskId, messageId))).toBe(false);
 }
@@ -330,6 +350,27 @@ describe('operator task-message effect fence', () => {
       const senderResult = await workerResult(sender);
       expect(readWorkerPayload(senderResult)).toMatchObject({ ok: true, result: { created: true } });
       expect(existsSync(taskInboxEventPath(value.root, value.taskId, MESSAGE_ONE))).toBe(true);
+    }), 30_000);
+
+    test('rejects a revocation that lands after the task-lock authority check and before publication', async () => withFixtureAsync(async (value) => {
+      const readyPath = join(value.home, 'canonical-read-under-task-lock');
+      const releasePath = join(value.home, 'release-canonical-read-under-task-lock');
+      const bin = pausedGitBinUnderTaskLock(value, readyPath, releasePath);
+      const sender = operatorMessageWorker(value, MESSAGE_ONE, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      try {
+        await waitFor(() => existsSync(readyPath), 'canonical read taken under the task lock');
+        const revoker = registryRevoker(value);
+        const revokerResult = await workerResult(revoker);
+        expect(revokerResult.status, revokerResult.stderr).toBe(0);
+
+        writeFileSync(releasePath, 'release\n');
+        const senderResult = await workerResult(sender);
+        expect(readWorkerPayload(senderResult)).toMatchObject({ ok: false, code: 'repository_read_only' });
+        expectNoInboxArtifacts(value, MESSAGE_ONE);
+      } finally {
+        writeFileSync(releasePath, 'release\n');
+        await sender.exited;
+      }
     }), 30_000);
 
     test('rejects a revocation that lands between registry authorization and the locked publication', async () => withFixtureAsync(async (value) => {

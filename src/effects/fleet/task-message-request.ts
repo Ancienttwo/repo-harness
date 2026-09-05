@@ -5,7 +5,6 @@ import {
 } from '../../core/fleet/task-message';
 import { lookupCanonicalTask } from '../../core/state/coordination-identity';
 import {
-  readRepoHarnessRegistryStrictSnapshot,
   withRepoHarnessRegistryAuthorizationLock,
   type RepoHarnessRegistryStrictSnapshot,
 } from '../repo-registry';
@@ -85,30 +84,29 @@ function registeredRepositoryRoot(
   return repository.path;
 }
 
-interface RegistryAuthority {
-  readonly repo_root: string;
-  readonly registry_revision: string;
-}
-
 /**
- * Re-prove the authority that admitted this write, without a lock.
+ * The task lock stays outside this lock, and this lock covers exactly the
+ * re-check plus the write.
  *
- * The registry writer publishes whole documents by rename, so a plain read
- * observes exactly one complete revision. Re-taking the registry lock here
- * would put the machine-global lock back underneath the per-task lock, which
- * is the ordering this split exists to remove.
+ * Nesting is safe in one direction only. `withRepoHarnessRegistryAuthorizationLock`
+ * has one product caller (this file), and nothing `src/effects/repo-registry.ts`
+ * runs under that lock acquires a task lock: it imports no lease, inbox, or
+ * coordination module, and the only caller-supplied hook under it
+ * (`applyRepoHarnessRegistryBatch`'s `beforeCommit`, used by `src/cli/mcp/setup.ts`)
+ * writes a config file. So no path holds the registry lock and then waits for a
+ * task lock, and task -> registry cannot close a cycle.
  */
-function assertRegistryAuthorityUnchanged(input: SendOperatorTaskMessageInput, authority: RegistryAuthority): void {
-  let snapshot: RepoHarnessRegistryStrictSnapshot;
-  try {
-    snapshot = readRepoHarnessRegistryStrictSnapshot({ env: input.env, adoptedOnly: false });
-  } catch (error) {
-    throw new OperatorTaskMessageError('registry_unavailable', 'the repository registry is unreadable', error);
-  }
-  if (snapshot.registryRevision === authority.registry_revision) return;
-  if (registeredRepositoryRoot(input, snapshot) !== authority.repo_root) {
-    throw new OperatorTaskMessageError('repository_not_found', `repository ${input.repository_id} moved since the board snapshot`);
-  }
+function withRegistryAuthorizedPublication<T>(
+  input: SendOperatorTaskMessageInput,
+  expectedRepoRoot: string,
+  publish: () => T,
+): T {
+  return withRepoHarnessRegistryAuthorizationLock({ env: input.env }, (snapshot) => {
+    if (registeredRepositoryRoot(input, snapshot) !== expectedRepoRoot) {
+      throw new OperatorTaskMessageError('repository_not_found', `repository ${input.repository_id} moved since the board snapshot`);
+    }
+    return publish();
+  });
 }
 
 interface CanonicalTaskContext {
@@ -172,18 +170,16 @@ export function sendOperatorTaskMessage(input: SendOperatorTaskMessageInput): Se
     if (input.scope === 'claim' && (input.expected_claim_id === null || input.expected_generation === null)) {
       throw new OperatorTaskMessageError('task_message_invalid', 'claim-scoped messages require a claim fence');
     }
-    // The registry lock covers exactly the registry: resolving and authorizing
-    // one registered repository. Holding it across this repository's canonical
-    // reads and its per-task lock blocked every other repository's registry
-    // work for as long as one task lock stayed contended.
-    const authority: RegistryAuthority = withRepoHarnessRegistryAuthorizationLock(
+    // Resolving and authorizing one registered repository is all this first
+    // critical section does. Holding the registry lock across this
+    // repository's canonical reads and its per-task lock blocked every other
+    // repository's registry work for as long as one task lock stayed
+    // contended; the authority is re-proved, under the same lock, around the
+    // write itself.
+    const repoRoot = withRepoHarnessRegistryAuthorizationLock(
       { env: input.env },
-      (snapshot) => Object.freeze({
-        repo_root: registeredRepositoryRoot(input, snapshot),
-        registry_revision: snapshot.registryRevision,
-      }),
+      (snapshot) => registeredRepositoryRoot(input, snapshot),
     );
-    const repoRoot = authority.repo_root;
     const context = canonicalTaskContext(repoRoot, input.task_id, input.expected_task_revision);
     const owner = input.scope === 'claim' ? readLease(repoRoot, context.task_id).record : null;
     if (input.scope === 'claim' && owner === null) {
@@ -213,7 +209,7 @@ export function sendOperatorTaskMessage(input: SendOperatorTaskMessageInput): Se
         repo_root: repoRoot,
         canonical_source: context.source,
         event,
-        assert_registry_authority: () => assertRegistryAuthorityUnchanged(input, authority),
+        with_registry_authority: (publish) => withRegistryAuthorizedPublication(input, repoRoot, publish),
       });
       return Object.freeze({
         repository_id: input.repository_id,

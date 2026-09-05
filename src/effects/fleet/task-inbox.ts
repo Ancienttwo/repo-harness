@@ -58,12 +58,17 @@ export interface SendTaskMessageInput {
 
 export interface SendTaskBoardMessageInput extends SendTaskMessageInput {
   /**
-   * Re-proved under the task lock. The Task Board write no longer holds the
-   * machine-global registry authorization lock while it waits for this task's
-   * lock, so the authority that admitted the write is checked again here
-   * instead of being pinned across unrelated repository I/O.
+   * Runs the final publication inside the caller's registry authorization
+   * lock, after re-proving that authority.
+   *
+   * The task lock stays outside it, so this send never holds the
+   * machine-global registry lock while it waits up to the task-lock budget or
+   * across canonical Git reads. Checking authorization and then publishing
+   * outside that lock would leave a window where a revocation commits between
+   * the check and the write, so the check and the write are one critical
+   * section of the same lock a revocation must take.
    */
-  readonly assert_registry_authority: () => void;
+  readonly with_registry_authority: <T>(publish: () => T) => T;
 }
 
 export interface TaskInboxListInput {
@@ -741,7 +746,7 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
 function sendTaskMessageWithAuthority(
   input: SendTaskMessageInput,
   requireActiveTaskBoardAuthority: boolean,
-  assertRegistryAuthority: (() => void) | null,
+  withRegistryAuthority: (<T>(publish: () => T) => T) | null,
 ): TaskInboxSendResult {
   let event: TaskMessageEventV1;
   try {
@@ -749,14 +754,22 @@ function sendTaskMessageWithAuthority(
   } catch (error) {
     throw asInboxError(error, 'task_message_invalid', 'task message event is invalid');
   }
-  return withInboxTaskLock(input.repo_root, event.task_id, () => {
-    if (assertRegistryAuthority !== null) {
-      try {
-        assertRegistryAuthority();
-      } catch (error) {
-        throw new TaskInboxAuthorityRejection(error);
-      }
+  const publish = (): TaskInboxSendResult => {
+    if (withRegistryAuthority === null) return writeImmutableEvent(input.repo_root, event);
+    let authorized = false;
+    try {
+      return withRegistryAuthority(() => {
+        authorized = true;
+        return writeImmutableEvent(input.repo_root, event);
+      });
+    } catch (error) {
+      // Only the caller's own authority rejection crosses this module's error
+      // vocabulary unchanged; a failure of the write itself is ours.
+      if (authorized) throw error;
+      throw new TaskInboxAuthorityRejection(error);
     }
+  };
+  return withInboxTaskLock(input.repo_root, event.task_id, () => {
     if (requireActiveTaskBoardAuthority) {
       assertCanonicalSourceIsActive(input.repo_root, input.canonical_source);
     }
@@ -771,7 +784,7 @@ function sendTaskMessageWithAuthority(
         fail('claim_mismatch', `task ${event.task_id} claim scope does not match current owner`);
       }
     }
-    return writeImmutableEvent(input.repo_root, event);
+    return publish();
   });
 }
 
@@ -789,7 +802,7 @@ export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResul
  * both revalidated under the task lock immediately before publication.
  */
 export function sendTaskBoardMessage(input: SendTaskBoardMessageInput): TaskInboxSendResult {
-  return sendTaskMessageWithAuthority(input, true, input.assert_registry_authority);
+  return sendTaskMessageWithAuthority(input, true, input.with_registry_authority);
 }
 
 /** Read-only projection for a canonical recipient. It never marks delivery. */
