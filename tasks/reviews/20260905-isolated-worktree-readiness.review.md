@@ -1,8 +1,8 @@
 # Review: isolated contract worktree readiness
 
-> **Status**: Blocked
+> **Status**: Pending
 > **Base Revision**: `1a9a5ae19167fd50ab0f0c650105ca8a9a2498eb`
-> **Substantive Change SHA256**: `sha256:6b15f94aaa5cf5f3508e7e573bfaa8d3292defd29b3aa05a8e1250e555557ca3`
+> **Substantive Change SHA256**: `sha256:1cdae848e1f4c0e944af1b5acbcf46b81a33529fe3620b2477a99f7cb4bbdf41`
 > **Review Scope**: eight source/test/fixture files; Waza check self-review
 
 ## Finding and change
@@ -143,3 +143,18 @@ Main has since received a separately verified review-boundary repair containing
 the prior reverse-import fix. Another task still owns uncommitted guard/projector
 changes in main. Preserve those writes and validate any integration seam before
 claiming the candidate is merged or installed.
+
+## Rebase verification (2026-09-05, onto 64953b6f)
+
+Rebased onto main after the verification-scope repair (`6c19234e`), the
+context-diagnostics patch (`be6e90f8`), and the golden refresh (#321). Two
+conflicts resolved: the research note keeps both appended sections, and the
+Fleet provider fixture keeps main's `omit_receipt_for` option together with this
+branch's workspace-root isolation. `tests/state/fixtures/loop-semantics/characterization.json`
+was regenerated because the resolver source hash it pins changed; the diff is
+that single `source_sha256` line.
+
+Focused run: `bun test tests/mutation-guard.test.ts tests/effects/fleet-board.test.ts tests/state/cli-state-golden.test.ts tests/state/project-effective-state.test.ts tests/state/loop-semantics-characterization.test.ts --timeout 60000`
+→ 71 pass, 0 fail. `tsc --noEmit` clean. `check-task-workflow --strict` OK, so
+the earlier active-plan contract gate conflict no longer applies. The full suite
+runs once in PR CI; the earlier interrupted run is not reused as evidence.
