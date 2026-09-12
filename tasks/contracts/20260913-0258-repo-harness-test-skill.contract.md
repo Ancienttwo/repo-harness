@@ -10,7 +10,7 @@
 > **Review File**: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md`
 > **Notes File**: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:bd45a095751cbb40deeeb32be012d4e8d8891a5e78ed757166686d1156b972bd`
+> **Substantive Change SHA256**: `sha256:154c37ca27729c5767b183993a4d4fa0a07b98a53ef2f3de8a2ff806f6ec762b`
 
 ## Why
 

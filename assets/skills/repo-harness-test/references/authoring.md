@@ -119,6 +119,6 @@ the applicable existing mechanism for the selected test.
 
 CI runs every selected file in its own process (`BUN_TEST_ISOLATE_FILES=1`)
 through a bounded pool (`BUN_TEST_JOBS=4`) with `BUN_TEST_MAX_CONCURRENCY=1`
-(`.github/workflows/ci.yml:92-95`). Cross-file state is therefore never
-shared, and `test.concurrent` buys nothing there. Do not enable concurrency on
-tests sharing process-global state or one checkout.
+(`.github/workflows/ci.yml:92-95`). Process memory is isolated between files;
+`--max-concurrency=1` bounds in-file concurrent tests to one. External filesystem
+and HOME state still need fixture isolation.
