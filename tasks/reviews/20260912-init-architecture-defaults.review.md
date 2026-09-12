@@ -1,7 +1,7 @@
 # Init architecture and recommendation defaults
 
 > **Status**: Verified
-> **Substantive Change SHA256**: `sha256:0c6bd3999c90f3be6f7ad9b572837ad7bee50bee92f22ed7db8a01c735f2a991`
+> **Substantive Change SHA256**: `sha256:dda07c20fd3c188068afae2398575dc31bca66a9f5f7b33ad3ec90e4820e4a86`
 
 ## Scope and decision
 
@@ -72,9 +72,30 @@ defaults. Both cards were resolved through the canonical archive helper with
 the owning module/index and product spec as durable artifacts; the unrelated
 low-severity cards remain pending.
 
-The implementation and regression bytes are unchanged from `4527bfa5`, so its
-86-case test run, typecheck, and packed-entrypoint smoke remain valid evidence
-for those paths. Integration adds documentation and queue disposition only.
-Architecture freshness, strict workflow, and the hook/helper/reference-config
-projection checks were rerun, and this digest binds the complete PR comparison
-against `origin/main`, including the preserved WIP and archive artifacts.
+The product implementation bytes are unchanged from `4527bfa5`, so its
+configuration/Stop tests and packed-entrypoint smoke remain baseline evidence
+for those paths. The final integration delta also isolates the account homes of
+existing adoption/init fixtures. Architecture freshness, strict workflow,
+projection checks, typecheck, project inspection, and self-host init dry-run
+passed again. This digest binds the complete PR comparison against `origin/main`.
+
+## CI fixture isolation root cause
+
+- Symptom: PR run `34672256891` failed one fleet acquisition case and four
+  verify-sprint cases because automatic projection had no model authority.
+- Cause: the existing adoption CLI fixture isolated only `REPO_HARNESS_HOME`;
+  successful init now writes defaults under `HOME/.repo-harness/config.json`.
+  Several in-process init fixtures also inherited the account home.
+- Trigger: running adoption before fleet/helper fixtures in the same account
+  persisted automatic projection configuration across isolated test processes.
+- Proof: a disposable-account sequence reproduced all five failures after
+  adoption wrote the ambient configuration. After explicitly isolating both
+  home paths, the same sequence plus the complete init file passed with the
+  ambient configuration absent after every file. The adoption CLI case now
+  asserts that the automatic defaults are present in its own fixture home.
+
+The final focused sequence covers adoption (31), init (37), fleet acquisition
+(9), and the four previously failing helper cases (4): 81 passing tests. It
+changes no readiness gate or product assertion. Required hosted CI must still
+pass on the final pushed head before merge; the failed run is diagnostic
+baseline evidence, not acceptance.

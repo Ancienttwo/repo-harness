@@ -232,6 +232,7 @@ describe("init command", () => {
 
       const result = runInit({
         sourceRoot: source,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
@@ -299,6 +300,7 @@ describe("init command", () => {
 
       const result = runInit({
         sourceRoot: source,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
@@ -419,20 +421,14 @@ describe("init command", () => {
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
 
-      // Explicit env is required here, not decorative: for an npx cache source
-      // initCommandEnv() (src/cli/commands/init.ts) builds `{ ...(env ?? {}),
-      // AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" }`, so passing no env yields a
-      // command env holding only that key. REPO_HARNESS_HOME and HOME are both
-      // dropped and the registry write falls back to homedir() — the operator's
-      // real ~/.repo-harness. Spreading process.env keeps the isolated home
-      // installed by tests/preload-home-isolation.ts.
-      //
-      // The delete keeps this test deterministic: initCommandEnv() only forces
-      // the flag to "0" when it is undefined, so an ambient
-      // AGENTIC_DEV_LINK_INSTALLED_COPIES in the operator's shell would be passed
-      // straight through and the `sync link=0` assertion below would fail for a
-      // reason that has nothing to do with the code under test.
-      const childEnv = { ...process.env };
+      // Init writes account configuration as well as registry state, so both
+      // home authorities must stay inside this fixture. Remove the ambient
+      // link flag to exercise the npx default deterministically.
+      const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        HOME: join(tmp, "home"),
+        REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness"),
+      };
       delete childEnv.AGENTIC_DEV_LINK_INSTALLED_COPIES;
 
       const result = runInit({
@@ -1223,7 +1219,10 @@ describe("init cutover quiescence gate", () => {
       const { source, repo } = liveContractWorktreeRepo(tmp);
       expect(isCutoverInstalled(repo)).toBe(false);
 
-      const result = runInit({ repo, sourceRoot: source, ...initOptions });
+      const result = runInit({
+        repo, sourceRoot: source, ...initOptions,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
+      });
 
       expect(result.exitCode).toBe(1);
       const gate = result.steps.find((step) => step.step === "cutover quiescence");
@@ -1246,7 +1245,10 @@ describe("init cutover quiescence gate", () => {
       // The blockers are still live; the marker is what makes the gate inert.
       expect(inspectCutoverQuiescence(repo).quiescent).toBe(false);
 
-      const result = runInit({ repo, sourceRoot: source, ...initOptions });
+      const result = runInit({
+        repo, sourceRoot: source, ...initOptions,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
+      });
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "cutover quiescence")).toBeUndefined();

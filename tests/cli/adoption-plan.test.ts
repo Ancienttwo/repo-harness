@@ -528,9 +528,12 @@ describe("init command cutover", () => {
       const apply = spawnSync("bun", [CLI, "init", "--repo", repo, "--mode", "minimal", "--no-verify", "--no-codegraph", "--json"], {
         cwd: ROOT,
         encoding: "utf-8",
-        env: { ...process.env, REPO_HARNESS_HOME: home },
+        env: { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") },
       });
       expect(apply.status).toBe(0);
+      const config = JSON.parse(readFileSync(join(home, ".repo-harness", "config.json"), "utf8"));
+      expect(config.architecture.projection_apply).toBe("automatic");
+      expect(config.refactor_recommendations.enabled).toBe(true);
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       const retired = spawnSync("bun", [CLI, "init", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });
       expect(retired.status).toBe(1);
