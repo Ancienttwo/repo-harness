@@ -1,7 +1,7 @@
 # Init architecture and recommendation defaults
 
 > **Status**: Verified
-> **Substantive Change SHA256**: `sha256:c201afe677c13a69a8221121b7098c2c9488c74f05d713855bd6989a9ec39feb`
+> **Substantive Change SHA256**: `sha256:0c6bd3999c90f3be6f7ad9b572837ad7bee50bee92f22ed7db8a01c735f2a991`
 
 ## Scope and decision
 
@@ -55,8 +55,26 @@ module validation are outside this initialization change.
 
 ## Boundaries
 
-No operator global configuration, installed runtime, provider model, or
-publication was changed. Existing source-checkout WIP is excluded. Automatic
+No operator global configuration, installed runtime, or provider model was
+changed. Automatic
 document generation still requires a valid architecture model and provider;
 suggestions require complete code facts. This slice enables defaults and
 verifies existing hook delivery without authoring those facts.
+
+## Integration evidence
+
+The user subsequently authorized committing the source-checkout WIP and merging
+the branch. The WIP was preserved separately in `f7df7f19`. The two high-severity
+cards concerned repository policy and its seed in `scripts/ensure-task-workflow.sh`;
+both last changed in the already-merged global-authority cutover `9563083c`.
+The contract-assets module now documents that authority and the approved init
+defaults. Both cards were resolved through the canonical archive helper with
+the owning module/index and product spec as durable artifacts; the unrelated
+low-severity cards remain pending.
+
+The implementation and regression bytes are unchanged from `4527bfa5`, so its
+86-case test run, typecheck, and packed-entrypoint smoke remain valid evidence
+for those paths. Integration adds documentation and queue disposition only.
+Architecture freshness, strict workflow, and the hook/helper/reference-config
+projection checks were rerun, and this digest binds the complete PR comparison
+against `origin/main`, including the preserved WIP and archive artifacts.

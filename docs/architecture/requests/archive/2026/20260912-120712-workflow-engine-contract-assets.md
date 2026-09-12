@@ -1,6 +1,6 @@
 # Architecture Queue Card: workflow-engine-contract-assets
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-09-12T11:46:22+0800
 > **Updated**: 2026-09-12T11:46:22+0800
 > **Severity**: high
@@ -84,3 +84,12 @@
   }
 ]
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-09-12T12:07:13+0800
+- Artifacts:
+- `docs/spec.md`
+- `docs/architecture/modules/workflow-engine/contract-assets.md`
+- Note: The recorded policy-key removal is the already-merged global authority cutover in 9563083c. Its single global authority and the approved init defaults are now documented in the capability module and spec; the initialization and Stop verification record covers the current behavior.
