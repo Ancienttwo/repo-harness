@@ -1,11 +1,12 @@
 import * as issueStore from '../../src/effects/automation/issue-batch-store';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
-import { afterEach, expect, test, spyOn } from 'bun:test';
+import { afterAll, afterEach, expect, test, spyOn } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
 import { createAdoptionRepository, observeVerifiedFixtureRevision } from '../helpers/campaign-adoption-repository';
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { campaignBrowserMetadata } from '../helpers/campaign-browser-session';
 import { makeSnapshot } from '../helpers/issue-batch-adoption-fixture';
 import { sealProgramAuthorization } from '../../src/core/automation/budget';
@@ -24,9 +25,8 @@ import { canonicalMessageBytes, canonicalMessageDigest } from '../../src/core/me
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore','pipe','pipe'] }).trim();
-async function fixture(stop = true, usage: 'none' | 'open' | 'acquired' = 'none') {
+async function buildFixture(stop: boolean, usage: 'none' | 'open' | 'acquired') {
   const f = await createAdoptionRepository('active', 1, undefined, {}, {}, { verified_revision: true, max_agent_turns: 30, max_runner_invocations: 30 });
-  roots.push(f.root, f.home);
   const adopted = await adoptIssueBatch(f.input, f.deps);
   git(f.root, ['merge', '--ff-only', adopted.publication!.materialized_commit]);
   if (usage !== 'none') {
@@ -95,6 +95,13 @@ async function fixture(stop = true, usage: 'none' | 'open' | 'acquired' = 'none'
   const adoptionArtifacts = () => Object.fromEntries(readdirSync(join(issueBatchGroupStoreRoot(f.root, f.intent.campaign_id, 1), 'adoption'))
     .sort().map(name => [name, readFileSync(join(issueBatchGroupStoreRoot(f.root, f.intent.campaign_id, 1), 'adoption', name), 'utf8')]));
   return { ...f, adopted, resume, successor, failedSuccessor, readBinding, adoptionPath, adoptSuccessor, adoptionArtifacts };
+}
+const templates = fixtureTemplate(buildFixture);
+afterAll(() => templates.dispose());
+async function fixture(stop = true, usage: 'none' | 'open' | 'acquired' = 'none') {
+  const f = await templates.materialize(stop, usage);
+  roots.push(f.root, f.home);
+  return f;
 }
 
 test.each(['exact', 'replacement', 'partial'] as const)('stopped adopted source enforces %s Issue identities through real admission', async mode => {

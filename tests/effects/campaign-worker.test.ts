@@ -1,10 +1,11 @@
 import * as revisionAdmission from '../../src/effects/automation/campaign-revision-admission';
 import * as campaignRuntime from '../../src/effects/automation/campaign-runtime';
-import { afterEach, expect, test, spyOn } from 'bun:test';
+import { afterAll, afterEach, expect, test, spyOn } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { historicalPlanningFixture, installHistoricalBoundDispatch, installHistoricalAttempt, installHistoricalFinal } from '../helpers/historical-campaign-lifecycle';
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { ensureCampaignAuthoringBudget, readAutomationBudgetStatus, appendAutomationUsage, readAutomationUsageForResult } from '../../src/effects/automation/budget-store';
 import { bindCampaignWorker, createCampaignWorkerHandoff } from '../../src/effects/automation/campaign-worker';
 import { recoverCampaignDispatch } from '../../src/effects/automation/campaign-recovery';
@@ -18,9 +19,11 @@ import { campaignRuntimeRecordKey } from '../../src/core/automation/campaign-run
 import { campaignContainerDirectory } from '../../src/effects/automation/campaign-container';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })));
+afterAll(() => templates.dispose());
 async function acquired() {
-  const f = await historicalPlanningFixture(); roots.push(f.root, f.home);
+  const f = await templates.materialize(); roots.push(f.root, f.home);
   const result = installHistoricalBoundDispatch(f);
   return { ...f, result, worktree: result.envelope.worktree_path };
 }

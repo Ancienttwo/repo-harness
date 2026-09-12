@@ -1,5 +1,5 @@
 import { readTaskAutomationAttemptCurrent } from '../../src/effects/engineers/automation-attempt-store';
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { existsSync, rmSync, writeFileSync, readFileSync, mkdirSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { execFileSync, spawnSync } from 'child_process';
@@ -7,6 +7,7 @@ import { readPlanningRecord } from '../../src/effects/automation/campaign-planni
 import { campaignRuntimeRecordKey } from '../../src/core/automation/campaign-runtime';
 import { historicalPlanningFixture, installHistoricalBoundDispatch, installHistoricalAttempt, installHistoricalChild, installHistoricalFinal } from '../helpers/historical-campaign-lifecycle';
 import { prepareHistoricalCodexInvocation } from '../helpers/historical-campaign-lifecycle';
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { persistPlanningRecord } from '../../src/effects/automation/campaign-planning-store';
 import { bindCampaignWorker, readCompletedCampaignWorker } from '../../src/effects/automation/campaign-worker';
 import { retireCampaignDispatch, observeCampaignReclaimEligibility, recoverCampaignDispatch } from '../../src/effects/automation/campaign-recovery';
@@ -17,9 +18,11 @@ import { readClaimTokenForTask } from '../../src/effects/state/coordination-clai
 import { readClaimActorReceipt } from '../../src/effects/engineers/claim-actor-store';
 
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterAll(() => templates.dispose());
 async function acquired() {
-  const f = await historicalPlanningFixture(); roots.push(f.root, f.home);
+  const f = await templates.materialize(); roots.push(f.root, f.home);
   const result = installHistoricalBoundDispatch(f);
   if (!('worker_handoff' in result) || !result.worker_handoff || !result.envelope) throw new Error(JSON.stringify(result));
   roots.push(result.envelope.worktree_path);
