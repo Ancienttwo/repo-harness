@@ -12,8 +12,9 @@ bun test tests/skill-surface --timeout 60000
 ```
 
 `bun test` accepts files and directories. `package.json`'s `test` script is
-`bun test --timeout 60000`; `--timeout` is the only effective timeout knob,
-since `bunfig.toml` carries no timeout key.
+`bun test --timeout 60000`. Files may also use `setDefaultTimeout(ms)` or a
+per-test timeout argument (see `references/authoring.md`); `bunfig.toml` defines
+no timeout setting.
 
 When timing a file locally, redirect instead of piping. A pipe swallows the
 exit status, and a long silent pipe is what makes a background runner look
@@ -31,7 +32,7 @@ workflow use. With `BUN_TEST_ISOLATE_FILES=1` it runs one `bun test` per file
 and keeps going after a failure, then prints `[ci] failed test files (N):`.
 
 - `BUN_TEST_FILES` is a space-separated explicit list (lines 165-173); no path
-  may contain a space. Unset, it walks `find tests -name '*.test.ts'` sorted.
+  may contain a space. Unset, it discovers sorted `*.test.ts` and `*.test.tsx` files under `tests/`.
 - `BUN_TEST_JOBS` sets the bounded worker pool (151, 191). Each worker's log is
   replayed whole by the parent, so a file's `[ci] test <path>` header and its
   bun output stay contiguous.
@@ -86,8 +87,8 @@ m=t+0;if(t~/[0-9]s$/)m*=1000;printf "%9.0f ms  %s\n",m,f;f=""}' | sort -rn | hea
 
 ## Do not re-run what is already proven
 
-A full suite run is bound to a tree. In the same tree, an unchanged retry
-consumes the existing evidence instead of running again. After `main` moves
-under the branch, rebind the task-sync digest
-(`references/verification-plan.md`) rather than repeating the suite; the PR's
-own CI run is the final full pass for the merge candidate.
+Evidence reuse follows the canonical policy and its subject/environment
+checks. After a rebase, task-sync digest rebinding
+(`references/verification-plan.md`) repairs the workflow binding; it does not
+prove that the changed tree passed old tests. Preserve required PR and main-push
+CI gates, and select any local delta verification from the actual change.

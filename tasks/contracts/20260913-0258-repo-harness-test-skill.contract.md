@@ -10,7 +10,7 @@
 > **Review File**: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md`
 > **Notes File**: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
-> **Substantive Change SHA256**: `sha256:6712f5c9baa6b5ca2a864225aa224b15ddc1e5b9dc9ef309b1c514aaabed9f97`
+> **Substantive Change SHA256**: `sha256:bd45a095751cbb40deeeb32be012d4e8d8891a5e78ed757166686d1156b972bd`
 
 ## Why
 
@@ -27,7 +27,7 @@ gets written next to the first one.
 Ship `repo-harness-test` as a canonical skill package: a router `SKILL.md` under
 2048 bytes plus four references (`authoring`, `running`, `refactor-evidence`,
 `verification-plan`), registered once in `assets/skill-commands/manifest.json` as
-a `full`-profile facade so `repo-harness init` projects it to both hosts. Every
+a `full`-profile facade so the install/update host sync projects it to both hosts. Every
 technique claim in the references resolves to a real file, symbol, command, or
 merged PR on `origin/main`. The package restates no policy.
 
@@ -189,7 +189,9 @@ exit_criteria:
     {"id": "c-helpers", "kind": "command", "command": "bun run check:helpers", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "required repository integrity check for a substantive change", "inputs": {"env": []}},
     {"id": "c-architecture-sync", "kind": "command", "command": "bash scripts/check-architecture-sync.sh", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "required repository integrity check for a substantive change", "inputs": {"env": []}},
     {"id": "c-task-workflow", "kind": "command", "command": "bash scripts/check-task-workflow.sh --strict", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "plan/contract/review/notes artifact consistency for this work package", "inputs": {"env": []}},
-    {"id": "c-task-sync", "kind": "command", "command": "bash scripts/check-task-sync.sh", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "binds the task digest to the PR merge base the way CI will compute it", "inputs": {"env": ["REPO_HARNESS_DIFF_BASE", "REPO_HARNESS_DIFF_MODE"]}},
+    {"id": "c-task-sync", "kind": "command", "command": "REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "binds the task digest to the PR merge base the way CI will compute it", "inputs": {"env": []}},
+    {"id": "c-deploy-sql-order", "kind": "command", "command": "bash scripts/check-deploy-sql-order.sh", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "required repository integrity check", "inputs": {"env": []}},
+    {"id": "c-project-state", "kind": "command", "command": "bun scripts/inspect-project-state.ts --repo . --format text", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "required repository state inspection", "inputs": {"env": []}},
     {"id": "c-init-dry-run", "kind": "command", "command": "bun src/cli/index.ts init --repo . --dry-run", "cwd": ".", "phase": "verification", "cost": "normal", "evidence_policy": "current_exact", "necessity": "adoption planner still resolves against the changed catalog", "inputs": {"env": []}}
   ]
 }

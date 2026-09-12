@@ -9,8 +9,7 @@ downstream reads the parsed catalog rather than its own copy:
   (line 208) is what projects a package into an install profile, and it only
   considers `kind: "facade"`. A shipped, profile-projected skill therefore has
   to be a facade.
-- `src/cli/installer/install-profile.ts` and `src/cli/commands/init.ts` consume
-  the catalog for the install/projection path; `scripts/skill-surface-select.ts`
+- `src/cli/installer/install-profile.ts` consumes the catalog for install state; `scripts/skill-surface-select.ts`
   and `scripts/sync-codex-installed-copies.sh` consume it for host sync;
   `scripts/run-skill-routing-eval.ts` consumes it for discovery scoring.
 
@@ -82,7 +81,7 @@ Every technique claim resolves on `origin/main` at `e3b93f0f`:
 - clock forwarding: `observeIssueBatch`
   (`src/effects/automation/issue-batch-observer.ts:136`, fixed call at 151,
   PR #425 / `9ae4cb2b`) and `refreshExternalSource`
-  (`src/effects/external-sources/refresh.ts:64`, fixed call at 73, PR #427 /
+  (`src/effects/external-sources/refresh.ts:64`, fixed call at 78, PR #427 /
   `08634e13`). Both were the same defect against the same fetcher, surfaced by
   the `BUN_TEST_JOBS=4` pool added in #425.
 
@@ -102,6 +101,35 @@ Every technique claim resolves on `origin/main` at `e3b93f0f`:
   authoring source and a projection drift check.
 - `repo-harness init --repo . --dry-run` plans 0 operations in this checkout and
   warns that downstream init is not applicable to the repo-harness source
-  checkout, so it cannot show the new skill's projection operation here. The
-  projection path is covered by `tests/install-profiles.test.ts` and
-  `tests/installed-copy-sync.test.ts` instead.
+  checkout, and validates only the self-host adoption boundary. Public init disables host
+  skill sync even for a downstream repo; host projection is exercised through
+  `scripts/sync-codex-installed-copies.sh` separately.
+
+
+## Acceptance boundary decisions
+
+- Refactor recipes describe discovery, process isolation and performance
+  measurement options. The canonical policy and Verification Plan decide which
+  apply; matching test names cannot establish assertion preservation.
+- The in-process CLI helper is documented against its tested chatgpt terminal
+  output/exit boundary. Other commands need a separately established completion
+  contract before reuse.
+- Public init is repo-local adoption. Host skill installation is the
+  install/update sync script's boundary, tested separately in an isolated HOME.
+- The declared repository integrity checks include deploy SQL ordering and
+  project-state inspection in addition to the original plan's checks.
+
+
+## Boundary readback
+
+A disposable HOME and downstream Git repo exercised both boundaries with the
+candidate source. `init --dry-run --json` planned 103 repo-local operations;
+`init --no-codegraph --no-verify --json` applied successfully and materialized
+`.ai/harness/policy.json`. Host synchronization in copy mode excluded the skill
+under `minimal`; under `full`, all five package files in both Claude and Codex
+skill roots matched the source byte-for-byte. This is source-entrypoint smoke,
+not a packed-release installation or external dependency verification.
+
+The original contract incorrectly declared harness-internal diff variables as
+`inputs.env`, which the Verification Plan validator rejects. Its task-sync
+command now carries the explicit PR diff boundary, with no such input fields.

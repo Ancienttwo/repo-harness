@@ -1,45 +1,40 @@
-# Evidence a test refactor owes
+# Test-refactor evidence techniques
 
-Moving, splitting, merging, or deleting tests changes the oracle. Policy
-requires mapping a deleted test's assertions to retained coverage and reporting
-discovery and preservation
-(`docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`).
-These three artifacts are what that looks like in this repository, and they are
-fixed sections in the task's `tasks/notes/<plan-stem>.notes.md`.
+`docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`
+owns coverage selection and artifact requirements; the contract's Verification
+Plan selects executions. The recipes below support different evidence needs.
+They do not require every refactor to run all recipes or create a notes file.
 
-## 1. Test-name multiset, before and after
+## Compare discovered test names
 
-Bun's JUnit reporter names every case, so a refactor that preserves behavior
-preserves the multiset of `<testcase name=...>` values over the affected set.
-
-Capture the baseline on the unmodified tree, the candidate after the change,
-over the same file set:
+Bun's JUnit reporter exposes `<testcase name=...>` values. For a move or split
+that retains test names, compare their multiset over the corresponding affected
+files before and after. This detects discovery loss; equal names do not prove
+that assertions, fixtures, or behavior stayed intact. Read the assertion diff
+and map any deleted assertions to retained coverage separately.
 
 ```bash
-bun test --reporter=junit --reporter-outfile=/tmp/before.xml --timeout 180000 <files>
+bun test --reporter=junit --reporter-outfile=/tmp/before.xml --timeout 180000 <baseline-files>
 grep -o '<testcase name="[^"]*"' /tmp/before.xml | sort > /tmp/before.names
 ```
 
-Repeat into `/tmp/after.{xml,names}` and diff:
+Capture the candidate over its corresponding files into `/tmp/after.xml`, then
+extract `/tmp/after.names` with the same command:
 
 ```bash
-diff /tmp/before.names /tmp/after.names && echo "identical name multiset"
+diff /tmp/before.names /tmp/after.names
 wc -l /tmp/before.names /tmp/after.names
 ```
 
-Use `sort` without `-u`: a duplicate name is itself a finding. Record the case
-and file counts in the notes. PR #420 is the worked example: splitting a
-7257-line file into twenty-two script-owned files, with 155 relocated cases, is
-recorded as "470 cases across 42 files with an identical set of test names".
+`sort` without `-u` preserves multiplicity: duplicate display names can be
+legitimate, and deduplicating them would hide a lost occurrence. Account for
+renamed or parameterized cases when interpreting a delta. PR #420 used this
+method to check discovery while splitting `tests/helper-scripts.test.ts`.
 
-A name that must change (a renamed boundary, a parameterized input) is listed
-explicitly in the notes with its before/after pair. An unexplained delta means
-a case was lost.
+## Check an isolation boundary
 
-## 2. Isolation cross-check
-
-Run the affected set twice: once with every file in its own process, once with
-the whole set in a single process.
+When a change affects process-global fixtures or cross-file dependencies, the
+existing runner can compare isolated files with a shared Bun process:
 
 ```bash
 BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=4 BUN_TEST_FILES="<files>" \
@@ -47,30 +42,26 @@ BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=4 BUN_TEST_FILES="<files>" \
 bun test --timeout 180000 <files> > /tmp/shared.log 2>&1
 ```
 
-Both must pass. Isolated-only success means the refactor introduced shared
-process state; shared-only success means a case depends on another file having
-run first. CI runs the isolated shape
-(`.github/workflows/ci.yml:92-95`), so isolated failure is the blocking one,
-but record both.
+CI uses the isolated shape (`.github/workflows/ci.yml:92-95`). A difference
+between these runs is a diagnostic lead: investigate shared state, ordering,
+or contention before assigning a cause. Select this comparison when that
+boundary is relevant; do not add two runs solely to fill an evidence template.
 
-## 3. Before/after duration table
+## Measure a performance claim
 
-A refactor justified by speed states measured numbers, not a claim. Two
-sources, both recorded in the notes:
-
-- Local paired measurement: the same files, same machine, same `--timeout`,
-  before and after, one line per file.
-- CI per-file durations extracted from a completed run on each side, using the
-  `gh run view --log` recipe in `references/running.md`.
+For a claimed speed improvement, paired runs of the affected files on the same
+machine can compare duration with matching runtime, flags, and fixture inputs.
+The completed CI log recipe in `references/running.md` provides another view
+when hosted cost is the question. These are measurement options, not a
+requirement to rerun CI or collect both sources for every refactor.
 
 Separate fixture construction, subprocess time, and intentional waiting when
-attributing the change. Deduplicating wrapper source is a maintenance
-improvement; fewer actual spawns, copies, or installs is a separate claim that
-needs its own measurement.
+attributing a measured change. Deduplicating wrapper source alone demonstrates
+a maintenance change, not a runtime reduction.
 
-## What goes in the notes
+## Record the evidence selected for the task
 
-One section per artifact above, in that order: the name-multiset diff result
-with case/file counts and any explained renames; the two isolation runs with
-their outcomes; the duration table with its two sources. A refactor reported
-without all three is incomplete, whatever the suite says.
+Use the existing task artifact selected by policy. Link execution results with
+their subject and environment, explain discovery or assertion changes, and
+include measured durations when making a speed claim. Artifact admission and
+completion remain owned by the canonical policy and contract.

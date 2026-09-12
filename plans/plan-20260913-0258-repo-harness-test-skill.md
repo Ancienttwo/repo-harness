@@ -112,8 +112,10 @@ See captured planning output.
   `## Testing Policy and Artifact Standards` (authoring source `assets/reference-configs/sprint-contracts.md`).
 
 ## P2 Trace
-- `repo-harness init` -> `install-profile.ts` -> `parseSkillSurfaceCatalog(manifest)` -> facade projection into
-  `~/.claude/skills/<name>` and `~/.codex/skills/<name>` for every profile listing the package.
+- `repo-harness install` / `update` -> `sync-codex-installed-copies.sh` ->
+  `skill-surface-select.ts` -> `parseSkillSurfaceCatalog(manifest)` -> facade projection into
+  `~/.claude/skills/<name>` and `~/.codex/skills/<name>` for the selected profile.
+  Public `init` handles repo-local adoption and disables host skill sync.
 - Several tests pin the shipped surface as an exact set derived from that one manifest: they are the drift
   checks between the manifest and the declared surface, and each gains the new package name.
 
@@ -126,13 +128,13 @@ See captured planning output.
 - No new authority, no second policy, no runtime validator.
 
 ## Task Breakdown
-- [ ] Author `assets/skills/repo-harness-test/SKILL.md` (<= 2048 bytes) plus four references.
-- [ ] Register the package in `assets/skill-commands/manifest.json` and its `expectedProjections`.
-- [ ] Add the package name to the manifest-derived surface inventories in
+- [x] Author `assets/skills/repo-harness-test/SKILL.md` (<= 2048 bytes) plus four references.
+- [x] Register the package in `assets/skill-commands/manifest.json` and its `expectedProjections`.
+- [x] Add the package name to the manifest-derived surface inventories in
       `tests/skill-surface/catalog.test.ts`, `tests/skill-surface/canonical-packages.test.ts`,
       `tests/action-command-skills.test.ts`, `tests/skill-routing-eval.test.ts`.
-- [ ] Add one routing row to `assets/reference-configs/agentic-development-flow.md` and sync the projection.
-- [ ] Run the verification plan.
+- [x] Add one routing row to `assets/reference-configs/agentic-development-flow.md` and sync the projection.
+- [x] Run the verification plan.
 
 ## Verification Plan
 - `bun test tests/skill-surface tests/action-command-skills.test.ts tests/skill-routing-eval.test.ts tests/readme-dx.test.ts tests/install-profiles.test.ts tests/installed-copy-sync.test.ts`
@@ -148,8 +150,8 @@ Revert branch `codex/repo-harness-test-skill`.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Author `assets/skills/repo-harness-test/SKILL.md` (<= 2048 bytes) plus four references.
-- [ ] Register the package in `assets/skill-commands/manifest.json` and its `expectedProjections`.
-- [ ] Add the package name to the manifest-derived surface inventories in
-- [ ] Add one routing row to `assets/reference-configs/agentic-development-flow.md` and sync the projection.
-- [ ] Run the verification plan.
+- [x] Author `assets/skills/repo-harness-test/SKILL.md` (<= 2048 bytes) plus four references.
+- [x] Register the package in `assets/skill-commands/manifest.json` and its `expectedProjections`.
+- [x] Add the package name to the manifest-derived surface inventories in
+- [x] Add one routing row to `assets/reference-configs/agentic-development-flow.md` and sync the projection.
+- [x] Run the verification plan.
