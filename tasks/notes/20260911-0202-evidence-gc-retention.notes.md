@@ -104,4 +104,4 @@ of the `check:hooks` / `check:helpers` family and was missing from the root
 `Required Checks` block; it is now listed there in both `CLAUDE.md` and
 `AGENTS.md`.
 
-> **Substantive Change SHA256**: `sha256:9ca9180d9fe3216e4eb50bb3701040326130a5e5f76577bbbc5932918d31ae60`
+> **Substantive Change SHA256**: `sha256:80dd845324279a2cb1ce1620525c6d7bc058d79f884a67f1c66cc14e315d9539`

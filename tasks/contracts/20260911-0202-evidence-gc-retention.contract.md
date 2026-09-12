@@ -34,9 +34,11 @@ Bound Stop run-summary growth at the writer, and give operators one command that
 reclaims obsolete evidence in a repo the Stop path can no longer heal.
 
 1. `src/effects/run-summary-retention.ts` owns one retention policy: delete only
-   records carrying Stop's own `reason: "session-stop"` marker, keeping the
-   newest `RUN_SUMMARY_RETENTION_COUNT` by mtime. Every other shape in the
-   directory belongs to its own owner and is never a candidate.
+   records with the run-summary shape -- a non-empty `run_id` plus string
+   `checks_file`, `handoff_file`, `policy_file`, and `context_map_file` -- keeping
+   the newest `RUN_SUMMARY_RETENTION_COUNT` by mtime. The discriminator is the
+   shape, not `reason`: that field is free-form operator text. Every other shape
+   in the directory belongs to its own owner and is never a candidate.
 2. `stop-handler.ts` applies that sweep after its own run-summary write, fail-open
    so a sweep fault never fails Stop.
 3. `repo-harness run evidence-gc [--dry-run] [--repo <path>]` applies the same
@@ -53,7 +55,9 @@ reclaims obsolete evidence in a repo the Stop path can no longer heal.
   `assets/reference-configs/`. Also `workflow_write_run_summary`'s jq-less
   branch in `assets/hooks/lib/workflow-state.sh`: it writes the same record this
   contract now identifies by shape, and its short fallback would make every
-  jq-less host's summaries permanently unreclaimable.
+  jq-less host's summaries permanently unreclaimable. Also the root `CLAUDE.md`
+  and `AGENTS.md` `Required Checks` block, which omitted `check:reference-configs`
+  -- the third member of the projection-drift family this contract trips.
 - Out of scope: `src/effects/hook-event-log.ts` retention constants. The 256 MB /
   32-segment archive cap is already bounded and works as designed; the operator
   decided this round not to change it. Also out of scope: any change to the
@@ -71,16 +75,28 @@ reclaims obsolete evidence in a repo the Stop path can no longer heal.
 
 ## Falsifier
 
-The direction is wrong if any file in `harness.runs_dir` that a reader depends on
-can carry Stop's `reason: "session-stop"` marker, or if Stop's own summaries can
-lack it. Cheapest proof point: grep every `runs_dir` / `run_file` consumer in
-`src/` and `scripts/`, and for each writer confirm the record shape it emits.
+The direction is wrong if a file in `harness.runs_dir` that some reader depends
+on can carry the run-summary shape, or if a genuine run summary can lack one of
+its four path fields and so become permanently unreclaimable. Cheapest proof
+point: enumerate every writer into `runs_dir` across `src/`, `scripts/`, and
+`assets/hooks/`, and for each one read the record shape it emits on every branch.
 
-Executed. Three writers: `stop-handler.ts:467` (marker present, disposable),
-`verify-sprint.sh:1009` (`schema: repo-harness-run-trace.v1`, read back at
-finalization), and `verification-execution.ts:919-921` (`kind:
-verification_execution_record`, ledger-bound by sha256, read at
-`readValidRunResult:507-510`). Only the first carries the marker.
+Executed. Four writers of a `${runId}.json`-style record:
+
+- `stop-handler.ts:470-482` -- the disposable run summary, all eleven fields.
+- `workflow_write_run_summary` (`assets/hooks/lib/workflow-state.sh:1314`) --
+  the same eleven fields and the larger producer by volume. Its jq-less branch
+  emitted only five; this contract fixes that, because a short branch would make
+  every jq-less host's summaries permanently unreclaimable.
+- `verify-sprint.sh:1009` -- `schema: repo-harness-run-trace.v1`, read back at
+  finalization (`:913-937`). Carries `run_id`, none of the four path fields.
+- `verification-execution.ts:919-921` -- `kind: verification_execution_record`,
+  ledger-bound by sha256, read at `readValidRunResult:507-510`. No `run_id` at
+  all, so the discriminator rejects it on its first test.
+
+Operator reports in the same directory carry neither `run_id` nor the path
+fields. Measured on this repository's live directory: 5898 run summaries, 33
+verify-sprint traces, 12 operator reports, zero partial-shape records.
 
 ## Root Cause Evidence
 
@@ -131,8 +147,13 @@ allowed_paths:
   - scripts/
   - assets/workflow-contract.v1.json
   - assets/templates/helpers/
+  - assets/hooks/
+  - assets/reference-configs/
+  - .ai/hooks/
   - .ai/harness/workflow-contract.json
   - docs/
+  - CLAUDE.md
+  - AGENTS.md
 ```
 
 ## Evidence Requirements

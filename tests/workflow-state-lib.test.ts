@@ -668,6 +668,7 @@ describe("run summary shape is one authoring contract", () => {
 
   function writeRunSummary(withJq: boolean): Record<string, unknown> {
     const cwd = mkdtempSync(join(tmpdir(), "run-summary-shape-"));
+    let bin: string | null = null;
     try {
       mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
       writeFileSync(join(cwd, ".ai/harness/policy.json"), "{}\n");
@@ -676,7 +677,7 @@ describe("run summary shape is one authoring contract", () => {
       if (!withJq) {
         // A PATH holding only the coreutils the fallback branch needs proves
         // the branch actually runs, instead of silently taking the jq path.
-        const bin = mkdtempSync(join(tmpdir(), "run-summary-bin-"));
+        bin = mkdtempSync(join(tmpdir(), "run-summary-bin-"));
         for (const tool of ["date", "cat", "mkdir", "rm", "dirname", "basename", "sed", "grep", "awk", "head", "tail", "printf", "ls", "tr", "id", "uname", "mktemp", "stat", "sort", "find", "wc"]) {
           const resolved = spawnSync("command", ["-v", tool], { shell: true, encoding: "utf-8" }).stdout.trim();
           if (resolved) symlinkSync(resolved, join(bin, tool));
@@ -697,6 +698,7 @@ describe("run summary shape is one authoring contract", () => {
       return JSON.parse(readFileSync(join(cwd, ".ai/harness/runs", files[0]!), "utf-8")) as Record<string, unknown>;
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+      if (bin) rmSync(bin, { recursive: true, force: true });
     }
   }
 

@@ -131,8 +131,8 @@ registry with `bun test` and `repo-harness init --repo . --dry-run`.
 
 ## Evidence Retention
 
-`.ai/harness/runs/` has four record writers plus assorted operator reports, and
-only one shape is disposable history:
+`.ai/harness/runs/` holds four record shapes from five writers, and only one of
+them is disposable history:
 
 | File | Writer | Retention owner |
 | --- | --- | --- |
@@ -146,7 +146,8 @@ Evidence checkpoints under `.ai/harness/evidence/checkpoints/` are owned by
 `checkpoint-store.ts`, which keeps only the checkpoint the published marker
 names and prunes inside every successful publish.
 
-The two unowned classes are durable evidence, not leaks. A frozen acceptance
+The three unowned rows are not leaks. Operator reports own their own files; the
+other two are durable evidence. A frozen acceptance
 snapshot shares Stop's `run-` prefix, and a missing verification record makes
 `readValidRunResult` report an absent baseline, which fails a
 `baseline_with_delta` criterion permanently because a rerun only mints a new
