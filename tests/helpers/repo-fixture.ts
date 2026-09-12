@@ -42,36 +42,75 @@ export interface FixtureWorkspace {
   readonly home: string;
 }
 
+export interface FixtureTemplate<A extends readonly unknown[], R> {
+  materialize(...args: A): R;
+  dispose(): void;
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return typeof (value as { then?: unknown } | null | undefined)?.then === "function";
+}
+
 /**
  * Build an expensive repository fixture once per distinct argument list and give
  * every later caller a pristine materialization of it.
  *
- * The snapshot is restored into the original `root` and `home`, never copied to a
- * fresh path: `repoHarnessRepoIdFor` hashes the repository root verbatim, so the
- * sealed authorization, registry entry, campaign intent and publication recorded
- * inside a fixture are all bound to that exact path. Restoring in place therefore
- * keeps the returned value valid while giving each caller unshared bytes, which is
- * the same isolation a rebuild provides.
+ * The snapshot is restored into the workspace directories the fixture already
+ * owns, never copied to a fresh path: `repoHarnessRepoIdFor` hashes the
+ * repository root verbatim, so the sealed authorization, registry entry,
+ * campaign intent and publication recorded inside a fixture are all bound to
+ * that exact path. Restoring in place therefore keeps the returned value valid
+ * while giving each caller unshared bytes, which is the same isolation a rebuild
+ * provides.
+ *
+ * `materialize` mirrors the builder: a synchronous builder keeps a synchronous
+ * call site, because a fixture whose consumers are synchronous must not force
+ * every test body to become async just to reach the cache. `workspacePaths`
+ * names the directories to snapshot when the fixture does not use the
+ * `{ root, home }` shape.
  */
-export function fixtureTemplate<A extends readonly unknown[], T extends FixtureWorkspace>(build: (...args: A) => Promise<T>) {
-  const templates = new Map<string, { readonly value: T; readonly store: string }>();
+export function fixtureTemplate<A extends readonly unknown[], T extends FixtureWorkspace>(
+  build: (...args: A) => Promise<T>,
+): FixtureTemplate<A, Promise<T>>;
+export function fixtureTemplate<A extends readonly unknown[], T extends object>(
+  build: (...args: A) => T,
+  workspacePaths: (value: T) => readonly string[],
+): FixtureTemplate<A, T>;
+export function fixtureTemplate(
+  build: (...args: never[]) => unknown,
+  workspacePaths?: (value: never) => readonly string[],
+): FixtureTemplate<never[], unknown> {
+  const select = (workspacePaths ?? ((value: FixtureWorkspace) => [value.root, value.home])) as (value: unknown) => readonly string[];
+  const templates = new Map<string, { readonly value: unknown; readonly store: string; readonly asynchronous: boolean }>();
+  const capture = (value: unknown): string => {
+    const paths = select(value);
+    const store = tmpWorkspaceIn(dirname(paths[0]!), "fixture-template");
+    paths.forEach((path, index) => cpSync(path, join(store, `${index}`), { recursive: true, verbatimSymlinks: true }));
+    return store;
+  };
+  const restore = (entry: { readonly value: unknown; readonly store: string }): void => {
+    select(entry.value).forEach((path, index) => {
+      rmSync(path, { recursive: true, force: true });
+      cpSync(join(entry.store, `${index}`), path, { recursive: true, verbatimSymlinks: true });
+    });
+  };
   return {
-    async materialize(...args: A): Promise<T> {
+    materialize(...args: never[]): unknown {
       const key = JSON.stringify(args);
       const cached = templates.get(key);
       if (cached) {
-        for (const [name, path] of [["root", cached.value.root], ["home", cached.value.home]] as const) {
-          rmSync(path, { recursive: true, force: true });
-          cpSync(join(cached.store, name), path, { recursive: true, verbatimSymlinks: true });
-        }
-        return cached.value;
+        restore(cached);
+        return cached.asynchronous ? Promise.resolve(cached.value) : cached.value;
       }
-      const value = await build(...args);
-      const store = tmpWorkspaceIn(dirname(value.root), "fixture-template");
-      cpSync(value.root, join(store, "root"), { recursive: true, verbatimSymlinks: true });
-      cpSync(value.home, join(store, "home"), { recursive: true, verbatimSymlinks: true });
-      templates.set(key, { value, store });
-      return value;
+      const built = build(...args);
+      if (isThenable(built)) {
+        return Promise.resolve(built).then((value) => {
+          templates.set(key, { value, store: capture(value), asynchronous: true });
+          return value;
+        });
+      }
+      templates.set(key, { value: built, store: capture(built), asynchronous: false });
+      return built;
     },
     dispose(): void {
       for (const { store } of templates.values()) rmSync(store, { recursive: true, force: true });

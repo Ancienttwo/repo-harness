@@ -8,7 +8,7 @@
  * three invariants that make the boundary safe: one visible commit, one
  * `WorkerResultV1`, and no duplicated signal.
  */
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -72,11 +72,34 @@ import {
   type CollaborationDelegationFixture,
 } from '../helpers/collaboration-delegation-fixture';
 import { deliveryPlaneDigest, removeFixtureRoots } from '../helpers/collaboration-store-fixture';
+import { fixtureTemplate } from '../helpers/repo-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
 
+/**
+ * The delegation fixture is built once for this file and restored per test. Its
+ * cost is a git repository plus a real CLI child process that records the
+ * capability receipt, and every test here starts from the same shape.
+ *
+ * The builder's own `roots` argument is discarded because the template, not the
+ * builder, decides when a workspace exists: on a cache hit the builder never
+ * runs, so `delegationFixture()` is the single place that registers the two
+ * directories for `afterEach` removal.
+ */
+const templates = fixtureTemplate(
+  (mode: string) => createCollaborationDelegationFixture(sourceRoot, [], mode),
+  (value) => [value.repoRoot, value.home],
+);
+
+function delegationFixture(mode = 'shadow'): CollaborationDelegationFixture {
+  const value = templates.materialize(mode);
+  roots.push(value.repoRoot, value.home);
+  return value;
+}
+
 afterEach(() => removeFixtureRoots(roots));
+afterAll(() => templates.dispose());
 
 const PROTECTED_PATHS = [
   'common:.repo-harness-read-only-canary-common',
@@ -137,7 +160,7 @@ function completedRun(stdout: string, mode: string | null = 'shadow'): {
   readonly value: CollaborationDelegationFixture;
   readonly dispatchId: string;
 } {
-  const value = createCollaborationDelegationFixture(sourceRoot, roots, mode ?? 'shadow');
+  const value = delegationFixture(mode ?? 'shadow');
   setWorkerStdout(value.repoRoot, stdout);
   const participant = delegationParticipant(value, 0);
   const admitted = admitCollaborationDelegation({
@@ -419,7 +442,7 @@ describe('C4 contribution collector', () => {
   }, 120_000);
 
   test('the collector refuses a run that has not completed', () => {
-    const value = createCollaborationDelegationFixture(sourceRoot, roots);
+    const value = delegationFixture();
     setWorkerStdout(value.repoRoot, framed(draftPayload()));
     const participant = delegationParticipant(value, 0);
     const admitted = admitCollaborationDelegation({
