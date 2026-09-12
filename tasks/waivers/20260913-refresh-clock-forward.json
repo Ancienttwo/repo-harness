@@ -1,0 +1,12 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:8f2e97c454b4873ee3340d0249b4d4a203ace69a09ab2389f0368016dc887302",
+  "reason": "refreshExternalSource now forwards its injected clock to fetchGithubIssues, so the fetch deadline and the receipt/observation timestamps are measured on one clock instead of racing a fixture clock against wall time; the refresh fixture's deadline_ms is raised to 60000 so the test's one-second tick clock stays consistent with the deadline it now drives, and a new case proves the deadline is measured on the injected clock. This is the sibling of the observer fix in #425. Lite-profile slice reviewed and approved by the owner; no plan or contract carrier exists.",
+  "owner": "ancienttwo",
+  "scope": [
+    "src/effects/external-sources/refresh.ts",
+    "tests/effects/external-source-github.test.ts"
+  ],
+  "revisit_trigger": "A new caller of fetchGithubIssues appears, or its clock parameter changes shape"
+}
