@@ -14,6 +14,15 @@ import { verifyAcceptance } from '../scripts/acceptance-receipt';
 import { emptyVerificationEvaluation, withEmptyVerificationPlan } from './helpers/verification-plan-fixture';
 import { reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewRequest } from '../src/core/review/claude-review';
 
+// Every case in this file drives the real pinned `herdr` binary (sentinel
+// servers, `Bun.which('herdr')` session metadata) plus a spawned fake provider
+// child, so the whole file belongs to the release lane (`scripts/check-ci.sh`
+// with no lane argument). Same gate variable as
+// tests/harness-benchmark-matrix.test.ts.
+const releaseLaneOnly = test.skipIf(!process.env.REPO_HARNESS_TEST_EXPENSIVE);
+if (!process.env.REPO_HARNESS_TEST_EXPENSIVE) {
+  console.log('[gate] REPO_HARNESS_TEST_EXPENSIVE unset: skipping the real herdr review session cases (release lane only, not a failure).');
+}
 const fixtures: { root: string; home: string }[] = [];
 const sentinels: {name:string; process:ChildProcess; root:string; configPath:string}[] = [];
 async function sentinelServer() {
@@ -89,7 +98,7 @@ function fixture(mode = 'normal') {
     timeoutMs: 5000, admitSession: () => { admissions++; } }, admissions: () => admissions };
 }
 
-test('same child/session performs two rounds, records real receipt, rejects stale/duplicate subjects and closes precisely', async () => {
+releaseLaneOnly('same child/session performs two rounds, records real receipt, rejects stale/duplicate subjects and closes precisely', async () => {
   const f = fixture();
   const sentinel = await sentinelServer();
   const before = sentinel.identity();
@@ -113,7 +122,7 @@ test('same child/session performs two rounds, records real receipt, rejects stal
   expect(sentinel.identity()).toEqual(before);
 }, 30_000);
 
-test('stale source while reviewer runs cannot write an acceptance receipt or trigger replay', async () => {
+releaseLaneOnly('stale source while reviewer runs cannot write an acceptance receipt or trigger replay', async () => {
   const f = fixture('stale');
   await expect(runClaudeReviewRound(f.options)).rejects.toThrow('stale');
   prepare(f.root);
@@ -123,7 +132,7 @@ test('stale source while reviewer runs cannot write an acceptance receipt or tri
   expect(existsSync(join(dir, 'accepted-1.json'))).toBe(false);
 }, 20_000);
 
-test('explicit cancel cleans the exact detached provider after its host dies', async () => {
+releaseLaneOnly('explicit cancel cleans the exact detached provider after its host dies', async () => {
   const f = fixture();
   const first = await runClaudeReviewRound(f.options);
   const status = claudeReviewStatus(f.root, contract) as { processes: { host: string } };
@@ -135,7 +144,7 @@ test('explicit cancel cleans the exact detached provider after its host dies', a
   expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
 }, 20_000);
 
-test.each(['wrong-session', 'wrong-subject', 'conflicting-pass', 'crash', 'hang'])('%s fails closed; explicit cancel remains available', async mode => {
+releaseLaneOnly.each(['wrong-session', 'wrong-subject', 'conflicting-pass', 'crash', 'hang'])('%s fails closed; explicit cancel remains available', async mode => {
   const f = fixture(mode);
   f.options.timeoutMs = 400;
   await expect(runClaudeReviewRound(f.options)).rejects.toThrow();
@@ -146,7 +155,7 @@ test.each(['wrong-session', 'wrong-subject', 'conflicting-pass', 'crash', 'hang'
   expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
 }, 20_000);
 
-test('concurrent submission is refused without sending a second provider turn', async () => {
+releaseLaneOnly('concurrent submission is refused without sending a second provider turn', async () => {
   const f = fixture('slow');
   const running = runClaudeReviewRound(f.options);
   await Bun.sleep(50);
@@ -158,7 +167,7 @@ test('concurrent submission is refused without sending a second provider turn', 
 }, 20_000);
 
 
-test('a continuation must account for prior findings and cannot be replayed after omission', async () => {
+releaseLaneOnly('a continuation must account for prior findings and cannot be replayed after omission', async () => {
   const f = fixture('omit-finding');
   await runClaudeReviewRound(f.options);
   writeFileSync(join(f.root, 'source.ts'), 'export const value = 2;\n'); prepare(f.root);
@@ -167,7 +176,7 @@ test('a continuation must account for prior findings and cannot be replayed afte
   expect(existsSync(join(reviewSessionLocation(f.root, contract).dir, 'accepted-2.json'))).toBe(false);
 }, 20_000);
 
-test('three rounds share one admission and a fourth changed subject is refused', async () => {
+releaseLaneOnly('three rounds share one admission and a fourth changed subject is refused', async () => {
   const f = fixture();
   const first = await runClaudeReviewRound(f.options);
   for (let round = 2; round <= 3; round++) {
@@ -183,7 +192,7 @@ test('three rounds share one admission and a fourth changed subject is refused',
 }, 20_000);
 
 
-test('schema enums reject array coercion instead of accepting malformed provider data', () => {
+releaseLaneOnly('schema enums reject array coercion instead of accepting malformed provider data', () => {
   const context = { contract_file: contract, contract_sha256: 'contract', goal_sha256: 'goal', subject_sha256: 'subject', verification_evidence_sha256: 'evidence', target_revision: 'target' };
   const request: ClaudeReviewRequest = { round: 1, round_id: 'round', session_id: 'session', context, context_sha256: reviewContextDigest(context), prompt: '', timeout_ms: 1 };
   const output = { round_id: request.round_id, session_id: request.session_id, subject_sha256: context.subject_sha256, context_sha256: request.context_sha256, verdict: 'FAIL', summary: 'Review', findings: [{ id: 'F1', severity: 'P1', status: 'new', message: 'Evidence' }] };
@@ -199,7 +208,7 @@ test('schema enums reject array coercion instead of accepting malformed provider
   }
 });
 
-test('startup spawn failure can be cancelled without process metadata or acceptance', async () => {
+releaseLaneOnly('startup spawn failure can be cancelled without process metadata or acceptance', async () => {
   const f = fixture();
   chmodSync(f.options.providerCommand, 0o600);
   await expect(runClaudeReviewRound(f.options)).rejects.toThrow();
@@ -225,7 +234,7 @@ function unstartedSession() {
   return { ...f, ...location, session };
 }
 
-test('pre-spawn cancel fences a delayed host under real herdr and preserves a sentinel', async () => {
+releaseLaneOnly('pre-spawn cancel fences a delayed host under real herdr and preserves a sentinel', async () => {
   const f = unstartedSession();
   const sentinel = await sentinelServer();
   const before = sentinel.identity();
@@ -248,7 +257,7 @@ test('pre-spawn cancel fences a delayed host under real herdr and preserves a se
   expect(sentinel.identity()).toEqual(before);
 }, 10_000);
 
-test('failed server metadata publication reaps its owned herdr child', async () => {
+releaseLaneOnly('failed server metadata publication reaps its owned herdr child', async () => {
   const f = unstartedSession();
   // A dangling entry survives existsSync but refuses immutable publication.
   symlinkSync(join(f.dir, 'absent-target'), join(f.dir, 'server.json'));
@@ -260,7 +269,7 @@ test('failed server metadata publication reaps its owned herdr child', async () 
   expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
 });
 
-test('ambiguous server startup cannot report successful closure', async () => {
+releaseLaneOnly('ambiguous server startup cannot report successful closure', async () => {
   const f = unstartedSession();
   writeFileSync(join(f.dir, 'server-start-intent.json'), JSON.stringify({ session_id: f.session.session_id }));
   await expect(closeClaudeReview(f.options, true)).rejects.toThrow('server_startup_ownership_unknown');
@@ -271,7 +280,7 @@ test('ambiguous server startup cannot report successful closure', async () => {
   expect(claudeReviewStatus(f.root, contract).status).toBe('cleanup_pending');
 });
 
-test('pre-metadata cancel refuses ambiguous spawn intent and mismatched no-child proof', async () => {
+releaseLaneOnly('pre-metadata cancel refuses ambiguous spawn intent and mismatched no-child proof', async () => {
   const f = unstartedSession();
   writeFileSync(join(f.dir, 'spawn-intent.json'), JSON.stringify({ session_id: f.session.session_id }));
   await expect(closeClaudeReview(f.options, true)).rejects.toThrow('startup_ownership_unknown');
@@ -282,7 +291,7 @@ test('pre-metadata cancel refuses ambiguous spawn intent and mismatched no-child
 });
 
 
-test('pre-metadata cancel refuses sessions without recorded startup serialization', async () => {
+releaseLaneOnly('pre-metadata cancel refuses sessions without recorded startup serialization', async () => {
   const f = unstartedSession();
   const { startup_protocol, ...unrecorded } = f.session;
   writeFileSync(join(f.dir, 'session.json'), JSON.stringify(unrecorded));
@@ -290,7 +299,7 @@ test('pre-metadata cancel refuses sessions without recorded startup serializatio
   expect(existsSync(join(f.dir, 'closed.json'))).toBe(false);
 });
 
-test('server identity mismatch cannot submit another round or signal a replacement server', async () => {
+releaseLaneOnly('server identity mismatch cannot submit another round or signal a replacement server', async () => {
   const f = fixture();
   await runClaudeReviewRound(f.options);
   const dir = reviewSessionLocation(f.root, contract).dir;
@@ -308,7 +317,7 @@ test('server identity mismatch cannot submit another round or signal a replaceme
   } finally { writeFileSync(path, original); }
 }, 20_000);
 
-test('old tmux session metadata is rejected without translation or cleanup', async () => {
+releaseLaneOnly('old tmux session metadata is rejected without translation or cleanup', async () => {
   const f = unstartedSession();
   const path = join(f.dir, 'session.json');
   const original = readFileSync(path, 'utf8');

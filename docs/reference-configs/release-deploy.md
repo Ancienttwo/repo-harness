@@ -12,6 +12,13 @@ This repo keeps deployment contract surfaces under `deploy/` and private runtime
 state under ignored `_ops/`. Detailed release patterns, Cloudflare examples, and
 rollback playbooks belong in the external runbook.
 
+Tests whose cost is a real package install or a real external program are gated
+behind `REPO_HARNESS_TEST_EXPENSIVE` and are therefore not part of the hosted
+`scripts/check-ci.sh functional` lane. The release gate is the lane that owns
+them: `bun run check:release` (and a bare local `bash scripts/check-ci.sh`) runs
+the `all` lane, which exports that variable before the suite, while
+`prepublishOnly` stays a fast pre-publish check that never runs tests.
+
 ## Webapp Release Shape
 
 - For a SaaS webapp with public SEO/SSR plus authenticated workspace, prefer one
