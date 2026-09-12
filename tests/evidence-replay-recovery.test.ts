@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
-import { tmpdir } from "os";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
-import { foldAcceptedEvents, findCorruptTail, parseLogLine } from "../src/core/evidence/fold";
+import { findCorruptTail, foldAcceptedEvents, parseLogLine } from "../src/core/evidence/fold";
 import type { EvidenceEventRecord } from "../src/core/evidence/types";
 import {
   appendEvidenceEvent,
@@ -11,15 +11,6 @@ import {
   readAcceptedEvents,
   type EvidenceEventInput,
 } from "../src/effects/evidence/event-log";
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
 
 function baseInput(overrides: Partial<EvidenceEventInput> = {}): EvidenceEventInput {
   return {

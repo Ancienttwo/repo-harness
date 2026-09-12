@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { createHash } from "crypto";
 import { execFileSync, spawnSync } from "child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { createHash } from "crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
-import { emitAuthoritativeVerifyEvidence, type VerifyProducerInput } from "../src/effects/evidence/verify-producer";
 import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
+import { emitAuthoritativeVerifyEvidence, type VerifyProducerInput } from "../src/effects/evidence/verify-producer";
 import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 
 function git(repoRoot: string, args: readonly string[]): string {
@@ -23,15 +23,6 @@ function runWrapper(args: readonly string[]): { readonly status: number | null; 
 }
 
 const RUN_SNAPSHOT_ARG = ".ai/harness/runs/run-20260722T170215-94226-fixture.json";
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
 
 /**
  * Builds a minimal but real git fixture repo: one base commit (tagged
@@ -271,7 +262,6 @@ describe("emitAuthoritativeVerifyEvidence: idempotency and genesis", () => {
   }, 30_000);
 });
 
-
 // Cannot-bind => skip, not fail (ruling: sprint row 6 requires only that
 // non-subject-bound emission is impossible and subject mismatch fails
 // closed, not that every verify run emit). This wrapper is the layer that
@@ -346,7 +336,6 @@ describe("scripts/emit-verify-evidence.ts: exit code contract", () => {
     });
   }, 30_000);
 });
-
 
 test("frozen verification target remains bound when the policy ref moves", () => {
   withTempRepo("verify-frozen-target", (repoRoot) => {

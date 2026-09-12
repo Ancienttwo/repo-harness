@@ -1,69 +1,35 @@
-import { describe, test, expect, setDefaultTimeout } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
-  writeFileSync,
+  writeFileSync
 } from "fs";
-import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 
 // Regression guard for the squash-merge absorption predicate in the cleanup
 // branch of `scripts/contract-worktree.sh`. See:
 //   plans/plan-20260731-0952-contract-worktree-squash-cleanup.md
 //   tasks/contracts/20260731-0952-contract-worktree-squash-cleanup.contract.md
 //
-// Kept as its own file (rather than folded into helper-scripts.test.ts) so a
-// targeted RED capture only needs to run this one file.
+// This composition checks cleanup absorption through both contract-worktree
+// and ship-worktrees against the same Git history.
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
 
 setDefaultTimeout(30000);
 
-function tmpWorkspace(prefix: string): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
-}
 
-const SANDBOX_ENV_BLOCKLIST = [
-  "REPO_HARNESS_TARGET_REPO_ROOT",
-  "REPO_HARNESS_HELPER_SOURCE_PATH",
-  "REPO_HARNESS_SOURCE_ROOT",
-  "REPO_HARNESS_BUN_BIN",
-  "REPO_HARNESS_WORKFLOW_STATE_LIB",
-];
 
-function sandboxEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const base = { ...process.env };
-  for (const key of SANDBOX_ENV_BLOCKLIST) delete base[key];
-  return { ...base, ...env };
-}
 
-function run(cmd: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: sandboxEnv(env) });
-}
 
-function initGitRepo(cwd: string) {
-  expect(run("git", ["init"], cwd).status).toBe(0);
-  const branch = run("git", ["branch", "--show-current"], cwd).stdout.trim();
-  if (branch !== "main") {
-    expect(run("git", ["checkout", "-b", "main"], cwd).status).toBe(0);
-  }
-  expect(run("git", ["config", "user.name", "Helper Test"], cwd).status).toBe(0);
-  expect(run("git", ["config", "user.email", "helper@test.local"], cwd).status).toBe(0);
-}
 
-function commitAll(cwd: string, message: string) {
-  expect(run("git", ["add", "."], cwd).status).toBe(0);
-  expect(run("git", ["commit", "-m", message], cwd).status).toBe(0);
-}
 
 function copyHelpers(cwd: string) {
   const scriptsDir = join(cwd, "scripts");

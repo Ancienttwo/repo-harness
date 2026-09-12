@@ -6,17 +6,16 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
-  writeFileSync,
+  writeFileSync
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { run } from "./helpers/repo-fixture";
 
 import type { SubjectIdentity, TrustClass } from "../src/core/evidence/types";
-import { appendEvidenceEvent, appendGenesisRecord } from "../src/effects/evidence/event-log";
-import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { publishCheckpointFromLedger } from "../src/effects/evidence/checkpoint-store";
+import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { appendEvidenceEvent, appendGenesisRecord } from "../src/effects/evidence/event-log";
 import {
   buildRecoveryContext,
   renderRecoveryHandoff,
@@ -77,9 +76,6 @@ function seedEvent(
   });
 }
 
-function run(cmd: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: { ...process.env, ...env } });
-}
 
 describe("recovery-materializer: determinism", () => {
   test("same context + evidence + injected clock renders byte-identical handoff and resume", () => {

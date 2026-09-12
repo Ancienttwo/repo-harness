@@ -1,13 +1,15 @@
+import { ROOT as scriptROOT } from "./helpers/helper-script-fixture";
+import { run } from "./helpers/repo-fixture";
+
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
-import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
-import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
-import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import { acceptanceAuthorityFingerprint, acceptanceReceiptPath, recordAcceptance, sealArchiveProjection, verifyAcceptance } from '../scripts/acceptance-receipt';
+import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
+import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
+import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 
 const ROOT = join(import.meta.dir, '..');
 const SCRIPT = join(ROOT, 'scripts', 'merge-gate.ts');
@@ -17,9 +19,6 @@ afterEach(() => {
   for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
-function run(command: string, args: string[], cwd: string) {
-  return spawnSync(command, args, { cwd, encoding: 'utf-8', env: process.env });
-}
 
 function git(cwd: string, ...args: string[]): string {
   const result = run('git', args, cwd);
@@ -381,4 +380,41 @@ describe('merge candidate leak scan', () => {
     expect(sealed.stderr).toContain('_ops/provider-state.json');
     expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(false);
   }, 30_000);
+});
+
+describe("merge-gate helper integration", () => {
+  test("provider-free merge seal runs after the candidate commit and is reverified before merge or push", () => {
+    const contract = readFileSync(join(scriptROOT, "scripts/contract-worktree.sh"), "utf-8");
+    const ship = readFileSync(join(scriptROOT, "scripts/ship-worktrees.sh"), "utf-8");
+    expect(contract.indexOf('git commit -m "$commit_message"')).toBeLessThan(
+      contract.indexOf('run_merge_gate "$gate_base_ref" "$post_freeze_manifest"'),
+    );
+    const publicationCommitIndex = contract.indexOf('publication_sha="$(git commit-tree "$publication_tree"');
+    const publicationPreparedIndex = contract.indexOf('finish_transaction_phase publication_prepared "$publication_sha"');
+    const publicationMergeIndex = contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"');
+    const publicationMergedIndex = contract.indexOf('finish_transaction_phase merged "$publication_sha"');
+    for (const index of [publicationCommitIndex, publicationPreparedIndex, publicationMergeIndex, publicationMergedIndex]) {
+      expect(index).toBeGreaterThanOrEqual(0);
+    }
+    expect(contract.indexOf('verify_merge_gate_seal "$gate_base_ref"')).toBeLessThan(publicationCommitIndex);
+    expect(publicationPreparedIndex).toBeLessThan(publicationMergeIndex);
+    expect(publicationMergeIndex).toBeLessThan(publicationMergedIndex);
+    expect(contract).toContain('if [[ "$commit_gpgsign" == "true" ]]; then');
+    expect(contract).toContain('-m "Source-Worktree-Head: $verified_sha" -S)');
+    expect(contract).toContain('local merge gate base must equal target branch $target_branch');
+    expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
+      ship.indexOf('push_branch "$branch" "$verified_sha"'),
+    );
+    expect(ship.indexOf('verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
+      ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"'),
+    );
+    expect(ship.indexOf("\n  ship_transaction_begin\n")).toBeLessThan(
+      ship.indexOf('finish_contract_worktree "pr" "$gate_base_ref"'),
+    );
+    expect(ship.indexOf('push_branch "$branch" "$verified_sha"')).toBeLessThan(
+      ship.indexOf("\n  ship_transaction_commit\n"),
+    );
+    expect(ship).toContain('git push "$REMOTE_NAME" "$verified_sha:refs/heads/$branch"');
+    expect(ship).toContain('+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH');
+  });
 });

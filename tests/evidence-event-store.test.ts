@@ -1,28 +1,19 @@
-import { describe, expect, test, afterEach } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
-import { generateEventId, encodeUlid } from "../src/core/evidence/ulid";
 import { canonicalize } from "../src/core/evidence/canonical-json";
 import { computeIdempotencyKey } from "../src/core/evidence/idempotency";
+import { redactPayloadStrings } from "../src/core/evidence/redaction";
 import type { SubjectIdentity } from "../src/core/evidence/types";
+import { encodeUlid, generateEventId } from "../src/core/evidence/ulid";
 import {
   appendEvidenceEvent,
   appendGenesisRecord,
   readAcceptedEvents,
   type EvidenceEventInput,
 } from "../src/effects/evidence/event-log";
-import { redactPayloadStrings } from "../src/core/evidence/redaction";
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
 
 function subjectIdentity(overrides: Partial<SubjectIdentity> = {}): SubjectIdentity {
   return {
@@ -476,7 +467,6 @@ describe("D6 redaction: typed-field exemption (EPC-05 gatekeeper CRITICAL fix)",
     });
   });
 });
-
 
 test("declared path arrays preserve extensionless files through ledger redaction", () => {
   const path = "deploy/campaign-container/Dockerfile";

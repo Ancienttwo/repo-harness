@@ -3,26 +3,27 @@ import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
+import { createHash } from "crypto";
+import {
+  readPendingPostEditEvents,
+  runMutationObserved,
+  type MutationObservedCollector,
+} from "../src/cli/hook/mutation-observed";
+import { canonicalize } from "../src/core/evidence/canonical-json";
 import type { EvidenceEventRecord, JsonValue, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
-import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
-import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
-import { emitAuthoritativeVerifyEvidence } from "../src/effects/evidence/verify-producer";
-import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
+import { assessChange, buildReviewSelectionPacket } from "../src/core/review/change-assessment";
 import {
   buildChecksLatestProjection,
   parseAcceptancePolicySummary,
   writeChecksLatest,
   type ChecksLatestProjection,
 } from "../src/effects/evidence/checks-materializer";
-import { canonicalize } from "../src/core/evidence/canonical-json";
-import { createHash } from "crypto";
-import { assessChange, buildReviewSelectionPacket } from "../src/core/review/change-assessment";
-import {
-  runMutationObserved,
-  readPendingPostEditEvents,
-  type MutationObservedCollector,
-} from "../src/cli/hook/mutation-observed";
+import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
+import { emitAuthoritativeVerifyEvidence } from "../src/effects/evidence/verify-producer";
+import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const CONTRACT_RELATIVE = "tasks/contracts/fixture.contract.md";
@@ -36,15 +37,6 @@ const LONG_SLUG = "20260722-1929-epc-05-checks-latest-materializer";
 const LONG_SLUG_CONTRACT_RELATIVE = `tasks/contracts/${LONG_SLUG}.contract.md`;
 const LONG_SLUG_RUN_FILE = `.ai/harness/runs/run-20260722T210100-77777-${LONG_SLUG}.json`;
 const LONG_SLUG_ACTIVE_PLAN = `plans/plan-${LONG_SLUG}.md`;
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
 
 function contractWithPolicy(policyJson: string | null): string {
   const lines = ["# Task Contract: fixture", "", "## Allowed Paths", "", "```yaml", "allowed_paths:", "  - src/example.ts", "```", ""];

@@ -1,29 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { createHash } from "crypto";
 import { execFileSync } from "child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { createHash } from "crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 import {
   importPostBashObservation,
   UNBOUND_SENTINEL,
   type PostBashObservationInput,
 } from "../src/effects/evidence/post-bash-importer";
-import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 
 function git(repoRoot: string, args: readonly string[]): void {
   execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf-8" });
-}
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
 }
 
 /**

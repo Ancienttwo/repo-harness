@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "child_process";
 import {
   chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
+  writeFileSync
 } from "fs";
-import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { copyHelpers } from "./helpers/helper-script-fixture";
+import { run as scriptRun, tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -54,14 +54,6 @@ function runProcess(command: string, args: string[], cwd: string, env: NodeJS.Pr
   });
 }
 
-function withTempRepo(prefix: string, fn: (cwd: string) => void): void {
-  const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(cwd);
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
-}
 
 function installWorkflowArchiveFixture(cwd: string): void {
   mkdirSync(join(cwd, "scripts"), { recursive: true });
@@ -848,5 +840,419 @@ describe("archive evidence gates", () => {
       expect(retry.status).toBe(0);
       expect(existsSync(requestPath)).toBe(false);
     });
+  }, 30_000);
+});
+
+
+
+describe("archive-workflow helper integration", () => {
+  test("archive-workflow should archive plan and todo with non-completion outcome metadata", () => {
+    const cwd = tmpWorkspace("helper-archive");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1500-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), "# Implementation Notes: demo\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
+
+      const res = scriptRun(
+        "bash",
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1500-demo.md", "--outcome", "Abandoned"],
+        cwd
+      );
+      expect(res.status).toBe(0);
+
+      const archivedPlan = join(cwd, "plans/archive/plan-20260304-1500-demo.md");
+      expect(existsSync(archivedPlan)).toBe(true);
+      expect(readFileSync(archivedPlan, "utf-8")).toContain("**Status**: Abandoned");
+
+      const archivedTodos = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("todo-"));
+      expect(archivedTodos.length).toBeGreaterThanOrEqual(1);
+      const todoArchiveContent = readFileSync(join(cwd, "tasks/archive", archivedTodos[0]), "utf-8");
+      expect(todoArchiveContent).toContain("**Outcome**: Abandoned");
+      const archivedNotes = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("notes-"));
+      expect(archivedNotes.length).toBeGreaterThanOrEqual(1);
+      expect(readFileSync(join(cwd, "tasks/archive", archivedNotes[0]), "utf-8")).toContain("**Lifecycle**: notes");
+      expect(existsSync(join(cwd, "tasks/notes/demo.notes.md"))).toBe(false);
+      const archivedContracts = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("contract-"));
+      expect(archivedContracts.length).toBeGreaterThanOrEqual(1);
+      expect(readFileSync(join(cwd, "tasks/archive", archivedContracts[0]), "utf-8")).toContain("**Lifecycle**: contract");
+      expect(existsSync(join(cwd, "tasks/contracts/demo.contract.md"))).toBe(false);
+      const archivedReviews = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("review-"));
+      expect(archivedReviews.length).toBeGreaterThanOrEqual(1);
+      expect(readFileSync(join(cwd, "tasks/archive", archivedReviews[0]), "utf-8")).toContain("**Lifecycle**: review");
+      expect(existsSync(join(cwd, "tasks/reviews/demo.review.md"))).toBe(false);
+
+      const resetTodo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
+      expect(resetTodo).toContain("# Deferred Goal Ledger");
+      expect(resetTodo).toContain("**Status**: Backlog");
+      expect(resetTodo).toContain("## Deferred Goals");
+      expect(resetTodo).toContain("Revisit Trigger");
+      expect(resetTodo).not.toContain("## Review Section");
+
+      const current = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
+      expect(current).toContain("# Current Status Snapshot");
+      expect(current).toContain("> **Status**: Idle");
+      expect(current).toContain("> **Reason**: archive-workflow");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("archive-workflow rewrites one exact workflow family to collision-safe archive pointers", () => {
+    const cwd = tmpWorkspace("helper-archive-path-projection");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      copyHelpers(cwd);
+
+      const plan = "plans/plan-20260304-1502-demo.md";
+      const contract = "tasks/contracts/20260304-1502-demo.contract.md";
+      const review = "tasks/reviews/20260304-1502-demo.review.md";
+      const notes = "tasks/notes/20260304-1502-demo.notes.md";
+      writeFileSync(
+        join(cwd, plan),
+        [
+          "# Plan: demo",
+          "",
+          "> **Status**: Executing",
+          `> **Task Contract**: \`${contract}\``,
+          `> **Task Review**: \`${review}\``,
+          `> **Implementation Notes**: \`${notes}\``,
+          "",
+          `Contract pointer: ${contract}`,
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(cwd, contract),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          `> **Plan**: ${plan}`,
+          `> **Review File**: \`${review}\``,
+          `> **Notes File**: \`${notes}\``,
+          "",
+          "## Allowed Paths",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          `  - ${contract}`,
+          `  - ${review}`,
+          `  - ${notes}`,
+          "```",
+          "",
+          "## Exit Criteria (Machine Verifiable)",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  artifacts_exist:",
+          `    - ${notes}`,
+          "```",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(join(cwd, review), `# Task Review: demo\n\n> **Plan**: ${plan}\n> **Contract**: ${contract}\n> **Notes File**: ${notes}\n`);
+      writeFileSync(join(cwd, notes), `# Implementation Notes: demo\n\n> **Plan**: ${plan}\n> **Contract**: ${contract}\n> **Review**: ${review}\n`);
+      writeFileSync(join(cwd, "tasks/todos.md"), `# Deferred Goal Ledger\n\n> **Status**: Backlog\n> **Updated**: now\n\n## Deferred Goals\n\n${plan}\n`);
+
+      const collision = "tasks/archive/review-20990101-0101-demo.md";
+      writeFileSync(join(cwd, collision), "pre-existing review archive\n");
+      const res = scriptRun(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", plan,
+          "--outcome", "Abandoned",
+          "--timestamp", "20990101-0101",
+        ],
+        cwd,
+      );
+      expect(res.status, res.stderr).toBe(0);
+
+      const destinations = {
+        plan: "plans/archive/plan-20260304-1502-demo.md",
+        contract: "tasks/archive/contract-20990101-0101-demo.md",
+        review: "tasks/archive/review-20990101-0101-demo-v2.md",
+        notes: "tasks/archive/notes-20990101-0101-demo.md",
+      };
+      for (const destination of Object.values(destinations)) {
+        expect(existsSync(join(cwd, destination))).toBe(true);
+      }
+      const expectedPairs = [
+        [plan, destinations.plan],
+        [notes, destinations.notes],
+        [contract, destinations.contract],
+        [review, destinations.review],
+      ];
+      for (const destination of Object.values(destinations)) {
+        const content = readFileSync(join(cwd, destination), "utf-8");
+        for (const [source, archived] of expectedPairs) {
+          expect(content).toContain(`> **Archive Projection V1**: \`${source}\` => \`${archived}\``);
+          expect(content.split("\n\n").slice(1).join("\n\n")).not.toContain(source);
+        }
+      }
+      expect(readFileSync(join(cwd, destinations.plan), "utf-8")).toContain(`> **Task Contract**: \`${destinations.contract}\``);
+      const archivedContract = readFileSync(join(cwd, destinations.contract), "utf-8");
+      expect(archivedContract).toContain(`> **Plan**: ${destinations.plan}`);
+      expect(archivedContract).toContain(`  - ${destinations.review}`);
+      expect(archivedContract).toContain(`    - ${destinations.notes}`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // R-E (fix 5): a --timestamp value passed to archive-workflow.sh is used
+  // verbatim for every archive-family filename instead of a fresh internal
+  // `date` call (the seam contract-worktree.sh finish now relies on so its
+  // allowlist predictions and archive's actual output cannot disagree across
+  // a minute boundary); a standalone invocation without --timestamp keeps
+  // making its own single `date` call, unchanged.
+
+  test("archive-workflow uses a caller-supplied --timestamp for every archive filename; a standalone run keeps its own date call", () => {
+    const cwd = tmpWorkspace("helper-archive-timestamp-seam");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1500-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), "# Implementation Notes: demo\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
+
+      // A deliberately implausible value: a real `date +%Y%m%d-%H%M` call can
+      // never produce this, so finding it in the archived filenames is proof
+      // the seam is wired, not a coincidence.
+      const markerTimestamp = "20990101-0000";
+      const marked = scriptRun(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", "plans/plan-20260304-1500-demo.md",
+          "--outcome", "Abandoned",
+          "--timestamp", markerTimestamp,
+        ],
+        cwd
+      );
+      expect(marked.status, marked.stderr).toBe(0);
+
+      const markedEntries = readdirSync(join(cwd, "tasks/archive"));
+      expect(markedEntries).toContain(`contract-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toContain(`review-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toContain(`notes-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toContain(`todo-${markerTimestamp}-demo.md`);
+
+      // Standalone invocation (no --timestamp): unchanged behavior, its own
+      // fresh `date` call, never the marker from the previous invocation.
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1501-demo2.md"),
+        "# Plan: demo2\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(join(cwd, "tasks/notes/demo2.notes.md"), "# Implementation Notes: demo2\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo2.contract.md"), "# Task Contract: demo2\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo2.review.md"), "# Task Review: demo2\n");
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
+
+      const standalone = scriptRun(
+        "bash",
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1501-demo2.md", "--outcome", "Abandoned"],
+        cwd
+      );
+      expect(standalone.status, standalone.stderr).toBe(0);
+
+      const standaloneContracts = readdirSync(join(cwd, "tasks/archive")).filter(
+        (name) => name.startsWith("contract-") && name.endsWith("-demo2.md")
+      );
+      expect(standaloneContracts.length).toBe(1);
+      expect(standaloneContracts[0]).toMatch(/^contract-\d{8}-\d{4}-demo2\.md$/);
+      expect(standaloneContracts[0]).not.toContain(markerTimestamp);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // R-E hardening (third external review round): --timestamp is interpolated
+  // directly into archive filenames, so a malformed value must fail closed
+  // rather than produce a garbage or unexpected archive path.
+
+  test("archive-workflow rejects a --timestamp value that does not match YYYYMMDD-HHMM", () => {
+    const cwd = tmpWorkspace("helper-archive-timestamp-format-guard");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1502-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+
+      const malformed = scriptRun(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", "plans/plan-20260304-1502-demo.md",
+          "--outcome", "Abandoned",
+          "--timestamp", "not-a-timestamp",
+        ],
+        cwd
+      );
+      expect(malformed.status).not.toBe(0);
+      expect(malformed.stderr).toContain("--timestamp must match YYYYMMDD-HHMM");
+      expect(readdirSync(join(cwd, "plans")).some((name) => name.startsWith("plan-20260304-1502-demo"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("archive-workflow should preserve existing deferred ledger rows", () => {
+    const cwd = tmpWorkspace("helper-archive-deferred-ledger");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1505-demo.md"),
+        "# Plan: demo\n\n> **Status**: Complete\n"
+      );
+      writeFileSync(
+        join(cwd, "tasks/todos.md"),
+        [
+          "# Deferred Goal Ledger",
+          "",
+          "> **Status**: Backlog",
+          "> **Updated**: (migration)",
+          "> **Scope**: Medium/long-term goals deferred from active plan execution",
+          "",
+          "Current plan tasks live in the active plan's `## Task Breakdown`.",
+          "Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.",
+          "",
+          "## Deferred Goals",
+          "",
+          "| Goal | Why Deferred | Tradeoff | Revisit Trigger |",
+          "|------|--------------|----------|-----------------|",
+          "| Review archived legacy checklist | Legacy checklist was preserved during migration. | Keep user-authored task text. | Promote real follow-up work into a new plan. |",
+          "",
+        ].join("\n")
+      );
+
+      const res = scriptRun(
+        "bash",
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1505-demo.md", "--outcome", "Superseded"],
+        cwd
+      );
+      expect(res.status).toBe(0);
+
+      const todo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
+      expect(todo).toContain("> **Updated**: (archive-workflow)");
+      expect(todo).toContain("Review archived legacy checklist");
+      expect(todo).not.toContain("Archived workflow did not leave a deferred medium/long-term goal");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // Sixth external review round: plan/notes/contract/review archive
+  // destinations all go through unique_archive_path (collision -> -v2
+  // suffix), but the todo destination was written with a direct `>`
+  // redirect, silently overwriting an existing archived todo snapshot on a
+  // same-timestamp-and-slug collision instead of suffixing like its three
+  // siblings.
+
+  test("archive-workflow suffixes a colliding todo archive destination instead of overwriting it", () => {
+    const cwd = tmpWorkspace("helper-archive-todo-collision");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      const collidingTimestamp = "20990101-0000";
+      writeFileSync(
+        join(cwd, "tasks/archive/todo-20990101-0000-demo.md"),
+        "> **Archived**: 2099-01-01 00:00\n\npre-existing archived todo content\n"
+      );
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1506-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] fresh todo row\n");
+
+      const res = scriptRun(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", "plans/plan-20260304-1506-demo.md",
+          "--outcome", "Abandoned",
+          "--timestamp", collidingTimestamp,
+        ],
+        cwd
+      );
+      expect(res.status, res.stderr).toBe(0);
+
+      const preserved = readFileSync(join(cwd, "tasks/archive/todo-20990101-0000-demo.md"), "utf-8");
+      expect(preserved).toContain("pre-existing archived todo content");
+
+      const suffixed = readdirSync(join(cwd, "tasks/archive")).filter(
+        (name) => name.startsWith("todo-20990101-0000-demo-v") && name.endsWith(".md")
+      );
+      expect(suffixed.length).toBe(1);
+      const suffixedContent = readFileSync(join(cwd, "tasks/archive", suffixed[0]), "utf-8");
+      expect(suffixedContent).toContain("fresh todo row");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("archive-workflow should set plan status to Abandoned for abandoned outcome", () => {
+    const cwd = tmpWorkspace("helper-archive-abandoned");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1510-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
+
+      const res = scriptRun(
+        "bash",
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1510-demo.md", "--outcome", "Abandoned"],
+        cwd
+      );
+      expect(res.status).toBe(0);
+
+      const archivedPlan = join(cwd, "plans/archive/plan-20260304-1510-demo.md");
+      expect(existsSync(archivedPlan)).toBe(true);
+      expect(readFileSync(archivedPlan, "utf-8")).toContain("**Status**: Abandoned");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   }, 30_000);
 });
