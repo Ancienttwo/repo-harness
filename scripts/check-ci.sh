@@ -67,6 +67,12 @@ if [[ "$lane" != functional ]]; then
 fi
 
 if [[ "$lane" != governance ]]; then
+  if [[ "$lane" == all ]]; then
+    # Local and release callers own the expensive real-install and real-herdr
+    # cases; the hosted functional lane deliberately leaves them gated out.
+    export REPO_HARNESS_TEST_EXPENSIVE=1
+  fi
+
   echo "[ci] tests"
   run_bun_tests
 
