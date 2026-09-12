@@ -246,6 +246,52 @@ not runtime evidence.
 - Existing hook/runtime/contract tests continue to assert hook parity and the
   advisory PostToolUse behavior around architecture queue failures.
 
+## CI coverage selection
+
+`.github/workflows/ci.yml` schedules Governance independently of test selection.
+The pure `selectCoverage` function in `scripts/select-ci-coverage.ts` decides
+from the event, checked-out subject and complete raw Git diff. Its thin shell
+reads GitHub event/environment inputs and Git output. PR selection compares the
+event base to the tested synthetic merge; pushes compare every committed change
+between before and head. Missing endpoints, empty/unavailable diffs, checkout
+mismatch, malformed records, nonregular file modes and unknown paths retain
+full coverage. Rename detection is disabled so both paths remain visible.
+
+Documentation coverage includes `tasks/**`, `plans/**`, Markdown under `docs/`,
+`docs/architecture/.projection-manifest.json`, `.ai/harness/handoff/**` and
+`README.md`. `docs/reference-configs/**` remains full coverage, as do
+`.archcontext/**`, runtime policies/configs, deploy files, root agent instructions,
+source, tests and other unclassified paths. Documentation consumers are inferred
+from checkout-bound filesystem reads, including path aliases and local reader
+wrappers and static test-helper imports. It also conservatively includes reads
+of named tracked guides when the test resolves checkout code; documents explicitly
+authored as fixture content do not activate that secondary rule. True checkout
+reads stay covered even if a test also writes fixture documents. Ignored runtime
+files do not enter the tracked-guide inventory. The scanner is the inventory
+source; the workflow's sorted whole-file list is its projection, checked by the
+documentation drift test. No manually
+maintained consumer allowlist or per-test name filtering owns this lane.
+
+`bun scripts/replay-ci-coverage.ts --since YYYY-MM-DD` feeds pinned first-parent
+history into the same pure function and prints per-commit and mode/reason totals.
+It does not bypass checkout validation in the production shell. Historical hit
+rate and the actual documentation-lane duration are acceptance evidence;
+correct scheduling alone does not establish lower CI cost.
+
+Draft PRs defer expensive checks and explain that ready_for_review must run
+coverage. Required / CI never reports mergeable success for a deferred draft.
+Both ready_for_review and converted_to_draft trigger a new run; manual dispatch
+always selects full. The aggregate accepts only successful selection/Governance
+and exactly the prescribed success/skipped dispositions for full or docs mode.
+Failure, cancellation, unknown modes and unintended omissions remain failures.
+
+Functional, matrix and documentation jobs depend only on selection. The owner
+retained independent hosted Governance/Test failure visibility from the
+2026-09-09 incident; the measured wasted Test time on governance-only failures
+and the two-week revisit trigger are recorded in `tasks/todos.md`. Local/release
+`check-ci.sh` gates and the isolated file runner remain unchanged. PR evidence
+is not reused as acceptance for a different merge subject.
+
 ## Optimization Backlog
 
 - Add capability registry validation to strict workflow checks once the new registry has one more real edit cycle.

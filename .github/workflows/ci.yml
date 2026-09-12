@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_dispatch:
   push:
     branches:
@@ -12,6 +13,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  selection:
+    name: Select test coverage
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Select coverage from the complete Git diff
+        id: select
+        run: bun scripts/select-ci-coverage.ts
+
   governance:
     name: Governance
     runs-on: ubuntu-latest
@@ -67,6 +84,8 @@ jobs:
         run: git diff --check
 
   test:
+    needs: selection
+    if: needs.selection.outputs.mode == 'full'
     name: Test
     runs-on: ubuntu-latest
     env:
@@ -135,6 +154,8 @@ jobs:
         run: bash scripts/check-ci.sh functional
 
   mcp-path-matrix:
+    needs: selection
+    if: needs.selection.outputs.mode == 'full'
     name: MCP path matrix (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -177,6 +198,58 @@ jobs:
           tests/cli/windows-protected-helper-runtime-smoke.test.ts
           tests/evidence-checkpoint.test.ts
 
+  documentation:
+    name: Documentation assertions
+    runs-on: ubuntu-latest
+    needs: selection
+    if: needs.selection.outputs.mode == 'docs'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Check documentation coverage projection
+        run: bun test tests/ci-documentation-consumers.test.ts --timeout 60000
+      - name: Check documentation consumers
+        run: |
+          BUN_TEST_ISOLATE_FILES=1
+          BUN_TEST_TIMEOUT_MS=180000
+          BUN_TEST_MAX_CONCURRENCY=1
+          BUN_TEST_FILES="tests/action-command-skills.test.ts
+          tests/architecture-projection-e2e.test.ts
+          tests/architecture-projection-provider.test.ts
+          tests/archive-evidence-gates.test.ts
+          tests/characterization/repair-campaign-authority-freeze.test.ts
+          tests/cli/documentation-contracts.test.ts
+          tests/cli/global-runtime-init.test.ts
+          tests/cli/mcp-reader-tools.test.ts
+          tests/cli/mcp-setup.test.ts
+          tests/create-project-dirs.runtime.test.ts
+          tests/evidence-residue-scan.test.ts
+          tests/install-scripts.test.ts
+          tests/migration-script.test.ts
+          tests/readme-dx.test.ts
+          tests/retired-planning-provider.test.ts
+          tests/skill-surface/retired-names-scan.test.ts
+          tests/unit/collaboration-admission.test.ts
+          tests/unit/collaboration-authority-baseline.test.ts
+          tests/unit/issue-282-automation-budget-prd-drift.test.ts
+          tests/unit/me1b-engineering-overlay.test.ts
+          tests/unit/verifier-evidence-lifecycle-cutover.test.ts
+          tests/workflow-contract.test.ts"
+          source scripts/lib/ci-run-tests.sh
+          run_bun_tests
+
   # Stable aggregate context for branch protection. Binding protection to the
   # individual jobs means the matrix OS list is part of the protection rule:
   # add or rename an OS and the required contexts silently reference check runs
@@ -188,15 +261,36 @@ jobs:
     # context skipped and the required check never reports at all.
     if: always()
     needs:
+      - selection
+      - documentation
       - governance
       - test
       - mcp-path-matrix
     steps:
-      - name: Assert upstream jobs succeeded
+      - name: Assert selected coverage succeeded
+        env:
+          SELECTION_RESULT: ${{ needs.selection.result }}
+          COVERAGE_MODE: ${{ needs.selection.outputs.mode }}
+          GOVERNANCE_RESULT: ${{ needs.governance.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          MATRIX_RESULT: ${{ needs.mcp-path-matrix.result }}
+          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
         run: |
-          echo "governance=${{ needs.governance.result }}"
-          echo "test=${{ needs.test.result }}"
-          echo "mcp-path-matrix=${{ needs.mcp-path-matrix.result }}"
-          [ "${{ needs.governance.result }}" = "success" ] || exit 1
-          [ "${{ needs.test.result }}" = "success" ] || exit 1
-          [ "${{ needs.mcp-path-matrix.result }}" = "success" ] || exit 1
+          echo "selection=$SELECTION_RESULT mode=$COVERAGE_MODE governance=$GOVERNANCE_RESULT test=$TEST_RESULT matrix=$MATRIX_RESULT documentation=$DOCUMENTATION_RESULT"
+          [ "$SELECTION_RESULT" = success ] && [ "$GOVERNANCE_RESULT" = success ] || exit 1
+          # Draft deferral must never become a mergeable success, even if a
+          # selector accidentally emits another mode. Ready triggers a new run.
+          [ "$IS_DRAFT" = false ] || exit 1
+          case "$COVERAGE_MODE" in
+            full)
+              [ "$TEST_RESULT" = success ] && [ "$MATRIX_RESULT" = success ] && [ "$DOCUMENTATION_RESULT" = skipped ]
+              ;;
+            docs)
+              [ "$DOCUMENTATION_RESULT" = success ] && [ "$TEST_RESULT" = skipped ] && [ "$MATRIX_RESULT" = skipped ]
+              ;;
+            *)
+              echo "Coverage is deferred or invalid; this run cannot authorize merge."
+              exit 1
+              ;;
+          esac
