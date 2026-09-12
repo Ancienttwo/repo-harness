@@ -1,6 +1,6 @@
 ---
 name: repo-harness-test
-description: Testing entrypoint for this repository - how to author a test and pick a fixture, which tests to run and how to measure them, what evidence a test refactor owes, and how to write a contract's Verification Plan. Triggers include 寫測試, 加測試, 測試太慢, 重複測試, 全量測試, test fixture, 跑哪些測試, 測試文件, write tests, test plan, slow tests, full suite. Not a debugging entrypoint and not a review entrypoint.
+description: Testing techniques for the repo-harness source checkout: fixtures, execution, refactor evidence and Verification Plans. Triggers include 寫測試, 加測試, 測試太慢, 重複測試, 全量測試, test fixture, 跑哪些測試, 測試文件, write tests, test plan, slow tests, full suite. Not a debugging entrypoint and not a review entrypoint.
 when_to_use: "repo-harness-test, 寫測試, 加測試, 測試太慢, 重複測試, 全量測試, test fixture, 跑哪些測試, 測試文件, write tests, test plan, slow tests, full suite"
 ---
 
@@ -10,6 +10,10 @@ Router for testing work. Policy prose is owned elsewhere; this package carries
 only executable technique and the tools this repository actually ships.
 
 ## Mode Selection
+
+Confirm the target is the repo-harness source checkout before using these
+references. For downstream projects, use their own test commands, fixtures and
+CI; do not apply these source-only paths or lane assumptions.
 
 - About to write, extend, or name a test, or choosing a fixture -> `references/authoring.md`.
 - Choosing which tests to run, or finding where suite time goes -> `references/running.md`.

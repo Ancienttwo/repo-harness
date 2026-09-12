@@ -97,7 +97,7 @@
       "component": "verifier",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Testing router: authoring and fixture selection, test execution and CI lane selection, the evidence a test refactor owes, and the test side of a contract Verification Plan. Routes to docs/reference-configs/sprint-contracts.md for policy and owns no policy of its own.",
+      "summary": "Testing router for the repo-harness source checkout: authoring and fixture selection, test execution and CI lane selection, the evidence a test refactor owes, and the test side of a contract Verification Plan. Routes to docs/reference-configs/sprint-contracts.md for policy and owns no policy of its own.",
       "retirementCandidate": null
     },
     {

@@ -133,3 +133,21 @@ not a packed-release installation or external dependency verification.
 The original contract incorrectly declared harness-internal diff variables as
 `inputs.env`, which the Verification Plan validator rejects. Its task-sync
 command now carries the explicit PR diff boundary, with no such input fields.
+
+
+## Global discovery boundary
+
+The skill is globally discoverable, but its four references describe this
+source checkout's fixtures and CI. Mode selection therefore first establishes
+the target repository; downstream projects use their own testing commands,
+fixtures and CI. The description and routing-table row state that scope. The
+isolated downstream fixture has the adopted policy but no source
+`tests/helpers/repo-fixture.ts` or `scripts/check-ci.sh`, demonstrating why
+host installation does not make those recipes applicable there.
+
+The formal codex-plugin review identified this scope issue on `3665ec35` as a
+P2 finding. It is now corrected. The work-package permits one formal semantic
+review; final closeout after this correction requires owner acceptance rather
+than a repeated external review or a claim that the prior reviewer passed the
+changed subject. Existing canonical package and routing tests verify package
+shape and discovery; they are not an LLM downstream-routing evaluation.
