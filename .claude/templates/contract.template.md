@@ -128,15 +128,14 @@ delegation:
 This block contains only non-executable artifact requirements. Define every
 executable check once in the canonical Verification Plan below. Each check must
 state its phase, cost, evidence policy, necessity, and input environment; a
-missing or malformed plan fails closed.
+missing or malformed plan fails closed. Populate artifact requirements only
+for deliverables this task actually owns; do not create a spec, notes or report
+merely to fill this template.
 
 ```yaml
 exit_criteria:
-  files_exist:
-    - docs/spec.md
-  artifacts_exist:
-    - .ai/harness/checks/latest.json
-    - {{NOTES_FILE}}
+  files_exist: []
+  artifacts_exist: []
 ```
 
 ## Verification Plan
@@ -144,42 +143,28 @@ exit_criteria:
 ```json
 {
   "protocol": 1,
-  "checks": [
-    {
-      "id": "focused-regression",
-      "kind": "package_test",
-      "path": "tests/unit/{{TASK_SLUG}}.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Covers the changed behavior named by this contract.",
-      "inputs": { "env": [] }
-    },
-    {
-      "id": "typecheck",
-      "kind": "command",
-      "command": "bun run check:type",
-      "cwd": ".",
-      "phase": "preflight",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Checks TypeScript contracts before behavioral verification.",
-      "inputs": { "env": [] }
-    }
-  ]
+  "checks": []
 }
 ```
 
-This is the sole executable verification authority. Use `baseline_with_delta`
-only when a referenced immutable baseline plus named current delta checks prove
-the intended coverage; do not infer that choice from paths or command text.
+Author the actual checks using [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
+The empty array is not permission to omit required repository checks: retain it
+only when no executable criterion applies and explain why in Acceptance Notes.
+Prefer existing covering tests; creating a task-named test or adding typecheck
+is not a template requirement. For each selected check declare `id`, `kind`,
+`cwd`, `phase`, `cost`, `evidence_policy`, `necessity`, `inputs.env`, and its
+`command` or `path`. Declare the same execution once, including checks nested
+inside aggregate scripts. Use `baseline_with_delta` only with an immutable
+baseline and named current delta checks; never infer it from paths or command text.
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior:
-- Edge cases:
-- Regression risks:
+- Changed behavior/boundary, existing covering tests and remaining gap:
+- New test case/file rationale, or why existing coverage is sufficient:
+- Selected check IDs and why their coverage is sufficient; omitted coverage:
+- Full/expensive check justification and expected cost, if applicable:
+- Execution/baseline references, subject, current delta and disposition:
+- Residual risks and incomplete observations:
 
 ## Rollback Point
 

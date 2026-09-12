@@ -221,25 +221,197 @@ reasons, and state revision; standard needs one approved plan, while strict
 retains the contract/worktree requirements. Do not resolve this transition by
 disabling guards or treating a cached lite profile as permission to edit.
 
-## Verification Scope and Follow-up Changes
+## Testing Policy and Artifact Standards
 
-The parent selects final acceptance checks from the observed behavior and the
-project's risk-scoped required checks. A full suite needs an explicit acceptance
-or release requirement, or a named integration risk that focused checks cannot
-cover. Do not duplicate the same coverage in package-test checks and command checks.
-Each check declares its evidence policy and environment inputs before execution;
-mutable external inputs must be represented explicitly or verified by their owning producer. The canonical producer is
-`verify-sprint --prepare-acceptance`; workers and reviewers consume its evidence.
+This section owns test selection, test-file creation, execution ownership and
+test-document authoring. Root `AGENTS.md` owns repository-specific required
+commands; the active contract's JSON `Verification Plan` owns its executable
+checks. Templates, role prompts and reports refer here rather than maintaining
+another policy. These are author/reviewer requirements: they do not imply a
+new runtime validator, automatic coverage selector or CI evidence importer.
 
-After a full pass, a bounded follow-up edit uses baseline evidence plus focused
-delta checks. The parent records the baseline run/subject, changed paths, affected
-checks, and remaining risk in Acceptance Notes, then revises final criteria to
-those checks when no full-suite trigger remains. This is an explicit contract
-scope decision, not reuse of a stale exact-context cache entry. Do not relabel
-the baseline full pass as a full pass for the new subject, and do not remove an
-explicit user/release requirement. An unknown impact or uncovered integration
-risk justifies a broader check; changed metadata, a new hash, or a cache miss
-alone does not. Freeze the revised scope before preparing new acceptance.
+### Select the smallest sufficient coverage
+
+Start with a concrete changed behavior, failure condition and owning boundary.
+Find existing tests before choosing a command or adding a test. Record the
+uncovered behavior and the expected observable result, not a desired test count.
+
+| Change or risk | Sufficient starting point | Escalation condition |
+| --- | --- | --- |
+| Prose, formatting, task ledger | Relevant document/projection checks and required repository integrity | An executable template, generated configuration or runtime contract changes |
+| Local decision or bug fix | Existing focused tests; add or extend the smallest regression guard for the missing behavior | A named caller, persistence or process boundary is not exercised |
+| Cross-module behavior | Named composition/integration tests plus relevant focused checks | A concrete integration risk remains outside those named checks |
+| CLI, installer, package or platform boundary | Real entrypoint/artifact/platform smoke for each changed boundary, with branch cases tested below that boundary | The public boundary cannot be represented by the focused smoke set |
+| Explicit user, CI or release gate | Its required checks against the required subject and environment | Changes to that gate require their own authorized policy change |
+
+A new full-suite criterion must cite either an explicit user/release/CI
+requirement or the concrete integration gap, why named checks cannot cover it,
+and expected cost. Merely writing a full-suite command into a contract is not
+its own justification. Changed paths, file count, review depth, a new commit,
+new test files, or an evidence cache miss do not establish necessity. Unknown
+impact first requires tracing the owning path; if that leaves an uncovered
+integration risk, document it and broaden coverage explicitly.
+
+Local development defaults to focused checks plus the repository's required
+integrity checks. Existing CI and release full-suite gates remain mandatory.
+This policy does not authorize skipping a main-push suite because a PR passed,
+or treating different platforms or source/package entrypoints as equivalent.
+
+### Admit a test case or file
+
+Before adding coverage, identify these four facts in the existing brief, plan
+or contract Acceptance Notes; a short task may state them in its final report:
+
+- The requirement or invariant, concrete trigger and observable failure.
+- The existing covering test(s), and the specific gap requiring the addition.
+- The lowest layer that can expose that failure; any reason to use a real
+  process, filesystem, network, package install or platform boundary.
+- The focused command and expected setup/runtime cost, including expensive
+  fixtures or external dependencies when present.
+
+Prefer extending the owning test file or parameterizing distinct inputs with
+one stable oracle. Create a new file only for an independently meaningful
+behavior/boundary, fixture isolation need, or an existing file that cannot
+coherently own the case. Name it for behavior or boundary, not a task/date/PR.
+Do not add assertions that only mirror implementation text, count symbols, or
+pin incidental formatting unless those bytes are the actual public contract.
+Mechanical prose/formatting changes do not need new product tests. Bug fixes
+retain the required pre-fix failing guard and concrete Root Cause Evidence;
+reuse an existing failing guard when it already proves the defect.
+
+An end-to-end test must demonstrate a real boundary: keep distinct success,
+error, ownership, recovery and platform scenarios when they prove different
+invariants. Do not replay the entire installation or workflow merely to check
+another pure input branch. Multiple layers covering similar inputs need a
+named difference in the failure each catches. Delete a superseded test only
+after mapping its assertions to retained coverage; equal names or input data
+are not proof of redundancy.
+
+Keep mutable HOME, repositories, environment and process state isolated.
+Shared immutable fixtures are acceptable when copying/resetting preserves that
+isolation. Prefer real synchronization signals to sleeps, retries or longer
+timeouts. Measure process/setup cost before adding fixture caches or parallelism.
+Do not add production-only abstractions solely to make tests faster when an
+existing test seam or lower-level consumer can express the case.
+
+For repeated test scaffolding, compare fixture semantics before copying another
+`run`, `withTempRepo` or `initRepo`. When at least two real consumers need the
+same process/temp-repository lifecycle, give that fixture one owner under the
+existing test-helper directory. Keep domain builders separate. The shared
+helper must make cwd, environment isolation, exit/output handling, timeout and
+cleanup ownership explicit; do not hide retries or inherit the user's real
+HOME by default. Do not create a configurable universal fixture framework for
+unobserved future consumers.
+
+Audit large test files by owned boundary and fixture cost. Before splitting a
+helper-script suite, map each scenario to any existing script-specific tests;
+move cases to their owner and remove only proven redundant coverage. Preserve
+composition cases that catch failures across those scripts. Group budget or
+other cross-cutting tests by their actual authority and behavior; issue numbers
+belong in provenance, not a competing naming hierarchy. Report test discovery
+and coverage preservation when moving files. Deduplicating wrapper source is a
+maintenance improvement; fewer actual spawns, copies or installs must be
+measured separately before claiming a runtime improvement.
+
+For a slow-file investigation, separate fixture construction/copying, Git and
+CLI subprocess time, and intentional waiting/concurrency. Count invocations of
+shared heavy fixtures as well as duplicated helper definitions. A helper used
+by many files can still rebuild the same costly baseline for every test. Where
+setup itself is not under test, consider constructing an immutable seed once
+and deriving a private repository/HOME for each case; preserve required commit
+history, permissions and cleanup. Keep fresh construction where initialization
+or history creation is the behavior being tested.
+
+A concurrency flag alone is not evidence of parallel execution. Verify that
+the runner actually schedules independent tests/files before changing limits.
+Do not enable concurrency on tests sharing process-global state or a checkout.
+Real locking, process recovery and provider waits need their own observed
+bounds and completion signals, not a blanket speed target. Real pack/install
+smokes may share a frozen tarball only when the tested artifact is identical;
+keep distinct environments and installation paths, and test the packaging
+lifecycle itself when that is the requirement.
+
+### Execute once at each evidence boundary
+
+The parent/contract owner selects final coverage. The implementation worker
+runs focused checks while editing; after implementation and criteria are
+frozen, one assigned execution owner prepares canonical acceptance evidence.
+A long command follows the orchestrator ownership rule above. Do not first
+manually execute every final check and then repeat them through preparation.
+
+Declare each executable once. Compare kind, command/path, cwd and declared
+environment inputs, not just IDs; two IDs do not justify the same execution.
+Expand known aggregate scripts during planning so a full suite or `check:ci`
+does not silently duplicate separately declared leaf checks. Do not infer shell
+command equivalence with a second parser. A genuinely distinct input, platform,
+artifact or process boundary remains a separate check with its own rationale.
+
+Use the supported fields `phase`, `cost`, `evidence_policy`, `necessity` and
+`inputs.env`. Full suites and known costly setup belong to `cost: expensive`;
+do not label them normal to avoid rerun controls. Put executable preflight
+checks before verification. The `necessity` names the behavior/gap or gate;
+expected duration and coverage reasoning live in Acceptance Notes, not invented
+JSON fields. Before an expensive run, state its cost and why it is necessary.
+
+Reviewers, done/Stop handlers, finalize, finish and ship validate existing
+subject-bound evidence. They do not rerun tests to make the evidence their own.
+A reviewer reports missing, stale or failed evidence to the execution owner;
+newly discovered uncovered risk returns to the parent for a revised plan.
+For a review without canonical contract evidence, use the repository's scoped
+verification rules and report the actual evidence limits.
+
+An unchanged retry consumes valid exact evidence. An expensive miss or input
+drift requires an explicit revised Verification Plan or rerun reason, never an
+automatic repeat. After a passing full suite and a bounded edit, preserve the
+old run as a historical baseline and use named current delta checks when the
+full-suite trigger no longer applies. Record the baseline/run reference,
+changed inputs, delta coverage and residual risk. Do not relabel the old pass
+as a full-suite pass for the new subject or waive an explicit user/release gate.
+Failed, timed-out or incomplete runs are not passes; newer same-input failure
+must not be hidden by an older success. Stop after three fail/fix/reverify
+rounds for the same issue and report the remaining cause.
+
+### Create only the artifact that owns the decision
+
+| Information | Existing home | Creation rule |
+| --- | --- | --- |
+| A small change's scope and coverage | Brief/final response; approved plan when the workflow profile requires one | No separate test plan/report for each small change |
+| Executable acceptance checks | Contract `Verification Plan` JSON | Only when the task has a contract; exactly one executable authority |
+| Coverage choice, cost, baseline/delta and omissions | Contract `Acceptance Notes`, or the active plan for standard work | Update the existing decision; do not create parallel command lists |
+| Actual command results, timing and provenance | Canonical execution records in the existing evidence/run store | Produced by the executor; do not hand-author success records or duplicate logs in Markdown |
+| Acceptance judgment and evidence references | Existing `tasks/reviews/` artifact when required | Consume the recorded checks; no new report for every retry or role |
+| Reusable testing knowledge | Owning architecture/spec/research document or `tasks/lessons.md` | Keep stable decisions and source pointers; archive task snapshots |
+
+A standalone testing document is justified only by a reusable subsystem test
+strategy, a distinct operator/manual procedure, or an explicitly required
+external deliverable. First check whether the owning document can hold it.
+Name its owner, audience, source of truth and update/removal trigger. A new
+feature, test file, run, failure or reviewer alone is not a creation trigger.
+Do not create per-test Markdown, dated pass reports, or another coverage ledger.
+
+A required plan/acceptance report records only:
+
+1. The behavior/risk and changed boundary; existing coverage and any omission.
+2. Check IDs pointing to the single executable plan, plus full/expensive-run
+   justification and expected cost when applicable.
+3. Execution evidence references and disposition (`executed`, exact reuse,
+   historical baseline plus current delta, failed, missing or not run), with
+   the verified subject and relevant environment. Preserve baseline identity.
+4. Failures, incomplete coverage and the bounded next action, or why coverage
+   is sufficient. Keep actual duration in run evidence and summarize material
+   cost deviations instead of copying passing logs.
+
+Example: a version-hint branch change extends the owning decision tests and
+keeps one relevant CLI integration smoke. Acceptance Notes explain the
+untested boundary, if any; the contract references those tests once. A new
+installer E2E file and a dated test report are not required just because the
+branch changed.
+
+Template examples are not default requirements. Select actual existing paths
+and commands; leave `checks: []` only when there truly are no executable
+criteria, with a rationale in the existing artifact. Required repository checks
+still apply. Do not invent a task-named test file, add a generic typecheck or
+create a notes/report file solely to satisfy a copied placeholder.
 
 ## Cutover Package Discipline
 

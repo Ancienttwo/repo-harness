@@ -18,7 +18,7 @@
 - Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
 - Intended files changed:
 - Actual files changed:
-- Commands passed:
+- Check IDs and evidence disposition:
 - Residual risks:
 - Reviewer action required: inspect diff and card
 - Rollback:
@@ -31,11 +31,16 @@
 
 ## Verification Evidence
 
-- Waza `/check` run:
-- Commands run:
-- Manual checks:
-- Supporting artifacts:
-- Implementation notes reviewed:
+Follow [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
+Consume canonical evidence; do not rerun checks to populate this review or
+copy the executable plan. Return missing/stale evidence to its execution owner.
+
+- Waza `/check` review reference, when required:
+- Check IDs and disposition (executed / exact reuse / baseline with delta / failed / missing / not run):
+- Verified subject, relevant environment and immutable execution references:
+- Historical baseline and current delta references, if applicable:
+- Manual observations, failures and coverage limitations:
+- Implementation notes reviewed, if present:
 - Run snapshot:
 
 ## Manual Check Evidence

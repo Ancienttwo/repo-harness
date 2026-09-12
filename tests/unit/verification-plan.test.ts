@@ -29,7 +29,7 @@ describe("Verification Plan schema", () => {
     const installed = readFileSync(resolve(root, ".claude/templates/contract.template.md"), "utf8");
     expect(installed).toBe(source);
     const plan = parseVerificationPlanFromContractText(source.replaceAll("{{TASK_SLUG}}", "example"));
-    expect(plan.checks.map((check) => check.id)).toEqual(["focused-regression", "typecheck"]);
+    expect(plan.checks).toEqual([]);
   });
 
   test("accepts an explicit empty plan without treating a missing plan as equivalent", () => {
