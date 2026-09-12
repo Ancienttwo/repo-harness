@@ -1,6 +1,13 @@
+> **Archived**: 2026-09-12 17:19
+> **Related Plan**: plans/archive/plan-20260912-testing-policy.md
+> **Outcome**: Superseded
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260912-1719
+> **Archive Projection V1**: `plans/plan-20260912-testing-policy.md` => `plans/archive/plan-20260912-testing-policy.md`
+
 # Plan: Testing policy and test artifact authoring
 
-> **Status**: Review
+> **Status**: Archived
 > **Substantive Change SHA256**: `sha256:baa1c291cd15530cd9cdf1ecc732e31aed8f170ff5398191d9e3e42996a0ee76`
 > **Artifact Level**: work-package
 > **Promotion Reason**: verification_boundary
@@ -52,7 +59,7 @@ Run the existing verification-authoring and verification-plan tests, targeted fl
 - [x] Align templates, root references and reviewer instructions.
 - [x] Verify affected authoring/projection surfaces and repository integrity; preserve the architecture-sync failure as a closeout blocker.
 - [x] Record durable lesson in tasks/lessons.md.
-- [ ] Archive after the pre-existing architecture queue blockers are resolved by their owner.
+- [x] Archive after the pre-existing architecture queue blockers are resolved by their owner.
 
 ## Delivery integration
 
@@ -61,3 +68,14 @@ Run the existing verification-authoring and verification-plan tests, targeted fl
 - Current focused verification passed: 8 verification-authoring/schema tests (42 assertions) and 2 fleet generation/parity tests (111 assertions). Logs: `/tmp/rh-policy-delivery-focused.log` and `/tmp/rh-policy-delivery-fleet.log`. No local full-suite execution.
 - Hosted CI is an explicit remaining gate: root agent files, templates and the test assertion select full coverage. Expected Test job cost is about 22 minutes, based on #415; a PR pass does not waive the required main-push run.
 - All nine required integrity checks passed on the integrated candidate, including architecture sync (zero blocking requests), task-sync bound to the header digest and strict workflow validation. Logs: `/tmp/rh-policy-integrity-{0..8}.log`. The former architecture blocker is resolved; no external AcceptanceReceipt is claimed.
+
+## Hosted delivery evidence
+
+- PR [#418](https://github.com/Ancienttwo/repo-harness/pull/418) merged as `6a8439a81a1fe1ef61df4b9959fb64f5ae9d1c7f`, retaining original WIP `47e1ae08` in its ancestry. Local main was fast-forwarded to the same commit with a clean working tree.
+- PR run [34683536952](https://github.com/Ancienttwo/repo-harness/actions/runs/34683536952), head `a1e4b6eb`: full coverage passed, including 425 Test files / 5281 passed tests, tarball install / packaged Operator / CLI smoke, Governance, all three platform matrix jobs and Required / CI. Test job took 20m12s.
+- Main run [34684444855](https://github.com/Ancienttwo/repo-harness/actions/runs/34684444855), head `6a8439a8`: the full Test passed once in 22m04s (08:54:15–09:16:19 UTC). Attempt 1 failed only the Windows matrix plus its Required / CI aggregate. `tests/cli/mcp-http.test.ts:1337` assumed a 3000 ms initial yield guaranteed command completion; the observed response was a valid running session after 3011 ms. The process manager explicitly races exit against the yield timer, and both files were unchanged from the passing PR. This timing-sensitive assertion remains a deferred test defect, not a repaired product defect.
+- One targeted rerun of Windows job `103528880771` produced attempt 2: Windows and Required / CI passed. The Test job retained its original start/end timestamps and result; no second full Test execution occurred. The original failed attempt remains part of the evidence, with the repair tracked in tasks/todos.md.
+
+## Archive Note
+
+Superseded after delivery through PR #418: the canonical Testing Policy and Artifact Standards section now owns the durable requirements, while this plan is historical implementation evidence. No AcceptanceReceipt was produced; this is not a Completed contract acceptance claim.
