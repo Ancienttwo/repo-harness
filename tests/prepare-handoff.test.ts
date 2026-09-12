@@ -149,11 +149,8 @@ describe("prepare-handoff helper integration", () => {
       );
       writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] Continue\n");
 
-      expect(run("git", ["init"], cwd).status).toBe(0);
-      expect(run("git", ["config", "user.name", "Helper Test"], cwd).status).toBe(0);
-      expect(run("git", ["config", "user.email", "helper@test.local"], cwd).status).toBe(0);
-      expect(run("git", ["add", "."], cwd).status).toBe(0);
-      expect(run("git", ["commit", "-m", "init"], cwd).status).toBe(0);
+      initGitRepo(cwd);
+      commitAll(cwd, "init");
 
       writeFileSync(join(cwd, "scripts/untracked-helper.ts"), "export {}\n");
 
