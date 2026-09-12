@@ -4,22 +4,129 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-09-12
+
+A maintenance release that gives three unbounded or unreachable surfaces an
+explicit operator exit: stale fleet registrations, accumulated harness evidence,
+and a campaign preparation record that could strand a worker between its own
+write and the runtime effect it was about to cause. Alongside those, the
+architecture projection and refactor-recommendation settings move to one
+per-user configuration document, the operator board scopes to the repository you
+selected, and installs stop overwriting content you edited yourself.
+
+### Added
+
+- **`repo-harness fleet prune` removes stale repository registrations.** The
+  default run previews confirmed-absent registry rows; `--apply` removes them
+  under the registry mutation lock and requires `--expected-revision <digest>`
+  taken from that preview, so a registry that moved between preview and apply is
+  refused rather than pruned against a stale view. `--repo-id <id...>` limits
+  both inspection and removal. Registry rows only — nothing on disk is touched
+  and no backup is written.
+- **`repo-harness run evidence-gc` reclaims harness evidence on demand.**
+  Evidence checkpoint retention has shipped since 0.19.0 but only ran inside a
+  successful publish, so a repository whose ledger was reset, or that no longer
+  runs the harness, kept its whole backlog with no way to reclaim it — 9.7 GB in
+  one repository measured here. `run evidence-gc` applies both existing
+  retention policies on demand and `--dry-run` reports reclaimable bytes before
+  anything is removed.
+- **Stop run summaries are bounded.** Stop wrote one run summary per session and
+  nothing removed them (5931 files in this repository, back to 2026-05-25).
+  Retention now keeps the newest `RUN_SUMMARY_RETENTION_COUNT` entries and Stop
+  applies it after its own write. Records are selected by Stop's own shape — a
+  `run_id` plus `checks_file`, `handoff_file`, `policy_file`, and
+  `context_map_file`, every one a pointer the next Stop recomputes — so the
+  immutable `verification-<executionId>.json` records the evidence ledger binds
+  by sha256, acceptance snapshots, and any shape a future writer adds are left to
+  their owners. `reason` is deliberately not the discriminator: it is free-form
+  operator text with about 190 distinct values here.
+- **`auto-campaign` bundled skill facade.** One user invocation authorizes one
+  bounded conversational campaign turn over the existing `repo-harness campaign`
+  commands, then reports and returns control. No daemon, cron, hook-triggered
+  execution, automatic next turn, or automatic merge; token and monetary caps
+  stay null rather than being claimed as a hard budget.
+- **`repo-harness refactor recommendations` surfaces measured refactor
+  opportunities for user approval.** It reads measured opportunities for an agent
+  to raise with you and never executes one; `--json` prints the recommendations
+  together with readiness. The user decision stays the gate.
+- **The operator board shows a fenced read-only task worktree diff.** The diff
+  carries explicit target and head identity, the tracked patch, and untracked
+  filenames. Git reads are bounded and cancellable, external filters and hidden
+  index changes are refused, lazy fetch and fsmonitor are disabled, and physical
+  directory identities are compared across Windows short and long aliases.
+
+### Changed
+
+- **Architecture projection is configured once per user, not once per
+  repository.** `projection_provider`, `projection_apply`,
+  `projection_failure_gate`, `projection_timeout_ms`, and the retired
+  `projection_version` no longer live in
+  `.ai/harness/policy.json#architecture`; the host-wide authority is
+  `~/.repo-harness/config.json#architecture`, seeded by the global runtime step
+  on install and update. Run `repo-harness update` once for the account, then
+  `repo-harness init --repo .` in each repository — adoption strips the retired
+  repository keys rather than copying repository preferences into the host
+  configuration, and `init` reports an `architecture projection readiness` step
+  naming the exact repair when the global document is missing.
+- **The operator board is scoped to the selected repository** and the operator
+  browser payload moves to protocol 5, versioned separately from
+  `FLEET_BOARD_PROTOCOL`. The tarball smoke now imports
+  `OPERATOR_FLEET_PAYLOAD_PROTOCOL` from the installed package instead of
+  restating the number, so the next bump cannot pass its own tests while failing
+  the smoke.
+- **A repository that never opted in starts projecting after `update`.** The
+  retired repository defaults were `provider: disabled` and `apply: disabled`,
+  while the host defaults are `projection_provider: archctx` and
+  `projection_apply: automatic`, and adoption deletes the repository keys without
+  a warning. A repository that had projection off — deliberately or by never
+  having touched it — therefore projects automatically once the account runs
+  `update`, and one that set
+  `projection_failure_gate: strict` drops to `advisory`. Assert the `architecture`
+  block you want in `~/.repo-harness/config.json` before running `init`: the
+  repository keys are gone by the time `init` returns and the setting is no longer
+  representable at repository scope.
+
 ### Fixed
 
-- **Fleet and bundled cross-review upgrades honor installation ownership.**
-  Unchanged files recorded in the installation manifest can now upgrade to a
-  newer package; unowned or user-modified content remains protected. Bundled
-  skills synchronize their entire trees, including updated and retired
-  references, with rollback on copy failure. `deep-worker` is included in
-  installation transaction capture and fleet completeness checks.
+- **Install honors ownership receipts on upgrade.** Unchanged files recorded in
+  the installation manifest can now upgrade to a newer package, while unowned or
+  user-modified content stays protected. Bundled skills synchronize their entire
+  trees, including updated and retired references, with rollback on copy
+  failure. `deep-worker` is included in installation transaction capture and
+  fleet completeness checks.
 - **Herdr repository configuration is seeded and diagnosed correctly.**
   TypeScript repository adoption now supplies the canonical Herdr version pin.
-  Missing or malformed `external_tooling.herdr.min_version` reports
+  A missing or malformed `external_tooling.herdr.min_version` reports
   `configuration-error` instead of runtime `unavailable`, while strict readiness
   still fails closed. After upgrading, run `repo-harness init --repo .` in an
-  affected repository to fill missing defaults; explicit malformed values must
-  be corrected deliberately. Global runtime refresh alone does not update
+  affected repository to fill missing defaults; explicit malformed values must be
+  corrected deliberately. A global runtime refresh alone does not update
   repository policy.
+- **Campaign preparation retries when the prior attempt produced no runtime
+  effect.** A preparation record was admitted once and any second call threw
+  `campaign preparation already admitted`, so a worker interrupted between
+  persisting the record and creating the container had no way forward: the record
+  blocked the retry and no container journal existed to reconcile. `prepareChild`
+  now reads the prior record and retries against it for the worker role only —
+  no launch, final, child, verifier preparation, downstream phase record, or
+  attempt reservation — and only on an identical identity whose bound neither
+  replaces nor extends the original deadline, so the immutable effect window is
+  preserved rather than renewed. `assertCampaignPreparationRetryable` is the
+  exclusive fence before the container create request: an existing container
+  journal for either the version probe or the workload identity means the attempt
+  already reached the runtime, and reconciliation is the only exit.
+- **`workflow_write_run_summary` emits the full record on jq-less hosts.** The
+  shell writer in `assets/hooks/lib/workflow-state.sh` produces the same shape as
+  `stop-handler.ts` and is the larger producer by volume, but its jq-less branch
+  emitted 5 of the 11 fields. Now that retention identifies a deletable record by
+  that shape, the short branch would have made every jq-less host's summaries
+  permanently unreclaimable. Both branches now emit the same fields, under tests
+  that prove which branch ran.
+- **`check:reference-configs` is listed with its family in the root required
+  checks.** It is the third member of the `check:hooks` / `check:helpers` family
+  and was missing, which is how a release note authored directly in the
+  `docs/reference-configs/` projection — instead of its `assets/reference-configs/`
+  source — reached CI before the next sync would have deleted it silently.
 
 ## [0.19.0] - 2026-09-10
 
