@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-12 13:10
+> **Related Plan**: plans/archive/plan-20260912-1239-init-automation-delivery.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260912-1310
+> **Archive Projection V1**: `plans/plan-20260912-1239-init-automation-delivery.md` => `plans/archive/plan-20260912-1239-init-automation-delivery.md`
+> **Archive Projection V1**: `tasks/notes/20260912-1239-init-automation-delivery.notes.md` => `tasks/archive/notes-20260912-1310-init-automation-delivery.md`
+> **Archive Projection V1**: `tasks/contracts/20260912-1239-init-automation-delivery.contract.md` => `tasks/archive/contract-20260912-1310-init-automation-delivery.md`
+> **Archive Projection V1**: `tasks/reviews/20260912-1239-init-automation-delivery.review.md` => `tasks/archive/review-20260912-1310-init-automation-delivery.md`
+
 # Task Contract: init-automation-delivery
 
-> **Status**: Active
-> **Plan**: plans/plan-20260912-1239-init-automation-delivery.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260912-1239-init-automation-delivery.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-12 12:39
-> **Review File**: `tasks/reviews/20260912-1239-init-automation-delivery.review.md`
-> **Notes File**: `tasks/notes/20260912-1239-init-automation-delivery.notes.md`
+> **Review File**: `tasks/archive/review-20260912-1310-init-automation-delivery.md`
+> **Notes File**: `tasks/archive/notes-20260912-1310-init-automation-delivery.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260912-1239-init-automation-delivery.md`
+- Source plan: `plans/archive/plan-20260912-1239-init-automation-delivery.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260912-1239-init-automation-delivery.review.md`
-- Notes file: `tasks/notes/20260912-1239-init-automation-delivery.notes.md`
+- Review file: `tasks/archive/review-20260912-1310-init-automation-delivery.md`
+- Notes file: `tasks/archive/notes-20260912-1310-init-automation-delivery.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -145,7 +155,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260912-1239-init-automation-delivery.notes.md
+    - tasks/archive/notes-20260912-1310-init-automation-delivery.md
 ```
 
 ## Verification Plan

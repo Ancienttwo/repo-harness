@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-12 13:10
+> **Related Plan**: plans/archive/plan-20260912-1239-init-automation-delivery.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260912-1310
+> **Archive Projection V1**: `plans/plan-20260912-1239-init-automation-delivery.md` => `plans/archive/plan-20260912-1239-init-automation-delivery.md`
+> **Archive Projection V1**: `tasks/notes/20260912-1239-init-automation-delivery.notes.md` => `tasks/archive/notes-20260912-1310-init-automation-delivery.md`
+> **Archive Projection V1**: `tasks/contracts/20260912-1239-init-automation-delivery.contract.md` => `tasks/archive/contract-20260912-1310-init-automation-delivery.md`
+> **Archive Projection V1**: `tasks/reviews/20260912-1239-init-automation-delivery.review.md` => `tasks/archive/review-20260912-1310-init-automation-delivery.md`
+
 # Task Review: init-automation-delivery
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260912-1239-init-automation-delivery.md
-> **Contract**: tasks/contracts/20260912-1239-init-automation-delivery.contract.md
-> **Notes File**: tasks/notes/20260912-1239-init-automation-delivery.notes.md
+> **Plan**: plans/archive/plan-20260912-1239-init-automation-delivery.md
+> **Contract**: tasks/archive/contract-20260912-1310-init-automation-delivery.md
+> **Notes File**: tasks/archive/notes-20260912-1310-init-automation-delivery.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-12 12:39
 > **Recommendation**: pass
@@ -35,7 +45,7 @@
 - Commands run:
 - Manual checks:
 - Supporting artifacts: tasks/reviews/20260912-init-architecture-defaults.review.md; CI run 34672256891 is the reproduced contamination failure baseline.
-- Implementation notes reviewed: tasks/notes/20260912-1239-init-automation-delivery.notes.md.
+- Implementation notes reviewed: tasks/archive/notes-20260912-1310-init-automation-delivery.md.
 - Run snapshot:
 
 ## Acceptance Receipt Projection
