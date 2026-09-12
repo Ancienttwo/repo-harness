@@ -50,6 +50,18 @@ const CANONICAL_PACKAGES: ReadonlyArray<{
     references: ["prd.md", "sprint.md", "goal.md"],
   },
   {
+    // Post-cutover addition: the testing router, sourced at its final
+    // directory from the start (no staging name to disambiguate).
+    dir: "repo-harness-test",
+    frontmatterName: "repo-harness-test",
+    references: [
+      "authoring.md",
+      "running.md",
+      "refactor-evidence.md",
+      "verification-plan.md",
+    ],
+  },
+  {
     // SSD-03 staged this directory as "repo-harness-plan-canonical" (its
     // frontmatter already carried the eventual public name) to avoid
     // colliding with the then-live assets/skill-commands/repo-harness-plan
