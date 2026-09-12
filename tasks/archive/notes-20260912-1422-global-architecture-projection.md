@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-12 14:22
+> **Related Plan**: plans/archive/plan-20260911-0144-global-architecture-projection.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260912-1422
+> **Archive Projection V1**: `plans/plan-20260911-0144-global-architecture-projection.md` => `plans/archive/plan-20260911-0144-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/notes/20260911-0144-global-architecture-projection.notes.md` => `tasks/archive/notes-20260912-1422-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/contracts/20260911-0144-global-architecture-projection.contract.md` => `tasks/archive/contract-20260912-1422-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/reviews/20260911-0144-global-architecture-projection.review.md` => `tasks/archive/review-20260912-1422-global-architecture-projection.md`
+
 # Implementation Notes: global architecture projection
 
 ## P1: Map
@@ -59,3 +69,12 @@ Acceptance base refreshed to main e238a73a after concurrent PRs landed. Their ch
 Main advanced to 75410260 during CI. Merge retained upstream retention changes and the existing Stop runtime alias; only the import and todo timestamp conflicted.
 
 > **Substantive Change SHA256**: `sha256:890686feb12a80371cb0c63c656ac82cd4327f0b8ca5b438e54996e771b1fefd`
+
+## Workflow closeout
+
+Delivered via PR #401, merged at 9563083c. No typed AcceptanceReceipt was sealed
+for that exact subject (the review card records the external AcceptanceReceipt as
+pending), so `completed_archive_gate` cannot admit a `Completed` archive without a
+user-issued waiver. Archived `Superseded` instead: the merged main tree is the
+surviving authority for this scope and the plan family no longer represents active
+work.

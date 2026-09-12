@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-12 14:22
+> **Related Plan**: plans/archive/plan-20260911-0238-proactive-refactor-recommendations.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260912-1422
+> **Archive Projection V1**: `plans/plan-20260911-0238-proactive-refactor-recommendations.md` => `plans/archive/plan-20260911-0238-proactive-refactor-recommendations.md`
+> **Archive Projection V1**: `tasks/notes/20260911-0238-proactive-refactor-recommendations.notes.md` => `tasks/archive/notes-20260912-1422-proactive-refactor-recommendations.md`
+> **Archive Projection V1**: `tasks/contracts/20260911-0238-proactive-refactor-recommendations.contract.md` => `tasks/archive/contract-20260912-1422-proactive-refactor-recommendations.md`
+> **Archive Projection V1**: `tasks/reviews/20260911-0238-proactive-refactor-recommendations.review.md` => `tasks/archive/review-20260912-1422-proactive-refactor-recommendations.md`
+
 # Task Review: proactive-refactor-recommendations
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260911-0238-proactive-refactor-recommendations.md
-> **Contract**: tasks/contracts/20260911-0238-proactive-refactor-recommendations.contract.md
-> **Notes File**: tasks/notes/20260911-0238-proactive-refactor-recommendations.notes.md
+> **Plan**: plans/archive/plan-20260911-0238-proactive-refactor-recommendations.md
+> **Contract**: tasks/archive/contract-20260912-1422-proactive-refactor-recommendations.md
+> **Notes File**: tasks/archive/notes-20260912-1422-proactive-refactor-recommendations.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-11 02:38
 > **Recommendation**: pass

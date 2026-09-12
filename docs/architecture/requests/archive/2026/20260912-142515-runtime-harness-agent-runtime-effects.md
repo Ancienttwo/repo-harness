@@ -1,6 +1,6 @@
 # Architecture Queue Card: runtime-harness-agent-runtime-effects
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-09-09T02:02:06+0800
 > **Updated**: 2026-09-09T02:02:06+0800
 > **Severity**: low
@@ -84,3 +84,11 @@
   }
 ]
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-09-12T14:25:15+0800
+- Artifacts:
+- `docs/architecture/modules/runtime-harness/agent-runtime-effects.md`
+- Note: Adapter swap already recorded by d8c082b1 in the capability node, module doc and local contracts; no boundary, entrypoint, dependency, runtime-path or verification change remains.
