@@ -1,7 +1,7 @@
 # Plan: CI test selection and draft lifecycle
 
 > **Status**: Review
-> **Substantive Change SHA256**: `sha256:5b67974483427206b2fa8a666e331c9e1bc6b124e119d205d84a8aee89b3148f`
+> **Substantive Change SHA256**: `sha256:dd0b8fa46c1072b22b3da6d52f75e0d3a178bc3cfcd8b15f6385901a54ce0c4e`
 > **Artifact Level**: work-package
 > **Promotion Reason**: verification_boundary
 > **Verification Boundary**: Git event fixtures and the actual workflow aggregate shell.
@@ -81,3 +81,4 @@ No hosted success is claimed. After gatekeeper PASS, the owner controls ship: re
 - Owner approved ship after the local gatekeeper PASS. The reviewed slice was committed locally and rebased without conflicts onto `3108aa435a8d5655622446881dc77a61e2aa6d9f`; the other worktree policy WIP remains separate.
 - Base delta changes initialization defaults and existing repository documents, with no selector/workflow/runner changes. Revalidate the selected docs lane for its real-repository fixture consumers, selector/drift and digest binding. Prior local evidence remains a baseline for its recorded subject.
 - Rebased candidate verification: whole documentation lane passed (22 files, 309 tests, 75.86 seconds); selector/drift passed (9 tests, 193 expectations, 9.22 seconds); typecheck and all nine repository-integrity commands passed. Logs: `/tmp/rh-ci-ship-docs.log`, `/tmp/rh-ci-ship-focused.log`, `/tmp/rh-ci-ship-integrity-{0..9}.log`. `git range-diff` confirms the rebased implementation patch is unchanged; only this evidence entry and its base-bound digest changed.
+- Draft PR #415 was created at `30027569`. During creation, #414 advanced main to `a2c241813ab2eb4188d4a6682633cf87873cc64d`; draft run `34679218915` correctly deferred all expensive lanes, but Governance additionally rejected the old base-bound digest. Integrated that non-overlapping architecture/lifecycle-only base with a normal merge and rebound the digest. No product, test, runner or selector implementation changed; retain the 75.86-second docs lane as baseline and use targeted drift checks for this delta.
