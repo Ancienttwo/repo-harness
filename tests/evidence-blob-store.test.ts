@@ -1,19 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
-import { writeBlob, ingestFileAsBlob } from "../src/effects/evidence/blob-store";
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
+import { ingestFileAsBlob, writeBlob } from "../src/effects/evidence/blob-store";
 
 function sha256hex(content: Buffer | string): string {
   return createHash("sha256").update(content).digest("hex");

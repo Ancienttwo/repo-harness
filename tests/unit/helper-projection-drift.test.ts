@@ -1,3 +1,8 @@
+import { spawnSync } from "child_process";
+import { existsSync, rmSync } from "fs";
+import { HELPER_DIR, INTENTIONALLY_DIVERGENT, TEMPLATE_DIR, ROOT as scriptROOT } from "../helpers/helper-script-fixture";
+import { run, tmpWorkspace } from "../helpers/repo-fixture";
+
 /**
  * Helper projection drift guard.
  *
@@ -98,4 +103,71 @@ describe('helper projection drift', () => {
     expect(readFileSync(join(SCRIPTS_DIR, 'verify-contract.sh'), 'utf-8')).toContain(constant);
     expect(readFileSync(join(HELPERS_DIR, 'verify-contract.sh'), 'utf-8')).toContain(constant);
   });
+});
+
+describe("helper-projection helper integration", () => {
+  test("workflow contract drives a deterministic helper projection without a migration delegate", () => {
+    const check = run("bun", ["scripts/sync-helper-sources.ts", "--check"], scriptROOT);
+    expect(
+      check.status,
+      `sync-helper-sources --check exited ${check.status} (signal=${check.signal ?? "none"})\nstdout:\n${check.stdout}\nstderr:\n${check.stderr}`
+    ).toBe(0);
+    expect(check.stdout).toContain("projection OK");
+    expect(check.stdout).not.toContain("package delegate preserved");
+    expect(check.stderr).toBe("");
+
+    const contract = JSON.parse(readFileSync(join(scriptROOT, "assets/workflow-contract.v1.json"), "utf-8")) as {
+      helpers: { scripts: string[] };
+    };
+    const packaged = readdirSync(HELPER_DIR)
+      .filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))
+      .sort();
+    expect(packaged).toEqual([...contract.helpers.scripts].sort());
+
+    const helpers = packaged.filter((name) => !INTENTIONALLY_DIVERGENT.includes(name));
+    expect(helpers.length).toBeGreaterThan(0);
+    for (const helper of helpers) {
+      const scriptsPath = join(scriptROOT, "scripts", helper);
+      expect(existsSync(scriptsPath)).toBe(true);
+      expect(readFileSync(scriptsPath, "utf-8")).toBe(readFileSync(join(HELPER_DIR, helper), "utf-8"));
+      expect(statSync(scriptsPath).mode & 0o111).toBe(statSync(join(HELPER_DIR, helper)).mode & 0o111);
+    }
+  }, 30_000);
+
+  test("contract projection has a single canonical executable template authority", () => {
+    const standalone = readFileSync(join(TEMPLATE_DIR, "contract.template.md"), "utf-8");
+    const planToTodoSrc = readFileSync(join(scriptROOT, "scripts/plan-to-todo.sh"), "utf-8");
+    const ensureTaskWorkflowSrc = readFileSync(join(scriptROOT, "scripts/ensure-task-workflow.sh"), "utf-8");
+    const projectInitLibSrc = readFileSync(join(scriptROOT, "scripts/lib/project-init-lib.sh"), "utf-8");
+    expect(readFileSync(join(scriptROOT, ".claude/templates/contract.template.md"), "utf-8")).toBe(standalone);
+    for (const [label, source] of Object.entries({ planToTodoSrc, ensureTaskWorkflowSrc, projectInitLibSrc })) {
+      expect(source, `${label} must not restore an executable contract fallback`).not.toContain("CONTRACT_TEMPLATE_EOF");
+      expect(source, `${label} must fail closed without its canonical template`).toContain("canonical contract template is required");
+    }
+  });
+
+  test("direct helper tests ignore ambient repo-root env", () => {
+    const poisonRepo = tmpWorkspace("helper-ambient-root-poison");
+    try {
+      const res = spawnSync("bun", [
+        "test",
+        "tests/new-plan.test.ts",
+        "--test-name-pattern",
+        "new-plan should create timestamped plan without compatibility pointer",
+      ], {
+        cwd: scriptROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          REPO_HARNESS_TARGET_REPO_ROOT: poisonRepo,
+        },
+      });
+
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+      expect(`${res.stdout}\n${res.stderr}`).toContain("1 pass");
+      expect(existsSync(join(poisonRepo, "plans"))).toBe(false);
+    } finally {
+      rmSync(poisonRepo, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

@@ -1,4 +1,8 @@
+import { copyHelpers } from "./helpers/helper-script-fixture";
+import { run, tmpWorkspace } from "./helpers/repo-fixture";
+
 import { describe, expect, test } from "bun:test";
+import { spawn } from "child_process";
 import {
   copyFileSync,
   existsSync,
@@ -13,13 +17,9 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawn, spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 
-function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: { ...process.env, ...env } });
-}
 
 type AsyncQueueResult = {
   status: number | null;
@@ -817,5 +817,144 @@ describe("architecture queue", () => {
         rmSync(outside, { recursive: true, force: true });
       }
     });
+  }, 30_000);
+});
+
+describe("architecture-queue helper integration", () => {
+  test("archive-architecture-request moves handled requests out of the pending queue", () => {
+    const cwd = tmpWorkspace("helper-architecture-archive");
+    try {
+      copyHelpers(cwd);
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/modules/apps-web"), { recursive: true });
+      const requestPath = join(cwd, "docs/architecture/requests/20260522-apps-web-account.md");
+      const artifactPath = join(cwd, "docs/architecture/modules/apps-web/account.md");
+      const requestFile = "docs/architecture/requests/20260522-apps-web-account.md";
+      const event = {
+        ts: "2026-05-22T12:00:00+0800",
+        file_path: "apps/web/src/routes/account/page.tsx",
+        severity: "medium",
+        functional_block: "apps/web",
+        capability_id: "apps-web-account",
+        matched_prefix: "apps/web",
+        architecture_domain: "apps-web",
+        architecture_capability: "account",
+        architecture_module: "docs/architecture/modules/apps-web/account.md",
+        workstream_dir: "tasks/workstreams/apps-web/account",
+        contract_agents: "AGENTS.md",
+        contract_claude: "CLAUDE.md",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      expect(run("bun", ["scripts/architecture-event.ts", "upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)], cwd).status).toBe(0);
+      writeFileSync(artifactPath, "# Account Architecture\n");
+      writeFileSync(
+        join(cwd, "docs/architecture/index.md"),
+        [
+          "# Architecture Index",
+          "",
+          "## Pending Requests",
+          "",
+          "- [ ] 2026-05-22 [medium] `apps/web/src/routes/account/page.tsx` -> [20260522-apps-web-account](requests/20260522-apps-web-account.md)",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "AGENTS.md"),
+        [
+          "# Root",
+          "",
+          "- Pending architecture request: `docs/architecture/requests/20260522-apps-web-account.md`",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "CLAUDE.md"),
+        [
+          "# Root",
+          "",
+          "- Pending architecture request: `docs/architecture/requests/20260522-apps-web-account.md`",
+          "",
+        ].join("\n")
+      );
+      expect(run("bash", ["scripts/architecture-queue.sh", "reindex"], cwd).status).toBe(0);
+
+      const res = run("bash", [
+        "scripts/archive-architecture-request.sh",
+        "--request",
+        "docs/architecture/requests/20260522-apps-web-account.md",
+        "--status",
+        "resolved",
+        "--artifact",
+        "docs/architecture/modules/apps-web/account.md",
+        "--note",
+        "module pointer updated",
+      ], cwd);
+
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+      expect(res.stdout).toContain("[ArchitectureArchive] Archived docs/architecture/requests/20260522-apps-web-account.md");
+      expect(existsSync(requestPath)).toBe(false);
+
+      const archivePath = join(
+        cwd,
+        `docs/architecture/requests/archive/${new Date().getFullYear()}/20260522-apps-web-account.md`
+      );
+      expect(existsSync(archivePath)).toBe(true);
+      const archived = readFileSync(archivePath, "utf-8");
+      expect(archived).toContain("> **Status**: Resolved");
+      expect(archived).toContain("## Archive Resolution");
+      expect(archived).toContain("- `docs/architecture/modules/apps-web/account.md`");
+      expect(archived).toContain("- Note: module pointer updated");
+
+      const index = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
+      expect(index).not.toContain("requests/20260522-apps-web-account.md");
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("- Pending architecture request: `(none)`");
+      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toContain("- Pending architecture request: `(none)`");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("architecture-drift should replace stale pending index lines for the same capability", () => {
+    const cwd = tmpWorkspace("helper-architecture-pending-dedupe");
+    try {
+      copyHelpers(cwd);
+      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+      mkdirSync(join(cwd, "apps/web/src/routes"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/context/capabilities.json"), JSON.stringify({
+        version: 1,
+        capabilities: [
+          {
+            id: "apps-web",
+            domain: "apps-web",
+            name: "web",
+            prefixes: ["apps/web"],
+            contract_files: {
+              agents: "apps/web/AGENTS.md",
+              claude: "apps/web/CLAUDE.md",
+            },
+            architecture_module: "docs/architecture/modules/apps-web/web.md",
+            workstream_dir: "tasks/workstreams/apps-web/web",
+            lsp_profile: "typescript-lsp",
+            verification_hints: ["web checks"],
+          },
+        ],
+      }, null, 2) + "\n");
+
+      const first = run("bash", ["scripts/architecture-queue.sh", "record", "--file", "apps/web/src/routes/first.tsx"], cwd);
+      expect(first.status).toBe(0);
+      const second = run("bash", ["scripts/architecture-queue.sh", "record", "--file", "apps/web/src/routes/second.tsx"], cwd);
+      expect(second.status).toBe(0);
+
+      const index = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
+      const pendingLines = index.split("\n").filter((line) => line.includes("requests/") && line.includes("[medium]"));
+      expect(pendingLines).toHaveLength(1);
+      expect(pendingLines[0]).toContain("apps/web/src/routes/second.tsx");
+      expect(pendingLines[0]).not.toContain("first.tsx");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   }, 30_000);
 });

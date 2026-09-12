@@ -4,12 +4,8 @@ import { createHash } from "crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
-import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
-import { importAttestedEvidence, type AttestedReceiptInput } from "../src/effects/evidence/attested-import";
-import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
-import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
-import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
 import {
   acceptanceReceiptPath,
   archiveProjectionReceiptPath,
@@ -18,19 +14,15 @@ import {
   runAcceptanceReceiptCli,
   sealArchiveProjection,
 } from "../scripts/acceptance-receipt";
+import { importAttestedEvidence, type AttestedReceiptInput } from "../src/effects/evidence/attested-import";
+import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
+import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
+import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 import { emptyVerificationEvaluation, withEmptyVerificationPlan } from "./helpers/verification-plan-fixture";
 
 function git(repoRoot: string, args: readonly string[]): string {
   return execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf-8" });
-}
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
 }
 
 /**

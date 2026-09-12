@@ -1,9 +1,12 @@
+import { copyHelpers } from "./helpers/helper-script-fixture";
+import { run, tmpWorkspace as scriptTmpWorkspace } from "./helpers/repo-fixture";
+
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { createHash } from "crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -214,6 +217,27 @@ describe("capability resolver", () => {
       const res = runResolver(cwd, ["validate", "--format", "text"]);
       expect(res.status).toBe(1);
       expect(res.stdout).toContain("apps-web: prefix does not exist: apps/web");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe("capability-resolver helper integration", () => {
+  test("capability resolver rejects missing registry instead of synthesizing legacy discovery", () => {
+    const cwd = scriptTmpWorkspace("helper-capability-worktrees");
+    try {
+      mkdirSync(join(cwd, "apps/mobile"), { recursive: true });
+      mkdirSync(join(cwd, ".worktrees/codex/old/apps/mobile"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(join(cwd, "apps/mobile/AGENTS.md"), "# Mobile Contract\n");
+      writeFileSync(join(cwd, ".worktrees/codex/old/apps/mobile/AGENTS.md"), "# Old Worktree Contract\n");
+
+      const res = run("bun", ["scripts/capability-resolver.ts", "list", "--format", "prefixes"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("missing capability registry: .ai/context/capabilities.json");
+      expect(res.stderr).not.toContain("apps/mobile");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

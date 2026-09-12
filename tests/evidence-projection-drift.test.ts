@@ -1,3 +1,4 @@
+import { run, withTempRepo } from "./helpers/repo-fixture";
 /**
  * EPC-09 Program closeout, Goal 1: cross-package projection-drift check.
  *
@@ -15,36 +16,25 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { spawnSync } from "child_process";
 
-import type { JsonValue, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
-import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
-import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { canonicalize } from "../src/core/evidence/canonical-json";
 import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
+import type { JsonValue, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import {
   CHECKPOINTS_DIR_RELATIVE,
   publishCheckpointFromLedger,
   resolveLastPublishedCheckpoint,
 } from "../src/effects/evidence/checkpoint-store";
-import { materializeRecoveryViews } from "../src/effects/evidence/recovery-materializer";
 import { buildChecksLatestProjection, type MaterializeChecksLatestInput } from "../src/effects/evidence/checks-materializer";
-import { canonicalize } from "../src/core/evidence/canonical-json";
+import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
+import { materializeRecoveryViews } from "../src/effects/evidence/recovery-materializer";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const SUBJECT_A = `sha256:${"a".repeat(64)}`;
 const FIXED_NOW = () => new Date("2026-07-23T02:00:00.000Z");
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
 
 function baseIdentity(overrides: Partial<SubjectIdentity> = {}): SubjectIdentity {
   return {
@@ -104,9 +94,6 @@ function seedEvent(
   });
 }
 
-function run(cmd: string, args: string[], cwd: string) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8" });
-}
 
 function contentHashOf(consumerFacing: Record<string, unknown>): string {
   return `sha256:${createHash("sha256").update(canonicalize(consumerFacing as any)).digest("hex")}`;

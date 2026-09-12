@@ -1,51 +1,41 @@
-import { describe, expect, test, spyOn } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as fs from "fs";
 import {
   constants,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
   symlinkSync,
-  writeFileSync,
+  writeFileSync
 } from "fs";
-import * as fs from "fs";
-import { tmpdir } from "os";
 import { dirname, join, sep } from "path";
+import { withTempRepo } from "./helpers/repo-fixture";
 
-import type { EvidenceEventRecord, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
-import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
-import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
+import type { EvidenceEventRecord, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import {
   CHECKPOINT_HUMAN_FILENAME,
   CHECKPOINT_MACHINE_FILENAME,
-  CHECKPOINTS_DIR_RELATIVE,
   CheckpointResolutionError,
+  CHECKPOINTS_DIR_RELATIVE,
+  checkpointSyncPlan,
   pruneCheckpointCache,
   publishCheckpoint,
   publishCheckpointFromLedger,
-  checkpointSyncPlan,
   resolveCheckpointMarkerPath,
   resolveCheckpointsDir,
   resolveLastPublishedCheckpoint,
 } from "../src/effects/evidence/checkpoint-store";
+import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const SUBJECT_A = `sha256:${"a".repeat(64)}`;
 const SUBJECT_B = `sha256:${"b".repeat(64)}`;
 const FIXED_NOW = () => new Date("2026-07-22T22:00:00.000Z");
-
-function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
-  const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  try {
-    fn(repoRoot);
-  } finally {
-    rmSync(repoRoot, { recursive: true, force: true });
-  }
-}
 
 function baseIdentity(overrides: Partial<SubjectIdentity> = {}): SubjectIdentity {
   return {
