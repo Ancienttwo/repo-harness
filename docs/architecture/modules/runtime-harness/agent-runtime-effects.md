@@ -164,4 +164,6 @@ ledger 用 atomic replace 發布,讀取不取鎖,因此不會反向持有 effect
 
 ## 4. 歷史決策記錄(append-only)
 
+- 2026-09-12:漂移卡 `runtime-harness-agent-runtime-effects` 歸檔為 Resolved。觸發事件是 2026-09-09T02:02 對 `src/effects/engineers/agent-runtime-adapters/herdr-cli-agent.ts` 的編輯,該次改動由 `d8c082b1` 落地,同一個 commit 已同步改寫 `capability.runtime-harness.agent-runtime-effects.yaml` 的 summary 與 adapter 責任行、本文檔機器區,以及 `src/core/engineers/{AGENTS,CLAUDE}.md`;`source.include` 前綴、宣告入口與依賴邊界均未變動,因此不需要額外 snapshot。
+
 ## Optimization Backlog

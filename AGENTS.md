@@ -132,7 +132,7 @@ explicit requirement for that new subject; a cache miss alone is not a trigger.
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/runtime-harness/automation-budget.md`
-- Pending architecture request: `docs/architecture/requests/runtime-harness-automation-budget.md`
+- Pending architecture request: `(none)`
 
 ## Active Workstreams
 

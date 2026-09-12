@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-12 14:22
+> **Related Plan**: plans/archive/plan-20260911-0144-global-architecture-projection.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260912-1422
+> **Archive Projection V1**: `plans/plan-20260911-0144-global-architecture-projection.md` => `plans/archive/plan-20260911-0144-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/notes/20260911-0144-global-architecture-projection.notes.md` => `tasks/archive/notes-20260912-1422-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/contracts/20260911-0144-global-architecture-projection.contract.md` => `tasks/archive/contract-20260912-1422-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/reviews/20260911-0144-global-architecture-projection.review.md` => `tasks/archive/review-20260912-1422-global-architecture-projection.md`
+
 # Task Contract: global-architecture-projection
 
 > **Status**: Active
-> **Plan**: plans/plan-20260911-0144-global-architecture-projection.md
+> **Plan**: plans/archive/plan-20260911-0144-global-architecture-projection.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
 > **Last Updated**: 2026-09-11 01:44
-> **Review File**: `tasks/reviews/20260911-0144-global-architecture-projection.review.md`
-> **Notes File**: `tasks/notes/20260911-0144-global-architecture-projection.notes.md`
+> **Review File**: `tasks/archive/review-20260912-1422-global-architecture-projection.md`
+> **Notes File**: `tasks/archive/notes-20260912-1422-global-architecture-projection.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ A single disposable HOME fails to control two repository status/drain paths, or 
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260911-0144-global-architecture-projection.md`
+- Source plan: `plans/archive/plan-20260911-0144-global-architecture-projection.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260911-0144-global-architecture-projection.review.md`
-- Notes file: `tasks/notes/20260911-0144-global-architecture-projection.notes.md`
+- Review file: `tasks/archive/review-20260912-1422-global-architecture-projection.md`
+- Notes file: `tasks/archive/notes-20260912-1422-global-architecture-projection.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -72,9 +82,9 @@ allowed_paths:
   - docs/spec.md
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260911-0144-global-architecture-projection.contract.md
-  - tasks/reviews/20260911-0144-global-architecture-projection.review.md
-  - tasks/notes/20260911-0144-global-architecture-projection.notes.md
+  - tasks/archive/contract-20260912-1422-global-architecture-projection.md
+  - tasks/archive/review-20260912-1422-global-architecture-projection.md
+  - tasks/archive/notes-20260912-1422-global-architecture-projection.md
   - src/
   - tests/
   - scripts/
@@ -138,7 +148,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260911-0144-global-architecture-projection.notes.md
+    - tasks/archive/notes-20260912-1422-global-architecture-projection.md
 ```
 
 ## Verification Plan
