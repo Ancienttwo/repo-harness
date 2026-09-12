@@ -1,6 +1,6 @@
 {
-  "version": "0.19.0",
-  "templateVersion": "0.19.0",
+  "version": "0.19.1",
+  "templateVersion": "0.19.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -275,6 +275,10 @@
     {
       "version": "0.18.0",
       "description": "Rebuilds the operator control board as an attention-first worklist with a resident detail pane, projecting task_label and task_index through FleetBoardCardV1 at FLEET_BOARD_PROTOCOL 2, and opens the board's single write channel as an authenticated task-message POST with Origin, read_only and 8 KiB gates under sender_kind operator; adds zh/en board i18n and canonical brand marks"
+    },
+    {
+      "version": "0.19.1",
+      "description": "Bounds the two unbounded surfaces under .ai/harness/: Stop run summaries are retained to the newest RUN_SUMMARY_RETENTION_COUNT by record shape, and repo-harness run evidence-gc reclaims superseded evidence checkpoints and over-retention summaries in a repository the Stop path can no longer heal; moves architecture projection execution settings to ~/.repo-harness/config.json#architecture; adds the auto-campaign bounded standard turn, repository-scoped operator board, explicit fleet registry pruning, and proactive measured refactor recommendations behind user approval"
     }
   ],
   "generatedProjectStamp": {

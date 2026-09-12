@@ -4,7 +4,86 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-09-12
+
+Two surfaces under `.ai/harness/` grew without an operator exit. This release
+bounds both and adds the command that reclaims a backlog the Stop path can no
+longer reach, alongside architecture-projection configuration moving to the
+user level and four additions on the program layer.
+
+### Changed
+
+- **Architecture projection execution settings are global, not per repository.**
+  They now live once in `~/.repo-harness/config.json#architecture`. Global
+  install and update initialize Archctx automatic projection with an advisory
+  failure gate, preserving an explicit `disabled` choice and unrelated settings.
+  Repository `init` reports readiness and adoption removes the retired
+  repository-local execution settings. Provider versions stay package-owned.
+
+### Added
+
+- **Stop run summaries are bounded.** Stop wrote one `${runId}.json` per session
+  and nothing removed it; a long-running repository reached 5931 files here,
+  the oldest from 2026-05-25. `src/effects/run-summary-retention.ts` retains the
+  newest `RUN_SUMMARY_RETENTION_COUNT` and Stop applies it after its own write,
+  fail-open so a sweep fault never fails Stop.
+
+  A run summary is identified by its record shape -- a `run_id` plus
+  `checks_file`, `handoff_file`, `policy_file`, and `context_map_file`, every one
+  a pointer the next Stop recomputes. Not by filename and not by `reason`:
+  `verify-sprint`'s frozen acceptance snapshot shares the `run-` prefix, and
+  `reason` is free-form operator text. Records carrying results rather than
+  pointers -- that snapshot, and the ledger-bound
+  `verification-${executionId}.json` a `baseline_with_delta` criterion reads --
+  are never candidates, and neither is a shape a future writer adds.
+
+- **`repo-harness run evidence-gc [--dry-run] [--repo <path>]`.** Applies the
+  retention above plus the existing checkpoint prune on demand, reporting
+  reclaimable bytes per class. Checkpoint retention has shipped since 0.19.0 but
+  only runs inside a successful publish, so a repository whose evidence ledger
+  was reset, or one that no longer runs the harness, kept its whole backlog with
+  no way to reclaim it -- 9.7 GB in a single repository measured here. The next
+  successful Stop after upgrading prunes that backlog on its own; this command
+  is for when that Stop will not come.
+
+- **`auto-campaign` skill.** Fixes one standard campaign turn as a bounded
+  procedure: `assets/skills/auto-campaign/` ships `SKILL.md`, an execution
+  reference, `standard.json`, and `prepare-grant.ts`, registered in the skill
+  catalog.
+
+- **Repository-scoped operator board.** The board carries a repository
+  dimension and a selector, so multiple repositories no longer share one
+  undifferentiated surface.
+
+- **`repo-harness fleet` registry pruning.** Stale repository registry entries
+  are removed through an explicit operator command instead of implicit
+  invalidation.
+
+- **Proactive measured refactor recommendations.** Normal Stop reads measured
+  Archctx refactor opportunities and asks the agent to present evidence,
+  inferred benefit, and risk for a proceed/defer/decline choice. Observation
+  never authors or accepts a recommendation, creates a plan or program, enables
+  execution, or builds an index; existing user-approved execution gates stay
+  authoritative. The enable preference is global.
+
 ### Fixed
+
+- **Campaign preparation can retry before any runtime effect.** A worker
+  interrupted between writing the preparation record and creating its container
+  had no exit: the record blocked a retry and the absent container journal left
+  nothing for `reconcile`. `prepareChild` now reads back an existing record and
+  permits a retry only when that attempt is provably effect-free -- worker role
+  only, with no launch, final, child, verifier preparation, downstream phase
+  record, or attempt reservation. The retry must carry identical identity, and
+  the caller's bound neither replaces nor extends the original deadline, so the
+  immutable effect window is preserved rather than renewed.
+
+- **One authoring contract for the run summary record.**
+  `workflow_write_run_summary`'s jq-less branch emitted 5 of the 11 fields.
+  Now that retention identifies a record by its shape, a short branch would have
+  made every jq-less host's summaries permanently unreclaimable. Both branches
+  emit the same fields.
+
 
 - **Fleet and bundled cross-review upgrades honor installation ownership.**
   Unchanged files recorded in the installation manifest can now upgrade to a
