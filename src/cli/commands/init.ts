@@ -1,5 +1,7 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
+import { ensureGlobalArchitectureProjection } from './architecture-configuration';
+import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 /**
  * Existing-repo harness bootstrap/update implementation.
  *
@@ -37,6 +39,7 @@ import {
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
+import { withRuntimeHostTransactionLock } from "../installer/runtime-host-lock";
 import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
 import {
   defaultBrainRootChoice,
@@ -834,6 +837,20 @@ export function runInit(
       status: "skipped",
       detail: apply ? "repo harness did not apply cleanly or registry effect was unavailable" : "dry-run",
     });
+  }
+
+  if (apply && migrate.status === "ok") {
+    try {
+      // Install/update snapshot and roll back this same account configuration.
+      // Join their lock before either initializer reads its current values.
+      withRuntimeHostTransactionLock(commandEnv, () => {
+        const architecture = ensureGlobalArchitectureProjection(commandEnv);
+        steps.push(architecture);
+        if (architecture.status === "ok") steps.push(ensureGlobalRefactorRecommendations(commandEnv));
+      });
+    } catch (error) {
+      steps.push({ step: "global automation defaults", status: "failed", detail: String(error) });
+    }
   }
 
   if (externalSkills && apply && migrate.status === "ok") {

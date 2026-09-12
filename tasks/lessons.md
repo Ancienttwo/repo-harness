@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-09-12
+- Triggered by correction: architecture document projection must be enabled by initialization, and proactive refactor suggestions must be delivered through the hook.
+- Mistake pattern: enabling defaults only in global install/update while repository init merely reports missing setup leaves an initialized repository without its expected automation.
+- Prevention rule: successful init uses the same default configuration writers as install/update, preserves explicit disabled choices, and keeps dry-run read-only. Verify Stop recommendation delivery separately from permission to execute a refactor.
+- Where to apply next time: `src/cli/commands/init.ts`, `tests/cli/init.test.ts`, and `tests/stop-handler.test.ts`.
+
 - Date: 2026-09-09
 - Triggered by correction: projection receipts naming bc2328db were called stale while this checkout's HEAD/main actually remained at bc2328db; only origin/main had advanced.
 - Mistake pattern: treating remote-tracking movement, generation stamps, and the executing checkout's identity as interchangeable evidence of a late writer.

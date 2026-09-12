@@ -22,6 +22,8 @@ import {
   syncCrossReviewSkills,
   writeGlobalContextFiles,
 } from "../../src/cli/commands/init";
+import { withRuntimeHostTransactionLock } from "../../src/cli/installer/runtime-host-lock";
+import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import {
   cutoverMarkerPath,
@@ -176,12 +178,98 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
 }
 
 describe("init command", () => {
+  test("init defaults enable architecture projection and Stop recommendations without overriding user choices", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-architecture-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const accountHome = join(tmp, "account");
+    const configPath = join(accountHome, ".repo-harness/config.json");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(dirname(configPath), { recursive: true });
+      setupFakeSource(source);
+      writeFileSync(configPath, JSON.stringify({ brainRoot: "/existing/brain" }));
+      const options = {
+        repo, sourceRoot: source, syncSkill: false, hostAdapters: false,
+        externalSkills: false, codegraph: false, verify: false,
+        env: { ...process.env, HOME: accountHome, REPO_HARNESS_HOME: join(accountHome, ".repo-harness") },
+      };
+      const initial = readFileSync(configPath, "utf8");
+      expect(runInit({ ...options, apply: false }).exitCode).toBe(0);
+      expect(readFileSync(configPath, "utf8")).toBe(initial);
+
+      const applied = runInit(options);
+      expect(applied.exitCode).toBe(0);
+      expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
+        brainRoot: "/existing/brain",
+        architecture: { projection_provider: "archctx", projection_apply: "automatic" },
+        refactor_recommendations: { enabled: true },
+      });
+      expect(applied.steps.find((step) => step.step === "global architecture projection")?.status).toBe("ok");
+      expect(applied.steps.find((step) => step.step === "global refactor recommendations")?.status).toBe("ok");
+      const disabled = JSON.stringify({
+        architecture: { projection_provider: "disabled", projection_apply: "disabled" },
+        refactor_recommendations: { enabled: false },
+      });
+      writeFileSync(configPath, disabled);
+      expect(runInit(options).exitCode).toBe(0);
+      expect(readFileSync(configPath, "utf8")).toBe(disabled);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  test("init cannot write defaults during a host transaction that rolls back", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-host-lock-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const configPath = join(home, ".repo-harness/config.json");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(dirname(configPath), { recursive: true });
+      setupFakeSource(source);
+      const original = JSON.stringify({ brainRoot: "/existing/brain" });
+      writeFileSync(configPath, original);
+      const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") };
+      const options = {
+        repo, sourceRoot: source, env, syncSkill: false, hostAdapters: false,
+        externalSkills: false, codegraph: false, verify: false,
+      };
+      // Hold the update lock and its real rollback preimage while init attempts
+      // the write. No timing window can let an unprotected writer escape.
+      withRuntimeHostTransactionLock(env, () => {
+        const transaction = beginInstallHostTransaction([configPath], env);
+        try {
+          const result = runInit(options);
+          expect(result.exitCode).toBe(1);
+          expect(result.steps).toContainEqual(expect.objectContaining({
+            step: "global automation defaults", status: "failed",
+          }));
+          expect(readFileSync(configPath, "utf8")).toBe(original);
+        } finally {
+          rollbackInstallHostTransaction(transaction);
+        }
+      });
+      expect(runInit(options).exitCode).toBe(0);
+      expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
+        architecture: { projection_apply: "automatic" },
+        refactor_recommendations: { enabled: true },
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30000);
+
   test("defaults --repo to cwd and applies the existing-repo harness", () => {
     const tmp = join(tmpdir(), `repo-harness-init-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
     const previousCwd = process.cwd();
     try {
+      mkdirSync(join(tmp, "home"), { recursive: true });
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
@@ -190,6 +278,7 @@ describe("init command", () => {
 
       const result = runInit({
         sourceRoot: source,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
@@ -249,6 +338,7 @@ describe("init command", () => {
     const repo = join(tmp, "repo");
     const previousCwd = process.cwd();
     try {
+      mkdirSync(join(tmp, "home"), { recursive: true });
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
@@ -257,6 +347,7 @@ describe("init command", () => {
 
       const result = runInit({
         sourceRoot: source,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
@@ -377,20 +468,15 @@ describe("init command", () => {
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
 
-      // Explicit env is required here, not decorative: for an npx cache source
-      // initCommandEnv() (src/cli/commands/init.ts) builds `{ ...(env ?? {}),
-      // AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" }`, so passing no env yields a
-      // command env holding only that key. REPO_HARNESS_HOME and HOME are both
-      // dropped and the registry write falls back to homedir() — the operator's
-      // real ~/.repo-harness. Spreading process.env keeps the isolated home
-      // installed by tests/preload-home-isolation.ts.
-      //
-      // The delete keeps this test deterministic: initCommandEnv() only forces
-      // the flag to "0" when it is undefined, so an ambient
-      // AGENTIC_DEV_LINK_INSTALLED_COPIES in the operator's shell would be passed
-      // straight through and the `sync link=0` assertion below would fail for a
-      // reason that has nothing to do with the code under test.
-      const childEnv = { ...process.env };
+      // Init writes account configuration as well as registry state, so both
+      // home authorities must stay inside this fixture. Remove the ambient
+      // link flag to exercise the npx default deterministically.
+      const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        HOME: join(tmp, "home"),
+        REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness"),
+      };
+      mkdirSync(childEnv.HOME!, { recursive: true });
       delete childEnv.AGENTIC_DEV_LINK_INSTALLED_COPIES;
 
       const result = runInit({
@@ -1143,6 +1229,7 @@ describe("init command", () => {
  */
 describe("init cutover quiescence gate", () => {
   function liveContractWorktreeRepo(tmp: string): { source: string; repo: string } {
+    mkdirSync(join(tmp, "home"), { recursive: true });
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
     mkdirSync(source, { recursive: true });
@@ -1181,7 +1268,10 @@ describe("init cutover quiescence gate", () => {
       const { source, repo } = liveContractWorktreeRepo(tmp);
       expect(isCutoverInstalled(repo)).toBe(false);
 
-      const result = runInit({ repo, sourceRoot: source, ...initOptions });
+      const result = runInit({
+        repo, sourceRoot: source, ...initOptions,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
+      });
 
       expect(result.exitCode).toBe(1);
       const gate = result.steps.find((step) => step.step === "cutover quiescence");
@@ -1204,7 +1294,10 @@ describe("init cutover quiescence gate", () => {
       // The blockers are still live; the marker is what makes the gate inert.
       expect(inspectCutoverQuiescence(repo).quiescent).toBe(false);
 
-      const result = runInit({ repo, sourceRoot: source, ...initOptions });
+      const result = runInit({
+        repo, sourceRoot: source, ...initOptions,
+        env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
+      });
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "cutover quiescence")).toBeUndefined();

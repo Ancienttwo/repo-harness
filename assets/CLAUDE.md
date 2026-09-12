@@ -31,21 +31,21 @@ Owns the workflow-engine-contract-assets capability boundary declared in .archco
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `assets/templates`
+- Functional block: `.ai/harness/policy.json`
 - Capability ID: `workflow-engine-contract-assets`
-- Matched prefix: `assets/templates`
+- Matched prefix: `.ai/harness/policy.json`
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-08-05T00:46:13+0800
-- Last changed path: `tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`
-- Severity: medium
-- Change type: workstream-sync
+- Last architecture event: 2026-09-12T11:46:22+0800
+- Last changed path: `.ai/harness/policy.json`
+- Severity: high
+- Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `assets/templates`
+- Entrypoints: `.ai/harness/policy.json`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `assets/templates`
+- Runtime path: `.ai/harness/policy.json`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`

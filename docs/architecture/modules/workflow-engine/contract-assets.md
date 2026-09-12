@@ -68,6 +68,22 @@ sequenceDiagram
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" -->
+
+## Architecture automation defaults
+
+Architecture projection execution preferences belong to the user-level
+`~/.repo-harness/config.json#architecture`. Repository policy owns model and
+capability authority, documentation paths, and freshness gates; it does not
+author provider selection or apply mode. Global install/update and successful
+repository init use the same configuration writers to initialize automatic
+projection and `refactor_recommendations.enabled=true` when unset, preserving
+explicit disabled choices. Init dry-run does not write these preferences.
+
+The Stop hook consumes architecture changes and delivers measured refactor
+opportunities for a user decision. Default enablement does not synthesize a
+missing architecture model, missing code facts, or permission to execute a
+refactor. `docs/spec.md` owns the product contract; the initialization and Stop
+regressions verify these separate boundaries.
 ## 3. P3：设计决策与不变量
 
 ### 3.1 为什么契约资产与 runtime 状态分离
