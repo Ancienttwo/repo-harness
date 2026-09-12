@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-13 04:17
+> **Related Plan**: plans/archive/plan-20260913-0258-repo-harness-test-skill.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260913-0417
+> **Archive Projection V1**: `plans/plan-20260913-0258-repo-harness-test-skill.md` => `plans/archive/plan-20260913-0258-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md` => `tasks/archive/notes-20260913-0417-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-0258-repo-harness-test-skill.contract.md` => `tasks/archive/contract-20260913-0417-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md` => `tasks/archive/review-20260913-0417-repo-harness-test-skill.md`
+
 # Task Review: repo-harness-test-skill
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260913-0258-repo-harness-test-skill.md
-> **Contract**: tasks/contracts/20260913-0258-repo-harness-test-skill.contract.md
-> **Notes File**: tasks/notes/20260913-0258-repo-harness-test-skill.notes.md
+> **Plan**: plans/archive/plan-20260913-0258-repo-harness-test-skill.md
+> **Contract**: tasks/archive/contract-20260913-0417-repo-harness-test-skill.md
+> **Notes File**: tasks/archive/notes-20260913-0417-repo-harness-test-skill.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-13 02:58
 > **Recommendation**: pass

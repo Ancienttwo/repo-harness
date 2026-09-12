@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-13 04:17
+> **Related Plan**: plans/archive/plan-20260913-0258-repo-harness-test-skill.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260913-0417
+> **Archive Projection V1**: `plans/plan-20260913-0258-repo-harness-test-skill.md` => `plans/archive/plan-20260913-0258-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md` => `tasks/archive/notes-20260913-0417-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-0258-repo-harness-test-skill.contract.md` => `tasks/archive/contract-20260913-0417-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md` => `tasks/archive/review-20260913-0417-repo-harness-test-skill.md`
+
 # Notes: repo-harness-test-skill
 
 ## Registration point

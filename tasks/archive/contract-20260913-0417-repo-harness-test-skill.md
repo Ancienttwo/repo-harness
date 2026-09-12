@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-13 04:17
+> **Related Plan**: plans/archive/plan-20260913-0258-repo-harness-test-skill.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260913-0417
+> **Archive Projection V1**: `plans/plan-20260913-0258-repo-harness-test-skill.md` => `plans/archive/plan-20260913-0258-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md` => `tasks/archive/notes-20260913-0417-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-0258-repo-harness-test-skill.contract.md` => `tasks/archive/contract-20260913-0417-repo-harness-test-skill.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md` => `tasks/archive/review-20260913-0417-repo-harness-test-skill.md`
+
 # Task Contract: repo-harness-test-skill
 
-> **Status**: Active
-> **Plan**: plans/plan-20260913-0258-repo-harness-test-skill.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260913-0258-repo-harness-test-skill.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-13 02:58
-> **Review File**: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md`
-> **Notes File**: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md`
+> **Review File**: `tasks/archive/review-20260913-0417-repo-harness-test-skill.md`
+> **Notes File**: `tasks/archive/notes-20260913-0417-repo-harness-test-skill.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 > **Substantive Change SHA256**: `sha256:377551a2569997cf2bc00709d1f96f2ede9be9384b2afba1f38ed2cb7f440f93`
 
@@ -71,10 +81,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260913-0258-repo-harness-test-skill.md`
+- Source plan: `plans/archive/plan-20260913-0258-repo-harness-test-skill.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260913-0258-repo-harness-test-skill.review.md`
-- Notes file: `tasks/notes/20260913-0258-repo-harness-test-skill.notes.md`
+- Review file: `tasks/archive/review-20260913-0417-repo-harness-test-skill.md`
+- Notes file: `tasks/archive/notes-20260913-0417-repo-harness-test-skill.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -98,9 +108,9 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260913-0258-repo-harness-test-skill.contract.md
-  - tasks/reviews/20260913-0258-repo-harness-test-skill.review.md
-  - tasks/notes/20260913-0258-repo-harness-test-skill.notes.md
+  - tasks/archive/contract-20260913-0417-repo-harness-test-skill.md
+  - tasks/archive/review-20260913-0417-repo-harness-test-skill.md
+  - tasks/archive/notes-20260913-0417-repo-harness-test-skill.md
   - assets/skills/repo-harness-test/
   - assets/skill-commands/manifest.json
   - assets/reference-configs/agentic-development-flow.md
@@ -166,7 +176,7 @@ exit_criteria:
     - assets/skills/repo-harness-test/references/refactor-evidence.md
     - assets/skills/repo-harness-test/references/verification-plan.md
   artifacts_exist:
-    - tasks/notes/20260913-0258-repo-harness-test-skill.notes.md
+    - tasks/archive/notes-20260913-0417-repo-harness-test-skill.md
 ```
 
 ## Verification Plan
