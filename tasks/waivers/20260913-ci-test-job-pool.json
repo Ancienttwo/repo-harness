@@ -1,0 +1,14 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:9449e3ea6cf848ca2ad2b00a3ecf1e13a5b9c95a4b5d2b5a8f0a0aa7f9322e89",
+  "reason": "CI test-loop parallelism with unchanged per-file isolation semantics and aggregation contract: isolate mode now runs up to BUN_TEST_JOBS files concurrently through a bounded pool, each file still gets its own `bun test` process with the same flags, the pool replays each worker's log contiguously when that worker finishes, and the failure block keeps its per-file exit codes (sorted by path once completion order becomes a race). BUN_TEST_JOBS defaults to 1 and that path is the untouched serial loop, guarded byte-for-byte by tests/check-ci-isolate-aggregation.test.ts. Lite-profile slice reviewed and approved by the owner; no plan or contract carrier exists. The slice also carries the one-line observer fix this parallel Test job exposed: observeIssueBatch now forwards its injected clock to fetchGithubIssues, so the observation deadline and the refresh receipts read one clock instead of racing a fixture clock against wall time.",
+  "owner": "ancienttwo",
+  "scope": [
+    ".github/workflows/ci.yml",
+    "scripts/lib/ci-run-tests.sh",
+    "src/effects/automation/issue-batch-observer.ts",
+    "tests/check-ci-isolate-aggregation.test.ts"
+  ],
+  "revisit_trigger": "The isolate loop gains test selection or sharding logic, or the loop moves into the TypeScript CI selector"
+}

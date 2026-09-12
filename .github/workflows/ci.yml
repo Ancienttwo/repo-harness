@@ -92,6 +92,7 @@ jobs:
       BUN_TEST_MAX_CONCURRENCY: "1"
       BUN_TEST_TIMEOUT_MS: "180000"
       BUN_TEST_ISOLATE_FILES: "1"
+      BUN_TEST_JOBS: "4"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -225,6 +226,7 @@ jobs:
           BUN_TEST_ISOLATE_FILES=1
           BUN_TEST_TIMEOUT_MS=180000
           BUN_TEST_MAX_CONCURRENCY=1
+          BUN_TEST_JOBS=4
           BUN_TEST_FILES="tests/action-command-skills.test.ts
           tests/architecture-projection-e2e.test.ts
           tests/architecture-projection-provider.test.ts
