@@ -1,19 +1,19 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { automationDigest, canonicalAutomationJson, validateProgramAuthorization } from '../src/core/automation/budget';
 import { listStoredProgramAuthorizations, mintProgramAuthorization, readStoredProgramAuthorization } from '../src/effects/automation/grant-store';
+import { fixtureTemplate } from './helpers/repo-fixture';
 
 const root = resolve(import.meta.dir, '..');
 const source = join(root, 'assets/skills/auto-campaign');
 const temporary: string[] = [];
 afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
-function fixture(profile: 'minimal' | 'full') {
+function buildFixture(profile: 'minimal' | 'full') {
   const dir = mkdtempSync(join(tmpdir(), 'auto-campaign-'));
-  temporary.push(dir);
   const repo = join(dir, 'repo');
   mkdirSync(repo);
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
@@ -39,6 +39,29 @@ function fixture(profile: 'minimal' | 'full') {
     return spawnSync(process.execPath, [join(env.CODEX_SKILLS_ROOT, 'auto-campaign/scripts/prepare-grant.ts'), path], { cwd: repo, env, encoding: 'utf8', timeout: 15000 });
   }
   return { dir, repo, env, input, draft };
+}
+
+/**
+ * The install is built once per profile and restored per test. Its cost is a git
+ * repository plus `scripts/sync-codex-installed-copies.sh`, which starts three Bun
+ * child processes and rsyncs the package into both skill roots; every test here
+ * starts from that same shape.
+ *
+ * One workspace path is enough because the fixture's mkdtemp directory owns every
+ * byte written: it is `HOME`, and `REPO_HARNESS_HOME`, `CODEX_SKILLS_ROOT` and
+ * `CLAUDE_SKILLS_ROOT` -- the sync script's only destinations -- are all inside it.
+ * `draft()` still spawns a real `prepare-grant.ts` per call, because that is the
+ * behaviour under test.
+ */
+const templates = fixtureTemplate(buildFixture, (value) => [value.dir]);
+afterAll(() => templates.dispose());
+
+// The template, not the builder, decides when a workspace exists: on a cache hit
+// the builder never runs, so registration for `afterEach` removal belongs here.
+function fixture(profile: 'minimal' | 'full') {
+  const value = templates.materialize(profile);
+  temporary.push(value.dir);
+  return value;
 }
 
 test('full installs complete portable skill on both hosts; draft seals and mints through existing authority', () => {
