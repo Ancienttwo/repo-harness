@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { copyHelpers } from "./helpers/helper-script-fixture";
+import { installSqlCheck } from "./helpers/helper-script-fixture";
 import { run, tmpWorkspace } from "./helpers/repo-fixture";
 
 setDefaultTimeout(30000);
@@ -19,7 +19,7 @@ describe("check-deploy-sql-order helper integration", () => {
   test("check-deploy-sql-order should enforce deploy SQL location and ascending prefixes", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql");
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/sql"), { recursive: true });
       writeFileSync(join(cwd, "deploy/sql/0001_create_users.sql"), "create table users(id integer);\n");
       writeFileSync(join(cwd, "deploy/sql/0002_add_orders.sql"), "create table orders(id integer);\n");
@@ -122,7 +122,7 @@ describe("check-deploy-sql-order helper integration", () => {
   test("check-deploy-sql-order should accept an explicit multi-root SQL policy", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql-policy");
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/database/migrations"), { recursive: true });
       mkdirSync(join(cwd, "deploy/database/roles"), { recursive: true });
       mkdirSync(join(cwd, "deploy/account"), { recursive: true });
@@ -171,7 +171,7 @@ describe("check-deploy-sql-order helper integration", () => {
   test("check-deploy-sql-order should reject invalid, overlapping, or unknown SQL policy roots", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql-policy-invalid");
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/database/migrations"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/policy.json"),
@@ -275,7 +275,7 @@ describe("check-deploy-sql-order helper integration", () => {
   test("check-deploy-sql-order should reject forged or missing explicit invariant policy", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql-invariant-policy");
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/sql"), { recursive: true });
       writeFileSync(join(cwd, "deploy/sql/0001_create_users.sql"), "select 1;\n");
 
@@ -321,7 +321,7 @@ describe("check-deploy-sql-order helper integration", () => {
   test("check-deploy-sql-order should require unambiguous full-path invariant references for configured roots", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql-invariant-collision");
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/a"), { recursive: true });
       mkdirSync(join(cwd, "deploy/b"), { recursive: true });
       mkdirSync(join(cwd, "tests/sql"), { recursive: true });
@@ -368,7 +368,7 @@ describe("check-deploy-sql-order helper integration", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql-symlinks");
     const outsideDir = mkdtempSync(join(tmpdir(), "helper-check-deploy-sql-file-outside-"));
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/sql"), { recursive: true });
       writeFileSync(join(cwd, "deploy/sql/0001_create_users.sql"), "select 1;\n");
       symlinkSync("0001_create_users.sql", join(cwd, "deploy/sql/0002_regular_link.sql"));
@@ -418,7 +418,7 @@ describe("check-deploy-sql-order helper integration", () => {
   test("check-deploy-sql-order should fail closed when SQL enumeration fails", () => {
     const cwd = tmpWorkspace("helper-check-deploy-sql-enumeration-failure");
     try {
-      copyHelpers(cwd);
+      installSqlCheck(cwd);
       mkdirSync(join(cwd, "deploy/sql"), { recursive: true });
       writeFileSync(join(cwd, "deploy/sql/0001_create_users.sql"), "select 1;\n");
       mkdirSync(join(cwd, "bin"), { recursive: true });

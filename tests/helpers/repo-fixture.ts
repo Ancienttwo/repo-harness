@@ -1,6 +1,6 @@
 import { afterAll, expect } from "bun:test";
 import { spawnSync } from "child_process";
-import { cpSync, mkdtempSync, realpathSync, rmSync } from "fs";
+import { appendFileSync, cpSync, mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -91,13 +91,9 @@ export function run(cmd: string, args: string[], cwd: string, env?: NodeJS.Proce
 }
 
 export function initGitRepo(cwd: string) {
-  expect(run("git", ["init"], cwd).status).toBe(0);
-  const branch = run("git", ["branch", "--show-current"], cwd).stdout.trim();
-  if (branch !== "main") {
-    expect(run("git", ["checkout", "-b", "main"], cwd).status).toBe(0);
-  }
-  expect(run("git", ["config", "user.name", "Helper Test"], cwd).status).toBe(0);
-  expect(run("git", ["config", "user.email", "helper@test.local"], cwd).status).toBe(0);
+  expect(run("git", ["init", "-b", "main"], cwd).status).toBe(0);
+  // Append the fixture identity directly: two `git config` processes per repository were pure fixture cost.
+  appendFileSync(join(cwd, ".git/config"), '\n[user]\n\tname = Helper Test\n\temail = helper@test.local\n');
 }
 
 export function commitAll(cwd: string, message: string) {

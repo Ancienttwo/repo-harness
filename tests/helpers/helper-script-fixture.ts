@@ -10,6 +10,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync
 } from "fs";
@@ -25,6 +26,24 @@ export const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 // The repository resolver imports the canonical core. Its packaged projection
 // is intentionally standalone and is source-hash/drift checked separately.
 export const INTENTIONALLY_DIVERGENT = ["capability-resolver.ts", "recovery-view-cli.ts"];
+
+// Match the fixture's shell permission setup without starting a login shell.
+export function makeShellScriptsExecutable(directory: string): void {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) makeShellScriptsExecutable(path);
+    else if (entry.isFile() && entry.name.endsWith(".sh")) {
+      chmodSync(path, statSync(path).mode | (0o111 & ~process.umask()));
+    }
+  }
+}
+
+export function installSqlCheck(cwd: string): void {
+  mkdirSync(join(cwd, "scripts"), { recursive: true });
+  mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+  copyFileSync(join(HELPER_DIR, "check-deploy-sql-order.sh"), join(cwd, "scripts/check-deploy-sql-order.sh"));
+  makeShellScriptsExecutable(join(cwd, "scripts"));
+}
 
 export function copyHelpers(cwd: string) {
   // Source CLI imports this package-owned template during readiness checks.
@@ -70,8 +89,8 @@ export function copyHelpers(cwd: string) {
     );
   }
 
-  expect(run("bash", ["-lc", "chmod +x scripts/*.sh"], cwd).status).toBe(0);
-  expect(run("bash", ["-lc", "chmod +x .ai/harness/scripts/*.sh"], cwd).status).toBe(0);
+  makeShellScriptsExecutable(scriptsDir);
+  makeShellScriptsExecutable(harnessScriptsDir);
 }
 
 export function createTrustedMergeGateRuntime(path: string, authorityHome: string): string {
@@ -98,7 +117,7 @@ export function installHooks(cwd: string) {
       copyFileSync(src, join(aiHooksDir, f.name));
     }
   }
-  expect(run("bash", ["-lc", "find .ai/hooks -type f -name '*.sh' -exec chmod +x {} +"], cwd).status).toBe(0);
+  makeShellScriptsExecutable(aiHooksDir);
 }
 
 export function runHook(script: string, cwd: string, stdin: string, env?: NodeJS.ProcessEnv) {
