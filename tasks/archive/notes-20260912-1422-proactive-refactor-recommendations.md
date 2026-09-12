@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-12 14:22
+> **Related Plan**: plans/archive/plan-20260911-0238-proactive-refactor-recommendations.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260912-1422
+> **Archive Projection V1**: `plans/plan-20260911-0238-proactive-refactor-recommendations.md` => `plans/archive/plan-20260911-0238-proactive-refactor-recommendations.md`
+> **Archive Projection V1**: `tasks/notes/20260911-0238-proactive-refactor-recommendations.notes.md` => `tasks/archive/notes-20260912-1422-proactive-refactor-recommendations.md`
+> **Archive Projection V1**: `tasks/contracts/20260911-0238-proactive-refactor-recommendations.contract.md` => `tasks/archive/contract-20260912-1422-proactive-refactor-recommendations.md`
+> **Archive Projection V1**: `tasks/reviews/20260911-0238-proactive-refactor-recommendations.review.md` => `tasks/archive/review-20260912-1422-proactive-refactor-recommendations.md`
+
 # Implementation Notes: proactive-refactor-recommendations
 
 > **Status**: Active
-> **Plan**: plans/plan-20260911-0238-proactive-refactor-recommendations.md
-> **Contract**: tasks/contracts/20260911-0238-proactive-refactor-recommendations.contract.md
-> **Review**: tasks/reviews/20260911-0238-proactive-refactor-recommendations.review.md
+> **Plan**: plans/archive/plan-20260911-0238-proactive-refactor-recommendations.md
+> **Contract**: tasks/archive/contract-20260912-1422-proactive-refactor-recommendations.md
+> **Review**: tasks/archive/review-20260912-1422-proactive-refactor-recommendations.md
 > **Last Updated**: 2026-09-11 02:38
 > **Lifecycle**: notes
 
@@ -76,3 +86,12 @@ Owner-accepted base compare binding:
 PR #401 was squash-merged as 9563083c. Merging that published baseline into this branch resolved only repeated-history conflicts: the resulting complete tree is identical to the passing CI subject 4b68c9be. The PR now targets main. Refresh acceptance for the new target using the existing owner grant; CI remains required.
 
 > **Substantive Change SHA256**: `sha256:fc6e1ac0ece02c467bdf41dbc7dd844edf770bb9eb943fa138313cf377f28f6a`
+
+## Workflow closeout
+
+Delivered via PR #408, merged at 3ea6e453. No typed AcceptanceReceipt was sealed
+for that exact subject (the codex-plugin approval named an earlier subject and the
+review card records external acceptance as pending), so `completed_archive_gate`
+cannot admit a `Completed` archive without a user-issued waiver. Archived
+`Superseded` instead: the merged main tree is the surviving authority for this
+scope and the plan family no longer represents active work.

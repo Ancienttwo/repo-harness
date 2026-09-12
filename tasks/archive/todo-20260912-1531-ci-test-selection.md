@@ -1,3 +1,9 @@
+> **Archived**: 2026-09-12 15:31
+> **Related Plan**: plans/archive/plan-20260912-1317-ci-test-selection.md
+> **Outcome**: Superseded
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260912-1531
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog

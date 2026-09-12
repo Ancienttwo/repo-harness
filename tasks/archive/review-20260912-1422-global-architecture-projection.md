@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-12 14:22
+> **Related Plan**: plans/archive/plan-20260911-0144-global-architecture-projection.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260912-1422
+> **Archive Projection V1**: `plans/plan-20260911-0144-global-architecture-projection.md` => `plans/archive/plan-20260911-0144-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/notes/20260911-0144-global-architecture-projection.notes.md` => `tasks/archive/notes-20260912-1422-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/contracts/20260911-0144-global-architecture-projection.contract.md` => `tasks/archive/contract-20260912-1422-global-architecture-projection.md`
+> **Archive Projection V1**: `tasks/reviews/20260911-0144-global-architecture-projection.review.md` => `tasks/archive/review-20260912-1422-global-architecture-projection.md`
+
 # Task Review: global-architecture-projection
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260911-0144-global-architecture-projection.md
-> **Contract**: tasks/contracts/20260911-0144-global-architecture-projection.contract.md
-> **Notes File**: tasks/notes/20260911-0144-global-architecture-projection.notes.md
+> **Plan**: plans/archive/plan-20260911-0144-global-architecture-projection.md
+> **Contract**: tasks/archive/contract-20260912-1422-global-architecture-projection.md
+> **Notes File**: tasks/archive/notes-20260912-1422-global-architecture-projection.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-11 01:44
 > **Recommendation**: pass

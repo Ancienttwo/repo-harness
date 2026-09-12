@@ -1,6 +1,6 @@
 # Architecture Queue Card: runtime-harness-automation-budget
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-09-08T05:10:09+0800
 > **Updated**: 2026-09-08T05:10:12+0800
 > **Severity**: low
@@ -124,3 +124,11 @@
   }
 ]
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-09-12T14:25:21+0800
+- Artifacts:
+- `docs/architecture/modules/runtime-harness/automation-budget.md`
+- Note: Touched files stayed inside the declared src/core/automation and src/effects/automation prefixes; the capability node and module doc were reprojected afterwards by 9cc12bac (PR #395).

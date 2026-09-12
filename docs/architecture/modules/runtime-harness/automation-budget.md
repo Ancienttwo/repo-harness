@@ -116,6 +116,8 @@ sequenceDiagram
 
 ## 4. 歷史決策記錄(append-only)
 
+- 2026-09-12:漂移卡 `runtime-harness-automation-budget` 歸檔為 Resolved。觸發事件是 2026-09-08T05:10 對 `src/core/automation/budget.ts`、`src/effects/automation/budget-store.ts`、`src/effects/automation/campaign-capability-registry.ts` 的編輯,分別由 `f45373de`、`8486201f`、`4893cf82` 落地,全部落在既有的 `src/core/automation/**` 與 `src/effects/automation/**` 前綴內,未新增宣告入口、未改依賴規則、runtime path 與驗證命令。能力模型與本文檔機器區之後已由 `9cc12bac`(PR #395)重新投影,涵蓋這些改動,因此不需要額外 snapshot。
+
 ## Optimization Backlog
 
 ## Campaign authoring scope

@@ -106,7 +106,7 @@ independently repeating it.
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/runtime-harness/automation-budget.md`
-- Pending architecture request: `docs/architecture/requests/runtime-harness-automation-budget.md`
+- Pending architecture request: `(none)`
 
 ## Active Workstreams
 
