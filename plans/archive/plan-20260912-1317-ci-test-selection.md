@@ -92,8 +92,8 @@ No hosted success is claimed. After gatekeeper PASS, the owner controls ship: re
 
 ## Hosted acceptance
 
-- Draft run `34679218915` (head `30027569`, mode=draft): Test, matrix and documentation jobs skipped; `Required / CI` failed by design because a draft PR defers expensive lanes.
-- Ready-for-review run `34679383556` (head `60092a0f`, mode=full): all six jobs green.
+- Draft run [`34679310023`](https://github.com/Ancienttwo/repo-harness/actions/runs/34679310023) (head `6e62761a`, mode=draft): selection and Governance succeeded; Test, matrix and documentation jobs skipped; `Required / CI` failed by design because a draft PR defers expensive lanes.
+- Ready-for-review run [`34679383556`](https://github.com/Ancienttwo/repo-harness/actions/runs/34679383556) (head `60092a0f`, mode=full): selection, Governance, Test, all three platform matrix jobs and `Required / CI` succeeded (seven successful jobs); documentation skipped as expected.
 - Post-merge run `34680455754` on main, pure `tasks/` direct commit `e90c6569` (mode=docs): Test and matrix skipped, documentation job passed, `Required / CI` success, whole run 105 seconds. This is the read-back that closes the hosted acceptance boundary above.
 
 ## Archive Note
