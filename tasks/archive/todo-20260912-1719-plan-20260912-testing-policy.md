@@ -1,3 +1,9 @@
+> **Archived**: 2026-09-12 17:19
+> **Related Plan**: plans/archive/plan-20260912-testing-policy.md
+> **Outcome**: Superseded
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260912-1719
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
