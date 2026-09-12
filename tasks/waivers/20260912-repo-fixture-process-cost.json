@@ -1,0 +1,14 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-substantive-change-waiver",
+  "substantive_change_sha256": "sha256:044471068c487ee36e8c0d24d0140c14132671030e9ac679e68a339b0b1c8db4",
+  "reason": "Test-fixture-only process reduction with no product or workflow semantics change: native chmod replaces login-shell chmod in the shared fixture, `git init -b main` plus a directly appended local [user] section replaces the branch probe and two `git config` processes per repository, and the deploy-SQL cases install only the checker. Behavior oracles are unchanged and the 30 consumer test files pass (340/340). Lite-profile slice reviewed and approved by the owner; no plan or contract carrier exists.",
+  "owner": "ancienttwo",
+  "scope": [
+    "tests/check-deploy-sql-order.test.ts",
+    "tests/helpers/helper-script-fixture.ts",
+    "tests/helpers/repo-fixture.ts",
+    "tests/prepare-handoff.test.ts"
+  ],
+  "revisit_trigger": "The deferred goal row in tasks/todos.md about repeated real CLI setup in the fixture layout is picked up as a work-package plan, or the fixture helpers change again"
+}
