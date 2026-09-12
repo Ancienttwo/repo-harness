@@ -288,6 +288,8 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 <!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
 - [ ] 2026-09-08T05:10:12+0800 [low] `src/effects/automation/campaign-capability-registry.ts` -> [runtime-harness-automation-budget](requests/runtime-harness-automation-budget.md)
 - [ ] 2026-09-09T02:02:06+0800 [low] `src/effects/engineers/agent-runtime-adapters/herdr-cli-agent.ts` -> [runtime-harness-agent-runtime-effects](requests/runtime-harness-agent-runtime-effects.md)
+- [ ] 2026-09-12T11:46:22+0800 [high] `.ai/harness/policy.json` -> [workflow-engine-contract-assets](requests/workflow-engine-contract-assets.md)
+- [ ] 2026-09-12T11:46:34+0800 [high] `scripts/ensure-task-workflow.sh` -> [root](requests/root.md)
 <!-- END ARCHITECTURE PENDING REQUESTS -->
 
 
