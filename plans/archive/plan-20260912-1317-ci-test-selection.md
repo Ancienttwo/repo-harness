@@ -1,6 +1,13 @@
+> **Archived**: 2026-09-12 15:31
+> **Related Plan**: plans/archive/plan-20260912-1317-ci-test-selection.md
+> **Outcome**: Superseded
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260912-1531
+> **Archive Projection V1**: `plans/plan-20260912-1317-ci-test-selection.md` => `plans/archive/plan-20260912-1317-ci-test-selection.md`
+
 # Plan: CI test selection and draft lifecycle
 
-> **Status**: Review
+> **Status**: Archived
 > **Substantive Change SHA256**: `sha256:dd0b8fa46c1072b22b3da6d52f75e0d3a178bc3cfcd8b15f6385901a54ce0c4e`
 > **Artifact Level**: work-package
 > **Promotion Reason**: verification_boundary
@@ -82,3 +89,13 @@ No hosted success is claimed. After gatekeeper PASS, the owner controls ship: re
 - Base delta changes initialization defaults and existing repository documents, with no selector/workflow/runner changes. Revalidate the selected docs lane for its real-repository fixture consumers, selector/drift and digest binding. Prior local evidence remains a baseline for its recorded subject.
 - Rebased candidate verification: whole documentation lane passed (22 files, 309 tests, 75.86 seconds); selector/drift passed (9 tests, 193 expectations, 9.22 seconds); typecheck and all nine repository-integrity commands passed. Logs: `/tmp/rh-ci-ship-docs.log`, `/tmp/rh-ci-ship-focused.log`, `/tmp/rh-ci-ship-integrity-{0..9}.log`. `git range-diff` confirms the rebased implementation patch is unchanged; only this evidence entry and its base-bound digest changed.
 - Draft PR #415 was created at `30027569`. During creation, #414 advanced main to `a2c241813ab2eb4188d4a6682633cf87873cc64d`; draft run `34679218915` correctly deferred all expensive lanes, but Governance additionally rejected the old base-bound digest. Integrated that non-overlapping architecture/lifecycle-only base with a normal merge and rebound the digest. No product, test, runner or selector implementation changed; retain the 75.86-second docs lane as baseline and use targeted drift checks for this delta.
+
+## Hosted acceptance
+
+- Draft run `34679218915` (head `30027569`, mode=draft): Test, matrix and documentation jobs skipped; `Required / CI` failed by design because a draft PR defers expensive lanes.
+- Ready-for-review run `34679383556` (head `60092a0f`, mode=full): all six jobs green.
+- Post-merge run `34680455754` on main, pure `tasks/` direct commit `e90c6569` (mode=docs): Test and matrix skipped, documentation job passed, `Required / CI` success, whole run 105 seconds. This is the read-back that closes the hosted acceptance boundary above.
+
+## Archive Note
+
+Archived as Superseded: delivered via PR #415 merged at 969a7fe5; hosted acceptance recorded in plan; no AcceptanceReceipt sealed.
