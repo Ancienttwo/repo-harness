@@ -586,7 +586,7 @@ export function buildProgram(): Command {
     .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
     .option('--brain-root <path>', 'Deprecated: user-level brain config belongs to repo-harness update/setup')
     .option('--brain-mode <mode>', 'Deprecated: init does not perform user-level brain sync', 'skip')
-    .option('--interactive', 'Rejected: public init is repo-local and does not configure user-level runtime state')
+    .option('--interactive', 'Rejected: interactive host setup belongs to repo-harness install')
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (action: string | undefined, rawOpts: {
       repo?: string;

@@ -6,12 +6,13 @@
 ## Global Architecture Projection
 
 Architecture projection execution preferences have one user-level authority:
-`~/.repo-harness/config.json#architecture`. Global install/update initializes
-archctx automatic projection once and preserves explicit user choices. The
+`~/.repo-harness/config.json#architecture`. Global install/update and successful
+repository init initialize archctx automatic projection once and preserve
+explicit user choices. The
 package release owns the exact provider version. Repository init retires the
-old projection execution keys and reports readiness; it never configures the
-host. Runtime, Stop and acceptance helpers read the same global policy without
-repo overrides. Project model/capability authority, document ownership,
+old projection execution keys and reports readiness. Init dry-run never writes
+host preferences. Runtime, Stop and acceptance helpers read the same global
+policy without repo overrides. Project model/capability authority, document ownership,
 freshness gates and semantic acceptance remain local. Missing setup is reported
 explicitly; malformed global config fails closed. No model or approval is
 synthesized to make automatic projection continue.
@@ -338,7 +339,8 @@ AcceptanceReceipt field.
   `code-change`) that determines which verification and delegation rules
   apply to that task.
 - **Proactive refactor recommendations**: Global `refactor_recommendations.enabled`
-  defaults to true and is initialized once by install/update. Normal Stop reads
+  defaults to true and is initialized once by install/update or successful
+  repository init, preserving an explicit disabled choice. Normal Stop reads
   measured structural opportunities and asks the Agent to explain evidence,
   expected benefit and risk, then request the user's decision. Observation is
   separate from Refactor Mode activation: it never authors a proposal, accepts

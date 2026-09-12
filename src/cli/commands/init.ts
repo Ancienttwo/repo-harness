@@ -1,5 +1,7 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
+import { ensureGlobalArchitectureProjection } from './architecture-configuration';
+import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 /**
  * Existing-repo harness bootstrap/update implementation.
  *
@@ -834,6 +836,12 @@ export function runInit(
       status: "skipped",
       detail: apply ? "repo harness did not apply cleanly or registry effect was unavailable" : "dry-run",
     });
+  }
+
+  if (apply && migrate.status === "ok") {
+    const architecture = ensureGlobalArchitectureProjection(commandEnv);
+    steps.push(architecture);
+    if (architecture.status === "ok") steps.push(ensureGlobalRefactorRecommendations(commandEnv));
   }
 
   if (externalSkills && apply && migrate.status === "ok") {

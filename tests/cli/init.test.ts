@@ -176,6 +176,48 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
 }
 
 describe("init command", () => {
+  test("init defaults enable architecture projection and Stop recommendations without overriding user choices", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-architecture-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const accountHome = join(tmp, "account");
+    const configPath = join(accountHome, ".repo-harness/config.json");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(dirname(configPath), { recursive: true });
+      setupFakeSource(source);
+      writeFileSync(configPath, JSON.stringify({ brainRoot: "/existing/brain" }));
+      const options = {
+        repo, sourceRoot: source, syncSkill: false, hostAdapters: false,
+        externalSkills: false, codegraph: false, verify: false,
+        env: { ...process.env, HOME: accountHome, REPO_HARNESS_HOME: join(accountHome, ".repo-harness") },
+      };
+      const initial = readFileSync(configPath, "utf8");
+      expect(runInit({ ...options, apply: false }).exitCode).toBe(0);
+      expect(readFileSync(configPath, "utf8")).toBe(initial);
+
+      const applied = runInit(options);
+      expect(applied.exitCode).toBe(0);
+      expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
+        brainRoot: "/existing/brain",
+        architecture: { projection_provider: "archctx", projection_apply: "automatic" },
+        refactor_recommendations: { enabled: true },
+      });
+      expect(applied.steps.find((step) => step.step === "global architecture projection")?.status).toBe("ok");
+      expect(applied.steps.find((step) => step.step === "global refactor recommendations")?.status).toBe("ok");
+      const disabled = JSON.stringify({
+        architecture: { projection_provider: "disabled", projection_apply: "disabled" },
+        refactor_recommendations: { enabled: false },
+      });
+      writeFileSync(configPath, disabled);
+      expect(runInit(options).exitCode).toBe(0);
+      expect(readFileSync(configPath, "utf8")).toBe(disabled);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60000);
+
   test("defaults --repo to cwd and applies the existing-repo harness", () => {
     const tmp = join(tmpdir(), `repo-harness-init-${Date.now()}`);
     const source = join(tmp, "source");
