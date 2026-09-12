@@ -75,7 +75,7 @@ export function refreshExternalSource(input: {
   let pages = 0;
   let issuesSeen = 0;
   try {
-    const fetched = fetchGithubIssues(policy, input.runner);
+    const fetched = fetchGithubIssues(policy, input.runner, () => now().getTime());
     identity = fetched.repository;
     pages = fetched.pages_fetched;
     issuesSeen = fetched.issues_seen;

@@ -30,7 +30,7 @@ function refreshRepository(): string {
   execFileSync('git', ['init', '-q'], { cwd: root });
   mkdirSync(join(root, '.ai', 'harness'), { recursive: true });
   writeFileSync(join(root, '.ai', 'harness', 'policy.json'), JSON.stringify({
-    external_sources: { version: 1, mode: 'manual', github: { enabled: true, repository: 'acme/widgets', selection: { kind: 'labels', labels_all: ['ready'], assignees_any: [] }, limits: { max_pages: 2, max_issues: 20, max_body_bytes: 256, max_total_bytes: 4096, deadline_ms: 1000 } } },
+    external_sources: { version: 1, mode: 'manual', github: { enabled: true, repository: 'acme/widgets', selection: { kind: 'labels', labels_all: ['ready'], assignees_any: [] }, limits: { max_pages: 2, max_issues: 20, max_body_bytes: 256, max_total_bytes: 4096, deadline_ms: 60000 } } },
   }));
   return root;
 }
@@ -166,6 +166,19 @@ describe('GitHub external-source adapter', () => {
       expect(() => refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: () => { throw new GithubAdapterError('rate_limit', '429', 'unavailable'); }, now })).toThrow(ExternalSourceRefreshError);
       try { refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: () => { throw new GithubAdapterError('rate_limit', '429', 'unavailable'); }, now }); }
       catch (error) { expect((error as ExternalSourceRefreshError).receipt?.outcome).toBe('unavailable'); }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('refresh measures the fetch deadline on its injected clock', () => {
+    const root = refreshRepository();
+    let tick = 0;
+    const now = () => new Date(Date.parse('2026-08-31T00:00:00.000Z') + (tick++ * 120_000));
+    try {
+      refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
+      throw new Error('expected the injected clock to exceed deadline_ms');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ExternalSourceRefreshError);
+      expect((error as ExternalSourceRefreshError).receipt?.failure?.class).toBe('deadline');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
