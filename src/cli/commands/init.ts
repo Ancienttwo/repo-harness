@@ -39,6 +39,7 @@ import {
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
+import { withRuntimeHostTransactionLock } from "../installer/runtime-host-lock";
 import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
 import {
   defaultBrainRootChoice,
@@ -839,9 +840,17 @@ export function runInit(
   }
 
   if (apply && migrate.status === "ok") {
-    const architecture = ensureGlobalArchitectureProjection(commandEnv);
-    steps.push(architecture);
-    if (architecture.status === "ok") steps.push(ensureGlobalRefactorRecommendations(commandEnv));
+    try {
+      // Install/update snapshot and roll back this same account configuration.
+      // Join their lock before either initializer reads its current values.
+      withRuntimeHostTransactionLock(commandEnv, () => {
+        const architecture = ensureGlobalArchitectureProjection(commandEnv);
+        steps.push(architecture);
+        if (architecture.status === "ok") steps.push(ensureGlobalRefactorRecommendations(commandEnv));
+      });
+    } catch (error) {
+      steps.push({ step: "global automation defaults", status: "failed", detail: String(error) });
+    }
   }
 
   if (externalSkills && apply && migrate.status === "ok") {

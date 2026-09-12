@@ -1,7 +1,7 @@
 # Init architecture and recommendation defaults
 
 > **Status**: Verified
-> **Substantive Change SHA256**: `sha256:dda07c20fd3c188068afae2398575dc31bca66a9f5f7b33ad3ec90e4820e4a86`
+> **Substantive Change SHA256**: `sha256:05f5d4aeb8d42de2a25ef9c69bb4d2c2d4f007d7043a8bf3734513c3eafbf351`
 
 ## Scope and decision
 
@@ -72,10 +72,10 @@ defaults. Both cards were resolved through the canonical archive helper with
 the owning module/index and product spec as durable artifacts; the unrelated
 low-severity cards remain pending.
 
-The product implementation bytes are unchanged from `4527bfa5`, so its
-configuration/Stop tests and packed-entrypoint smoke remain baseline evidence
-for those paths. The final integration delta also isolates the account homes of
-existing adoption/init fixtures. Architecture freshness, strict workflow,
+The configuration/Stop tests and packed-entrypoint smoke at `4527bfa5` remain
+baseline evidence for their original subject. Integration isolates account homes
+in adoption/init fixtures; the subsequent shared-lock correction below is
+covered by fresh canonical verification and semantic review. Architecture freshness, strict workflow,
 projection checks, typecheck, project inspection, and self-host init dry-run
 passed again. This digest binds the complete PR comparison against `origin/main`.
 
@@ -99,3 +99,24 @@ The final focused sequence covers adoption (31), init (37), fleet acquisition
 changes no readiness gate or product assertion. Required hosted CI must still
 pass on the final pushed head before merge; the failed run is diagnostic
 baseline evidence, not acceptance.
+
+## Shared host transaction invariant
+
+- Symptom: official Codex-plugin review found that a concurrent failed host
+  update could restore its earlier config snapshot over init's successful
+  automatic defaults (P2; initially source-derived).
+- Cause: init called both configuration writers outside the existing
+  `withRuntimeHostTransactionLock` used by install/update.
+- Trigger: an update holds the host lock and an earlier configuration snapshot
+  while init attempts to seed defaults, followed by update rollback.
+- Proof: `init cannot write defaults during a host transaction that rolls back`
+  failed on the unprotected implementation (expected failure exit 1, received
+  success exit 0). The same deterministic interleaving passes with the shared
+  lock; configuration stays unchanged under contention and a fresh init after
+  rollback seeds both defaults. No sleeps or timing window establish ordering.
+
+Both initializers now execute under that existing lock, before reading current
+values. Lock failure becomes an explicit failed init step. The scope remains
+configuration seeding; no new synchronization primitive or product fallback is
+introduced. The delivery branch also integrates the concurrently merged 0.19.1
+release base `d94ec3c7`; source changes for this PR remain separately reviewable.

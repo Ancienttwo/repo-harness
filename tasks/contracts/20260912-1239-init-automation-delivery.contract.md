@@ -21,7 +21,7 @@ Accept the exact PR #412 diff against origin/main, merge only after the installe
 
 ## Scope
 
-- In scope: existing PR #412 implementation, WIP documentation, fixture isolation, and delivery evidence.
+- In scope: existing PR #412 implementation, WIP documentation, fixture isolation, shared host-lock protection for the new defaults, and delivery evidence.
 - Out of scope: additional product fixes, runtime installation, global configuration changes, releases, and unrelated worktrees.
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
@@ -210,5 +210,5 @@ the intended coverage; do not infer that choice from paths or command text.
 
 ## Rollback Point
 
-- Commit / checkpoint: origin/main at 2bea52c13482ef1777f57a1bdc799a745acc524f.
+- Commit / checkpoint: origin/main at d94ec3c7517230b361f1354805ab3d4a364a045a.
 - Revert strategy: revert the eventual PR merge commit; preserve the separate WIP commit.
