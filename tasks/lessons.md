@@ -1,5 +1,6 @@
 # Lessons Learned (Self-Improvement Loop)
 
+
 > Capture correction-derived prevention rules here.
 > Promote repeated patterns into durable project rules during spa day.
 
@@ -11,6 +12,12 @@
 - Where to apply next time:
 
 ## Active Lessons
+
+- Date: 2026-09-12
+- Triggered by correction: repeated tests and full-suite cost persisted despite a risk-scoped policy; contract defaults seeded a new test/typecheck while reviewer instructions requested another execution.
+- Mistake pattern: treating template examples as mandatory coverage, using multiple IDs or roles for one execution, and creating test reports without an independent reader or decision.
+- Prevention rule: use `docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards` as the single test-selection and artifact-authoring policy. Existing tests are the starting point; canonical execution records own results and reviewers validate their applicability. Template defaults must not manufacture required tests or documents.
+- Where to apply next time: contract/review authoring, fleet reviewer instructions and test-cost optimization. This policy change does not implement execution-fingerprint deduplication, CI reuse or fixture performance changes.
 
 - Date: 2026-09-12
 - Triggered by correction: architecture document projection must be enabled by initialization, and proactive refactor suggestions must be delivered through the hook.

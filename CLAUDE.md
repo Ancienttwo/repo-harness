@@ -58,13 +58,14 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 
 ## Required Checks
 
-Verification is risk-scoped. The active task contract's JSON `Verification Plan`
-owns executable checks; `exit_criteria` owns artifact requirements. Run focused
-tests for every changed behavior. The following repository-integrity checks are required for
-substantive repository changes; `check:hooks`, `check:helpers`, and
-`check:reference-configs` catch a projection edited without its authoring source
-in `scripts/`, `assets/hooks/`, or `assets/reference-configs/`, so that drift
-fails here instead of only in `scripts/check-ci.sh governance`:
+Follow [Testing Policy and Artifact Standards](docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards)
+for test selection, new test/file admission, full-suite justification, evidence
+reuse and test-document creation. The contract's JSON `Verification Plan` is
+its sole executable authority; `exit_criteria` owns artifact requirements.
+
+The following repository-integrity checks remain required for substantive
+repository changes. Projection checks protect the authoring sources in
+`scripts/`, `assets/hooks/` and `assets/reference-configs/`:
 
 ```bash
 bun run check:hooks
@@ -78,37 +79,10 @@ bun scripts/inspect-project-state.ts --repo . --format text
 bun src/cli/index.ts init --repo . --dry-run
 ```
 
-Use focused regression tests and the repository-integrity checks above by
-default, including small code and test changes. Run the full
-`bun test --timeout 60000` suite only when the active contract or release gate
-explicitly requires it, or observed cross-module impact cannot be covered by
-named focused checks. A code/test path, diff size, review depth, or changed
-verification script alone is not sufficient justification. Before an expensive
-run, state the uncovered risk, why narrower checks are insufficient, and the
-expected cost. When authoring a contract, apply these same conditions before
-adding a full-suite criterion; copying an unconditional command is not a risk
-assessment.
-
-Freeze the implementation before final acceptance. Execute required expensive
-criteria through `verify-sprint --prepare-acceptance`; declare each executable
-check once in the JSON `Verification Plan`, including phase, cost, evidence
-policy, necessity, and environment inputs. Unchanged retries consume recorded
-execution evidence. Expensive input drift requires an explicit new plan or
-rerun reason; a cache miss never grants permission to rerun. Reviewers consume that evidence rather than
-independently rerunning the suite. Do not list the same test coverage twice in
-the final contract; focused development runs are separate from final acceptance.
-Record changed paths, checks run or reused, and why that coverage is sufficient.
-CI and explicit release gates retain their required checks.
-
-After a passing full suite, a subsequent bounded change does not automatically
-require another full run. Retain the baseline run identity, inspect the actual
-delta, and run its regression/affected checks. The parent updates the contract's
-final criteria to that delta coverage when the full-suite trigger no longer
-applies, recording the baseline and coverage rationale in Acceptance Notes.
-Do not waive an explicit user/release requirement. An old full-suite pass remains
-baseline evidence for its original subject, never a full-suite pass for the new
-subject. Repeat the full suite only for an uncovered integration risk or an
-explicit requirement for that new subject; a cache miss alone is not a trigger.
+Run focused coverage for changed behavior. Existing CI/release gates retain
+their checks. Apply the linked policy before declaring an expensive/full run
+or a new test document; reviewers consume canonical evidence rather than
+independently repeating it.
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
