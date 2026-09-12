@@ -11,7 +11,7 @@ import { publicationPointerFromReceipt } from '../../src/core/publication/public
 import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { readDevelopmentCampaignStatus, appendDevelopmentCampaignEvent } from '../../src/effects/automation/development-campaign-store';
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { rmSync, realpathSync, mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, chmodSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -19,14 +19,17 @@ import { execFileSync, spawnSync } from 'child_process';
 import { cleanupExactWorktree, assertWorktreeBinding } from '../../src/effects/state/coordination-worktree-topology';
 import { canonicalMessageDigest, messageSha256 } from '../../src/core/messages/mechanics';
 import { historicalPlanningFixture, installHistoricalBoundDispatch, installHistoricalAttempt, installHistoricalChild, installHistoricalFinal } from '../helpers/historical-campaign-lifecycle';
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { ensureCampaignAuthoringBudget, beginCampaignBudgetStep, readCampaignBudgetLedger } from '../../src/effects/automation/budget-store';
 import { readPlanningRecord, persistPlanningRecord, withCampaignPlanningLock } from '../../src/effects/automation/campaign-planning-store';
 import { runCampaignCloseoutProviderAttempt } from '../../src/effects/automation/campaign-closeout-provider';
 
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterAll(() => templates.dispose());
 async function fixture(recoveryBudget = false) {
-  const f = await historicalPlanningFixture(false, false, undefined, true, recoveryBudget ? { max_provider_failures: 10 } : {}); roots.push(f.root, f.home);
+  const f = await templates.materialize(false, false, undefined, true, recoveryBudget ? { max_provider_failures: 10 } : {}); roots.push(f.root, f.home);
   const budget = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env }).budget;
   const step = { repo_root: f.root, automation_run_id: budget.automation_run_id, expected_budget_sha256: budget.budget_sha256,
     campaign_id: f.intent.campaign_id, group_number: 1 as const, intent_sha256: f.intent.intent_sha256, idempotency_key: 'closeout-fixture', env: f.env };
@@ -109,7 +112,7 @@ test('shared lifecycle refuses audit while published Tasks lack cleanup receipts
 }, 60_000);
 
 async function acquired(recoveryBudget = false) {
-  const f = await historicalPlanningFixture(false, false, undefined, true, { max_agent_turns: 40, max_runner_invocations: 40, ...(recoveryBudget ? { max_provider_failures: 10 } : {}) }); roots.push(f.root, f.home);
+  const f = await templates.materialize(false, false, undefined, true, { max_agent_turns: 40, max_runner_invocations: 40, ...(recoveryBudget ? { max_provider_failures: 10 } : {}) }); roots.push(f.root, f.home);
   const result = installHistoricalBoundDispatch(f);
   if (!('worker_handoff' in result) || !result.worker_handoff || !result.envelope) throw new Error(JSON.stringify(result));
   roots.push(result.envelope.worktree_path);
