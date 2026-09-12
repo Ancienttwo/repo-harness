@@ -335,11 +335,13 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   // addition, bringing the live surface to 11 repo-owned + 6 external.
   // obsidian-memory is the second repo-owned addition (a facade projected to
   // both hosts by every profile), bringing it to 12 repo-owned + 6 external.
-  test("covers all 13 repo-owned sources plus the 8 external skills (21 packages)", () => {
+  // repo-harness-test is the third: a full-profile facade owning the testing
+  // routing surface, sourced from assets/skills/repo-harness-test.
+  test("covers all 14 repo-owned sources plus the 8 external skills (22 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(21);
+    expect(resolution.catalog.packages.length).toBe(22);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(13);
+    expect(repoOwned.length).toBe(14);
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
       "check", "health", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "reverse-skill-router", "think",
@@ -420,7 +422,8 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       "repo-harness-plan", "repo-harness-check", "obsidian-memory",
     ]);
     expect(facadesForProfile(catalog, "full")).toEqual([
-      "repo-harness-plan", "repo-harness-check", "repo-harness-product", "repo-harness-ship", "obsidian-memory", "auto-campaign",
+      "repo-harness-plan", "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-ship",
+      "obsidian-memory", "auto-campaign",
     ]);
   });
 
@@ -534,8 +537,8 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   test("mutationPathSkillNames covers every package path that can be host-synced post-cutover", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
-      "repo-harness", "repo-harness-plan", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
-      "obsidian-memory", "auto-campaign",
+      "repo-harness", "repo-harness-plan", "repo-harness-check", "repo-harness-test", "repo-harness-product",
+      "repo-harness-ship", "obsidian-memory", "auto-campaign",
     ]);
     expect(externalSkills).toEqual([
       "repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",

@@ -82,6 +82,25 @@
       "retirementCandidate": null
     },
     {
+      "name": "repo-harness-test",
+      "kind": "facade",
+      "source": "assets/skills/repo-harness-test",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "full"
+      ],
+      "discoverability": "profile-facade",
+      "component": "verifier",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Testing router for the repo-harness source checkout: authoring and fixture selection, test execution and CI lane selection, the evidence a test refactor owes, and the test side of a contract Verification Plan. Routes to docs/reference-configs/sprint-contracts.md for policy and owns no policy of its own.",
+      "retirementCandidate": null
+    },
+    {
       "name": "repo-harness-product",
       "kind": "facade",
       "source": "assets/skills/repo-harness-product",
@@ -406,6 +425,7 @@
       "full": [
         "repo-harness-plan",
         "repo-harness-check",
+        "repo-harness-test",
         "repo-harness-product",
         "repo-harness-ship",
         "obsidian-memory",

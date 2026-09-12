@@ -507,7 +507,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["auto-campaign", "obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-product", "repo-harness-ship"].sort(),
+        ["auto-campaign", "obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-product", "repo-harness-ship", "repo-harness-test"].sort(),
       );
     }, 30_000);
 
