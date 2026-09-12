@@ -148,7 +148,7 @@ export function observeIssueBatch(input: ObserveIssueBatchInput): IssueBatchObse
   }
 
   try {
-    const snapshot = fetchGithubIssues(policy, input.runner);
+    const snapshot = fetchGithubIssues(policy, input.runner, () => now().getTime());
     const observations = snapshot.issues.map((issue) => {
       const eligibility = evaluateGithubEligibility(issue, policy);
       return writeProviderIssueObservation(input.repo_root, buildProviderIssueObservation({
