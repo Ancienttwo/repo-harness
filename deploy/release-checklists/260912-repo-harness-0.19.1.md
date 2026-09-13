@@ -1,20 +1,18 @@
 # repo-harness 0.19.1 Release Filing
 
-- Date: 2026-09-12
-- Package: `repo-harness@0.19.1`
-- Base release: `v0.19.0`
-- Integration base: `2bea52c1`. The contract started at `3ea6e453`; PR #410
-  merged into `main` on 2026-09-12 and the candidate was rebased onto it.
-- Release branch: `codex/release-0-19-1`.
-- Candidate commit: bound by the release PR head.
-- Release scope: metadata and documentation only. Every product surface in
-  `v0.19.0..2bea52c1` is already accepted on `main`; this work-package stamps the
-  two version authorities, rebuilds `docs/CHANGELOG.md` for the full range,
-  refreshes the release-stamp lines in five README locales, and records this
-  filing. No `src/` or `tests/` path is touched.
-- Publish status: **not published.** Merge, tag, npm publication,
-  `check:release-published`, and the Bun-global runtime refresh are all pending
-  owner authorization.
+- Updated: 2026-09-13.
+- Package: `repo-harness@0.19.1`; base published release: `v0.19.0`.
+- Integration base: `7f6fcd1f143e77fd007f43d39e9fe5a7029583fb`.
+- Candidate: the merged commit of the `codex/release-0191-current` documentation
+  work-package, with the accepted product tree from that integration base.
+- Existing remote annotated tag object: `58098c2292b5ac104ea1e4ce7e72d0a5d3475cdf`,
+  previously targeting `d94ec3c7517230b361f1354805ab3d4a364a045a`.
+- Owner authorization: publish current main as 0.19.1, including moving that
+  old tag with an exact lease. npm reported 0.19.1 absent before preparation.
+- Scope: update this filing and the 0.19.1 changelog. Product source, versions,
+  existing tests and deferred work are unchanged by this preparation.
+- Status: publication authorized; registry and installed-runtime readbacks are
+  recorded after publication. Preparation alone is not a published release.
 
 ## Release Content
 
@@ -29,7 +27,7 @@
   run-summary retention policies on demand and reports reclaimable bytes with
   `--dry-run`. Checkpoint retention has shipped since 0.19.0 but only ran inside
   a successful publish, so a repository whose ledger was reset kept its whole
-  backlog — 9.7 GB in one repository measured at authoring time.
+  backlog: 9.7 GB in one repository measured at authoring time.
 - Stop run summaries are bounded to the newest `RUN_SUMMARY_RETENTION_COUNT`
   entries, selected by Stop's own record shape (`run_id` plus `checks_file`,
   `handoff_file`, `policy_file`, `context_map_file`). Immutable
@@ -43,8 +41,8 @@
 
 - Architecture projection is configured once per user in
   `~/.repo-harness/config.json#architecture`, not per repository. The retired
-  `.ai/harness/policy.json#architecture.projection_*` keys — including
-  `projection_version` — are stripped by adoption rather than copied into the
+  `.ai/harness/policy.json#architecture.projection_*` keys (including
+  `projection_version`) are stripped by adoption rather than copied into the
   host configuration. Operator path: `repo-harness update` once for the account,
   then `repo-harness init --repo .` per repository; `init` reports an
   `architecture projection readiness` step naming the exact repair when the
@@ -79,16 +77,32 @@
   `external_tooling.herdr.min_version` reports `configuration-error` instead of
   runtime `unavailable`.
 - Campaign `prepareChild` retries preparation when the prior attempt provably
-  produced no runtime effect — worker role only, identical identity, and the
+  produced no runtime effect: worker role only, identical identity, and the
   original deadline neither replaced nor extended.
   `assertCampaignPreparationRetryable` is the exclusive fence before the
   container create request; an existing container journal for the version probe
   or the workload identity means reconciliation, not retry, is the only exit.
 
+### Current-main additions
+
+- `repo-harness-test` is a full-profile source-checkout testing router. Its
+  references cover fixture ownership, original-path template restoration,
+  proven CLI completion semantics, evidence selection and CI lanes. Downstream
+  projects are directed to their own tooling.
+- CI uses docs/full/draft coverage selection and a four-worker isolated file
+  pool. Shared fixture templates and in-process chatgpt CLI tests reduce setup
+  work while preserving existing assertion semantics.
+- Real install and Herdr tests are opt-in in ordinary runs and mandatory in the
+  explicit `check:release` all lane. A green hosted functional lane does not
+  establish that evidence.
+- `init` now seeds global architecture/refactor defaults after successful
+  adoption, under the shared host transaction lock. Existing global values are
+  preserved. Issue observation and external-source refresh forward injected
+  clocks to GitHub fetchers.
+
 ### Same-release corrections (PR #410)
 
-PR #410 merged into `main` at `2bea52c1` after this contract started and is part
-of the candidate. It corrects work that is itself shipping for the first time in
+PR #410 merged into `main` at `2bea52c1` and is part of the candidate. It corrects work that is itself shipping for the first time in
 this release, so it carries no changelog entry of its own:
 
 - The `docs/reference-configs/hook-operations.md` evidence-retention table gained
@@ -120,7 +134,8 @@ This repository's own precedent takes a minor for new public surfaces. The
 groups; 0.17.1 -> 0.18.0 took a minor for a protocol bump alone, and this range
 carries an operator payload protocol bump (4 -> 5) as well.
 
-The owner was shown that evidence on 2026-09-12 and selected `0.19.1`. Under 0.x
+The owner selected `0.19.1` on 2026-09-12 and explicitly reaffirmed that
+version for current main on 2026-09-13. Under 0.x
 cadence the patch position is not itself a compatibility claim, and no downstream
 repository must take an action to keep working. That is the argument the choice
 rests on; the precedent above points the other way and is not resolved by it.
@@ -142,7 +157,7 @@ all five keys from `policy.architecture`
 the operator gets no notice that a value they authored was discarded.
 `src/cli/commands/architecture-configuration.ts:9` writes
 `~/.repo-harness/config.json#architecture` only when `!current.initialized`, and
-never reads the repository's prior values — nothing carries a repository setting
+never reads the repository's prior values; nothing carries a repository setting
 into the host document.
 
 The host defaults are `projection_provider: 'archctx'`,
@@ -156,9 +171,9 @@ ascending blast radius:
 | Change | Downstream action |
 | --- | --- |
 | A repository that set `projection_apply: "disabled"` starts projecting under the host default `automatic` | Set `projection_apply` in `~/.repo-harness/config.json#architecture` before running `init` |
-| `projection_failure_gate: "strict"` weakens to the host default `advisory` — a gate downgrade, not a default change | Set `projection_failure_gate: "strict"` in the same global block before running `init`; a repository that failed closed otherwise stops doing so |
+| `projection_failure_gate: "strict"` weakens to the host default `advisory`; a gate downgrade, not a default change | Set `projection_failure_gate: "strict"` in the same global block before running `init`; a repository that failed closed otherwise stops doing so |
 | A tuned `projection_timeout_ms` reverts to `120000` | Re-author the timeout in the same global block before running `init` |
-| Every adopted repository that simply never opted in flips from off to on once the account runs `update` — the widest blast radius, because it needs no prior repository setting to be hit | Assert the whole intended `architecture` block in `~/.repo-harness/config.json` before the first `init`, then inspect the first projection run |
+| Every adopted repository that simply never opted in flips from off to on once the account runs `update`; the widest blast radius, because it needs no prior repository setting to be hit | Assert the whole intended `architecture` block in `~/.repo-harness/config.json` before the first `init`, then inspect the first projection run |
 
 The assertion must happen **before** `init`. Adoption deletes the repository
 keys silently and warns nobody, so after the fact there is no record of what the
@@ -167,7 +182,7 @@ any more: a per-repository projection policy cannot be re-authored at all once
 the upgrade lands. The breaking property is that a deliberately-set value is
 discarded without warning, not that an upgrade step is required.
 
-The remaining range items retire no authority:
+The remaining range items retain their existing authority boundaries:
 
 - The operator payload protocol 4 -> 5 is internal to the board and its smoke;
   the payload version is read from the installed package, not restated by
@@ -185,81 +200,54 @@ that call here.
 npm `latest`, tag `v0.19.1`, tarball metadata, source commit, the two version
 files (`package.json#version`, `assets/skill-version.json#version` and
 `#templateVersion`), and the installed runtime must all resolve to one immutable
-release. None of those layers is claimed by this filing: only the version files
-are stamped here, and every other layer stays unverified until the publish
-follow-through below is authorized and read back.
+release. The user authorized publication of current main, including replacement of the
+previous old tag target. Publication remains conditional on current candidate
+evidence and an npm absence check. The published package is never overwritten.
 
 ## Verification
 
-Run from the release worktree. The rows below were re-run after the candidate
-was rebased onto `2bea52c1`; earlier results against `3ea6e453` are superseded.
+The release contract declares one full `bun run check:release` execution with
+`BUN_TEST_ISOLATE_FILES=1`, `BUN_TEST_JOBS=4` and
+`BUN_TEST_MAX_CONCURRENCY=1`. Its all lane unskips
+`REPO_HARNESS_TEST_EXPENSIVE`, runs required repository checks, packs the
+package, and exercises a clean tarball installation. The version consistency
+check is a separate preflight. Canonical results are bound to the contract's
+frozen subject; neither the old 0.19.1 candidate nor hosted functional CI
+substitutes for this release gate.
 
-| Gate | Result |
-| --- | --- |
-| `bun scripts/check-skill-version.ts` | pass — `repo-harness=0.19.1, template=0.19.1` |
-| `bun test tests/readme-dx.test.ts --timeout 60000` | pass |
-| `bun run check:reference-configs` | pass |
-| `bash scripts/check-task-workflow.sh --strict` | pass |
-| `bash scripts/check-architecture-sync.sh` | pass |
-| `REPO_HARNESS_DIFF_BASE=2bea52c1 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh` | pass — this is the Governance root cause. On the first candidate the check reported `Substantive diff lacks canonical workflow evidence bound to sha256:a9056e87...` over `README.es.md`, `README.fr.md`, `README.ja.md`, `README.zh-CN.md`, `assets/skill-version.json`, `deploy/release-checklists/260912-repo-harness-0.19.1.md`, and `package.json`: no canonical workflow artifact carried that digest. Fixed by binding the recomputed `> **Substantive Change SHA256**:` line into `plans/plan-20260912-1053-release-0-19-1.md`, and by declaring the check in the contract's Verification Plan with its diff boundary bound into the command — without a committed comparison boundary the script prints `[task-sync] No changes detected.` and exits 0, a false green. |
-| `bun src/cli/index.ts init --repo . --dry-run` | pass |
-| `bun src/cli/index.ts fleet prune --help` | resolves; options as documented |
-| `bun src/cli/index.ts run evidence-gc` usage | resolves; `--repo`, `--dry-run`, `--format` |
-| `bun src/cli/index.ts refactor recommendations --help` | resolves; `--repo`, `--json` |
-| `bash scripts/check-tarball-install-smoke.sh` | pass — `repo-harness-0.19.1.tgz installs, serves the packaged Operator, and packaged CLI bins start` |
-| `bun src/cli/index.ts run verify-sprint --prepare-acceptance` | Inner `verify-contract` report: 12 criteria, 0 failed, status Fulfilled, verification evidence frozen. Enclosing gate: **failed closed.** The run recorded in `.ai/harness/checks/latest.json` for the first candidate was `repo-harness run verify-sprint` with `status: "fail"`, `exit_code: 1`, `failure_class: "change_assessment"` — the change assessment had no `ready` binding because the substantive digest was unbound. That binding is repaired here. The enclosing gate failed closed on the first candidate; on this head it passes — `bun src/cli/index.ts run verify-sprint` exits 0 under the recorded `user_waiver` AcceptanceReceipt (reviewer `User`, source `user-waiver`, actor `kito`), which the contract's `{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}` policy permits through its `user_waiver` clause. The criteria count is the inner report only and is not a release-gate pass. |
-| `change-assessment prepare` | ready — `irreversible_effect` (deploy, release) covered by the declared `tarball-install-smoke` runtime readback |
-| `bun run check:release` | **could not complete on the release machine.** Run over head `57511350`, it reached `scripts/check-ci.sh` and failed one test, `tests/architecture-projection-provider.test.ts:245` ("bounds a real provider process tree whose descendant keeps captured pipes open"); the observable failure is `ENOENT` opening the fixture's `descendant.pid`, meaning the spawned descendant never wrote it. The mechanism is not established and this row does not claim one. What is established is that the failure is not caused by this candidate: the diff contains zero `src/` and zero `tests/` paths and its only executable-adjacent change is the `package.json` version line; the same file on the same machine fails **two** tests against `main` at `2bea52c1` and **one** against this candidate; and CI over `2bea52c1` is green. A separate first attempt was SIGTERM'd by the OS under memory pressure and is not counted as a result. The full suite's authority for this release is therefore the CI `Test` job, recorded in the row below; this row is an unavailable local gate, not a pass. `package.json#prepublishOnly` runs `check-npm-release.sh --prepublish`, which returns at the fast gate and never reaches `check-ci.sh`, so publication is not mechanically blocked by this. The machine-local failure is recorded as out-of-scope follow-up, not repaired by this release. |
-| `npm view repo-harness version` | pending |
-| GitHub Required/CI on release PR | **pass over head `57511350`** — Actions run `34671334660`: `Test` pass (22m29s), `Governance` pass, `MCP path matrix` pass on `ubuntu-latest`, `macos-latest` and `windows-latest`, `Required / CI` pass; `mergeStateStatus` CLEAN. That head carries every substantive path in this release. The commit that merges also carries this row and the `check:release` row above, so it is one docs-only delta beyond `57511350`; CI re-runs on it and the merge is gated on that run being green, confirmed at merge time rather than claimed here. |
+The prior candidate's local gate failed in process-tree timeout fixtures; this
+new release preparation retains that history as a reason to require a fresh
+full release result. A skipped or failed case is not a pass.
 
-The declared `runtime_readback` oracle is not decorative. `deploy` and `release`
-are irreversible workflow categories, so `change-assessment` refused to reach
-`ready` while the contract declared no oracle of that kind — the first prepare
-returned `blocked` with `oracle_gap` over all nine subject paths. The tarball
-install smoke is what closes it: it observes the artifact a consumer receives
-rather than the files in the worktree.
+### Evidence locations
 
-### Skill eval evidence
+- Release preparation plan and contract: the `20260913-1143-release-0191-current`
+  workflow family, archived at closeout.
+- Canonical verification: `.ai/harness/checks/latest.json` and its immutable run
+  snapshot while preparing; durable disposition in the archived review.
+- Published verification: `bun run check:release-published` reads registry
+  metadata, downloads the immutable tarball, installs it in a clean prefix and
+  verifies installed CLI/hook contracts; its runtime receipt is recorded under
+  `.ai/harness/checks/runtime-evidence-release.latest.json`.
 
-- `full_test_count`: unavailable — no skill eval was run for this candidate.
-- `dry_run_ratio`: unavailable.
-- `grader_pass_rate`: unavailable.
-- `effectiveness_authority`: **none.** This filing carries no authoritative
-  skill-effectiveness evidence and must not be read as a pass.
+### Skill effectiveness and host readiness
 
-### Readiness yellow flags
-
-From `bun src/cli/index.ts setup check --target claude --check-updates --json`
-(overall `status: attention`):
-
-- `doctor.security-config` — 2 findings, 0 high / 2 warn / 0 fail; first is
-  `unmanaged-hook-command` at `~/.claude/settings.json`. Accepted: the machine's
-  own user-level hook wiring, not a property of the released package. Inspect
-  with `repo-harness security scan --json`; do not blind-delete user-owned
-  config.
-- `tooling.waza` — update-available. Repair:
-  `bunx skills add tw93/Waza -g -a claude-code -s think hunt check health -y`,
-  then re-run the readiness command.
-- `tooling.codegraph` — update-available. Repair:
-  `bun update @colbymchenry/codegraph && bash scripts/ensure-codegraph.sh --sync`.
-- `runtime.skills_cli` — missing (optional), declared exception boundary for
-  external Waza/Mermaid skill bootstrap. Accepted as-is.
-- `repo.init-refresh` — `na`; this self-host source checkout owns its own
-  workflow surfaces. Accepted as-is.
-- Missing skill eval evidence: recorded above as unavailable, not as a pass.
-
-None of these flags change the source or packaged runtime being released.
+- `full_test_count`, `dry_run_ratio`, `grader_pass_rate`: unavailable; no live
+  skill-effectiveness eval is claimed. `effectiveness_authority`: none.
+- Existing host hook warnings and optional tooling-update notices belong to
+  host setup. Preserve user-owned configuration during the runtime refresh.
+- Source unit/integration tests and package-install smoke do not claim live
+  downstream LLM routing effectiveness.
 
 ## Publish Follow-through
 
-The owner has not authorized any of the following. All five are **pending** and
-none was performed by this work-package:
+After acceptance, merge the documentation work-package with Required CI green.
+Pack that exact merged commit and inspect the archive. Recheck npm absence,
+replace `v0.19.1` using the recorded old-tag object as a lease, and publish the
+frozen tarball. Create the GitHub Release from the 0.19.1 changelog, run
+`check:release-published`, and refresh the Bun-global runtime through the
+supported installer/update path. Read back all final identities before closing.
 
-1. Pending — merge the release PR into `main`.
-2. Pending — annotated tag `v0.19.1` at the merge commit, pushed to `origin`.
-3. Pending — `npm publish` of `repo-harness@0.19.1`.
-4. Pending — `bun run check:release-published` read-back: registry, dist-tag,
-   tarball, tag, and local version files must agree.
-5. Pending — Bun-global runtime refresh, with `repo-harness --version` read back
-   as `0.19.1`.
+Before npm publication, an interrupted tag move may be restored with an exact
+lease against the tag object written by this release. After npm publication,
+the immutable version is retained; any repair needs a new release version.

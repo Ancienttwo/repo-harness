@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
-## [0.19.1] - 2026-09-12
+## [0.19.1] - 2026-09-13
 
 A maintenance release that gives three unbounded or unreachable surfaces an
 explicit operator exit: stale fleet registrations, accumulated harness evidence,
@@ -16,26 +16,30 @@ selected, and installs stop overwriting content you edited yourself.
 
 ### Added
 
+- **`repo-harness-test` guides testing in the source checkout.** The full-profile
+  skill covers fixtures, test execution, refactor evidence and Verification
+  Plans, while downstream projects use their own test commands and CI.
+
 - **`repo-harness fleet prune` removes stale repository registrations.** The
   default run previews confirmed-absent registry rows; `--apply` removes them
   under the registry mutation lock and requires `--expected-revision <digest>`
   taken from that preview, so a registry that moved between preview and apply is
   refused rather than pruned against a stale view. `--repo-id <id...>` limits
-  both inspection and removal. Registry rows only — nothing on disk is touched
+  both inspection and removal. Registry rows only; nothing on disk is touched
   and no backup is written.
 - **`repo-harness run evidence-gc` reclaims harness evidence on demand.**
   Evidence checkpoint retention has shipped since 0.19.0 but only ran inside a
   successful publish, so a repository whose ledger was reset, or that no longer
-  runs the harness, kept its whole backlog with no way to reclaim it — 9.7 GB in
+  runs the harness, kept its whole backlog with no way to reclaim it: 9.7 GB in
   one repository measured here. `run evidence-gc` applies both existing
   retention policies on demand and `--dry-run` reports reclaimable bytes before
   anything is removed.
 - **Stop run summaries are bounded.** Stop wrote one run summary per session and
   nothing removed them (5931 files in this repository, back to 2026-05-25).
   Retention now keeps the newest `RUN_SUMMARY_RETENTION_COUNT` entries and Stop
-  applies it after its own write. Records are selected by Stop's own shape — a
+  applies it after its own write. Records are selected by Stop's own shape: a
   `run_id` plus `checks_file`, `handoff_file`, `policy_file`, and
-  `context_map_file`, every one a pointer the next Stop recomputes — so the
+  `context_map_file`, every one a pointer the next Stop recomputes. This means the
   immutable `verification-<executionId>.json` records the evidence ledger binds
   by sha256, acceptance snapshots, and any shape a future writer adds are left to
   their owners. `reason` is deliberately not the discriminator: it is free-form
@@ -57,6 +61,15 @@ selected, and installs stop overwriting content you edited yourself.
 
 ### Changed
 
+- **CI selects coverage from the actual changed paths.** Documentation-only
+  changes use the documentation lane, draft PRs defer expensive testing, and
+  other changes keep full coverage; independent test files run in a bounded
+  worker pool.
+- **Source tests reuse isolated fixture templates and proven in-process CLI
+  seams.** Templates restore their original paths so repository-bound receipts
+  remain valid; real package-install and Herdr cases run in the explicit
+  release lane.
+
 - **Architecture projection is configured once per user, not once per
   repository.** `projection_provider`, `projection_apply`,
   `projection_failure_gate`, `projection_timeout_ms`, and the retired
@@ -64,7 +77,7 @@ selected, and installs stop overwriting content you edited yourself.
   `.ai/harness/policy.json#architecture`; the host-wide authority is
   `~/.repo-harness/config.json#architecture`, seeded by the global runtime step
   on install and update. Run `repo-harness update` once for the account, then
-  `repo-harness init --repo .` in each repository — adoption strips the retired
+  `repo-harness init --repo .` in each repository. Adoption strips the retired
   repository keys rather than copying repository preferences into the host
   configuration, and `init` reports an `architecture projection readiness` step
   naming the exact repair when the global document is missing.
@@ -78,8 +91,8 @@ selected, and installs stop overwriting content you edited yourself.
   retired repository defaults were `provider: disabled` and `apply: disabled`,
   while the host defaults are `projection_provider: archctx` and
   `projection_apply: automatic`, and adoption deletes the repository keys without
-  a warning. A repository that had projection off — deliberately or by never
-  having touched it — therefore projects automatically once the account runs
+  a warning. A repository that had projection off (deliberately or by never
+  having touched it) therefore projects automatically once the account runs
   `update`, and one that set
   `projection_failure_gate: strict` drops to `advisory`. Assert the `architecture`
   block you want in `~/.repo-harness/config.json` before running `init`: the
@@ -87,6 +100,13 @@ selected, and installs stop overwriting content you edited yourself.
   representable at repository scope.
 
 ### Fixed
+
+- **`init` establishes global automation defaults after successful adoption.**
+  Account configuration writes use the shared host transaction lock so init,
+  install and update cannot race the same configuration document.
+- **Issue observation and external-source refresh forward injected clocks.**
+  GitHub fetch deadlines use the caller's clock, avoiding mixed-clock failures
+  exposed by parallel test execution.
 
 - **Install honors ownership receipts on upgrade.** Unchanged files recorded in
   the installation manifest can now upgrade to a newer package, while unowned or
@@ -107,9 +127,8 @@ selected, and installs stop overwriting content you edited yourself.
   `campaign preparation already admitted`, so a worker interrupted between
   persisting the record and creating the container had no way forward: the record
   blocked the retry and no container journal existed to reconcile. `prepareChild`
-  now reads the prior record and retries against it for the worker role only —
-  no launch, final, child, verifier preparation, downstream phase record, or
-  attempt reservation — and only on an identical identity whose bound neither
+  now reads the prior record and retries against it for the worker role only (no launch, final, child, verifier preparation, downstream phase record, or
+  attempt reservation), and only on an identical identity whose bound neither
   replaces nor extends the original deadline, so the immutable effect window is
   preserved rather than renewed. `assertCampaignPreparationRetryable` is the
   exclusive fence before the container create request: an existing container
@@ -125,8 +144,8 @@ selected, and installs stop overwriting content you edited yourself.
 - **`check:reference-configs` is listed with its family in the root required
   checks.** It is the third member of the `check:hooks` / `check:helpers` family
   and was missing, which is how a release note authored directly in the
-  `docs/reference-configs/` projection — instead of its `assets/reference-configs/`
-  source — reached CI before the next sync would have deleted it silently.
+  `docs/reference-configs/` projection (instead of its `assets/reference-configs/`
+  source) reached CI before the next sync would have deleted it silently.
 
 ## [0.19.0] - 2026-09-10
 
