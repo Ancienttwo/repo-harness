@@ -142,5 +142,5 @@ agent's delivery ledger; closing this plan does not claim those steps happened.
 On 2026-09-13 the owner approved fixing both release-gate blockers and then
 continuing publication. Existing testing oracles and production deadlines stay
 intact. The repair changes five existing tests and their shared fixture helper:
-CodeGraph fixtures perform a nonsemantic startup handshake before observation;
+Tooling fixtures share a prepared shell launcher with private command bodies;
 Oracle cleanup timing begins at the real workload marker after preflight.

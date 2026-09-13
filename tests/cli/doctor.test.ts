@@ -11,7 +11,7 @@ import {
   registerCheck,
   runDoctor,
 } from '../../src/cli/commands/doctor';
-import { warmFixtureExecutable } from '../helpers/repo-fixture';
+import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -46,8 +46,7 @@ function withEnv(values: Record<string, string | undefined>, fn: () => void): vo
 }
 
 function writeExecutable(filePath: string, content: string): void {
-  fs.writeFileSync(filePath, content);
-  fs.chmodSync(filePath, 0o755);
+  writeShellExecutableFixture(filePath, content);
 }
 
 function withTempRepo(
@@ -86,7 +85,6 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string): void {
     [
       '#!/bin/bash',
       'set -euo pipefail',
-      'if [[ "${1:-}" == "__fixture-ready" ]]; then exit 0; fi',
       `echo "codegraph $*" >> "${logFile}"`,
       'case "${1:-}" in',
       '  "--version") echo "0.9.6" ;;',
@@ -97,7 +95,6 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string): void {
       '',
     ].join('\n'),
   );
-  warmFixtureExecutable(path.join(fakeBin, 'codegraph'), ['__fixture-ready']);
 }
 
 function writeFakeBunx(fakeBin: string): void {

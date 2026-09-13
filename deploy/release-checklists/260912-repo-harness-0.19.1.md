@@ -221,8 +221,9 @@ new release preparation retains that history as a reason to require a fresh
 full release result. A skipped or failed case is not a pass.
 
 The current run exposed cold-start timing assumptions in existing fixtures.
-CodeGraph fixtures now complete a nonsemantic executable-startup handshake
-before readiness probes are observed. The Oracle cleanup test measures from
+The four tooling fixture consumers share one prepared shell launcher, with
+private bodies beside their original command paths. This removes repeated
+cold executable startup while retaining real subprocess probes. The Oracle cleanup test measures from
 its actual workload marker after preflight, retaining the 8000 ms bound and
 all cleanup assertions. Production probe timeouts and the four-worker pool
 remain unchanged. The initial failed run is preserved in the workflow notes;

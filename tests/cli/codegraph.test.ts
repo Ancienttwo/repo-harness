@@ -1,16 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { warmFixtureExecutable } from "../helpers/repo-fixture";
+import { writeShellExecutableFixture } from "../helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 
 function writeExecutable(filePath: string, content: string) {
-  writeFileSync(filePath, content);
-  chmodSync(filePath, 0o755);
+  writeShellExecutableFixture(filePath, content);
 }
 
 function setupFakeEnvironment(prefix: string) {
@@ -28,7 +27,6 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string) {
     [
       "#!/bin/bash",
       "set -euo pipefail",
-      "if [[ \"${1:-}\" == \"__fixture-ready\" ]]; then exit 0; fi",
       `echo "codegraph $*" >> "${logFile}"`,
       "case \"${1:-}\" in",
       "  \"--version\") echo '0.9.6' ;;",
@@ -39,7 +37,6 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string) {
       "",
     ].join("\n")
   );
-  warmFixtureExecutable(join(fakeBin, "codegraph"), ["__fixture-ready"]);
 }
 
 // check-agent-tooling.sh resolves `skills` from PATH (and only spawns it under
@@ -117,7 +114,6 @@ test('standalone CodeGraph configure records restorable MCP provenance', () => {
     writeExecutable(codegraph, [
       '#!/bin/bash',
       'set -euo pipefail',
-      'if [[ "${1:-}" == "__fixture-ready" ]]; then exit 0; fi',
       'case "${1:-}" in',
       '  --version) echo "0.9.6" ;;',
       '  status) echo "CodeGraph Status"; echo "Index is up to date" ;;',
@@ -125,7 +121,6 @@ test('standalone CodeGraph configure records restorable MCP provenance', () => {
       '  *) exit 1 ;;',
       'esac',
     ].join('\n'));
-    warmFixtureExecutable(codegraph, ['__fixture-ready']);
     mkdirSync(join(fixture.home, '.codex'));
     writeFileSync(join(fixture.home, '.codex/config.toml'), 'model = "user-model"\n');
     const env = { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ''}`, AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0', BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
