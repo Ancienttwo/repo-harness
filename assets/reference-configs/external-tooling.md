@@ -960,6 +960,19 @@ candidate verification may explicitly select the candidate package root.
 Missing or mismatching runtime dependencies still fail closed with no target-repo
 fallback. Project model, ownership and snapshot checks remain repository-local.
 
+SessionStart also gives the Agent read-only model coverage guidance under this
+global provider setting; no per-repo execution toggle is needed. It observes empty
+capability models, missing declared module documents, and tracked package roots
+with no capability match or a shared ancestor capability. These are bounded
+inspection prompts, not inferred semantic nodes. The Agent uses the
+`repo-harness-architecture` skill to inspect source evidence and decide boundaries
+within the authorized task, then creates nodes through archctx ChangeSets and
+runs the existing projection. An intentional umbrella is valid. Hooks do not
+write model YAML, and unrelated coverage findings remain advice. The manifest
+inventory is limited to Git-tracked `package.json` paths; this is not a complete
+semantic coverage audit for every language or untracked source tree. Inspection
+errors become SessionStart provider diagnostics instead of invented model facts.
+
 When enabled, Stop observes the Git changed set and coalesces eligible paths
 into one durable projection job, excludes
 ArchContext-owned `docs/architecture/**` and declared agent-context targets,

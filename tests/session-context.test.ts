@@ -18,6 +18,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   INPUT_PRIORITY_CONTEXT,
+  architectureModelGuidanceContext,
   buildSessionStartSections,
   minimalChangeSessionContent,
   minimalChangeSessionSection,
@@ -1267,4 +1268,85 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
       });
     });
   }, 60_000);
+});
+
+describe('architecture model guidance', () => {
+  function fixture(run: (repo: string, env: NodeJS.ProcessEnv) => void): void {
+    withTmpRepo('architecture-guidance', (repo) => withTmpHome((home) => {
+      initGit(repo);
+      mkdirSync(join(home, '.repo-harness'), { recursive: true });
+      writeFileSync(join(home, '.repo-harness/config.json'), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic' } }));
+      writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
+      mkdirSync(join(repo, '.archcontext/model/nodes'), { recursive: true });
+      run(repo, { HOME: home });
+    }));
+  }
+  function node(repo: string, name: string, prefix: string): void {
+    mkdirSync(join(repo, prefix), { recursive: true });
+    writeFileSync(join(repo, `.archcontext/model/nodes/capability.test.${name}.yaml`), JSON.stringify({
+      schemaVersion: 'archcontext.node/v2', id: `capability.test.${name}`, kind: 'capability', name,
+      status: 'active', summary: `Fixture ${name}`, responsibilities: ['Fixture responsibility'], source: { include: [`${prefix}/**`] },
+      extensions: { contractFiles: { agents: `${prefix}/AGENTS.md`, claude: `${prefix}/CLAUDE.md` }, lspProfile: 'typescript-lsp', verification: ['bun test'] },
+    }));
+    mkdirSync(join(repo, 'docs/architecture/modules/test'), { recursive: true });
+    writeFileSync(join(repo, `docs/architecture/modules/test/${name}.md`), '# Fixture module\n');
+  }
+  function trackPackage(repo: string, prefix: string): void {
+    mkdirSync(join(repo, prefix), { recursive: true });
+    writeFileSync(join(repo, prefix, 'package.json'), '{}\n');
+    execFileSync('git', ['add', '--', `${prefix}/package.json`], { cwd: repo });
+  }
+
+  test('normal SessionStart surfaces empty model even without drift requests and never writes nodes', () => fixture((repo, env) => {
+    const section = sessionStartMainSection(freshCollector(repo), env, Date.now());
+    expect(section?.content).toContain('No capability nodes are declared');
+    expect(section?.content).toContain('repo-harness-architecture');
+    expect(section?.content).toContain('archctx plan/apply');
+    expect(section?.actionable).toBe(true);
+    expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toEqual([]);
+    expect(existsSync(join(repo, 'docs/architecture/requests'))).toBe(false);
+  }));
+
+  test('reports shared ancestor and unmapped tracked packages as observations, not invented nodes', () => fixture((repo, env) => {
+    node(repo, 'umbrella', 'packages');
+    trackPackage(repo, 'packages/client'); trackPackage(repo, 'packages/server'); trackPackage(repo, 'tools/cli');
+    const before = readFileSync(join(repo, '.archcontext/model/nodes/capability.test.umbrella.yaml'), 'utf8');
+    const content = architectureModelGuidanceContext(repo, env);
+    expect(content).toContain('2 tracked package roots share ancestor capability');
+    expect(content).toContain('1 tracked package root(s) have no capability match: "tools/cli"');
+    expect(content).toContain('Review whether that boundary is intentional');
+    expect(content).toContain('Package layout alone does not establish a capability');
+    expect(readFileSync(join(repo, '.archcontext/model/nodes/capability.test.umbrella.yaml'), 'utf8')).toBe(before);
+    expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toHaveLength(1);
+  }));
+
+  test('reports missing declared docs and becomes silent once coverage and documents are complete', () => fixture((repo, env) => {
+    trackPackage(repo, 'packages/client'); node(repo, 'client', 'packages/client');
+    const doc = join(repo, 'docs/architecture/modules/test/client.md');
+    rmSync(doc);
+    expect(architectureModelGuidanceContext(repo, env)).toContain('docs/architecture/modules/test/client.md');
+    writeFileSync(doc, '# Fixture module\n');
+    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
+  }));
+
+  test('global disabled or uninitialized and registry mode do not produce guidance', () => fixture((repo, env) => {
+    const config = join(env.HOME!, '.repo-harness/config.json');
+    writeFileSync(config, JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } }));
+    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
+    rmSync(config);
+    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
+    writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'registry' } }));
+    expect(architectureModelGuidanceContext(repo, env)).toBeNull();
+  }));
+
+  test('malformed authority rejects inspection and SessionStart records a provider diagnostic', () => fixture((repo, env) => {
+    writeFileSync(join(repo, '.archcontext/model/nodes/broken.yaml'), 'not: [valid');
+    expect(() => architectureModelGuidanceContext(repo, env)).toThrow();
+    const diagnostics: Array<{ provider_id: string }> = [];
+    const content = sessionStartMainContent(freshCollector(repo), env, Date.now(), (diagnostic) => diagnostics.push(diagnostic));
+    expect(content ?? '').not.toContain('No capability nodes');
+    expect(diagnostics.some((diagnostic) => diagnostic.provider_id === 'architecture-model-guidance')).toBe(true);
+    writeFileSync(join(env.HOME!, '.repo-harness/config.json'), '{');
+    expect(() => architectureModelGuidanceContext(repo, env)).toThrow();
+  }));
 });

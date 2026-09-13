@@ -356,6 +356,11 @@ for file in "${changed_files[@]}"; do
 done
 if ! workflow_profile="$("${repo_harness_cli[@]}" state resolve --json --field workflow_profile --target-path "${profile_paths[@]}")"; then
   echo "[task-sync] Workflow profile resolution failed; no lite exemption admitted." >&2
+  # Failed verification can itself block state resolution. Keep the failure,
+  # but expose the exact binding consumed above so recovery needs no cache reset
+  # or trust in a blocked resolver's profile field.
+  echo "[task-sync] To satisfy task-sync, record the current diff in a changed canonical workflow artifact with this exact line:" >&2
+  printf '> **Substantive Change SHA256**: `%s`\n' "$substantive_digest" >&2
   exit 1
 fi
 case "$workflow_profile" in
