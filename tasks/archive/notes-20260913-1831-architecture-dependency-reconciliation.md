@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-13 18:31
+> **Related Plan**: plans/archive/plan-20260913-1807-architecture-dependency-reconciliation.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260913-1831
+> **Archive Projection V1**: `plans/plan-20260913-1807-architecture-dependency-reconciliation.md` => `plans/archive/plan-20260913-1807-architecture-dependency-reconciliation.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1807-architecture-dependency-reconciliation.notes.md` => `tasks/archive/notes-20260913-1831-architecture-dependency-reconciliation.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1807-architecture-dependency-reconciliation.contract.md` => `tasks/archive/contract-20260913-1831-architecture-dependency-reconciliation.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1807-architecture-dependency-reconciliation.review.md` => `tasks/archive/review-20260913-1831-architecture-dependency-reconciliation.md`
+
 # Implementation Notes: architecture-dependency-reconciliation
 
 > **Status**: Active
-> **Plan**: plans/plan-20260913-1807-architecture-dependency-reconciliation.md
-> **Contract**: tasks/contracts/20260913-1807-architecture-dependency-reconciliation.contract.md
-> **Review**: tasks/reviews/20260913-1807-architecture-dependency-reconciliation.review.md
+> **Plan**: plans/archive/plan-20260913-1807-architecture-dependency-reconciliation.md
+> **Contract**: tasks/archive/contract-20260913-1831-architecture-dependency-reconciliation.md
+> **Review**: tasks/archive/review-20260913-1831-architecture-dependency-reconciliation.md
 > **Last Updated**: 2026-09-13 18:07
 > **Lifecycle**: notes
 
