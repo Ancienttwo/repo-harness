@@ -129,8 +129,8 @@ User approved resolving task-sync recovery. The helper already accepts exact bou
 
 - [x] Implement globally gated coverage observations in the existing session context path.
 - [x] Document Agent decision and ChangeSet authoring workflow in the architecture skill and mirrored reference docs.
-- [ ] Fix task-sync recovery diagnostics and prove exact-binding recovery.
-- [ ] Verify focused fixture behavior and required repository checks, review once and close the local contract without merge.
+- [x] Fix task-sync recovery diagnostics and prove exact-binding recovery.
+- [x] Verify focused fixture behavior and required repository checks, review once and close the local contract without merge.
 
 ## Verification
 
@@ -146,5 +146,5 @@ User approved resolving task-sync recovery. The helper already accepts exact bou
 ## Task Breakdown
 - [x] Implement globally gated coverage observations in the existing session context path.
 - [x] Document Agent decision and ChangeSet authoring workflow in the architecture skill and mirrored reference docs.
-- [ ] Fix task-sync recovery diagnostics and prove exact-binding recovery.
-- [ ] Verify focused fixture behavior and required repository checks, review once and close the local contract without merge.
+- [x] Fix task-sync recovery diagnostics and prove exact-binding recovery.
+- [x] Verify focused fixture behavior and required repository checks, review once and close the local contract without merge.

@@ -43,6 +43,8 @@ import type { WorktreeOwnership } from '../../effects/loop/state-input-collector
 import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
 import { parseHookInput } from './hook-input';
 import { mintOrAdoptSessionRunIdentity } from './run-identity';
+import { capabilitySourceMode, findMatch, readRegistry } from '../../../scripts/capability-resolver';
+import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 
 // ---------------------------------------------------------------------------
 // run-identity threading -- SessionStart's single mint/adopt point
@@ -775,6 +777,54 @@ function architectureQueuePendingContext(repoRoot: string, nowMs: number): strin
   ].join('\n');
 }
 
+/** Read-only observations, not proposed semantic boundaries. */
+export function architectureModelGuidanceContext(repoRoot: string, env: NodeJS.ProcessEnv): string | null {
+  if (capabilitySourceMode(repoRoot) !== 'archcontext') return null;
+  const global = readGlobalArchitectureConfiguration(env);
+  if (!global.initialized || global.policy.provider === 'disabled') return null;
+
+  const registry = readRegistry(repoRoot);
+  const observations: string[] = [];
+  if (registry.capabilities.length === 0) observations.push('No capability nodes are declared.');
+  const missingDocs = registry.capabilities.filter((capability) => !fileExists(repoRoot, capability.architecture_module));
+  if (missingDocs.length) {
+    observations.push(`${missingDocs.length} declared module document(s) are missing: ${missingDocs.slice(0, 3).map((capability) => JSON.stringify(capability.architecture_module)).join(', ')}.`);
+  }
+
+  // Git's tracked manifest paths are inventory evidence only. Do not crawl source
+  // trees or infer responsibilities from directory names inside a session hook.
+  const manifests = execFileSync('git', ['ls-files', '-z', '--', ':(glob)**/package.json'], {
+    cwd: repoRoot, encoding: 'utf-8', timeout: 2_000, maxBuffer: 1_048_576,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).split('\0').filter((file) => file && file !== 'package.json');
+  const unmapped: string[] = [];
+  const ancestorGroups = new Map<string, string[]>();
+  for (const manifest of manifests) {
+    const packageRoot = dirname(manifest);
+    const match = findMatch(registry, repoRoot, packageRoot);
+    if (!match.matched) unmapped.push(packageRoot);
+    else if (match.matched_prefix !== packageRoot) {
+      const key = `${match.capability_id} (${match.matched_prefix})`;
+      const roots = ancestorGroups.get(key) ?? [];
+      roots.push(packageRoot);
+      ancestorGroups.set(key, roots);
+    }
+  }
+  if (unmapped.length) observations.push(`${unmapped.length} tracked package root(s) have no capability match: ${unmapped.slice(0, 3).map((root) => JSON.stringify(root)).join(', ')}.`);
+  for (const [capability, roots] of ancestorGroups) {
+    if (roots.length > 1) observations.push(`${roots.length} tracked package roots share ancestor capability ${JSON.stringify(capability)}: ${roots.slice(0, 3).map((root) => JSON.stringify(root)).join(', ')}. Review whether that boundary is intentional.`);
+  }
+  if (!observations.length) return null;
+  return [
+    '# Architecture Model Guidance', '',
+    ...observations.slice(0, 5).map((observation) => `- ${observation}`),
+    ...(observations.length > 5 ? [`- ${observations.length - 5} more observations; inspect the full model.`] : []),
+    'Use the repo-harness-architecture skill to inspect source responsibilities and existing semantic docs, then propose justified capability boundaries. Package layout alone does not establish a capability.',
+    'Within the authorized task, Agent decides and writes model changes through archctx plan/apply (ChangeSet), validates, then runs architecture projection. Keep unrelated findings as advice; do not expand the active task. Hooks never author nodes.',
+    'Evidence: `repo-harness run capability-resolver list --format json`; `.archcontext/model/nodes/`; `git ls-files "**/package.json"`.',
+  ].join('\n');
+}
+
 interface PendingOrchestration {
   readonly [field: string]: unknown;
 }
@@ -1305,6 +1355,7 @@ export function sessionStartMainContent(
   let context = safely('resume', observeDiagnostic, () => resumeBlock(repoRoot, collector) || null) ?? '';
   context = appendBlock(context, safely('capability-context-pending', observeDiagnostic, () => capabilityContextPendingContext(repoRoot)));
   context = appendBlock(context, safely('architecture-queue-pending', observeDiagnostic, () => architectureQueuePendingContext(repoRoot, nowMs)));
+  context = appendBlock(context, safely('architecture-model-guidance', observeDiagnostic, () => architectureModelGuidanceContext(repoRoot, env)));
   context = appendBlock(context, safely('pending-plan-capture', observeDiagnostic, () => pendingPlanCaptureContext(repoRoot, collector, nowMs)));
   context = appendBlock(context, safely('current-status-snapshot', observeDiagnostic, () => currentStatusSnapshotContext(repoRoot)));
   context = appendBlock(context, safely('active-sprint', observeDiagnostic, () => activeSprintContext(repoRoot)));
@@ -1316,7 +1367,7 @@ export function sessionStartMainContent(
 
 /** Headers that flip the old script-loop branch's `actionable` bit for this id (mirrors runtime.ts's retired `scriptActionable` regex verbatim). */
 const SESSION_START_ACTIONABLE_HEADERS =
-  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint)/m;
+  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Architecture Model Guidance|Active Sprint)/m;
 
 export function sessionStartMainSection(
   collector: SessionContextCollector,

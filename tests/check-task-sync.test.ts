@@ -66,6 +66,26 @@ function setupRepo(): string {
 }
 
 describe("check-task-sync helper", () => {
+  test("a blocked resolver exposes exact evidence binding and the next run recovers without ignoring its exit code", () => {
+    const cwd = setupRepo();
+    try {
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      writeFileSync(join(cwd, ".git", "task-sync-bin", "repo-harness"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+      const failed = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(failed.status).toBe(1);
+      expect(failed.stderr).toContain("resolution failed");
+      const digest = reportedDigest(failed.stdout + failed.stderr);
+      expect(failed.stderr).toContain("> **Substantive Change SHA256**: `" + digest + "`");
+      mkdirSync(join(cwd, "tasks", "notes"), { recursive: true });
+      writeFileSync(join(cwd, "tasks", "notes", "recovery.notes.md"), `# Recovery evidence\n> **Substantive Change SHA256**: \`${digest}\`\n`);
+      const recovered = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(recovered.status).toBe(0);
+      expect(recovered.stdout).toContain("Bound canonical workflow evidence");
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 3;\n");
+      expect(run(cwd, ["bash", "scripts/check-task-sync.sh"]).status).toBe(1);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  }, 30_000);
+
   test("admits a real lite template edit without creating workflow artifacts", () => {
     const cwd = setupRepo();
     try {

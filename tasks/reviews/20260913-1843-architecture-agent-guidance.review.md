@@ -1,16 +1,16 @@
 # Task Review: architecture-agent-guidance
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260913-1843-architecture-agent-guidance.md
 > **Contract**: tasks/contracts/20260913-1843-architecture-agent-guidance.contract.md
 > **Notes File**: tasks/notes/20260913-1843-architecture-agent-guidance.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-13 18:43
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:c2a867557893572521d60277b0e90155cd5f10a04c868fb5d83f62b01fdb7b7c
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: f1596f094423018e35ceb6f46f74a8d07b7b182c
 
 ## Human Review Card
 
@@ -54,17 +54,17 @@ screenshot/artifact path, or reviewer observation.
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:c2a867557893572521d60277b0e90155cd5f10a04c868fb5d83f62b01fdb7b7c
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: f1596f094423018e35ceb6f46f74a8d07b7b182c
+> **Verification Evidence SHA256**: sha256:80efd6dab00dab4b010fc65870f7e44d2dfbf00954eb6f9981d02aca62e46e1e
+> **Issued At**: 2026-09-13T11:01:07.557Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Codex plugin approved exact subject c2a867557893572521d60277b0e90155cd5f10a04c868fb5d83f62b01fdb7b7c against pinned base f1596f094423018e35ceb6f46f74a8d07b7b182c; no material findings. Canonical verification passed all 21 checks.
 - Findings: none
 
 ## Behavior Diff Notes

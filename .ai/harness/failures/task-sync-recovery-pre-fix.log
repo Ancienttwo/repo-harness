@@ -1,0 +1,25 @@
+bun test v1.4.2 (744846f84)
+
+tests/check-task-sync.test.ts:
+29 |   });
+30 | }
+31 | 
+32 | function reportedDigest(output: string): string {
+33 |   const match = output.match(/sha256:[0-9a-f]{64}/u);
+34 |   expect(match).not.toBeNull();
+                         ^
+error: expect(received).not.toBeNull()
+
+Received: null
+
+      at reportedDigest (/Users/kito/Projects/repo-harness-wt-architecture-agent-guidance/tests/check-task-sync.test.ts:34:21)
+      at <anonymous> (/Users/kito/Projects/repo-harness-wt-architecture-agent-guidance/tests/check-task-sync.test.ts:77:22)
+(fail) check-task-sync helper > a blocked resolver exposes exact evidence binding and the next run recovers without ignoring its exit code [939.05ms]
+
+ 0 pass
+ 33 filtered out
+ 1 fail
+ 9 expect() calls
+Ran 1 test across 1 file. [969.00ms]
+
+PRE_FIX_EXIT=1

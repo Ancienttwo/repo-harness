@@ -10,6 +10,7 @@ export const SESSION_CONTEXT_PROVIDER_IDS = [
   'resume',
   'capability-context-pending',
   'architecture-queue-pending',
+  'architecture-model-guidance',
   'pending-plan-capture',
   'current-status-snapshot',
   'active-sprint',
