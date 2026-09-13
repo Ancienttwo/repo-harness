@@ -951,9 +951,14 @@ global automatic mode does not authorize ownership adoption or semantic acceptan
 Use `repo-harness architecture-projection policy --json` to inspect the global
 source path, initialization state and effective execution settings without a
 provider process. `repo-harness architecture-projection status --json` adds the
-exact package capability handshake and project apply readiness. A repo that
-vendors a mismatching provider still fails closed; the global setting does not
-relax version or executable identity checks.
+exact package capability handshake and project apply readiness. The running
+repo-harness package owns the `archctx` executable and exact dependency version;
+its dependency tree is refreshed by the global update transaction. A target
+repository's `node_modules/archctx` never overrides that runtime dependency.
+Source-checkout execution uses that checkout's repo-harness dependencies, and
+candidate verification may explicitly select the candidate package root.
+Missing or mismatching runtime dependencies still fail closed with no target-repo
+fallback. Project model, ownership and snapshot checks remain repository-local.
 
 When enabled, Stop observes the Git changed set and coalesces eligible paths
 into one durable projection job, excludes

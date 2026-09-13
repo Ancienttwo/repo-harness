@@ -98,7 +98,6 @@ const PROJECTION_WORKTREE_IGNORE_PATHS = new Set([
   'docs/architecture',
 ]);
 
-export type ArchctxResolutionOrigin = 'repo' | 'consumer';
 
 export interface ResolvedArchctxPackage {
   binaryPath: string;
@@ -133,11 +132,11 @@ function capabilityAuthorityReady(repoRoot: string): boolean {
   return existsSync(join(repoRoot, '.archcontext', 'model', 'nodes'));
 }
 
-export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION, origin: ArchctxResolutionOrigin = 'consumer'): ResolvedArchctxPackage {
-  const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion, origin);
+export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ResolvedArchctxPackage {
+  const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion);
   const manifestPath = join(packageRoot, 'package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown; engines?: unknown };
-  if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from ${origin} root ${resolve(consumerRoot)})`);
+  if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from consumer root ${resolve(consumerRoot)})`);
   const engines = isRecord(manifest.engines) ? manifest.engines : null;
   if (engines?.node !== ARCHCONTEXT_NODE_RANGE) throw new Error(`package-local archctx@${requiredVersion} Node runtime contract mismatch: expected ${ARCHCONTEXT_NODE_RANGE}, got ${String(engines?.node)}`);
   const bin = isRecord(manifest.bin) && typeof manifest.bin.archctx === 'string' ? manifest.bin.archctx : null;
@@ -234,19 +233,6 @@ function runArchctxProcess(
   return DEFAULT_RUNNER(nodeExecutable, [resolved.binaryPath, ...args], { cwd, timeoutMs: remainingTimeout({ deadlineMs, nowMs: now }, timeoutMs, args.join(' ')), env });
 }
 
-/**
- * Resolution search order (node-resolution shaped, not a semantic fallback chain):
- * an explicit caller override wins, then the target repo dependency tree, then the
- * running CLI package root when the repo vendors no archctx at all. The exact
- * version assertion is fail-closed on every path, so a repo that vendors a
- * mismatching archctx throws instead of being masked by the CLI's own copy.
- */
-function resolveArchctxForRepo(repoRoot: string, requiredVersion: string, consumerRootOverride?: string): ResolvedArchctxPackage {
-  if (consumerRootOverride) return resolvePackageLocalArchctx(consumerRootOverride, requiredVersion);
-  if (findArchctxPackageRoot(repoRoot)) return resolvePackageLocalArchctx(repoRoot, requiredVersion, 'repo');
-  return resolvePackageLocalArchctx(findConsumerRoot(), requiredVersion);
-}
-
 export function runPackageLocalArchctxJson(
   repoRoot: string,
   requiredVersion: string,
@@ -255,7 +241,9 @@ export function runPackageLocalArchctxJson(
   maximumMs = 120_000,
   allowErrorEnvelope = false,
 ): { resolved: ResolvedArchctxPackage; value: unknown } {
-  const resolved = resolveArchctxForRepo(repoRoot, requiredVersion, options.consumerRoot);
+  // The runtime package owns the executable; the target repo supplies cwd/model
+  // data only. Candidate verification may explicitly select its consumer root.
+  const resolved = resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), requiredVersion);
   const result = runArchctxProcess(resolved, args, options, repoRoot, remainingTimeout(options, maximumMs, args.join(' ')));
   if ((result.status !== 0 || result.signal || result.error) && !allowErrorEnvelope) throw new Error(`archctx ${args.join(' ')} failed: ${processFailure(result)}`);
   if (result.signal || result.error || result.stdout.trim() === '') throw new Error(`archctx ${args.join(' ')} failed: ${processFailure(result)}`);
@@ -529,9 +517,9 @@ function assertProjectionResultAuthority(
   }
 }
 
-function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string, origin: ArchctxResolutionOrigin): string {
+function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string): string {
   const packageRoot = findArchctxPackageRoot(consumerRoot);
-  if (!packageRoot) throw new Error(`package-local archctx@${requiredVersion} is missing from the ${origin} dependency tree rooted at ${resolve(consumerRoot)}`);
+  if (!packageRoot) throw new Error(`package-local archctx@${requiredVersion} is missing from the consumer dependency tree rooted at ${resolve(consumerRoot)}`);
   return packageRoot;
 }
 

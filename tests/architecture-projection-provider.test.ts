@@ -210,6 +210,9 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 describe('package-local ArchContext projection provider', () => {
   test('bounds a real provider process tree whose descendant keeps captured pipes open', () => {
     const f = fixture();
+    // Include runtime selection and startup so the provider reaches its descendant
+    // before the timeout exercises process-tree cleanup. Selection has its own test.
+    const providerBudgetMs = 2_000;
     const descendantPidPath = join(f.root, 'descendant.pid');
     const node = resolveCompatibleNodeRuntime(process.env);
     writeFileSync(f.binary, [
@@ -226,9 +229,10 @@ describe('package-local ArchContext projection provider', () => {
       `import { archctxCapabilities } from ${JSON.stringify(providerModule)};`,
       `const started = Date.now();`,
       `try {`,
-      `  archctxCapabilities(${JSON.stringify(f.repoRoot)}, { consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: '${ARCHCTX_REQUIRED_VERSION}', timeoutMs: 500 }, env: { ...process.env, REPO_HARNESS_NODE_BIN: ${JSON.stringify(node)}, ARCHCTX_DESCENDANT_PID_PATH: ${JSON.stringify(descendantPidPath)} }, deadlineMs: Date.now() + 500 });`,
+      `  archctxCapabilities(${JSON.stringify(f.repoRoot)}, { consumerRoot: ${JSON.stringify(f.consumerRoot)}, policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: '${ARCHCTX_REQUIRED_VERSION}', timeoutMs: ${providerBudgetMs} }, env: { ...process.env, REPO_HARNESS_NODE_BIN: ${JSON.stringify(node)}, ARCHCTX_DESCENDANT_PID_PATH: ${JSON.stringify(descendantPidPath)} }, deadlineMs: Date.now() + ${providerBudgetMs} });`,
       `  process.exitCode = 2;`,
       `} catch (error) {`,
+      `  console.error(String(error));`,
       `  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);`,
       `  const pid = Number((await import('node:fs')).readFileSync(${JSON.stringify(descendantPidPath)}, 'utf8'));`,
       `  let descendantAlive = true;`,
@@ -338,22 +342,49 @@ describe('package-local ArchContext projection provider', () => {
     expect(resolvePackageLocalArchctx(installedHarnessRoot).binaryPath).toBe(realpathSync(f.binary));
   });
 
-  test('resolves the target repo dependency tree before the running CLI package root', () => {
+  test.each(['0.0.1', ARCHCTX_REQUIRED_VERSION])('runtime provider is not overridden by target archctx@%s', (version) => {
     const f = fixture();
-    const repoBinary = vendorArchctx(f.repoRoot, '9.9.9');
+    const repoBinary = vendorArchctx(f.repoRoot, version);
+    const before = readFileSync(join(f.repoRoot, 'node_modules', 'archctx', 'package.json'), 'utf8');
+    const calls: string[] = [];
     const handshake = archctxCapabilities(f.repoRoot, {
-      policy: { ...policy, requiredVersion: '9.9.9' },
-      run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities('9.9.9')), stderr: '' }),
+      policy,
+      run: (binary) => {
+        calls.push(binary);
+        return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+      },
     });
-    expect(handshake.resolved.binaryPath).toBe(realpathSync(repoBinary));
-    expect(handshake.resolved.version).toBe('9.9.9');
+    expect(handshake.resolved.packageRoot).toBe(realpathSync(join(import.meta.dir, '..', 'node_modules', 'archctx')));
+    expect(handshake.resolved.binaryPath).not.toBe(realpathSync(repoBinary));
+    expect(calls).toEqual([handshake.resolved.binaryPath]);
+    expect(handshake.resolved.version).toBe(ARCHCTX_REQUIRED_VERSION);
+    expect(readFileSync(join(f.repoRoot, 'node_modules', 'archctx', 'package.json'), 'utf8')).toBe(before);
   });
 
-  test('fails closed when the target repo vendors a mismatching archctx', () => {
+  test('fails closed on a mismatching runtime provider even when the target has a valid copy', () => {
+    const f = fixture();
+    vendorArchctx(f.repoRoot, ARCHCTX_REQUIRED_VERSION);
+    vendorArchctx(f.consumerRoot, '0.0.1');
+    expect(() => archctxCapabilities(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }) }))
+      .toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}, got archctx@0.0.1 (resolved from consumer root ${f.consumerRoot})`);
+  });
+
+  test('status CLI uses its runtime provider for a repository with stale local archctx', () => {
     const f = fixture();
     vendorArchctx(f.repoRoot, '0.0.1');
-    expect(() => archctxCapabilities(f.repoRoot, { policy, run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }) }))
-      .toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}, got archctx@0.0.1 (resolved from repo root ${f.repoRoot})`);
+    const home = join(f.root, 'home');
+    mkdirSync(join(home, '.repo-harness'), { recursive: true });
+    writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({
+      architecture: { projection_provider: 'archctx', projection_apply: 'automatic' },
+    }));
+    const output = execFileSync(process.execPath, [
+      join(import.meta.dir, '..', 'src', 'cli', 'index.ts'), 'architecture-projection', 'status', '--json',
+    ], { cwd: f.repoRoot, env: { ...process.env, HOME: home }, encoding: 'utf8', timeout: 10_000 });
+    const readiness = JSON.parse(output);
+    expect(readiness.projectionProvider.state).toBe('ready');
+    expect(readiness.projectionProvider.version).toBe(ARCHCTX_REQUIRED_VERSION);
+    expect(readiness.projectionProvider.binaryPath).toBe(resolvePackageLocalArchctx(join(import.meta.dir, '..')).binaryPath);
+    expect(JSON.parse(readFileSync(join(f.repoRoot, 'node_modules', 'archctx', 'package.json'), 'utf8')).version).toBe('0.0.1');
   });
 
   test('fails closed when the pinned version omits the prior-committed-applies feature', () => {

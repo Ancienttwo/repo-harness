@@ -1,0 +1,39 @@
+bun test tests/architecture-projection-provider.test.ts --test-name-pattern runtime provider is not overridden
+bun test v1.4.2 (744846f84)
+
+tests/architecture-projection-provider.test.ts:
+135 | 
+136 | export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION, origin: ArchctxResolutionOrigin = 'consumer'): ResolvedArchctxPackage {
+137 |   const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion, origin);
+138 |   const manifestPath = join(packageRoot, 'package.json');
+139 |   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown; engines?: unknown };
+140 |   if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from ${origin} root ${resolve(consumerRoot)})`);
+                                                                                                                                                                                                                                                                                        ^
+error: package-local archctx mismatch: expected archctx@0.5.10, got archctx@0.0.1 (resolved from repo root /var/folders/fg/cxwpgmpn589gm911sskc0v_m0000gn/T/repo-harness-archctx-provider-1mmV9c/repo)
+      at resolvePackageLocalArchctx (/Users/kito/Projects/repo-harness-wt-architecture-dependency-reconciliation/src/effects/architecture/archctx-provider.ts:140:275)
+      at runPackageLocalArchctxJson (/Users/kito/Projects/repo-harness-wt-architecture-dependency-reconciliation/src/effects/architecture/archctx-provider.ts:258:20)
+      at archctxCapabilities (/Users/kito/Projects/repo-harness-wt-architecture-dependency-reconciliation/src/effects/architecture/archctx-provider.ts:268:31)
+      at <anonymous> (/Users/kito/Projects/repo-harness-wt-architecture-dependency-reconciliation/tests/architecture-projection-provider.test.ts:346:23)
+(fail) package-local ArchContext projection provider > runtime provider is not overridden by target archctx@0.0.1 [120.29ms]
+348 |       run: (binary) => {
+349 |         calls.push(binary);
+350 |         return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+351 |       },
+352 |     });
+353 |     expect(handshake.resolved.packageRoot).toBe(realpathSync(join(import.meta.dir, '..', 'node_modules', 'archctx')));
+                                                 ^
+error: expect(received).toBe(expected)
+
+Expected: "/Users/kito/Projects/repo-harness-wt-architecture-dependency-reconciliation/node_modules/archctx"
+Received: "/private/var/folders/fg/cxwpgmpn589gm911sskc0v_m0000gn/T/repo-harness-archctx-provider-EJvKHb/repo/node_modules/archctx"
+
+      at <anonymous> (/Users/kito/Projects/repo-harness-wt-architecture-dependency-reconciliation/tests/architecture-projection-provider.test.ts:353:44)
+(fail) package-local ArchContext projection provider > runtime provider is not overridden by target archctx@0.5.10 [115.92ms]
+
+ 0 pass
+ 27 filtered out
+ 2 fail
+ 1 expect() calls
+Ran 2 tests across 1 file. [272.00ms]
+
+PRE_FIX_EXIT=1
