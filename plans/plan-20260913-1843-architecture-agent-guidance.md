@@ -121,10 +121,15 @@ Reuse global enablement, the capability parser/matcher, SessionStart advice and 
 
 SessionStart coverage advice, its existing tests/provider diagnostics, architecture skill procedure and mirrored operator docs. No global tool upgrades, publishing, unrelated queue repair, automatic semantic synthesis, or target repository changes.
 
+## Approved recovery extension
+
+User approved resolving task-sync recovery. The helper already accepts exact bound evidence before requesting a profile. On resolver exit 1 it hides the digest needed to reach that existing path. Preserve fail-closed profile behavior and expose the exact required binding; test failed invocation followed by exact binding and successful recovery without altering failed evidence or resolver status.
+
 ## Task Breakdown
 
 - [x] Implement globally gated coverage observations in the existing session context path.
 - [x] Document Agent decision and ChangeSet authoring workflow in the architecture skill and mirrored reference docs.
+- [ ] Fix task-sync recovery diagnostics and prove exact-binding recovery.
 - [ ] Verify focused fixture behavior and required repository checks, review once and close the local contract without merge.
 
 ## Verification
@@ -134,7 +139,12 @@ Existing session-context tests cover empty model, shared ancestor mapping, unmap
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
+## Approved recovery extension
+
+User approved resolving task-sync recovery. The helper already accepts exact bound evidence before requesting a profile. On resolver exit 1 it hides the digest needed to reach that existing path. Preserve fail-closed profile behavior and expose the exact required binding; test failed invocation followed by exact binding and successful recovery without altering failed evidence or resolver status.
+
 ## Task Breakdown
 - [x] Implement globally gated coverage observations in the existing session context path.
 - [x] Document Agent decision and ChangeSet authoring workflow in the architecture skill and mirrored reference docs.
+- [ ] Fix task-sync recovery diagnostics and prove exact-binding recovery.
 - [ ] Verify focused fixture behavior and required repository checks, review once and close the local contract without merge.

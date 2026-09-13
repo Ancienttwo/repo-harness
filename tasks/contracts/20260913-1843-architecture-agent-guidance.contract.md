@@ -2,7 +2,7 @@
 
 > **Status**: Active
 > **Plan**: plans/plan-20260913-1843-architecture-agent-guidance.md
-> **Task Profile**: code-change
+> **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
@@ -21,7 +21,7 @@ Surface read-only architecture coverage evidence through existing globally enabl
 
 ## Scope
 
-- In scope: existing session context, diagnostics, tests, architecture skill and mirrored reference docs.
+- In scope: existing session context, diagnostics, tests, architecture skill and mirrored reference docs; user-approved task-sync recovery diagnostic fix.
 - Out of scope: automatic semantic synthesis, package updates, release, unrelated queues and target project models.
 - Taste constraints: no new dependencies, files, abstraction, config flag or state machine; reuse canonical registry and matching.
 
@@ -37,7 +37,10 @@ If advice writes a model, treats package names as semantic boundaries, ignores g
 
 ## Root Cause Evidence
 
-Not applicable: this slice adds Agent guidance to an existing consumer-only workflow.
+- root_cause: scripts/check-task-sync.sh exits on blocked profile resolution without emitting the computed substantive digest needed by its existing earlier exact-evidence recovery path.
+- repro: change fixture source and make the state resolver exit 1; task-sync fails without a usable evidence binding.
+- regression_guard: tests/check-task-sync.test.ts
+- pre_fix_failure_artifact: .ai/harness/failures/task-sync-recovery-pre-fix.log
 
 ## Workflow Inventory
 
@@ -66,6 +69,10 @@ Not applicable: this slice adds Agent guidance to an existing consumer-only work
 
 ```yaml
 allowed_paths:
+  - scripts/check-task-sync.sh
+  - assets/templates/helpers/check-task-sync.sh
+  - tests/check-task-sync.test.ts
+  - .ai/harness/failures/task-sync-recovery-pre-fix.log
   - src/cli/hook/session-context.ts
   - src/cli/hook/session-context-budget.ts
   - tests/session-context.test.ts
@@ -150,6 +157,19 @@ exit_criteria:
       "cost": "normal",
       "evidence_policy": "current_exact",
       "necessity": "Focused SessionStart behavior",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "task-sync-recovery",
+      "kind": "package_test",
+      "path": "tests/check-task-sync.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Prove failure recovery preserves exact diff binding and does not admit blocked lite profiles",
       "inputs": {
         "env": []
       }
