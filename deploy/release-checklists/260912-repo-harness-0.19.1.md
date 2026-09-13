@@ -3,16 +3,17 @@
 - Updated: 2026-09-13.
 - Package: `repo-harness@0.19.1`; base published release: `v0.19.0`.
 - Integration base: `7f6fcd1f143e77fd007f43d39e9fe5a7029583fb`.
-- Candidate: the merged commit of the `codex/release-0191-current` release
-  work-package, including the bounded release-gate repairs.
+- Published source: `66441481771bac742fcbca35fefa03d44ac25f8a` (PR #431).
+- Source tree: `1f0db8cca1436cfb7e994640d009978492447ee1`, identical to the
+  accepted PR head `4aa16400e6ec0e7255564c015851d6d9bd1257a3`.
 - Existing remote annotated tag object: `58098c2292b5ac104ea1e4ce7e72d0a5d3475cdf`,
   previously targeting `d94ec3c7517230b361f1354805ab3d4a364a045a`.
 - Owner authorization: publish current main as 0.19.1, including moving that
   old tag with an exact lease. npm reported 0.19.1 absent before preparation.
 - Scope: update this filing and the 0.19.1 changelog, and repair all
   owner-approved release-gate blockers. Versions and deferred work remain unchanged.
-- Status: publication authorized; registry and installed-runtime readbacks are
-  recorded after publication. Preparation alone is not a published release.
+- Status: published. npm `latest`, tarball integrity, clean installation,
+  installed CLI/hook readback, GitHub Release and the leased tag all agree.
 
 ## Release Content
 
@@ -256,12 +257,59 @@ while retaining all dependencies, immutable hashing and real install checks.
 
 ## Publish Follow-through
 
-After acceptance, merge the documentation work-package with Required CI green.
-Pack that exact merged commit and inspect the archive. Recheck npm absence,
-replace `v0.19.1` using the recorded old-tag object as a lease, and publish the
-frozen tarball. Create the GitHub Release from the 0.19.1 changelog, run
-`check:release-published`, and refresh the Bun-global runtime through the
-supported installer/update path. Read back all final identities before closing.
+- PR #431 merged with Required CI green: run `34740872712`, attempt 2.
+  The main-branch run `34741967140` also passed without a retry.
+- The first PR attempt failed the benchmark base immutability guard. Its exact
+  changed path was not captured; 100 isolated Linux repetitions and the macOS
+  focused case passed. No assertion or implementation was changed for this
+  intermittent failure. The retry and subsequent main run passed; its root
+  cause remains unproven.
+- Local full release execution `vx-1d380329781f4342a7b9` passed in 741727 ms.
+  The implementation closes with typed owner acceptance (`user_waiver`), not
+  the earlier documentation-only external review.
+- Packed the exact merged commit with rebuilt hook and operator UI bundles.
+  The archive includes all five `repo-harness-test` skill files.
+- Frozen tarball: `repo-harness-0.19.1.tgz`, 11729923 bytes;
+  SHA-1 `dd04427fcc5b1f6706b31ce8893123e93d5367a7`;
+  integrity `sha512-V2XtdC9zMXpRImr5rCib60LRVIv+qNAgYBUoaHtrHRphqwxTrnWZihNgo6oPXIF82cslaSFUqX16uyKqiMVewA==`.
+- Replaced the old annotated tag using its exact object as a force-with-lease
+  expectation. New tag object `3972e6b247ea87a283112a0f29f16764f93f12a7`
+  peels to the published source above.
+- npm authentication was renewed as `ancienttwo`; the package upload completed
+  after the separate publish authentication with HTTP 202 and CLI exit 0.
+- [GitHub Release](https://github.com/Ancienttwo/repo-harness/releases/tag/v0.19.1)
+  was published at `2026-09-13T06:13:25Z`, using the 0.19.1 changelog.
+- npm's exact-version lifecycle endpoint subsequently returned `published`.
+  The initial 404 readback occurred before registry availability; no duplicate
+  publish was submitted. Public metadata now reports `latest: 0.19.1` and the
+  exact frozen tarball SHA-1 and SHA-512 above.
+- `bun run check:release-published` passed. Runtime receipt
+  `sha256:e643557ee3e049072bd11e905b56f838ab571cf60fafbebad720ea9a3d6ad307`
+  records `published_tarball`, `clean_install` and `installed_hook_readback`
+  as pass; the installed hook returned `StateSnapshot v1`.
+- The existing-host update initially refused two modified Codex skills
+  (`obsidian-memory` and `claude-plan`) and ten agent definitions, then rolled
+  back to 0.19.0. The owner subsequently authorized merging both versions and
+  completing the update.
+- Compared the local skill copies with repository history and the packaged
+  definitions. The skills were older revisions; installed the complete current
+  rules and retained the original Chinese text in the host backup. Agent
+  definitions adopt the current role/model boundaries, preserving the Codex
+  explorer's additional data-ownership, async/error-path and read-only
+  constraints. `install-agent-fleet.sh --accept-user-managed` records that
+  single merged explorer file; a subsequent ordinary fleet install passes.
+- Preserved the originals under
+  `~/.repo-harness/backups/release-0191-runtime-20260913-144359`.
+  The existing CodeGraph TOML subtree also needed conversion from nested
+  tables to inline tables for the installer's fragment ownership parser.
+  Full-document parsed equality was verified before writing; all configuration
+  values are unchanged, and the original configuration is in the same backup.
+- `repo-harness update --version 0.19.1 --no-codegraph --no-external-skills`
+  then passed, including candidate runtime reconciliation. The installed CLI
+  reports 0.19.1; install-state reports the full profile with consistent
+  ownership and no missing components or surface drift. Both host copies of
+  `obsidian-memory` and the Codex `claude-plan` match the packaged content;
+  the explorer receipt matches its retained customization.
 
 Before npm publication, an interrupted tag move may be restored with an exact
 lease against the tag object written by this release. After npm publication,
