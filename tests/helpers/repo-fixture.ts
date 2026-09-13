@@ -1,6 +1,6 @@
 import { afterAll, expect } from "bun:test";
 import { spawnSync } from "child_process";
-import { appendFileSync, chmodSync, cpSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { appendFileSync, chmodSync, cpSync, mkdtempSync, realpathSync, rmSync, linkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -191,5 +191,6 @@ export function writeShellExecutableFixture(filePath: string, content: string): 
   }
   writeFileSync(`${filePath}.fixture-body`, content, { mode: 0o600 });
   rmSync(filePath, { force: true });
-  symlinkSync(join(shellFixtureRoot, "launcher"), filePath);
+  // A hard link retains the command path even when a runtime canonicalizes it.
+  linkSync(join(shellFixtureRoot, "launcher"), filePath);
 }

@@ -924,49 +924,43 @@ describe("verification execution lifecycle", () => {
   test("two identical concurrent requests start the expensive command once", async () => {
     const fixture = setupRepo("verification-concurrent");
     try {
-      await new Promise<void>((resolvePromise, rejectPromise) => {
-        const { root: repoRoot, contractPath, counterPath } = fixture;
-        const slowPlan = {
-          protocol: 1,
-          checks: [commandCheck({ command: "printf 'x\\n' >> \"$COUNTER_PATH\"; sleep 0.5" })],
-        };
-        writeFileSync(join(repoRoot, contractPath), contract(slowPlan));
-        const env = { ...process.env, COUNTER_PATH: counterPath };
-        const first = spawn("bun", [CLI, "execute", "--repo", repoRoot, "--contract", contractPath], {
-          env,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        const started = Date.now();
-        while (!existsSync(counterPath) && Date.now() - started < 5_000) {
-          Bun.sleepSync(10);
-        }
-        try {
-          expect(existsSync(counterPath)).toBe(true);
-          const second = spawnSync("bun", [CLI, "execute", "--repo", repoRoot, "--contract", contractPath], {
-            encoding: "utf8",
-            env,
-          });
-          expect(second.status).toBe(1);
-          expect(JSON.parse(second.stdout).status).toBe("waiting");
-        } catch (error) {
-          first.kill("SIGTERM");
-          rejectPromise(error);
-          return;
-        }
-        first.on("error", rejectPromise);
-        first.on("exit", (code: number | null) => {
-          try {
-            expect(code).toBe(0);
-            expect(readFileSync(counterPath, "utf8").trim().split("\n")).toHaveLength(1);
-            resolvePromise();
-          } catch (error) {
-            rejectPromise(error);
-          }
-        });
+      const { root: repoRoot, contractPath, counterPath } = fixture;
+      const slowPlan = {
+        protocol: 1,
+        checks: [commandCheck({
+          command: "printf 'x\\n' >> \"$COUNTER_PATH\"; attempts=0; while [ ! -f \"$COUNTER_PATH.release\" ]; do attempts=$((attempts + 1)); [ \"$attempts\" -lt 1000 ] || exit 1; sleep 0.01; done",
+        })],
+      };
+      writeFileSync(join(repoRoot, contractPath), contract(slowPlan));
+      const env = { ...process.env, COUNTER_PATH: counterPath };
+      const first = spawn("bun", [CLI, "execute", "--repo", repoRoot, "--contract", contractPath], {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
       });
+      const completed = new Promise<number | null>((resolvePromise, rejectPromise) => {
+        first.once("error", rejectPromise);
+        first.once("close", resolvePromise);
+      });
+      try {
+        const started = Date.now();
+        while (!existsSync(counterPath) && Date.now() - started < 5_000) await Bun.sleep(10);
+        expect(existsSync(counterPath)).toBe(true);
+        // Keep the first request admitted until the second has observed its lock.
+        const second = spawnSync("bun", [CLI, "execute", "--repo", repoRoot, "--contract", contractPath], {
+          encoding: "utf8",
+          env,
+        });
+        expect(second.status).toBe(1);
+        expect(JSON.parse(second.stdout).status).toBe("waiting");
+      } finally {
+        writeFileSync(`${counterPath}.release`, "release\n");
+        expect(await completed).toBe(0);
+      }
+      expect(readFileSync(counterPath, "utf8").trim().split("\n")).toHaveLength(1);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
       rmSync(fixture.counterPath, { force: true });
+      rmSync(`${fixture.counterPath}.release`, { force: true });
     }
   }, 30_000);
 });

@@ -3,15 +3,14 @@
 - Updated: 2026-09-13.
 - Package: `repo-harness@0.19.1`; base published release: `v0.19.0`.
 - Integration base: `7f6fcd1f143e77fd007f43d39e9fe5a7029583fb`.
-- Candidate: the merged commit of the `codex/release-0191-current` documentation
-  work-package, with the accepted product tree from that integration base.
+- Candidate: the merged commit of the `codex/release-0191-current` release
+  work-package, including the bounded release-gate repairs.
 - Existing remote annotated tag object: `58098c2292b5ac104ea1e4ce7e72d0a5d3475cdf`,
   previously targeting `d94ec3c7517230b361f1354805ab3d4a364a045a`.
 - Owner authorization: publish current main as 0.19.1, including moving that
   old tag with an exact lease. npm reported 0.19.1 absent before preparation.
-- Scope: update this filing and the 0.19.1 changelog, and repair the two
-  owner-approved fixture timing blockers found by the current release gate.
-  Packaged product source, versions and deferred work remain unchanged.
+- Scope: update this filing and the 0.19.1 changelog, and repair all
+  owner-approved release-gate blockers. Versions and deferred work remain unchanged.
 - Status: publication authorized; registry and installed-runtime readbacks are
   recorded after publication. Preparation alone is not a published release.
 
@@ -221,13 +220,19 @@ new release preparation retains that history as a reason to require a fresh
 full release result. A skipped or failed case is not a pass.
 
 The current run exposed cold-start timing assumptions in existing fixtures.
-The four tooling fixture consumers share one prepared shell launcher, with
+Tooling, MCP and global runtime shell fixtures share a prepared launcher, with
 private bodies beside their original command paths. This removes repeated
-cold executable startup while retaining real subprocess probes. The Oracle cleanup test measures from
+cold executable startup while retaining real subprocess probes. Hard links preserve
+command identity when runtime validation resolves executable paths. The Oracle
+cleanup test measures from
 its actual workload marker after preflight, retaining the 8000 ms bound and
 all cleanup assertions. Production probe timeouts and the four-worker pool
 remain unchanged. The initial failed run is preserved in the workflow notes;
 only the final frozen-candidate gate can establish release readiness.
+The lane test isolates its inherited expensive-test flag; the concurrent
+verification test holds admission until the second request observes the lock.
+The benchmark runtime bundle uses gzip level 1 to reduce preparation CPU cost
+while retaining all dependencies, immutable hashing and real install checks.
 
 ### Evidence locations
 

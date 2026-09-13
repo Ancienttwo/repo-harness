@@ -144,3 +144,9 @@ continuing publication. Existing testing oracles and production deadlines stay
 intact. The repair changes five existing tests and their shared fixture helper:
 Tooling fixtures share a prepared shell launcher with private command bodies;
 Oracle cleanup timing begins at the real workload marker after preflight.
+
+The owner subsequently expanded this amendment to all release-gate blockers.
+The complete frozen run at 38d80371 finished in 1003 seconds and exposed seven
+failing cases across six files. Diagnose each before editing; preserve the
+four-file pool, existing assertions and production deadlines. Deferred CI
+work remains excluded.

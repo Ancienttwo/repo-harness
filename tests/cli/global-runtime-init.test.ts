@@ -7,6 +7,7 @@ import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
 import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
+import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -31,6 +32,11 @@ function singleFileManagedTreeHash(content: string): string {
 }
 
 function writeExecutable(filePath: string, content: string): void {
+  const interpreter = content.split('\n', 1)[0];
+  if (interpreter === '#!/bin/sh' || interpreter === '#!/bin/bash') {
+    writeShellExecutableFixture(filePath, content);
+    return;
+  }
   writeFileSync(filePath, content);
   chmodSync(filePath, 0o755);
 }
