@@ -11,6 +11,7 @@ import {
   registerCheck,
   runDoctor,
 } from '../../src/cli/commands/doctor';
+import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -45,8 +46,7 @@ function withEnv(values: Record<string, string | undefined>, fn: () => void): vo
 }
 
 function writeExecutable(filePath: string, content: string): void {
-  fs.writeFileSync(filePath, content);
-  fs.chmodSync(filePath, 0o755);
+  writeShellExecutableFixture(filePath, content);
 }
 
 function withTempRepo(

@@ -1,0 +1,248 @@
+> **Archived**: 2026-09-13 13:39
+> **Related Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260913-1339
+> **Archive Projection V1**: `plans/plan-20260913-1143-release-0191-current.md` => `plans/archive/plan-20260913-1143-release-0191-current.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1143-release-0191-current.notes.md` => `tasks/archive/notes-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1143-release-0191-current.contract.md` => `tasks/archive/contract-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1143-release-0191-current.review.md` => `tasks/archive/review-20260913-1339-release-0191-current.md`
+
+# Task Contract: release-0191-current
+
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Task Profile**: bugfix
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
+> **Owner**: ancienttwo
+> **Capability ID**: root
+> **Last Updated**: 2026-09-13 11:43
+> **Review File**: `tasks/archive/review-20260913-1339-release-0191-current.md`
+> **Notes File**: `tasks/archive/notes-20260913-1339-release-0191-current.md`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
+
+> **Substantive Change SHA256**: `sha256:2caa30b943974aab68cb7a640f7fed963361a6970dedcc197d426dbcf8bd8898`
+
+## Why
+
+The old 0.19.1 tag omits accepted changes through 7f6fcd1f. The owner chose to
+publish current main under the same version. Release metadata and current
+package evidence must agree before moving the tag or publishing to npm.
+
+## Goal
+
+Prepare the updated 0.19.1 release documentation and one verified current-main
+package boundary for integration. Publication follows as an authorized operator
+chain after this work-package is accepted and merged.
+
+## Scope
+
+- In scope: docs/CHANGELOG.md, the existing 0.19.1 release filing, and this workflow family.
+- In scope amendment (owner approved 2026-09-13): repair all observed release-gate blockers, including Oracle/tooling, Fleet retry, MCP fixed-goal execution, global runtime fixtures, lane environment isolation, verification concurrency and benchmark artifact preparation. Preserve production deadlines, existing assertions and the four-file release pool.
+- Out of scope: unrelated product behavior, other worktrees and deferred CI tasks.
+- Taste constraints: preserve operator migration warnings; no unverified performance or publication claims.
+
+## Stop Conditions
+
+- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
+- Stop if an Exit Criteria command cannot be run in this environment.
+- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+
+## Falsifier
+
+An existing npm 0.19.1, moved remote tag, failing full release gate, missing
+packaged files or mismatched installed-runtime identity blocks publication.
+The cheap preflight is the npm absence and version check.
+
+## Root Cause Evidence
+
+- root_cause: The nested lane test inherits the outer release gate flag; concurrency assumes second-request admission within a fixed 0.5-second sleep; benchmark preparation spends 19.6 seconds compressing a 310 MiB dependency closure. Fresh executable fixture cold starts exceed the CodeGraph 1-second readiness probe window, while the Oracle test counts preflight startup against its unrelated 8-second cleanup budget. Instrumented Oracle work lasts 5118 ms; its first Gitleaks probe alone lasts 3251 ms.
+- repro: Injecting 750 ms before the second verification CLI reproduces status 0 instead of waiting; running the lane test with REPO_HARNESS_TEST_EXPENSIVE=1 reproduces its wrong functional-lane value. The complete frozen release run vx-88142df9a8bf4c73ae25 records all seven subsequent failures. Four concurrent isolated existing CodeGraph/resolver test runs reproduce missing version log and extra retry probe; the instrumented Oracle timeout test fails at 8569 ms while actual Oracle cleanup remains within its budget.
+- regression_guard: tests/expensive-test-gate.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/release-0191-current-blockers/lane-env-red.log
+
+## Workflow Inventory
+
+- Source plan: `plans/archive/plan-20260913-1143-release-0191-current.md`
+- Deferred-goal ledger: `tasks/todos.md`
+- Review file: `tasks/archive/review-20260913-1339-release-0191-current.md`
+- Notes file: `tasks/archive/notes-20260913-1339-release-0191-current.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+
+## Change Assessment
+
+```json
+{"protocol":1,"oracles":[{"id":"release-deterministic-gates","kind":"deterministic_test","paths":["*"]},{"id":"tarball-install-smoke","kind":"runtime_readback","paths":["*"]}]}
+```
+
+## Acceptance Policy
+
+```json
+{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}
+```
+
+## Allowed Paths
+
+```yaml
+allowed_paths:
+  - scripts/run-harness-profile-benchmark.ts
+  - .ai/harness/runs/release-0191-current-blockers/
+  - tests/cli/operator-serve.test.ts
+  - tests/cli/mcp-tools.test.ts
+  - tests/cli/global-runtime-init.test.ts
+  - tests/effects/verification-execution.test.ts
+  - tests/expensive-test-gate.test.ts
+  - tests/harness-benchmark-matrix.test.ts
+  - tests/helpers/repo-fixture.ts
+  - tests/cli/chatgpt-browser.test.ts
+  - tests/cli/codegraph.test.ts
+  - tests/cli/codegraph-resolver.test.ts
+  - tests/cli/doctor.test.ts
+  - tests/check-agent-tooling.test.ts
+  - docs/CHANGELOG.md
+  - deploy/release-checklists/260912-repo-harness-0.19.1.md
+  - plans/
+  - tasks/todos.md
+  - tasks/archive/contract-20260913-1339-release-0191-current.md
+  - tasks/archive/review-20260913-1339-release-0191-current.md
+  - tasks/archive/notes-20260913-1339-release-0191-current.md
+```
+
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
+  benchmark: not_applicable
+```
+
+## Delegation Contract
+
+```yaml
+delegation:
+  budget:
+    tokens: null
+    runner_invocations: null
+    wall_time_minutes: null
+  permission_scope:
+    mode: inherit_allowed_paths
+    writable_paths: []
+    network: inherited
+  roles:
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+    fallback: null
+    brief_is_authoritative: true
+```
+
+## Exit Criteria (Machine Verifiable)
+
+This block contains only non-executable artifact requirements. Define every
+executable check once in the canonical Verification Plan below. Each check must
+state its phase, cost, evidence policy, necessity, and input environment; a
+missing or malformed plan fails closed. Populate artifact requirements only
+for deliverables this task actually owns; do not create a spec, notes or report
+merely to fill this template.
+
+```yaml
+exit_criteria:
+  files_exist:
+    - docs/CHANGELOG.md
+    - deploy/release-checklists/260912-repo-harness-0.19.1.md
+  artifacts_exist:
+    - tasks/archive/notes-20260913-1339-release-0191-current.md
+```
+
+## Verification Plan
+
+```json
+{
+  "protocol": 1,
+  "checks": [
+    {
+      "id": "version",
+      "kind": "command",
+      "command": "bun scripts/check-skill-version.ts",
+      "cwd": ".",
+      "phase": "preflight",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Both version authorities and README stamps must agree on 0.19.1",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "release-lane-regression",
+      "kind": "package_test",
+      "path": "tests/expensive-test-gate.test.ts",
+      "cwd": ".",
+      "phase": "preflight",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Bugfix Root Cause Evidence H1 requires its captured failing guard as an explicit package_test; this two-second mandatory preflight is the sole aggregate-overlap exception",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "release",
+      "kind": "command",
+      "command": "REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=4 BUN_TEST_MAX_CONCURRENCY=1 bun run check:release",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "expensive",
+      "evidence_policy": "current_exact",
+      "necessity": "Explicit owner-authorized release gate includes real install and Herdr cases omitted by hosted functional CI, required integrity checks and tarball runtime smoke",
+      "inputs": {
+        "env": []
+      }
+    }
+  ]
+}
+```
+
+Author the actual checks using [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
+The empty array is not permission to omit required repository checks: retain it
+only when no executable criterion applies and explain why in Acceptance Notes.
+Prefer existing covering tests; creating a task-named test or adding typecheck
+is not a template requirement. For each selected check declare `id`, `kind`,
+`cwd`, `phase`, `cost`, `evidence_policy`, `necessity`, `inputs.env`, and its
+`command` or `path`. Declare the same execution once, including checks nested
+inside aggregate scripts. Use `baseline_with_delta` only with an immutable
+baseline and named current delta checks; never infer it from paths or command text.
+
+## Acceptance Notes (Human Review)
+
+- Changed boundary: release documentation and candidate/package identity. The
+  existing release gate owns the needed runtime and archive checks.
+- No new tests: the full gate includes readme assertions and the packaging
+  smoke; listing those leaves separately would duplicate execution.
+- Expected full-gate cost: 15-25 minutes with a four-file pool; normal hosted
+  functional CI is not an expensive-case substitute.
+- The runtime_readback oracle is the real tarball installation already nested
+  in check:release. The publication readback is a later operator step.
+- Owner authorization permits publication and moving the old tag, but this
+  contract still requires its frozen reviewer for semantic acceptance.
+
+## Rollback Point
+
+- Integration base: 7f6fcd1f143e77fd007f43d39e9fe5a7029583fb.
+- Before publication, revert this documentation work-package and preserve npm
+  absence. The old remote tag object is recorded in the release filing.

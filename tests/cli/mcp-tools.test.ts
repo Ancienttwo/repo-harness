@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { writeShellExecutableFixture } from '../helpers/repo-fixture';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -742,8 +743,7 @@ describe('mcp tools', () => {
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
       writeFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n\n## Required workflow\n\nRun fake codex.\n');
       const fakeCodex = join(binRoot, 'codex');
-      writeFileSync(fakeCodex, '#!/usr/bin/env bash\necho "fake-codex:$1:$2:$3"\n', 'utf-8');
-      chmodSync(fakeCodex, 0o755);
+      writeShellExecutableFixture(fakeCodex, '#!/bin/bash\necho "fake-codex:$1:$2:$3"\n');
       process.env.PATH = `${binRoot}:${originalPath ?? ''}`;
 
       const disabledCtx = { repoRoot, policy: getMcpPolicy('orchestrator') };

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  chmodSync,
   copyFileSync,
   existsSync,
   mkdtempSync,
@@ -15,6 +14,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { runSubagentHandler } from "../src/cli/hook/subagent-handler";
+import { writeShellExecutableFixture } from "./helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
@@ -49,8 +49,7 @@ function writeAgentFleetReceipt(home: string, files: Array<{ path: string; sha25
 }
 
 function writeExecutable(filePath: string, content: string) {
-  writeFileSync(filePath, content);
-  chmodSync(filePath, 0o755);
+  writeShellExecutableFixture(filePath, content);
 }
 
 function writeOfficialCodexPluginFixture(pluginRoot: string) {

@@ -643,7 +643,8 @@ export function prepareBenchmarkRuntimeArtifact(sourceRoot: string, runRoot: str
   writeFileSync(sourcePackageManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
   const artifactName = basename(sourceArtifactPath);
   const artifactPath = resolve(packageRoot, artifactName);
-  run('tar', ['-czf', artifactPath, '-C', stageRoot, 'package'], runRoot);
+  // This local runtime bundle favors preparation latency over distribution size.
+  run('tar', ['-cf', artifactPath, '--use-compress-program', 'gzip -1', '-C', stageRoot, 'package'], runRoot);
   const artifactRelativePath = relative(packageRoot, artifactPath);
   if (artifactRelativePath === '' || isAbsolute(artifactRelativePath)
     || artifactRelativePath === '..' || artifactRelativePath.startsWith(`..${sep}`)) {

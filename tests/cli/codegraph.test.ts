@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { writeShellExecutableFixture } from "../helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 
 function writeExecutable(filePath: string, content: string) {
-  writeFileSync(filePath, content);
-  chmodSync(filePath, 0o755);
+  writeShellExecutableFixture(filePath, content);
 }
 
 function setupFakeEnvironment(prefix: string) {
@@ -110,7 +110,8 @@ test('standalone CodeGraph configure records restorable MCP provenance', () => {
   const fixture = setupFakeEnvironment('standalone-codegraph-uninstall');
   try {
     writeFakeSkillsCli(fixture.fakeBin);
-    writeExecutable(join(fixture.fakeBin, 'codegraph'), [
+    const codegraph = join(fixture.fakeBin, 'codegraph');
+    writeExecutable(codegraph, [
       '#!/bin/bash',
       'set -euo pipefail',
       'case "${1:-}" in',

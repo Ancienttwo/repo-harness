@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { writeShellExecutableFixture } from "../helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const SCRIPT = join(ROOT, "scripts/ensure-codegraph.sh");
 
 function writeExecutable(filePath: string, content: string) {
-  writeFileSync(filePath, content);
-  chmodSync(filePath, 0o755);
+  writeShellExecutableFixture(filePath, content);
 }
 
 function setupFakeEnvironment(prefix: string) {

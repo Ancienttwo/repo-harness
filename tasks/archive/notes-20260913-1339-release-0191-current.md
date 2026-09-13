@@ -1,0 +1,203 @@
+> **Archived**: 2026-09-13 13:39
+> **Related Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260913-1339
+> **Archive Projection V1**: `plans/plan-20260913-1143-release-0191-current.md` => `plans/archive/plan-20260913-1143-release-0191-current.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1143-release-0191-current.notes.md` => `tasks/archive/notes-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1143-release-0191-current.contract.md` => `tasks/archive/contract-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1143-release-0191-current.review.md` => `tasks/archive/review-20260913-1339-release-0191-current.md`
+
+# Release preparation decisions
+
+The owner explicitly selected latest-main 0.19.1 after being shown the old
+remote tag and npm absence. The tag update will use an exact old-object lease,
+not an unconditional force. The previous package version remains 0.19.1.
+
+The mergeable work-package owns documentation and prepared release evidence.
+The authorized tag/npm/GitHub/runtime operations occur after its closeout, so
+its checklist cannot claim publication before that actually happens.
+
+The existing check:release aggregate is the single expensive execution owner.
+It includes all required integrity checks, readme tests and real package smoke;
+only the nonduplicate version preflight is declared separately. The tarball
+smoke supplies the irreversible-release runtime_readback oracle.
+
+Original main WIP stays in the primary checkout. Other worktrees and deferred
+CI hardening items are outside this release.
+
+## Release gate blocked
+
+Candidate `b0bdd6f7674a92dfb3c09055ad70bd526e891ae5` passed the
+codex-plugin documentation review with verdict `approve`, no findings and
+subject `sha256:76152de1b4aba58bef99031a7ade9daf9a09abb65db398a5c07263bd8e34883a`.
+That approval does not authorize treating failed runtime checks as passing.
+
+The canonical release execution completed 138 test files before the parent
+stopped it after five files failed in two observed areas. It was interrupted
+through its owned process supervisor; the test process group was then absent.
+The aggregate did not finish, and tarball smoke was not reached.
+
+- `tests/cli/chatgpt-browser.test.ts:1213`: the Oracle process-tree timeout
+  scenario took 12527 ms against the existing less-than-8000 ms assertion.
+- `tests/cli/codegraph.test.ts:87` and `tests/cli/doctor.test.ts:467`: the fake
+  CodeGraph log contained `codegraph status .` but no `codegraph --version`.
+- `tests/cli/codegraph-resolver.test.ts:94`: three probes were returned where
+  the fixture expects two. The tooling probe code retries timed-out version
+  probes, but the cause of this observed mismatch has not been proven.
+- `tests/check-agent-tooling.test.ts`: readiness changed from expected present
+  to partial in some scenarios, and several child processes hit their existing
+  15-second or 30-second deadlines.
+
+Canonical failed run:
+`.ai/harness/runs/run-20260913T114957-69096-20260913-1143-release-0191-current.json`.
+Captured completed-file failure logs and independent review are preserved in
+`.ai/harness/runs/release-0191-current-blockers/`. The aggregate diagnostic is
+`.ai/harness/runs/verification-vx-84d69d9c43c24f90a726.log`.
+
+No source or test repair was made. Per the AGENTS second-out-of-scope boundary,
+the parent requested a scope decision before repairs. No tag, npm publication,
+GitHub Release or global runtime refresh occurred. Do not record an
+AcceptanceReceipt or finish this contract until valid release evidence exists.
+
+## Approved blocker repairs
+
+The owner approved repairing both observed failure areas and continuing the
+0.19.1 publication chain. The original stop is resolved for those two areas.
+
+Oracle root cause: `tests/cli/chatgpt-browser.test.ts:1192` starts the cleanup
+budget before Gitleaks and Oracle readiness probes. Instrumented execution
+observed 3251 ms in the first Gitleaks process and 5118 ms in actual Oracle
+execution (100 ms timeout plus the existing 5000 ms TERM grace), yielding an
+8569 ms total against the 8000 ms cleanup assertion. The raw lower-layer
+baseline for three fresh executable shell fixtures was 4573/1337/1487 ms on
+first exec versus 5/7/15 ms on second exec; `/bin/sh` itself took 5 ms.
+The OS-level source of that cold-exec delay is not established. No production
+clock, timeout or cleanup defect is inferred from this evidence.
+
+The Oracle assertion will retain its 8000 ms bound but measure from the fake
+Oracle's existing argument-file write, which only occurs on its real workload
+path after readiness probes. Existing error, staged-egress and descendant
+absence assertions remain. Pre-fix instrumentation and failure are preserved
+in `/tmp/release-0191-oracle-instrumented.log` and
+`/tmp/release-0191-process-timings.jsonl` for the repair run.
+
+CodeGraph root cause was reproduced with four concurrent isolated runs:
+codegraph failed in 3/4 lanes and resolver failed in 4/4 lanes. The existing
+1-second version probe timed out before a fresh fixture executable reached its
+logging statement; its retry explains the extra probe. The test-only fix runs
+an unlogged `__fixture-ready` handshake before starting those observations;
+the fake timeout wrapper is prepared with `/usr/bin/true`. One shared helper
+in `tests/helpers/repo-fixture.ts` bounds this setup to 30 seconds and throws
+on failure. The production probe timeout, fixture paths and log assertions
+are unchanged.
+
+Repair verification: the three CLI files passed 29 tests / 191 assertions;
+four concurrent codegraph runs each passed 3 tests and four resolver runs each
+passed 5 tests. `tests/check-agent-tooling.test.ts` passed 32 tests / 287
+assertions in 105.49 seconds, covering its prior 12 failing scenarios.
+Oracle passed its focused guard with all eight assertions, then passed three
+parallel instances alongside the tooling file (a four-file load). The entire
+test still includes slow readiness setup, while the unchanged 8-second bound
+now belongs to actual Oracle execution and cleanup.
+
+No tests were removed or skipped, no production code was changed, and no
+production or existing test deadline was increased. The new shared helper is
+used by four existing fixture consumers. The unchanged full release aggregate
+remains required before publication; focused passes do not replace it.
+
+## Complete tooling fixture fix
+
+The first repair passed focused checks but its full release retry still hit
+15-second tooling test deadlines. The stopped run is
+`.ai/harness/runs/run-20260913T122630-42948-20260913-1143-release-0191-current.json`.
+A four-process read-only-update reproduction then failed in all four lanes.
+Instrumentation showed the remaining fake curl, Herdr, Claude and npm launches
+each cost about 2 seconds, in addition to fixture warmup. The issue was the
+sum of cold fixture launches, not a production readiness deadline defect.
+Adding a warmup for every executable would merely move the same accumulated
+cost within the existing test deadline.
+
+The final helper instead prepares one shell launcher per test process and
+links each original fixture command path to it. A private non-executable body
+beside that path is interpreted by its declared /bin/sh or /bin/bash. The
+shell uses exec, retaining the child PID, arguments, environment, working
+directory, output and exit status. These four callers do not inspect their
+script path. The fixture root and command pathname remain unchanged; bodies
+are removed with the existing fixture cleanup, and afterAll removes the shared
+launcher. No package/runtime code consumes this test-only helper.
+
+A lower-layer probe measured 4566 ms to prepare the launcher, then 9-16 ms for
+four newly-created fixture paths with distinct bodies and correct outputs.
+Final four-file parallel coverage passed 61 tests / 478 assertions: tooling
+32/287 in 26.89s, CodeGraph 3/20 in 5.21s, resolver 5/91 in 5.98s, and doctor
+21/80 in 12.82s. It includes the real hanging-probe timeout mapping and the
+same original positive and negative command-log assertions. This replaces the
+per-executable warmup implementation from the first repair; no sentinel was
+added to the individual fake tools in the final diff.
+
+## Complete gate and approved expanded repair boundary
+
+Frozen run `vx-88142df9a8bf4c73ae25` at `38d80371` completed all test files
+and failed seven cases in six files: Fleet retry; MCP fixed Codex goal; two
+global runtime cases; lane environment isolation; verification concurrency;
+benchmark artifact preparation. Oracle and all four tooling fixture consumers
+passed. The owner authorized repairing every release-gate blocker and then
+continuing publication, preserving assertions and production deadlines.
+
+## Expanded repair decisions
+
+- P1/P2 lane environment: `check-ci.sh all` exports the expensive-test flag;
+  the nested functional-lane fixture inherited it from the outer release run.
+  Removing that inherited flag in both child environments preserves the actual
+  script as lane authority. `lane-env-red.log` records `PRE_FIX_EXIT=1`;
+  `lane-env-green.log` passes both existing tests and all 13 assertions.
+- P1/P2 concurrency: the counter preceded a fixed 0.5-second sleep, so a slow
+  second CLI could arrive after the first released its lock. Injecting 750 ms
+  before that CLI reproduced status 0 instead of waiting. A bounded release-file
+  rendezvous now holds the first request through second-request admission; the
+  same delayed probe passes all five original assertions. Production locking
+  and deadlines are unchanged. The release marker stays outside the subject.
+- MCP and global runtime still generated fresh shell executables. Their 5-second
+  and 30-second failures match the measured cold-start pressure, although their
+  focused pre-fix reruns passed. These causes remain inferred from the canonical
+  loaded run, not individually reproduced. They now use the same shell fixture
+  helper; the non-shell Node fixture remains direct. Complete files pass 18/197
+  and 43 tests respectively. The canonical four-file gate remains decisive.
+- Global runtime canonicalizes executable paths. A symlink to the shared launcher
+  lost the private body location and reproducibly returned exit 64. Hard links
+  retain each fake command path while sharing the prepared inode. All consumers
+  create their fixture commands on the same temporary filesystem. No runtime
+  consumer or fixture body depends on the generated script path.
+- P1/P2 benchmark: the self-contained dependency closure is about 310 MiB,
+  including roughly 276 MiB of the native CodeGraph package. Baseline preparation
+  took 22.59 s, with final default compression taking 19.60 s. `gzip -1` on the
+  same staging tree took 14.70 s. The portable tar compressor option preserves
+  gzip format, contents and hash validation while trading a larger temporary
+  archive for lower CPU work. Its first test run overlapped the compression
+  measurement and still hit 30 s; the subsequent instrumented run passed the
+  unchanged artifact/mutation guard in 21.13 s. The real two-install case passed
+  in 32.62 s under its unchanged 60-second budget. At 10x package size, compression
+  and staging I/O remain the first limits; no dependency is omitted.
+- Fleet's one failed retry has not reproduced: one focused run, four concurrent
+  focused runs, and two complete-file runs all passed with no source/test change.
+  One complete-file run included the release environment. A process trace showed
+  healthy retry output and collector-group absence. Do not attribute this to the
+  FIFO writer without evidence or describe it as a fixed product defect; retain
+  the original assertion and verify it again in the complete release gate.
+
+The bugfix profile requires its exact regression guard as a `package_test`
+(H1), even when an aggregate covers it. The captured failing lane guard is
+therefore a required two-second preflight; this is the only deliberate overlap
+with the release aggregate, not a second full verification authority.
+
+## Final preparation evidence
+
+`run-20260913T132245-32390-20260913-1143-release-0191-current.json` passed all
+16 contract criteria at `29245bb6d51be793d7a5221eaaaa396d7f2a563f`. Its release
+execution `vx-1d380329781f4342a7b9` passed in 741727 ms. The complete aggregate
+includes 447 test files and the real tarball installation smoke. All seven
+prior failures passed; saved per-file results are in the ignored `expanded-gate`
+subdirectory. The owner then approved the current repairs and release continuation;
+the typed disposition is owner acceptance, not a second external review.
+No publication or installed-runtime update is claimed by this preparation result.

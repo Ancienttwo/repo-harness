@@ -18,6 +18,9 @@ function exportedGateVariable(): string {
 }
 
 function runLane(lane: string) {
+  const env = { ...process.env };
+  // Each lane must establish its own gate instead of inheriting the outer release run.
+  delete env[exportedGateVariable()];
   const bin = mkdtempSync(join(tmpdir(), 'rh-expensive-gate-'));
   try {
     // The bun stub reports the variable the lane actually handed to `bun test`,
@@ -27,7 +30,7 @@ function runLane(lane: string) {
     writeFileSync(join(bin, 'bash'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
     return spawnSync('/bin/bash', ['scripts/check-ci.sh', lane], {
       cwd: ROOT, encoding: 'utf8',
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, BUN_TEST_ISOLATE_FILES: '0', REPO_HARNESS_DIFF_BASE: 'HEAD' },
+      env: { ...env, PATH: `${bin}:${process.env.PATH}`, BUN_TEST_ISOLATE_FILES: '0', REPO_HARNESS_DIFF_BASE: 'HEAD' },
     });
   } finally {
     rmSync(bin, { recursive: true, force: true });

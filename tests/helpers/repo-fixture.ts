@@ -1,6 +1,6 @@
 import { afterAll, expect } from "bun:test";
 import { spawnSync } from "child_process";
-import { appendFileSync, cpSync, mkdtempSync, realpathSync, rmSync } from "fs";
+import { appendFileSync, chmodSync, cpSync, mkdtempSync, realpathSync, rmSync, linkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -148,4 +148,49 @@ export function withTempRepo(prefix: string, fn: (repoRoot: string) => void): vo
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
+}
+
+let shellFixtureRoot: string | undefined;
+afterAll(() => {
+  if (shellFixtureRoot) rmSync(shellFixtureRoot, { recursive: true, force: true });
+  shellFixtureRoot = undefined;
+});
+
+/**
+ * Share the executable inode while keeping each shell fixture's body beside its
+ * original command path. Fresh executable cold starts can exceed probe budgets;
+ * interpreting a private body avoids paying that cost for every generated stub.
+ * These fixtures use /bin/sh or /bin/bash and do not inspect their script path.
+ */
+export function writeShellExecutableFixture(filePath: string, content: string): void {
+  const shebang = content.split("\n", 1)[0];
+  if (shebang !== "#!/bin/sh" && shebang !== "#!/bin/bash") {
+    throw new Error(`unsupported shell fixture interpreter: ${shebang}`);
+  }
+  if (!shellFixtureRoot) {
+    const root = tmpWorkspace("shell-fixture-launcher");
+    const launcher = join(root, "launcher");
+    writeFileSync(launcher, [
+      "#!/bin/sh",
+      'if [ "${1:-}" = "__fixture-ready" ]; then exit 0; fi',
+      'IFS= read -r interpreter < "$0.fixture-body"',
+      'case "$interpreter" in',
+      '  "#!/bin/sh") exec /bin/sh "$0.fixture-body" "$@" ;;',
+      '  "#!/bin/bash") exec /bin/bash "$0.fixture-body" "$@" ;;',
+      '  *) exit 64 ;;',
+      'esac',
+      "",
+    ].join("\n"));
+    chmodSync(launcher, 0o755);
+    const ready = spawnSync(launcher, ["__fixture-ready"], { encoding: "utf-8", timeout: 30_000 });
+    if (ready.status !== 0) {
+      rmSync(root, { recursive: true, force: true });
+      throw new Error(`fixture launcher failed: ${ready.stderr || ready.stdout || String(ready.error)}`);
+    }
+    shellFixtureRoot = root;
+  }
+  writeFileSync(`${filePath}.fixture-body`, content, { mode: 0o600 });
+  rmSync(filePath, { force: true });
+  // A hard link retains the command path even when a runtime canonicalizes it.
+  linkSync(join(shellFixtureRoot, "launcher"), filePath);
 }
