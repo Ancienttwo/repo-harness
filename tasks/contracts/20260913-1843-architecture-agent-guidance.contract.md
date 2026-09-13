@@ -53,7 +53,7 @@ Not applicable: this slice adds Agent guidance to an existing consumer-only work
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"session-context-and-required-integrity","kind":"deterministic_test","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
