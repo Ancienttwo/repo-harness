@@ -207,6 +207,7 @@ function acquireFixture(): AcquireFixture {
 
 function acquireEnvironment(home: string): NodeJS.ProcessEnv {
   return {
+    HOME: home,
     REPO_HARNESS_HOME: home,
     REPO_HARNESS_TARGET_REPO_ROOT: '',
     REPO_HARNESS_HELPER_SOURCE_PATH: '',
@@ -386,7 +387,7 @@ describe('fleet offers CLI', () => {
       expect(readFileSync(join(envelope.worktree_path, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(envelope.worktree_path);
 
       const preflight = spawnSync(process.execPath, [join(CWD, 'scripts/contract-run.ts'), 'preflight',
-        '--repo', envelope.worktree_path, '--contract', envelope.plan.contract_path, '--json'], { encoding: 'utf8' });
+        '--repo', envelope.worktree_path, '--contract', envelope.plan.contract_path, '--json'], { encoding: 'utf8', env: { ...process.env, ...env } });
       expect(preflight.status, preflight.stdout + preflight.stderr).toBe(0);
       expect(readLease(fixture.repo, envelope.task_id).record).toMatchObject({
         claim_id: envelope.claim_id,
@@ -408,7 +409,7 @@ describe('fleet offers CLI', () => {
             helper: 'verify-sprint', args: ['--prepare-acceptance'], cwd: envelope.worktree_path,
             trustedPackage: true, stdio: 'pipe',
           })})));`,
-        ], { cwd: envelope.worktree_path, encoding: 'utf8' });
+        ], { cwd: envelope.worktree_path, encoding: 'utf8', env: { ...process.env, ...env } });
         expect(run.status, run.stderr).toBe(0);
         return JSON.parse(run.stdout) as ReturnType<typeof runHelper>;
       };
@@ -449,7 +450,7 @@ describe('fleet offers CLI', () => {
       const template = readFileSync(contractFile, 'utf8');
       expect(template).toContain('Describe the exact outcome this task must deliver.');
       const rejected = spawnSync(process.execPath, [join(CWD, 'scripts/contract-run.ts'), 'preflight',
-        '--repo', envelope.worktree_path, '--contract', envelope.plan.contract_path, '--json'], { encoding: 'utf8' });
+        '--repo', envelope.worktree_path, '--contract', envelope.plan.contract_path, '--json'], { encoding: 'utf8', env: { ...process.env, ...env } });
       expect(rejected.status).not.toBe(0);
       expect(rejected.stdout).toContain('incomplete_brief');
       const replayed = project();

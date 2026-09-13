@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:b859983f97115344cb2d922ace1e8499d648eeca197ec66cf58b3775378e135d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "cd9ad5c64278f756bdad572b4f9616f2094d9047",
-    "worktreeDigest": "sha256:f4074cd24184ffe906e2d6e334c170018511bd8b703bfe0dd34ed7b8f6070b79",
-    "sourceTreeDigest": "sha256:dcee551d83782e235acfe1e58e90d13e3feb0fdddad8a41355f2dd3a46a8ede5",
+    "baseHeadSha": "646ff483262dc325ab13fead135aeee060aebeb6",
+    "worktreeDigest": "sha256:bd29baa9b3f9c478eab6e5bd7a04076ca347d89704ed1b292722b0663c8c9d85",
+    "sourceTreeDigest": "sha256:d817ca019347925180c2abe2d4dc38875b85611a0aeb2153dcc3d973567cafe0",
     "modelDigest": "sha256:a11afbf16edf9e822bf02222d331beb8c050ef0b659ae605c23183193b10bbd5",
-    "codeGraphDigest": "sha256:c9f5e7b631032475667f7e1bb5bbd39b9df762147b31122c2e72586ca9b349ee",
-    "indexedWorktreeDigest": "sha256:931de978f90c7273324b8605bd9573fcca65cce57f1dd71a429a79f2197d4721",
+    "codeGraphDigest": "sha256:eb055a00a39c41fae941e863b14645a61d2fe2712753e863d0f3f82e5ba6d152",
+    "indexedWorktreeDigest": "sha256:c6a0b0bae391859d48dead81ad83004c7b5300663ad6f1d8d11df2ffa12afea7",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:80d51f9593ae0a6e6971398564582a39e977d13d2ab34bbc2f629b79b9552d72"
+    "projectionInputDigest": "sha256:273f5d6ab1c101c9ecb9aced8f13146a7a208bf1ad5015179670bbb2db0ab283"
   },
-  "projectionDigest": "sha256:83064d9423135d1a683185a2e696913fddf04cb2970654cfeea3ae4054413d3f",
+  "projectionDigest": "sha256:515bd818ee6323408b4e7281fd657bbe54a61270781913bb2403ae86e34c0544",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -709,12 +709,12 @@
     },
     "digests": {
       "modelDigest": "sha256:a11afbf16edf9e822bf02222d331beb8c050ef0b659ae605c23183193b10bbd5",
-      "sourceTreeDigest": "sha256:dcee551d83782e235acfe1e58e90d13e3feb0fdddad8a41355f2dd3a46a8ede5",
+      "sourceTreeDigest": "sha256:d817ca019347925180c2abe2d4dc38875b85611a0aeb2153dcc3d973567cafe0",
       "flowProofDigest": "sha256:938dadfc988b732b6a67413ece104c062bb257ffd9f67caaf7db04dbc957b983",
-      "projectionDigest": "sha256:83064d9423135d1a683185a2e696913fddf04cb2970654cfeea3ae4054413d3f"
+      "projectionDigest": "sha256:515bd818ee6323408b4e7281fd657bbe54a61270781913bb2403ae86e34c0544"
     }
   },
-  "receiptDigest": "sha256:2be80270e9a584aaea849cbf692196a1871dfbcd5e994016e8a6209ad8015924",
+  "receiptDigest": "sha256:5a9ea6b76262d24fcd4aa8af6631439519a17b1038d64219dd0340f133fa20f6",
   "refreshSignalIds": [],
   "targetCount": 33,
   "fileCount": 33,
@@ -747,9 +747,9 @@
       "sourceDigest": "sha256:6c1d5494a41634fd28f9685b325b1d79d2bb95fac249f5c57dc5519e35c5c307",
       "outputDigest": "sha256:5c61debb2a48e091cde2de1f88b22066a8e4fb7b2e6fc18e4e98fbc2e1f0aa56",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "f1596f094423018e35ceb6f46f74a8d07b7b182c",
-        "committedAt": "2026-09-13T14:58:57+08:00"
+        "branch": "codex/release-0192",
+        "commit": "b148c087eafa52bb94bd6a37a14700b82a8e33ae",
+        "committedAt": "2026-09-13T19:39:23+08:00"
       }
     },
     {
@@ -787,9 +787,9 @@
       "sourceDigest": "sha256:5c192000c887502bac2e9787d6ffb992e49a57f955b4e7b4655b7c01d18c6dd0",
       "outputDigest": "sha256:c831589b4ccffcbd58d0502102abfbecc01025326f7fa0f0e9ba60fc3dbd0cb4",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "f1596f094423018e35ceb6f46f74a8d07b7b182c",
-        "committedAt": "2026-09-13T14:58:57+08:00"
+        "branch": "codex/release-0192",
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
@@ -1027,9 +1027,9 @@
       "sourceDigest": "sha256:386d962d22c4c89019abc4255ad4878fe223fc990ac131ab4fc89233fc469788",
       "outputDigest": "sha256:b81a8870d378fb065ad73aef39b59bfcf3ba7ec57a741e1c22524cf6f9684194",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "3f286554da41d162b31bbab7f6074a9445f3a413",
-        "committedAt": "2026-09-13T18:25:04+08:00"
+        "branch": "codex/release-0192",
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
@@ -1047,9 +1047,9 @@
       "sourceDigest": "sha256:132d8cab10d94dc2d5add313cea2a2cfa120b63b2d180ff084f4d9a0fae044bf",
       "outputDigest": "sha256:49427c6729ca7883ed1d9f6f3b23ac6c4ed307748a6344c0e24a4bed00b701ce",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "f1596f094423018e35ceb6f46f74a8d07b7b182c",
-        "committedAt": "2026-09-13T14:58:57+08:00"
+        "branch": "codex/release-0192",
+        "commit": "b148c087eafa52bb94bd6a37a14700b82a8e33ae",
+        "committedAt": "2026-09-13T19:39:23+08:00"
       }
     },
     {
@@ -1227,9 +1227,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "3f286554da41d162b31bbab7f6074a9445f3a413",
-        "committedAt": "2026-09-13T18:25:04+08:00"
+        "branch": "codex/release-0192",
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
@@ -1247,9 +1247,9 @@
       "sourceDigest": "sha256:6f1d8c7839dc83c16c80bee79ee8c6b3b3131e523928d2d0e957180fd0541c02",
       "outputDigest": "sha256:beaaa466d51cbd8f929fd6acd6645c6f5136cccf539f09b63a273e5ab38519fa",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "3f286554da41d162b31bbab7f6074a9445f3a413",
-        "committedAt": "2026-09-13T18:25:04+08:00"
+        "branch": "codex/release-0192",
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {

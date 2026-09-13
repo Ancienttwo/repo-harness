@@ -713,9 +713,7 @@ function renderRequiredFollowUp(event: ArchitectureEvent): string {
 
 function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[], existingMetadata: Record<string, string>): string {
   const firstDetected =
-    existingMetadata.Detected ||
-    events
-      .map((entry) => entry.ts || "")
+    [existingMetadata.Detected, ...events.map((entry) => entry.ts || "")]
       .filter(Boolean)
       .sort()[0] ||
     event.ts ||

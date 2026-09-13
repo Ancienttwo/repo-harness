@@ -334,7 +334,7 @@ describe('resumable legacy cascade', () => {
       "}",
     ].join('\n'));
     const run = () => spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/index.ts'), 'architecture-projection', 'drain', '--json'],
-      { cwd, encoding: 'utf8', env: { ...process.env, REPO_HARNESS_CLI: stub, DRIFT_CALLS: calls, DRIFT_FAILED: failed } });
+      { cwd, encoding: 'utf8', env: { ...process.env, HOME: stubRoot, REPO_HARNESS_CLI: stub, DRIFT_CALLS: calls, DRIFT_FAILED: failed } });
     const first = run();
     expect(first.status).toBe(1);
     expect(first.stderr).toContain('architecture-queue exited 9');

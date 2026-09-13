@@ -254,6 +254,27 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("out-of-order observations keep Detected at the earliest event timestamp", () => {
+    tmpRepo((cwd) => {
+      const requestFile = "docs/architecture/requests/root.md";
+      for (const [file, ts] of [
+        ["newer.ts", "2026-09-13T12:00:02.000Z"],
+        ["older.ts", "2026-09-13T12:00:01.000Z"],
+        ["latest.ts", "2026-09-13T12:00:03.000Z"],
+      ]) {
+        const result = run("bun", ["scripts/architecture-event.ts", "upsert-request",
+          "--request-file", requestFile, "--event-json", JSON.stringify({ file_path: file, ts })], cwd);
+        expect(result.status, result.stderr).toBe(0);
+        const validation = run("bun", ["scripts/architecture-event.ts", "validate-requests",
+          "--requests-dir", "docs/architecture/requests"], cwd);
+        expect(validation.status, validation.stderr).toBe(0);
+      }
+      const card = readFileSync(join(cwd, requestFile), "utf8");
+      expect(card).toContain("> **Detected**: 2026-09-13T12:00:01.000Z");
+      expect(card).toContain("> **Open Edits**: 3");
+    });
+  });
+
   test("record serializes concurrent events without losing a card entry", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-concurrent-"));
     try {

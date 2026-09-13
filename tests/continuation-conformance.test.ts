@@ -47,6 +47,8 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const LEDGER = '.ai/harness/runs/continuation/attempts.jsonl';
 const SPRINT = 'plans/sprints/20260803-0000-conformance.sprint.md';
 
+// The full two-worktree lifecycle shares this budget; avoid a shorter per-case
+// override that measures host/pool contention instead of conformance.
 setDefaultTimeout(240_000);
 
 // Ambient authority vars would let the helpers repoint themselves at the real
@@ -943,5 +945,5 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(worktreeStatusBeforeFinish).toBe('');
       expect(git(primary, ['log', '--all', '--oneline', '--', LEDGER]).stdout).toBe('');
     });
-  }, 90_000);
+  });
 });
