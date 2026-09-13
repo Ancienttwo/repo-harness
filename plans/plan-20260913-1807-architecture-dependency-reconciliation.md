@@ -118,7 +118,7 @@ src/effects/architecture/archctx-provider.ts, tests/architecture-projection-prov
 - [x] Prove the stale and matching target copies cannot override the runtime provider using a pre-fix regression.
 - [x] Remove the target-repository provider resolution path and obsolete origin branch; preserve exact runtime validation.
 - [x] Update architecture runtime ownership documentation.
-- [ ] Run focused provider coverage and required repository checks; record verification and acceptance.
+- [x] Run focused provider coverage and required repository checks; record verification and acceptance.
 
 ## Verification
 Existing architecture-projection-provider tests exercise package resolution, handshake, binary containment and the provider command boundary. Add target-copy isolation and retain broken-runtime rejection. Required repository integrity checks apply; no full suite or benchmark is justified.
