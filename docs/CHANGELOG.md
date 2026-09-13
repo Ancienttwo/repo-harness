@@ -4,6 +4,35 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-09-13
+
+### Fixed
+
+- Keep architecture queue first-detection metadata valid when concurrent events
+  arrive out of timestamp order.
+
+- Resolve archctx from the running repo-harness package. A target repository's
+  stale or independently installed copy no longer overrides the updated runtime.
+  Exact provider-version and executable-identity checks remain enforced.
+- When task-sync cannot resolve a workflow profile, report the exact current
+  diff binding needed to recover through canonical workflow evidence. Failed
+  resolution still fails closed; source changes invalidate previous bindings.
+
+### Added
+
+- SessionStart gives the Agent architecture coverage observations when the global
+  provider is enabled: empty capability models, missing module documents, and
+  tracked package roots with no match or a shared ancestor capability. The Agent
+  inspects source evidence and decides boundaries using the architecture skill;
+  hooks do not generate semantic nodes. New nodes use archctx ChangeSets.
+
+### Limits
+
+- Package observations cover Git-tracked package.json paths, not a complete
+  semantic inventory of every language. Public archctx 0.5.10 plan creates new
+  entities; updating existing nodes needs a supported typed ChangeSet surface.
+
+
 ## [0.19.1] - 2026-09-13
 
 A maintenance release that gives three unbounded or unreachable surfaces an

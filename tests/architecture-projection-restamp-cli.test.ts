@@ -26,7 +26,9 @@ const AUTHORITY_ENV_KEYS = [
 ] as const;
 
 function isolatedEnv(): NodeJS.ProcessEnv {
-  const base = { ...process.env };
+  const home = mkdtempSync(join(tmpdir(), 'repo-harness-restamp-home-'));
+  roots.push(home);
+  const base: NodeJS.ProcessEnv = { ...process.env, HOME: home };
   for (const key of AUTHORITY_ENV_KEYS) delete base[key];
   return base;
 }

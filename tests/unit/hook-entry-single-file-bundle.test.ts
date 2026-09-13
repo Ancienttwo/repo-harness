@@ -184,14 +184,19 @@ describe('hook-entry single-file bundle', () => {
       const target = [
         "const { spawn } = require('child_process');",
         "process.on('SIGTERM', () => {});",
-        `const child = spawn(process.execPath, ['-e', ${JSON.stringify("process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)")}], { stdio: 'inherit' });`,
-        `require('fs').writeFileSync(${JSON.stringify(descendantPidPath)}, String(child.pid));`,
+        `spawn(process.execPath, ['-e', ${JSON.stringify([
+          "process.on('SIGTERM', () => {});",
+          `require('fs').writeFileSync(${JSON.stringify(descendantPidPath)}, String(process.pid));`,
+          "process.stdout.write('descendant-ready\\n');",
+          "setInterval(() => {}, 1000);",
+        ].join('\n'))}], { stdio: 'inherit' });`,
         'setInterval(() => {}, 1000);',
       ].join('\n');
       const result = runBundledSupervisor(
         buildBundle('0.0.0-test'),
         metadataPath,
-        100,
+        // Include bundled launcher startup before exercising descendant cleanup.
+        2_000,
         process.execPath,
         ['-e', target],
       );
@@ -206,6 +211,7 @@ describe('hook-entry single-file bundle', () => {
         const descendantPid = Number(readFileSync(descendantPidPath, 'utf-8'));
 
         expect(result.status, `stdout=${result.stdout}\nstderr=${result.stderr}`).toBe(1);
+        expect(result.stdout).toContain('descendant-ready');
         expect(receipt).toMatchObject({ timedOut: true, completed: true });
         expect(Number.isSafeInteger(descendantPid) && descendantPid > 0).toBe(true);
         expect(processExists(descendantPid)).toBe(false);

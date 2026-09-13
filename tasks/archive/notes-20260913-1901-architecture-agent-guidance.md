@@ -60,3 +60,9 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to harness asset files only after verification across more than one task or fixture.
 
 > **Substantive Change SHA256**: `sha256:7f57ff15791431e4201ce8126d5e792b4bff88ca25ff34ebcd8010696be0ae46`
+
+## Integration evidence binding
+
+Main integration `8d5d4e60` passed 119 focused tests and nine local checks. Its push-range Governance diagnostic identified the following binding; this records that exact historical range without changing the failed CI result. The 0.19.2 candidate carries its own binding and verification.
+
+> **Substantive Change SHA256**: `sha256:c22b1f6d634ef321cb049c744c416dbbfa93a62e7c4f27c1b21d5c40302200cd`

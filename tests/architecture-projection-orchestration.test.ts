@@ -762,7 +762,7 @@ describe('durable architecture projection orchestration', () => {
 
   test('manual drain leaves the cursor unchanged when the legacy cascade helper fails', () => {
     const f = fixture();
-    writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
+    // An empty fixture HOME selects disabled projection through the global authority.
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/rollback.ts', session_id: 'rollback' }) });
     writeFileSync(join(f.repoRoot, 'src/shell-written.ts'), 'export const written = 1;\n');
     const failingCli = join(dirname(f.repoRoot), 'failing-cascade-cli.ts');
@@ -770,7 +770,7 @@ describe('durable architecture projection orchestration', () => {
     const cli = realpathSync(join(import.meta.dir, '..', 'src', 'cli', 'index.ts'));
     const result = spawnSync(process.execPath, [cli, 'architecture-projection', 'drain', '--json'], {
       cwd: f.repoRoot,
-      env: { ...process.env, REPO_HARNESS_CLI: failingCli },
+      env: { ...process.env, HOME: dirname(f.repoRoot), REPO_HARNESS_CLI: failingCli },
       encoding: 'utf8',
     });
     expect(result.status).toBe(1);
