@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-13 19:01
+> **Related Plan**: plans/archive/plan-20260913-1843-architecture-agent-guidance.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260913-1901
+> **Archive Projection V1**: `plans/plan-20260913-1843-architecture-agent-guidance.md` => `plans/archive/plan-20260913-1843-architecture-agent-guidance.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1843-architecture-agent-guidance.notes.md` => `tasks/archive/notes-20260913-1901-architecture-agent-guidance.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1843-architecture-agent-guidance.contract.md` => `tasks/archive/contract-20260913-1901-architecture-agent-guidance.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1843-architecture-agent-guidance.review.md` => `tasks/archive/review-20260913-1901-architecture-agent-guidance.md`
+
 # Task Review: architecture-agent-guidance
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260913-1843-architecture-agent-guidance.md
-> **Contract**: tasks/contracts/20260913-1843-architecture-agent-guidance.contract.md
-> **Notes File**: tasks/notes/20260913-1843-architecture-agent-guidance.notes.md
+> **Plan**: plans/archive/plan-20260913-1843-architecture-agent-guidance.md
+> **Contract**: tasks/archive/contract-20260913-1901-architecture-agent-guidance.md
+> **Notes File**: tasks/archive/notes-20260913-1901-architecture-agent-guidance.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-13 18:43
 > **Recommendation**: pass

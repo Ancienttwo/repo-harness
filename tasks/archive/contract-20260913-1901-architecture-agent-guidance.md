@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-13 19:01
+> **Related Plan**: plans/archive/plan-20260913-1843-architecture-agent-guidance.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260913-1901
+> **Archive Projection V1**: `plans/plan-20260913-1843-architecture-agent-guidance.md` => `plans/archive/plan-20260913-1843-architecture-agent-guidance.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1843-architecture-agent-guidance.notes.md` => `tasks/archive/notes-20260913-1901-architecture-agent-guidance.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1843-architecture-agent-guidance.contract.md` => `tasks/archive/contract-20260913-1901-architecture-agent-guidance.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1843-architecture-agent-guidance.review.md` => `tasks/archive/review-20260913-1901-architecture-agent-guidance.md`
+
 # Task Contract: architecture-agent-guidance
 
-> **Status**: Active
-> **Plan**: plans/plan-20260913-1843-architecture-agent-guidance.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260913-1843-architecture-agent-guidance.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
 > **Last Updated**: 2026-09-13 18:43
-> **Review File**: `tasks/reviews/20260913-1843-architecture-agent-guidance.review.md`
-> **Notes File**: `tasks/notes/20260913-1843-architecture-agent-guidance.notes.md`
+> **Review File**: `tasks/archive/review-20260913-1901-architecture-agent-guidance.md`
+> **Notes File**: `tasks/archive/notes-20260913-1901-architecture-agent-guidance.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ If advice writes a model, treats package names as semantic boundaries, ignores g
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260913-1843-architecture-agent-guidance.md`
+- Source plan: `plans/archive/plan-20260913-1843-architecture-agent-guidance.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260913-1843-architecture-agent-guidance.review.md`
-- Notes file: `tasks/notes/20260913-1843-architecture-agent-guidance.notes.md`
+- Review file: `tasks/archive/review-20260913-1901-architecture-agent-guidance.md`
+- Notes file: `tasks/archive/notes-20260913-1901-architecture-agent-guidance.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -80,10 +90,10 @@ allowed_paths:
   - assets/reference-configs/external-tooling.md
   - docs/reference-configs/external-tooling.md
   - docs/architecture/
-  - plans/plan-20260913-1843-architecture-agent-guidance.md
-  - tasks/contracts/20260913-1843-architecture-agent-guidance.contract.md
-  - tasks/reviews/20260913-1843-architecture-agent-guidance.review.md
-  - tasks/notes/20260913-1843-architecture-agent-guidance.notes.md
+  - plans/archive/plan-20260913-1843-architecture-agent-guidance.md
+  - tasks/archive/contract-20260913-1901-architecture-agent-guidance.md
+  - tasks/archive/review-20260913-1901-architecture-agent-guidance.md
+  - tasks/archive/notes-20260913-1901-architecture-agent-guidance.md
   - tasks/todos.md
 ```
 
