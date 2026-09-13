@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-13 13:39
+> **Related Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260913-1339
+> **Archive Projection V1**: `plans/plan-20260913-1143-release-0191-current.md` => `plans/archive/plan-20260913-1143-release-0191-current.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1143-release-0191-current.notes.md` => `tasks/archive/notes-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1143-release-0191-current.contract.md` => `tasks/archive/contract-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1143-release-0191-current.review.md` => `tasks/archive/review-20260913-1339-release-0191-current.md`
+
 # Release preparation decisions
 
 The owner explicitly selected latest-main 0.19.1 after being shown the old

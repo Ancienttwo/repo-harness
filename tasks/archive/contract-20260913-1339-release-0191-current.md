@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-13 13:39
+> **Related Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260913-1339
+> **Archive Projection V1**: `plans/plan-20260913-1143-release-0191-current.md` => `plans/archive/plan-20260913-1143-release-0191-current.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1143-release-0191-current.notes.md` => `tasks/archive/notes-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1143-release-0191-current.contract.md` => `tasks/archive/contract-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1143-release-0191-current.review.md` => `tasks/archive/review-20260913-1339-release-0191-current.md`
+
 # Task Contract: release-0191-current
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260913-1143-release-0191-current.md
+> **Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-13 11:43
-> **Review File**: `tasks/reviews/20260913-1143-release-0191-current.review.md`
-> **Notes File**: `tasks/notes/20260913-1143-release-0191-current.notes.md`
+> **Review File**: `tasks/archive/review-20260913-1339-release-0191-current.md`
+> **Notes File**: `tasks/archive/notes-20260913-1339-release-0191-current.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 > **Substantive Change SHA256**: `sha256:2caa30b943974aab68cb7a640f7fed963361a6970dedcc197d426dbcf8bd8898`
@@ -53,10 +63,10 @@ The cheap preflight is the npm absence and version check.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260913-1143-release-0191-current.md`
+- Source plan: `plans/archive/plan-20260913-1143-release-0191-current.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260913-1143-release-0191-current.review.md`
-- Notes file: `tasks/notes/20260913-1143-release-0191-current.notes.md`
+- Review file: `tasks/archive/review-20260913-1339-release-0191-current.md`
+- Notes file: `tasks/archive/notes-20260913-1339-release-0191-current.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -96,9 +106,9 @@ allowed_paths:
   - deploy/release-checklists/260912-repo-harness-0.19.1.md
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260913-1143-release-0191-current.contract.md
-  - tasks/reviews/20260913-1143-release-0191-current.review.md
-  - tasks/notes/20260913-1143-release-0191-current.notes.md
+  - tasks/archive/contract-20260913-1339-release-0191-current.md
+  - tasks/archive/review-20260913-1339-release-0191-current.md
+  - tasks/archive/notes-20260913-1339-release-0191-current.md
 ```
 
 ## Evidence Requirements
@@ -156,7 +166,7 @@ exit_criteria:
     - docs/CHANGELOG.md
     - deploy/release-checklists/260912-repo-harness-0.19.1.md
   artifacts_exist:
-    - tasks/notes/20260913-1143-release-0191-current.notes.md
+    - tasks/archive/notes-20260913-1339-release-0191-current.md
 ```
 
 ## Verification Plan

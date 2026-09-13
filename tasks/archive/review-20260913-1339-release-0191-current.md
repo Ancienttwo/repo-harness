@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-13 13:39
+> **Related Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260913-1339
+> **Archive Projection V1**: `plans/plan-20260913-1143-release-0191-current.md` => `plans/archive/plan-20260913-1143-release-0191-current.md`
+> **Archive Projection V1**: `tasks/notes/20260913-1143-release-0191-current.notes.md` => `tasks/archive/notes-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/contracts/20260913-1143-release-0191-current.contract.md` => `tasks/archive/contract-20260913-1339-release-0191-current.md`
+> **Archive Projection V1**: `tasks/reviews/20260913-1143-release-0191-current.review.md` => `tasks/archive/review-20260913-1339-release-0191-current.md`
+
 # Task Review: release-0191-current
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260913-1143-release-0191-current.md
-> **Contract**: tasks/contracts/20260913-1143-release-0191-current.contract.md
-> **Notes File**: tasks/notes/20260913-1143-release-0191-current.notes.md
+> **Plan**: plans/archive/plan-20260913-1143-release-0191-current.md
+> **Contract**: tasks/archive/contract-20260913-1339-release-0191-current.md
+> **Notes File**: tasks/archive/notes-20260913-1339-release-0191-current.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-13 11:43
 > **Recommendation**: pass
