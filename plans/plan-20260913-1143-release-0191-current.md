@@ -106,7 +106,7 @@ The release package is defined by package.json files/bin/prepack and assets/skil
 Update the 0.19.1 changelog and filing for the accepted current-main range, freeze source and contract, prepare one full release gate, obtain the contract-required semantic acceptance, finish/archive and merge the documentation PR with hosted CI. Pack the resulting immutable main commit, inspect its archive, then update v0.19.1 using an exact old-tag lease and publish that exact tarball to npm. Create the GitHub release and read back registry, tag, tarball and installed runtime identity. Refresh the Bun-global runtime through the supported update surface after publication.
 
 ## P3 Decision
-The user explicitly selected version 0.19.1 and authorized publishing current main despite the existing old tag. Do not change the version or silently keep the old tag target. Preserve unrelated WIP using this linked worktree. No product source/test changes or deferred CI tasks are part of this release; a real blocking failure is diagnosed before any bounded repair. npm publication is irreversible; never replace an existing version. A tag push uses force-with-lease against the observed old tag object. At 10x scale, real-install/provider test cost dominates; execute the expensive gate once after freezing and reuse valid evidence, never relabel a skipped case as pass.
+The user explicitly selected version 0.19.1 and authorized publishing current main despite the existing old tag. Do not change the version or silently keep the old tag target. Preserve unrelated WIP using this linked worktree. Product source and deferred CI tasks remain outside this release; the owner subsequently approved repairs to the two observed Oracle cleanup and CodeGraph/tooling fixture failures. npm publication is irreversible; never replace an existing version. A tag push uses force-with-lease against the observed old tag object. At 10x scale, real-install/provider test cost dominates; execute the expensive gate once after freezing and reuse valid evidence, never relabel a skipped case as pass.
 
 ## Task Breakdown
 - [ ] Refresh the existing 0.19.1 changelog and release filing for current main, preserving migration warnings.
@@ -136,3 +136,11 @@ This plan closes the release-preparation documentation and verified package
 boundary before publication. The separately authorized post-merge operator chain
 (tag, npm, GitHub Release, readback and runtime refresh) remains the parent
 agent's delivery ledger; closing this plan does not claim those steps happened.
+
+## Approved Scope Amendment
+
+On 2026-09-13 the owner approved fixing both release-gate blockers and then
+continuing publication. Existing testing oracles and production deadlines stay
+intact. The repair changes five existing tests and their shared fixture helper:
+CodeGraph fixtures perform a nonsemantic startup handshake before observation;
+Oracle cleanup timing begins at the real workload marker after preflight.

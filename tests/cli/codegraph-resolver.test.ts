@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { warmFixtureExecutable } from "../helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const SCRIPT = join(ROOT, "scripts/ensure-codegraph.sh");
@@ -29,6 +30,7 @@ function setupFakeEnvironment(prefix: string) {
       "",
     ].join("\n")
   );
+  warmFixtureExecutable(join(fakeBin, "timeout"), ["1s", "/usr/bin/true"]);
   return { root, home, fakeBin };
 }
 
@@ -38,6 +40,7 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string) {
     [
       "#!/bin/bash",
       "set -euo pipefail",
+      "if [[ \"${1:-}\" == \"__fixture-ready\" ]]; then exit 0; fi",
       `echo "codegraph $*" >> "${logFile}"`,
       "case \"${1:-}\" in",
       "  \"--version\") echo '0.9.6' ;;",
@@ -48,6 +51,7 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string) {
       "",
     ].join("\n")
   );
+  warmFixtureExecutable(join(fakeBin, "codegraph"), ["__fixture-ready"]);
 }
 
 function writeFakeBunx(fakeBin: string) {

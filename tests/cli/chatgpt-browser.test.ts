@@ -1210,7 +1210,12 @@ describe('chatgpt browser command', () => {
           FAKE_ORACLE_ARGS_PATH: argsPath,
           FAKE_ORACLE_DESCENDANT_PID_PATH: childPidPath,
         });
-        expect(Date.now() - startedAt).toBeLessThan(8_000);
+        // Readiness probes precede the workload timeout. The fake Oracle writes
+        // args only when its real workload starts, so cold probe startup cannot
+        // consume the process-group cleanup budget.
+        const oracleStartedAt = lstatSync(argsPath).mtimeMs;
+        expect(oracleStartedAt).toBeGreaterThanOrEqual(startedAt);
+        expect(Date.now() - oracleStartedAt).toBeLessThan(8_000);
         const payload = JSON.parse(result.stdout);
         expect(payload).toMatchObject({ status: 'failed', error: { code: 'ORACLE_EXEC_FAILED' } });
         expect(payload.error.message).toContain('timed out after 100ms');

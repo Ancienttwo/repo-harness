@@ -15,6 +15,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { runSubagentHandler } from "../src/cli/hook/subagent-handler";
+import { warmFixtureExecutable } from "./helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
@@ -92,6 +93,7 @@ function setupFakeEnvironment(prefix: string) {
       "",
     ].join("\n")
   );
+  warmFixtureExecutable(join(fakeBin, "timeout"), ["1s", "/usr/bin/true"]);
   writeExecutable(
     join(fakeBin, "claude"),
     [
@@ -269,6 +271,7 @@ function writeFakeCodeGraph(
     [
       "#!/bin/bash",
       "set -euo pipefail",
+      "if [[ \"${1:-}\" == \"__fixture-ready\" ]]; then exit 0; fi",
       options.logFile ? `echo "codegraph $*" >> "${options.logFile}"` : "",
       "case \"${1:-}\" in",
       "  \"--version\")",
@@ -284,6 +287,7 @@ function writeFakeCodeGraph(
       "",
     ].join("\n")
   );
+  warmFixtureExecutable(join(fakeBin, "codegraph"), ["__fixture-ready"]);
 }
 
 function writeFakeNpm(fakeBin: string, version: string, logFile?: string) {

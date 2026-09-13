@@ -9,8 +9,9 @@
   previously targeting `d94ec3c7517230b361f1354805ab3d4a364a045a`.
 - Owner authorization: publish current main as 0.19.1, including moving that
   old tag with an exact lease. npm reported 0.19.1 absent before preparation.
-- Scope: update this filing and the 0.19.1 changelog. Product source, versions,
-  existing tests and deferred work are unchanged by this preparation.
+- Scope: update this filing and the 0.19.1 changelog, and repair the two
+  owner-approved fixture timing blockers found by the current release gate.
+  Packaged product source, versions and deferred work remain unchanged.
 - Status: publication authorized; registry and installed-runtime readbacks are
   recorded after publication. Preparation alone is not a published release.
 
@@ -218,6 +219,14 @@ substitutes for this release gate.
 The prior candidate's local gate failed in process-tree timeout fixtures; this
 new release preparation retains that history as a reason to require a fresh
 full release result. A skipped or failed case is not a pass.
+
+The current run exposed cold-start timing assumptions in existing fixtures.
+CodeGraph fixtures now complete a nonsemantic executable-startup handshake
+before readiness probes are observed. The Oracle cleanup test measures from
+its actual workload marker after preflight, retaining the 8000 ms bound and
+all cleanup assertions. Production probe timeouts and the four-worker pool
+remain unchanged. The initial failed run is preserved in the workflow notes;
+only the final frozen-candidate gate can establish release readiness.
 
 ### Evidence locations
 

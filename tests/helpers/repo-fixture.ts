@@ -37,6 +37,18 @@ export function tmpWorkspaceIn(parent: string, prefix: string): string {
   return realpathSync(mkdtempSync(join(parent, `${prefix}-`)));
 }
 
+/**
+ * Start a freshly-written fixture executable before the test measures its
+ * command-specific behavior. Callers use a fixture-only sentinel or a fixed
+ * system no-op, so this cannot add an observed product command to a test log.
+ */
+export function warmFixtureExecutable(filePath: string, args: string[]): void {
+  const result = spawnSync(filePath, args, { encoding: "utf-8", timeout: 30_000 });
+  if (result.status !== 0) {
+    throw new Error(`fixture warmup failed for ${filePath}: ${result.stderr || result.stdout || String(result.error)}`);
+  }
+}
+
 export interface FixtureWorkspace {
   readonly root: string;
   readonly home: string;
