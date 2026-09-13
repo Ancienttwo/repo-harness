@@ -2,7 +2,7 @@
 
 > **Status**: Completed
 > **Scope**: External publication facts, permitted by the publication granularity rule
-> **Substantive Change SHA256**: `sha256:018d1fc0e3adae37396a6e7b329e52cfecdc5748eeb73f0ef4eb5f7c84cd5aa3`
+> **Substantive Change SHA256**: `sha256:18ffe166feb4fe642870b35afbe945c5df418c75fde73721c21ff5a1dead6e5b`
 
 The approved release follow-through published source `66441481` through PR #431.
 Its tree equals the accepted candidate; PR Required CI (attempt 2) and the
@@ -15,10 +15,16 @@ with runtime receipt
 This readback binds only the external-fact filing update; it does not change
 the earlier implementation subject or its typed owner acceptance. The filing
 owns the full identities, the intermittent hosted failure, and the separate
-existing-host update rollback:
+existing-host merge and completed update:
 `deploy/release-checklists/260912-repo-harness-0.19.1.md`.
 
-The public package has a verified clean-install result. The existing host's
-custom skills and agent definitions remain preserved, and its CLI stays at
-0.19.0 until the owner chooses how to reconcile those files. No unowned
-surface was force-replaced to obtain a passing local update.
+The public package has a verified clean-install result. After the initial
+ownership refusal, the owner authorized merging the local and packaged
+versions. The two skills now match the current package, the agent fleet uses
+current role/model boundaries, and the Codex explorer retains its additional
+constraints through the supported user-managed hash receipt. Original files
+and the semantically equivalent CodeGraph TOML normalization are backed up on
+the host. The supported update passed, the installed CLI reports 0.19.1, and
+install-state reports a consistent full profile with no ownership gaps or
+surface drift. A subsequent fleet install preserves the one registered
+customization and passes. No release source or immutable npm package changed.

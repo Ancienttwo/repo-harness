@@ -287,13 +287,29 @@ while retaining all dependencies, immutable hashing and real install checks.
   `sha256:e643557ee3e049072bd11e905b56f838ab571cf60fafbebad720ea9a3d6ad307`
   records `published_tarball`, `clean_install` and `installed_hook_readback`
   as pass; the installed hook returned `StateSnapshot v1`.
-- The separate existing-host update was attempted with
-  `repo-harness update --version 0.19.1 --no-codegraph --no-external-skills`.
-  The installer refused two unowned/modified Codex skills (`obsidian-memory`
-  and `claude-plan`) and agent-fleet drift, then rolled the transaction back.
-  The global CLI still reports 0.19.0. Existing custom files were preserved;
-  replacing them requires the owner's disposition. This host-state conflict
-  does not invalidate the successful clean installation of the published package.
+- The existing-host update initially refused two modified Codex skills
+  (`obsidian-memory` and `claude-plan`) and ten agent definitions, then rolled
+  back to 0.19.0. The owner subsequently authorized merging both versions and
+  completing the update.
+- Compared the local skill copies with repository history and the packaged
+  definitions. The skills were older revisions; installed the complete current
+  rules and retained the original Chinese text in the host backup. Agent
+  definitions adopt the current role/model boundaries, preserving the Codex
+  explorer's additional data-ownership, async/error-path and read-only
+  constraints. `install-agent-fleet.sh --accept-user-managed` records that
+  single merged explorer file; a subsequent ordinary fleet install passes.
+- Preserved the originals under
+  `~/.repo-harness/backups/release-0191-runtime-20260913-144359`.
+  The existing CodeGraph TOML subtree also needed conversion from nested
+  tables to inline tables for the installer's fragment ownership parser.
+  Full-document parsed equality was verified before writing; all configuration
+  values are unchanged, and the original configuration is in the same backup.
+- `repo-harness update --version 0.19.1 --no-codegraph --no-external-skills`
+  then passed, including candidate runtime reconciliation. The installed CLI
+  reports 0.19.1; install-state reports the full profile with consistent
+  ownership and no missing components or surface drift. Both host copies of
+  `obsidian-memory` and the Codex `claude-plan` match the packaged content;
+  the explorer receipt matches its retained customization.
 
 Before npm publication, an interrupted tag move may be restored with an exact
 lease against the tag object written by this release. After npm publication,
