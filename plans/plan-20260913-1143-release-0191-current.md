@@ -109,9 +109,9 @@ Update the 0.19.1 changelog and filing for the accepted current-main range, free
 The user explicitly selected version 0.19.1 and authorized publishing current main despite the existing old tag. Do not change the version or silently keep the old tag target. Preserve unrelated WIP using this linked worktree. Product source and deferred CI tasks remain outside this release; the owner subsequently approved repairs to the two observed Oracle cleanup and CodeGraph/tooling fixture failures. npm publication is irreversible; never replace an existing version. A tag push uses force-with-lease against the observed old tag object. At 10x scale, real-install/provider test cost dominates; execute the expensive gate once after freezing and reuse valid evidence, never relabel a skipped case as pass.
 
 ## Task Breakdown
-- [ ] Refresh the existing 0.19.1 changelog and release filing for current main, preserving migration warnings.
-- [ ] Freeze the release contract and run the full release gate plus version/document assertions.
-- [ ] Prepare semantic acceptance and the documentation work-package for integration.
+- [x] Refresh the existing 0.19.1 changelog and release filing for current main, preserving migration warnings.
+- [x] Freeze the release contract and run the full release gate plus version/document assertions.
+- [x] Prepare semantic acceptance and the documentation work-package for integration.
 
 ## Verification Plan
 One cost:expensive command runs BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=4 BUN_TEST_MAX_CONCURRENCY=1 bun run check:release. It includes full tests, projections, typecheck, state checks, architecture/task checks, init dry-run, pack dry-run and real tarball installation smoke. Separate nonduplicate normal checks are bun scripts/check-skill-version.ts and tests/readme-dx.test.ts only if not already covered by the full gate (omit the duplicate leaf). The runtime_readback oracle is the tarball smoke already nested in the release gate; do not execute it a second time to populate a separate check.
@@ -126,9 +126,9 @@ Before publication, abandon this task branch and leave npm untouched. Preserve t
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Refresh the existing 0.19.1 changelog and release filing for current main, preserving migration warnings.
-- [ ] Freeze the release contract and run the full release gate plus version/document assertions.
-- [ ] Prepare semantic acceptance and the documentation work-package for integration.
+- [x] Refresh the existing 0.19.1 changelog and release filing for current main, preserving migration warnings.
+- [x] Freeze the release contract and run the full release gate plus version/document assertions.
+- [x] Prepare semantic acceptance and the documentation work-package for integration.
 
 ## Work-package Boundary
 
