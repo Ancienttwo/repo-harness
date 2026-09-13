@@ -787,9 +787,9 @@
       "sourceDigest": "sha256:5c192000c887502bac2e9787d6ffb992e49a57f955b4e7b4655b7c01d18c6dd0",
       "outputDigest": "sha256:c831589b4ccffcbd58d0502102abfbecc01025326f7fa0f0e9ba60fc3dbd0cb4",
       "verifiedAgainst": {
-        "branch": "codex/architecture-dependency-reconciliation",
-        "commit": "f1596f094423018e35ceb6f46f74a8d07b7b182c",
-        "committedAt": "2026-09-13T14:58:57+08:00"
+        "branch": "codex/release-0192",
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
@@ -1028,8 +1028,8 @@
       "outputDigest": "sha256:b81a8870d378fb065ad73aef39b59bfcf3ba7ec57a741e1c22524cf6f9684194",
       "verifiedAgainst": {
         "branch": "codex/release-0192",
-        "commit": "b148c087eafa52bb94bd6a37a14700b82a8e33ae",
-        "committedAt": "2026-09-13T19:39:23+08:00"
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
@@ -1228,8 +1228,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/release-0192",
-        "commit": "b148c087eafa52bb94bd6a37a14700b82a8e33ae",
-        "committedAt": "2026-09-13T19:39:23+08:00"
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
@@ -1248,8 +1248,8 @@
       "outputDigest": "sha256:beaaa466d51cbd8f929fd6acd6645c6f5136cccf539f09b63a273e5ab38519fa",
       "verifiedAgainst": {
         "branch": "codex/release-0192",
-        "commit": "b148c087eafa52bb94bd6a37a14700b82a8e33ae",
-        "committedAt": "2026-09-13T19:39:23+08:00"
+        "commit": "582c9e2faff88f0494f281247ef37dda753aaf70",
+        "committedAt": "2026-09-13T22:24:42+08:00"
       }
     },
     {
