@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
+import { observeRefactorRecommendations } from '../src/effects/refactor/recommendations';
 import { RUN_SUMMARY_RETENTION_COUNT } from '../src/effects/run-summary-retention';
 import { consumePendingPostEditEvents, readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
 import { advanceArchitectureDriftCursor, computeArchitectureDriftChangedSet, readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
@@ -336,7 +337,7 @@ describe('runStopHandler', () => {
     expect(readPendingPostEditEvents(cwd)).toEqual([]);
   });
 
-  test('uses the Stop-entry deadline and acknowledges the queue head after preceding work exhausts it', () => {
+  test.each([25_000, 19_999])('retains unattempted journal work after a %i ms projection and consumes it on a fresh pass', (projectionMs) => {
     const cwd = fixture();
     const pending = join(cwd, '.ai/harness/journal/post-edit/pending');
     mkdirSync(pending, { recursive: true });
@@ -365,7 +366,7 @@ describe('runStopHandler', () => {
       dependencies: {
         wallClockMs: () => wallClock,
         drainArchitectureProjection: () => {
-          wallClock = 25_000;
+          wallClock = projectionMs;
           return {
             schemaVersion: 'repo-harness.architecture-projection-drain/v1',
             status: 'idle', jobId: null, sourceEventIds: [], resultStatus: null,
@@ -378,6 +379,10 @@ describe('runStopHandler', () => {
 
     expect(result.exitCode).toBe(0);
     expect(existsSync(sentinel)).toBe(false);
+    expect(readPendingPostEditEvents(cwd)).toMatchObject([{ event_id: 'event-preceding-work-timeout', dirty: { 'contract-verification': true } }]);
+    const resumed = consumePendingPostEditEvents(cwd, { ...process.env, REPO_HARNESS_CLI: stubCli }, { deadlineMs: Date.now() + 5_000 });
+    expect(resumed).toMatchObject({ consumed: 1, pending: 0, errors: 0 });
+    expect(existsSync(sentinel)).toBe(true);
     expect(readPendingPostEditEvents(cwd)).toEqual([]);
   });
 
@@ -1342,4 +1347,52 @@ describe('stop bounds its own run summary history', () => {
     expect(existsSync(join(cwd, RUNS_DIR, 'run-directory.json'))).toBe(true);
     expect(existsSync(join(cwd, RUNS_DIR, 'stop-retention-fault-run.json'))).toBe(true);
   });
+});
+
+test('Stop permits a measured long projection followed by recommendation readback within the host deadline', () => {
+  const cwd = fixture(); const start = 1_000_000; let clock = start;
+  mkdirSync(join(cwd, '.archcontext'));
+  writeFileSync(join(cwd, '.archcontext/manifest.yaml'), 'fixture: true\n');
+  const output = runStopHandler({
+    collector: collector(cwd, () => canonicalState({ profile: 'lite' })),
+    dependencies: {
+      wallClockMs: () => clock,
+      drainArchitectureProjection: (_root, _env, budget?: { deadlineMs: number }) => {
+        clock = start + 23_600;
+        expect(budget?.deadlineMs).toBeGreaterThan(clock);
+        expect(budget?.deadlineMs).toBeLessThanOrEqual(start + 110_000);
+        return { schemaVersion: 'repo-harness.architecture-projection-drain/v1', status: 'idle',
+          jobId: null, sourceEventIds: [], resultStatus: null, error: null, acknowledgeSourceEvents: false,
+          queue: { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1', pending: 0, running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: null, oldestDeadLetterJobId: null } };
+      },
+      observeRefactorRecommendations: (root, options) => observeRefactorRecommendations(root, {
+        ...options,
+        discover: (_repo, provider) => {
+          clock += 16_000;
+          expect(provider.deadlineMs).toBeGreaterThan(clock);
+          expect(provider.deadlineMs).toBeLessThanOrEqual(start + 140_000);
+          return { scan: { snapshot: { codeFacts: { coverage: 'complete', truncated: false }, repositorySummary: { multiplyOwnedFileCount: 0 } } },
+            candidates: [{ recommendationId: 'measured-cycle', recommendationFingerprint: 'sha256:measured',
+              recommendation: { payload: { kind: 'cycle', affectedNodeIds: ['module.a', 'module.b'] }, confidence: 'high', risk: 'medium', uncertainty: 'low', explanation: ['Measured dependency cycle'], evidenceBindingIds: ['binding.cycle'] } }] } as any;
+        },
+      }),
+    },
+  });
+  expect(output.stdout).toContain('measured-cycle');
+  expect(JSON.parse(output.stdout).decision).toBe('block');
+  expect(clock).toBe(start + 39_600);
+});
+
+test('Stop reports a budget-deferred recommendation without scanning or requesting a user decision', () => {
+  const cwd = fixture(); let clock = 0;
+  mkdirSync(join(cwd, '.archcontext'));
+  writeFileSync(join(cwd, '.archcontext/manifest.yaml'), 'fixture: true\n');
+  const output = runStopHandler({
+    collector: collector(cwd, () => { clock = 145_000; return canonicalState({ profile: 'lite' }); }),
+    dependencies: { wallClockMs: () => clock },
+  });
+  expect(output.exitCode).toBe(0);
+  expect(output.stdout).toBe('');
+  expect(output.stderr).toContain('[RefactorRecommendations] deferred: insufficient remaining Stop work budget');
+  expect(existsSync(join(cwd, '.ai/harness/runs/refactor-recommendations.json'))).toBe(false);
 });

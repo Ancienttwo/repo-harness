@@ -15,6 +15,7 @@
  * fail when CLI is uninstalled or not on PATH).
  */
 
+import { MANAGED_STOP_TIMEOUT_SECONDS } from '../../core/hook-work-budget';
 import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
 import type { InstallProfile } from './install-profile';
 import {
@@ -74,7 +75,7 @@ export function buildHookCommand(route: Route, host: HookHost): string {
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {
   const entry: HookEntry = {
-    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: route.event === 'Stop' && route.routeId === 'default' ? 150 : 30 }],
+    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: route.event === 'Stop' && route.routeId === 'default' ? MANAGED_STOP_TIMEOUT_SECONDS : 30 }],
   };
   if (route.matcher !== undefined) entry.matcher = route.matcher;
   return entry;

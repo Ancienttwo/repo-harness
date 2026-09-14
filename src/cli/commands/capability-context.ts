@@ -281,6 +281,17 @@ export function runCapabilityContextRequest(opts: {
   let capability: Capability;
   let matchedPrefix: string;
   const eventCapabilityId = typeof event?.capability_id === 'string' ? event.capability_id : '';
+  // Architecture events use synthetic root ownership for unmapped paths. They
+  // retain their architecture card but have no capability contract to refresh.
+  if (event && !opts.path && (!eventCapabilityId || eventCapabilityId === 'root')) {
+    const match = findMatch(registry, repo, inputPath);
+    if (!match.matched) {
+      return {
+        repo, entry: null, status: 'skipped',
+        lines: [`[CapabilityContext] No capability matches architecture event path: ${inputPath}; skipped.`],
+      };
+    }
+  }
   if (eventCapabilityId) {
     capability = findCapabilityById(registry, eventCapabilityId);
     matchedPrefix = typeof event?.matched_prefix === 'string'

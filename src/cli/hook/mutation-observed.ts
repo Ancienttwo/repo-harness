@@ -1007,11 +1007,12 @@ export function consumePendingPostEditEvents(
         || (event.dirty['minimal-change'] && event.payload.minimal_change),
       );
       if (deadlineElapsed && hasDeferredEffect) {
-        eventFailures.push('journal deadline elapsed before deferred effects');
+        // No effect was attempted; preserve its durable trigger for the next pass.
+        break;
       } else if (event.dirty['contract-verification'] && event.payload.contract_verification) {
         const targetTimeoutMs = Math.min(helperTimeoutMs, remainingMs - PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS);
         if (targetTimeoutMs < 1) {
-          eventFailures.push('contract verification skipped because the remaining journal budget cannot cover process cleanup');
+          break;
         } else {
           const verification = processContractVerification(
             repoRoot,

@@ -267,6 +267,41 @@ describe('architecture drift source event', () => {
 });
 
 describe('resumable legacy cascade', () => {
+  test('real CLI drain crosses an unmapped workspace file and queues the mapped tail', () => {
+    const cwd = fixture();
+    const cli = join(import.meta.dir, '../src/cli/index.ts');
+    const fixtureHome = realpathSync(mkdtempSync(join(tmpdir(), 'drift-unmapped-home-')));
+    workspaces.push(fixtureHome);
+    symlinkSync(join(import.meta.dir, '../scripts'), join(cwd, 'scripts'));
+    write(cwd, '.gitignore', '.ai/harness/\nscripts\n');
+    write(cwd, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
+    write(cwd, '.archcontext/model/nodes/capability.sdk.sdk-root.yaml', [
+      'schemaVersion: archcontext.node/v2', 'id: capability.sdk.sdk-root',
+      'kind: capability', 'name: SDK', 'status: active', 'summary: SDK source',
+      'responsibilities: [Own SDK source]', 'source:', '  include: [src/**]',
+      'extensions:', '  contractFiles:', '    agents: src/AGENTS.md', '    claude: src/CLAUDE.md',
+      '  lspProfile: typescript-lsp', '  verification: []',
+    ].join('\n'));
+    write(cwd, 'src/index.ts', 'export const sdk = 1;');
+    write(cwd, 'docs/architecture/index.md', '# Architecture\n\n## Pending Requests\n');
+    const anchor = commitAll(cwd, 'capability baseline');
+    advanceArchitectureDriftCursor(cwd, anchor, null);
+    write(cwd, 'pnpm-workspace.yaml', 'packages: [src]\n');
+    write(cwd, 'src/index.ts', 'export const sdk = 2;');
+    const head = commitAll(cwd, 'workspace and SDK changes');
+    const result = spawnSync(process.execPath, [cli, 'architecture-projection', 'drain', '--json'], {
+      cwd, encoding: 'utf8', timeout: 30_000,
+      env: { ...process.env, HOME: fixtureHome, REPO_HARNESS_CLI: cli },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).status).toBe('disabled');
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(head);
+    const queue = readFileSync(join(cwd, '.ai/harness/capability-context/requests.jsonl'), 'utf8')
+      .trim().split('\n').map(line => JSON.parse(line));
+    expect(queue.map(entry => entry.capability_id)).toEqual(['sdk-sdk-root']);
+    expect(readFileSync(join(cwd, 'docs/architecture/requests/root.md'), 'utf8')).toContain('pnpm-workspace.yaml');
+  }, 35_000);
+
   test('drains a 1592-path backlog across bounded retries without replaying the prefix', () => {
     const cwd = fixture();
     const anchor = git(cwd, ['rev-parse', 'HEAD']);

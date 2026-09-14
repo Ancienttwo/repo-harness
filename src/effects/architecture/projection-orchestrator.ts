@@ -89,9 +89,8 @@ export function drainArchitectureProjectionJobs(
     return failPreflight(root, events, observedPaths, now, policy.timeoutMs, error, options.acceptedChange);
   }
   const eligible = events.flatMap((event) => event.changed_paths).filter((path) => !isOwned(path, owned));
-  if (events.length > 0 && eligible.length === 0) {
-    return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, true);
-  }
+  // Owned-only events need no new job, but must not starve an existing retry.
+  const onlyOwnedEvents = events.length > 0 && eligible.length === 0;
   const aggregateId = architectureProjectionJobId(events.map((event) => event.event_id), eligible, options.acceptedChange);
   const aggregateState = architectureProjectionJobState(root, aggregateId);
   if (aggregateState === 'running') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, false);
@@ -99,7 +98,7 @@ export function drainArchitectureProjectionJobs(
   if (aggregateState === 'receipt') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, true);
   enqueueArchitectureProjectionJob(root, eventIds, sourceKeys, eligible, now, options.acceptedChange);
   const job = claimNextArchitectureProjectionJob(root, policy.timeoutMs, now);
-  if (!job) return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, false);
+  if (!job) return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, onlyOwnedEvents);
   let completedResultStatus: ProjectionResultV1['status'] | null = null;
   try {
     const request: ProjectionRequestV1 = {

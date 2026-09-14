@@ -7,7 +7,7 @@ import { discoverRefactorCandidates, type RefactorDiscoveryV1 } from './discover
 import { readRefactorRecommendationSettings } from './recommendation-settings';
 import type { RefactorArchctxProviderOptions } from './archctx-provider';
 
-export const REFACTOR_RECOMMENDATION_TIMEOUT_MS = 10_000;
+import { REFACTOR_RECOMMENDATION_TIMEOUT_MS } from '../../core/hook-work-budget';
 export const REFACTOR_RECOMMENDATION_COOLDOWN_MS = 300_000;
 export const REFACTOR_RECOMMENDATION_STATE = '.ai/harness/runs/refactor-recommendations.json';
 const MAX_DELIVERY_BYTES = 12_000;
@@ -80,7 +80,7 @@ export function observeRefactorRecommendations(repoRoot: string, options: Refact
     const root = realpathSync(repoRoot);
     if (!existsSync(join(root, '.archcontext/manifest.yaml'))) return result('unavailable', 'repository architecture model is not initialized');
     const deadlineMs = Math.min(options.deadlineMs ?? Infinity, now() + REFACTOR_RECOMMENDATION_TIMEOUT_MS);
-    if (options.deadlineMs !== undefined && options.deadlineMs - now() < REFACTOR_RECOMMENDATION_TIMEOUT_MS) return result('deferred', 'insufficient remaining Stop work budget');
+    if (options.deadlineMs !== undefined && options.deadlineMs <= now()) return result('deferred', 'insufficient remaining Stop work budget');
     return withExclusiveDirectoryLock(root, '.ai/harness/runs/refactor-recommendations.lock', () => {
       const path = join(root, REFACTOR_RECOMMENDATION_STATE);
       const state = readState(path);

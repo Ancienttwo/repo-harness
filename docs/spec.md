@@ -346,7 +346,14 @@ AcceptanceReceipt field.
   separate from Refactor Mode activation: it never authors a proposal, accepts
   a recommendation, creates an execution task or edits code. User approval
   enters the existing approved-plan workflow. Incomplete facts are reported,
-  never synthesized. Delivery is bounded and deduplicated.
+  never synthesized. Delivery is bounded and deduplicated. The managed Stop host allows 150 seconds;
+  a shared timing policy caps Stop work at 140 seconds and projection at 110
+  seconds, reserving 30 seconds for the serial recommendation scan and lifecycle
+  readback. Journal and disabled-provider cascade work retain their 20-second
+  entry deadline. The provider may impose a shorter configured timeout; work
+  that exceeds the host slice remains pending for the existing explicit drain.
+  Observation uses positive remaining caller time and reports exhausted-budget
+  deferral without turning it into a recommendation.
 - **Refactor Mode**: The `off | shadow | active` operating mode under which
   repo-harness consumes an external structural authority to author, assess and
   execute refactors. It is a narrowed entry into the existing plan, contract,

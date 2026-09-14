@@ -53,6 +53,7 @@ import {
   renderRecoveryResume,
   resolveRecoveryEvidence,
 } from '../../effects/evidence/recovery-materializer';
+import { STOP_ARCHITECTURE_WORK_BUDGET_MS, STOP_WORK_BUDGET_MS } from '../../core/hook-work-budget';
 import { HookEffectReconciliationRequired } from './handler-contract';
 
 // Ignored runtime evidence, same tree as hook-events.jsonl. Deliberately not a
@@ -60,7 +61,7 @@ import { HookEffectReconciliationRequired } from './handler-contract';
 // before deciding whether the advisory should ever block, and adding a metric
 // would repeat the `child_processes` completeness problem already on the ledger.
 const UNPLANNED_IMPLEMENTATION_EVIDENCE = '.ai/harness/runs/unplanned-implementation.jsonl';
-const STOP_DEFERRED_WORK_BUDGET_MS = 20_000;
+const STOP_JOURNAL_WORK_BUDGET_MS = 20_000;
 
 function recordUnplannedImplementation(repoRoot: string, now: Date, paths: readonly string[]): void {
   try {
@@ -91,7 +92,7 @@ export interface StopProjectionTarget {
 
 export interface StopHandlerDependencies {
   readonly now?: () => Date;
-  /** Wall clock shared by architecture and journal deferred work. */
+  /** Wall clock shared by all bounded Stop work. */
   readonly wallClockMs?: () => number;
   readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
   /** Invoked once after the complete Stop projection batch commits. */
@@ -99,7 +100,7 @@ export interface StopHandlerDependencies {
   /** Narrow post-commit fault/observation seam; never driven by an env flag. */
   readonly afterProjectionWrite?: (target: StopProjectionTarget) => void;
   readonly observeRefactorRecommendations?: typeof observeRefactorRecommendations;
-  readonly drainArchitectureProjection?: (repoRoot: string, env: NodeJS.ProcessEnv) => ArchitectureProjectionDrainResultV1;
+  readonly drainArchitectureProjection?: (repoRoot: string, env: NodeJS.ProcessEnv, budget: { deadlineMs: number; nowMs: () => number }) => ArchitectureProjectionDrainResultV1;
 }
 
 export interface StopHandlerInput {
@@ -691,7 +692,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const env = opts.env ?? process.env;
   const dependencies = opts.dependencies ?? {};
   const wallClockMs = dependencies.wallClockMs ?? Date.now;
-  const deferredDeadlineMs = wallClockMs() + STOP_DEFERRED_WORK_BUDGET_MS;
+  const startedAtMs = wallClockMs();
+  const stopWorkDeadlineMs = startedAtMs + STOP_WORK_BUDGET_MS;
+  const architectureBudget = { deadlineMs: startedAtMs + STOP_ARCHITECTURE_WORK_BUDGET_MS, nowMs: wallClockMs };
+  const journalBudget = { deadlineMs: Math.min(stopWorkDeadlineMs, startedAtMs + STOP_JOURNAL_WORK_BUDGET_MS), nowMs: wallClockMs };
   const now = dependencies.now?.() ?? new Date();
   const payload = parsePayload(opts.input);
   if (payload.stop_hook_active === true || payload.stop_hook_active === 'true') {
@@ -718,13 +722,13 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
       unplannedImplementationPaths = changedSet.paths.filter(isImplementationSurfacePath);
     }
     const driftEvent = architectureDriftSourceEvent(changedSet);
-    architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
-      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [], deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
+    architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env, architectureBudget)
+      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [], ...architectureBudget });
     if (architectureDrain.status === 'disabled') {
       drainArchitectureDriftCascade(repoRoot, changedSet, (changedPath) => {
-        const cascade = processArchitectureCascade(repoRoot, env, changedPath, { deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
+        const cascade = processArchitectureCascade(repoRoot, env, changedPath, journalBudget);
         if (!cascade.ok) throw new Error(cascade.error);
-      }, { deadlineMs: deferredDeadlineMs, nowMs: wallClockMs }, now);
+      }, journalBudget, now);
     }
     // The cursor is the retry boundary: it only moves past a range the
     // consumer acknowledged, so a retry-pending, dead-lettered, or throwing
@@ -750,7 +754,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     }
   }
   try {
-    consumePendingPostEditEvents(repoRoot, env, { deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
+    consumePendingPostEditEvents(repoRoot, env, journalBudget);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     journalSideEffectError = message;
@@ -870,10 +874,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   if (minimalGate) return { ...minimalGate, stderr: stderr.join('') };
 
   function finishWithRecommendations(): StopHandlerResult {
-    const recommendation = (dependencies.observeRefactorRecommendations ?? observeRefactorRecommendations)(repoRoot, { env, consume: true, deadlineMs: deferredDeadlineMs, nowMs: wallClockMs });
+    const recommendation = (dependencies.observeRefactorRecommendations ?? observeRefactorRecommendations)(repoRoot, { env, consume: true, deadlineMs: stopWorkDeadlineMs, nowMs: wallClockMs });
     const recommendationDecision = renderRefactorRecommendationDecision(recommendation);
     if (recommendationDecision) return { ...block(recommendationDecision), stderr: stderr.join('') };
-    if (recommendation.status === 'proof_required' || (recommendation.status === 'unavailable' && recommendation.message !== 'repository architecture model is not initialized')) {
+    if ((recommendation.status === 'deferred' && recommendation.message === 'insufficient remaining Stop work budget') || recommendation.status === 'proof_required' || (recommendation.status === 'unavailable' && recommendation.message !== 'repository architecture model is not initialized')) {
       stderr.push(`[RefactorRecommendations] ${recommendation.status}: ${recommendation.message}\n`);
     }
 

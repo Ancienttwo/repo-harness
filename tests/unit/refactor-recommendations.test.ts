@@ -70,7 +70,7 @@ test('incomplete code facts and exhausted deadlines never become recommendations
   const partial = observeRefactorRecommendations(f.repo, base); expect(partial.status).toBe('proof_required'); expect(partial.candidates).toEqual([]);
   expect(renderRefactorRecommendationDecision(partial)).toBeNull();
   let clock = now;
-  const timeout = observeRefactorRecommendations(f.repo, { env: f.env, nowMs: () => clock, discover: () => { clock += 11000; return discovery(); } });
+  const timeout = observeRefactorRecommendations(f.repo, { env: f.env, nowMs: () => clock, discover: () => { clock += 31000; return discovery(); } });
   expect(timeout.status).toBe('unavailable'); expect(timeout.candidates).toEqual([]);
 });
 
@@ -109,4 +109,36 @@ test('full delivery ledger pauses new delivery without evicting previous identit
   expect(observation.status).toBe('unavailable'); expect(observation.message).toContain('ledger is full');
   expect(observation.candidates).toEqual([]);
   expect(JSON.parse(readFileSync(path, 'utf8')).delivered).toEqual(delivered);
+});
+
+test('serial scan and lifecycle readback can complete beyond ten seconds under one bounded deadline', () => {
+  const f = fixture(); let clock = 0;
+  const observation = observeRefactorRecommendations(f.repo, {
+    env: f.env, nowMs: () => clock,
+    discover: (_root, options) => {
+      clock += 16_000;
+      expect(clock).toBeLessThan(options.deadlineMs!);
+      return discovery();
+    },
+  });
+  expect(observation.status).toBe('recommended');
+  expect(observation.candidates).toHaveLength(1);
+});
+
+test('positive remaining caller time is usable without resetting the caller deadline', () => {
+  const f = fixture(); let clock = 0;
+  const observation = observeRefactorRecommendations(f.repo, {
+    env: f.env, deadlineMs: 5_000, nowMs: () => clock,
+    discover: (_root, options) => {
+      expect(options.deadlineMs).toBe(5_000);
+      clock += 2_000;
+      return discovery();
+    },
+  });
+  expect(observation.status).toBe('recommended');
+  const exhausted = observeRefactorRecommendations(f.repo, {
+    env: f.env, deadlineMs: clock, nowMs: () => clock,
+    discover: () => { throw new Error('expired caller must not scan'); },
+  });
+  expect(exhausted.status).toBe('deferred');
 });

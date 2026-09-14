@@ -13,6 +13,12 @@
 
 ## Active Lessons
 
+- Date: 2026-09-13
+- Triggered by correction: a downstream legacy architecture drain repeatedly stopped on an unmapped workspace file despite adequate retry budgets.
+- Mistake pattern: treating architecture queue synthetic `root` ownership as a registered capability makes capability-context fail and pins the durable cascade offset.
+- Prevention rule: retain the umbrella architecture card and skip automatic capability refresh only when canonical matching confirms an unmapped path. Invalid registry, invalid paths, unknown real IDs and explicit path requests still fail closed; never swallow a generic cascade exit code or manually advance its cursor.
+- Where to apply next time: `src/cli/commands/capability-context.ts`; `tests/architecture-drift.test.ts` exercises the real CLI across an unmapped file into a mapped tail. This does not clean historical requests or establish downstream runtime deployment.
+
 - Date: 2026-09-12
 - Triggered by correction: repeated tests and full-suite cost persisted despite a risk-scoped policy; contract defaults seeded a new test/typecheck while reviewer instructions requested another execution.
 - Mistake pattern: treating template examples as mandatory coverage, using multiple IDs or roles for one execution, and creating test reports without an independent reader or decision.
@@ -407,3 +413,8 @@ Planning approval and execution completion are separate observations. An approve
 - Mistake pattern: treating the execution base (container versus host) as an operational detail chosen at launch, when it is actually an input to the acceptance contract. A grant minted before that question is settled buys provider rounds, worker preparation and immutable records for a path whose evidence nobody has agreed to accept. The failure surfaces only at terminal proof, after the budget is already spent and the preparation records are already immutable.
 - Prevention rule: before minting a campaign grant, confirm the execution base the Owner accepts and check it against the evidence contract the terminal proof actually consumes. If the two disagree, surface the conflict and stop at admission — do not spend provider budget, do not persist preparation records. A base swap invalidates prior canary observations; it is a new evidence shape, not a configuration change.
 - Where to apply next time: every `development_campaign` activation and every activation-ladder step, plus any future automation program whose acceptance path reads a runner-specific receipt.
+
+## 2026-09-13: Compose Stop work under the installed host deadline
+
+- Keep the managed host timeout and runtime phase reservations in one authority. A provider timeout longer than the enclosing Stop deadline does not make the provider usable.
+- A recommendation consists of a measured scan plus lifecycle readback; bound the complete observation and preserve one absolute deadline across both. Positive remaining time can be used, while exhausted-budget deferral must be visible.

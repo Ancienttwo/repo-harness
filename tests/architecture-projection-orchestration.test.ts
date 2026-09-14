@@ -669,6 +669,49 @@ describe('durable architecture projection orchestration', () => {
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
   });
 
+  test('owned-only source events drain an existing pending job without enqueueing generated paths', () => {
+    const f = fixture();
+    const pending = enqueueArchitectureProjectionJob(realpathSync(f.repoRoot), ['event-before-restamp'], ['source-before-restamp'], ['src/index.ts'])!;
+    const sourceEvents = [{ event_id: 'event-restamp', source_key: 'source-restamp', changed_paths: ['docs/architecture/index.md', 'AGENTS.md'] }];
+    const requests: ProjectionRequestV1[] = [];
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return capabilities();
+      const request = JSON.parse(args[3]!) as ProjectionRequestV1;
+      requests.push(request);
+      return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(envelope(request)) };
+    };
+    const result = drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, sourceEvents, run });
+    expect(result).toMatchObject({ status: 'succeeded', jobId: pending.jobId, sourceEventIds: pending.sourceEventIds, acknowledgeSourceEvents: true });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.changedPaths).toEqual(['src/index.ts']);
+    expect(architectureProjectionJobState(f.repoRoot, pending.jobId)).toBe('receipt');
+    expect(result.queue).toMatchObject({ pending: 0, running: 0, receipts: 1, deadLetters: 0 });
+
+    const next = drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, sourceEvents, run });
+    expect(next).toMatchObject({ status: 'idle', sourceEventIds: ['event-restamp'], acknowledgeSourceEvents: true });
+    expect(requests).toHaveLength(1);
+  });
+
+  test('owned-only source events preserve a failed pending attempt without acknowledging it', () => {
+    const f = fixture();
+    const pending = enqueueArchitectureProjectionJob(realpathSync(f.repoRoot), ['event-before-restamp'], ['source-before-restamp'], ['src/index.ts'])!;
+    let projectionCalls = 0;
+    const result = drainArchitectureProjectionJobs(f.repoRoot, {
+      consumerRoot: f.consumerRoot, policy,
+      sourceEvents: [{ event_id: 'event-restamp', source_key: 'source-restamp', changed_paths: ['docs/architecture/index.md'] }],
+      run: (_binary, args) => {
+        if (args[0] === 'capabilities') return capabilities();
+        projectionCalls += 1;
+        return { status: 1, signal: null, stdout: '', stderr: 'provider unavailable' };
+      },
+    });
+    expect(result).toMatchObject({ status: 'retry-pending', jobId: pending.jobId, sourceEventIds: pending.sourceEventIds, acknowledgeSourceEvents: false });
+    expect(projectionCalls).toBe(1);
+    expect(result.queue).toMatchObject({ pending: 1, running: 0, receipts: 0, deadLetters: 0 });
+    const retained = JSON.parse(readFileSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending', `${pending.jobId}.json`), 'utf8'));
+    expect(retained).toMatchObject({ attempt: 1, sourceEventIds: pending.sourceEventIds, changedPaths: ['src/index.ts'], lastFailure: { kind: 'process' } });
+  });
+
   test('suppresses projection-owned docs and context paths without spawning', () => {
     const f = fixture();
     for (const path of ['docs/architecture/index.md', 'AGENTS.md', 'CLAUDE.md']) {
