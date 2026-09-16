@@ -343,6 +343,7 @@ describe('durable architecture projection orchestration', () => {
     const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs, deadlineMs: 20_000 });
     expect(timeouts).toEqual([10_000, 19_000]);
     expect(result.status).toBe('retry-pending');
+    expect(result.yieldReason).toBe('host-budget');
     expect(result.acknowledgeSourceEvents).toBe(false);
     expect(result.queue.pending).toBe(1);
     for (let attempt = 0; attempt < 4; attempt++) {

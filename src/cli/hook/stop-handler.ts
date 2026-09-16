@@ -36,6 +36,7 @@ import {
 import { isImplementationSurfacePath } from '../../effects/review/diff-fingerprint';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { loadArchitectureProjectionPolicy } from '../../effects/architecture/projection-config';
+import { startArchitectureProjectionContinuation } from '../../effects/architecture/projection-continuation';
 import { publishArchitectureProjectionRestampForDrain } from '../../effects/architecture/restamp-publication';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { sweepRunSummaries } from '../../effects/run-summary-retention';
@@ -91,6 +92,7 @@ export interface StopProjectionTarget {
 }
 
 export interface StopHandlerDependencies {
+  readonly startArchitectureProjectionContinuation?: typeof startArchitectureProjectionContinuation;
   readonly now?: () => Date;
   /** Wall clock shared by all bounded Stop work. */
   readonly wallClockMs?: () => number;
@@ -688,6 +690,22 @@ function planCompletenessBlock(
 }
 
 export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
+  let yielded = false;
+  const result = runStopHandlerWithinBudget(opts, () => { yielded = true; });
+  if (!yielded) return result;
+  // Start after every Stop write and gate has finished, including blocked Stop
+  // results. Launch is not completion and must not relax the original gate.
+  try {
+    const continuation = (opts.dependencies?.startArchitectureProjectionContinuation ?? startArchitectureProjectionContinuation)(
+      opts.collector.getRepoRoot(), opts.env ?? process.env,
+    );
+    return { ...result, stderr: `${result.stderr}[ArchitectureProjection] continuation started pid=${continuation.pid}; result log: ${continuation.logPath}. Completion requires a durable queue receipt.\n` };
+  } catch (error) {
+    return { ...result, stderr: `${result.stderr}[ArchitectureProjection] continuation launch failed: ${error instanceof Error ? error.message : String(error)}; job retained for repo-harness architecture-projection drain --json.\n` };
+  }
+}
+
+function runStopHandlerWithinBudget(opts: StopHandlerInput, onProjectionYield: () => void): StopHandlerResult {
   const repoRoot = opts.collector.getRepoRoot();
   const env = opts.env ?? process.env;
   const dependencies = opts.dependencies ?? {};
@@ -724,6 +742,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     const driftEvent = architectureDriftSourceEvent(changedSet);
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env, architectureBudget)
       ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [], ...architectureBudget });
+    if (architectureDrain.yieldReason === 'host-budget' && architectureDrain.queue.pending > 0) onProjectionYield();
     if (architectureDrain.status === 'disabled') {
       drainArchitectureDriftCascade(repoRoot, changedSet, (changedPath) => {
         const cascade = processArchitectureCascade(repoRoot, env, changedPath, journalBudget);

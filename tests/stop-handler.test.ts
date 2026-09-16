@@ -1396,3 +1396,38 @@ test('Stop reports a budget-deferred recommendation without scanning or requesti
   expect(output.stderr).toContain('[RefactorRecommendations] deferred: insufficient remaining Stop work budget');
   expect(existsSync(join(cwd, '.ai/harness/runs/refactor-recommendations.json'))).toBe(false);
 });
+
+describe('architecture projection host-budget continuation', () => {
+  test('dispatches a yielded job after Stop projections finish and preserves the strict failure gate', () => {
+    const { cwd } = gitFixture();
+    writeFileSync(join(cwd, '.ai/harness/test-home/.repo-harness/config.json'), JSON.stringify({
+      architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'strict' },
+    }));
+    const order: string[] = [];
+    const result = runStopHandler({
+      collector: collector(cwd, () => { order.push('state'); return canonicalState(); }),
+      dependencies: {
+        observeProjectionTransaction: () => { order.push('recovery-written'); },
+        drainArchitectureProjection: () => ({
+          schemaVersion: 'repo-harness.architecture-projection-drain/v1', status: 'retry-pending',
+          jobId: 'job-yielded', sourceEventIds: ['event-yielded'], resultStatus: null,
+          error: 'host budget exhausted', yieldReason: 'host-budget', acknowledgeSourceEvents: false,
+          queue: { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1', pending: 1,
+            running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: 'job-yielded', oldestDeadLetterJobId: null },
+        }),
+        ...{ startArchitectureProjectionContinuation: (root: string) => {
+          expect(root).toBe(cwd);
+          expect(order).toContain('recovery-written');
+          order.push('continuation');
+          return { pid: 12345, logPath: '.ai/harness/architecture-projection/continuations/test.log' };
+        } },
+      },
+    });
+    expect(order.at(-1)).toBe('continuation');
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).decision).toBe('block');
+    expect(result.stdout).toContain('Strict projection failure gate blocked Stop');
+    expect(result.stderr).toContain('continuation started');
+    expect(result.stderr).toContain('12345');
+  });
+});

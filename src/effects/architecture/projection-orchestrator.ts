@@ -51,6 +51,8 @@ export interface ArchitectureProjectionDrainResultV1 {
   error: string | null;
   acknowledgeSourceEvents: boolean;
   queue: ArchitectureProjectionQueueStateV1;
+  /** The host yielded its own shorter budget; the provider attempt may resume outside it. */
+  yieldReason?: 'host-budget';
 }
 
 export interface ArchitectureProjectionOrchestratorOptions extends ArchctxProviderOptions {
@@ -156,7 +158,7 @@ export function drainArchitectureProjectionJobs(
     if (error instanceof ArchitectureProjectionOwnershipError) return lostOwnership(root, job, error);
     // A host yielding its shorter time slice is not a failed business attempt.
     const classified = options.deadlineMs !== undefined && clock() >= options.deadlineMs
-      ? { kind: 'host-budget' as const, message: 'host architecture projection budget exhausted; job retained for an explicit drain' }
+      ? { kind: 'host-budget' as const, message: 'host architecture projection budget exhausted; job retained for continuation' }
       : classify(error);
     let transition: ReturnType<typeof failArchitectureProjectionJob>;
     try {
@@ -166,7 +168,7 @@ export function drainArchitectureProjectionJobs(
       const transitionMessage = transitionError instanceof Error ? transitionError.message : String(transitionError);
       throw new Error(`${classified.message}; architecture projection failure transition failed: ${transitionMessage}`, { cause: error });
     }
-    return outcome(
+    const result = outcome(
       root,
       transition.state === 'dead-letter' ? 'dead-letter' : 'retry-pending',
       job.jobId,
@@ -175,6 +177,8 @@ export function drainArchitectureProjectionJobs(
       classified.message,
       false,
     );
+    if (classified.kind === 'host-budget') result.yieldReason = 'host-budget';
+    return result;
   }
   return outcome(root, 'succeeded', job.jobId, job.sourceEventIds, completedResultStatus, null, true);
 }

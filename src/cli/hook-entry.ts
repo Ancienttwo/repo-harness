@@ -13,6 +13,7 @@ import { DETACHED_TOOLING_POPULATE_FLAG, runDetachedToolingPopulate } from './ho
 import { writeAllSync } from './runtime/write-all-sync';
 import { PROCESS_GROUP_LAUNCHER_FLAG, runProcessGroupLauncherCli } from '../effects/process-group-launcher';
 import { PROCESS_SUPERVISOR_FLAG, runProcessSupervisorCli } from '../effects/process-supervisor';
+import { ARCHITECTURE_PROJECTION_CONTINUATION_FLAG, runArchitectureProjectionContinuationCli } from '../effects/architecture/projection-continuation';
 
 export type RunHookEntryOptions = RunHookOptions;
 export type RunHookEntryResult = RunHookResult;
@@ -31,6 +32,9 @@ function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: Rou
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
+  if (argv[0] === ARCHITECTURE_PROJECTION_CONTINUATION_FLAG) {
+    process.exit(runArchitectureProjectionContinuationCli(argv.slice(1)));
+  }
   if (argv[0] === PROCESS_SUPERVISOR_FLAG) {
     process.exit(await runProcessSupervisorCli(argv.slice(1)));
   }
