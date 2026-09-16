@@ -55,3 +55,5 @@ Formal acceptance remains unresolved: source cross-review admission permits one 
 ## Owner signoff
 
 The user explicitly approved the policy correction and owner acceptance after reviewing the concrete implementation and 31 passing canonical conditions. Freeze this corrected authority, reuse the verified source with metadata/provenance delta checks, then issue and verify the typed UserWaiverGrant and user_waiver AcceptanceReceipt. Preserve the original plugin rejection and the subsequent red-green evidence as history. No second external review or circuit reset.
+
+Local closeout requires the canonical template section order: workflow_contract_allows_path reads the first YAML block only. Restored Allowed Paths before Exit Criteria; no allowed path, acceptance decision or product semantics changed. Rebind the explicitly approved owner grant to the corrected contract bytes.

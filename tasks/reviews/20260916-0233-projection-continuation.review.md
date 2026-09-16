@@ -1,7 +1,7 @@
 # Review: Projection continuation
 
-> **Status**: Pending
-> **Recommendation**: fail
+> **Status**: Accepted
+> **Recommendation**: pass
 > **Scope**: Local source and process/receipt verification; no merge or release approval
 > **Reviewer**: gatekeeper agent continuation_gate
 > **Base**: d52f9a9be7a8056f6ece98e8ff1d7684cd3b7672
@@ -16,15 +16,16 @@ This PASS binds the frozen tree above. Final plan/contract/notes/review-only cha
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: reject
-> **Reviewer**: Codex
-> **Source**: codex-plugin
-> **Actor**: codex-plugin
-> **Reviewed Subject SHA256**: sha256:7ff07497c672adec86cfe72c9b8662826ab9c46b23d7727a4e2fb991667ab7a0
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: Codex
+> **Reviewed Subject SHA256**: sha256:3b67a8aafcdea329bc1d55fccb842b5013a33fc7750ebf5ff076118b14039314
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: d52f9a9be7a8056f6ece98e8ff1d7684cd3b7672
-> **Verification Evidence SHA256**: sha256:093ecd3f1336d4eb89596a977909654a1747d6492c6fac8918917cc44c570870
-> **Issued At**: 2026-09-16T02:12:23.995Z
+> **Verification Evidence SHA256**: sha256:2ee9f5ff89a88f4053956a4a52c3529e4e7956b35ec8090577d9ea79fb00bb9a
+> **Issued At**: 2026-09-16T07:49:39.054Z
 
-- Summary: Do not ship yet: detached execution exposes a strict Stop gate bypass. Review was static; tests were not run.
-- Findings: P2: Keep strict Stop blocked while the continuation owns unfinished work (src/cli/hook/stop-handler.ts:699-702) — After this launch, a subsequent Stop can encounter the child’s running job. projection-orchestrator.ts returns status='idle' for an existing running claim (lines 98 and 103), but the strict gate in stop-handler.ts:844 only blocks errors, retry-pending, or dead-letter. Consequently, with other gates satisfied, Stop succeeds before any completion receipt exists—even if the child subsequently fails. The added test checks only the launching Stop, missing this second-Stop bypass. Recommendation: Make strict gating account for unfinished queue work, including an idle drain with a running claim. Add a regression that holds the detached worker open, invokes another Stop, and verifies blocking until successful receipt completion.
+- Summary: User explicitly approved owner acceptance and changing user_waiver to allowed for the concrete strict Stop queue gate repair 228dddc5 after canonical preparation passed all 31 conditions. Record user_waiver; retain prior external rejection; no publication or installation approval.
+- Findings: none
+

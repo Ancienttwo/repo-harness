@@ -43,19 +43,6 @@ On 2026-09-16 the user approved fixing the confirmed second-Stop bypass. Change 
 {"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}
 ```
 
-## Exit Criteria (Machine Verifiable)
-
-```yaml
-exit_criteria:
-  files_exist:
-    - src/effects/architecture/projection-continuation.ts
-    - tests/architecture-projection-continuation.test.ts
-    - docs/researches/20260916-projection-continuation.md
-  artifacts_exist:
-    - .ai/harness/runs/projection-continuation/real-provider-continuation-receipt.json
-```
-
-
 ## Allowed Paths
 
 ```yaml
@@ -74,6 +61,19 @@ allowed_paths:
   - tasks/notes/20260916-0233-projection-continuation.notes.md
   - tasks/reviews/20260916-0233-projection-continuation.review.md
 ```
+
+## Exit Criteria (Machine Verifiable)
+
+```yaml
+exit_criteria:
+  files_exist:
+    - src/effects/architecture/projection-continuation.ts
+    - tests/architecture-projection-continuation.test.ts
+    - docs/researches/20260916-projection-continuation.md
+  artifacts_exist:
+    - .ai/harness/runs/projection-continuation/real-provider-continuation-receipt.json
+```
+
 
 ## Evidence Requirements
 
