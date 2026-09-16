@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-16 16:28
+> **Related Plan**: plans/archive/plan-20260916-0233-projection-continuation.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260916-1628
+> **Archive Projection V1**: `plans/plan-20260916-0233-projection-continuation.md` => `plans/archive/plan-20260916-0233-projection-continuation.md`
+> **Archive Projection V1**: `tasks/notes/20260916-0233-projection-continuation.notes.md` => `tasks/archive/notes-20260916-1628-projection-continuation.md`
+> **Archive Projection V1**: `tasks/contracts/20260916-0233-projection-continuation.contract.md` => `tasks/archive/contract-20260916-1628-projection-continuation.md`
+> **Archive Projection V1**: `tasks/reviews/20260916-0233-projection-continuation.review.md` => `tasks/archive/review-20260916-1628-projection-continuation.md`
+
 # Plan: Resume architecture projection after Stop budget
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260916-0233
 > **Slug**: projection-continuation
 > **Planning Source**: codex-plan-or-waza-think
@@ -12,9 +22,9 @@
 > **Rollback Surface**: Isolated continuation code tests and docs
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260916-0233-projection-continuation.contract.md`
-> **Task Review**: `tasks/reviews/20260916-0233-projection-continuation.review.md`
-> **Implementation Notes**: `tasks/notes/20260916-0233-projection-continuation.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260916-1628-projection-continuation.md`
+> **Task Review**: `tasks/archive/review-20260916-1628-projection-continuation.md`
+> **Implementation Notes**: `tasks/archive/notes-20260916-1628-projection-continuation.md`
 
 ## P1: Architecture Map
 

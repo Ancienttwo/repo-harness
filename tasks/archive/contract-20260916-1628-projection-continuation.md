@@ -1,13 +1,23 @@
+> **Archived**: 2026-09-16 16:28
+> **Related Plan**: plans/archive/plan-20260916-0233-projection-continuation.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260916-1628
+> **Archive Projection V1**: `plans/plan-20260916-0233-projection-continuation.md` => `plans/archive/plan-20260916-0233-projection-continuation.md`
+> **Archive Projection V1**: `tasks/notes/20260916-0233-projection-continuation.notes.md` => `tasks/archive/notes-20260916-1628-projection-continuation.md`
+> **Archive Projection V1**: `tasks/contracts/20260916-0233-projection-continuation.contract.md` => `tasks/archive/contract-20260916-1628-projection-continuation.md`
+> **Archive Projection V1**: `tasks/reviews/20260916-0233-projection-continuation.review.md` => `tasks/archive/review-20260916-1628-projection-continuation.md`
+
 # Task Contract: Projection continuation
 
-> **Status**: Active
-> **Plan**: plans/plan-20260916-0233-projection-continuation.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260916-0233-projection-continuation.md
 > **Task Profile**: bugfix
 > **Owner**: Codex
 > **Capability ID**: root
 > **Review Base**: d52f9a9be7a8056f6ece98e8ff1d7684cd3b7672
-> **Review File**: tasks/reviews/20260916-0233-projection-continuation.review.md
-> **Notes File**: tasks/notes/20260916-0233-projection-continuation.notes.md
+> **Review File**: tasks/archive/review-20260916-1628-projection-continuation.md
+> **Notes File**: tasks/archive/notes-20260916-1628-projection-continuation.md
 
 ## Why
 
@@ -59,10 +69,10 @@ allowed_paths:
   - tests/architecture-projection-orchestration.test.ts
   - tests/architecture-projection-continuation.test.ts
   - docs/researches/20260916-projection-continuation.md
-  - plans/plan-20260916-0233-projection-continuation.md
-  - tasks/contracts/20260916-0233-projection-continuation.contract.md
-  - tasks/notes/20260916-0233-projection-continuation.notes.md
-  - tasks/reviews/20260916-0233-projection-continuation.review.md
+  - plans/archive/plan-20260916-0233-projection-continuation.md
+  - tasks/archive/contract-20260916-1628-projection-continuation.md
+  - tasks/archive/notes-20260916-1628-projection-continuation.md
+  - tasks/archive/review-20260916-1628-projection-continuation.md
 ```
 
 ## Exit Criteria (Machine Verifiable)
