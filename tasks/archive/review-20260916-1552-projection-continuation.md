@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-16 15:52
+> **Related Plan**: plans/archive/plan-20260916-0233-projection-continuation.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260916-1552
+> **Archive Projection V1**: `plans/plan-20260916-0233-projection-continuation.md` => `plans/archive/plan-20260916-0233-projection-continuation.md`
+> **Archive Projection V1**: `tasks/notes/20260916-0233-projection-continuation.notes.md` => `tasks/archive/notes-20260916-1552-projection-continuation.md`
+> **Archive Projection V1**: `tasks/contracts/20260916-0233-projection-continuation.contract.md` => `tasks/archive/contract-20260916-1552-projection-continuation.md`
+> **Archive Projection V1**: `tasks/reviews/20260916-0233-projection-continuation.review.md` => `tasks/archive/review-20260916-1552-projection-continuation.md`
+
 # Review: Projection continuation
 
 > **Status**: Accepted

@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-16 15:52
+> **Related Plan**: plans/archive/plan-20260916-0233-projection-continuation.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260916-1552
+> **Archive Projection V1**: `plans/plan-20260916-0233-projection-continuation.md` => `plans/archive/plan-20260916-0233-projection-continuation.md`
+> **Archive Projection V1**: `tasks/notes/20260916-0233-projection-continuation.notes.md` => `tasks/archive/notes-20260916-1552-projection-continuation.md`
+> **Archive Projection V1**: `tasks/contracts/20260916-0233-projection-continuation.contract.md` => `tasks/archive/contract-20260916-1552-projection-continuation.md`
+> **Archive Projection V1**: `tasks/reviews/20260916-0233-projection-continuation.review.md` => `tasks/archive/review-20260916-1552-projection-continuation.md`
+
 # Projection continuation implementation notes
 
 User approved automatic continuation after the completed fortune-algo first-capability slice. Work is isolated in codex/architecture-projection-continuation at d5b4f22b. Existing main WIP and fortune-algo changes are preserved.
@@ -32,7 +42,7 @@ The user approved takeover after the original writer stopped and approved formal
 
 ## Formal acceptance blocker
 
-The first canonical `bash scripts/verify-sprint.sh --prepare-acceptance --contract tasks/contracts/20260916-0233-projection-continuation.contract.md` attempt exited 1 before evidence freeze. Log: `.ai/harness/runs/projection-continuation/formal-prepare.log`. archctx returned `human-action-required`, `unresolved-major-change`, with refresh reason `verified-flow-proof-changed`; 27 capability nodes are affected. Its snapshot also reports CodeGraph unavailable and this worktree has no `.codegraph/` directory. These are observed facts; missing indexing alone is not proven to explain the major-change classification. No projected tracked documents changed, no external review ran, and no AcceptanceReceipt was issued. Restoring indexing and resolving the wide architecture candidate requires a separately bounded architecture task; do not disable projection or widen allowed_paths just to pass. Production/test source remains the reviewed candidate.
+The first canonical `bash scripts/verify-sprint.sh --prepare-acceptance --contract tasks/archive/contract-20260916-1552-projection-continuation.md` attempt exited 1 before evidence freeze. Log: `.ai/harness/runs/projection-continuation/formal-prepare.log`. archctx returned `human-action-required`, `unresolved-major-change`, with refresh reason `verified-flow-proof-changed`; 27 capability nodes are affected. Its snapshot also reports CodeGraph unavailable and this worktree has no `.codegraph/` directory. These are observed facts; missing indexing alone is not proven to explain the major-change classification. No projected tracked documents changed, no external review ran, and no AcceptanceReceipt was issued. Restoring indexing and resolving the wide architecture candidate requires a separately bounded architecture task; do not disable projection or widen allowed_paths just to pass. Production/test source remains the reviewed candidate.
 
 ## Index recovery and candidate reconciliation
 
