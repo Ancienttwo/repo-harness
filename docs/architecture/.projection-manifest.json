@@ -1228,8 +1228,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/architecture-projection-continuation",
-        "commit": "228dddc533586499d4f03ca19fabd8e702cb87c5",
-        "committedAt": "2026-09-16T13:11:25+08:00"
+        "commit": "14e9083e4e1fc616794dcb117d4174b4400b7f7c",
+        "committedAt": "2026-09-16T16:27:17+08:00"
       }
     },
     {
@@ -1248,8 +1248,8 @@
       "outputDigest": "sha256:beaaa466d51cbd8f929fd6acd6645c6f5136cccf539f09b63a273e5ab38519fa",
       "verifiedAgainst": {
         "branch": "codex/architecture-projection-continuation",
-        "commit": "d52f9a9be7a8056f6ece98e8ff1d7684cd3b7672",
-        "committedAt": "2026-09-14T10:35:06+08:00"
+        "commit": "14e9083e4e1fc616794dcb117d4174b4400b7f7c",
+        "committedAt": "2026-09-16T16:27:17+08:00"
       }
     },
     {

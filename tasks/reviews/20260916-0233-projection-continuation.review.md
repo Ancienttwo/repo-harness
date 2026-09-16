@@ -20,12 +20,12 @@ This PASS binds the frozen tree above. Final plan/contract/notes/review-only cha
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: Codex
-> **Reviewed Subject SHA256**: sha256:3b67a8aafcdea329bc1d55fccb842b5013a33fc7750ebf5ff076118b14039314
+> **Reviewed Subject SHA256**: sha256:035a85eeb95ee7391e8faa4e586e68abf57bd8291801ce6bfd73d93ce5008344
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: d52f9a9be7a8056f6ece98e8ff1d7684cd3b7672
-> **Verification Evidence SHA256**: sha256:1013e6e443867a3cc354a2bb95b23039716fa4dec7a991be1a7940286fbc3df7
-> **Issued At**: 2026-09-16T07:51:59.794Z
+> **Verification Evidence SHA256**: sha256:37ff077d60c60a2a8535531fd199ea0575d1562acaf3d8812b7a1db85192f892
+> **Issued At**: 2026-09-16T08:28:06.032Z
 
-- Summary: Same explicit user approval of owner acceptance for strict gate repair 228dddc5; rebind after restoring canonical contract section order. No source or allowed-path change, no new review, no publication or installation.
+- Summary: User explicitly approved owner acceptance for the strict Stop repair, then approved this bounded archive-integrity follow-up and completion of the same closeout. Fix 14e9083e preserves the frozen Verification Plan; canonical preparation run-20260916T162717-6051 passed 34 conditions. Preserve the prior plugin rejection and record user_waiver; no second external review, publication or installation.
 - Findings: none
 
