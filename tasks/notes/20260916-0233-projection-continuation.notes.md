@@ -57,3 +57,13 @@ Formal acceptance remains unresolved: source cross-review admission permits one 
 The user explicitly approved the policy correction and owner acceptance after reviewing the concrete implementation and 31 passing canonical conditions. Freeze this corrected authority, reuse the verified source with metadata/provenance delta checks, then issue and verify the typed UserWaiverGrant and user_waiver AcceptanceReceipt. Preserve the original plugin rejection and the subsequent red-green evidence as history. No second external review or circuit reset.
 
 Local closeout requires the canonical template section order: workflow_contract_allows_path reads the first YAML block only. Restored Allowed Paths before Exit Criteria; no allowed path, acceptance decision or product semantics changed. Rebind the explicitly approved owner grant to the corrected contract bytes.
+
+## Approved archive integrity repair
+
+P1: archive-workflow.sh projects lifecycle navigation; Verification Plan owns executable acceptance criteria. P2: the real archive changed the metadata-delta command by replacing historical task paths, which invalidated the accepted plan hash; reverting that archive restored the valid receipt. P3: skip the Verification Plan section during the existing path rewrite, preserving its bytes and hash while continuing navigation projection outside it. Prediction and actual archive share the same function. No receipt validator change, new dependency, file or abstraction.
+
+The existing collision-safe archive integration case now includes historical paths in its executable command and checks exact section retention, plan hash and navigation rewrites. It failed on the original helper (archive-plan-pre-fix.log, exit 1) and passed after the three-line guard (archive-plan-green.log). The helper mirror is regenerated through sync:helpers. Final acceptance reruns the existing archive and receipt files, required integrity checks and types; unchanged continuation source evidence remains baseline_with_delta under a narrow path guard. Actual receipt verification before and after archive is the final integration criterion.
+
+Final evidence freeze: tree `0007ee85ee0fa5eb6110cfac9186444697aa2261`; archive suite and receipt suite passed with unchanged snapshots, alongside types and required integrity checks except task-sync. Preparation was Partial solely because the new substantive diff digest was absent, causing its five dependent baseline checks to reject reuse. Add the exact digest below and rerun current metadata/architecture checks; reuse the successful executions behind a full-tree metadata-only guard rather than repeat the suites.
+
+> **Substantive Change SHA256**: `sha256:3e0dcb3fa7b7848419bdcb4287a14c942ed2dac23bbb82eee7d35a6bd9d14a06`

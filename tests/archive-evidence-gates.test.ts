@@ -15,6 +15,8 @@ import { join } from "path";
 import { copyHelpers } from "./helpers/helper-script-fixture";
 import { run as scriptRun, tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
+import { hashVerificationPlan, parseVerificationPlanFromContractText } from "../src/core/evidence/verification-plan";
+
 const ROOT = join(import.meta.dir, "..");
 
 const FIXTURE_AUTHORITY_ENV_KEYS = [
@@ -937,6 +939,13 @@ describe("archive-workflow helper integration", () => {
           "",
         ].join("\n"),
       );
+      const verificationPlan = {
+        protocol: 1,
+        checks: [{ id: "frozen-paths", kind: "command", cwd: ".", phase: "verification", cost: "normal",
+          evidence_policy: "current_exact", inputs: { env: [] }, necessity: "Keep the accepted historical paths literal",
+          command: `printf '%s' '${plan} ${contract} ${review} ${notes}'` }],
+      };
+      const verificationSection = `## Verification Plan\n\n\`\`\`json\n${JSON.stringify(verificationPlan, null, 2)}\n\`\`\`\n`;
       writeFileSync(
         join(cwd, contract),
         [
@@ -956,6 +965,7 @@ describe("archive-workflow helper integration", () => {
           `  - ${notes}`,
           "```",
           "",
+          verificationSection,
           "## Exit Criteria (Machine Verifiable)",
           "",
           "```yaml",
@@ -970,6 +980,7 @@ describe("archive-workflow helper integration", () => {
       writeFileSync(join(cwd, notes), `# Implementation Notes: demo\n\n> **Plan**: ${plan}\n> **Contract**: ${contract}\n> **Review**: ${review}\n`);
       writeFileSync(join(cwd, "tasks/todos.md"), `# Deferred Goal Ledger\n\n> **Status**: Backlog\n> **Updated**: now\n\n## Deferred Goals\n\n${plan}\n`);
 
+      const beforePlanHash = hashVerificationPlan(parseVerificationPlanFromContractText(readFileSync(join(cwd, contract), "utf8")));
       const collision = "tasks/archive/review-20990101-0101-demo.md";
       writeFileSync(join(cwd, collision), "pre-existing review archive\n");
       const res = scriptRun(
@@ -1003,11 +1014,13 @@ describe("archive-workflow helper integration", () => {
         const content = readFileSync(join(cwd, destination), "utf-8");
         for (const [source, archived] of expectedPairs) {
           expect(content).toContain(`> **Archive Projection V1**: \`${source}\` => \`${archived}\``);
-          expect(content.split("\n\n").slice(1).join("\n\n")).not.toContain(source);
+          expect(content.replace(verificationSection, "").split("\n\n").slice(1).join("\n\n")).not.toContain(source);
         }
       }
       expect(readFileSync(join(cwd, destinations.plan), "utf-8")).toContain(`> **Task Contract**: \`${destinations.contract}\``);
       const archivedContract = readFileSync(join(cwd, destinations.contract), "utf-8");
+      expect(archivedContract).toContain(verificationSection);
+      expect(hashVerificationPlan(parseVerificationPlanFromContractText(archivedContract))).toBe(beforePlanHash);
       expect(archivedContract).toContain(`> **Plan**: ${destinations.plan}`);
       expect(archivedContract).toContain(`  - ${destinations.review}`);
       expect(archivedContract).toContain(`    - ${destinations.notes}`);

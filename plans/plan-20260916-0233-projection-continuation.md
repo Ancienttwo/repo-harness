@@ -36,6 +36,7 @@ Reuse existing queue ownership and provider contracts. No daemon, second retry s
 - [x] Prepare canonical verification evidence and finish the existing evidence-only review.
 - [x] Restore the linked-worktree index and reconcile the proof-only architecture candidate.
 - [x] Fix the approved second-Stop strict queue gate finding and capture source/bundle red-green evidence.
+- [x] Preserve frozen Verification Plan bytes during archive path projection and prove the regression red-green.
 - [ ] Complete owner acceptance and local integration/archive after resolving the formal acceptance policy boundary.
 
 ## Evidence Contract

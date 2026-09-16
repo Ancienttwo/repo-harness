@@ -24,7 +24,7 @@ Resume host-budget-yielded projection once after Stop using the existing queue a
 
 ## Stop Conditions
 
-- Stop if edits exceed the approved strict-queue-gate follow-up or a required gate cannot be satisfied from valid evidence.
+- Stop if edits exceed the approved strict-queue-gate and archive-integrity follow-ups or a required gate cannot be satisfied from valid evidence.
 - Stop before changes outside Allowed Paths or any relaxation of queue/provider/acceptance gates.
 
 ## Approved strict gate follow-up
@@ -47,6 +47,9 @@ On 2026-09-16 the user approved fixing the confirmed second-Stop bypass. Change 
 
 ```yaml
 allowed_paths:
+  - scripts/archive-workflow.sh
+  - assets/templates/helpers/archive-workflow.sh
+  - tests/archive-evidence-gates.test.ts
   - docs/architecture/.projection-manifest.json
   - src/cli/hook/stop-handler.ts
   - src/cli/hook-entry.ts
@@ -84,10 +87,10 @@ evidence_requirements:
 
 ## Root Cause Evidence
 
-- root_cause: The continuation exposes an existing running claim as drain status idle; stop-handler.ts checks status instead of unfinished queue counts, so a second strict Stop bypasses delivery gating. The original missing-consumer repair remains covered by its prior red evidence.
-- repro: bun test tests/architecture-projection-continuation.test.ts --test-name-pattern 'Stop yields' on candidate 88248407: hold the detached provider, invoke a second Stop, observe empty stdout instead of strict block.
-- regression_guard: tests/architecture-projection-continuation.test.ts
-- pre_fix_failure_artifact: .ai/harness/runs/projection-continuation/strict-gate-pre-fix.log
+- root_cause: archive-workflow.sh rewrites every matching path in the whole contract, including executable Verification Plan commands. Navigation projection changes the acceptance plan hash and invalidates the previously valid receipt.
+- repro: bun run test tests/archive-evidence-gates.test.ts --test-name-pattern 'collision-safe archive pointers' before the helper fix; the archived command contains rewritten historical paths and fails the original section assertion.
+- regression_guard: tests/archive-evidence-gates.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/projection-continuation/archive-plan-pre-fix.log
 
 ## Verification Plan
 
@@ -96,17 +99,80 @@ evidence_requirements:
   "protocol": 1,
   "checks": [
     {
-      "id": "metadata-delta",
+      "id": "archive-freeze",
       "kind": "command",
-      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"4c4790604cee79bb9fc37c6fcf2cf56345c9caab\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Non-metadata changes after verified candidate: \" + unexpected.join(\", \")); console.log(\"Verified metadata-only delta: \" + changed.join(\", \"));'",
+      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"0007ee85ee0fa5eb6110cfac9186444697aa2261\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Changes outside the approved archive repair: \" + unexpected.join(\", \")); console.log(\"Verified bounded archive repair delta: \" + changed.join(\", \"));'",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Bind owner acceptance to the verified strict-gate implementation; permit task metadata and deterministic manifest provenance only.",
+      "necessity": "Prove helper and regression bytes are unchanged from the successful archive and receipt executions; only final task metadata and deterministic manifest provenance may differ.",
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "archive-delta",
+      "kind": "command",
+      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"4c4790604cee79bb9fc37c6fcf2cf56345c9caab\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"scripts/archive-workflow.sh\", \"assets/templates/helpers/archive-workflow.sh\", \"tests/archive-evidence-gates.test.ts\", \"docs/researches/20260916-projection-continuation.md\", \"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Changes outside the approved archive repair: \" + unexpected.join(\", \")); console.log(\"Verified bounded archive repair delta: \" + changed.join(\", \"));'",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Bind unchanged continuation evidence to its verified source; permit only the approved archive helper, regression, generated mirror and task/research/provenance delta.",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "archive-evidence",
+      "kind": "package_test",
+      "path": "tests/archive-evidence-gates.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "baseline_with_delta",
+      "necessity": "Exercise the actual archive helper, collision-safe navigation and frozen Verification Plan bytes/hash, including prediction and receipt gates.",
+      "inputs": {
+        "env": []
+      },
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-a95d332718bd41de9557.json",
+        "execution_id": "vx-a95d332718bd41de9557"
+      },
+      "delta_checks": [
+        "archive-freeze",
+        "archive-delta",
+        "projection-manifest",
+        "architecture",
+        "task-sync",
+        "workflow"
+      ]
+    },
+    {
+      "id": "acceptance-receipt",
+      "kind": "package_test",
+      "path": "tests/acceptance-receipt.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "baseline_with_delta",
+      "necessity": "Verify unchanged receipt authority, lifecycle projections and rejection of invalid evidence.",
+      "inputs": {
+        "env": []
+      },
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-317d20e803eb49beb166.json",
+        "execution_id": "vx-317d20e803eb49beb166"
+      },
+      "delta_checks": [
+        "archive-freeze",
+        "archive-delta",
+        "projection-manifest",
+        "architecture",
+        "task-sync",
+        "workflow"
+      ]
     },
     {
       "id": "projection-manifest",
@@ -138,7 +204,8 @@ evidence_requirements:
         "execution_id": "vx-365ef1e80f1a4430b36a"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -162,7 +229,8 @@ evidence_requirements:
         "execution_id": "vx-db8e9c3dbdaa49809c12"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -186,7 +254,8 @@ evidence_requirements:
         "execution_id": "vx-6e1b1be1f61249cf9a80"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -210,7 +279,8 @@ evidence_requirements:
         "execution_id": "vx-a67e1e32cab4444cb9ac"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -234,7 +304,8 @@ evidence_requirements:
         "execution_id": "vx-09daee7f6a7a4f139461"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -254,11 +325,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-9ffe4d89d0ac4c2ebe9d.json",
-        "execution_id": "vx-9ffe4d89d0ac4c2ebe9d"
+        "run_file": ".ai/harness/runs/verification-vx-d721a9f9d79f4f799563.json",
+        "execution_id": "vx-d721a9f9d79f4f799563"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -278,11 +350,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-f7c108664c3044c19549.json",
-        "execution_id": "vx-f7c108664c3044c19549"
+        "run_file": ".ai/harness/runs/verification-vx-513bdd5ea78248e39aa8.json",
+        "execution_id": "vx-513bdd5ea78248e39aa8"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -302,11 +375,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-2ed144923e9e49d8b9bd.json",
-        "execution_id": "vx-2ed144923e9e49d8b9bd"
+        "run_file": ".ai/harness/runs/verification-vx-9d91b8f0f99b4a9cbb3f.json",
+        "execution_id": "vx-9d91b8f0f99b4a9cbb3f"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -326,11 +400,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-9a0ece5c6fa24b72ae74.json",
-        "execution_id": "vx-9a0ece5c6fa24b72ae74"
+        "run_file": ".ai/harness/runs/verification-vx-4579cff62ab442de9064.json",
+        "execution_id": "vx-4579cff62ab442de9064"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -350,11 +425,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-cb89fb6a1c3a4d1995cc.json",
-        "execution_id": "vx-cb89fb6a1c3a4d1995cc"
+        "run_file": ".ai/harness/runs/verification-vx-9e7b04d10cd94f1c90d8.json",
+        "execution_id": "vx-9e7b04d10cd94f1c90d8"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -413,11 +489,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-0c575a4f13d043d3aa10.json",
-        "execution_id": "vx-0c575a4f13d043d3aa10"
+        "run_file": ".ai/harness/runs/verification-vx-19644f1a66e848129517.json",
+        "execution_id": "vx-19644f1a66e848129517"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -437,11 +514,12 @@ evidence_requirements:
         "env": []
       },
       "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-3471582b944448f799b0.json",
-        "execution_id": "vx-3471582b944448f799b0"
+        "run_file": ".ai/harness/runs/verification-vx-e50348d0dca7476687dc.json",
+        "execution_id": "vx-e50348d0dca7476687dc"
       },
       "delta_checks": [
-        "metadata-delta",
+        "archive-freeze",
+        "archive-delta",
         "projection-manifest",
         "architecture",
         "task-sync",
@@ -471,3 +549,7 @@ Gatekeeper PASS binds verified tree31c9d1f5234b772ebe759fd9d2d567db2538e6de. The
 ## Owner acceptance authorization
 
 On 2026-09-16 the user explicitly approved changing user_waiver to allowed and signing off the concrete strict-gate repair (implementation 228dddc5, canonical preparation run-20260916T131135-79102). Record the disposition as user_waiver, never external_pass. This does not authorize publication or installation.
+
+## Approved archive integrity follow-up
+
+User approved fixing archive path rewriting of the frozen Verification Plan and completing the same owner-accepted closeout. Scope is the canonical archive helper, its generated helper projection, the existing archive evidence tests and task/research records. Preserve executable plan bytes and hash; continue rewriting navigation pointers; do not relax receipt validation or create compatibility authority. Verify red-green plus actual receipt validity before and after archive.

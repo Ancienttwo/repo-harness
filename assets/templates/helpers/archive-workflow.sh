@@ -491,6 +491,9 @@ rewrite_archive_projection_file() {
     awk \
       -v source_path="${archive_projection_sources[$index]}" \
       -v destination_path="${archive_projection_destinations[$index]}" '
+      # Executable acceptance criteria are frozen authority, not navigation.
+      /^## / { verification_plan = ($0 ~ /^## Verification Plan[[:space:]]*$/) }
+      verification_plan { print; next }
       {
         remaining = $0
         rendered = ""
