@@ -827,6 +827,9 @@ function runStopHandlerWithinBudget(opts: StopHandlerInput, onProjectionYield: (
   }
   if (restampAdvisory) stderr.push(`${restampAdvisory}\n`);
   if (journalSideEffectError) stderr.push(`[PostEditJournal] side effects failed: ${journalSideEffectError}\n`);
+  const activeQueue = architectureDrain?.queue;
+  // An idle drain may mean another process owns the claim, not completion.
+  const unfinishedProjection = !!activeQueue && (activeQueue.pending > 0 || activeQueue.running > 0 || activeQueue.deadLetters > 0);
   let architectureGate: 'advisory' | 'strict' = 'advisory';
   try {
     architectureGate = loadArchitectureProjectionPolicy(env).failureGate;
@@ -836,17 +839,19 @@ function runStopHandlerWithinBudget(opts: StopHandlerInput, onProjectionYield: (
     // An unreadable policy cannot prove that strict projection delivery was
     // enabled. Preserve the default advisory posture unless a durable job is
     // already active and therefore proves this lane owns pending work.
-    const activeQueue = architectureDrain?.queue;
-    architectureGate = activeQueue && (activeQueue.pending > 0 || activeQueue.running > 0 || activeQueue.deadLetters > 0)
+    architectureGate = unfinishedProjection
       ? 'strict'
       : 'advisory';
   }
-  if (architectureGate === 'strict' && (architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
+  if (architectureGate === 'strict' && (unfinishedProjection || architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
     const recovery = architectureDrain?.status === 'dead-letter' && architectureDrain.jobId
       ? ` Recover with: repo-harness architecture-projection retry-dead-letter --job-id ${architectureDrain.jobId} --json.`
       : ' Re-run repo-harness architecture-projection drain --json after correcting the reported failure.';
+    const queueState = unfinishedProjection
+      ? ` pending=${activeQueue!.pending} running=${activeQueue!.running} dead-letter=${activeQueue!.deadLetters}.`
+      : '';
     return {
-      ...block(`[ArchitectureProjection] Strict projection failure gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.${recovery}`),
+      ...block(`[ArchitectureProjection] Strict projection failure gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.${queueState}${recovery}`),
       stderr: stderr.join(''),
     };
   }

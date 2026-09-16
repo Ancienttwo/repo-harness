@@ -34,7 +34,9 @@ Reuse existing queue ownership and provider contracts. No daemon, second retry s
 - [x] Implement source and bundled continuation, preserving policy/claim/gate behavior.
 - [x] Verify parent-exit survival, duplicate consumers, failure/manual policy and actual archctx receipt in a disposable fortune-algo copy.
 - [x] Prepare canonical verification evidence and finish the existing evidence-only review.
-- [ ] Complete the approved formal AcceptanceReceipt and local integration/archive boundary.
+- [x] Restore the linked-worktree index and reconcile the proof-only architecture candidate.
+- [x] Fix the approved second-Stop strict queue gate finding and capture source/bundle red-green evidence.
+- [ ] Complete owner acceptance and local integration/archive after resolving the formal acceptance policy boundary.
 
 ## Evidence Contract
 

@@ -36,7 +36,7 @@ beforeAll(async () => {
   writeFileSync(join(provider, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.5.10', type: 'module', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/provider.mjs' } }));
   writeFileSync(join(provider, 'bin/provider.mjs'), `
 import { createHash } from 'node:crypto';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
  console.log(JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.10' },
@@ -46,6 +46,9 @@ if (args[0] === 'capabilities') {
 } else {
  const request = JSON.parse(args[3]);
  appendFileSync(process.env.CONTINUATION_TEST_CALLS, JSON.stringify({ requestId: request.requestId, pid: process.pid }) + '\\n');
+ if (process.env.CONTINUATION_TEST_RELEASE && existsSync(process.env.CONTINUATION_TEST_YIELD_MARKER)) {
+   while (!existsSync(process.env.CONTINUATION_TEST_RELEASE)) await new Promise(resolve => setTimeout(resolve, 20));
+ }
  await new Promise(resolve => setTimeout(resolve, Number(process.env.CONTINUATION_TEST_DELAY || 0)));
  if (process.env.CONTINUATION_TEST_FAIL === '1') { console.error('fixture provider failure'); process.exit(1); }
  const d = 'sha256:' + '1'.repeat(64);
@@ -129,20 +132,37 @@ describe('architecture projection detached continuation', () => {
   for (const mode of ['source', 'bundle']) {
     test(`${mode} Stop yields an expired host budget and completes after parent exit with one owned receipt`, async () => {
       const f = fixture(mode);
+      const policyPath = join(f.root, '.ai/harness/test-home/.repo-harness/config.json');
+      const policy = JSON.parse(readFileSync(policyPath, 'utf8'));
+      policy.architecture.projection_failure_gate = 'strict';
+      writeFileSync(policyPath, JSON.stringify(policy));
       const head = git(f.root, ['rev-parse', 'HEAD']);
       writeFileSync(join(f.root, 'src/index.ts'), 'export const value = 2;\n');
       const entry = mode === 'source' ? join(consumer, 'src/cli/hook-entry.ts') : bundle;
-      const env = { ...f.env, CONTINUATION_TEST_DELAY: '2000', CONTINUATION_TEST_YIELD_MARKER: join(f.root, '.ai/harness/host-clock-expired') };
+      const env = { ...f.env, CONTINUATION_TEST_RELEASE: join(f.root, '.ai/harness/release-child'), CONTINUATION_TEST_YIELD_MARKER: join(f.root, '.ai/harness/host-clock-expired') };
       const parent = spawnSync(process.execPath, ['--preload', parentClock, entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
         input: JSON.stringify({ cwd: f.root, session_id: 'continuation-test' }), encoding: 'utf8', timeout: 35_000 });
       expect(parent.status).toBe(0);
+      expect(JSON.parse(parent.stdout).decision).toBe('block');
       expect(parent.stderr).toContain('continuation started pid=');
       expect(receipts(f.root)).toHaveLength(0);
       await until(() => architectureProjectionQueueState(f.root).running === 1, 'detached claim');
       // A second detached wake while the first owns the queue must not invoke
       // the provider or publish a competing receipt.
-      const duplicate = launch(f.root, env);
-      await until(() => readFileSync(join(f.root, duplicate.logPath), 'utf8').includes('"status":"idle"'), 'duplicate idle result');
+      try {
+        const duplicate = launch(f.root, env);
+        await until(() => readFileSync(join(f.root, duplicate.logPath), 'utf8').includes('"status":"idle"'), 'duplicate idle result');
+        const second = spawnSync(process.execPath, [entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
+          input: JSON.stringify({ cwd: f.root, session_id: 'continuation-second-stop' }), encoding: 'utf8', timeout: 35_000 });
+        expect(architectureProjectionQueueState(f.root).running).toBe(1);
+        expect(receipts(f.root)).toHaveLength(0);
+        expect(second.status).toBe(0);
+        expect(second.stdout).toContain('Strict projection failure gate blocked Stop');
+        expect(JSON.parse(second.stdout).decision).toBe('block');
+      } finally {
+        writeFileSync(env.CONTINUATION_TEST_RELEASE, 'release');
+        await until(() => receipts(f.root).length === 1, 'released child completion');
+      }
       await until(() => receipts(f.root).length === 1, 'provider completion');
       const [receipt] = receipts(f.root);
       expect(receipt.attempt).toBe(1); // host yield is refunded, not a business failure
@@ -152,6 +172,11 @@ describe('architecture projection detached continuation', () => {
       const calls = readFileSync(f.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line));
       expect(calls).toHaveLength(2); // expired Stop + independent full-budget attempt
       expect(new Set(calls.map(call => call.requestId)).size).toBe(1);
+      const completed = spawnSync(process.execPath, [entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
+        input: JSON.stringify({ cwd: f.root, session_id: 'continuation-completed-stop' }), encoding: 'utf8', timeout: 35_000 });
+      expect(completed.status).toBe(0);
+      expect(completed.stdout).toBe('');
+      expect(architectureProjectionQueueState(f.root)).toMatchObject({ pending: 0, running: 0, deadLetters: 0, receipts: 1 });
       expect(git(f.root, ['rev-parse', 'HEAD'])).toBe(head);
     }, 65_000);
   }

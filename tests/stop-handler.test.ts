@@ -1431,3 +1431,35 @@ describe('architecture projection host-budget continuation', () => {
     expect(result.stderr).toContain('12345');
   });
 });
+
+
+describe('strict projection gate uses unfinished queue state', () => {
+  for (const kind of ['pending', 'running', 'deadLetters'] as const) {
+    for (const gate of ['strict', 'advisory'] as const) {
+      test(`${gate} Stop with idle drain and ${kind} work`, () => {
+        const { cwd } = gitFixture();
+        writeFileSync(join(cwd, '.ai/harness/test-home/.repo-harness/config.json'), JSON.stringify({
+          architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: gate },
+        }));
+        const queue = { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1' as const,
+          pending: 0, running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: null, oldestDeadLetterJobId: null };
+        queue[kind] = 1;
+        const run = () => runStopHandler({ collector: collector(cwd, () => canonicalState()), dependencies: {
+          drainArchitectureProjection: () => ({ schemaVersion: 'repo-harness.architecture-projection-drain/v1',
+            status: 'idle', jobId: null, sourceEventIds: [], resultStatus: null, error: null, acknowledgeSourceEvents: false,
+            queue: { ...queue } }),
+        } });
+        const unfinished = run();
+        if (gate === 'strict') {
+          expect(JSON.parse(unfinished.stdout).decision).toBe('block');
+          expect(unfinished.stdout).toContain(`${kind === 'deadLetters' ? 'dead-letter' : kind}=1`);
+        } else {
+          expect(unfinished.stdout).toBe('');
+        }
+        queue[kind] = 0;
+        queue.receipts = 1;
+        expect(run().stdout).toBe('');
+      });
+    }
+  }
+});

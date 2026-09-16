@@ -12,7 +12,7 @@ The child rereads current policy, calls the existing drain without a host deadli
 
 ## P3: Invariants and limitations
 
-- Strict Stop behavior is unchanged: pending work remains a blocking result under strict projection policy, even when a continuation has started.
+- Strict Stop checks the canonical queue counts as well as drain failures. Pending, running or dead-letter work blocks Stop, including an idle drain while a child owns the running claim. After successful receipt completion and an empty unfinished queue, normal Stop readiness applies. Advisory policy remains advisory.
 - There is no second scheduler or retry state. Concurrent wake-ups contend on the existing single running claim; a duplicate consumer exits idle.
 - Manual/disabled policy observed by the child prevents a claim. Real provider failures remain pending/dead-lettered according to existing policy; the child does not recursively spawn itself.
 - The child completes the queued job only. Drift cursor advancement remains owned by a subsequent Stop/explicit drain with its original range and cursor CAS; a child never invents a cursor acknowledgement.
@@ -26,3 +26,9 @@ Current-base regression fails before the patch and passes with it. The focused s
 A disposable copy of fortune-algo, with a consistent SQLite backup of its CodeGraph index and the accepted Bazi Core model, also ran the candidate hook against actual archctx 0.5.10. Direct execution completed; a second run with parent-only clock expiry yielded and automatically produced job `job-6006dde9db55e8b9c010ab83` with result `noop`, CodeGraph ready, pending/running/dead-letter all zero. `noop` is correct for already-current documents and is not evidence of new semantic document generation. No original fortune-algo file was modified by this smoke.
 
 Source-bound evidence: `.ai/harness/runs/projection-continuation/verification-summary.json`, `focused-final.txt`, `pre-fix.txt`, `real-provider-continuation-receipt.json` and `real-provider-continuation.log`. Local source acceptance does not prove a published or installed hook update. The normal release/build/install lane is still required for other sessions to use this code.
+
+## Follow-up acceptance finding
+
+Official review of the first candidate found that checking only retry/dead-letter drain statuses let a second strict Stop pass while a detached child held a running claim. Both source and bundled real-process tests now hold the child on a release marker, prove the second Stop blocks without a receipt, then release the child and prove receipt completion permits Stop. The two cases failed on the unfixed candidate; the guard reads existing queue counts rather than introducing a second ownership state. Unit cases additionally cover pending/running/dead-letter under strict versus advisory policy.
+
+A linked worktree also needs its own valid CodeGraph index for projection acceptance. Missing indexing made 27 capabilities appear as a verified-flow-proof change. After codegraph init, metadata was complete and the model, flow proof and module outputs matched; only projection provenance refreshed. A deterministic empty-noop reconciliation closed the proof-only candidate without accepting a semantic change.

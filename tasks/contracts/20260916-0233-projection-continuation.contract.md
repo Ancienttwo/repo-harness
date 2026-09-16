@@ -24,8 +24,12 @@ Resume host-budget-yielded projection once after Stop using the existing queue a
 
 ## Stop Conditions
 
-- Stop if the frozen production/test subject changes or a required gate cannot be satisfied from valid evidence.
+- Stop if edits exceed the approved strict-queue-gate follow-up or a required gate cannot be satisfied from valid evidence.
 - Stop before changes outside Allowed Paths or any relaxation of queue/provider/acceptance gates.
+
+## Approved strict gate follow-up
+
+On 2026-09-16 the user approved fixing the confirmed second-Stop bypass. Change only the Stop gate, existing Stop/process tests, deterministic projections, and task/research records. The queue remains authoritative. Strict blocks while pending, running or dead-letter work remains; advisory behavior stays advisory. Verify actual detached source/bundle execution and release after a successful receipt. Refresh affected evidence and formal acceptance on the new subject.
 
 ## Change Assessment
 
@@ -47,7 +51,6 @@ exit_criteria:
     - src/effects/architecture/projection-continuation.ts
     - tests/architecture-projection-continuation.test.ts
     - docs/researches/20260916-projection-continuation.md
-  - docs/architecture/.projection-manifest.json
   artifacts_exist:
     - .ai/harness/runs/projection-continuation/real-provider-continuation-receipt.json
 ```
@@ -57,6 +60,7 @@ exit_criteria:
 
 ```yaml
 allowed_paths:
+  - docs/architecture/.projection-manifest.json
   - src/cli/hook/stop-handler.ts
   - src/cli/hook-entry.ts
   - src/effects/architecture/projection-orchestrator.ts
@@ -80,10 +84,10 @@ evidence_requirements:
 
 ## Root Cause Evidence
 
-- root_cause: Stop passes a bounded deadline to synchronous drain; host-budget puts the job back in pending and refunds the attempt, but there is no consumer outside that same bounded Stop budget.
-- repro: Run the host-budget continuation test on the base revision; no detached consumer is dispatched although the job remains pending.
-- regression_guard: tests/stop-handler.test.ts
-- pre_fix_failure_artifact: .ai/harness/runs/projection-continuation/pre-fix.txt
+- root_cause: The continuation exposes an existing running claim as drain status idle; stop-handler.ts checks status instead of unfinished queue counts, so a second strict Stop bypasses delivery gating. The original missing-consumer repair remains covered by its prior red evidence.
+- repro: bun test tests/architecture-projection-continuation.test.ts --test-name-pattern 'Stop yields' on candidate 88248407: hold the detached provider, invoke a second Stop, observe empty stdout instead of strict block.
+- regression_guard: tests/architecture-projection-continuation.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/projection-continuation/strict-gate-pre-fix.log
 
 ## Verification Plan
 
@@ -94,12 +98,12 @@ evidence_requirements:
     {
       "id": "metadata-delta",
       "kind": "command",
-      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"31c9d1f5234b772ebe759fd9d2d567db2538e6de\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Non-metadata changes after verified candidate: \" + unexpected.join(\", \")); console.log(\"Verified metadata-only delta: \" + changed.join(\", \"));'",
+      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"31c9d1f5234b772ebe759fd9d2d567db2538e6de\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"src/cli/hook/stop-handler.ts\", \"tests/stop-handler.test.ts\", \"tests/architecture-projection-continuation.test.ts\", \"docs/researches/20260916-projection-continuation.md\", \"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Non-metadata changes after verified candidate: \" + unexpected.join(\", \")); console.log(\"Verified metadata-only delta: \" + changed.join(\", \"));'",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Preserve the reviewed implementation/tests while allowing four task records and the provider-generated manifest; projection-manifest validates its unchanged semantics.",
+      "necessity": "Prove changes stay within the approved strict Stop follow-up, documentation and generated provenance; new current checks cover affected execution paths.",
       "inputs": {
         "env": []
       }
@@ -123,23 +127,12 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "Verify detached projection lifecycle and existing ownership/Stop gates",
       "inputs": {
         "env": []
       },
-      "path": "tests/stop-handler.test.ts",
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-c11253eda2e341c08865.json",
-        "execution_id": "vx-c11253eda2e341c08865"
-      },
-      "delta_checks": [
-        "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
-        "projection-manifest"
-      ]
+      "path": "tests/stop-handler.test.ts"
     },
     {
       "id": "orchestration",
@@ -162,7 +155,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -171,23 +168,12 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "Verify detached projection lifecycle and existing ownership/Stop gates",
       "inputs": {
         "env": []
       },
-      "path": "tests/architecture-projection-continuation.test.ts",
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-51a1813691bd448ca484.json",
-        "execution_id": "vx-51a1813691bd448ca484"
-      },
-      "delta_checks": [
-        "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
-        "projection-manifest"
-      ]
+      "path": "tests/architecture-projection-continuation.test.ts"
     },
     {
       "id": "late-write",
@@ -210,7 +196,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -219,23 +209,12 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "Verify detached projection lifecycle and existing ownership/Stop gates",
       "inputs": {
         "env": []
       },
-      "path": "tests/stop-handler-restamp-publication.test.ts",
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-5f6a52ead5f049d0b846.json",
-        "execution_id": "vx-5f6a52ead5f049d0b846"
-      },
-      "delta_checks": [
-        "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
-        "projection-manifest"
-      ]
+      "path": "tests/stop-handler-restamp-publication.test.ts"
     },
     {
       "id": "types",
@@ -244,22 +223,11 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "Required repository integrity for this hook/process change",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-cdc5b09ac1fa4983afd9.json",
-        "execution_id": "vx-cdc5b09ac1fa4983afd9"
-      },
-      "delta_checks": [
-        "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
-        "projection-manifest"
-      ]
+      }
     },
     {
       "id": "hooks",
@@ -282,7 +250,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -306,7 +278,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -330,7 +306,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -354,7 +334,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -417,7 +401,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     },
     {
@@ -441,7 +429,11 @@ evidence_requirements:
         "task-sync",
         "workflow",
         "architecture",
-        "projection-manifest"
+        "projection-manifest",
+        "stop",
+        "continuation",
+        "restamp",
+        "types"
       ]
     }
   ]
