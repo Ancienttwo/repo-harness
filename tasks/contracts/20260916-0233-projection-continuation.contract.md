@@ -40,7 +40,7 @@ On 2026-09-16 the user approved fixing the confirmed second-Stop bypass. Change 
 ## Acceptance Policy
 
 ```json
-{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"forbidden"}
+{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}
 ```
 
 ## Exit Criteria (Machine Verifiable)
@@ -98,12 +98,12 @@ evidence_requirements:
     {
       "id": "metadata-delta",
       "kind": "command",
-      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"31c9d1f5234b772ebe759fd9d2d567db2538e6de\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"src/cli/hook/stop-handler.ts\", \"tests/stop-handler.test.ts\", \"tests/architecture-projection-continuation.test.ts\", \"docs/researches/20260916-projection-continuation.md\", \"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Non-metadata changes after verified candidate: \" + unexpected.join(\", \")); console.log(\"Verified metadata-only delta: \" + changed.join(\", \"));'",
+      "command": "bun -e 'import { captureGitVirtualTreeSnapshot } from \"./src/effects/evidence/verification-execution.ts\"; import { execFileSync } from \"node:child_process\"; const current = captureGitVirtualTreeSnapshot(process.cwd()); const changed = execFileSync(\"git\", [\"diff\", \"--name-only\", \"4c4790604cee79bb9fc37c6fcf2cf56345c9caab\", current.tree_hash], {encoding:\"utf8\"}).trim().split(\"\\n\").filter(Boolean); const allowed = new Set([\"docs/architecture/.projection-manifest.json\", \"plans/plan-20260916-0233-projection-continuation.md\", \"tasks/contracts/20260916-0233-projection-continuation.contract.md\", \"tasks/notes/20260916-0233-projection-continuation.notes.md\", \"tasks/reviews/20260916-0233-projection-continuation.review.md\"]); const unexpected = changed.filter(path => !allowed.has(path)); if (unexpected.length) throw new Error(\"Non-metadata changes after verified candidate: \" + unexpected.join(\", \")); console.log(\"Verified metadata-only delta: \" + changed.join(\", \"));'",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Prove changes stay within the approved strict Stop follow-up, documentation and generated provenance; new current checks cover affected execution paths.",
+      "necessity": "Bind owner acceptance to the verified strict-gate implementation; permit task metadata and deterministic manifest provenance only.",
       "inputs": {
         "env": []
       }
@@ -127,12 +127,23 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "current_exact",
+      "evidence_policy": "baseline_with_delta",
       "necessity": "Verify detached projection lifecycle and existing ownership/Stop gates",
       "inputs": {
         "env": []
       },
-      "path": "tests/stop-handler.test.ts"
+      "path": "tests/stop-handler.test.ts",
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-365ef1e80f1a4430b36a.json",
+        "execution_id": "vx-365ef1e80f1a4430b36a"
+      },
+      "delta_checks": [
+        "metadata-delta",
+        "projection-manifest",
+        "architecture",
+        "task-sync",
+        "workflow"
+      ]
     },
     {
       "id": "orchestration",
@@ -152,14 +163,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -168,12 +175,23 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "current_exact",
+      "evidence_policy": "baseline_with_delta",
       "necessity": "Verify detached projection lifecycle and existing ownership/Stop gates",
       "inputs": {
         "env": []
       },
-      "path": "tests/architecture-projection-continuation.test.ts"
+      "path": "tests/architecture-projection-continuation.test.ts",
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-6e1b1be1f61249cf9a80.json",
+        "execution_id": "vx-6e1b1be1f61249cf9a80"
+      },
+      "delta_checks": [
+        "metadata-delta",
+        "projection-manifest",
+        "architecture",
+        "task-sync",
+        "workflow"
+      ]
     },
     {
       "id": "late-write",
@@ -193,14 +211,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -209,12 +223,23 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "current_exact",
+      "evidence_policy": "baseline_with_delta",
       "necessity": "Verify detached projection lifecycle and existing ownership/Stop gates",
       "inputs": {
         "env": []
       },
-      "path": "tests/stop-handler-restamp-publication.test.ts"
+      "path": "tests/stop-handler-restamp-publication.test.ts",
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-09daee7f6a7a4f139461.json",
+        "execution_id": "vx-09daee7f6a7a4f139461"
+      },
+      "delta_checks": [
+        "metadata-delta",
+        "projection-manifest",
+        "architecture",
+        "task-sync",
+        "workflow"
+      ]
     },
     {
       "id": "types",
@@ -223,11 +248,22 @@ evidence_requirements:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "current_exact",
+      "evidence_policy": "baseline_with_delta",
       "necessity": "Required repository integrity for this hook/process change",
       "inputs": {
         "env": []
-      }
+      },
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-9ffe4d89d0ac4c2ebe9d.json",
+        "execution_id": "vx-9ffe4d89d0ac4c2ebe9d"
+      },
+      "delta_checks": [
+        "metadata-delta",
+        "projection-manifest",
+        "architecture",
+        "task-sync",
+        "workflow"
+      ]
     },
     {
       "id": "hooks",
@@ -247,14 +283,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -275,14 +307,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -303,14 +331,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -331,14 +355,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -398,14 +418,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     },
     {
@@ -426,14 +442,10 @@ evidence_requirements:
       },
       "delta_checks": [
         "metadata-delta",
-        "task-sync",
-        "workflow",
-        "architecture",
         "projection-manifest",
-        "stop",
-        "continuation",
-        "restamp",
-        "types"
+        "architecture",
+        "task-sync",
+        "workflow"
       ]
     }
   ]
@@ -455,3 +467,7 @@ The exploratory commands and complete focused log passed on the exact integrated
 ## Local acceptance and evidence reuse
 
 Gatekeeper PASS binds verified tree31c9d1f5234b772ebe759fd9d2d567db2538e6de. The final four task-record changes use native baseline_with_delta with an explicit full-tree path guard; task-sync/workflow remain current_exact. The user approved formal closeout on 2026-09-16. Contract remains Active until canonical acceptance and archive complete. The existing gatekeeper source review is retained as local evidence; the required official Codex plugin acceptance is a distinct formal boundary.
+
+## Owner acceptance authorization
+
+On 2026-09-16 the user explicitly approved changing user_waiver to allowed and signing off the concrete strict-gate repair (implementation 228dddc5, canonical preparation run-20260916T131135-79102). Record the disposition as user_waiver, never external_pass. This does not authorize publication or installation.

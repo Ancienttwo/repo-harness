@@ -51,3 +51,7 @@ User approved the review finding fix. P1: projection-jobs keeps ownership; Stop 
 Extended the existing source/bundle tests with an explicit release marker to hold the detached child; both cases failed before the fix (`strict-gate-pre-fix.log`, PRE_FIX_EXIT=1), then passed after the fix, including empty stdout after receipt completion. Added a strict/advisory matrix for each unfinished queue state to the existing Stop test file. Direct `bun test` exploratory runs hit Bun's 5-second default in pre-existing subprocess cases; the repository's canonical `scripts.test` is already `bun test --timeout 60000`. Final evidence uses the package_test executor and that existing timeout, without changing tests or product timeouts to accommodate this.
 
 Formal acceptance remains unresolved: source cross-review admission permits one semantic review per work-package and explicitly routes finding fixes to owner acceptance, while this contract currently forbids user waiver. Preserve the prior rejected receipt; do not relabel it as a pass on this new subject or reset the circuit.
+
+## Owner signoff
+
+The user explicitly approved the policy correction and owner acceptance after reviewing the concrete implementation and 31 passing canonical conditions. Freeze this corrected authority, reuse the verified source with metadata/provenance delta checks, then issue and verify the typed UserWaiverGrant and user_waiver AcceptanceReceipt. Preserve the original plugin rejection and the subsequent red-green evidence as history. No second external review or circuit reset.
