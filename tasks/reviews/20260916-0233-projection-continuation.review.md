@@ -23,9 +23,9 @@ This PASS binds the frozen tree above. Final plan/contract/notes/review-only cha
 > **Reviewed Subject SHA256**: sha256:3b67a8aafcdea329bc1d55fccb842b5013a33fc7750ebf5ff076118b14039314
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: d52f9a9be7a8056f6ece98e8ff1d7684cd3b7672
-> **Verification Evidence SHA256**: sha256:2ee9f5ff89a88f4053956a4a52c3529e4e7956b35ec8090577d9ea79fb00bb9a
-> **Issued At**: 2026-09-16T07:49:39.054Z
+> **Verification Evidence SHA256**: sha256:1013e6e443867a3cc354a2bb95b23039716fa4dec7a991be1a7940286fbc3df7
+> **Issued At**: 2026-09-16T07:51:59.794Z
 
-- Summary: User explicitly approved owner acceptance and changing user_waiver to allowed for the concrete strict Stop queue gate repair 228dddc5 after canonical preparation passed all 31 conditions. Record user_waiver; retain prior external rejection; no publication or installation approval.
+- Summary: Same explicit user approval of owner acceptance for strict gate repair 228dddc5; rebind after restoring canonical contract section order. No source or allowed-path change, no new review, no publication or installation.
 - Findings: none
 
