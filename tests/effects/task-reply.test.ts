@@ -182,6 +182,14 @@ describe('protected Task reply storage and Engineer composition', () => {
     expect(limited.coverage.bytes).toBeLessThanOrEqual(2 * 1024 * 1024);
   });
 
+  test('a valid event stored under another message ID fails closed on both exact and paged reads', () => {
+    const f = fixture();
+    writeFileSync(taskInboxEventPath(f.root, f.work.task_id, id(10)), `${canonicalTaskMessageEventBytes(f.parent)}\n`);
+    expect(() => f.query()).toThrow('path identity');
+    expect(() => withEngineerTaskInbox(f.input, inbox => consumeTaskSteer({ ...inbox, message_id: id(10), event_digest: f.parent.event_digest, now: AT }))).toThrow('path identity');
+    expect(f.history().acknowledgement).toBeNull();
+  });
+
   test('a rotated live Lease rejects the original actor and leaves reply history unchanged', () => {
     const f = fixture(); f.consume(); f.ack();
     const lease = readLease(f.root, f.work.task_id);

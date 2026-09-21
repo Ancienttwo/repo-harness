@@ -10,6 +10,7 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
+> **Substantive Change SHA256**: `sha256:920902719597d26bbe8aaf80d596d984781eddf25ee9a756dbb054a63d35e86d`
 
 ## Human Review Card
 
@@ -22,7 +23,7 @@
 
 ## Verification Evidence
 
-Development evidence: 16 effects tests passed, including five real child exits and original-ID recovery, late token revocation, revoked mapping, rotated Lease, ACK recovery, orphan/missing records and bounded reads. The real Engineer OAuth HTTP smoke passed with exact inventory, SDK current-request token propagation and existing session isolation. Final canonical verification follows source and projection freeze; these development runs do not replace it.
+Development evidence: 16 effects tests plus the exact stored-path identity regression passed, including five real child exits and original-ID recovery, late token revocation, revoked mapping, rotated Lease, ACK recovery, orphan/missing records and bounded reads. The real Engineer OAuth HTTP smoke passed with exact inventory, SDK current-request token propagation and existing session isolation. Final canonical verification follows source and projection freeze; these development runs do not replace it.
 
 ## Residual Risks / Follow-ups
 

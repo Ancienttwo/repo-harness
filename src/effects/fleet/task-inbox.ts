@@ -1020,6 +1020,7 @@ function isOriginalSteer(event: TaskMessageEventV1): boolean {
 function restrictedParent(input: RestrictedTaskInboxInput, messageId: string, eventDigest: string): TaskMessageEventV1 {
   const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, messageId));
   assertEventCanonical(event, input.task_id, recipientTaskRevision(input));
+  if (event.message_id !== messageId) fail('task_message_unreadable', 'steer path identity is mismatched');
   if (!isOriginalSteer(event) || event.event_digest !== eventDigest) fail('task_message_invalid', 'exact original human steer is required');
   if (event.scope === 'claim' && (event.target_claim_id !== input.recipient.claim_id || event.target_generation !== input.recipient.generation)) {
     fail('claim_mismatch', 'steer belongs to a different claim recipient');
@@ -1163,6 +1164,7 @@ export function readTaskSteerReply(input: { repo_root: string; task_id: string; 
   return withTaskLock(input.repo_root, input.task_id, () => {
     const parent = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.parent_message_id));
     assertEventStored(parent, input.task_id);
+    if (parent.message_id !== input.parent_message_id) fail('task_message_unreadable', 'steer path identity is mismatched');
     return { parent, ...readReplyChain(input, parent) };
   });
 }
@@ -1195,6 +1197,7 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
           // Directory coverage is bounded independently of the requested page.
           const event = optionalReplyRecord(commonDirectory, join(directory, entry.name), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge)!;
           assertEventStored(event, input.task_id);
+          if (event.message_id !== messageId) fail('task_message_unreadable', 'steer path identity is mismatched');
           events.push(event);
         }
       } catch (error) { if (!exhausted) throw error; }
