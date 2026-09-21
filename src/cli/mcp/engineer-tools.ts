@@ -675,7 +675,12 @@ function taskCommunication(ctx: EngineerMcpToolContext, name: EngineerMcpToolNam
   if (!ctx.verifyAuthorization || !ctx.authorizationId) throw new EngineerMcpError('ENGINEER_AUTHORIZATION_MISSING', 'current-request OAuth verifier is required for Task communication');
   const result = withEngineerTaskInbox({ repo_root: ctx.repoRoot, authorization_id: ctx.authorizationId, work_envelope: args.work_envelope, verify_authorization: ctx.verifyAuthorization }, inbox => {
     if (name === 'engineer_task_messages') return observeTaskSteers({ ...inbox, limit: optionalInteger(args, 'limit', 1), after: optionalString(args, 'after') });
-    if (name === 'engineer_task_reply') return replyToTaskSteer({ ...inbox, parent_message_id: requiredString(args, 'parent_message_id'), parent_event_digest: requiredString(args, 'parent_event_digest'), reply_message_id: requiredString(args, 'reply_message_id'), body: requiredString(args, 'body'), now: () => new Date().toISOString() });
+    if (name === 'engineer_task_reply') {
+      if (typeof args.body !== 'string') throw new EngineerMcpError('INVALID_ARGUMENT', 'body must be a string');
+      return replyToTaskSteer({ ...inbox, parent_message_id: requiredString(args, 'parent_message_id'),
+        parent_event_digest: requiredString(args, 'parent_event_digest'), reply_message_id: requiredString(args, 'reply_message_id'),
+        body: args.body, now: () => new Date().toISOString() });
+    }
     const request = { ...inbox, message_id: requiredString(args, 'message_id'), event_digest: requiredString(args, 'event_digest'), now: new Date().toISOString() };
     return name === 'engineer_task_message_consume' ? consumeTaskSteer(request) : acknowledgeTaskSteer(request);
   });

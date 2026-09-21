@@ -205,6 +205,39 @@ describe('protected Task reply storage and Engineer composition', () => {
     expect(f.ack()).toMatchObject({ delivery_channel: 'hook_session', delivery_ref: null });
   });
 
+  test('MCP preserves exact reply whitespace and rejects a whitespace-only retry change', async () => {
+    const f = fixture(); f.consume(); f.ack();
+    const ctx = { repoRoot: f.root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: id(2), engineerVerifyAuthorization: f.input.verify_authorization };
+    const args = { work_envelope: f.work, parent_message_id: id(4), parent_event_digest: f.parent.event_digest, reply_message_id: id(5), body: '  const inspected = true;\n\n' };
+    const first = await callMcpTool(ctx, 'engineer_task_reply', args);
+    expect(first).toMatchObject({ structuredContent: { event: { body: args.body } } });
+    expect(await callMcpTool(ctx, 'engineer_task_reply', { ...args, body: args.body.trim() })).toMatchObject({ isError: true, structuredContent: { error: { code: 'task_reply_conflict' } } });
+  });
+
+  test('a restarted MCP caller recovers a partial reply whose original body existed only in the exited child', async () => {
+    const f = fixture(); f.consume(); f.ack();
+    const child = Bun.spawn([process.execPath, '-e', `
+      import { withEngineerTaskInbox } from ${JSON.stringify(join(PROJECT, 'src/effects/engineers/task-inbox.ts'))};
+      import { replyToTaskSteer } from ${JSON.stringify(join(PROJECT, 'src/effects/fleet/task-inbox.ts'))};
+      const v = JSON.parse(process.env.REPLY_TEST_INPUT);
+      withEngineerTaskInbox({...v.input, env: process.env, verify_authorization: () => {}}, inbox => replyToTaskSteer({...inbox,
+        parent_message_id: v.parent.message_id, parent_event_digest: v.parent.event_digest,
+        reply_message_id: ${JSON.stringify(id(5))}, body: '  child-only-' + crypto.randomUUID() + String.fromCharCode(10),
+        now: () => ${JSON.stringify(AT)}, crash_hook: boundary => { if (boundary === 'event_published') process.exit(86); }}));
+    `], { cwd: PROJECT, env: { ...f.env, REPLY_TEST_INPUT: JSON.stringify({ input: f.input, parent: f.parent }) }, stdout: 'pipe', stderr: 'pipe' });
+    expect(await child.exited).toBe(86); expect(await new Response(child.stderr).text()).toBe('');
+    const ctx = { repoRoot: f.root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: id(2), engineerVerifyAuthorization: f.input.verify_authorization };
+    const read = await callMcpTool(ctx, 'engineer_task_messages', { work_envelope: f.work });
+    const recovery = (read.structuredContent as { entries: { recovery: { parent_message_id: string; parent_event_digest: string; reply_message_id: string; body: string; intent_sha256: string } }[] }).entries[0]!.recovery;
+    expect(recovery.reply_message_id).toBe(id(5));
+    expect(recovery.body).toMatch(/^  child-only-[0-9a-f-]+\n$/);
+    const { intent_sha256, ...retry } = recovery;
+    expect(intent_sha256).toMatch(/^sha256:/);
+    const committed = await callMcpTool(ctx, 'engineer_task_reply', { work_envelope: f.work, ...retry });
+    expect(committed).toMatchObject({ structuredContent: { event: { message_id: recovery.reply_message_id, body: recovery.body }, commit: { intent_sha256 } } });
+    expect(f.history().observation.state).toBe('complete');
+  }, 20_000);
+
   test('strict named MCP tools reject missing transport authority then compose consume ACK and reply', async () => {
     const f = fixture(); const base = { repoRoot: f.root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: id(2) };
     expect(await callMcpTool(base, 'engineer_task_messages', { work_envelope: f.work })).toMatchObject({ isError: true, structuredContent: { error: { code: 'ENGINEER_AUTHORIZATION_MISSING' } } });

@@ -26,6 +26,7 @@
 ## Open Questions
 
 - Real H0/Campaign and notification reconciliation remain outside this slice.
+- The one semantic review identified missing recovery bytes and MCP body trimming. Fixed within this slice, with a child-only body recovery oracle; final acceptance requires the named owner rather than a repeated provider review.
 
 ## Evidence Links
 

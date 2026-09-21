@@ -1206,7 +1206,8 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
     const parents = events.filter(event => isOriginalSteer(event) && event.task_revision === authority.actor.task_revision
       && (event.scope === 'task' || (event.target_claim_id === input.recipient.claim_id && event.target_generation === input.recipient.generation)))
       .sort((a, b) => a.message_id.localeCompare(b.message_id)).filter(event => !input.after || event.message_id > input.after);
-    const entries: { parent: TaskMessageEventV1; receipt: TaskMessageDeliveryReceiptV1 | null; reply: ReturnType<typeof inspectTaskReplyChain>; pending_disposition: boolean; reply_message_id: string | null }[] = [];
+    const entries: { parent: TaskMessageEventV1; receipt: TaskMessageDeliveryReceiptV1 | null; reply: ReturnType<typeof inspectTaskReplyChain>; pending_disposition: boolean; reply_message_id: string | null;
+      recovery: { parent_message_id: string; parent_event_digest: string; reply_message_id: string; body: string; intent_sha256: string } | null }[] = [];
     if (!exhausted) {
       try {
         for (const parent of parents.slice(0, limit)) {
@@ -1215,7 +1216,11 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
           const observation = orphan ? { state: 'orphan_event' as const } : chain.observation;
           entries.push({ parent, receipt: chain.acknowledgement, reply: observation,
             pending_disposition: (chain.acknowledgement?.delivery_state === 'delivered' || chain.acknowledgement?.delivery_state === 'acknowledged') && observation.state !== 'complete',
-            reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null });
+            reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null,
+            recovery: chain.intent && (observation.state === 'intent_only' || observation.state === 'event_uncommitted')
+              ? { parent_message_id: chain.intent.parent.message_id, parent_event_digest: chain.intent.parent.event_digest,
+                reply_message_id: chain.intent.effect_id, body: chain.intent.reply.body, intent_sha256: chain.intent.intent_sha256 }
+              : null });
         }
       } catch (error) { if (!exhausted) throw error; }
     }
