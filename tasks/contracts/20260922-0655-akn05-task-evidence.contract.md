@@ -21,7 +21,7 @@ AKN-05b shared detail shows exact-scope canonical context and bounded historical
 
 ## Scope
 
-- In scope: read-only context/activity integration, original evidence, exact message lookup, page replacement, bilingual UI and tests.
+- In scope: read-only context/activity integration, original evidence, exact message lookup, page replacement, bilingual UI and tests; shared720px overlay/full-screen detail with focus, scroll lock, IME and draft preservation.
 - Out of scope: three-view navigation, write admission, polling, backend changes, native runtime and main merge.
 - Invariant: existing Composer keys, drafts, expected fences, POST, ACK and TaskDiff stay unchanged.
 
@@ -338,6 +338,8 @@ exit_criteria:
 ```
 
 ## Acceptance Notes (Human Review)
+
+The detail layout continuation removes wide complementary mode, makes modality independent of viewport and moves the existing overview facts into a secondary disclosure. Verify wide/narrow and live resize without remounting Composer, preserving focus and restoring it on close.
 
 Existing UI suites own this interaction boundary; extend them rather than adding a task-named suite. Inspect built wide/narrow EN/ZH fixture. Architecture and canonical verification precede one semantic acceptance. This does not prove native execution or complete AKN-05.
 

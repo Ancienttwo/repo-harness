@@ -395,7 +395,7 @@ describe('operator web interactions', () => {
     const last = focusable.at(-1);
     last?.focus();
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }) as unknown as Event);
-    expect(document.activeElement).toBe(close);
+    expect(document.activeElement).toBe(focusable[0]);
 
     await act(async () => {
       document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
@@ -742,27 +742,28 @@ describe('operator web interactions', () => {
     expect(translate('zh', 'status.observedAgo', { age: '2 分钟' })).toBe('2 分钟前读到的快照');
   });
 
-  test('keeps a persistent complementary pane on wide layouts and a repository overview until a task is picked', async () => {
+  test('keeps overview secondary and opens the same modal with focus restoration on wide layouts', async () => {
     installDom(true);
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
-
-    const overview = document.querySelector('[role="complementary"]');
-    expect(overview?.getAttribute('aria-modal')).toBeNull();
-    expect(overview?.getAttribute('aria-labelledby')).toBe('detail-pane-title');
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(paneText()).toContain('Repository overview');
-    expect(paneText()).toContain('Tasks by repository and stage');
-    expect(paneText()).toContain('Repository health');
-    expect(paneText()).toContain('read write');
-    expect(document.querySelectorAll('.stage-matrix tbody tr').length).toBe(1);
-
+    expect(document.querySelector('[role="complementary"]')).toBeNull();
+    expect(document.querySelector('.detail-pane')).toBeNull();
+    const overview = document.querySelector<HTMLDetailsElement>('.repository-overview');
+    expect(overview?.open).toBe(false);
+    expect(overview?.textContent).toContain('Tasks by repository and stage');
+    expect(overview?.textContent).toContain('Repository health');
+    expect(document.querySelectorAll('.stage-matrix tbody tr')).toHaveLength(1);
     const trigger = buttonWithText(fixtureTasks.blocked.task_label);
     trigger.focus();
     await act(async () => trigger.click());
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const pane = document.querySelector('[role="dialog"]');
+    const close = document.querySelector<HTMLButtonElement>('.detail-pane [aria-label="Close task details"]');
+    expect(pane?.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(close);
+    expect(document.body.style.overflow).toBe('hidden');
+    await act(async () => close?.click());
+    expect(document.querySelector('.detail-pane')).toBeNull();
     expect(document.activeElement).toBe(trigger);
-    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
-    expect(trigger.getAttribute('aria-current')).toBe('true');
+    expect(document.body.style.overflow).toBe('');
   });
 
   test('attention carries a text encoding, not only a color', async () => {
@@ -776,8 +777,9 @@ describe('operator web interactions', () => {
   test('holds the layout, stale treatment, motion, and type-size contracts in one stylesheet', async () => {
     const css = await Bun.file('src/operator-web/styles.css').text();
 
-    expect(css).toContain('.operator-main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); flex: 1; align-items: start; }');
-    expect(css).toContain('.operator-app[data-state="stale"] .operator-main { filter: saturate(.55); }');
+    expect(css).toContain('.operator-main { display: block; flex: 1; }');
+    expect(css).toContain('width: min(720px, 100vw)');
+    expect(css).toContain('.operator-app[data-state="stale"] .operator-content { filter: saturate(.55); }');
     expect(css).toContain('@media (max-width: 900px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).not.toContain('@media (max-width: 1100px)');
@@ -927,6 +929,26 @@ describe('operator web task message composer', () => {
     await act(async () => buttonWithText(task).click());
     await act(async () => composerToggle().click());
   }
+
+  test('wide modal survives resize and IME cancellation without replacing draft or retry identity', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    const textarea = document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+    textarea.focus();
+    await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true }) as unknown as Event));
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    await typeMessage('保留中文草稿');
+    const card = stableSnapshot.repositories[0]!.cards.find(value => value.task_id === fixtureTasks.blocked.task_id)!;
+    const key = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
+    const before = window.localStorage.getItem(key);
+    textarea.focus();
+    await act(async () => window.dispatchEvent(new window.Event('resize')));
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
+    expect(window.localStorage.getItem(key)).toBe(before);
+    await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event));
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    expect(textarea.value).toBe('保留中文草稿');
+  });
 
   test('restores a draft after remount with the original retry identity and stale fence', async () => {
     const requests: TaskMessageRequestV1[] = [];

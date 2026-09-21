@@ -4,3 +4,5 @@
 - Replace pages instead of appending to maintain bounded browser memory and honest coverage. Exact parent/reply lookup reuses the existing message ID endpoint.
 - Add TaskEvidence.tsx for the shared query lifetime and evidence rendering boundary; App integration passes only identity, refresh generation and injectable readers, preserving Composer and TaskDiff.
 - Three-view navigation is still pending: it needs the canonical preparation/organization facts without remapping server-owned semantics. This detail slice supplies the common evidence entrypoint first.
+
+- Keep the roadmap overlay requirement in this existing detail work-package. CSS owns width, so viewport changes cannot restart focus or draft lifetime. Preserve prior overview/collaboration observations in a secondary disclosure instead of deleting them with the complementary pane.

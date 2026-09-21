@@ -112,6 +112,7 @@ More than5 files: new src/operator-web/TaskEvidence.tsx (independent query/evide
 Whole roadmap implementation and stage PRs are already approved by the user. Freeze source and deterministic architecture proof, prepare canonical evidence, obtain one typed semantic acceptance under the contract, then publish a stage PR. Preserve pending05a acceptance and its frozen worktree. No new credentials or external API dependencies. Rollback removes the new read-only details and leaves durable records unchanged.
 
 ## Task Breakdown
+- [x] Complete shared detail layout:720px wide-screen overlay/full-screen narrow pane; preserve focus, scroll lock, drafts and IME. Move the repository overview to a secondary disclosure in main content.
 - [x] Implement exact-scope context/activity queries and original-evidence detail presentation.
 - [x] Verify lifetimes, coverage/provenance, existing draft/IME behavior, bilingual narrow/wide layout and integrity.
 - [ ] Record durable boundary, architecture/canonical evidence, acceptance and stage PR.
@@ -120,6 +121,10 @@ Whole roadmap implementation and stage PRs are already approved by the user. Fre
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
+- [x] Complete shared detail layout:720px wide-screen overlay/full-screen narrow pane; preserve focus, scroll lock, drafts and IME. Move the repository overview to a secondary disclosure in main content.
 - [x] Implement exact-scope context/activity queries and original-evidence detail presentation.
 - [x] Verify lifetimes, coverage/provenance, existing draft/IME behavior, bilingual narrow/wide layout and integrity.
 - [ ] Record durable boundary, architecture/canonical evidence, acceptance and stage PR.
+
+## Detail layout continuation
+Roadmap section7 explicitly requires a wide overlay and narrow full-screen detail. Implement it in this existing detail work-package using already allowed App/styles/interaction tests; no extra plan or worktree. Remove the persistent complementary-pane branch and responsive JS modality, keep a single modal lifetime across resize, preserve overview facts in a secondary main-content disclosure. Formal organization/Decision and Planning dependency adapters remain the next observed data gap, not a renamed empty view.

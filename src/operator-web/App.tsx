@@ -1850,52 +1850,33 @@ function Composer({
   );
 }
 
-const WIDE_LAYOUT_QUERY = '(min-width: 901px)';
-
-function useWideLayout(): boolean {
-  const [wide, setWide] = useState(() => typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia(WIDE_LAYOUT_QUERY).matches);
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const query = window.matchMedia(WIDE_LAYOUT_QUERY);
-    const update = (event: MediaQueryListEvent) => setWide(event.matches);
-    setWide(query.matches);
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-  return wide;
-}
-
 function DetailPane({
   snapshot,
-  visibleRepositories,
   card,
   repository,
   collaboration,
   revisionChangedFrom,
   boardUnstable,
-  modal,
   evidenceGeneration,
   readTaskContext,
   readTaskActivity,
   onClose,
+  onRefresh,
   onSent,
   sendMessage,
   t,
 }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null;
-  readonly visibleRepositories: readonly OperatorFleetRepositoryV1[];
-  readonly card: OperatorFleetCardV1 | null;
+  readonly card: OperatorFleetCardV1;
   readonly repository: OperatorFleetRepositoryV1 | null;
   readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
   readonly boardUnstable: boolean;
-  readonly modal: boolean;
   readonly evidenceGeneration: number;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
+  readonly onRefresh: () => void;
   readonly onSent: () => void;
   readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
   readonly t: OperatorTranslate;
@@ -1904,19 +1885,18 @@ function DetailPane({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const composerDraftRef = useRef(false);
-  const cardKey = card ? taskKey(card) : null;
+  const cardKey = taskKey(card);
   const reportComposerDraft = useCallback((hasDraft: boolean) => {
     composerDraftRef.current = hasDraft;
   }, []);
 
   useEffect(() => {
-    if (!cardKey || typeof document === 'undefined') return;
-    if (modal) {
-      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      closeButtonRef.current?.focus();
-    }
+    if (typeof document === 'undefined') return;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (event.isComposing || event.keyCode === 229) return;
         // Escape is the IME candidate-cancel key. Closing the pane on it while
         // the composer holds text would unmount the panel and take the draft
         // and its retry-bearing message id with it. The close button, the
@@ -1929,7 +1909,7 @@ function DetailPane({
         onClose();
         return;
       }
-      if (!modal || event.key !== 'Tab') return;
+      if (event.key !== 'Tab') return;
       const dialog = dialogRef.current;
       if (!dialog) return;
       const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
@@ -1953,71 +1933,56 @@ function DetailPane({
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      if (modal) returnFocusRef.current?.focus();
+      returnFocusRef.current?.focus();
       returnFocusRef.current = null;
     };
-    // Task identity and responsive modality own the focus lifecycle; incidental
+    // Task identity owns the focus lifecycle; resize and incidental
     // card replacement does not restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardKey, modal]);
+  }, [cardKey]);
 
   useEffect(() => {
-    if (!modal || !cardKey || typeof document === 'undefined') return;
+    if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
-  }, [cardKey, modal]);
+  }, [cardKey]);
 
-  if (modal && !card) return null;
-  const label = card ? taskDisplayLabel(card) : null;
+  const label = taskDisplayLabel(card);
   return (
     <>
-      {modal && card && (
-        <button className="pane-scrim" type="button" tabIndex={-1} aria-label={t('detail.close')} onClick={onClose} />
-      )}
+      <button className="pane-scrim" type="button" tabIndex={-1} aria-label={t('detail.close')} onClick={onClose} />
       <aside
         ref={dialogRef}
         className="detail-pane"
-        role={modal ? 'dialog' : 'complementary'}
-        aria-modal={modal ? 'true' : undefined}
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="detail-pane-title"
       >
         <div className="detail-pane__header">
           <div className="detail-pane__title">
-            <p className="detail-eyebrow">{card ? t('detail.taskDetail') : t('detail.overviewTitle')}</p>
-            <h2 id="detail-pane-title" className={label && !label.isLabel ? 'mono-value' : ''}>
-              {label ? label.text : t('detail.overviewTitle')}
+            <p className="detail-eyebrow">{t('detail.taskDetail')}</p>
+            <h2 id="detail-pane-title" className={!label.isLabel ? 'mono-value' : ''}>
+              {label.text}
             </h2>
-            {card && label?.isLabel && <code className="detail-pane__id">{card.task_id.slice(0, 12)}</code>}
+            {label.isLabel && <code className="detail-pane__id">{card.task_id.slice(0, 12)}</code>}
           </div>
-          {card && (
-            <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label={t('detail.close')}>
+          <div className="detail-pane__actions">
+          <button type="button" className="operator-button operator-button--secondary" onClick={onRefresh}>{t('status.refresh')}</button>
+          <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label={t('detail.close')}>
               <Icon name="close" size={18} />
-            </button>
-          )}
+          </button>
+          </div>
         </div>
         <div className="detail-pane__body">
-          {card ? (
-            <>
-              <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
-              <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
-              <TaskDiff key={JSON.stringify([card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />
-            </>
-          ) : snapshot ? (
-            <>
-              <p className="detail-quiet">{t('detail.overviewHint')}</p>
-              <StageMatrix snapshot={{ repositories: visibleRepositories }} t={t} />
-              <section className="detail-block" aria-labelledby="detail-health-heading">
-                <h3 className="detail-eyebrow" id="detail-health-heading">{t('detail.repositoryHealth')}</h3>
-                <RepositoryHealth snapshot={{ repositories: visibleRepositories }} t={t} />
-              </section>
-            </>
-          ) : null}
+          <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
+          <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
+          <TaskDiff key={JSON.stringify([card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />
           {/* Below the task's own facts, never above them: collaboration is
               context for a decision the worklist already surfaced. */}
           <CollaborationPane state={collaboration} t={t} />
         </div>
-        {card && !(card.placement.kind === 'column' && card.placement.column === 'done') && repository && snapshot && (
+        {!(card.placement.kind === 'column' && card.placement.column === 'done') && repository && snapshot && (
           <Composer
             key={taskKey(card)}
             card={card}
@@ -2100,7 +2065,6 @@ export function OperatorApp({
   );
   const [collaborationRefreshGeneration, setCollaborationRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
-  const wideLayout = useWideLayout();
   const refreshInFlight = useRef(false);
   const refreshQueued = useRef(false);
   const stateRef = useRef<OperatorSnapshotViewState>(initial);
@@ -2273,22 +2237,30 @@ export function OperatorApp({
                     t={t}
                   />
               ) : null}
+          {activeRepository && <details className="repository-overview">
+            <summary>{t('detail.overviewTitle')}</summary>
+            <StageMatrix snapshot={{ repositories: visibleRepositories }} t={t} />
+            <section aria-label={t('detail.repositoryHealth')}>
+              <h3>{t('detail.repositoryHealth')}</h3>
+              <RepositoryHealth snapshot={{ repositories: visibleRepositories }} t={t} />
+            </section>
+            {!selectedCard && <CollaborationPane state={collaboration} t={t} />}
+          </details>}
         </main>
-        {(wideLayout || selectedCard) && state.kind !== 'fatal' && (
+        {selectedCard && state.kind !== 'fatal' && (
           <DetailPane
             key={activeRepository?.repository_id ?? 'none'}
             snapshot={snapshot}
-            visibleRepositories={visibleRepositories}
             card={selectedCard}
             repository={selectedRepository}
             collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
             boardUnstable={boardUnstable}
-            modal={!wideLayout}
             evidenceGeneration={collaborationRefreshGeneration}
             readTaskContext={readTaskContext}
             readTaskActivity={readTaskActivity}
             onClose={() => setSelection(null)}
+            onRefresh={() => void refresh()}
             onSent={() => void refresh()}
             sendMessage={sendMessage}
             t={t}
