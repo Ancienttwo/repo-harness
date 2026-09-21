@@ -473,9 +473,9 @@ export function readRepoHarnessRegistryStrictSnapshot(opts: {
  * Serialize an authorization-sensitive operation with registry mutations.
  *
  * The callback observes one strict registry revision while its mutation lock
- * remains held. Callers that also touch per-task state must take the task lock
- * only inside this callback: registry authorization lock -> task lock is the
- * sole permitted order. Registry mutation paths never acquire task locks.
+ * remains held. Task publication callers acquire their task lock before this
+ * short final authorization section; never wait for a task lock inside it.
+ * Registry mutation paths acquire no task or Engineer locks.
  */
 export function withRepoHarnessRegistryAuthorizationLock<T>(
   opts: { readonly env?: NodeJS.ProcessEnv } = {},

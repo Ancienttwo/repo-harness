@@ -225,6 +225,7 @@ describe('mcp oauth provider', () => {
       const firstInfo = await engineer.verifyAccessToken(first.access_token) as { authorizationId?: string };
       expect(firstInfo).toMatchObject({ profile: 'engineer', authorizationRevision: 11 });
       const firstAuthorization = firstInfo.authorizationId!;
+      expect(engineer.verifyAccessTokenCurrent(first.access_token)).toMatchObject(firstInfo);
       expect(store.listAuthorizations('engineer')).toEqual([
         expect.objectContaining({ authorizationId: firstAuthorization, profile: 'engineer' }),
       ]);
@@ -241,8 +242,11 @@ describe('mcp oauth provider', () => {
       await expect(coding.verifyAccessToken(refreshed.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
       await engineer.revokeToken?.(client, { token: second.refresh_token ?? '' });
       expect(revoked).toEqual([secondAuthorization]);
+      expect(() => engineer.verifyAccessTokenCurrent(second.access_token)).toThrow(InvalidTokenError);
+      expect(engineer.verifyAccessTokenCurrent(refreshed.access_token)).toMatchObject({ authorizationId: firstAuthorization });
 
       authorizationRevision = 12;
+      expect(() => engineer.verifyAccessTokenCurrent(refreshed.access_token)).toThrow(InvalidTokenError);
       await expect(engineer.verifyAccessToken(refreshed.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
       expect(revoked).toEqual([secondAuthorization, firstAuthorization]);
     } finally {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash, randomBytes } from 'crypto';
 import { createServer } from 'net';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -14,6 +14,11 @@ import {
   createOAuthRateLimitMiddleware,
   startMcpHttp,
 } from '../../src/cli/mcp/transports/http';
+import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import { enrollEngineerPrincipal } from '../../src/effects/engineers/principal-store';
+import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
@@ -926,6 +931,7 @@ describe('mcp http transport', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
+    process.env.REPO_HARNESS_HOME = realpathSync(process.env.REPO_HARNESS_HOME!);
     let proc: Bun.Subprocess | null = null;
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
@@ -1060,6 +1066,10 @@ describe('mcp http transport', () => {
       };
       const tools = (await call(firstHeaders, 2, 'tools/list')).result.tools as Array<{ name: string }>;
       expect(tools.map((tool) => tool.name)).toEqual([
+        'engineer_task_messages',
+        'engineer_task_message_consume',
+        'engineer_task_message_ack',
+        'engineer_task_reply',
         'engineer_status',
         'engineer_offers',
         'engineer_acquire',
@@ -1085,6 +1095,23 @@ describe('mcp http transport', () => {
       ]);
       const unmapped = await call(firstHeaders, 3, 'tools/call', { name: 'engineer_status', arguments: {} });
       expect(JSON.parse(unmapped.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_unmapped' } });
+
+      mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true });
+      mkdirSync(join(repoRoot, 'agents'), { recursive: true });
+      cpSync(join(process.cwd(), '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+      cpSync(join(process.cwd(), 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
+      runGit('add', 'agents', '.archcontext');
+      runGit('commit', '-m', 'Engineer profile fixture');
+      const engineerId = 'engineer:capability.verification.evals-checks';
+      const profile = loadEngineerProfile(repoRoot, engineerId);
+      bindEngineer(repoRoot, { engineer_id: engineerId, idempotency_key: 'http-reply-bind', provider: 'codex-app-thread', provider_thread_id: 'fixture', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision });
+      const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath()); tokenStore.load();
+      const authorization = tokenStore.listAuthorizations('engineer')[0]!;
+      enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: authorization.authorizationId, binding: readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding! });
+      const communication = await call(firstHeaders, 30, 'tools/call', { name: 'engineer_task_messages', arguments: { work_envelope: {} } });
+      // Reaching envelope validation proves SDK extra.authInfo carried this
+      // request's token through the synchronous provider recheck.
+      expect(JSON.parse(communication.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_mismatch', message: 'WorkEnvelope identity is invalid' } });
 
       const secondHeaders = await initialize(await issueToken());
       const hijacked = await fetch(`http://127.0.0.1:${port}/mcp`, {

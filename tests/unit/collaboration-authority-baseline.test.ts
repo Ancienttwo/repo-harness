@@ -437,7 +437,7 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
   {
     module: 'src/core/fleet/task-reply.ts',
     fails: ['C-1', 'C-2'],
-    evidence: 'messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots; no production consumer reads these records, and structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority',
+    evidence: 'messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots; Task Inbox and restricted Engineer MCP consume them only for message disposition, and structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority',
   },
   {
     module: 'src/core/publication/feedback.ts',

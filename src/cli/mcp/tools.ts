@@ -39,6 +39,7 @@ export interface McpToolContext {
   sessionOwnerId?: string;
   codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
   engineerAuthorizationId?: string;
+  engineerVerifyAuthorization?: () => void;
 }
 
 function codingContext(ctx: McpToolContext): CodingToolContext {
@@ -1158,7 +1159,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         return callCollaborationTool({ repoRoot: ctx.repoRoot, authorizationId: ctx.engineerAuthorizationId }, name, args);
       }
       if (!isEngineerTool(name)) return errorResult('TOOL_NOT_AVAILABLE', `tool is not available in the engineer profile: ${name}`);
-      return callEngineerTool({ repoRoot: ctx.repoRoot, authorizationId: ctx.engineerAuthorizationId }, name, args);
+      return callEngineerTool({ repoRoot: ctx.repoRoot, authorizationId: ctx.engineerAuthorizationId, verifyAuthorization: ctx.engineerVerifyAuthorization }, name, args);
     }
     if (isCodingTool(name) && ctx.policy.capabilities.workspaceCoder) {
       return callCodingTool(codingContext(ctx), name, args);
