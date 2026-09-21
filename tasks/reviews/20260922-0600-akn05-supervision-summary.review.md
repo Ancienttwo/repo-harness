@@ -6,7 +6,7 @@
 > **Notes File**: tasks/notes/20260922-0600-akn05-supervision-summary.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Recommendation**: pending
-> **Substantive Change SHA256**: `sha256:a63d03f03e99ead0472e91abfab244ca7ca7cb3599edfad94bcf107d1b64ab88`
+> **Substantive Change SHA256**: `sha256:b96e1395cb28a4b34ca0a773df7590727794470e199ddbc1904bdef1c82c85cd`
 
 ## Local evidence
 
@@ -51,3 +51,7 @@ Final targeted result:125 tests passed,0 failed,700 assertions across the four o
 ```
 
 The findings belong to the AKN-03b inbox reader and AKN-04b activity protocol. Preserve this rejection and correct those owning scopes before rebinding the candidate. This contract has consumed its independent review.
+
+## Corrected candidate
+
+The two findings were reproduced before production edits, with PRE_FIX_EXIT=1. Owning commits bd557f81 (steer pagination) and07c5ea0a (empty activity bodies) are integrated. The owning suites passed23/23 and11/11 respectively; final canonical verification also includes both suites. The original reject disposition remains immutable. Corrected-subject owner acceptance is still required; no second independent review is performed.
