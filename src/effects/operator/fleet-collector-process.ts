@@ -9,6 +9,8 @@ import {
 
 export interface FleetCollectorStartRequest {
   readonly type: 'start';
+  readonly protocol: 1;
+  readonly scope: { readonly kind: 'fleet' } | { readonly kind: 'repository'; readonly repository_id: string };
   readonly env?: Readonly<Record<string, string>>;
   readonly sequence: number;
   readonly max_concurrency: number;
@@ -36,10 +38,19 @@ export function parseFleetCollectorRequest(value: unknown): FleetCollectorReques
   if (record.type === 'cancel') return { type: 'cancel' };
   if (
     record.type !== 'start'
+    || record.protocol !== 1
     || !Number.isSafeInteger(record.sequence)
     || !Number.isSafeInteger(record.max_concurrency)
     || !Number.isSafeInteger(record.timeout_ms)
   ) return null;
+  const scope = record.scope as Record<string, unknown> | null;
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope)) return null;
+  if (scope.kind === 'fleet') {
+    if (Object.keys(scope).length !== 1) return null;
+  } else if (scope.kind === 'repository') {
+    if (Object.keys(scope).length !== 2 || typeof scope.repository_id !== 'string'
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(scope.repository_id)) return null;
+  } else return null;
   if (record.env !== undefined && (typeof record.env !== 'object' || record.env === null || Array.isArray(record.env))) return null;
   const envRecord = record.env as Record<string, unknown> | undefined;
   const env = envRecord === undefined
@@ -48,6 +59,8 @@ export function parseFleetCollectorRequest(value: unknown): FleetCollectorReques
   if (envRecord !== undefined && Object.keys(env ?? {}).length !== Object.keys(envRecord).length) return null;
   return {
     type: 'start',
+    protocol: 1,
+    scope: scope as FleetCollectorStartRequest['scope'],
     env,
     sequence: record.sequence as number,
     max_concurrency: record.max_concurrency as number,
@@ -97,6 +110,7 @@ function run(): void {
     controller = new AbortController();
     void collectFleetBoard({
       env: request.env,
+      repository_id: request.scope.kind === 'repository' ? request.scope.repository_id : undefined,
       sequence: request.sequence,
       max_concurrency: request.max_concurrency,
       timeout_ms: request.timeout_ms,

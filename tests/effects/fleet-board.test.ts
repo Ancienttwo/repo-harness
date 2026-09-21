@@ -659,3 +659,57 @@ describe('fleet board collector', () => {
     expect(overlap).toBe(false);
   }, 10_000);
 });
+
+describe('exact repository Fleet collection', () => {
+  test('selects read-only A before providers and never collects unrelated B', async () => {
+    const a = repo(1), b = repo(2);
+    const seen: string[] = [];
+    const dependencies: FleetBoardDependencies = {
+      read_registry: () => registry([a, b]),
+      collect_repository: async (entry) => {
+        seen.push(entry.id);
+        if (entry.id === b.id) throw new Error('unreadable unrelated root');
+        return { repository_id: entry.id, repo_root: entry.path, access_mode: entry.accessMode,
+          status: 'ok', snapshot_consistency: 'stable', cards: [card(1)], error: null };
+      },
+    };
+    const result = await collectFleetBoard({ repository_id: a.id }, dependencies);
+    expect(seen).toEqual([a.id]);
+    expect(result.repositories.map((entry) => entry.repository_id)).toEqual([a.id]);
+    expect(result.repositories[0]?.access_mode).toBe('read_only');
+    await expect(collectFleetBoard({ repository_id: 'missing' }, dependencies)).rejects.toMatchObject({ code: 'fleet_repository_not_found' });
+    await expect(collectFleetBoard({ repository_id: '../root' }, dependencies)).rejects.toMatchObject({ code: 'fleet_board_argument_invalid' });
+    expect(seen).toEqual([a.id]);
+  });
+
+  test('strict registry failure remains fatal before selected repository observation', async () => {
+    let calls = 0;
+    await expect(collectFleetBoard({ repository_id: repo(1).id }, {
+      read_registry: () => { throw new Error('malformed global authority'); },
+      collect_repository: async () => { calls += 1; throw new Error('must not observe'); },
+    })).rejects.toMatchObject({ code: 'fleet_registry_unavailable' });
+    expect(calls).toBe(0);
+  });
+});
+
+test('real scoped collector reads healthy A while B is missing without changing either authority', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'fleet-scoped-real-'));
+  const healthyRoot = join(root, 'healthy');
+  const home = join(root, 'home');
+  mkdirSync(healthyRoot); mkdirSync(home);
+  try {
+    const a = createPlainBoardFixture(healthyRoot, 1, repoHarnessRepoIdFor(realpathSync(healthyRoot)));
+    const missingPath = join(realpathSync(root), 'missing');
+    const b = { ...repo(2), id: repoHarnessRepoIdFor(missingPath), path: missingPath };
+    const file = join(home, 'registered-repos.json');
+    writeFileSync(file, JSON.stringify({ version: 1, authorizationRevision: 1, repos: [a, b] }));
+    const before = readFileSync(file, 'utf8');
+    const status = git(healthyRoot, 'status', '--porcelain');
+    const result = await collectFleetBoard({ env: { REPO_HARNESS_HOME: home }, repository_id: a.id, timeout_ms: 5_000 });
+    expect(result.repositories).toHaveLength(1);
+    expect(result.repositories[0]).toMatchObject({ repository_id: a.id, status: 'ok', access_mode: 'read_only' });
+    expect(result.counts.known_tasks).toBe(1);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    expect(git(healthyRoot, 'status', '--porcelain')).toBe(status);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { projectOperatorRepositorySnapshot } from '../../core/operator/repository-snapshot';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
 import { Worker as ActivityWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
@@ -78,6 +80,7 @@ export const OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES =
  * second copy of the same strings.
  */
 export const OPERATOR_HEALTH_PATH = '/healthz' as const;
+export const OPERATOR_REPOSITORY_SNAPSHOT_ROUTE = /^\/api\/v1\/fleet\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
 export const OPERATOR_FLEET_SNAPSHOT_PATH = '/api/v1/fleet/snapshot' as const;
 export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 /** The static fallback has no path shape of its own; it is whatever is left. */
@@ -117,6 +120,7 @@ export interface OperatorRouteV1 {
  */
 export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'health', method: 'GET', pattern: OPERATOR_HEALTH_PATH, write: false }),
+  Object.freeze({ id: 'repository_snapshot', method: 'GET', pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source, write: false }),
   Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: OPERATOR_FLEET_SNAPSHOT_PATH, write: false }),
   Object.freeze({
     id: 'collaboration_snapshot',
@@ -322,6 +326,7 @@ function publicFleetError(error: unknown): {
   readonly status: number;
   readonly body: OperatorErrorResponseV1;
 } {
+  if (error instanceof OperatorFleetBusyError) return { status: 503, body: errorBody('fleet_snapshot_busy', 'Fleet observation queue is full.') };
   if (error instanceof OperatorFleetTimeoutError) {
     return {
       status: 503,
@@ -336,11 +341,12 @@ function publicFleetError(error: unknown): {
     const messageByCode: Readonly<Record<FleetBoardError['code'], string>> = {
       fleet_registry_unavailable: 'Fleet registry cannot be read.',
       fleet_registry_invalid: 'Fleet registry is invalid.',
+      fleet_repository_not_found: 'Repository is not registered.',
       fleet_board_argument_invalid: 'Fleet snapshot request is invalid.',
       fleet_watch_aborted_before_first_snapshot: 'Fleet snapshot collection was aborted.',
     };
     return {
-      status: error.code === 'fleet_board_argument_invalid' ? 400 : 503,
+      status: error.code === 'fleet_repository_not_found' ? 404 : error.code === 'fleet_board_argument_invalid' ? 400 : 503,
       body: errorBody(error.code, messageByCode[error.code]),
     };
   }
@@ -349,6 +355,8 @@ function publicFleetError(error: unknown): {
     body: errorBody('fleet_snapshot_unavailable', 'Fleet snapshot is unavailable.'),
   };
 }
+
+class OperatorFleetBusyError extends Error {}
 
 class OperatorFleetTimeoutError extends Error {
   readonly code = 'fleet_snapshot_timeout' as const;
@@ -584,6 +592,7 @@ function fleetCollectorResponse(value: unknown): OperatorFleetCollectorResponse 
     && 'code' in value
     && (value.code === 'fleet_registry_unavailable'
       || value.code === 'fleet_registry_invalid'
+      || value.code === 'fleet_repository_not_found'
       || value.code === 'fleet_board_argument_invalid'
       || value.code === 'fleet_watch_aborted_before_first_snapshot')
   ) {
@@ -676,6 +685,7 @@ function windowsFleetControllerPath(): string {
  */
 function readDefaultFleetSnapshot(
   input: Required<Pick<FleetBoardCollectorOptions, 'sequence' | 'max_concurrency' | 'timeout_ms'>> & {
+    readonly repository_id?: string;
     readonly env?: NodeJS.ProcessEnv;
     readonly signal: AbortSignal;
   },
@@ -875,6 +885,8 @@ function readDefaultFleetSnapshot(
           if (cancellationRequested) return;
           if (!writeChildJsonLine(controller, {
             type: 'start',
+            protocol: 1,
+            scope: input.repository_id === undefined ? { kind: 'fleet' } : { kind: 'repository', repository_id: input.repository_id },
             sequence: input.sequence,
             max_concurrency: input.max_concurrency,
             timeout_ms: input.timeout_ms,
@@ -922,6 +934,8 @@ function readDefaultFleetSnapshot(
       }
     } else if (collector !== null && !writeChildJsonLine(collector, {
       type: 'start',
+      protocol: 1,
+      scope: input.repository_id === undefined ? { kind: 'fleet' } : { kind: 'repository', repository_id: input.repository_id },
       env: collaborationWorkerEnvironment(input.env),
       sequence: input.sequence,
       max_concurrency: input.max_concurrency,
@@ -1394,10 +1408,7 @@ export async function startOperatorServer(
   const collect = options.collect_fleet_board;
   const readCollaboration = options.read_collaboration_snapshot ?? readDefaultCollaborationSnapshot;
   const send = options.send_task_message;
-  let inFlight: Promise<OperatorFleetSnapshotV1> | null = null;
   let nextSnapshotSequence = 1;
-  let activeFleetCanceller: (() => void) | null = null;
-  let activeFleetSubscribers = 0;
   let activeTaskMessageWriters = 0;
   const activeTaskMessageCancellers = new Set<() => void>();
   const activeTaskMessageCompletions = new Set<Promise<void>>();
@@ -1514,92 +1525,132 @@ export async function startOperatorServer(
     }
   };
 
-  const snapshot = (): Promise<OperatorFleetSnapshotV1> => {
-    if (inFlight !== null) return inFlight;
-    const sequence = nextSnapshotSequence;
-    nextSnapshotSequence += 1;
-    const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), timeoutMs);
-    const pending = (collect === undefined
-      ? readDefaultFleetSnapshot({
-        env: options.env,
-        sequence,
-        max_concurrency: maxConcurrency,
-        timeout_ms: timeoutMs,
-        signal: controller.signal,
-      })
-      : Promise.resolve().then(() => collect({
-        env: options.env,
-        sequence,
-        max_concurrency: maxConcurrency,
-        timeout_ms: timeoutMs,
-        signal: controller.signal,
-      }))).then(projectOperatorFleetSnapshot);
-    inFlight = pending;
-    /**
-     * Cancellation retires the shared observation immediately, exactly as the
-     * collaboration path drops its observation the moment it is cancelled. The
-     * collector's abort path is not instantaneous — it drains a cleanup grace
-     * period and then waits for the process group to disappear — so a request
-     * that arrives inside that window would otherwise be handed the dying
-     * promise and answered with its failure. A page reload right after the
-     * previous page closed its connection is exactly that request.
-     */
-    const cancelFleet = () => {
-      if (inFlight === pending) inFlight = null;
-      if (activeFleetCanceller === cancelFleet) activeFleetCanceller = null;
-      controller.abort();
+  interface FleetObservation {
+    readonly repositoryId: string | undefined;
+    readonly key: string;
+    readonly sequence: number;
+    readonly controller: AbortController;
+    readonly promise: Promise<OperatorFleetSnapshotV1>;
+    readonly resolve: (snapshot: OperatorFleetSnapshotV1) => void;
+    readonly reject: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout> | null;
+    subscribers: number;
+    settled: boolean;
+  }
+  const fleetObservations = new Map<string, FleetObservation>();
+  const fleetQueue: FleetObservation[] = [];
+  const fleetCompletions = new Set<Promise<void>>();
+  const serviceEpoch = randomUUID();
+  let activeFleetObservation: FleetObservation | null = null;
+  let fleetClosing = false;
+
+  const settleFleetObservation = (observation: FleetObservation, outcome:
+    { readonly ok: true; readonly value: OperatorFleetSnapshotV1 } | { readonly ok: false; readonly error: unknown }): void => {
+    if (observation.settled) return;
+    observation.settled = true;
+    if (observation.timer !== null) clearTimeout(observation.timer);
+    if (fleetObservations.get(observation.key) === observation) fleetObservations.delete(observation.key);
+    const index = fleetQueue.indexOf(observation);
+    if (index >= 0) fleetQueue.splice(index, 1);
+    if (outcome.ok) observation.resolve(outcome.value);
+    else observation.reject(outcome.error);
+  };
+
+  const cancelFleetObservation = (observation: FleetObservation): void => {
+    observation.controller.abort();
+    settleFleetObservation(observation, { ok: false, error: new OperatorFleetTimeoutError() });
+    // Retirement changes subscription identity, never the active process slot.
+    drainFleetQueue();
+  };
+
+  const drainFleetQueue = (): void => {
+    if (fleetClosing || activeFleetObservation !== null) return;
+    const observation = fleetQueue.shift();
+    if (observation === undefined) return;
+    activeFleetObservation = observation;
+    const input = {
+      env: options.env,
+      repository_id: observation.repositoryId,
+      sequence: observation.sequence,
+      max_concurrency: maxConcurrency,
+      timeout_ms: timeoutMs,
+      signal: observation.controller.signal,
     };
-    activeFleetCanceller = cancelFleet;
-    pending.then(
-      () => {
-        clearTimeout(deadline);
-        if (inFlight === pending) inFlight = null;
-        if (activeFleetCanceller === cancelFleet) activeFleetCanceller = null;
-      },
-      () => {
-        clearTimeout(deadline);
-        if (inFlight === pending) inFlight = null;
-        if (activeFleetCanceller === cancelFleet) activeFleetCanceller = null;
-      },
-    );
-    return pending;
+    const completion = Promise.resolve().then(() => {
+      if (observation.controller.signal.aborted) throw new OperatorFleetTimeoutError();
+      return collect === undefined ? readDefaultFleetSnapshot(input) : collect(input);
+    }).then((raw) => {
+      const value = projectOperatorFleetSnapshot(raw);
+      if (value.sequence !== observation.sequence) throw new Error('Fleet generation mismatch');
+      if (observation.repositoryId !== undefined) projectOperatorRepositorySnapshot(value, observation.repositoryId, serviceEpoch);
+      settleFleetObservation(observation, { ok: true, value });
+    }).catch((error: unknown) => {
+      settleFleetObservation(observation, { ok: false, error });
+    }).finally(() => {
+      // The production promise settles only after process-group/Job cleanup.
+      // Injected readers are held to the same settlement boundary.
+      activeFleetObservation = null;
+      fleetCompletions.delete(completion);
+      drainFleetQueue();
+    });
+    fleetCompletions.add(completion);
+  };
+
+  const acquireFleetObservation = (repositoryId: string | undefined): FleetObservation => {
+    if (fleetClosing) throw new OperatorFleetTimeoutError();
+    const key = repositoryId === undefined ? 'fleet' : `repository:${repositoryId}`;
+    const current = fleetObservations.get(key);
+    if (current !== undefined) { current.subscribers += 1; return current; }
+    if (activeFleetObservation !== null && fleetQueue.length >= maxConcurrency * 2) throw new OperatorFleetBusyError();
+    let resolveObservation!: FleetObservation['resolve'];
+    let rejectObservation!: FleetObservation['reject'];
+    const observation: FleetObservation = {
+      repositoryId, key, sequence: nextSnapshotSequence++, controller: new AbortController(),
+      promise: new Promise((resolve, reject) => { resolveObservation = resolve; rejectObservation = reject; }),
+      resolve: (value) => resolveObservation(value), reject: (error) => rejectObservation(error),
+      timer: null, subscribers: 1, settled: false,
+    };
+    observation.timer = setTimeout(() => cancelFleetObservation(observation), timeoutMs);
+    fleetObservations.set(key, observation);
+    fleetQueue.push(observation);
+    drainFleetQueue();
+    return observation;
   };
 
   const handleFleetSnapshot = async (
     request: IncomingMessage,
     response: ServerResponse,
     headOnly: boolean,
+    repositoryId?: string,
   ): Promise<void> => {
-    activeFleetSubscribers += 1;
-    let finished = false;
+    let observation: FleetObservation;
+    try { observation = acquireFleetObservation(repositoryId); }
+    catch (error) {
+      const failure = publicFleetError(error);
+      sendRefusal(request, response, failure.status, failure.body, headOnly);
+      return;
+    }
     let released = false;
     let clientDisconnected = false;
     const release = (): void => {
       if (released) return;
       released = true;
-      activeFleetSubscribers -= 1;
-      if (!finished && activeFleetSubscribers === 0) activeFleetCanceller?.();
+      observation.subscribers -= 1;
+      if (observation.subscribers === 0 && !observation.settled) cancelFleetObservation(observation);
     };
-    const onClientDisconnect = (): void => {
-      if (finished) return;
-      clientDisconnected = true;
-      release();
-    };
+    const onClientDisconnect = (): void => { clientDisconnected = true; release(); };
     request.once('aborted', onClientDisconnect);
     response.once('close', onClientDisconnect);
     try {
-      const current = await snapshot();
+      const current = await observation.promise;
       if (clientDisconnected || response.destroyed) return;
-      finished = true;
-      sendJson(response, 200, current, headOnly);
+      sendJson(response, 200, repositoryId === undefined ? current
+        : projectOperatorRepositorySnapshot(current, repositoryId, serviceEpoch), headOnly);
     } catch (error) {
       if (clientDisconnected || response.destroyed) return;
-      finished = true;
       const failure = publicFleetError(error);
       sendRefusal(request, response, failure.status, failure.body, headOnly);
     } finally {
-      finished = true;
       release();
       request.removeListener('aborted', onClientDisconnect);
       response.removeListener('close', onClientDisconnect);
@@ -1953,6 +2004,16 @@ export async function startOperatorServer(
       return;
     }
 
+    const repositoryRoute = OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.exec(pathname);
+    if (repositoryRoute !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Repository snapshots accept no query selectors.'), headOnly);
+        return;
+      }
+      await handleFleetSnapshot(request, response, headOnly, repositoryRoute[1]!);
+      return;
+    }
+
     const contextRoute = OPERATOR_TASK_CONTEXT_ROUTE.exec(pathname);
     if (contextRoute !== null) {
       let input: OperatorTaskContextRequest;
@@ -2121,7 +2182,9 @@ export async function startOperatorServer(
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
-    activeFleetCanceller?.();
+    fleetClosing = true;
+    for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
+    await Promise.allSettled([...fleetCompletions]);
     for (const cancel of activeDiffCancellers) cancel();
     for (const cancel of activeTaskReadCancellers) cancel();
     await Promise.allSettled([...activeTaskReadWorkers]);

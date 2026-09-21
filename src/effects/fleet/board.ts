@@ -38,6 +38,7 @@ import { observeAgentRuntimeEffects, projectTaskAgentRuntimeState, AgentRuntimeE
 export type FleetBoardFatalErrorCode =
   | 'fleet_registry_unavailable'
   | 'fleet_registry_invalid'
+  | 'fleet_repository_not_found'
   | 'fleet_board_argument_invalid'
   | 'fleet_watch_aborted_before_first_snapshot';
 
@@ -56,6 +57,8 @@ class FleetRepositoryError extends Error {
 }
 
 export interface FleetBoardCollectorOptions {
+  /** Exact registered identity, selected before any repository/provider observation. */
+  readonly repository_id?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly sequence?: number;
   readonly observed_at?: string;
@@ -498,6 +501,9 @@ export async function collectFleetBoard(
   options: FleetBoardCollectorOptions = {},
   dependencies: FleetBoardDependencies = productionFleetBoardDependencies,
 ): Promise<FleetBoardSnapshotV1> {
+  if (options.repository_id !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(options.repository_id)) {
+    throw new FleetBoardError('fleet_board_argument_invalid', 'invalid repository selector');
+  }
   const maxConcurrency = positiveInteger(options.max_concurrency, 'max-concurrency', 1, 16);
   const timeoutMs = positiveInteger(options.timeout_ms, 'timeout-ms', 1_000, 30_000);
   const sequence = options.sequence ?? 1;
@@ -533,12 +539,16 @@ export async function collectFleetBoard(
       if (error instanceof RepoHarnessRegistryStrictError) throw new FleetBoardError(error.code, error.message, error);
       throw new FleetBoardError('fleet_registry_unavailable', 'cannot read fleet registry authority', error);
     }
+    const selected = options.repository_id === undefined ? registry.repos : registry.repos.filter((repo) => repo.id === options.repository_id);
+    if (options.repository_id !== undefined && selected.length !== 1) {
+      throw new FleetBoardError('fleet_repository_not_found', 'repository is not registered');
+    }
     if (deadlineExceededNow()) {
       return projectFleetBoardSnapshot({
         registry_revision: registry.registryRevision,
         sequence,
         observed_at: options.observed_at ?? new Date(nowMs).toISOString(),
-        repositories: registry.repos.map((repo) => repositoryError(
+        repositories: selected.map((repo) => repositoryError(
           repo,
           'repo_collection_timeout',
           new Error('fleet collection round deadline exceeded'),
@@ -547,7 +557,7 @@ export async function collectFleetBoard(
     }
     assertCollectionActive(controller.signal, deadlineExceededNow);
     const providerLimiter = createFleetProviderObservationLimiter(maxConcurrency);
-    const repositories = await collectBounded(registry.repos, maxConcurrency, async (repo) => {
+    const repositories = await collectBounded(selected, maxConcurrency, async (repo) => {
       await yieldToEventLoop();
       if (deadlineExceededNow() || controller.signal.aborted) {
         return repositoryError(

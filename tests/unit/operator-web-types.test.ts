@@ -413,3 +413,34 @@ test('current context transport preserves expected revision, abort and uncached 
     await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('stale');
   } finally {globalThis.fetch=original;}
 });
+
+describe('repository snapshot transport', () => {
+  test('binds nested identity and generation with a strict envelope', async () => {
+    const { decodeOperatorRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
+    const value = { protocol: 1, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
+      service_epoch: '00000000-0000-4000-8000-000000000001', generation: 1, snapshot: validFleetPayload() };
+    expect(decodeOperatorRepositorySnapshot(value, 'repo-1')).toMatchObject({ repository_id: 'repo-1' });
+    for (const bad of [{ ...value, protocol: 2 }, { ...value, generation: 2 }, { ...value, generation: 0 },
+      { ...value, service_epoch: 'unknown' }, { ...value, repository_id: 'repo-2' }, { ...value, path: '/private' },
+      { ...value, snapshot: { ...value.snapshot, repositories: [] } }]) {
+      expect(() => decodeOperatorRepositorySnapshot(bad, 'repo-1')).toThrow();
+    }
+  });
+  test('fetches an uncached selected repository with cancellation and typed refusal', async () => {
+    const { fetchRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
+    const original = globalThis.fetch;
+    const controller = new AbortController();
+    let called = 0;
+    globalThis.fetch = (async (input, init) => {
+      called += 1;
+      expect(input).toBe('/api/v1/fleet/repositories/repo-1/snapshot');
+      expect(init?.cache).toBe('no-store'); expect(init?.signal).toBe(controller.signal);
+      return new Response(JSON.stringify({ error: { code: 'fleet_repository_not_found' } }), { status: 404 });
+    }) as typeof fetch;
+    try {
+      await expect(fetchRepositorySnapshot('repo-1', controller.signal)).rejects.toThrow('fleet_repository_not_found');
+      await expect(fetchRepositorySnapshot('../root', controller.signal)).rejects.toThrow('repository_snapshot_invalid');
+      expect(called).toBe(1);
+    } finally { globalThis.fetch = original; }
+  });
+});
