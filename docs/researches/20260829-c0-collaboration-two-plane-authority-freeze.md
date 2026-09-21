@@ -667,3 +667,7 @@ unchanged. The resulting inventory digest is
 `sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787`.
 The protocol change and this explicit amendment are verified by
 `tests/unit/collaboration-authority-baseline.test.ts`.
+
+## AKN-04a Fleet protocol revision (2026-09-22)
+
+The placement cutover changes the existing Fleet board wire protocol from 4 to 5; its authority membership and store ownership remain unchanged. The earlier inventory digest `sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787` above records the prior freeze. The current inventory, differing in that protocol value, is `sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162`. The closed inventory regression remains required; this explicit revision does not retroactively change any earlier acceptance or establish a new delivery authority.
