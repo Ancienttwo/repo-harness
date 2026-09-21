@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 01:26
+> **Related Plan**: plans/archive/plan-20260922-0113-akn03-reply-protocol.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-0126
+> **Archive Projection V1**: `plans/plan-20260922-0113-akn03-reply-protocol.md` => `plans/archive/plan-20260922-0113-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md` => `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md` => `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md` => `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+
 # Task Contract: akn03-reply-protocol
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0113-akn03-reply-protocol.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0113-akn03-reply-protocol.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 01:13
-> **Review File**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md`
-> **Notes File**: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md`
+> **Review File**: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+> **Notes File**: `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -37,10 +47,10 @@ A half-written, cross-task, wrong-recipient, changed-byte or rotated-fence chain
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0113-akn03-reply-protocol.md`
+- Source plan: `plans/archive/plan-20260922-0113-akn03-reply-protocol.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md`
-- Notes file: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md`
+- Review file: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+- Notes file: `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -66,10 +76,10 @@ allowed_paths:
   - tests/unit/task-reply.test.ts
   - docs/researches/20260922-task-reply-protocol.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0113-akn03-reply-protocol.md
-  - tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md
-  - tasks/reviews/20260922-0113-akn03-reply-protocol.review.md
-  - tasks/notes/20260922-0113-akn03-reply-protocol.notes.md
+  - plans/archive/plan-20260922-0113-akn03-reply-protocol.md
+  - tasks/archive/contract-20260922-0126-akn03-reply-protocol.md
+  - tasks/archive/review-20260922-0126-akn03-reply-protocol.md
+  - tasks/archive/notes-20260922-0126-akn03-reply-protocol.md
 ```
 
 ## Evidence Requirements

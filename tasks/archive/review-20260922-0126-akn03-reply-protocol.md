@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 01:26
+> **Related Plan**: plans/archive/plan-20260922-0113-akn03-reply-protocol.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-0126
+> **Archive Projection V1**: `plans/plan-20260922-0113-akn03-reply-protocol.md` => `plans/archive/plan-20260922-0113-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md` => `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md` => `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md` => `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+
 # Task Review: akn03-reply-protocol
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0113-akn03-reply-protocol.md
-> **Contract**: tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md
-> **Notes File**: tasks/notes/20260922-0113-akn03-reply-protocol.notes.md
+> **Plan**: plans/archive/plan-20260922-0113-akn03-reply-protocol.md
+> **Contract**: tasks/archive/contract-20260922-0126-akn03-reply-protocol.md
+> **Notes File**: tasks/archive/notes-20260922-0126-akn03-reply-protocol.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 01:13
 > **Recommendation**: pass

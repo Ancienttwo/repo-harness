@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-22 01:26
+> **Related Plan**: plans/archive/plan-20260922-0113-akn03-reply-protocol.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260922-0126
+> **Archive Projection V1**: `plans/plan-20260922-0113-akn03-reply-protocol.md` => `plans/archive/plan-20260922-0113-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md` => `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md` => `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md` => `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+
 # Plan: AKN-03a: Task reply intent/commit protocol and recovery oracle
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260922-0113
 > **Slug**: akn03-reply-protocol
 > **Planning Source**: repo-harness-plan
@@ -12,9 +22,9 @@
 > **Rollback Surface**: Revert core contract, focused tests and own documentation; no persisted production state
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md`
-> **Task Review**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md`
-> **Implementation Notes**: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`
+> **Task Review**: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+> **Implementation Notes**: `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
 
 ## Agentic Routing
 - Selected route: planning
@@ -28,16 +38,16 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260922-0113-akn03-reply-protocol.md`
-- Sprint contract: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md`
-- Sprint review: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md`
-- Implementation notes: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md`
+- Active plan: `plans/archive/plan-20260922-0113-akn03-reply-protocol.md`
+- Sprint contract: `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`
+- Sprint review: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+- Implementation notes: `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md` `allowed_paths`
+- Scope authority: `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260922-0113-akn03-reply-protocol.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260922-0113-akn03-reply-protocol.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260922-0113-akn03-reply-protocol.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260922-0113-akn03-reply-protocol.md`.
 
 ## Approach
 ### Strategy
@@ -66,11 +76,11 @@ See captured planning output.
 | Captured plan lacks enough detail | Medium | Execution may need clarification | Stop before implementation if the captured output contradicts repo rules or lacks concrete file targets |
 
 ## Task Contracts
-- Contract file: `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md`
-- Review file: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md`
-- Implementation notes file: `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md`
+- Contract file: `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`
+- Review file: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`
+- Implementation notes file: `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/archive/contract-20260922-0126-akn03-reply-protocol.md --strict`
 - Active plan rule: this captured plan is written to `.ai/harness/active-plan` and the owning worktree is written to `.ai/harness/active-worktree` unless --no-active is used. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -80,18 +90,18 @@ See captured planning output.
 
 ## Promotion Gate
 
-- **Merge/PR unit**: Captured plan `plans/plan-20260922-0113-akn03-reply-protocol.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Merge/PR unit**: Captured plan `plans/archive/plan-20260922-0113-akn03-reply-protocol.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
 - **Rollback surface**: Revert core contract, focused tests and own documentation; no persisted production state
 - **Verification boundary**: Pure reply chain fault oracle plus required integrity and type checks; no Host acceptance
-- **Review/acceptance boundary**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md` must record pass against the captured acceptance criteria.
+- **Review/acceptance boundary**: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
 - **Why not checklist row**: verification_boundary
 
 ## Evidence Contract
 
-- **State/progress path**: `plans/plan-20260922-0113-akn03-reply-protocol.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260922-0113-akn03-reply-protocol.contract.md`, `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md`, and `tasks/notes/20260922-0113-akn03-reply-protocol.notes.md`
+- **State/progress path**: `plans/archive/plan-20260922-0113-akn03-reply-protocol.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/archive/contract-20260922-0126-akn03-reply-protocol.md`, `tasks/archive/review-20260922-0126-akn03-reply-protocol.md`, and `tasks/archive/notes-20260922-0126-akn03-reply-protocol.md`
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
-- **Evaluator rubric**: `tasks/reviews/20260922-0113-akn03-reply-protocol.review.md` must record a passing Waza /check style recommendation
+- **Evaluator rubric**: `tasks/archive/review-20260922-0126-akn03-reply-protocol.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
 - **Rollback surface**: Revert core contract, focused tests and own documentation; no persisted production state
 
