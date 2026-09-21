@@ -55,3 +55,7 @@ The findings belong to the AKN-03b inbox reader and AKN-04b activity protocol. P
 ## Corrected candidate
 
 The two findings were reproduced before production edits, with PRE_FIX_EXIT=1. Owning commits bd557f81 (steer pagination) and07c5ea0a (empty activity bodies) are integrated. The owning suites passed23/23 and11/11 respectively; final canonical verification also includes both suites. The original reject disposition remains immutable. Corrected-subject owner acceptance is still required; no second independent review is performed.
+
+## Corrected canonical verification
+
+Candidate ef70e8d7; normalized subject `sha256:dd37050e8aa4b370cad2d1195491f7620844dea0cd4a024a733d0623f2fbfc19`. Final canonical run `.ai/harness/runs/run-20260922T064358-47626-20260922-0600-akn05-supervision-summary.json` passes21/21 criteria, zero failures, including both corrected dependency suites and all required integrity checks. Architecture materialization is noop and the source stayed frozen. Semantic acceptance remains pending; the previous reject receipt is retained.
