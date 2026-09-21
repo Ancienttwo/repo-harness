@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 02:24
+> **Related Plan**: plans/archive/plan-20260922-0151-akn03-reply-inventory.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-0224
+> **Archive Projection V1**: `plans/plan-20260922-0151-akn03-reply-inventory.md` => `plans/archive/plan-20260922-0151-akn03-reply-inventory.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0151-akn03-reply-inventory.notes.md` => `tasks/archive/notes-20260922-0224-akn03-reply-inventory.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0151-akn03-reply-inventory.contract.md` => `tasks/archive/contract-20260922-0224-akn03-reply-inventory.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0151-akn03-reply-inventory.review.md` => `tasks/archive/review-20260922-0224-akn03-reply-inventory.md`
+
 # Task Contract: akn03-reply-inventory
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0151-akn03-reply-inventory.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0151-akn03-reply-inventory.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 01:51
-> **Review File**: `tasks/reviews/20260922-0151-akn03-reply-inventory.review.md`
-> **Notes File**: `tasks/notes/20260922-0151-akn03-reply-inventory.notes.md`
+> **Review File**: `tasks/archive/review-20260922-0224-akn03-reply-inventory.md`
+> **Notes File**: `tasks/archive/notes-20260922-0224-akn03-reply-inventory.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ The existing scan still fails, a production consumer relies on reply records for
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0151-akn03-reply-inventory.md`
+- Source plan: `plans/archive/plan-20260922-0151-akn03-reply-inventory.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0151-akn03-reply-inventory.review.md`
-- Notes file: `tasks/notes/20260922-0151-akn03-reply-inventory.notes.md`
+- Review file: `tasks/archive/review-20260922-0224-akn03-reply-inventory.md`
+- Notes file: `tasks/archive/notes-20260922-0224-akn03-reply-inventory.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -80,10 +90,10 @@ allowed_paths:
   - tasks/archive/review-20260922-0126-akn03-reply-protocol.md
   - tasks/archive/notes-20260922-0126-akn03-reply-protocol.md
   - tasks/archive/todo-20260922-0126-akn03-reply-protocol.md
-  - plans/plan-20260922-0151-akn03-reply-inventory.md
-  - tasks/contracts/20260922-0151-akn03-reply-inventory.contract.md
-  - tasks/reviews/20260922-0151-akn03-reply-inventory.review.md
-  - tasks/notes/20260922-0151-akn03-reply-inventory.notes.md
+  - plans/archive/plan-20260922-0151-akn03-reply-inventory.md
+  - tasks/archive/contract-20260922-0224-akn03-reply-inventory.md
+  - tasks/archive/review-20260922-0224-akn03-reply-inventory.md
+  - tasks/archive/notes-20260922-0224-akn03-reply-inventory.md
   - tasks/todos.md
 ```
 

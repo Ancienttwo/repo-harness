@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 02:24
+> **Related Plan**: plans/archive/plan-20260922-0151-akn03-reply-inventory.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-0224
+> **Archive Projection V1**: `plans/plan-20260922-0151-akn03-reply-inventory.md` => `plans/archive/plan-20260922-0151-akn03-reply-inventory.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0151-akn03-reply-inventory.notes.md` => `tasks/archive/notes-20260922-0224-akn03-reply-inventory.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0151-akn03-reply-inventory.contract.md` => `tasks/archive/contract-20260922-0224-akn03-reply-inventory.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0151-akn03-reply-inventory.review.md` => `tasks/archive/review-20260922-0224-akn03-reply-inventory.md`
+
 # Task Review: AKN-03 reply inventory integration
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0151-akn03-reply-inventory.md
-> **Contract**: tasks/contracts/20260922-0151-akn03-reply-inventory.contract.md
-> **Notes File**: tasks/notes/20260922-0151-akn03-reply-inventory.notes.md
+> **Plan**: plans/archive/plan-20260922-0151-akn03-reply-inventory.md
+> **Contract**: tasks/archive/contract-20260922-0224-akn03-reply-inventory.md
+> **Notes File**: tasks/archive/notes-20260922-0224-akn03-reply-inventory.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
