@@ -1,16 +1,16 @@
 # Task Review: candidate-runtime-fixture-authority
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-0132-candidate-runtime-fixture-authority.md
 > **Contract**: tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md
 > **Notes File**: tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 01:32
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:9213b38459930b40a3c4889a197039603d85b9db0e723d2a6850040ac2bcb755
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 
 > **Substantive Change SHA256**: `sha256:d71927b8967ed75c0d04234fb311444fa0c142644df89cbc3e39d98315fbf7d0`
 
@@ -24,17 +24,17 @@ All 11 canonical executable checks passed. Independent codex-plugin review appro
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:9213b38459930b40a3c4889a197039603d85b9db0e723d2a6850040ac2bcb755
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:192a2e29b7886f947d7ad301c5d7631a75ceaf533352f78f5e43579ef1529b7a
+> **Issued At**: 2026-09-21T17:47:52.448Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: No material blockers found in the exact three-file scope across all four change sources against the pinned base. The fixture targets the current timeout authority and preserves reconciliation assertions. Review was read-only; tests were not rerun.
 - Findings: none
 
 ## Residual boundaries
