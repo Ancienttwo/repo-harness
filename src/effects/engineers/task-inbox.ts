@@ -1,6 +1,6 @@
 import { realpathSync } from 'fs';
 import { EngineerPrincipalError, type ClaimActorReceiptV1, type EngineerPrincipalMappingV1 } from '../../core/engineers/principal-claim';
-import { validateFleetWorkEnvelope, type WorkEnvelopeV1 } from '../fleet/acquire';
+import { validateFleetCommunicationEnvelope, type WorkEnvelopeV1 } from '../fleet/acquire';
 import type { RestrictedTaskInboxInput } from '../fleet/task-inbox';
 import { withRepoHarnessRegistryAuthorizationLock } from '../repo-registry';
 import { withEngineerBindingLock } from './binding-store';
@@ -51,7 +51,7 @@ export function withEngineerTaskInbox<T>(input: EngineerTaskInboxInput, action: 
         if (!actor || actor.engineer_id !== live.engineer_id || actor.binding_id !== live.binding_id || actor.binding_generation !== live.binding_generation
           || actor.engineer_contract_revision !== live.engineer_contract_revision || actor.repository_id !== live.repository_id) stale('Claim actor does not belong to this current Engineer');
         validateClaimActorReceiptLive(input.repo_root, actor, work);
-        validateFleetWorkEnvelope(input.repo_root, work, input.env);
+        validateFleetCommunicationEnvelope(input.repo_root, work, input.env);
         if (frozen && (frozen.mapping.mapping_digest !== mapping.mapping_digest || frozen.actor.receipt_sha256 !== actor.receipt_sha256)) stale('Original task communication fence changed');
         frozen = { mapping, actor };
         return frozen;

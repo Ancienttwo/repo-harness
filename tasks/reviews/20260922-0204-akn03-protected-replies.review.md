@@ -10,11 +10,11 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Substantive Change SHA256**: `sha256:05a76b76374e613e15ad6bcc4b5808186837ec943c62adf60d50fdfa34585096`
+> **Substantive Change SHA256**: `sha256:5f1a3c33b23dda4bd0a42c6d23b7c453da73465ff7837a390a0fce5259a1c13d`
 
 ## Human Review Card
 
-- Verdict: independent needs-attention; both findings fixed and regression-tested; exact final owner acceptance pending.
+- Verdict: independent needs-attention; original findings fixed; cumulative AKN-04a dependency findings corrected with pre-fix failures and targeted regressions; corrected final verification and owner acceptance pending.
 - Change type: code-change; protected message disposition and current-request auth.
 - Scope: roadmap sections 5.3 and 5.5-5.7, as frozen in the captured plan.
 - P1/P2/P3: existing inbox authority; Binding to Task to mapping to registry lock order; original WorkEnvelope digest; synchronous OAuth recheck and physical crash boundaries.
@@ -69,3 +69,9 @@ Review subject: `sha256:c87c011cd1e9865a9eff72640e8885d2073f6e1b22f67d304857de97
 ## Review resolution
 
 Both findings reproduced in `review-regressions-before.log`: exact whitespace was lost, and a fresh caller had no recovery body. The protected read now returns frozen retry bytes for incomplete chains; MCP passes original body bytes unchanged. Regression coverage generates the body exclusively inside the child that exits, then recovers through the authorized MCP read and reply tools. The existing current-fence check remains mandatory. Final canonical verification and owner acceptance follow the corrected source/projection freeze; the earlier reviewer verdict does not cover the new subject.
+
+## AKN-04a dependency findings
+
+The cumulative independent review rejected 75036305-derived behavior: unrelated canonical commits prevented ongoing communication, and full-history scan exhaustion prevented known-operation recovery. The owner request for the earlier f306 subject is superseded. `review-recovery-before.log` captured three failing regression cases. The corrected targeted run passed all three: communication survives unrelated canonical advancement while acquisition remains strict and changed Plan proof fails closed; authenticated exact-parent recovery survives both scan and byte exhaustion, retains immutable history, and rejects wrong digest, pagination mixing and revoked token. The code uses shared authority checks and an explicitly scoped exact-parent read requiring the original persisted intent. Unknown-parent discovery beyond the list bound remains incomplete and is not represented as solved.
+
+No second independent review was run. Acceptance must bind the corrected source and canonical verification.

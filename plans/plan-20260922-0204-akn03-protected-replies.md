@@ -132,3 +132,7 @@ Use focused reply/effect/MCP tests and the required nine repository integrity co
 - [x] Compose exact live principal/Binding/Lease/WorkEnvelope/registry and current OAuth authority for restricted Engineer MCP operations.
 - [x] Prove physical crash boundaries, exact retries, stale/revoked identity, ACK recovery, direction and bounded reads with focused tests.
 - [ ] Freeze source/projection, run canonical verification, record independent acceptance and submit a stage PR.
+
+## Dependency review corrections
+
+AKN-04a cumulative review identified two defects owned by this communication slice. Preserve strict acquisition commit fencing in `src/effects/fleet/acquire.ts`; add a communication validator sharing current registry, canonical Task and exact Plan proof validation while allowing an unrelated canonical commit to advance. The original WorkEnvelope digest, ClaimActor and live Lease fences remain mandatory. Add an authenticated exact-parent recovery selector to the existing messages tool; read only its bounded immutable reply chain, require a persisted intent, and report coverage as exact-parent rather than claiming whole-inbox coverage. This restores known interrupted operations beyond list scan limits without a second index or unbounded traversal. Unknown-parent discovery remains explicitly incomplete at the list budget. Verify both barriers before and after correction in the existing effects suite. The original one-shot review remains spent; new owner acceptance must bind corrected evidence.
