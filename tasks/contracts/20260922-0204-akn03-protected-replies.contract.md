@@ -71,6 +71,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  - src/effects/fleet/acquire.ts
   - src/effects/fleet/task-inbox.ts
   - src/effects/engineers/task-inbox.ts
   - src/effects/engineers/principal-store.ts
@@ -163,6 +164,17 @@ exit_criteria:
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "acquire-effects",
+      "kind": "package_test",
+      "path": "tests/unit/fleet-acquire-effect.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Shared authority validator must retain strict acquisition fencing",
+      "inputs": { "env": [] }
     },
     {
       "id": "reply-core",

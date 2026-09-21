@@ -1170,7 +1170,12 @@ export function readTaskSteerReply(input: { repo_root: string; task_id: string; 
 }
 
 /** Bounded, reconstructible pending-disposition view. No delivery, ACK, provider or recovery writes. */
-export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: number; after?: string }) {
+export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: number; after?: string; parent_message_id?: string; parent_event_digest?: string }) {
+  const exact = input.parent_message_id !== undefined || input.parent_event_digest !== undefined;
+  if (exact && (input.parent_message_id === undefined || input.parent_event_digest === undefined || input.limit !== undefined || input.after !== undefined)) {
+    fail('task_message_invalid', 'exact recovery requires parent_message_id and parent_event_digest without pagination');
+  }
+  if (input.parent_message_id !== undefined) assertMessageId(input.parent_message_id);
   const limit = input.limit ?? 50;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('task_message_invalid', 'limit must be from 1 to 100');
   if (input.after !== undefined) assertMessageId(input.after);
@@ -1186,7 +1191,16 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
       if (bytes + size > 2 * 1024 * 1024) { exhausted = 'bytes'; throw new Error('bounded inbox read exhausted'); }
       bytes += size;
     };
-    if (inspectSafeDirectoryChain(commonDirectory, directory, false, 'task events')) {
+    if (exact) {
+      const parent = optionalReplyRecord(commonDirectory, join(directory, `${input.parent_message_id}.json`), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge);
+      if (!parent) fail('task_message_invalid', 'exact recovery parent is missing');
+      assertEventCanonical(parent, input.task_id, authority.actor.task_revision);
+      if (parent.message_id !== input.parent_message_id) fail('task_message_unreadable', 'steer path identity is mismatched');
+      if (!isOriginalSteer(parent) || parent.event_digest !== input.parent_event_digest) fail('task_message_invalid', 'exact original human steer is required');
+      if (parent.scope === 'claim' && (parent.target_claim_id !== input.recipient.claim_id || parent.target_generation !== input.recipient.generation)) fail('claim_mismatch', 'steer belongs to a different claim recipient');
+      scanned = 1;
+      events.push(parent);
+    } else if (inspectSafeDirectoryChain(commonDirectory, directory, false, 'task events')) {
       const stream = opendirSync(directory);
       try {
         for (let entry = stream.readSync(); entry !== null; entry = stream.readSync()) {
@@ -1212,6 +1226,10 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
       try {
         for (const parent of parents.slice(0, limit)) {
           const chain = readReplyChain(input, parent, charge, commonDirectory);
+          if (exact) {
+            if (!chain.intent) replyInconsistent('exact recovery requires a persisted reply intent');
+            assertTaskReplyResumeFence(chain.intent, { principal_mapping: authority.mapping, claim_actor: authority.actor });
+          }
           const orphan = !chain.intent && !chain.commit && events.some(event => event.in_reply_to === parent.message_id && event.sender_id === authority.actor.receipt_sha256);
           const observation = orphan ? { state: 'orphan_event' as const } : chain.observation;
           entries.push({ parent, receipt: chain.acknowledgement, reply: observation,
@@ -1226,7 +1244,7 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
     }
     return { task_id: input.task_id, recipient: input.recipient, fence: { task_revision: authority.actor.task_revision, claim_actor_digest: authority.actor.receipt_sha256, mapping_digest: authority.mapping.mapping_digest },
       entries, context: renderTaskMessageUntrustedContext(entries.map(entry => entry.parent)),
-      coverage: { complete: exhausted === null && parents.length <= entries.length, reason: exhausted ?? (parents.length > entries.length ? 'page' : null), scanned, bytes },
+      coverage: { scope: exact ? 'exact_parent' as const : 'inbox' as const, complete: exhausted === null && parents.length <= entries.length, reason: exhausted ?? (parents.length > entries.length ? 'page' : null), scanned, bytes },
       next_cursor: exhausted === null && parents.length > entries.length ? entries.at(-1)?.parent.message_id ?? null : null };
   });
 }

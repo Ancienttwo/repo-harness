@@ -13,7 +13,7 @@ import { enrollEngineerPrincipal, revokeEngineerPrincipal } from '../../src/effe
 import { resolveEngineerPrincipal } from '../../src/effects/engineers/principal';
 import { publishClaimActorReceipt } from '../../src/effects/engineers/claim-actor-store';
 import { acknowledgeTaskSteer, consumeTaskSteer, deliverTaskInbox, observeTaskSteers, readTaskSteerReply, replyToTaskSteer, sendTaskMessage, taskInboxTaskDirectory, taskInboxEventPath, type TaskReplyWriteBoundary } from '../../src/effects/fleet/task-inbox';
-import { type WorkEnvelopeV1 } from '../../src/effects/fleet/acquire';
+import { validateFleetWorkEnvelope, type WorkEnvelopeV1 } from '../../src/effects/fleet/acquire';
 import { readCanonicalTaskPlanProof } from '../../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { readRepoHarnessRegistrySnapshot, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
@@ -77,6 +77,45 @@ function fixture() {
 }
 
 describe('protected Task reply storage and Engineer composition', () => {
+  test('review recovery: unrelated canonical commits preserve communication but not acquisition or changed plans', () => {
+    const f = fixture();
+    git(f.root, 'commit', '--allow-empty', '-qm', 'unrelated main advancement');
+    expect(() => validateFleetWorkEnvelope(f.root, f.work, f.env)).toThrow('canonical target moved');
+    expect(f.query().entries[0]?.parent.message_id).toBe(f.parent.message_id);
+    f.consume(); f.ack();
+    expect(() => f.reply(boundary => { if (boundary === 'intent_published') throw new Error('interrupted'); })).toThrow('interrupted');
+    git(f.root, 'commit', '--allow-empty', '-qm', 'another unrelated advancement');
+    expect(f.query().entries[0]?.recovery?.body).toBe(f.replyArgs.body);
+    expect(f.reply().commit.effect_id).toBe(f.replyArgs.reply_message_id);
+    writeFileSync(join(f.root, PLAN), '# Different plan\n');
+    git(f.root, 'add', PLAN); git(f.root, 'commit', '-qm', 'replace task plan');
+    expect(() => f.query()).toThrow('plan or contract proof');
+  });
+
+  for (const [reason, count, body] of [['scan', 1001, 'old steer'], ['bytes', 300, 'x'.repeat(8000)]] as const) {
+    test(`review recovery: exact parent survives ${reason} exhaustion without deleting history`, async () => {
+      const f = fixture(); f.consume(); f.ack();
+      expect(() => f.reply(boundary => { if (boundary === 'event_published') throw new Error('interrupted'); })).toThrow('interrupted');
+      const directory = join(taskInboxTaskDirectory(f.root, f.work.task_id), 'events');
+      for (let n = 100; n < count + 100; n++) {
+        const event = buildTaskMessageEvent({ ...f.parent, message_id: id(n), body });
+        writeFileSync(join(directory, `${event.message_id}.json`), `${canonicalTaskMessageEventBytes(event)}\n`);
+      }
+      expect(f.query().coverage).toMatchObject({ complete: false, reason });
+      const ctx = { repoRoot: f.root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: id(2), engineerVerifyAuthorization: f.input.verify_authorization };
+      const args = { work_envelope: f.work, parent_message_id: f.parent.message_id, parent_event_digest: f.parent.event_digest };
+      const result = await callMcpTool(ctx, 'engineer_task_messages', args);
+      expect(result).toMatchObject({ structuredContent: { coverage: { scope: 'exact_parent', complete: true, scanned: 1 }, entries: [{ recovery: { body: f.replyArgs.body, reply_message_id: id(5) } }] } });
+      const recovery = (result.structuredContent as { entries: { recovery: typeof f.replyArgs }[] }).entries[0]!.recovery;
+      const resumed = await callMcpTool(ctx, 'engineer_task_reply', { work_envelope: f.work, parent_message_id: recovery.parent_message_id, parent_event_digest: recovery.parent_event_digest, reply_message_id: recovery.reply_message_id, body: recovery.body });
+      expect(resumed.isError).not.toBeTrue(); expect(f.history().observation.state).toBe('complete');
+      expect(readdirSync(directory)).toHaveLength(count + 2);
+      expect((await callMcpTool(ctx, 'engineer_task_messages', { ...args, parent_event_digest: `sha256:${'0'.repeat(64)}` })).isError).toBeTrue();
+      expect((await callMcpTool(ctx, 'engineer_task_messages', { ...args, after: id(1) })).isError).toBeTrue();
+      f.revokeToken(); expect((await callMcpTool(ctx, 'engineer_task_messages', args)).isError).toBeTrue();
+    });
+  }
+
   test('ACKed unanswered steer remains visible; reads do not mutate receipt or Lease and replies do not echo', () => {
     const f = fixture(); const before = readLease(f.root, f.work.task_id).raw;
     expect(f.query().entries[0]?.receipt).toBeNull();
