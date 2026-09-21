@@ -19,7 +19,7 @@ const id = (n:number) => `123e4567-e89b-42d3-a456-${String(n).padStart(12,'0')}`
 const AT = '2026-09-22T00:00:00.000Z';
 const sha = (n:number) => `sha256:${String(n).repeat(64)}`;
 function put(path:string, bytes:string) { mkdirSync(dirname(path),{ recursive:true }); writeFileSync(path,bytes); }
-function fixture() {
+function fixture(replyBody = '  Exact old reply.\n') {
   const base = realpathSync(mkdtempSync(join(tmpdir(),'operator-activity-'))); roots.push(base);
   const root = join(base,'repo'), home=join(base,'home'); mkdirSync(root); mkdirSync(home);
   execFileSync('git',['init','-q','-b','main'],{cwd:root});
@@ -32,7 +32,7 @@ function fixture() {
   const parent=buildTaskMessageEvent({message_id:id(1),task_id:task,task_revision:revision,scope:'task',target_claim_id:null,target_generation:null,sender_kind:'operator',sender_id:'operator',sender_trust:'local_operator',audience:'owner',body:'Inspect before answering.',created_at:AT,in_reply_to:null});
   const recipient={kind:'claim' as const,claim_id:id(3),generation:1};
   const ack=transitionTaskMessageDeliveryReceipt(transitionTaskMessageDeliveryReceipt(buildTaskMessageDeliveryReceipt({message_id:parent.message_id,recipient,task_revision:revision,delivery_channel:'hook_session'}),{state:'delivered',at:AT}),{state:'acknowledged',at:AT});
-  const intent=buildTaskReplyIntent({parent,acknowledgement:ack,principal_mapping:mapping,claim_actor:actor,reply_message_id:id(2),body:'  Exact old reply.\n',prepared_at:AT});
+  const intent=buildTaskReplyIntent({parent,acknowledgement:ack,principal_mapping:mapping,claim_actor:actor,reply_message_id:id(2),body:replyBody,prepared_at:AT});
   const commit=buildTaskReplyCommit({intent,committed_at:AT});
   const inbox=join(root,'.git/repo-harness/task-inbox/v1',task), key=deriveTaskMessageRecipientKey(recipient);
   const event=(message:typeof parent) => put(join(inbox,'events',`${message.message_id}.json`),canonicalTaskMessageEventBytes(message)+'\n');
@@ -133,4 +133,28 @@ test('serialized output and nested recipient scan limits are independently visib
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
   expect(result.next_cursor).toBeNull();
   expect(readOperatorTaskActivity({...f.input,message_id:id(199),limit:1}).entries[0]?.event.message_id).toBe(id(199));
+});
+
+
+test('activity preserves an empty canonical reply through the production HTTP reader', async () => {
+  const f = fixture(''), before = tree(f.root);
+  const server = await startOperatorServer({ port: 0, env: f.input.env });
+  try {
+    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/activity?message_id=${id(2)}`;
+    const response = await fetch(server.url + path);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ entries: [{ provenance: 'recorded_claim_actor', event: { body: '', body_sha256: f.intent.reply.body_sha256 } }] });
+    expect(tree(f.root)).toBe(before);
+  } finally { await server.close(); }
+});
+
+
+test('activity retains canonical UTF-8 body limits while metadata remains nonempty', () => {
+  const f = fixture('界'.repeat(2730) + 'ab');
+  const result = readOperatorTaskActivity({ ...f.input, message_id: id(2), limit: 1 });
+  expect(result.entries[0]?.event.body).toBe(f.intent.reply.body);
+  expect(Buffer.byteLength(f.intent.reply.body)).toBe(8192);
+  const entry = result.entries[0]!;
+  expect(() => decodeOperatorTaskActivity({ ...result, entries: [{ ...entry, event: { ...entry.event, body: f.intent.reply.body + 'x' } }] }, result)).toThrow();
+  expect(() => decodeOperatorTaskActivity({ ...result, entries: [{ ...entry, event: { ...entry.event, sender_id: '' } }] }, result)).toThrow();
 });

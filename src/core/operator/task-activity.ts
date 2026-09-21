@@ -52,7 +52,7 @@ const SHA = /^sha256:[0-9a-f]{64}$/u;
 const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
 const hash = (v: unknown): v is string => typeof v === 'string' && SHA.test(v);
 const integer = (v: unknown, min = 0): v is number => Number.isSafeInteger(v) && (v as number) >= min;
-const text = (v: unknown, max = 8192): v is string => typeof v === 'string' && v.length > 0 && new TextEncoder().encode(v).length <= max;
+const text = (v: unknown, max = 8192, allowEmpty = false): v is string => typeof v === 'string' && (allowEmpty || v.length > 0) && new TextEncoder().encode(v).length <= max;
 const timestamp = (v: unknown): boolean => text(v, 64) && Number.isFinite(Date.parse(v));
 const exact = (v: unknown, keys: string[]): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && Object.keys(v).every(k => keys.includes(k));
 const one = (v: unknown, values: readonly unknown[]): boolean => values.includes(v);
@@ -81,7 +81,7 @@ function validEvent(v: unknown): v is ActivityEvent {
     && one(v.scope, ['task','claim']) && (v.scope === 'claim' ? isUuid(v.target_claim_id) && integer(v.target_generation, 1) : v.target_claim_id === null && v.target_generation === null)
     && one(v.sender_kind, ['user','operator','agent']) && nullable(v.sender_id, text)
     && one(v.sender_trust, ['local_operator','lease_owner','unverified_agent']) && one(v.audience, ['owner','orchestrator','user'])
-    && text(v.body) && hash(v.body_sha256) && timestamp(v.created_at) && nullable(v.in_reply_to, isUuid) && hash(v.event_digest);
+    && text(v.body, 8192, true) && hash(v.body_sha256) && timestamp(v.created_at) && nullable(v.in_reply_to, isUuid) && hash(v.event_digest);
 }
 function validReceipt(v: unknown, event: ActivityEvent): v is ActivityReceipt {
   if (!exact(v, receiptKeys)) return false;
