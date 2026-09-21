@@ -191,7 +191,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(second.status).toBe(200);
       expect(collectCalls).toBe(1);
       const payload = await first.json() as Record<string, unknown>;
-      expect(payload).toMatchObject({ protocol: 5, kind: 'operator_fleet_snapshot', sequence: 1 });
+      expect(payload).toMatchObject({ protocol: 6, kind: 'operator_fleet_snapshot', sequence: 1 });
       expect(await second.json()).toMatchObject({ sequence: 1 });
       expect(JSON.stringify(payload)).not.toContain('repo_root');
 

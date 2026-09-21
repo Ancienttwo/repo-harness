@@ -23,6 +23,7 @@ import {
   degradedSnapshot,
   fixtureTasks,
   leaseStateSnapshot,
+  preparationSnapshot,
   stableSnapshot,
 } from '../../src/operator-web/fixture';
 import {
@@ -192,7 +193,9 @@ describe('operator web worklist projection', () => {
       'ready_to_merge',
       'unreadable',
       'unclassified',
-      'agent_working',
+      'preparation',
+      'available',
+      'claimed',
       'external',
       'done',
     ]);
@@ -203,14 +206,14 @@ describe('operator web worklist projection', () => {
     ]);
     expect(byId.ready_to_merge).toEqual([fixtureTasks.ready.task_id]);
     expect(byId.external).toEqual([fixtureTasks.review.task_id]);
-    expect(byId.agent_working).toEqual([fixtureTasks.working.task_id]);
+    expect(byId.claimed).toEqual([fixtureTasks.working.task_id]);
     expect(byId.done).toEqual([fixtureTasks.done.task_id]);
 
     const externalUnclassified = {
       ...stableSnapshot,
       repositories: [{
         ...stableSnapshot.repositories[0],
-        cards: [{ ...stableSnapshot.repositories[0].cards[2], column: null }],
+        cards: [{ ...stableSnapshot.repositories[0].cards[2], placement: { kind: 'unclassified', reason: 'state_unmapped' } }],
       }],
     } as OperatorFleetSnapshotV1;
     const regrouped = groupWorklist(externalUnclassified);
@@ -221,7 +224,7 @@ describe('operator web worklist projection', () => {
   test('collapses every group except the first non-empty group', () => {
     const groups = groupWorklist(stableSnapshot);
     expect(defaultCollapsedGroups(groups)).toEqual([
-      'ready_to_merge', 'unreadable', 'unclassified', 'agent_working', 'external', 'done',
+      'ready_to_merge', 'unreadable', 'unclassified', 'preparation', 'available', 'claimed', 'external', 'done',
     ]);
     const withoutNeedsYou = groups.map((group) => group.id === 'needs_you'
       ? { ...group, cards: [], count: 0 }
@@ -330,10 +333,10 @@ describe('operator web interactions', () => {
 
   test('projects R1 runtime evidence without changing authoritative worklist grouping', async () => {
     const working = stableSnapshot.repositories[0].cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
-    expect(groupWorklist(stableSnapshot).find((group) => group.id === 'agent_working')?.cards).toContain(working);
+    expect(groupWorklist(stableSnapshot).find((group) => group.id === 'claimed')?.cards).toContain(working);
 
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
-    await act(async () => buttonWithText('Agent working').click());
+    await act(async () => buttonWithText('Claimed / under review').click());
     const row = buttonWithText(fixtureTasks.working.task_label);
     expect(row.textContent).toContain('runtime unavailable');
     expect(row.textContent).toContain('reconciliation required');
@@ -631,7 +634,7 @@ describe('operator web interactions', () => {
     const lowerPriority = {
       ...stableSnapshot,
       repositories: [{ ...stableSnapshot.repositories[0]!, cards: [working] }],
-      counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 },
+      counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 1 },
     } satisfies OperatorFleetSnapshotV1;
     const urgent = { ...stableSnapshot, sequence: stableSnapshot.sequence + 1 };
 
@@ -644,7 +647,7 @@ describe('operator web interactions', () => {
       />,
     );
     expect(document.querySelector('[aria-label="Expand Needs you"]')).not.toBeNull();
-    expect(document.querySelector('[aria-label="Collapse Agent working"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Collapse Claimed / under review"]')).not.toBeNull();
 
     await act(async () => buttonWithText('Refresh').click());
     expect(document.querySelector('[aria-label="Collapse Needs you"]')).not.toBeNull();
@@ -663,7 +666,7 @@ describe('operator web interactions', () => {
     const lowerPriority = {
       ...stableSnapshot,
       repositories: [{ ...stableSnapshot.repositories[0]!, cards: [working] }],
-      counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 },
+      counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 1 },
     } satisfies OperatorFleetSnapshotV1;
     const urgent = { ...stableSnapshot, sequence: stableSnapshot.sequence + 1 };
 
@@ -675,13 +678,13 @@ describe('operator web interactions', () => {
         fetchSnapshot={async () => urgent}
       />,
     );
-    const agentHeader = document.querySelector<HTMLButtonElement>('[aria-label="Collapse Agent working"]');
+    const agentHeader = document.querySelector<HTMLButtonElement>('[aria-label="Collapse Claimed / under review"]');
     if (!agentHeader) throw new Error('agent working header not found');
     await act(async () => agentHeader.click());
-    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Expand Agent working"]')?.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Expand Claimed / under review"]')?.click());
     await act(async () => buttonWithText('Refresh').click());
 
-    expect(document.querySelector('[aria-label="Collapse Agent working"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Collapse Claimed / under review"]')).not.toBeNull();
     expect(buttonWithText(fixtureTasks.working.task_label)).not.toBeNull();
   });
 
@@ -846,7 +849,7 @@ describe('operator web interactions', () => {
     const unreadableOnly = {
       ...degradedSnapshot,
       repositories: degradedSnapshot.repositories.filter((repository) => repository.status === 'unreadable'),
-      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1, unclassified: 0 },
+      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 0 },
     } as OperatorFleetSnapshotV1;
 
     installDom(true);
@@ -1694,9 +1697,9 @@ describe('operator web composer target truth', () => {
    * claim it was printing two panels higher.
    */
   const heldCases = [
-    { task: fixtureTasks.reserving, group: 'Agent working', lease: 'reserving', zhLease: '预留中' },
-    { task: fixtureTasks.completing, group: 'Agent working', lease: 'completing', zhLease: '收尾中' },
-    { task: fixtureTasks.reviewing, group: 'Agent working', lease: 'reviewing', zhLease: '审查中' },
+    { task: fixtureTasks.reserving, group: 'Claimed / under review', lease: 'reserving', zhLease: '预留中' },
+    { task: fixtureTasks.completing, group: 'Claimed / under review', lease: 'completing', zhLease: '收尾中' },
+    { task: fixtureTasks.reviewing, group: 'Claimed / under review', lease: 'reviewing', zhLease: '审查中' },
     { task: fixtureTasks.reviewingUnpublished, group: 'Unclassified', lease: 'reviewing', zhLease: '审查中' },
     { task: fixtureTasks.leaseUnknown, group: 'Unclassified', lease: 'unknown', zhLease: '未知' },
   ] as const;
@@ -1747,7 +1750,13 @@ describe('operator web composer target truth', () => {
   test('keeps the envelope task-scoped while naming the holder', async () => {
     const submitted: TaskMessageRequestV1[] = [];
     const entry = heldCases[0];
+    const healthy = { ...leaseStateSnapshot, snapshot_consistency: 'stable' as const,
+      repositories: [{ ...leaseStateSnapshot.repositories[0]!, snapshot_consistency: 'stable' as const,
+        cards: leaseStateSnapshot.repositories[0]!.cards.filter(card => card.task_id === entry.task.task_id) }],
+      counts: { ...leaseStateSnapshot.counts, working: 1, in_review: 0, unclassified: 0, known_tasks: 1 },
+    };
     await openLeaseStateComposer(entry.task.task_label, entry.group, {
+      initialState: projectSnapshotViewState(decodeOperatorFleetSnapshot(healthy)),
       sendMessage: async (request) => { submitted.push(request); },
     });
 
@@ -1821,5 +1830,25 @@ describe('notification evidence detail', () => {
     await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" />);
     await act(async () => buttonWithText(fixtureTasks.working.task_label).click());
     expect(paneText()).toContain(expected);
+  });
+});
+
+
+describe('preparation and available work', () => {
+  test('keeps healthy preparation and inline work out of claimed execution', async () => {
+    const groups = groupWorklist(preparationSnapshot);
+    expect(groups.find(group => group.id === 'claimed')!.count).toBe(0);
+    expect(groups.find(group => group.id === 'preparation')!.cards.map(card => card.task_id)).toEqual([fixtureTasks.console.task_id, fixtureTasks.changed.task_id]);
+    expect(groups.find(group => group.id === 'available')!.cards.map(card => card.task_id)).toEqual([fixtureTasks.available.task_id]);
+    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" />);
+    expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stable');
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    const detail = document.querySelector('.detail-pane')?.textContent ?? '';
+    expect(detail).toContain('Acquisition readiness reasons');
+    expect(detail).toContain('Plan awaits approval');
+    expect(detail).toContain('plan_not_approved');
+    expect(detail).not.toContain('No blocker, no stalled feedback');
+    await act(async () => buttonWithText('中').click());
+    expect(document.querySelector('.detail-pane')?.textContent).toContain('计划等待批准');
   });
 });

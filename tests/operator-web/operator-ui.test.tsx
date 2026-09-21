@@ -43,11 +43,11 @@ describe('operator web control board', () => {
       'Ready to merge',
       'Unreadable repos',
       'Unclassified',
-      'Agent working',
+      'Claimed / under review',
       'External',
       'Done',
     )).toBe(true);
-    expect(markup).toContain('protocol 5');
+    expect(markup).toContain('protocol 6');
     expect(markup).toContain('observe-only · one write: task message');
   });
 
@@ -68,7 +68,7 @@ describe('operator web control board', () => {
     expect(markup).not.toContain(fixtureTasks.working.task_label);
     expect(markup).not.toContain(fixtureTasks.review.task_label);
     expect(markup).not.toContain(fixtureTasks.done.task_label);
-    expect(markup).toContain('aria-label="Expand Agent working"');
+    expect(markup).toContain('aria-label="Expand Claimed / under review"');
     expect(markup).toContain('aria-label="Collapse Needs you"');
     expect(markup).toContain('aria-label="Expand Unreadable repos"');
   });
@@ -162,7 +162,7 @@ describe('operator web control board', () => {
     );
 
     expect(markup).toContain('protocol — · sequence —');
-    expect(markup).not.toContain('protocol 5');
+    expect(markup).not.toContain('protocol 6');
   });
 
   test('keeps empty, changed-during-read, and repo-degraded semantics explicit', () => {
@@ -186,7 +186,7 @@ describe('operator web control board', () => {
     const unreadableOnly = {
       ...degradedSnapshot,
       repositories: degradedSnapshot.repositories.filter((repository) => repository.status === 'unreadable'),
-      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1, unclassified: 0 },
+      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 0 },
     } as const;
     const markup = renderStable(unreadableOnly);
 

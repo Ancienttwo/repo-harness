@@ -1,6 +1,7 @@
 import type {
   OperatorCollaborationSnapshotV1,
   OperatorFleetCardV1,
+  OperatorFleetColumn,
   OperatorFleetRepositoryV1,
   OperatorFleetSnapshotV1,
 } from './types';
@@ -98,7 +99,7 @@ export const fixtureTasks = {
 function card(
   repositoryId: string,
   task: FixtureTask,
-  column: OperatorFleetCardV1['column'],
+  column: OperatorFleetColumn | null,
   overrides: Partial<OperatorFleetCardV1> = {},
 ): OperatorFleetCardV1 {
   return {
@@ -109,9 +110,11 @@ function card(
     task_index: task.task_index,
     claim_id: column === 'available' || column === 'done' ? null : task.claim_id,
     generation: column === 'available' || column === 'done' ? null : 3,
-    column,
+    task_state: column === 'done' ? 'done' : 'pending',
+    placement: column === null ? { kind: 'unclassified', reason: 'state_unmapped' } : { kind: 'column', column },
     attention_owner: 'none',
     execution_readiness: column === 'available' ? 'execution_ready' : null,
+    readiness_blockers: column === 'available' ? [] : null,
     lease_state: column === 'available' ? 'available' : column === 'done' ? 'released' : 'bound',
     publication_id: column === 'in_review' || column === 'ready_to_merge' ? `pub-${task.slug}` : null,
     head_sha: column === 'in_review' || column === 'ready_to_merge' ? '0123456789abcdef0123456789abcdef01234567' : null,
@@ -195,7 +198,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
 ];
 
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
-  protocol: 5,
+  protocol: 6,
   kind: 'operator_fleet_snapshot',
   registry_revision: `sha256:${'e'.repeat(64)}`,
   sequence: 18,
@@ -210,6 +213,7 @@ export const stableSnapshot: OperatorFleetSnapshotV1 = {
     done: 1,
     unreadable: 0,
     unclassified: 0,
+    preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 7,
   },
   source_snapshot_sha256: `sha256:${'a'.repeat(64)}`,
 };
@@ -219,7 +223,7 @@ export const emptySnapshot: OperatorFleetSnapshotV1 = {
   registry_revision: `sha256:${'f'.repeat(64)}`,
   sequence: 19,
   repositories: [],
-  counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 },
+  counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 0 },
   source_snapshot_sha256: `sha256:${'b'.repeat(64)}`,
 };
 
@@ -230,13 +234,13 @@ export const changedDuringReadSnapshot: OperatorFleetSnapshotV1 = {
   snapshot_consistency: 'changed_during_read',
   repositories: [
     repository('repo-harness', [
-      card('repo-harness', fixtureTasks.changed, null, {
+      card('repo-harness', fixtureTasks.changed, 'working', {
         snapshot_consistency: 'changed_during_read',
         attention_owner: 'user',
       }),
     ], { snapshot_consistency: 'changed_during_read' }),
   ],
-  counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 1 },
+  counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 1 },
   source_snapshot_sha256: `sha256:${'c'.repeat(64)}`,
 };
 
@@ -277,16 +281,37 @@ const leaseStateRepositories: readonly OperatorFleetRepositoryV1[] = [
     card('repo-harness', fixtureTasks.reviewing, 'in_review', { lease_state: 'reviewing' }),
     card('repo-harness', fixtureTasks.reviewingUnpublished, null, { lease_state: 'reviewing' }),
     card('repo-harness', fixtureTasks.leaseUnknown, null, { lease_state: 'unknown' }),
-  ]),
+  ], { snapshot_consistency: 'degraded' }),
 ];
 
 export const leaseStateSnapshot: OperatorFleetSnapshotV1 = {
   ...stableSnapshot,
   registry_revision: `sha256:${'3'.repeat(64)}`,
   sequence: 22,
+  snapshot_consistency: 'degraded',
   repositories: leaseStateRepositories,
-  counts: { available: 0, working: 2, in_review: 1, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 2 },
+  counts: { available: 0, working: 2, in_review: 1, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 2, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 5 },
   source_snapshot_sha256: `sha256:${'7'.repeat(64)}`,
+};
+
+/** Normal preparation and inline work are healthy canonical placements. */
+export const preparationSnapshot: OperatorFleetSnapshotV1 = {
+  ...stableSnapshot,
+  repositories: [repository('repo-harness', [
+    card('repo-harness', fixtureTasks.available, 'available', { attention_owner: 'none' }),
+    card('repo-harness', fixtureTasks.changed, 'available', {
+      placement: { kind: 'preparation' }, execution_readiness: 'planning_required',
+      readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }], attention_owner: 'agent',
+    }),
+    card('repo-harness', fixtureTasks.blocked, 'available', {
+      placement: { kind: 'preparation' }, execution_readiness: 'planning_required',
+      readiness_blockers: [{ code: 'plan_not_approved', attention_owner: 'user' }], attention_owner: 'user',
+    }),
+    card('repo-harness', fixtureTasks.console, 'available', {
+      placement: { kind: 'alternate_workflow', workflow: 'inline' }, execution_readiness: 'inline_ready',
+    }),
+  ])],
+  counts: { ...emptySnapshot.counts, available: 1, preparation: 2, alternate_workflow: 1, known_tasks: 4 },
 };
 
 export const operatorFixtures = {
@@ -295,6 +320,7 @@ export const operatorFixtures = {
   changedDuringRead: changedDuringReadSnapshot,
   degraded: degradedSnapshot,
   leaseStates: leaseStateSnapshot,
+  preparation: preparationSnapshot,
 } as const;
 
 /**

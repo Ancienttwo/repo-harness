@@ -289,6 +289,7 @@ async function cardInput(
     },
     merge_readiness: readiness,
     execution_readiness: offers.get(card.task_id)?.execution_readiness ?? null,
+    readiness_blockers: offers.get(card.task_id)?.blockers ?? null,
     feedback,
     inbox: Object.freeze({
       unread_count: inbox.unread_count,
@@ -326,6 +327,7 @@ function failedCardInput(
     },
     merge_readiness: null,
     execution_readiness: null,
+    readiness_blockers: null,
     feedback: emptyFeedback(),
     inbox: emptyInbox(),
     snapshot_consistency: boardConsistency,

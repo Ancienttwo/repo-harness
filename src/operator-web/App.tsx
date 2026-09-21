@@ -29,7 +29,6 @@ import {
   type OperatorCollaborationSnapshotV1,
   type OperatorCollaborationSource,
   type OperatorFleetCardV1,
-  type OperatorFleetColumn,
   type OperatorFleetErrorV1,
   type OperatorFleetRepositoryV1,
   type OperatorFleetSnapshotV1,
@@ -163,6 +162,7 @@ export function taskDisplayLabel(card: OperatorFleetCardV1): { readonly text: st
 }
 
 type MergeBlocker = NonNullable<OperatorFleetCardV1['merge_readiness']>['blockers'][number];
+type ReadinessBlocker = NonNullable<OperatorFleetCardV1['readiness_blockers']>[number];
 type BlockerOwner = MergeBlocker['attention_owner'];
 
 function cardBlockers(card: OperatorFleetCardV1): readonly MergeBlocker[] {
@@ -171,6 +171,7 @@ function cardBlockers(card: OperatorFleetCardV1): readonly MergeBlocker[] {
 
 export type WorklistCause =
   | { readonly kind: 'blocker'; readonly blocker: MergeBlocker }
+  | { readonly kind: 'readiness'; readonly blocker: ReadinessBlocker }
   | { readonly kind: 'no_progress' }
   | { readonly kind: 'unread'; readonly count: number };
 
@@ -180,6 +181,13 @@ export type WorklistCause =
  * else, which outranks an unread message.
  */
 export function primaryCause(card: OperatorFleetCardV1): WorklistCause | null {
+  const preExecution = card.task_state === 'pending' && (card.placement.kind !== 'column' || card.placement.column === 'available');
+  if (preExecution && card.readiness_blockers?.length) {
+    const blocker = card.readiness_blockers.find(blocker => blocker.attention_owner === 'user')
+      ?? card.readiness_blockers.find(blocker => blocker.attention_owner === 'external')
+      ?? card.readiness_blockers[0]!;
+    return { kind: 'readiness', blocker };
+  }
   const blockers = cardBlockers(card);
   const owned = (owner: BlockerOwner) => blockers.find((blocker) => blocker.attention_owner === owner);
   const userBlocker = owned('user');
@@ -198,7 +206,9 @@ export type WorklistGroupId =
   | 'ready_to_merge'
   | 'unreadable'
   | 'unclassified'
-  | 'agent_working'
+  | 'claimed'
+  | 'available'
+  | 'preparation'
   | 'external'
   | 'done';
 
@@ -207,7 +217,9 @@ export const WORKLIST_GROUP_ORDER: readonly WorklistGroupId[] = [
   'ready_to_merge',
   'unreadable',
   'unclassified',
-  'agent_working',
+  'preparation',
+  'available',
+  'claimed',
   'external',
   'done',
 ];
@@ -219,11 +231,13 @@ export const WORKLIST_GROUP_ORDER: readonly WorklistGroupId[] = [
  */
 function groupForCard(card: OperatorFleetCardV1): Exclude<WorklistGroupId, 'unreadable'> {
   if (card.attention_owner === 'user') return 'needs_you';
-  if (card.column === null) return 'unclassified';
-  if (card.column === 'ready_to_merge') return 'ready_to_merge';
+  if (card.placement.kind === 'unclassified') return 'unclassified';
+  if (card.placement.kind === 'preparation' || card.placement.kind === 'alternate_workflow') return 'preparation';
+  if (card.placement.column === 'available') return 'available';
+  if (card.placement.column === 'ready_to_merge') return 'ready_to_merge';
   if (card.attention_owner === 'external') return 'external';
-  if (card.column === 'done') return 'done';
-  return 'agent_working';
+  if (card.placement.column === 'done') return 'done';
+  return 'claimed';
 }
 
 function compareCards(left: OperatorFleetCardV1, right: OperatorFleetCardV1): number {
@@ -275,8 +289,8 @@ function RuntimeExceptionBadges({ card, t }: { readonly card: OperatorFleetCardV
   );
 }
 
-function stageKey(column: OperatorFleetColumn | null): OperatorMessageKey {
-  return column === null ? 'stage.unclassified' : (`stage.${column}` as OperatorMessageKey);
+function stageKey(placement: OperatorFleetCardV1['placement']): OperatorMessageKey {
+  return `stage.${placement.kind === 'column' ? placement.column : placement.kind}` as OperatorMessageKey;
 }
 
 function attentionKey(owner: OperatorFleetCardV1['attention_owner']): OperatorMessageKey {
@@ -475,12 +489,12 @@ function CauseLine({ cause, t }: { readonly cause: WorklistCause | null; readonl
   if (!cause) {
     return <span className="worklist-row__cause worklist-row__cause--quiet">{t('row.noCause')}</span>;
   }
-  if (cause.kind === 'blocker') {
+  if (cause.kind === 'blocker' || cause.kind === 'readiness') {
     return (
       <span className={`worklist-row__cause ${attentionTone(cause.blocker.attention_owner)}`}>
         <Icon name="alert" size={13} />
         <span className="cause-owner">{t(attentionKey(cause.blocker.attention_owner))}</span>
-        <span className="cause-text">{t(blockerKey(cause.blocker.code))}</span>
+        <span className="cause-text">{t(cause.kind === 'readiness' ? `readinessBlocker.${cause.blocker.code}` as OperatorMessageKey : blockerKey(cause.blocker.code))}</span>
         <code className="cause-code">{cause.blocker.code}</code>
       </span>
     );
@@ -531,7 +545,7 @@ function WorklistRow({
       </span>
       <span className="worklist-row__meta">
         <span className="worklist-row__repository"><Icon name="repo" size={13} />{card.repository_id}</span>
-        <span className="worklist-row__stage">{t(stageKey(card.column))}</span>
+        <span className="worklist-row__stage">{t(stageKey(card.placement))}</span>
         {changed && <span className="worklist-row__changed">{t('row.changedDuringRead')}</span>}
       </span>
       <CauseLine cause={cause} t={t} />
@@ -716,16 +730,21 @@ function StageMatrix({ snapshot, t }: { readonly snapshot: Pick<OperatorFleetSna
         <thead>
           <tr>
             <th scope="col">{t('detail.matrixRepository')}</th>
-            {OPERATOR_COLUMNS.map((column) => <th scope="col" key={column.id}>{t(stageKey(column.id))}</th>)}
+            {(['preparation', 'alternate_workflow'] as const).map(kind => <th scope="col" key={kind}>{t(`stage.${kind}`)}</th>)}
+            {OPERATOR_COLUMNS.map((column) => <th scope="col" key={column.id}>{t(stageKey({ kind: 'column', column: column.id }))}</th>)}
+            <th scope="col">{t('stage.unclassified')}</th><th scope="col">{t('repo.isolatedHeading')}</th>
           </tr>
         </thead>
         <tbody>
           {snapshot.repositories.map((repository) => (
             <tr key={repository.repository_id}>
               <th scope="row">{repository.display_name}</th>
+              {(['preparation', 'alternate_workflow'] as const).map(kind => <td key={kind}>{repository.status === 'unreadable' ? '—' : repository.cards.filter(card => card.task_state !== 'missing' && card.placement.kind === kind).length}</td>)}
               {OPERATOR_COLUMNS.map((column) => (
-                <td key={column.id}>{repository.cards.filter((card) => card.column === column.id).length}</td>
+                <td key={column.id}>{repository.status === 'unreadable' ? '—' : repository.cards.filter((card) => card.task_state !== 'missing' && card.placement.kind === 'column' && card.placement.column === column.id).length}</td>
               ))}
+              <td>{repository.status === 'unreadable' ? '—' : repository.cards.filter(card => card.task_state !== 'missing' && card.placement.kind === 'unclassified').length}</td>
+              <td>{repository.status === 'unreadable' ? '—' : repository.cards.filter(card => card.task_state === 'missing').length}</td>
             </tr>
           ))}
         </tbody>
@@ -750,7 +769,8 @@ function RepositoryHealth({
             <div className="repository-row__main">
               <strong>{repository.display_name}</strong>
               <span>
-                {t(`repo.accessMode.${repository.access_mode}` as OperatorMessageKey)} · {t('repo.tasks', { count: repository.cards.length })}
+                {t(`repo.accessMode.${repository.access_mode}` as OperatorMessageKey)} · {repository.status === 'unreadable' ? t('repo.tasksUnknown') : t('repo.tasks', { count: repository.cards.filter(card => card.task_state !== 'missing').length })}
+                {repository.cards.some(card => card.task_state === 'missing') && <> · {t('repo.isolated', { count: repository.cards.filter(card => card.task_state === 'missing').length })}</>}
               </span>
             </div>
             <span className="repository-row__state">
@@ -770,6 +790,7 @@ function RepositoryHealth({
 function TaskCauses({ card, t }: { readonly card: OperatorFleetCardV1; readonly t: OperatorTranslate }) {
   const blockers = cardBlockers(card);
   const quiet = blockers.length === 0 && !card.feedback.no_progress && card.inbox.unread_count === 0;
+  if (quiet && (card.readiness_blockers?.length ?? 0) > 0) return null;
   return (
     <section className="detail-block" aria-labelledby="detail-cause-heading">
       <h3 className="detail-eyebrow" id="detail-cause-heading">{t('detail.cause')}</h3>
@@ -847,10 +868,22 @@ function TaskDetail({
             ? t('attention.none')
             : t('attention.owned', { owner: t(attentionKey(card.attention_owner)) })}
         </Badge>
-        <Badge>{t(stageKey(card.column))}</Badge>
+        <Badge>{t(stageKey(card.placement))}</Badge>
         <Badge>{card.repository_id}</Badge>
       </div>
       <TaskCauses card={card} t={t} />
+      {card.readiness_blockers !== null && card.readiness_blockers.length > 0 && (
+        <section className="detail-block" aria-labelledby="detail-readiness-heading">
+          <h3 className="detail-eyebrow" id="detail-readiness-heading">{t('detail.readinessBlockers')}</h3>
+          <ul className="cause-list">{card.readiness_blockers.map((blocker, index) => (
+            <li className={`cause-item ${attentionTone(blocker.attention_owner)}`} key={`${blocker.code}:${index}`}>
+              <span className="cause-text">{t(`readinessBlocker.${blocker.code}` as OperatorMessageKey)}</span>
+              <span className="cause-owner">{t('detail.blockerOwner', { owner: t(attentionKey(blocker.attention_owner)) })}</span>
+              <code className="cause-code">{blocker.code}</code>
+            </li>
+          ))}</ul>
+        </section>
+      )}
       <section className="detail-block" aria-labelledby="detail-identity-heading">
         <h3 className="detail-eyebrow" id="detail-identity-heading">{t('detail.identity')}</h3>
         <CopyValue label={t('field.taskId')} value={card.task_id} t={t} />
@@ -1972,7 +2005,7 @@ function DetailPane({
               context for a decision the worklist already surfaced. */}
           <CollaborationPane state={collaboration} t={t} />
         </div>
-        {card && card.column !== 'done' && repository && snapshot && (
+        {card && !(card.placement.kind === 'column' && card.placement.column === 'done') && repository && snapshot && (
           <Composer
             key={taskKey(card)}
             card={card}

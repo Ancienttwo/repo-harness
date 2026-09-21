@@ -10,7 +10,7 @@ import type { OperatorTaskDiff } from '../../src/core/operator/task-diff';
 
 let root: Root;
 let window: Window;
-const card = allCards(stableSnapshot).find(c => c.claim_id !== null && c.column === 'working')!;
+const card = allCards(stableSnapshot).find(c => c.claim_id !== null && c.placement.kind === 'column' && c.placement.column === 'working')!;
 const t = (key: Parameters<typeof translate>[1]) => translate('en', key);
 function result(): OperatorTaskDiff {
   return { protocol: 1, kind: 'operator_task_diff', repository_id: card.repository_id, task_id: card.task_id, task_revision: card.task_revision,

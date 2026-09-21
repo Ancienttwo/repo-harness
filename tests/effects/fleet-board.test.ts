@@ -61,7 +61,7 @@ function card(index: number): FleetBoardCardInputV1 {
     task_revision: 'b'.repeat(64),
     task_label: `fixture row ${index}`, task_index: index,
     task_state: 'pending', lease_state: 'available', claim_id: null, generation: null,
-    current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready',
+    current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready', readiness_blockers: [],
     feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
     inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null }, snapshot_consistency: 'stable',
     error: null,
@@ -211,7 +211,7 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string): Re
 }
 
 describe('fleet board collector', () => {
-  test('real collector reads a registered sprint board without mutating repo or registry authority', async () => {
+  test.each([['read_only', 'inline'], ['read_write', 'inline'], ['read_write', 'contract']] as const)('real collector preserves %s %s readiness without mutating repo or registry authority', async (accessMode, mode) => {
     const root = mkdtempSync(join(tmpdir(), 'fleet-board-real-'));
     const repoRoot = join(root, 'repo');
     const home = join(root, 'home');
@@ -226,7 +226,7 @@ describe('fleet board collector', () => {
         '# Fleet fixture', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
         '| # | ID | Status | Task | Mode | Acceptance | Plan |',
         '|---|----|--------|------|------|------------|------|',
-        `| 1 | ${fixtureTaskId('inspect one registered repository')} | [ ] | inspect one registered repository | inline | projection is read only | (pending) |`, '',
+        `| 1 | ${fixtureTaskId('inspect one registered repository')} | [ ] | inspect one registered repository | ${mode} | projection is read only | (pending) |`, '',
       ].join('\n'));
       execFileSync('git', ['init', '-b', 'main'], { cwd: repoRoot, encoding: 'utf8' });
       execFileSync('git', ['config', 'user.name', 'Fleet Board Test'], { cwd: repoRoot, encoding: 'utf8' });
@@ -237,7 +237,7 @@ describe('fleet board collector', () => {
       const repositoryId = repoHarnessRepoIdFor(canonicalRepoRoot);
       writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
         version: 1, authorizationRevision: 1, repos: [{
-          id: repositoryId, path: canonicalRepoRoot, accessMode: 'read_only', source: 'manual',
+          id: repositoryId, path: canonicalRepoRoot, accessMode, source: 'manual',
           registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z',
         }],
       })}\n`);
@@ -252,6 +252,13 @@ describe('fleet board collector', () => {
         task_label: 'inspect one registered repository',
         task_index: 1,
       });
+      expect(result.snapshot_consistency).toBe('stable');
+      expect(result.counts.known_tasks).toBe(1);
+      expect(result.repositories[0]?.cards[0]).toMatchObject(accessMode === 'read_only'
+        ? { placement: { kind: 'preparation' }, readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }] }
+        : mode === 'contract'
+          ? { placement: { kind: 'preparation' }, readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }
+          : { placement: { kind: 'alternate_workflow', workflow: 'inline' }, readiness_blockers: [] });
       expect(result.repositories[0]?.cards[0]?.task_id).toMatch(/^[0-9a-f]{64}$/u);
       expect(readFileSync(join(home, 'registered-repos.json'), 'utf8')).toBe(registryBefore);
       expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' })).toBe(statusBefore);
@@ -492,15 +499,15 @@ describe('fleet board collector', () => {
       const readable = repository.cards.filter((entry) => entry.error === null);
       expect(failed).toHaveLength(1);
       expect(failed[0]).toMatchObject({
-        column: null,
+        placement: { kind: 'unclassified', reason: 'observation_failed' },
         merge_readiness: null,
-        execution_readiness: null,
+        execution_readiness: null, readiness_blockers: null,
         error: { code: 'repo_publication_unreadable', message: 'repository publication observation is unavailable' },
       });
       expect(failed[0]?.blocker_codes).toEqual([]);
       expect(readable).toHaveLength(1);
       for (const entry of repository.cards) expect(entry.inbox.delivery_evidence === null).toBe(entry.error !== null);
-      expect(readable[0]?.column).not.toBeNull();
+      expect(readable[0]?.placement.kind).toBe('column');
       expect(repository.snapshot_consistency).toBe('degraded');
       expect(result.counts.unclassified).toBe(1);
       expect(result.counts.unreadable).toBe(0);
