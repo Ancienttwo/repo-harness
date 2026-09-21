@@ -435,6 +435,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'untrusted peer payload under [TaskInboxUntrustedPeerMessages]; the operator POST route names its recipient from readLease, not from a message',
   },
   {
+    module: 'src/core/fleet/task-reply.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots; no production consumer reads these records, and structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority',
+  },
+  {
     module: 'src/core/publication/feedback.ts',
     fails: ['C-1'],
     evidence: 'review/repair loop despite the publication/ directory (D12); merge-readiness imports only publication-receipt and no publication or merge decision reads a feedback event',

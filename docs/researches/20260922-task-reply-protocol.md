@@ -8,6 +8,8 @@ AKN-03a implements the pure protocol and interrupted-chain oracle from the [Agen
 
 No CLI, MCP, worker, hook, inbox filesystem writer or UI imports the new contract in this slice. No `authenticated` flag is emitted. `inspectTaskReplyChain().state === 'complete'` means structural completeness only and must never by itself enable a badge, authorize work, or advance a Task/Lease.
 
+The [C0 authority criterion](20260829-c0-collaboration-two-plane-authority-freeze.md#納入判據與排除清單) classifies this as messaging provenance, outside the five delivery authority planes (C-1); its pure records also decide no cross-agent ownership, publication or acceptance (C-2). The existing `collaboration-authority-baseline.test.ts` closed scan explicitly records this exclusion. The frozen delivery inventory digest is unchanged; future consumers must preserve or re-adjudicate this boundary.
+
 ## Frozen protocol v1
 
 `TaskReplyIntentV1` has exact fields: `protocol`, `kind`, `effect_id`, `idempotency_key`, `parent`, `acknowledgement`, `principal_mapping`, `claim_actor`, `reply`, `prepared_at`, `intent_sha256`. Both identity fields equal the original reply UUID. Full validated snapshots freeze recovery input; they cannot overwrite the canonical event, ACK, mapping or actor stores. The canonical reply event owns the actual published body. An immutable intent retains the requested bytes so a later effect can retry exactly those bytes.

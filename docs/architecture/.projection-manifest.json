@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:b859983f97115344cb2d922ace1e8499d648eeca197ec66cf58b3775378e135d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "af2c19b6b64989b7542b8f1c6c5c26c7287c3c7f",
-    "worktreeDigest": "sha256:1a1f67bed3d5b6b0414802f76f63ffca016c919817f733134a4a9019868d78a8",
-    "sourceTreeDigest": "sha256:9cc7606b8d51d3ec16007a8210dd0f9269e809a52f9e9d63ce60943c134f4244",
+    "baseHeadSha": "4a8b29921dd618368d117015388d5452329b8345",
+    "worktreeDigest": "sha256:ba7f4e7a8f011b8e8a4751f770cbfcf55bb1c1d5d0d44b1369a86b84fd33774c",
+    "sourceTreeDigest": "sha256:18704e0a3e27c12403e27287fff510e6e8ecc3dcb240ee5e743e3ac9b59015d2",
     "modelDigest": "sha256:a11afbf16edf9e822bf02222d331beb8c050ef0b659ae605c23183193b10bbd5",
-    "codeGraphDigest": "sha256:b69867afc986e576f32dc796298d96edc4d71636d1e2deefabcc7d037218f0be",
-    "indexedWorktreeDigest": "sha256:e8c45b80cc7b37e84e03c8251463db6ca09f26aad11a2b53735ef574ada0f36a",
+    "codeGraphDigest": "sha256:d32480591056b5c664d593c0566fb0f180ab64a03547208b2b04e9077aedff68",
+    "indexedWorktreeDigest": "sha256:7ffd112b9733e33c6c1e52a31c6c09f6051b4a42fe0227da55209f960113d681",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:a581c1fbc7adb06d73a8d2a375c4fdcd7f408a24fa092e3ce83c0cbe8ee20623"
+    "projectionInputDigest": "sha256:4ca77320f59593828b997df6eced36edcd00d87691302a90c45b46b721385d1d"
   },
-  "projectionDigest": "sha256:30b040c026f887fab9cf028ec1a831167681965b087d99a2eff5c50e42767709",
+  "projectionDigest": "sha256:e5c5cb3dd02d2745d73ca926e2ece8ed5775dea9d0ccc087ec114d0e123026e3",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -709,12 +709,12 @@
     },
     "digests": {
       "modelDigest": "sha256:a11afbf16edf9e822bf02222d331beb8c050ef0b659ae605c23183193b10bbd5",
-      "sourceTreeDigest": "sha256:9cc7606b8d51d3ec16007a8210dd0f9269e809a52f9e9d63ce60943c134f4244",
+      "sourceTreeDigest": "sha256:18704e0a3e27c12403e27287fff510e6e8ecc3dcb240ee5e743e3ac9b59015d2",
       "flowProofDigest": "sha256:938dadfc988b732b6a67413ece104c062bb257ffd9f67caaf7db04dbc957b983",
-      "projectionDigest": "sha256:30b040c026f887fab9cf028ec1a831167681965b087d99a2eff5c50e42767709"
+      "projectionDigest": "sha256:e5c5cb3dd02d2745d73ca926e2ece8ed5775dea9d0ccc087ec114d0e123026e3"
     }
   },
-  "receiptDigest": "sha256:4f2e8542f047d0c02b0eec1c6e08864ef005084e94ae59627c24d64df0418c12",
+  "receiptDigest": "sha256:084c27f321f58e3aca792374a3f51d9a15b8269b2079b682c3a86242780c011f",
   "refreshSignalIds": [],
   "targetCount": 33,
   "fileCount": 33,
