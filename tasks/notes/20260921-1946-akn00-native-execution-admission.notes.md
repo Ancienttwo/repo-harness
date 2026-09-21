@@ -14,3 +14,6 @@
 
 - 2026-09-22独立codex-plugin评审approve、findings=[]，exact subject `sha256:b10fd83bac79e83fae1b8f70272ec313e0a6a8866539601c0043c17bfb0846df`；AcceptanceReceipt为external_pass，最终verify-sprint通过。原文见`.ai/harness/runs/akn00/cross-review-20260922.json`。
 - 归档未完成：installed helper会重写Verification Plan中workflow-delta命令的路径，导致归档后plan hash失配；对照临时归档commit `3bac0fa9`与冻结candidate `7a866b11`，只有该check.command变化。repo内scripts和assets helper已有跳过Verification Plan的修复，但源CLI收口被merge-gate的installed-runtime规则拒绝。两次finish均自动回滚，未合并；日志为`akn00/finish-20260922.*`与`akn00/finish-source-20260922.*`。需另行授权更新本机安装后继续；不改准入代码、不重做语义评审、不绕过gate。
+
+- 2026-09-22用户批准安装更新；从main `0d4371c3`构建0.19.2包，tarball SHA256 `03538749c55ae08a49d1e897730d51a111d2fba388723d5fe6be4a1f85edd89c`，通过原host事务安装到Bun global。归档helper、merge-gate、acceptance-receipt、verification-execution及hook bundle逐字节匹配；原四份用户配置hash不变，旧external_pass回执仍有效。安装readback见`akn00/installed-readback-20260922.json`。
+- 安装后setup check无fail，保留既有Claude adapter/未管理hook提示；当前Codex版本已为0.155.1。AKN-00原始0.154.0观测是固定候选的历史拒绝证据，不能外推为0.155.1准入或将本次repo-harness安装误称为Codex升级。
