@@ -174,10 +174,12 @@ function sha256(bytes: Uint8Array): `sha256:${string}` {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 }
 
-function run(argv: readonly string[]): ProcessResult {
+function run(argv: readonly string[], options: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): ProcessResult {
   const result = Bun.spawnSync([...argv], {
     stdout: 'pipe',
     stderr: 'pipe',
+    env: options.env,
+    cwd: options.cwd,
     timeout: 5_000,
     killSignal: 'SIGKILL',
     maxBuffer: 1_048_576,
@@ -290,30 +292,60 @@ const codexLaunchOnlyHost: Me2bHostProbeV2 = Object.freeze({
   },
 });
 
-function discoverCodexRuntime(): Me2bRuntimeIdentityV2 {
-  const discovered = Bun.which('codex');
+export type Me2bProbeSupport =
+  | { readonly status: 'registered'; readonly adapter_id: typeof CODEX_LAUNCH_ONLY_ADAPTER }
+  | { readonly status: 'unavailable'; readonly adapter_id: null; readonly reason: 'host_probe_not_registered' };
+
+export function me2bProbeSupport(version: string): Me2bProbeSupport {
+  return version === SUPPORTED_CODEX_VERSION
+    ? Object.freeze({ status: 'registered', adapter_id: CODEX_LAUNCH_ONLY_ADAPTER })
+    : Object.freeze({ status: 'unavailable', adapter_id: null, reason: 'host_probe_not_registered' });
+}
+
+/** Inventory is distinct from permission admission. Unsupported versions remain observable. */
+export function discoverCodexRuntime(options: {
+  executable?: string;
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+} = {}): { readonly runtime: Me2bRuntimeIdentityV2; readonly probe: Me2bProbeSupport } {
+  const discovered = options.executable ?? Bun.which('codex');
   if (!discovered) throw new Error('codex executable is unavailable');
   const executable = realpathSync(discovered);
-  const versionProbe = run([executable, '--version']);
+  const executableHash = sha256(readFileSync(executable));
+  const versionProbe = run([executable, '--version'], options);
   if (versionProbe.exitCode !== 0 || versionProbe.signalCode !== null) throw new Error('codex version probe failed');
   const version = Buffer.from(versionProbe.stdout).toString('utf8').trim();
-  if (version !== SUPPORTED_CODEX_VERSION) {
-    throw new Error(`no ME-2B Host probe adapter is registered for ${version || '<empty-version>'}`);
+  if (!version) throw new Error('codex version probe returned an empty version');
+  const helpProbe = run([executable, 'sandbox', '--help'], options);
+  if (helpProbe.exitCode !== 0 || helpProbe.signalCode !== null || helpProbe.stdout.byteLength === 0) {
+    throw new Error('codex sandbox help probe failed');
   }
-  const helpProbe = run([executable, 'sandbox', '--help']);
-  if (helpProbe.exitCode !== 0 || helpProbe.signalCode !== null) throw new Error('codex sandbox help probe failed');
+  if (realpathSync(discovered) !== executable || sha256(readFileSync(executable)) !== executableHash) {
+    throw new Error('codex executable changed during discovery');
+  }
   return Object.freeze({
-    executable_realpath: executable,
-    executable_sha256: sha256(readFileSync(executable)),
-    version,
-    sandbox_help_sha256: sha256(helpProbe.stdout),
+    runtime: Object.freeze({
+      executable_realpath: executable,
+      executable_sha256: executableHash,
+      version,
+      sandbox_help_sha256: sha256(helpProbe.stdout),
+    }),
+    probe: me2bProbeSupport(version),
   });
+}
+
+function requireRegisteredRuntime(): Me2bRuntimeIdentityV2 {
+  const discovery = discoverCodexRuntime();
+  if (discovery.probe.status !== 'registered') {
+    throw new Error(`no ME-2B Host probe adapter is registered for ${discovery.runtime.version}`);
+  }
+  return discovery.runtime;
 }
 
 export async function runMe2bRuntimeCanary(
   dependencies?: Me2bRuntimeCanaryDependenciesV2,
 ): Promise<Me2bRuntimeCanaryV2> {
-  const resolved = dependencies ?? Object.freeze({ runtime: discoverCodexRuntime(), host: codexLaunchOnlyHost });
+  const resolved = dependencies ?? Object.freeze({ runtime: requireRegisteredRuntime(), host: codexLaunchOnlyHost });
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-me2b-canary-'));
   try {
     const init = run(['/usr/bin/git', 'init', '--quiet', fixtureRoot]);
