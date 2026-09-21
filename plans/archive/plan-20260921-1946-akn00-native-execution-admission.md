@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-22 00:59
+> **Related Plan**: plans/archive/plan-20260921-1946-akn00-native-execution-admission.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260922-0059
+> **Archive Projection V1**: `plans/plan-20260921-1946-akn00-native-execution-admission.md` => `plans/archive/plan-20260921-1946-akn00-native-execution-admission.md`
+> **Archive Projection V1**: `tasks/notes/20260921-1946-akn00-native-execution-admission.notes.md` => `tasks/archive/notes-20260922-0059-akn00-native-execution-admission.md`
+> **Archive Projection V1**: `tasks/contracts/20260921-1946-akn00-native-execution-admission.contract.md` => `tasks/archive/contract-20260922-0059-akn00-native-execution-admission.md`
+> **Archive Projection V1**: `tasks/reviews/20260921-1946-akn00-native-execution-admission.review.md` => `tasks/archive/review-20260922-0059-akn00-native-execution-admission.md`
+
 # Plan: AKN-00：固定原生执行路径准入与故障证据
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260921-1946
 > **Slug**: akn00-native-execution-admission
 > **Planning Source**: waza-think
@@ -13,9 +23,9 @@
 > **Rollback Surface**: 局部报告脚本、typed probe discovery、测试与文档；不迁移生产状态
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260921-1946-akn00-native-execution-admission.contract.md`
-> **Task Review**: `tasks/reviews/20260921-1946-akn00-native-execution-admission.review.md`
-> **Implementation Notes**: `tasks/notes/20260921-1946-akn00-native-execution-admission.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260922-0059-akn00-native-execution-admission.md`
+> **Task Review**: `tasks/archive/review-20260922-0059-akn00-native-execution-admission.md`
+> **Implementation Notes**: `tasks/archive/notes-20260922-0059-akn00-native-execution-admission.md`
 
 ## Workflow Inventory
 

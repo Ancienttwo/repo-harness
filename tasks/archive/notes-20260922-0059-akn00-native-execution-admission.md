@@ -1,3 +1,13 @@
+> **Archived**: 2026-09-22 00:59
+> **Related Plan**: plans/archive/plan-20260921-1946-akn00-native-execution-admission.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-0059
+> **Archive Projection V1**: `plans/plan-20260921-1946-akn00-native-execution-admission.md` => `plans/archive/plan-20260921-1946-akn00-native-execution-admission.md`
+> **Archive Projection V1**: `tasks/notes/20260921-1946-akn00-native-execution-admission.notes.md` => `tasks/archive/notes-20260922-0059-akn00-native-execution-admission.md`
+> **Archive Projection V1**: `tasks/contracts/20260921-1946-akn00-native-execution-admission.contract.md` => `tasks/archive/contract-20260922-0059-akn00-native-execution-admission.md`
+> **Archive Projection V1**: `tasks/reviews/20260921-1946-akn00-native-execution-admission.review.md` => `tasks/archive/review-20260922-0059-akn00-native-execution-admission.md`
+
 # AKN-00 implementation decisions
 
 - 原ME-2B oracle不变；仅分离typed inventory与require-registered执行边界。0.154无probe准确拒绝，不修改0.149版本pin。
