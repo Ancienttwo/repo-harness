@@ -123,7 +123,7 @@ Both existing B/C tests progress beyond fixture preparation and prove candidate-
 
 - [x] Capture the existing pre-fix failure and freeze Root Cause Evidence.
 - [x] Retarget the copied fixture to the actual timeout constant and document the authority boundary.
-- [ ] Complete focused canonical checks, branch-aware task-sync and independent reviewer verdict.
+- [x] Complete focused canonical checks, branch-aware task-sync and independent reviewer verdict.
 
 Closeout after implementation: record the actual AcceptanceReceipt, archive and submit the separate CI repair PR; retain PR #434/#435 CI status separately until their branch state incorporates the repair.
 
@@ -133,4 +133,4 @@ Closeout after implementation: record the actual AcceptanceReceipt, archive and 
 ## Task Breakdown
 - [x] Capture the existing pre-fix failure and freeze Root Cause Evidence.
 - [x] Retarget the copied fixture to the actual timeout constant and document the authority boundary.
-- [ ] Complete focused canonical checks, branch-aware task-sync and independent reviewer verdict.
+- [x] Complete focused canonical checks, branch-aware task-sync and independent reviewer verdict.
