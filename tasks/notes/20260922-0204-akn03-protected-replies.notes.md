@@ -50,3 +50,5 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Regression guard: `tests/effects/task-reply.test.ts`; pre-fix artifact `.ai/harness/runs/review-recovery-before.log` contains three failures and `PRE_FIX_EXIT=1`.
 - P3: share existing Task/Plan authority checks, preserving strict acquisition semantics. Use an exact-parent selector requiring the persisted intent and current original fence; fixed record count bounds recovery independent of history. At 10x history the list still reaches an explicit coverage ceiling; known-operation recovery does not scan that history. New-parent discovery at that scale remains AKN-06, not falsely solved by this correction.
 - The AKN-04a independent rejection is retained in its own review. The old owner-acceptance request for 75036305 is superseded; neither stage receives another independent review.
+
+AKN-05a cumulative review exposed mixed-case UUID paging loss. Preserve exact IDs and use code-point ordering consistently; do not lowercase stored IDs. The other task-message chronological tie-break already uses code-point ordering.
