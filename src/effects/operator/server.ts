@@ -1,3 +1,5 @@
+import { Worker as ActivityWorker } from 'node:worker_threads';
+import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity, type TaskActivityFailure } from '../../core/operator/task-activity';
 import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff, type TaskDiffFailure } from '../../core/operator/task-diff';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -79,6 +81,7 @@ export const OPERATOR_FLEET_SNAPSHOT_PATH = '/api/v1/fleet/snapshot' as const;
 export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 /** The static fallback has no path shape of its own; it is whatever is left. */
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
+export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/activity$/u;
 export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/diff$/u;
 export const OPERATOR_TASK_MESSAGE_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/messages$/u;
 /**
@@ -119,6 +122,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
     pattern: OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source,
     write: false,
   }),
+  Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
   Object.freeze({ id: 'task_message', method: 'POST', pattern: OPERATOR_TASK_MESSAGE_ROUTE.source, write: true }),
@@ -132,6 +136,7 @@ export type OperatorCollaborationSnapshotReaderInput = ReadOperatorCollaboration
 };
 
 export interface OperatorServerOptions {
+  readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
   readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
@@ -1397,6 +1402,8 @@ export async function startOperatorServer(
   const collaborationQueue: CollaborationObservation[] = [];
   const collaborationQueueCapacity = maxConcurrency * 2;
   const activeDiffCancellers = new Set<() => void>();
+  const activeActivityCancellers = new Set<() => void>();
+  const activeActivityWorkers = new Set<Promise<void>>();
   let activeCollaborationWorkers = 0;
 
   interface CollaborationObservation {
@@ -1886,6 +1893,62 @@ export async function startOperatorServer(
       return;
     }
 
+    const activityRoute = OPERATOR_TASK_ACTIVITY_ROUTE.exec(pathname);
+    if (activityRoute !== null) {
+      if (closed) { sendJson(response, 503, { code: 'unavailable' }, headOnly); return; }
+      let input: OperatorTaskActivityRequest;
+      try { input = parseTaskActivityRequest(activityRoute[1]!, activityRoute[2]!, url.searchParams); }
+      catch { sendRefusal(request, response, 400, errorBody('invalid_request', 'Invalid activity selector.'), headOnly); return; }
+      if (activeActivityCancellers.size >= maxConcurrency) { sendJson(response, 503, { code: 'busy' }, headOnly); return; }
+      const controller = new AbortController();
+      let worker: ActivityWorker | undefined;
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cancel = () => finish('unavailable');
+      const release = () => activeActivityCancellers.delete(cancel);
+      const finish = (failure?: TaskActivityFailure, snapshot?: OperatorTaskActivity) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        controller.abort();
+        // Admission remains held until the actual worker exit / injected promise settlement.
+        if (worker) void worker.terminate().catch(() => {});
+        response.removeListener('close', cancel);
+        if (response.destroyed) return;
+        if (failure) sendJson(response, failure === 'history_unavailable' ? 404 : 503, { code: failure }, headOnly);
+        else sendJson(response, 200, snapshot, headOnly);
+      };
+      const accept = (value: unknown) => {
+        try { finish(undefined, decodeOperatorTaskActivity(value, input)); }
+        catch { finish('unavailable'); }
+      };
+      activeActivityCancellers.add(cancel);
+      response.once('close', cancel);
+      timer = setTimeout(() => finish('timeout'), timeoutMs);
+      if (options.read_task_activity) {
+        void Promise.resolve().then(() => options.read_task_activity!({ ...input, signal: controller.signal }))
+          .then(accept, () => finish('unavailable')).finally(release);
+      } else {
+        try {
+          worker = new ActivityWorker(new URL('./task-activity-worker.ts', import.meta.url), {
+            workerData: { ...input, env: collaborationWorkerEnvironment(options.env) },
+            env: { ...process.env, GIT_NO_LAZY_FETCH:'1', GIT_OPTIONAL_LOCKS:'0', GIT_TERMINAL_PROMPT:'0' },
+          });
+          const completion = new Promise<void>(resolveExit => {
+            worker!.once('exit', () => { release(); if (!settled) finish('unavailable'); resolveExit(); });
+          });
+          activeActivityWorkers.add(completion);
+          void completion.finally(() => activeActivityWorkers.delete(completion));
+          worker.once('message', (value: { ok?: unknown; snapshot?: unknown; code?: unknown } | null) => {
+            if (value?.ok === true) accept(value.snapshot);
+            else finish(TASK_ACTIVITY_FAILURES.includes(value?.code as TaskActivityFailure) ? value!.code as TaskActivityFailure : 'unavailable');
+          });
+          worker.once('error', () => finish('unavailable'));
+        } catch { release(); finish('unavailable'); }
+      }
+      return;
+    }
+
     const diffRoute = OPERATOR_TASK_DIFF_ROUTE.exec(pathname);
     if (diffRoute !== null) {
       if (closed) {
@@ -2037,6 +2100,8 @@ export async function startOperatorServer(
     closed = true;
     activeFleetCanceller?.();
     for (const cancel of activeDiffCancellers) cancel();
+    for (const cancel of activeActivityCancellers) cancel();
+    await Promise.allSettled([...activeActivityWorkers]);
     for (const cancel of activeTaskMessageCancellers) cancel();
     for (const cancel of activeCollaborationRequestCancellers) cancel();
     await Promise.allSettled([...activeTaskMessageCompletions]);

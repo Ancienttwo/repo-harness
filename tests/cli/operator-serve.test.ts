@@ -1272,3 +1272,60 @@ test('task diff disconnect and shutdown cancel active reads', async () => {
     await started; await server.close(); await cancelled; await closing;
   } finally { await server.close(); }
 });
+
+describe('historical task activity route', () => {
+  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/activity`;
+  const activity = {
+    repository_id:'repo-a', task_id:TASK_ID, limit:50, after:null, message_id:null,
+    protocol:1 as const, kind:'operator_task_activity' as const, observed_at:'2026-09-22T00:00:00.000Z', consistency:'observed' as const,
+    entries:[], coverage:{scope:'task' as const,complete:true,reason:null,scanned:0,bytes:0},next_cursor:null,
+  };
+  test('inherits Host/Origin/method guards and rejects path/ref and duplicate selectors', async () => {
+    let calls=0;
+    const server=await startOperatorServer({port:0,read_task_activity:async()=>{calls++;return activity;}});
+    try {
+      expect((await fetch(server.url+path)).status).toBe(200);
+      const head=await fetch(server.url+path,{method:'HEAD'}); expect(head.status).toBe(200); expect(await head.text()).toBe('');
+      for(const query of ['?root=/tmp','?ref=main','?after=invalid','?limit=1&limit=2','?message_id='+CLAIM_ID+'&limit=1']) expect((await fetch(server.url+path+query)).status).toBe(400);
+      expect((await fetch(server.url+path,{headers:{Origin:'https://example.com'}})).status).toBe(403);
+      expect((await fetch(server.url+path,{method:'POST',headers:{Origin:server.url}})).status).toBe(405);
+      expect(calls).toBe(2);
+    } finally {await server.close();}
+  });
+  test('timeout aborts response but holds capacity until the underlying reader actually settles', async () => {
+    let entered!:()=>void, settle!:()=>void;
+    const started=new Promise<void>(r=>{entered=r;});
+    let signal:AbortSignal|undefined;
+    const server=await startOperatorServer({port:0,timeout_ms:1000,max_concurrency:1,read_task_activity:input=>{
+      signal=input.signal;entered();return new Promise(resolve=>{settle=()=>resolve(activity);});
+    }});
+    try {
+      const pending=fetch(server.url+path);await started;
+      expect(await (await fetch(server.url+path)).json()).toEqual({code:'busy'});
+      expect(await (await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBeTrue();
+      expect(await (await fetch(server.url+path)).json()).toEqual({code:'busy'});
+      settle();await new Promise(resolve=>setTimeout(resolve,0));
+    } finally {settle?.();await server.close();}
+  });
+  test('rejects cross-repository worker-shaped payloads', async () => {
+    const server=await startOperatorServer({port:0,read_task_activity:async()=>({...activity,repository_id:'repo-b'})});
+    try {expect(await(await fetch(server.url+path)).json()).toEqual({code:'unavailable'});} finally {await server.close();}
+  });
+  test('disconnect and shutdown cancel activity reads without retaining request listeners', async () => {
+    let entered!:()=>void, stopped!:()=>void;
+    const started=new Promise<void>(r=>{entered=r;}), aborted=new Promise<void>(r=>{stopped=r;});
+    const server=await startOperatorServer({port:0,read_task_activity:({signal})=>new Promise((_,reject)=>{
+      signal.addEventListener('abort',()=>{stopped();reject(new Error('aborted'));},{once:true});entered();
+    })});
+    try {
+      const controller=new AbortController();const pending=fetch(server.url+path,{signal:controller.signal}).catch(()=>null);
+      await started;controller.abort();await aborted;await pending;
+    } finally {await server.close();}
+    let shutdownEntered!:()=>void, shutdownStopped!:()=>void;
+    const running=new Promise<void>(r=>{shutdownEntered=r;}), stopping=new Promise<void>(r=>{shutdownStopped=r;});
+    const second=await startOperatorServer({port:0,read_task_activity:({signal})=>new Promise((_,reject)=>{
+      signal.addEventListener('abort',()=>{shutdownStopped();reject(new Error('shutdown'));},{once:true});shutdownEntered();
+    })});
+    const pending=fetch(second.url+path).catch(()=>null);await running;await second.close();await stopping;await pending;
+  });
+});

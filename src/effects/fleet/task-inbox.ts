@@ -27,6 +27,7 @@ import { lookupCanonicalTask, PENDING_ROW_STATUS, type CanonicalTask } from '../
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { readCanonicalSprint, resolveRepoIdentity, type CanonicalSprintSource } from '../state/coordination-canonical-source';
+import { readClaimActorReceipt } from '../engineers/claim-actor-store';
 import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
 
 export const TASK_INBOX_RELATIVE_PATH = 'repo-harness/task-inbox/v1';
@@ -1247,4 +1248,94 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
       coverage: { scope: exact ? 'exact_parent' as const : 'inbox' as const, complete: exhausted === null && parents.length <= entries.length, reason: exhausted ?? (parents.length > entries.length ? 'page' : null), scanned, bytes },
       next_cursor: exhausted === null && parents.length > entries.length ? entries.at(-1)?.parent.message_id ?? null : null };
   });
+}
+
+/** Historical observations never acquire a Lease/Binding lock or perform delivery. */
+export function readHistoricalTaskActivity(input: {
+  repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
+  budget: { max_scan: number; max_bytes: number; deadline_ms: number };
+}) {
+  assertTaskId(input.task_id);
+  if (input.message_id !== null) assertMessageId(input.message_id);
+  if (input.after !== null) assertMessageId(input.after);
+  if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) fail('task_message_invalid', 'invalid activity limit');
+  const common = resolveGitCommonDirectory(input.repo_root);
+  const directory = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'events');
+  const started = Date.now();
+  let scanned = 0, bytes = 0;
+  let exhausted: 'scan' | 'bytes' | 'deadline' | null = null;
+  const stop = (reason: NonNullable<typeof exhausted>): never => { exhausted = reason; throw new Error('activity read budget exhausted'); };
+  const charge = (size: number) => {
+    if (Date.now() - started >= input.budget.deadline_ms) stop('deadline');
+    if (bytes + size > input.budget.max_bytes) stop('bytes');
+    bytes += size;
+  };
+  const count = () => { charge(0); if (scanned >= input.budget.max_scan) stop('scan'); scanned++; };
+  const each = (path: string, visit: (name: string) => void) => {
+    if (!inspectSafeDirectoryChain(common, path, false, 'historical activity directory')) return;
+    const stream = opendirSync(path);
+    try { for (let entry = stream.readSync(); entry; entry = stream.readSync()) {
+      count();
+      if (!entry.isFile() || !entry.name.endsWith('.json')) fail('task_message_unreadable', 'invalid historical activity entry');
+      visit(entry.name);
+    } } finally { stream.closeSync(); }
+  };
+  const eventAt = (id: string) => {
+    assertMessageId(id);
+    const event = optionalReplyRecord(common, join(directory, `${id}.json`), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge);
+    if (!event) return null;
+    assertEventStored(event, input.task_id);
+    if (event.message_id !== id) fail('task_message_unreadable', 'historical event path identity is mismatched');
+    return event;
+  };
+  const receiptsAt = (event: TaskMessageEventV1) => {
+    const receipts: TaskMessageDeliveryReceiptV1[] = [];
+    const path = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'delivery', event.message_id);
+    each(path, name => {
+      const receipt = optionalReplyRecord(common, join(path, name), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
+      if (!receipt || receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
+        || `${deriveTaskMessageRecipientKey(recipientFromReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
+      receipts.push(receipt);
+    });
+    return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromReceipt(b))));
+  };
+  type Reply = { claim_id: string; generation: number; reply_message_id: string | null; observation: ReturnType<typeof inspectTaskReplyChain>; actor: ClaimActorReceiptV1 | null };
+  const repliesAt = (parent: TaskMessageEventV1, receipts: TaskMessageDeliveryReceiptV1[]): Reply[] => {
+    const replies: Reply[] = [];
+    if (!isOriginalSteer(parent)) return replies;
+    for (const receipt of receipts) {
+      const recipient = recipientFromReceipt(receipt);
+      if (recipient.kind !== 'claim') continue;
+      const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
+      let actor: ClaimActorReceiptV1 | null = null;
+      if (chain.intent && chain.observation.state !== 'inconsistent') {
+        const recorded = readClaimActorReceipt(input.repo_root, input.task_id, recipient.claim_id, { max_bytes: REPLY_RECORD_MAX_BYTES, charge });
+        if (recorded && recorded.receipt_sha256 === chain.intent.claim_actor.receipt_sha256
+          && recorded.task_id === input.task_id && recorded.task_revision === parent.task_revision
+          && recorded.claim_id === recipient.claim_id && recorded.lease_generation === recipient.generation) actor = recorded;
+      }
+      replies.push({ claim_id: recipient.claim_id, generation: recipient.generation, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null, observation: chain.observation, actor });
+    }
+    return replies;
+  };
+  const events: TaskMessageEventV1[] = [];
+  const entries: { event: TaskMessageEventV1; receipts: TaskMessageDeliveryReceiptV1[]; replies: Reply[] }[] = [];
+  let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
+  try {
+    if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) events.push(event); }
+    else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); events.push(event); });
+    events.sort((a,b) => a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0);
+    for (const event of events.filter(e => input.after === null || e.message_id > input.after).slice(0,input.limit)) {
+      const receipts = receiptsAt(event);
+      const parent = event.in_reply_to === null ? event : eventAt(event.in_reply_to);
+      const parentReceipts = parent === event ? receipts : parent ? receiptsAt(parent) : [];
+      const replies = parent ? repliesAt(parent, parentReceipts).filter(r => parent === event || r.reply_message_id === event.message_id) : [];
+      entries.push({ event, receipts, replies });
+    }
+  } catch (error) { if (!exhausted) throw error; }
+  const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
+  const reason = exhausted ?? (more ? 'page' as const : null);
+  return { history_exists: historyExists, entries,
+    coverage: { complete: reason === null, reason, scanned, bytes },
+    next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
 }

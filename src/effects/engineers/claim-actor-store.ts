@@ -83,11 +83,15 @@ function parse(raw: string): ClaimActorReceiptV1 {
   }
 }
 
-export function readClaimActorReceipt(cwd: string, taskId: string, claimId: string): ClaimActorReceiptV1 | null {
+export function readClaimActorReceipt(cwd: string, taskId: string, claimId: string, budget?: { max_bytes: number; charge: (bytes: number) => void }): ClaimActorReceiptV1 | null {
   const paths = pathFor(cwd, taskId, claimId);
   if (!safeDirectoryExists(paths.common, paths.task) || !existsSync(paths.receipt)) return null;
   const stat = lstatSync(paths.receipt);
   if (!stat.isFile() || stat.isSymbolicLink()) throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'claim actor receipt path is unsafe');
+  if (budget) {
+    if (stat.size > budget.max_bytes) throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'claim actor receipt exceeds read budget');
+    budget.charge(stat.size);
+  }
   return parse(readFileSync(paths.receipt, 'utf8'));
 }
 
