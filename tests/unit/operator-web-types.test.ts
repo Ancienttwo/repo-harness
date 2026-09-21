@@ -392,3 +392,24 @@ describe('historical activity browser transport', () => {
     } finally {globalThis.fetch=original;}
   });
 });
+
+test('current context transport preserves expected revision, abort and uncached read semantics',async()=>{
+  const {fetchTaskContext}=await import('../../src/operator-web/task-context');
+  const request={repository_id:'repo-a',task_id:taskId,expected_task_revision:taskRevision};
+  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
+    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:taskId,task_revision:taskRevision,
+    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},task:{title:'Task',mode:'contract',acceptance:'read only',state:'pending'},
+    execution:{lease_state:'available',claim:null},offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:snapshotDigest,plan:null},
+    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:snapshotDigest,authorization_revision:1,consistency:'observed'},
+  };
+  const original=globalThis.fetch,controller=new AbortController();let url='';let observed:RequestInit|undefined;
+  try {
+    globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(context);}) as typeof fetch;
+    expect(await fetchTaskContext(request,controller.signal)).toEqual(context);
+    expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/context?task_revision=${taskRevision}`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+    globalThis.fetch=(async()=>Response.json({...context,task_revision:'f'.repeat(64)})) as unknown as typeof fetch;
+    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('Invalid task context response');
+    globalThis.fetch=(async()=>Response.json({code:'stale'},{status:409})) as unknown as typeof fetch;
+    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('stale');
+  } finally {globalThis.fetch=original;}
+});

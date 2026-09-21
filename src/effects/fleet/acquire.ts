@@ -207,7 +207,7 @@ function buildTaskOffer(
 export function collectRepoTaskOffers(
   repo: RepoHarnessRegisteredRepo,
   registry: RepoHarnessRegistrySnapshot,
-  options: Pick<FleetOffersOptions, 'env' | 'now_ms' | 'board_reader' | 'plan_reader'> = {},
+  options: Pick<FleetOffersOptions, 'env' | 'now_ms' | 'board_reader' | 'plan_reader'> & { readonly task_id?: string } = {},
 ): RepoTaskOffers | null {
   const sprintPath = readActiveSprintPath(repo.path);
   if (sprintPath === null) return null;
@@ -224,7 +224,8 @@ export function collectRepoTaskOffers(
   }
 
   const planReader = options.plan_reader ?? readCanonicalTaskPlanProof;
-  const offers = board.cards.map((card, index) => {
+  const offers = board.cards.flatMap((card, index) => {
+    if (options.task_id !== undefined && card.task_id !== options.task_id) return [];
     let proofResult: CanonicalTaskPlanProofResult | null = null;
     if (card.mode.trim().toLowerCase() === 'contract') {
       proofResult = planReader(repo.path, {
@@ -242,7 +243,7 @@ export function collectRepoTaskOffers(
         proofResult = { ok: false, code: 'plan_not_projectable', error: String(error), candidates: [proofResult.proof.plan_path] };
       }
     }
-    return buildTaskOffer(repo, registry, board, card, index, proofResult);
+    return [buildTaskOffer(repo, registry, board, card, index, proofResult)];
   });
   return Object.freeze({
     repo: Object.freeze({ ...repo }),

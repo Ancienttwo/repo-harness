@@ -1329,3 +1329,50 @@ describe('historical task activity route', () => {
     const pending=fetch(second.url+path).catch(()=>null);await running;await second.close();await stopping;await pending;
   });
 });
+
+describe('current Task context route',()=>{
+  const path=`/api/v1/fleet/tasks/repo-a/${TASK_ID}/context`;
+  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
+    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:TASK_ID,task_revision:'b'.repeat(64),
+    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},
+    task:{title:'Current task',mode:'contract',acceptance:'read only',state:'pending'},
+    execution:{lease_state:'available',claim:null},
+    offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:`sha256:${'d'.repeat(64)}`,plan:null},
+    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:`sha256:${'e'.repeat(64)}`,authorization_revision:1,consistency:'observed'},
+  };
+  test('validates Host, Origin and selectors before reading, then binds expected revision',async()=>{
+    let calls=0;const server=await startOperatorServer({port:0,read_task_context:async()=>{calls++;return context;}});
+    try {
+      expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
+      expect((await fetch(server.url+path,{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
+      expect((await fetch(server.url+path+'?source_ref=private')).status).toBe(400);
+      expect(calls).toBe(0);
+      expect((await fetch(server.url+path+'?task_revision='+context.task_revision)).status).toBe(200);
+      expect(await(await fetch(server.url+path+'?task_revision='+'a'.repeat(64))).json()).toEqual({code:'unavailable'});
+    } finally {await server.close();}
+  });
+  test('context timeout holds shared activity capacity until the original reader settles',async()=>{
+    let entered!:()=>void,settle!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});
+    let signal:AbortSignal|undefined,activityCalls=0;
+    const server=await startOperatorServer({port:0,timeout_ms:1000,max_concurrency:1,
+      read_task_context:input=>{signal=input.signal;entered();return new Promise(resolve=>{settle=()=>resolve(context);});},
+      read_task_activity:async()=>{activityCalls++;throw new Error('unused');},
+    });
+    try {
+      const pending=fetch(server.url+path);await started;
+      const activityPath=server.url+path.replace('/context','/activity');
+      expect(await(await fetch(activityPath)).json()).toEqual({code:'busy'});
+      expect(await(await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBeTrue();
+      expect(await(await fetch(activityPath)).json()).toEqual({code:'busy'});expect(activityCalls).toBe(0);
+      settle();await new Promise(resolve=>setTimeout(resolve,0));
+      expect(await(await fetch(activityPath)).json()).toEqual({code:'unavailable'});expect(activityCalls).toBe(1);
+    } finally {settle?.();await server.close();}
+  });
+  test('server shutdown aborts a context reader and does not publish a late response',async()=>{
+    let entered!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});let aborted=false;
+    const server=await startOperatorServer({port:0,read_task_context:({signal})=>new Promise((_,reject)=>{
+      signal.addEventListener('abort',()=>{aborted=true;reject(new Error('cancelled'));},{once:true});entered();
+    })});
+    const pending=fetch(server.url+path).catch(()=>null);await started;await server.close();await pending;expect(aborted).toBeTrue();
+  });
+});
