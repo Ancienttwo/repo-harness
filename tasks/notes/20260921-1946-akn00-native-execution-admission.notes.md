@@ -11,3 +11,6 @@
 - 首轮22项测试、type与仓库检查已通过，task-sync要求补上述diff绑定。复验只修改本切片workflow文档；以冻结Git tree逐文件/权限校验和当前task检查作为delta，保留原始执行证据。
 
 - 收口的architecture projection plan（`akn00/projection-plan.json`）仅计划更新`docs/architecture/.projection-manifest.json`，affectedNodeIds/refreshSignals均为空。按原流程增加这一生成文件到同包allowed_paths；architecture-sync改为当前执行，其余非workflow源文件必须匹配首轮冻结tree。
+
+- 2026-09-22独立codex-plugin评审approve、findings=[]，exact subject `sha256:b10fd83bac79e83fae1b8f70272ec313e0a6a8866539601c0043c17bfb0846df`；AcceptanceReceipt为external_pass，最终verify-sprint通过。原文见`.ai/harness/runs/akn00/cross-review-20260922.json`。
+- 归档未完成：installed helper会重写Verification Plan中workflow-delta命令的路径，导致归档后plan hash失配；对照临时归档commit `3bac0fa9`与冻结candidate `7a866b11`，只有该check.command变化。repo内scripts和assets helper已有跳过Verification Plan的修复，但源CLI收口被merge-gate的installed-runtime规则拒绝。两次finish均自动回滚，未合并；日志为`akn00/finish-20260922.*`与`akn00/finish-source-20260922.*`。需另行授权更新本机安装后继续；不改准入代码、不重做语义评审、不绕过gate。

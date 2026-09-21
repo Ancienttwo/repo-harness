@@ -1,15 +1,15 @@
 # Task Review: akn00-native-execution-admission
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260921-1946-akn00-native-execution-admission.md
 > **Contract**: tasks/contracts/20260921-1946-akn00-native-execution-admission.contract.md
 > **Notes File**: tasks/notes/20260921-1946-akn00-native-execution-admission.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:b10fd83bac79e83fae1b8f70272ec313e0a6a8866539601c0043c17bfb0846df
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 
 ## Human Review Card
 
@@ -35,17 +35,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:b10fd83bac79e83fae1b8f70272ec313e0a6a8866539601c0043c17bfb0846df
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:f7db752be2121bd7cbdeefaf631ef7e6d497b54406734b8af701864022e7d65f
+> **Issued At**: 2026-09-21T16:50:34.313Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: No material blocker found in the seven-file review scope against the pinned base, including the unstaged manifest change. Admission remains fail-closed. Test execution was blocked by the read-only sandbox during preload, so runtime verification is incomplete.
 - Findings: none
 
 ## Residual Risks / Follow-ups

@@ -1227,9 +1227,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/architecture-projection-continuation",
-        "commit": "14e9083e4e1fc616794dcb117d4174b4400b7f7c",
-        "committedAt": "2026-09-16T16:27:17+08:00"
+        "branch": "codex/akn00-native-execution-admission",
+        "commit": "95555e97964369f393d545c5ca9da7f5b93e61fd",
+        "committedAt": "2026-09-22T00:47:34+08:00"
       }
     },
     {
