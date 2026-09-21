@@ -131,3 +131,7 @@ Record pre-fix missing-plan degraded regression in existing Fleet unit suite. Co
 - [x] Cut over Operator DTO/decoder and browser consumers without legacy fallback.
 - [x] Update existing regression/consumer fixtures and prove source-level behavior plus rendered UI.
 - [ ] Freeze source/projection, verify and obtain stage acceptance before submitting PR.
+
+## Protocol inventory closure
+
+The existing C0 authority inventory imports Fleet protocol and therefore belongs to this same v4-to-v5 cutover. Synchronize its expected version and computed digest, retaining the historical freeze record and adding an explicit AKN-04a revision. Add the existing inventory suite to canonical verification. This correction introduces no new authority plane or product behavior.

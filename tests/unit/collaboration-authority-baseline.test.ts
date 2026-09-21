@@ -522,7 +522,7 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
  * re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787';
+  'sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
@@ -758,7 +758,7 @@ describe('C0 delivery-plane authority baseline', () => {
       'project-board': 1,
       'task-offer': 1,
       'fleet-offers': 1,
-      'fleet-board': 4,
+      'fleet-board': 5,
       'task-freeze-receipt': 1,
       'publication-receipt': 1,
       'publication-lineage': 1,
