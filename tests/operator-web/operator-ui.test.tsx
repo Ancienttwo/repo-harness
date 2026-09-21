@@ -195,3 +195,40 @@ describe('operator web control board', () => {
     expect(markup).toContain('repo_unreadable');
   });
 });
+
+describe('repository automation supervision', () => {
+  test('renders original decisions and unknown execution without deriving authorization or owners', async () => {
+    const { AutomationEvidence } = await import('../../src/operator-web/AutomationSummary');
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const { decodeOperatorRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
+    const { translate } = await import('../../src/operator-web/i18n');
+    const observation = decodeOperatorRepositorySnapshot(repositoryObservationFixture(), 'repo-harness');
+    const markup = renderToStaticMarkup(<AutomationEvidence observation={observation} t={(key, values) => translate('en', key, values)} />);
+    for (const value of ['Native execution evidence unavailable', 'executing', 'operator', 'dispatch_started',
+      'grant-ui-observation', 'Stored grant only.', 'reconciliation_required', 'agent_turns',
+      'Last stored decision', 'no_progress', observation.automation.grants.records[0]!.expires_at,
+      observation.automation.controllers.records[0]!.event_sha256, 'Stale']) expect(markup).toContain(value);
+    expect(markup).not.toContain('Agent is running');
+    expect(markup).not.toContain('<button');
+    const zh = renderToStaticMarkup(<AutomationEvidence observation={observation} t={(key, values) => translate('zh', key, values)} />);
+    expect(zh).toContain('原生执行证据不可用');
+    expect(zh).toContain('最近已存储决策');
+    expect(zh).toContain('原始关注责任方');
+  });
+
+  test('keeps source absence, failure and stale budget metrics distinct', async () => {
+    const { AutomationEvidence } = await import('../../src/operator-web/AutomationSummary');
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const { translate } = await import('../../src/operator-web/i18n');
+    const original = repositoryObservationFixture('repo-console');
+    const observation = { ...original, automation: { ...original.automation,
+      policy: { ...original.automation.policy, status: 'unavailable' as const, reason: 'source_changed' as const, records: [] } } };
+    const markup = renderToStaticMarkup(<AutomationEvidence observation={observation} t={(key, values) => translate('en', key, values)} />);
+    expect(markup).toContain('data-source-status="unavailable"');
+    expect(markup).toContain('data-source-status="missing"');
+    expect(markup).toContain('source_changed');
+    expect(markup).toContain('No record');
+    expect(markup).toContain('Stale');
+    expect(markup).toContain('>15</td>');
+  });
+});

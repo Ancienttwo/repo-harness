@@ -506,3 +506,44 @@ export const collaborationFixtures = {
   changedDuringRead: changedCollaborationSnapshot,
   off: offCollaborationSnapshot,
 } as const;
+
+/** Original-shaped read-only records for homepage UI/transport fixtures. */
+export function repositoryObservationFixture(repositoryId = 'repo-harness'): import('../core/operator/repository-snapshot').OperatorRepositorySnapshot {
+  const selected = stableRepositories.find((row) => row.repository_id === repositoryId);
+  if (!selected) throw new Error('unknown fixture repository');
+  const observed_at = '2026-09-22T00:00:00.000Z';
+  const digest = `sha256:${'b'.repeat(64)}`;
+  const missing = { status: 'missing' as const, observed_at, reason: null, records: [] };
+  const known = <T,>(records: T[]) => ({ status: 'known' as const, observed_at, reason: null, records });
+  return {
+    protocol: 2, kind: 'operator_repository_snapshot', repository_id: repositoryId,
+    service_epoch: '00000000-0000-4000-8000-000000000001', generation: 18,
+    snapshot: { ...stableSnapshot, repositories: [selected], counts: repositoryId === 'repo-harness'
+      ? { ...stableSnapshot.counts, working: 1, known_tasks: 6 }
+      : { ...emptySnapshot.counts, working: 1, known_tasks: 1 } },
+    automation: {
+      protocol: 1, repository_id: repositoryId, consistency: 'observed', observed_at,
+      native_execution: { status: 'unavailable', reason: 'native_admission_authority_unavailable', turn_ref: null },
+      policy: known([{ mode: 'active', source_ref: 'registered_worktree_policy', policy_sha256: digest }]),
+      grants: known([{ authorization_id: 'grant-ui-observation', authorization_sha256: digest,
+        target_ref: 'main', target_revision: 'c'.repeat(40), allowed_work_package_ids: ['package-ui'],
+        contract_scope: 'task_contract', contract_path: 'tasks/contracts/ui.contract.md', merge_mode: 'manual',
+        issued_at: observed_at, expires_at: '2026-09-22T02:00:00.000Z', campaign_id: 'campaign-ui' }]),
+      budgets: known([{ automation_run_id: digest, budget_sha256: digest, budget_revision: 2,
+        state: 'reconciliation_required', deadline_at: '2026-09-22T02:00:00.000Z', ledger_sha256: digest,
+        slice_sha256: digest, event_count: 3, last_completed_step_index: 1, open_reservation_count: 1,
+        projection_stale: true, attention_owner: 'user',
+        metrics: [{ metric: 'agent_turns', enforced: true, limit: 20, consumed: 4, reserved: 1, remaining: 15 }],
+        stop_receipt: { stop_receipt_sha256: digest, refusal_code: 'reconciliation_required', issued_at: observed_at, triggering_metric: 'agent_turns' } }]),
+      controllers: known([{ run_id: digest, run_sha256: digest, budget_sha256: digest, current_sha256: digest,
+        event_sha256: digest, revision: 3, state: 'executing', operation: 'dispatch_started', observed_at,
+        retry_at: null, source_attention_owner: 'operator', typed_reason_status: 'unavailable',
+        task_id: selected.cards[0]!.task_id, claim_id: selected.cards[0]!.claim_id, dispatch_id: 'dispatch-ui', runtime_effect_id: 'effect-ui' }]),
+      campaigns: repositoryId === 'repo-console' ? missing : known([{ campaign_id: 'campaign-ui', campaign_sha256: digest,
+        authorization_sha256: digest, current_sha256: digest, event_sha256: digest, revision: 2,
+        state: 'group_running', operation: 'start_group', observed_at, typed_reason_status: 'unavailable', source_attention_owner: 'unavailable',
+        group_decisions: [{ group_number: 1, intent_sha256: digest, last_decision: { receipt_sha256: digest,
+          action: 'observe', outcome: 'no_progress', observed_at, next_check_at: '2026-09-22T00:01:00.000Z' } }] }]),
+    },
+  };
+}

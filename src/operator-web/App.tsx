@@ -1,3 +1,4 @@
+import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { TaskDiff } from './TaskDiff';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
@@ -50,6 +51,7 @@ export interface OperatorAppProps {
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
+  readonly fetchRepositoryObservation?: RepositoryObservationReader;
 }
 
 /**
@@ -2072,6 +2074,7 @@ export function OperatorApp({
   fetchCollaboration = fetchOperatorCollaborationSnapshot,
   initialCollaboration,
   initialLocale,
+  fetchRepositoryObservation,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -2237,6 +2240,12 @@ export function OperatorApp({
       />
       <div className="operator-main">
         <main className="operator-content">
+          {activeRepository && <AutomationSummary
+            repositoryId={activeRepository.repository_id}
+            refreshGeneration={collaborationRefreshGeneration}
+            readObservation={fetchRepositoryObservation}
+            t={t}
+          />}
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />

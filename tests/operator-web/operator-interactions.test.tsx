@@ -501,7 +501,7 @@ describe('operator web interactions', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     });
     expect(document.querySelector('[data-state="stale"]')).not.toBeNull();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Fleet snapshot response is invalid');
+    expect(Array.from(document.querySelectorAll('[role="alert"]')).some((alert) => alert.textContent?.includes('Fleet snapshot response is invalid'))).toBe(true);
     expect(document.querySelector('.statusbar-fact--age.is-stale')).not.toBeNull();
   });
 
@@ -1851,4 +1851,74 @@ describe('preparation and available work', () => {
     await act(async () => buttonWithText('中').click());
     expect(document.querySelector('.detail-pane')?.textContent).toContain('计划等待批准');
   });
+});
+
+describe('scoped automation homepage observations', () => {
+  test('switches only the selected scope and discards an aborted late response', async () => {
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const pending: { id: string; signal: AbortSignal; resolve: (value: ReturnType<typeof repositoryObservationFixture>) => void }[] = [];
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      fetchRepositoryObservation={(id, signal) => new Promise((resolve) => pending.push({ id, signal, resolve }))} />);
+    expect(pending.map((row) => row.id)).toEqual(['repo-harness']);
+    await selectRepository('repo-console');
+    expect(pending[0]!.signal.aborted).toBe(true);
+    expect(pending.map((row) => row.id)).toEqual(['repo-harness', 'repo-console']);
+    await act(async () => pending[1]!.resolve(repositoryObservationFixture('repo-console')));
+    const summary = () => document.querySelector('.automation-summary')!;
+    expect(summary().textContent).toContain('repo-console');
+    await act(async () => pending[0]!.resolve(repositoryObservationFixture('repo-harness')));
+    expect(summary().textContent).not.toContain('repo-harness');
+    expect(summary().getAttribute('data-observation-status')).toBe('ready');
+    await act(async () => root?.unmount()); root = null;
+    expect(pending[1]!.signal.aborted).toBe(true);
+  });
+
+  test('refresh supersedes an in-flight response and accepts a current service epoch reset', async () => {
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const pending: { signal: AbortSignal; resolve: (value: ReturnType<typeof repositoryObservationFixture>) => void }[] = [];
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+      fetchRepositoryObservation={(_id, signal) => new Promise((resolve) => pending.push({ signal, resolve }))} />);
+    await act(async () => buttonWithText('Refresh').click());
+    expect(pending).toHaveLength(2);
+    expect(pending[0]!.signal.aborted).toBe(true);
+    const next = repositoryObservationFixture();
+    await act(async () => pending[1]!.resolve({ ...next, generation: 1,
+      service_epoch: '00000000-0000-4000-8000-000000000002', snapshot: { ...next.snapshot, sequence: 1 } }));
+    await act(async () => pending[0]!.resolve(next));
+    expect(document.querySelector('.automation-summary')?.textContent).toContain('00000000-0000-4000-8000-000000000002');
+    expect(document.querySelector('.automation-summary')?.textContent).not.toContain('00000000-0000-4000-8000-000000000001');
+  });
+
+  test('rejects a wrong scope and labels retained evidence when a refresh fails', async () => {
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    let request = 0;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+      fetchRepositoryObservation={async () => {
+        request += 1;
+        if (request === 1) return repositoryObservationFixture();
+        if (request === 2) return repositoryObservationFixture('repo-console');
+        throw new Error('private diagnostic must not be rendered');
+      }} />);
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('failed');
+    expect(document.querySelector('.automation-summary')?.textContent).toContain('Previous observation');
+    expect(document.querySelector('.automation-summary')?.textContent).not.toContain('repo-console');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('.automation-summary')?.textContent).not.toContain('private diagnostic');
+    expect(document.querySelector('.automation-summary')?.textContent).toContain('Read failed');
+  });
+});
+
+
+test('does not relabel a regressed generation in the same service epoch as current', async () => {
+  const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+  let calls = 0;
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+    fetchRepositoryObservation={async () => {
+      const value = repositoryObservationFixture();
+      return calls++ === 0 ? value : { ...value, generation: 1, snapshot: { ...value.snapshot, sequence: 1 } };
+    }} />);
+  await act(async () => buttonWithText('Refresh').click());
+  expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('failed');
+  expect(document.querySelector('.automation-summary')?.textContent).toContain('Previous observation');
 });
