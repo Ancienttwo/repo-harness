@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   OPERATOR_COLLABORATION_PROTOCOL,
   OPERATOR_COLLABORATION_SNAPSHOT_KIND,
-  type OperatorCollaborationSnapshotV1,
+  type OperatorCollaborationSnapshotV2,
 } from '../../src/core/operator/collaboration-snapshot';
 import {
   OperatorCollaborationError,
@@ -34,14 +34,16 @@ function writeRouteIds(routes: readonly OperatorRouteV1[]): readonly string[] {
 }
 
 function collaborationSnapshot(
-  overrides: Partial<OperatorCollaborationSnapshotV1> = {},
-): OperatorCollaborationSnapshotV1 {
+  overrides: Partial<OperatorCollaborationSnapshotV2> = {},
+): OperatorCollaborationSnapshotV2 {
   return {
     protocol: OPERATOR_COLLABORATION_PROTOCOL,
     kind: OPERATOR_COLLABORATION_SNAPSHOT_KIND,
     repository_id: 'repo-a',
+    exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
+    organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     ...overrides,
-  } as OperatorCollaborationSnapshotV1;
+  } as OperatorCollaborationSnapshotV2;
 }
 
 describe('operator structural write boundary', () => {
@@ -93,7 +95,7 @@ describe('operator structural write boundary', () => {
       [collaborationSnapshot({ repository_id: 'repo-b' }), 'repo-a'],
       [collaborationSnapshot({ protocol: 99 as never }), 'repo-a'],
       [collaborationSnapshot({ kind: 'operator_fleet_snapshot' as never }), 'repo-a'],
-      [{} as OperatorCollaborationSnapshotV1, 'repo-a'],
+      [{} as OperatorCollaborationSnapshotV2, 'repo-a'],
     ] as const) {
       let thrown: unknown;
       try {

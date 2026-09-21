@@ -400,3 +400,13 @@ code, .mono-value { font-family: var(--font-mono); }
 
 .detail-pane__actions { flex-shrink: 0; white-space: nowrap; display: flex; gap: 8px; align-items: start; }
 .detail-pane__actions .operator-button { min-height: 44px; }
+
+.organization-summary { display: grid; min-width: 0; gap: 12px; padding: 20px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-card); font-size: 14px; overflow-wrap: anywhere; }
+.organization-summary ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.organization-summary li { min-width: 0; padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.organization-summary summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; }
+.organization-summary pre { max-width: 100%; overflow: auto; font-size: 14px; }
+.organization-summary dl { display: grid; gap: 8px; }
+.organization-summary dd { margin: 0; }
+.organization-summary dt { color: var(--text-muted); }
+.organization-engineers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }

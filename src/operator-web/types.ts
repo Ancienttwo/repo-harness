@@ -1,3 +1,6 @@
+import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
+import type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
+export type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
 /** Browser projections import their transport types from the core authority. */
 export type {
   OperatorCollaborationActorKind,
@@ -9,7 +12,7 @@ export type {
   OperatorCollaborationOpportunityV1,
   OperatorCollaborationParticipantV1,
   OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV1,
+  OperatorCollaborationSnapshotV2,
   OperatorCollaborationSource,
   OperatorCollaborationThreadV1,
 } from '../core/operator/collaboration-snapshot';
@@ -30,7 +33,7 @@ import type {
   OperatorCollaborationOpportunityV1,
   OperatorCollaborationParticipantV1,
   OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV1,
+  OperatorCollaborationSnapshotV2,
   OperatorCollaborationSource,
   OperatorCollaborationThreadV1,
 } from '../core/operator/collaboration-snapshot';
@@ -56,7 +59,7 @@ export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'
  * same reason and typed against the core literal, so a bump that forgets the
  * browser fails typecheck.
  */
-export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV1['protocol'] = 1;
+export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV2['protocol'] = 2;
 
 export interface OperatorApiErrorV1 {
   readonly code: string;
@@ -708,18 +711,18 @@ function decodeCollaborationSources(value: unknown): readonly OperatorCollaborat
  * that silently dropped the entries it could not read would be the healthy-empty
  * reading the collaboration program exists to refuse.
  */
-export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV1 {
+export function decodeOperatorWorkExchangeSnapshot(value: unknown): OperatorWorkExchangeSnapshot {
   try {
     const snapshot = requireRecord(value);
     if (
-      snapshot.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL
-      || snapshot.kind !== 'operator_collaboration_snapshot'
+      snapshot.protocol !== 1
+      || snapshot.kind !== 'operator_work_exchange_snapshot'
     ) {
       throw new OperatorPayloadError();
     }
     return Object.freeze({
-      protocol: OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL,
-      kind: 'operator_collaboration_snapshot',
+      protocol: 1,
+      kind: 'operator_work_exchange_snapshot',
       repository_id: requireString(snapshot.repository_id),
       mode: requireOneOf(snapshot.mode, COLLABORATION_MODES),
       snapshot_consistency: requireOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES),
@@ -737,6 +740,36 @@ export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCol
     if (error instanceof OperatorPayloadError) throw new OperatorCollaborationPayloadError();
     throw error;
   }
+}
+
+export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV2 {
+  try {
+    const v = requireRecord(value);
+    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'exchange', 'organization']);
+    if (v.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL || v.kind !== 'operator_collaboration_snapshot') throw new OperatorPayloadError();
+    const repositoryId = requireString(v.repository_id);
+    const source = <T,>(value: unknown, decode: (snapshot: unknown) => T): import('../core/operator/collaboration-snapshot').OperatorCollaborationSourceObservation<T> => {
+      const s = requireRecord(value);
+      const observed_at = requireInstant(s.observed_at);
+      if (s.status === 'unavailable') {
+        requireExactKeys(s, ['status', 'observed_at', 'code']);
+        if (s.code !== 'source_unavailable') throw new OperatorPayloadError();
+        return { status: 'unavailable', observed_at, code: 'source_unavailable' };
+      }
+      requireExactKeys(s, ['status', 'observed_at', 'snapshot']);
+      if (s.status !== 'observed') throw new OperatorPayloadError();
+      return { status: 'observed', observed_at, snapshot: decode(s.snapshot) };
+    };
+    return {
+      protocol: OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL, kind: 'operator_collaboration_snapshot', repository_id: repositoryId,
+      exchange: source(v.exchange, raw => {
+        const exchange = decodeOperatorWorkExchangeSnapshot(raw);
+        if (exchange.repository_id !== repositoryId) throw new OperatorPayloadError();
+        return exchange;
+      }),
+      organization: source(v.organization, raw => decodeOperatorOrganizationSnapshot(raw, repositoryId)),
+    };
+  } catch { throw new OperatorCollaborationPayloadError(); }
 }
 
 /** Decode the complete browser payload before any component receives it. */

@@ -1,5 +1,5 @@
 import type {
-  OperatorCollaborationSnapshotV1,
+  OperatorWorkExchangeSnapshot,
   OperatorFleetCardV1,
   OperatorFleetColumn,
   OperatorFleetRepositoryV1,
@@ -343,9 +343,9 @@ function collabDigest(seed: string): string {
 const ENGINEER_LINEAGE = 'module_engineerengineer:capability.runtime-harness.collaboration';
 const WORKER_LINEAGE = `delegated_worker${collabDigest('6b1f04d9c8a2e735')}`;
 
-export const collaborationSnapshot: OperatorCollaborationSnapshotV1 = {
+export const exchangeSnapshot: OperatorWorkExchangeSnapshot = {
   protocol: 1,
-  kind: 'operator_collaboration_snapshot',
+  kind: 'operator_work_exchange_snapshot',
   repository_id: COLLAB_REPOSITORY_ID,
   mode: 'shadow',
   snapshot_consistency: 'stable',
@@ -480,25 +480,35 @@ export const collaborationSnapshot: OperatorCollaborationSnapshotV1 = {
 };
 
 /** Two additive sources unreadable: the panel must say so, not show fewer lanes. */
-export const degradedCollaborationSnapshot: OperatorCollaborationSnapshotV1 = {
-  ...collaborationSnapshot,
+export const degradedExchangeSnapshot: OperatorWorkExchangeSnapshot = {
+  ...exchangeSnapshot,
   snapshot_consistency: 'degraded',
   degraded_sources: ['handoffs', 'adoptions'],
   handoffs: [],
 };
 
 /** A writer landed between the two reads. */
-export const changedCollaborationSnapshot: OperatorCollaborationSnapshotV1 = {
-  ...collaborationSnapshot,
+export const changedExchangeSnapshot: OperatorWorkExchangeSnapshot = {
+  ...exchangeSnapshot,
   snapshot_consistency: 'changed_during_read',
   changed_sources: ['signals'],
 };
 
 /** Collaboration switched off: readable, and nothing can be written to it. */
-export const offCollaborationSnapshot: OperatorCollaborationSnapshotV1 = {
-  ...collaborationSnapshot,
+export const offExchangeSnapshot: OperatorWorkExchangeSnapshot = {
+  ...exchangeSnapshot,
   mode: 'off',
 };
+
+export function collaborationObservationFixture(exchange: OperatorWorkExchangeSnapshot): import('../core/operator/collaboration-snapshot').OperatorCollaborationSnapshotV2 {
+  return { protocol: 2, kind: 'operator_collaboration_snapshot', repository_id: exchange.repository_id,
+    exchange: { status: 'observed', observed_at: '2026-09-22T07:00:00.000Z', snapshot: exchange },
+    organization: { status: 'unavailable', observed_at: '2026-09-22T07:00:00.000Z', code: 'source_unavailable' } };
+}
+export const collaborationSnapshot = collaborationObservationFixture(exchangeSnapshot);
+export const degradedCollaborationSnapshot = collaborationObservationFixture(degradedExchangeSnapshot);
+export const changedCollaborationSnapshot = collaborationObservationFixture(changedExchangeSnapshot);
+export const offCollaborationSnapshot = collaborationObservationFixture(offExchangeSnapshot);
 
 export const collaborationFixtures = {
   stable: collaborationSnapshot,

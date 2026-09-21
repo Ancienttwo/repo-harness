@@ -1,29 +1,19 @@
+import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot } from '../../core/operator/organization-snapshot';
+import { validateEngineeringOverlaySnapshot, validateOrganizationAttentionSnapshot } from '../../core/engineers/engineering-overlay';
+import { collectEngineeringBoard } from '../engineers/engineering-overlay';
 import {
   OPERATOR_COLLABORATION_PROTOCOL,
   OPERATOR_COLLABORATION_SNAPSHOT_KIND,
-  projectOperatorCollaborationSnapshot,
-  type OperatorCollaborationSnapshotV1,
+  projectOperatorWorkExchangeSnapshot,
+  type OperatorCollaborationSnapshotV2,
 } from '../../core/operator/collaboration-snapshot';
 import { collectCollaborativeWorkExchange } from '../collaboration/work-exchange';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 
-/**
- * The board's read of one repository's collaboration substrate.
- *
- * The mirror image of the board's one write: the browser names a registered
- * repository and nothing else, and this effect re-resolves the repository root
- * locally, so a machine-local path never crosses the HTTP boundary in either
- * direction.
- *
- * Nothing here is read-write gated. `repository_read_only` is a refusal the
- * task-message write owes; a read owes no such thing, and refusing to show a
- * read-only repository's lanes would hide state the operator is entitled to see.
- *
- * Every failure is typed. There is no branch that returns an empty snapshot: an
- * unreadable signal set makes `collectCollaborativeWorkExchange()` throw, and
- * that throw becomes `collaboration_snapshot_unavailable` rather than a quiet
- * zero-lane document, because a collaboration store that cannot be read must
- * never render as a collaboration store with nothing in it.
+/** Resolve only registered repository IDs. WorkExchange and Organization are
+ * independent stored observations; one unavailable source cannot become an
+ * empty result or hide the other. Registry/identity failures refuse the whole
+ * response. No reader acquires, binds, delivers, acknowledges or runs a provider.
  */
 export type OperatorCollaborationErrorCode =
   | 'registry_unavailable'
@@ -58,7 +48,7 @@ export interface ReadOperatorCollaborationSnapshotInput {
  * message could otherwise be accepted as this repository's answer.
  */
 export function assertOperatorCollaborationSnapshotIdentity(
-  snapshot: OperatorCollaborationSnapshotV1,
+  snapshot: OperatorCollaborationSnapshotV2,
   repositoryId: string,
 ): void {
   if (snapshot === null
@@ -76,6 +66,20 @@ export function assertOperatorCollaborationSnapshotIdentity(
       `collaboration snapshot answered repository ${snapshot.repository_id} for requested repository ${repositoryId}`,
     );
   }
+  try {
+    if (Object.keys(snapshot).sort().join(',') !== 'exchange,kind,organization,protocol,repository_id') throw new Error('shape');
+    for (const source of [snapshot.exchange, snapshot.organization]) {
+      if (!source || !Number.isFinite(Date.parse(source.observed_at))) throw new Error('source');
+      if (source.status === 'unavailable') {
+        if (source.code !== 'source_unavailable' || Object.keys(source).sort().join(',') !== 'code,observed_at,status') throw new Error('failure');
+      } else if (source.status !== 'observed' || source.snapshot.repository_id !== repositoryId || Object.keys(source).sort().join(',') !== 'observed_at,snapshot,status') throw new Error('identity');
+    }
+    if (snapshot.organization.status === 'observed') decodeOperatorOrganizationSnapshot(snapshot.organization.snapshot, repositoryId);
+    if (snapshot.exchange.status === 'observed' && (snapshot.exchange.snapshot.protocol !== 1 || snapshot.exchange.snapshot.kind !== 'operator_work_exchange_snapshot')) throw new Error('exchange');
+  } catch (error) {
+    throw new OperatorCollaborationError('collaboration_repository_mismatch', 'invalid scoped collaboration source', error);
+  }
+
 }
 
 function registeredRepositoryRoot(input: ReadOperatorCollaborationSnapshotInput): string {
@@ -94,36 +98,32 @@ function registeredRepositoryRoot(input: ReadOperatorCollaborationSnapshotInput)
 
 export function readOperatorCollaborationSnapshot(
   input: ReadOperatorCollaborationSnapshotInput,
-): OperatorCollaborationSnapshotV1 {
+): OperatorCollaborationSnapshotV2 {
   const repoRoot = registeredRepositoryRoot(input);
-  let collection: ReturnType<typeof collectCollaborativeWorkExchange>;
-  try {
-    collection = collectCollaborativeWorkExchange({
-      repo_root: repoRoot,
-      // The board holds no `EngineerPrincipalV1`, so it cannot ask the scheduling
-      // plane what this participant could pick up. The reader is required rather
-      // than optional exactly so that decision has to be made here, and the
-      // decision is that the board does not ask: the projection drops
-      // `execution_offers` entirely, so this list never reaches a reader. Passing
-      // a reader that throws instead would mark the source `degraded` and claim
-      // the offers were unreadable, which is a different and false statement.
-      read_execution_offers: () => [],
-    });
-  } catch (error) {
-    throw new OperatorCollaborationError(
-      'collaboration_snapshot_unavailable',
-      `cannot read the collaboration store for repository ${input.repository_id}`,
-      error,
-    );
-  }
-  const projected = projectOperatorCollaborationSnapshot({
-    snapshot: collection.snapshot,
-    mode: collection.mode,
-    // Assigned straight across, so the projection's restated source vocabulary
-    // cannot drift from the collector's without failing typecheck here.
-    degraded_sources: collection.degraded_sources,
-    changed_sources: collection.changed_sources,
+  const observe = <T>(reader: () => T): import('../../core/operator/collaboration-snapshot').OperatorCollaborationSourceObservation<T> => {
+    try { return { status: 'observed', snapshot: reader(), observed_at: new Date().toISOString() }; }
+    catch (error) {
+      if (error instanceof OperatorCollaborationError && error.code === 'collaboration_repository_mismatch') throw error;
+      return { status: 'unavailable', code: 'source_unavailable', observed_at: new Date().toISOString() };
+    }
+  };
+  const exchange = observe(() => {
+    const collection = collectCollaborativeWorkExchange({ repo_root: repoRoot, read_execution_offers: () => [] });
+    const snapshot = projectOperatorWorkExchangeSnapshot({ snapshot: collection.snapshot, mode: collection.mode, degraded_sources: collection.degraded_sources, changed_sources: collection.changed_sources });
+    if (snapshot.repository_id !== input.repository_id) throw new OperatorCollaborationError('collaboration_repository_mismatch', 'exchange repository differs from request');
+    return snapshot;
   });
+  const organization = observe(() => {
+    const board = collectEngineeringBoard({ repo_root: repoRoot, env: input.env });
+    const overlay = validateEngineeringOverlaySnapshot(board.overlay);
+    const attention = validateOrganizationAttentionSnapshot(board.organization_attention);
+    if (overlay.repository_id !== input.repository_id) throw new OperatorCollaborationError('collaboration_repository_mismatch', 'organization repository differs from request');
+    return projectOperatorOrganizationSnapshot(overlay, attention);
+  });
+  const projected: OperatorCollaborationSnapshotV2 = {
+    protocol: OPERATOR_COLLABORATION_PROTOCOL, kind: OPERATOR_COLLABORATION_SNAPSHOT_KIND,
+    repository_id: input.repository_id, exchange, organization,
+  };
   assertOperatorCollaborationSnapshotIdentity(projected, input.repository_id);
   return projected;
 }

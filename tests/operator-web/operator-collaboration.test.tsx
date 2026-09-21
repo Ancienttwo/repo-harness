@@ -1,10 +1,13 @@
+import { buildEngineeringOverlaySnapshot, projectOrganizationAttention } from '../../src/core/engineers/engineering-overlay';
+import { projectOperatorOrganizationSnapshot, decodeOperatorOrganizationSnapshot } from '../../src/core/operator/organization-snapshot';
+import { OrganizationSummary } from '../../src/operator-web/OrganizationSummary';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Window } from 'happy-dom';
 
-import { projectOperatorCollaborationSnapshot } from '../../src/core/operator/collaboration-snapshot';
+import { projectOperatorWorkExchangeSnapshot } from '../../src/core/operator/collaboration-snapshot';
 import type { CollaborativeWorkExchangeSnapshotV1 } from '../../src/core/collaboration/work-exchange';
 import {
   CollaborationPane,
@@ -15,6 +18,8 @@ import {
 import {
   changedCollaborationSnapshot,
   collaborationSnapshot,
+  exchangeSnapshot as exchangeFixture,
+  collaborationObservationFixture,
   degradedCollaborationSnapshot,
   fixtureTasks,
   offCollaborationSnapshot,
@@ -24,7 +29,7 @@ import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorCollaborationSnapshot,
   projectSnapshotViewState,
-  type OperatorCollaborationSnapshotV1,
+  type OperatorCollaborationSnapshotV2,
 } from '../../src/operator-web/types';
 
 let root: Root | null = null;
@@ -91,7 +96,7 @@ function paneText(): string {
   return document.querySelector('.collab-pane')?.textContent ?? '';
 }
 
-function render(snapshot: OperatorCollaborationSnapshotV1, locale: 'en' | 'zh' = 'en'): string {
+function render(snapshot: OperatorCollaborationSnapshotV2, locale: 'en' | 'zh' = 'en'): string {
   return renderToStaticMarkup(
     <OperatorApp
       initialState={projectSnapshotViewState(stableSnapshot)}
@@ -141,7 +146,7 @@ afterEach(async () => {
 
 describe('operator collaboration projection', () => {
   test('UX-operator-collaboration-v1-P2 drops the offer list and the document digest it belongs to', () => {
-    const projected = projectOperatorCollaborationSnapshot({
+    const projected = projectOperatorWorkExchangeSnapshot({
       snapshot: exchangeSnapshot({
         execution_offers: [{
           offer: { sprint_path: 'plans/sprints/demo.sprint.md', offer_revision: `sha256:${'c'.repeat(64)}` },
@@ -162,7 +167,7 @@ describe('operator collaboration projection', () => {
   });
 
   test('reduces a proven execution context to its discriminant and keeps null distinct from none', () => {
-    const projected = projectOperatorCollaborationSnapshot({
+    const projected = projectOperatorWorkExchangeSnapshot({
       snapshot: exchangeSnapshot({
         open_handoffs: [
           {
@@ -229,7 +234,7 @@ describe('operator collaboration projection', () => {
   });
 
   test('orders lanes by the hotspot score and discoveries by recorded time', () => {
-    const projected = projectOperatorCollaborationSnapshot({
+    const projected = projectOperatorWorkExchangeSnapshot({
       snapshot: exchangeSnapshot({
         threads: [
           { thread_key: 'cool', hotspot_score: 12, signal_count: 1, distinct_contributor_count: 1, latest_signal_at: '2026-08-30T01:00:00.000Z', artifact_ref_count: 0, unadopted_handoff_count: 0, adoption_count: 0, cross_thread_reference_count: 0, recency_rank: 1, thread_sha256: `sha256:${'8'.repeat(64)}` },
@@ -254,13 +259,13 @@ describe('operator collaboration projection', () => {
       .toEqual(collaborationSnapshot);
 
     for (const broken of [
-      { ...collaborationSnapshot, protocol: 2 },
+      { ...collaborationSnapshot, protocol: 1 },
       { ...collaborationSnapshot, mode: 'paused' },
       { ...collaborationSnapshot, degraded_sources: ['leases'] },
       { ...collaborationSnapshot, source_snapshot_sha256: 'a'.repeat(64) },
       {
         ...collaborationSnapshot,
-        handoffs: [{ ...collaborationSnapshot.handoffs[0]!, execution_context_kind: 'merge' }],
+        handoffs: [{ ...exchangeFixture.handoffs[0]!, execution_context_kind: 'merge' }],
       },
       { ...collaborationSnapshot, unverified_execution_context_count: -1 },
     ]) {
@@ -346,11 +351,7 @@ describe('operator collaboration surface', () => {
   });
 
   test('renders collaboration mode as a closed consistency source in both locales', () => {
-    const modeChanged: OperatorCollaborationSnapshotV1 = {
-      ...collaborationSnapshot,
-      snapshot_consistency: 'changed_during_read',
-      changed_sources: ['mode'],
-    };
+    const modeChanged = collaborationObservationFixture({ ...exchangeFixture, snapshot_consistency: 'changed_during_read', changed_sources: ['mode'] });
 
     expect(render(modeChanged, 'en')).toContain('collaboration mode');
     expect(render(modeChanged, 'zh')).toContain('协作模式');
@@ -440,15 +441,15 @@ describe('operator collaboration surface', () => {
     expect(idle).toContain('Select a task to read its repository collaboration lanes.');
     expect(idle).not.toContain('No lane has a signal in this snapshot.');
 
-    const emptyStore = render({
-      ...collaborationSnapshot,
+    const emptyStore = render(collaborationObservationFixture({
+      ...exchangeFixture,
       threads: [],
       signals: [],
       handoffs: [],
       participants: [],
       opportunities: [],
       unverified_execution_context_count: 0,
-    });
+    }));
     expect(emptyStore).toContain('No lane has a signal in this snapshot.');
     expect(emptyStore).toContain('Nobody has published to this repository.');
     expect(emptyStore).not.toContain('Select a task to read its repository collaboration lanes.');
@@ -489,7 +490,7 @@ describe('operator collaboration surface', () => {
 });
 
 describe('operator collaboration read', () => {
-  test('UX-operator-collaboration-v1-P4 reads the selected task repository and keeps the selection across a refresh', async () => {
+  test('UX-operator-collaboration-v1-P4 reads the selected repository before task selection and shares it across task details', async () => {
     const asked: string[] = [];
     await mount(
       <OperatorApp
@@ -498,31 +499,31 @@ describe('operator collaboration read', () => {
         fetchSnapshot={async () => stableSnapshot}
         fetchCollaboration={async (repositoryId) => {
           asked.push(repositoryId);
-          return { ...collaborationSnapshot, repository_id: repositoryId };
+          return collaborationObservationFixture({ ...exchangeFixture, repository_id: repositoryId });
         }}
       />,
     );
 
-    // Nothing is selected, so nothing has been read.
-    expect(asked).toEqual([]);
-    expect(paneText()).toContain('Select a task to read its repository collaboration lanes.');
+    // The default selected repository is observed before any Task is opened.
+    expect(asked).toEqual(['repo-harness']);
+    expect(paneText()).toContain('repository repo-harness');
 
     await selectRepository('repo-console');
     await act(async () => buttonWithText(fixtureTasks.console.task_label).click());
-    expect(asked).toEqual(['repo-console']);
+    expect(asked).toEqual(['repo-harness', 'repo-console']);
     expect(paneText()).toContain('repository repo-console');
     expect(paneText()).toContain('hotspot 87');
 
     // An explicit board refresh also re-reads the selected repository, while
     // keeping the selection and avoiding reads for every other repository.
     await act(async () => buttonWithText('Refresh').click());
-    expect(asked).toEqual(['repo-console', 'repo-console']);
+    expect(asked).toEqual(['repo-harness', 'repo-console', 'repo-console']);
     expect(paneText()).toContain('repository repo-console');
 
     // Selecting a task in another repository moves the scope.
     await selectRepository('repo-harness');
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
-    expect(asked).toEqual(['repo-console', 'repo-console', 'repo-harness']);
+    expect(asked).toEqual(['repo-harness', 'repo-console', 'repo-console', 'repo-harness']);
     expect(paneText()).toContain('repository repo-harness');
   });
 
@@ -569,11 +570,7 @@ describe('operator collaboration read', () => {
               next_action: 'Check the repository collaboration store, then refresh the board.',
             };
           }
-          return {
-            ...collaborationSnapshot,
-            repository_id: repositoryId,
-            source_snapshot_sha256: `sha256:${'f'.repeat(64)}`,
-          };
+          return collaborationObservationFixture({ ...exchangeFixture, repository_id: repositoryId, source_snapshot_sha256: `sha256:${'f'.repeat(64)}` });
         }}
       />,
     );
@@ -590,8 +587,8 @@ describe('operator collaboration read', () => {
   });
 
   test('late collaboration responses cannot replace the repository selected later', async () => {
-    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV1) => void>>();
-    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV1> => new Promise((resolve) => {
+    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV2) => void>>();
+    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV2> => new Promise((resolve) => {
       const requests = pending.get(repositoryId) ?? [];
       requests.push(resolve);
       pending.set(repositoryId, requests);
@@ -611,13 +608,13 @@ describe('operator collaboration read', () => {
     expect(paneText()).toContain('repository repo-harness');
 
     await act(async () => {
-      pending.get('repo-console')?.[0]?.({ ...collaborationSnapshot, repository_id: 'repo-console' });
+      pending.get('repo-console')?.[0]?.(collaborationObservationFixture({ ...exchangeFixture, repository_id: 'repo-console' }));
     });
     expect(paneText()).toContain('repository repo-harness');
     expect(paneText()).not.toContain('hotspot 87');
 
     await act(async () => {
-      pending.get('repo-harness')?.[0]?.({ ...collaborationSnapshot, repository_id: 'repo-harness' });
+      pending.get('repo-harness')?.at(-1)?.(collaborationObservationFixture({ ...exchangeFixture, repository_id: 'repo-harness' }));
     });
     expect(paneText()).toContain('repository repo-harness');
     expect(paneText()).toContain('hotspot 87');
@@ -627,9 +624,9 @@ describe('operator collaboration read', () => {
     const requests: Array<{
       readonly repositoryId: string;
       readonly signal: AbortSignal;
-      readonly resolve: (snapshot: OperatorCollaborationSnapshotV1) => void;
+      readonly resolve: (snapshot: OperatorCollaborationSnapshotV2) => void;
     }> = [];
-    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV1> => new Promise((resolve, reject) => {
+    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV2> => new Promise((resolve, reject) => {
       requests.push({ repositoryId, signal, resolve });
       signal.addEventListener('abort', () => {
         const error = new Error('superseded');
@@ -650,14 +647,15 @@ describe('operator collaboration read', () => {
     await selectRepository('repo-harness');
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
 
-    expect(requests.map((request) => request.repositoryId)).toEqual(['repo-console', 'repo-harness']);
+    expect(requests.map((request) => request.repositoryId)).toEqual(['repo-harness', 'repo-console', 'repo-harness']);
     expect(requests[0]!.signal.aborted).toBe(true);
-    expect(requests[1]!.signal.aborted).toBe(false);
+    expect(requests[1]!.signal.aborted).toBe(true);
+    expect(requests[2]!.signal.aborted).toBe(false);
     expect(paneText()).toContain('repository repo-harness');
     expect(paneText()).not.toContain('The collaboration store cannot be read');
   });
 
-  test('aborts the active collaboration request when the task is deselected', async () => {
+  test('keeps the repository observation active when only the task is deselected', async () => {
     const observed: { signal: AbortSignal | null } = { signal: null };
     await mount(
       <OperatorApp
@@ -665,7 +663,7 @@ describe('operator collaboration read', () => {
         initialLocale="en"
         fetchCollaboration={async (_repositoryId, nextSignal) => {
           observed.signal = nextSignal;
-          return new Promise<OperatorCollaborationSnapshotV1>(() => {});
+          return new Promise<OperatorCollaborationSnapshotV2>(() => {});
         }}
       />,
     );
@@ -677,13 +675,13 @@ describe('operator collaboration read', () => {
     if (!close) throw new Error('close button not found');
     await act(async () => close.click());
 
-    expect(observed.signal?.aborted).toBe(true);
-    expect(paneText()).toContain('Select a task to read its repository collaboration lanes.');
+    expect(observed.signal?.aborted).toBe(false);
+    expect(paneText()).toContain('Reading the collaboration store');
   });
 
   test('refresh supersedes a collaboration generation without showing an abort failure', async () => {
     const signals: AbortSignal[] = [];
-    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV1> => {
+    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV2> => {
       signals.push(signal);
       return new Promise((resolve, reject) => {
         signal.addEventListener('abort', () => {
@@ -757,7 +755,7 @@ describe('operator collaboration read', () => {
 
       globalThis.fetch = (async () => new Response(JSON.stringify({
         ...collaborationSnapshot,
-        protocol: 2,
+        protocol: 1,
       }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -776,10 +774,7 @@ describe('operator collaboration read', () => {
     const requestedRepository = 'repo-harness';
     const otherRepository = 'repo-other';
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(JSON.stringify({
-      ...collaborationSnapshot,
-      repository_id: otherRepository,
-    }), {
+    globalThis.fetch = (async () => new Response(JSON.stringify(collaborationObservationFixture({ ...exchangeFixture, repository_id: otherRepository })), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })) as unknown as typeof fetch;
@@ -796,7 +791,7 @@ describe('operator collaboration read', () => {
       <OperatorApp
         initialState={projectSnapshotViewState(stableSnapshot)}
         initialLocale="en"
-        fetchCollaboration={async () => ({ ...collaborationSnapshot, repository_id: otherRepository })}
+        fetchCollaboration={async () => collaborationObservationFixture({ ...exchangeFixture, repository_id: otherRepository })}
       />,
     );
     await selectRepository('repo-harness');
@@ -804,5 +799,63 @@ describe('operator collaboration read', () => {
     expect(paneText()).toContain('does not match the requested repository');
     expect(paneText()).not.toContain('hotspot 87');
     expect(paneText()).not.toContain('Double-read windows must overlap');
+  });
+});
+
+function organizationBoardFixture() {
+  const hash = `sha256:${'a'.repeat(64)}`;
+  const engineerId = 'engineer:capability.runtime-harness.collaboration';
+  const overlay = buildEngineeringOverlaySnapshot({
+    repository_id: 'repo_a5b76eee64af71c3', registry_revision: hash, observed_at: '2026-09-22T07:00:00.000Z', snapshot_consistency: 'stable',
+    components: (['profiles', 'bindings', 'claims', 'messages', 'runtime_effects'] as const).map(component => ({ component, support: 'available', observation_before: hash, observation_after: hash })),
+    engineers: [{ engineer_id: engineerId, capability_id: 'capability.runtime-harness.collaboration', engineer_contract_revision: hash,
+      binding: { support: 'available', state: 'active', revision: hash, value: { binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 2, engineer_contract_revision: hash, provider: 'codex', provider_thread_id: 'private-thread', host_id: 'private-host', observation: 'unknown' } },
+      active_claim: { support: 'available', revision: hash, value: { task_id: 'b'.repeat(64), task_revision: `sha256:${'c'.repeat(64)}`, claim_id: '22222222-2222-4222-8222-222222222222', lease_generation: 3, work_envelope_sha256: hash, worktree_path: '/private/worktree', branch: 'private-branch', unit_ref: 'private-unit', receipt_sha256: hash } },
+      delegations: { support: 'unsupported', value: null }, memory: { support: 'unsupported', value: null },
+      messages: { support: 'available', pending: 2, delivery_failed: 1, revision: hash },
+      runtime_effects: { support: 'available', active: 1, reconciliation_required: 1, failed: 0, wake: { pending: 1, delivered: 0, failed: 0, reconciliation_required: 1 }, revision: hash },
+    }],
+  });
+  return { overlay, attention: projectOrganizationAttention(overlay) };
+}
+
+describe('Organization observation boundary', () => {
+  test('redacts private coordinates while preserving canonical owner, Claim and unknown observation', () => {
+    const board = organizationBoardFixture();
+    const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
+    const bytes = JSON.stringify(view);
+    for (const privateValue of ['private-thread', 'private-host', '/private/worktree', 'private-branch', 'private-unit', 'provider_thread_id', 'host_id', 'worktree_path']) expect(bytes).not.toContain(privateValue);
+    expect(view.attention).toEqual(board.attention);
+    expect(view.engineers[0]?.active_claim.value).toMatchObject({ claim_id: '22222222-2222-4222-8222-222222222222', lease_generation: 3 });
+    expect(view.engineers[0]?.binding.value?.observation).toBe('unknown');
+    expect(decodeOperatorOrganizationSnapshot(JSON.parse(bytes), view.repository_id)).toEqual(view);
+    for (const malformed of [
+      { ...view, repository_id: 'repo_other' },
+      { ...view, engineers: [...view.engineers, ...view.engineers] },
+      { ...view, host_id: 'private-host' },
+      { ...view, snapshot_consistency: 'degraded' },
+      { ...view, engineers: [{ ...view.engineers[0], binding: { ...view.engineers[0]!.binding, value: { ...view.engineers[0]!.binding.value, host_id: 'private-host' } } }] },
+      { ...view, engineers: Array.from({length:201}, () => view.engineers[0]) },
+    ]) expect(() => decodeOperatorOrganizationSnapshot(malformed, view.repository_id)).toThrow();
+  });
+
+  test('refuses old transport and cross-source identity without hiding an explicitly unavailable exchange', async () => {
+    const board = organizationBoardFixture();
+    const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
+    const payload: OperatorCollaborationSnapshotV2 = { ...collaborationSnapshot, repository_id: view.repository_id,
+      exchange: { status: 'unavailable', observed_at: view.observed_at, code: 'source_unavailable' },
+      organization: { status: 'observed', observed_at: view.observed_at, snapshot: view } };
+    expect(decodeOperatorCollaborationSnapshot(payload)).toEqual(payload);
+    expect(() => decodeOperatorCollaborationSnapshot(exchangeFixture)).toThrow();
+    expect(() => decodeOperatorCollaborationSnapshot({ ...payload, organization: { ...payload.organization, snapshot: { ...view, repository_id: 'repo_1111111111111111' } } })).toThrow();
+    const markup = renderToStaticMarkup(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId={view.repository_id} t={key => translate('en',key)} />);
+    expect(markup).toContain('module_engineer');
+    expect(markup).toContain('runtime_operator');
+    expect(markup).toContain('unknown');
+    expect(markup).toContain('does not prove execution is running');
+    expect(markup).not.toContain('private-host');
+    const stale = renderToStaticMarkup(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId="repo_1111111111111111" t={key => translate('en',key)} />);
+    expect(stale).not.toContain('engineer:capability.runtime-harness.collaboration');
+    expect(stale).toContain('Reading the selected repository');
   });
 });

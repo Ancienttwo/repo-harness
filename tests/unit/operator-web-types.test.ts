@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   decodeOperatorCollaborationSnapshot,
+  decodeOperatorWorkExchangeSnapshot,
   decodeOperatorFleetSnapshot,
   decodeOperatorTaskMessageResponse,
   OPERATOR_API_ERROR_CODES,
@@ -11,7 +12,7 @@ import {
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { operatorFixtures } from '../../src/operator-web/fixture';
+import { collaborationObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
 
 const taskId = 'a'.repeat(64);
@@ -78,10 +79,10 @@ function fleetPayloadWithCard(changes: Record<string, unknown>): Record<string, 
   return payload;
 }
 
-function validCollaborationPayload(): Record<string, unknown> {
+function validExchangePayload(): import("../../src/core/operator/collaboration-snapshot").OperatorWorkExchangeSnapshot {
   return {
     protocol: 1,
-    kind: 'operator_collaboration_snapshot',
+    kind: 'operator_work_exchange_snapshot',
     repository_id: 'repo-1',
     mode: 'off',
     snapshot_consistency: 'stable',
@@ -96,6 +97,8 @@ function validCollaborationPayload(): Record<string, unknown> {
     source_snapshot_sha256: snapshotDigest,
   };
 }
+
+function validCollaborationPayload() { return collaborationObservationFixture(validExchangePayload()); }
 
 describe('operator browser payload contracts', () => {
   test('requires the named-repository protocol without accepting old or missing display names', () => {
@@ -192,8 +195,8 @@ describe('operator browser payload contracts', () => {
   });
 
   test('accepts mode as a closed collaboration consistency source', () => {
-    expect(decodeOperatorCollaborationSnapshot({
-      ...validCollaborationPayload(),
+    expect(decodeOperatorWorkExchangeSnapshot({
+      ...validExchangePayload(),
       snapshot_consistency: 'changed_during_read',
       changed_sources: ['mode'],
     }).changed_sources).toEqual(['mode']);

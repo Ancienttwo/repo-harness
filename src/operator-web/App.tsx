@@ -1,3 +1,5 @@
+import { OrganizationSummary } from './OrganizationSummary';
+import type { OperatorWorkExchangeSnapshot } from './types';
 import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from './TaskEvidence';
 import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { TaskDiff } from './TaskDiff';
@@ -28,7 +30,7 @@ import {
   snapshotViewKind,
   type OperatorApiErrorCode,
   type OperatorApiErrorV1,
-  type OperatorCollaborationSnapshotV1,
+  type OperatorCollaborationSnapshotV2,
   type OperatorCollaborationSource,
   type OperatorFleetCardV1,
   type OperatorFleetErrorV1,
@@ -47,7 +49,7 @@ export interface OperatorAppProps {
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
-  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorCollaborationSnapshotV1>;
+  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorCollaborationSnapshotV2>;
   /** A deterministic collaboration state for fixtures and server renders. */
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
@@ -975,7 +977,7 @@ function TaskDetail({
 export type CollaborationViewState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly repository_id: string }
-  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV1 }
+  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV2 }
   | {
       readonly kind: 'failed';
       readonly repository_id: string;
@@ -987,9 +989,9 @@ const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('coll
 const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_repository_mismatch');
 
 function assertCollaborationRepository(
-  snapshot: OperatorCollaborationSnapshotV1,
+  snapshot: OperatorCollaborationSnapshotV2,
   repositoryId: string,
-): OperatorCollaborationSnapshotV1 {
+): OperatorCollaborationSnapshotV2 {
   if (snapshot.repository_id !== repositoryId) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
@@ -997,7 +999,7 @@ function assertCollaborationRepository(
 async function fetchOperatorCollaborationSnapshot(
   repositoryId: string,
   signal?: AbortSignal,
-): Promise<OperatorCollaborationSnapshotV1> {
+): Promise<OperatorCollaborationSnapshotV2> {
   const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot`, {
     headers: { Accept: 'application/json' },
     cache: 'no-store',
@@ -1010,7 +1012,7 @@ async function fetchOperatorCollaborationSnapshot(
     body = null;
   }
   if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
-  let snapshot: OperatorCollaborationSnapshotV1;
+  let snapshot: OperatorCollaborationSnapshotV2;
   try {
     snapshot = decodeOperatorCollaborationSnapshot(body);
   } catch {
@@ -1040,7 +1042,7 @@ function CollaborationConsistency({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   if (snapshot.snapshot_consistency === 'degraded') {
@@ -1072,7 +1074,7 @@ function CollaborationLanes({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1114,7 +1116,7 @@ function CollaborationDiscoveries({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1152,7 +1154,7 @@ function CollaborationHandoffs({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1200,7 +1202,7 @@ function CollaborationContributors({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1235,7 +1237,7 @@ function CollaborationOpportunities({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   if (snapshot.opportunities.length === 0) return null;
@@ -1302,7 +1304,10 @@ export function CollaborationPane({
       </section>
     );
   }
-  const { snapshot } = state;
+  if (state.snapshot.exchange.status === 'unavailable') return (
+    <section className="detail-block collab-pane"><h3>{t('collab.title')}</h3><p role="status">{t('org.sourceUnavailable')}</p></section>
+  );
+  const snapshot = state.snapshot.exchange.snapshot;
   return (
     <section className="detail-block collab-pane" aria-labelledby="collab-heading" data-collab-mode={snapshot.mode}>
       <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
@@ -2078,9 +2083,9 @@ export function OperatorApp({
     try { localStorage.setItem(OPERATOR_REPOSITORY_STORAGE_KEY, activeRepository.repository_id); } catch { /* Browser storage is optional UI preference. */ }
   }, [activeRepository]);
   const switchRepository = (id: string) => {
+    if (id !== activeRepository?.repository_id) setCollaboration({ kind: 'idle' });
     setRepositoryId(id);
     setSelection(null);
-    setCollaboration({ kind: 'idle' });
   };
   const busy = state.kind === 'loading';
   const stateKind = state.kind;
@@ -2140,12 +2145,9 @@ export function OperatorApp({
   const selectedRepository = selectedCard && snapshot
     ? snapshot.repositories.find((repository) => repository.repository_id === selectedCard.repository_id) ?? null
     : null;
-  const collaborationRepositoryId = selectedCard?.repository_id ?? null;
+  const collaborationRepositoryId = activeRepository?.repository_id ?? null;
 
-  // The collaboration store is per repository, so the read is scoped by the
-  // selected task's repository rather than by a default the board would have to
-  // invent. Deselecting returns to `idle`, which is not the same as an empty
-  // store and does not claim to have read one.
+  // One observation belongs to the selected repository; task selection shares it.
   useEffect(() => {
     if (initialCollaboration) return;
     if (collaborationRepositoryId === null) {
@@ -2160,7 +2162,7 @@ export function OperatorApp({
           try {
             setCollaboration({
               kind: 'ready',
-              snapshot: assertCollaborationRepository(next, collaborationRepositoryId),
+              snapshot: assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next), collaborationRepositoryId),
             });
           } catch (error) {
             setCollaboration({
@@ -2222,6 +2224,7 @@ export function OperatorApp({
             readObservation={fetchRepositoryObservation}
             t={t}
           />}
+          {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />

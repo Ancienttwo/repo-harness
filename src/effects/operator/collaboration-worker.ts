@@ -1,4 +1,4 @@
-import type { OperatorCollaborationSnapshotV1 } from '../../core/operator/collaboration-snapshot';
+import type { OperatorCollaborationSnapshotV2 } from '../../core/operator/collaboration-snapshot';
 import {
   OperatorCollaborationError,
   readOperatorCollaborationSnapshot,
@@ -13,7 +13,7 @@ interface CollaborationWorkerRequest {
 type CollaborationWorkerResponse =
   | {
       readonly ok: true;
-      readonly snapshot: OperatorCollaborationSnapshotV1;
+      readonly snapshot: OperatorCollaborationSnapshotV2;
     }
   | {
       readonly ok: false;
