@@ -133,7 +133,7 @@ Acceptance must cover task and claim parents, rejected self/agent/orchestrator/c
 - [x] Implement strict TaskReplyIntentV1 / TaskReplyCommitV1 and chain/resume/retry oracle.
 - [x] Add protocol negative and recovery cases; preserve original event/receipt behavior.
 - [x] Document frozen contract and remaining protected writer, recovery reader, MCP and Host work.
-- [ ] Freeze subject, run canonical verification, obtain independent acceptance, archive and submit stage PR.
+- [x] Freeze implementation subject, run canonical verification and obtain the independent reviewer verdict.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -142,4 +142,6 @@ Acceptance must cover task and claim parents, rejected self/agent/orchestrator/c
 - [x] Implement strict TaskReplyIntentV1 / TaskReplyCommitV1 and chain/resume/retry oracle.
 - [x] Add protocol negative and recovery cases; preserve original event/receipt behavior.
 - [x] Document frozen contract and remaining protected writer, recovery reader, MCP and Host work.
-- [ ] Freeze subject, run canonical verification, obtain independent acceptance, archive and submit stage PR.
+- [x] Freeze implementation subject, run canonical verification and obtain the independent reviewer verdict.
+
+Closeout follows the completed implementation checklist: record the subject-bound AcceptanceReceipt, archive via contract-worktree finish, then submit the stage PR. These publication steps remain pending until their actual receipts/remote readback exist.
