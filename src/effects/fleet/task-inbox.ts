@@ -1220,7 +1220,7 @@ export function observeTaskSteers(input: RestrictedTaskInboxInput & { limit?: nu
     }
     const parents = events.filter(event => isOriginalSteer(event) && event.task_revision === authority.actor.task_revision
       && (event.scope === 'task' || (event.target_claim_id === input.recipient.claim_id && event.target_generation === input.recipient.generation)))
-      .sort((a, b) => a.message_id.localeCompare(b.message_id)).filter(event => !input.after || event.message_id > input.after);
+      .sort((a, b) => a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0).filter(event => !input.after || event.message_id > input.after);
     const entries: { parent: TaskMessageEventV1; receipt: TaskMessageDeliveryReceiptV1 | null; reply: ReturnType<typeof inspectTaskReplyChain>; pending_disposition: boolean; reply_message_id: string | null;
       recovery: { parent_message_id: string; parent_event_digest: string; reply_message_id: string; body: string; intent_sha256: string } | null }[] = [];
     if (!exhausted) {

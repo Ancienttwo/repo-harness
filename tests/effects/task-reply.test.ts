@@ -77,6 +77,25 @@ function fixture() {
 }
 
 describe('protected Task reply storage and Engineer composition', () => {
+  test('mixed-case UUID pagination returns every original steer exactly once', () => {
+    const f = fixture();
+    const ids = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB'];
+    for (const message_id of ids) {
+      const event = buildTaskMessageEvent({ ...f.parent, message_id });
+      writeFileSync(taskInboxEventPath(f.root, f.work.task_id, message_id), `${canonicalTaskMessageEventBytes(event)}\n`);
+    }
+    const seen: string[] = [];
+    let after: string | undefined;
+    for (let n = 0; n < 4; n++) {
+      const page = withEngineerTaskInbox(f.input, inbox => observeTaskSteers({ ...inbox, limit: 1, after }));
+      seen.push(...page.entries.map(entry => entry.parent.message_id));
+      if (!page.next_cursor) { expect(page.coverage.complete).toBeTrue(); break; }
+      after = page.next_cursor;
+    }
+    expect(seen).toEqual([f.parent.message_id, ids[1], ids[0]]);
+    expect(new Set(seen).size).toBe(3);
+  });
+
   test('review recovery: unrelated canonical commits preserve communication but not acquisition or changed plans', () => {
     const f = fixture();
     git(f.root, 'commit', '--allow-empty', '-qm', 'unrelated main advancement');

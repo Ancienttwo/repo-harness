@@ -61,3 +61,7 @@ Effect tests terminate a child process at intent fsync, intent publication, even
 ## Remaining AKN-03 acceptance
 
 Notification effects still need bounded reconciliation under the original control reference (§5.8), including accepted-but-unknown results and missing receipt exhaustion. Real ST/AF canaries require H0 and legal Campaign prerequisites. No record digest, local crash fixture, ACK, hook receipt or HTTP smoke closes those Host and notification acceptance items.
+
+## Cursor ordering correction
+
+Protected steer paging compares original UUID strings in code-point order for both sorting and exclusive cursor filtering. UUIDs remain case-preserving protocol identifiers; no normalization or alternate identity is introduced. Locale sorting is unsuitable because uppercase and lowercase UUIDs are both valid. A mixed-case three-steer regression reproduced an omitted uppercase entry on the old comparator and now requires every original ID exactly once. The historical activity reader already uses the same code-point order.

@@ -10,7 +10,7 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Substantive Change SHA256**: `sha256:5f1a3c33b23dda4bd0a42c6d23b7c453da73465ff7837a390a0fce5259a1c13d`
+> **Substantive Change SHA256**: `sha256:ed3b605a02dcb742514baa338ae21111bfcb14d557611325251af711230e97e4`
 
 ## Human Review Card
 
@@ -75,3 +75,16 @@ Both findings reproduced in `review-regressions-before.log`: exact whitespace wa
 The cumulative independent review rejected 75036305-derived behavior: unrelated canonical commits prevented ongoing communication, and full-history scan exhaustion prevented known-operation recovery. The owner request for the earlier f306 subject is superseded. `review-recovery-before.log` captured three failing regression cases. The corrected targeted run passed all three: communication survives unrelated canonical advancement while acquisition remains strict and changed Plan proof fails closed; authenticated exact-parent recovery survives both scan and byte exhaustion, retains immutable history, and rejects wrong digest, pagination mixing and revoked token. The code uses shared authority checks and an explicitly scoped exact-parent read requiring the original persisted intent. Unknown-parent discovery beyond the list bound remains incomplete and is not represented as solved.
 
 No second independent review was run. Acceptance must bind the corrected source and canonical verification.
+
+## Corrected canonical evidence
+
+Source `92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e`; subject `sha256:de587bc9199084e7c8eef152f9a528d34d878f684c1e46782a316312677c3379`. Canonical prepare-acceptance passed all 23 criteria with zero failures, including recovery/effects, acquisition effects, MCP/OAuth/HTTP, authority inventory, type and required repository integrity checks. Run: `.ai/harness/runs/run-20260922T040623-9736-20260922-0204-akn03-protected-replies.json`. Architecture materialization was noop with current proof. This is machine verification, not an AcceptanceReceipt. Explicit owner acceptance remains pending and the previous request does not cover this corrected subject.
+
+## AKN-05a dependency finding: cursor ordering
+
+- root_cause: observeTaskSteers sorted UUIDs with localeCompare but applied an exclusive code-point cursor; a valid uppercase UUID could be silently skipped.
+- repro: bun test tests/effects/task-reply.test.ts --test-name-pattern 'mixed-case UUID pagination'
+- regression_guard: tests/effects/task-reply.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/akn05-reader-corrections/pagination-red.log (PRE_FIX_EXIT=1)
+
+The original review rejection remains. This correction supersedes prior source-bound verification and owner-acceptance subjects; it is not a new external review or a passing receipt.
