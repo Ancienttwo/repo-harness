@@ -1,13 +1,14 @@
+import { decodeOperatorAutomationSummary } from '../core/operator/automation-summary';
 import { assertRepositorySnapshotIdentity, type OperatorRepositorySnapshot } from '../core/operator/repository-snapshot';
 import { decodeOperatorFleetSnapshot } from './types';
 
 export function decodeOperatorRepositorySnapshot(value: unknown, repositoryId: string): OperatorRepositorySnapshot {
   if (typeof value !== 'object' || value === null || Array.isArray(value)
-    || Object.keys(value).sort().join(',') !== 'generation,kind,protocol,repository_id,service_epoch,snapshot') {
+    || Object.keys(value).sort().join(',') !== 'automation,generation,kind,protocol,repository_id,service_epoch,snapshot') {
     throw new Error('repository_snapshot_invalid');
   }
   const record = value as OperatorRepositorySnapshot;
-  const result = { ...record, snapshot: decodeOperatorFleetSnapshot(record.snapshot) };
+  const result = { ...record, snapshot: decodeOperatorFleetSnapshot(record.snapshot), automation: decodeOperatorAutomationSummary(record.automation, repositoryId) };
   assertRepositorySnapshotIdentity(result, repositoryId);
   return result;
 }

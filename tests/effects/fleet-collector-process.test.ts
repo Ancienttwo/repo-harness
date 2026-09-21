@@ -71,22 +71,22 @@ function processIsAlive(pid: number): boolean {
 describe('Fleet collector supervision protocol', () => {
   test('keeps the collector inert until a complete start payload arrives', () => {
     expect(parseFleetCollectorRequest({ type: 'cancel' })).toEqual({ type: 'cancel' });
-    expect(parseFleetCollectorRequest({ type: 'start', protocol: 1, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1 })).toBeNull();
+    expect(parseFleetCollectorRequest({ type: 'start', protocol: 2, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1 })).toBeNull();
     expect(parseFleetCollectorRequest({
-      type: 'start', protocol: 1, scope: { kind: 'fleet' },
+      type: 'start', protocol: 2, scope: { kind: 'fleet' },
       sequence: 1,
       max_concurrency: 1,
       timeout_ms: 1_000,
       env: { REPO_HARNESS_HOME: '/tmp/collector' },
     })).toEqual({
-      type: 'start', protocol: 1, scope: { kind: 'fleet' },
+      type: 'start', protocol: 2, scope: { kind: 'fleet' },
       sequence: 1,
       max_concurrency: 1,
       timeout_ms: 1_000,
       env: { REPO_HARNESS_HOME: '/tmp/collector' },
     });
     expect(parseFleetCollectorRequest({
-      type: 'start', protocol: 1, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1, timeout_ms: 1_000, env: { PATH: 42 },
+      type: 'start', protocol: 2, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1, timeout_ms: 1_000, env: { PATH: 42 },
     })).toBeNull();
   });
 
@@ -183,7 +183,7 @@ describe('Fleet collector supervision protocol', () => {
       expect(await assigned).toEqual({ type: 'assigned' });
 
       const started = nextJsonLine(controller, 'collector identity response');
-      controller.stdin.write('{"type":"start","protocol":1,"scope":{"kind":"fleet"},"sequence":1,"max_concurrency":1,"timeout_ms":1000}\n');
+      controller.stdin.write('{"type":"start","protocol":2,"scope":{"kind":"fleet"},"sequence":1,"max_concurrency":1,"timeout_ms":1000}\n');
       const identities = await started;
       collectorPid = Number(identities.collector_pid);
       descendantPid = Number(identities.descendant_pid);
@@ -235,13 +235,13 @@ describe('Fleet collector supervision protocol', () => {
 });
 
 test('collector requires versioned explicit scope and rejects malformed repository selectors', () => {
-  const base = { type: 'start', protocol: 1, sequence: 1, max_concurrency: 1, timeout_ms: 1_000 };
+  const base = { type: 'start', protocol: 2, sequence: 1, max_concurrency: 1, timeout_ms: 1_000 };
   expect(parseFleetCollectorRequest(base)).toBeNull();
-  expect(parseFleetCollectorRequest({ ...base, protocol: 0, scope: { kind: 'fleet' } })).toBeNull();
+  expect(parseFleetCollectorRequest({ ...base, protocol: 1, scope: { kind: 'fleet' } })).toBeNull();
   for (const scope of [{ kind: 'fleet', repository_id: 'repo-a' }, { kind: 'repository' },
     { kind: 'repository', repository_id: '../root' }, { kind: 'repository', repository_id: 'repo-a', extra: true }]) {
     expect(parseFleetCollectorRequest({ ...base, scope })).toBeNull();
   }
   expect(parseFleetCollectorRequest({ ...base, scope: { kind: 'repository', repository_id: 'repo-a' } }))
-    .toMatchObject({ protocol: 1, scope: { kind: 'repository', repository_id: 'repo-a' } });
+    .toMatchObject({ protocol: 2, scope: { kind: 'repository', repository_id: 'repo-a' } });
 });

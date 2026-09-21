@@ -1,3 +1,5 @@
+import { readOperatorAutomationSummary } from '../../src/effects/operator/automation-summary';
+import { automationSummaryReaders } from '../../src/effects/operator/automation-summary';
 import { campaignBrowserMetadata } from '../helpers/campaign-browser-session';
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { execFileSync } from 'child_process';
@@ -16,7 +18,7 @@ import { AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, reconcileAutomationReservation, 
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { appendDevelopmentCampaignEvent, createDevelopmentCampaign, readDevelopmentCampaignStatus } from '../../src/effects/automation/development-campaign-store';
 import { startIssueBatchAuthoring } from '../../src/effects/automation/gpt-pro-issue-authoring';
-import { CampaignStepError, runCampaignStep as runCampaignStepEffect, type CampaignStepDependencies } from '../../src/effects/automation/campaign-step';
+import { readCampaignStepReceipts, CampaignStepError, runCampaignStep as runCampaignStepEffect, type CampaignStepDependencies } from '../../src/effects/automation/campaign-step';
 import * as issueBatchStore from '../../src/effects/automation/issue-batch-store';
 import { issueBatchGroupStoreRoot, listIssueBatchJournalRecords, persistIssueBatchIntent } from '../../src/effects/automation/issue-batch-store';
 import type { IssueBatchObservationSnapshotV1 } from '../../src/effects/automation/issue-batch-observer';
@@ -144,6 +146,17 @@ describe('durable campaign heartbeat step', () => {
     const args = input(f, 'actual-pages');
     const result = await runCampaignStep(args, { now: () => new Date(later), provider_command });
     expect(result.reconciliation?.outcome).toBe('complete');
+    const storedReceipts = readCampaignStepReceipts(args);
+    expect(storedReceipts).toContainEqual(result.step_receipt);
+    const registry = { registryPath: 'fixture', authorizationRevision: 1, registryRevision: `sha256:${hex('registry')}`,
+      repos: [{ id: 'repo-1', path: f.root, accessMode: 'read_only' as const, source: 'manual' as const, registeredAt: at, lastSeenAt: at }] };
+    const summary = readOperatorAutomationSummary({ repository_id: 'repo-1', env: f.env }, { ...automationSummaryReaders, registry: () => registry });
+    expect(summary.campaigns.status).toBe('known');
+    expect(summary.campaigns.records[0]?.group_decisions[0]?.last_decision).toMatchObject({
+      receipt_sha256: result.step_receipt.step_receipt_sha256, action: result.step_receipt.action, outcome: result.step_receipt.outcome,
+    });
+
+    expect(calls).toBe(3);
     expect(calls).toBe(3);
     const runId = campaignAutomationRunId({ repository_id: f.intent.repository_id, campaign_id: f.intent.campaign_id });
     expect(readCampaignBudgetLedger(f.root, runId, f.env)).toMatchObject({ controller_steps: 1, provider_calls: 4, reserved_provider_calls: 0, active_step: null });

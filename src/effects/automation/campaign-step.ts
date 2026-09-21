@@ -204,7 +204,7 @@ function results(input: RunCampaignStepInput): readonly CampaignMutationResultV1
     return value as unknown as CampaignMutationResultV1;
   });
 }
-function receipts(input: RunCampaignStepInput): readonly CampaignStepReceiptV1[] {
+export function readCampaignStepReceipts(input: Pick<RunCampaignStepInput, 'repo_root' | 'campaign_id' | 'group_number' | 'intent_sha256'>): readonly CampaignStepReceiptV1[] {
   return listIssueBatchJournalRecords(input.repo_root, input.campaign_id, input.group_number, 'receipts').map((entry) => {
     const value = record(entry); validateDigest(value, 'step_receipt_sha256');
     exact(value, ['protocol', 'kind', 'campaign_id', 'group_number', 'intent_sha256', 'idempotency_key', 'action', 'outcome', 'observed_at', 'next_check_at', 'snapshot_receipt_sha256', 'reconciliation', 'mutation_reservation_sha256', 'evidence_refs', 'step_receipt_sha256'], 'campaign step receipt');
@@ -231,7 +231,7 @@ function persistReceipt(input: RunCampaignStepInput, basis: Omit<CampaignStepRec
     intent_sha256: input.intent_sha256, idempotency_key: input.idempotency_key, ...basis,
   }, 'step_receipt_sha256') as unknown as CampaignStepReceiptV1;
   return withDevelopmentCampaignLock(input.repo_root, input.campaign_id, () => {
-    const replay = receipts(input).find((entry) => entry.idempotency_key === input.idempotency_key);
+    const replay = readCampaignStepReceipts(input).find((entry) => entry.idempotency_key === input.idempotency_key);
     if (replay) return replay;
     const reservation = reservations(input).find((entry) => entry.idempotency_key === input.idempotency_key);
     if (reservation) {
@@ -268,7 +268,7 @@ function journalSha256(
 function campaignJournalSnapshot(input: RunCampaignStepInput): CampaignJournalSnapshot {
   const storedReservations = reservations(input);
   const storedResults = results(input);
-  const storedReceipts = receipts(input);
+  const storedReceipts = readCampaignStepReceipts(input);
   return Object.freeze({
     reservations: storedReservations,
     results: storedResults,

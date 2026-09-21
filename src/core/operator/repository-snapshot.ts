@@ -1,16 +1,19 @@
+import { decodeOperatorAutomationSummary, type OperatorAutomationSummary } from './automation-summary';
 import type { OperatorFleetSnapshotV1 } from './fleet-snapshot';
 
 export interface OperatorRepositorySnapshot {
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly kind: 'operator_repository_snapshot';
   readonly repository_id: string;
   readonly service_epoch: string;
   readonly generation: number;
   readonly snapshot: OperatorFleetSnapshotV1;
+  readonly automation: OperatorAutomationSummary;
 }
 
 export function assertRepositorySnapshotIdentity(value: OperatorRepositorySnapshot, repositoryId: string): void {
-  if (value.protocol !== 1 || value.kind !== 'operator_repository_snapshot'
+  decodeOperatorAutomationSummary(value.automation, repositoryId);
+  if (value.protocol !== 2 || value.kind !== 'operator_repository_snapshot'
     || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(repositoryId)
     || value.repository_id !== repositoryId
     || typeof value.service_epoch !== 'string'
@@ -24,11 +27,11 @@ export function assertRepositorySnapshotIdentity(value: OperatorRepositorySnapsh
 }
 
 export function projectOperatorRepositorySnapshot(
-  snapshot: OperatorFleetSnapshotV1, repositoryId: string, serviceEpoch: string,
+  snapshot: OperatorFleetSnapshotV1, repositoryId: string, serviceEpoch: string, automation: OperatorAutomationSummary,
 ): OperatorRepositorySnapshot {
   const result: OperatorRepositorySnapshot = {
-    protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
-    service_epoch: serviceEpoch, generation: snapshot.sequence, snapshot,
+    protocol: 2, kind: 'operator_repository_snapshot', repository_id: repositoryId,
+    service_epoch: serviceEpoch, generation: snapshot.sequence, snapshot, automation,
   };
   assertRepositorySnapshotIdentity(result, repositoryId);
   return result;

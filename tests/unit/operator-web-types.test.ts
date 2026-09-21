@@ -417,10 +417,10 @@ test('current context transport preserves expected revision, abort and uncached 
 describe('repository snapshot transport', () => {
   test('binds nested identity and generation with a strict envelope', async () => {
     const { decodeOperatorRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
-    const value = { protocol: 1, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
+    const value = { automation: automationFixture('repo-1'), protocol: 2, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
       service_epoch: '00000000-0000-4000-8000-000000000001', generation: 1, snapshot: validFleetPayload() };
     expect(decodeOperatorRepositorySnapshot(value, 'repo-1')).toMatchObject({ repository_id: 'repo-1' });
-    for (const bad of [{ ...value, protocol: 2 }, { ...value, generation: 2 }, { ...value, generation: 0 },
+    for (const bad of [{ ...value, protocol: 1 }, { ...value, generation: 2 }, { ...value, generation: 0 },
       { ...value, service_epoch: 'unknown' }, { ...value, repository_id: 'repo-2' }, { ...value, path: '/private' },
       { ...value, snapshot: { ...value.snapshot, repositories: [] } }]) {
       expect(() => decodeOperatorRepositorySnapshot(bad, 'repo-1')).toThrow();
@@ -444,3 +444,11 @@ describe('repository snapshot transport', () => {
     } finally { globalThis.fetch = original; }
   });
 });
+
+function automationFixture(repositoryId: string) {
+  const source = { status: 'missing' as const, observed_at: '2026-09-22T00:00:00.000Z', reason: null, records: [] };
+  return { protocol: 1 as const, repository_id: repositoryId, consistency: 'observed' as const, observed_at: source.observed_at,
+    policy: source, grants: source, budgets: source, controllers: source, campaigns: source,
+    native_execution: { status: 'unavailable' as const, reason: 'native_admission_authority_unavailable' as const, turn_ref: null },
+  };
+}

@@ -1395,7 +1395,7 @@ describe('repository snapshot admission', () => {
     const starts: (string | undefined)[] = [];
     const releases: (() => void)[] = [];
     let active = 0, peak = 0;
-    const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 2,
+    const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), max_concurrency: 2,
       collect_fleet_board: async (input) => {
         starts.push(input?.repository_id); active += 1; peak = Math.max(peak, active);
         await new Promise<void>((resolve) => releases.push(resolve));
@@ -1414,7 +1414,7 @@ describe('repository snapshot admission', () => {
       releases[0]!();
       const va = await (await a1).json() as Record<string, unknown>;
       expect(await (await a2).json()).toEqual(va);
-      expect(va).toMatchObject({ protocol: 1, kind: 'operator_repository_snapshot', repository_id: 'repo-a', generation: 1 });
+      expect(va).toMatchObject({ protocol: 2, kind: 'operator_repository_snapshot', repository_id: 'repo-a', generation: 1 });
       expect(JSON.stringify(va)).not.toContain('/private/');
       await waitFor(() => starts.length === 2, 'B did not start'); releases[1]!();
       const vb = await (await b).json() as Record<string, unknown>;
@@ -1434,7 +1434,7 @@ describe('repository snapshot admission', () => {
     const root = mkdtempSync(join(tmpdir(), 'operator-scoped-deadline-'));
     let calls = 0, aborted = false;
     let finish!: () => void;
-    const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 1, timeout_ms: 1_000,
+    const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), max_concurrency: 1, timeout_ms: 1_000,
       collect_fleet_board: async (input) => {
         calls += 1;
         input!.signal!.addEventListener('abort', () => { aborted = true; }, { once: true });
@@ -1466,7 +1466,7 @@ describe('repository snapshot admission', () => {
   test('enforces scoped query, Host, Origin and POST guards and refuses wrong collection identity', async () => {
     const root = mkdtempSync(join(tmpdir(), 'operator-scoped-guards-'));
     let calls = 0;
-    const server = await startOperatorServer({ port: 0, static_root: root,
+    const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id),
       collect_fleet_board: async (input) => { calls += 1; return scopedSnapshot('wrong-repo', input!.sequence!); },
     });
     try {
@@ -1499,7 +1499,7 @@ test('repository snapshots use a new service epoch after server restart', async 
   const epochs: string[] = [];
   try {
     for (let i = 0; i < 2; i += 1) {
-      const server = await startOperatorServer({ port: 0, static_root: root, collect_fleet_board: async (input) =>
+      const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), collect_fleet_board: async (input) =>
         projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence: input!.sequence!,
           observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: input!.repository_id!,
             repo_root: '/private/repo', access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards: [], error: null }] }),
@@ -1511,4 +1511,26 @@ test('repository snapshots use a new service epoch after server restart', async 
     }
     expect(epochs[0]).not.toBe(epochs[1]);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+function automationFixture(repositoryId: string) {
+  const source = { status: 'missing' as const, observed_at: '2026-09-22T00:00:00.000Z', reason: null, records: [] };
+  return { protocol: 1 as const, repository_id: repositoryId, consistency: 'observed' as const, observed_at: source.observed_at,
+    policy: source, grants: source, budgets: source, controllers: source, campaigns: source,
+    native_execution: { status: 'unavailable' as const, reason: 'native_admission_authority_unavailable' as const, turn_ref: null },
+  };
+}
+
+test('repository snapshot rejects automation from another repository', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'operator-automation-identity-'));
+  const server = await startOperatorServer({ port: 0, static_root: root,
+    read_automation_summary: () => automationFixture('other-repository'),
+    collect_fleet_board: async input => projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence: input!.sequence!,
+      observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: input!.repository_id!, repo_root: '/private/repo',
+        access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards: [], error: null }] }),
+  });
+  try {
+    const response = await fetch(server.url + '/api/v1/fleet/repositories/repo-a/snapshot');
+    expect(response.status).toBe(503); expect(await response.json()).toMatchObject({error:{code:'fleet_snapshot_unavailable'}});
+  } finally { await server.close(); rmSync(root,{recursive:true,force:true}); }
 });

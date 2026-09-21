@@ -1,3 +1,5 @@
+import { readOperatorAutomationSummary } from './automation-summary';
+import type { OperatorAutomationSummary } from '../../core/operator/automation-summary';
 import { createInterface } from 'node:readline';
 
 import type { FleetBoardSnapshotV1 } from '../../core/fleet/board';
@@ -9,7 +11,7 @@ import {
 
 export interface FleetCollectorStartRequest {
   readonly type: 'start';
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly scope: { readonly kind: 'fleet' } | { readonly kind: 'repository'; readonly repository_id: string };
   readonly env?: Readonly<Record<string, string>>;
   readonly sequence: number;
@@ -24,12 +26,12 @@ export interface FleetCollectorCancelRequest {
 export type FleetCollectorRequest = FleetCollectorStartRequest | FleetCollectorCancelRequest;
 
 export type FleetCollectorResponse =
-  | { readonly ok: true; readonly snapshot: FleetBoardSnapshotV1 }
-  | { readonly ok: false; readonly code: FleetBoardFatalErrorCode }
+  | { readonly ok: true; readonly protocol: 2; readonly snapshot: FleetBoardSnapshotV1; readonly automation: OperatorAutomationSummary | null }
+  | { readonly ok: false; readonly code: FleetBoardFatalErrorCode | 'fleet_snapshot_unavailable' }
   | { readonly ok: false; readonly cancelled: true };
 
 function unavailable(): FleetCollectorResponse {
-  return { ok: false, code: 'fleet_registry_unavailable' };
+  return { ok: false, code: 'fleet_snapshot_unavailable' };
 }
 
 export function parseFleetCollectorRequest(value: unknown): FleetCollectorRequest | null {
@@ -38,7 +40,7 @@ export function parseFleetCollectorRequest(value: unknown): FleetCollectorReques
   if (record.type === 'cancel') return { type: 'cancel' };
   if (
     record.type !== 'start'
-    || record.protocol !== 1
+    || record.protocol !== 2
     || !Number.isSafeInteger(record.sequence)
     || !Number.isSafeInteger(record.max_concurrency)
     || !Number.isSafeInteger(record.timeout_ms)
@@ -59,7 +61,7 @@ export function parseFleetCollectorRequest(value: unknown): FleetCollectorReques
   if (envRecord !== undefined && Object.keys(env ?? {}).length !== Object.keys(envRecord).length) return null;
   return {
     type: 'start',
-    protocol: 1,
+    protocol: 2,
     scope: scope as FleetCollectorStartRequest['scope'],
     env,
     sequence: record.sequence as number,
@@ -115,10 +117,11 @@ function run(): void {
       max_concurrency: request.max_concurrency,
       timeout_ms: request.timeout_ms,
       signal: controller.signal,
-    }).then(
-      (snapshot) => finish(controller?.signal.aborted
+    }).then((snapshot) => ({ snapshot, automation: request.scope.kind === 'repository'
+      ? readOperatorAutomationSummary({ repository_id: request.scope.repository_id, registry_revision: snapshot.registry_revision, env: request.env }) : null })).then(
+      (result) => finish(controller?.signal.aborted
         ? ({ ok: false, cancelled: true } satisfies FleetCollectorResponse)
-        : ({ ok: true, snapshot } satisfies FleetCollectorResponse)),
+        : ({ ok: true, protocol: 2, ...result } satisfies FleetCollectorResponse)),
       (error) => finish(controller?.signal.aborted
         ? ({ ok: false, cancelled: true } satisfies FleetCollectorResponse)
         : error instanceof FleetBoardError
