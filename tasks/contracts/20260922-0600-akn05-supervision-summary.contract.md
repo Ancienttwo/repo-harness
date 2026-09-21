@@ -21,7 +21,7 @@ AKN-05a scoped automation supervision header with source evidence and stale/canc
 
 ## Scope
 
-- In scope: browser scoped summary query, original-record rendering, bilingual responsive UI and owning tests.
+- In scope: browser scoped summary query, original-record rendering, bilingual responsive UI and owning tests; integrate the two confirmed dependency-reader corrections from AKN-03b and AKN-04b.
 - Out of scope: three-view navigation, context/activity details, target write admission, polling, native execution, runtime install and main merge.
 - Invariant: observations do not alter Task drafts, fences, POST or ACK cleanup.
 
@@ -37,7 +37,12 @@ A stale or wrong-repository result appears current; controller executing becomes
 
 ## Root Cause Evidence
 
-Not applicable: approved new supervision surface.
+The homepage is a new surface. Two independently reproduced cumulative dependency defects are corrected in their owning worktrees and integrated here:
+
+- root_cause: protected steer sort used locale order while the cursor used code-point order; activity reused nonempty metadata validation for canonical empty bodies.
+- repro: bun test tests/effects/task-reply.test.ts --test-name-pattern 'mixed-case UUID pagination'; bun test tests/effects/operator-task-activity.test.ts --test-name-pattern 'empty canonical reply'
+- regression_guard: tests/effects/task-reply.test.ts; tests/effects/operator-task-activity.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/akn05-supervision-summary/pagination-red.log; .ai/harness/runs/akn05-supervision-summary/empty-body-red.log (both PRE_FIX_EXIT=1, captured in owning worktrees before production fixes)
 
 ## Workflow Inventory
 
@@ -66,6 +71,16 @@ Not applicable: approved new supervision surface.
 
 ```yaml
 allowed_paths:
+  - src/effects/fleet/task-inbox.ts
+  - tests/effects/task-reply.test.ts
+  - docs/researches/20260922-task-reply-protocol.md
+  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+  - src/core/operator/task-activity.ts
+  - tests/effects/operator-task-activity.test.ts
+  - docs/researches/20260922-operator-task-activity.md
+  - tasks/reviews/20260922-0418-akn04-activity.review.md
+  - tasks/notes/20260922-0418-akn04-activity.notes.md
   - src/operator-web/AutomationSummary.tsx
   - src/operator-web/App.tsx
   - src/operator-web/i18n.ts
@@ -329,6 +344,32 @@ exit_criteria:
       "cost": "normal",
       "evidence_policy": "current_exact",
       "necessity": "Supervision scope, message regressions and required integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "steer-pagination",
+      "kind": "package_test",
+      "path": "tests/effects/task-reply.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Confirmed cumulative dependency regression, including production HTTP reader",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "activity-bodies",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-activity.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Confirmed cumulative dependency regression, including production HTTP reader",
       "inputs": {
         "env": []
       }

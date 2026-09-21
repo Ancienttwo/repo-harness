@@ -12,6 +12,42 @@
 
 Original automation observations are displayed through the strict scoped endpoint. The existing Task worklist, Composer fences, drafts and ACK behaviour remain under their previous authority. UI regressions, type/browser build and integrity evidence are recorded under `.ai/harness/runs/akn05-supervision-summary/`.
 
-Read-only production-bundle fixture preview verified wide/narrow English/Chinese and expanded original budget evidence, with no page overflow. This is local verification only. The user authorized local indexing for this worktree. CodeGraph indexed 1,189 files; deterministic projection updates only the manifest, with no human actions or refresh signals. Canonical verification, semantic acceptance and PR remain pending. No independent review was invoked and no acceptance receipt was fabricated.
+Read-only production-bundle fixture preview verified wide/narrow English/Chinese and expanded original budget evidence, with no page overflow. This is local verification only. The user authorized local indexing for this worktree. CodeGraph indexed 1,189 files; deterministic projection updates only the manifest, with no human actions or refresh signals. Canonical verification, semantic acceptance and PR remain pending. The one independent review returned needs-attention and is recorded as reject; no advisory PASS overrides its verdict.
 
 Final targeted result:125 tests passed,0 failed,700 assertions across the four owning UI suites. Typecheck and production browser build passed. All nine root integrity checks passed after binding the final substantive digest in this review; the initial task-sync refusal is preserved in its log.
+
+## Independent review transcript
+
+```json
+{
+  "verdict": "needs-attention",
+  "summary": "Do not ship yet: pagination can silently omit steers, and valid message bodies can break activity reads. 86 pure tests passed; web decoder tests were blocked by missing React.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "Pagination uses incompatible UUID orderings",
+      "body": "Steers are sorted with localeCompare but filtered against the cursor using code-point ordering. Both uppercase and lowercase UUIDs are accepted. With valid IDs starting with lowercase 'a' and uppercase 'B', a one-item page returns 'a' first, then the next page excludes 'B' and reports complete coverage. This silently hides an unprocessed steer.",
+      "file": "src/effects/fleet/task-inbox.ts",
+      "line_start": 1221,
+      "line_end": 1223,
+      "confidence": 1,
+      "recommendation": "Use the same code-point comparator for sorting and cursor filtering. Add a pagination regression with mixed-case UUIDs that verifies every stored steer appears exactly once."
+    },
+    {
+      "severity": "medium",
+      "title": "Activity decoding rejects bodies accepted by the write protocol",
+      "body": "validEvent applies text(), which requires a nonempty string, to the message body. The canonical TaskMessage validator and engineer_task_reply accept an empty body. A successfully persisted empty reply therefore makes any activity page containing it fail decoding; readOperatorTaskActivity converts that failure into unavailable, producing HTTP 503 instead of returning the history. The source-accepts/reader-rejects mismatch was reproduced.",
+      "file": "src/core/operator/task-activity.ts",
+      "line_start": 78,
+      "line_end": 84,
+      "confidence": 1,
+      "recommendation": "Validate bodies using the canonical protocol's string and UTF-8 byte constraints, including empty strings. Add coverage that reads a persisted empty reply through the activity endpoint."
+    }
+  ],
+  "next_steps": [
+    "Fix both reader inconsistencies and add focused regression coverage."
+  ]
+}
+```
+
+The findings belong to the AKN-03b inbox reader and AKN-04b activity protocol. Preserve this rejection and correct those owning scopes before rebinding the candidate. This contract has consumed its independent review.

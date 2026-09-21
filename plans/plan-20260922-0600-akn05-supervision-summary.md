@@ -108,6 +108,10 @@ P3: use existing React effect cleanup and the existing strict transport, with no
 ## Files and verification
 More than5 files: new src/operator-web/AutomationSummary.tsx, App.tsx integration, i18n.ts, styles.css, fixture.ts, existing tests/operator-web/operator-ui.test.tsx and operator-interactions.test.tsx; own docs/workflow and deterministic architecture projection manifest. Extend existing UI suites because they already own homepage and repository switching; no new test file. Test actual production component: original records and missing/unavailable, native unknown regardless controller executing, bilingual render, A->B late completion ignored, abort on unmount/superseding refresh, invalid identity/schema rejected, stale evidence labelled, epoch reset accepted for current request. Existing message/collaboration/diff suites remain regression evidence. Typecheck, full browser build and9 required integrity commands. Inspect actual read-only built fixture page in English/Chinese and wide/narrow browser. No main merge/runtime install/owner waiver/index permission inferred.
 
+## Acceptance corrections
+
+The first independent cumulative review found two reader inconsistencies in the approved AKN-03b/AKN-04b dependencies. Each was reproduced before editing and corrected in its owning worktree. Integrate code-point steer pagination and canonical empty-body activity validation, retain the original rejection, add both owning regression suites to the final Verification Plan, and obtain corrected-subject owner acceptance under the frozen policy. No repeat external review.
+
 ## Task Breakdown
 - [x] Implement scoped summary observation and bilingual original-authority homepage.
 - [x] Verify source truth, cancellation/stale isolation, existing message regressions and browser layouts.
