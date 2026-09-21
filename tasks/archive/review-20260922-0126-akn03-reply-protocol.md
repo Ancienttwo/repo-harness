@@ -54,3 +54,9 @@ All production integration remains unwired. The next protected effect must valid
 ```json
 {"verdict":"approve","summary":"No material blocking findings in the exact scoped changes against the pinned base. All 62 focused tests passed. Approval covers the pure protocol; authenticated storage and crash durability remain explicitly outside this slice.","findings":[],"next_steps":[]}
 ```
+
+## CI workflow evidence
+
+> **Substantive Change SHA256**: `sha256:7eed79d2ce374bc4797b102bc9fa1a726955be0aed52d01a0da530e175453c3c`
+
+This binds the archived review to the complete PR substantive diff against main at 0d4371c3. The local no-base task-sync check covered the working tree; hosted CI checks the complete branch diff. Product bytes and the independent review subject are unchanged.
