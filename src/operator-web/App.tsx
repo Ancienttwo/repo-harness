@@ -1,3 +1,4 @@
+import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from './TaskEvidence';
 import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { TaskDiff } from './TaskDiff';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -52,6 +53,8 @@ export interface OperatorAppProps {
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
   readonly fetchRepositoryObservation?: RepositoryObservationReader;
+  readonly readTaskContext?: TaskContextReader;
+  readonly readTaskActivity?: TaskActivityReader;
 }
 
 /**
@@ -1873,6 +1876,9 @@ function DetailPane({
   revisionChangedFrom,
   boardUnstable,
   modal,
+  evidenceGeneration,
+  readTaskContext,
+  readTaskActivity,
   onClose,
   onSent,
   sendMessage,
@@ -1886,6 +1892,9 @@ function DetailPane({
   readonly revisionChangedFrom: string | null;
   readonly boardUnstable: boolean;
   readonly modal: boolean;
+  readonly evidenceGeneration: number;
+  readonly readTaskContext?: TaskContextReader;
+  readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
   readonly onSent: () => void;
   readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
@@ -1991,6 +2000,7 @@ function DetailPane({
           {card ? (
             <>
               <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
+              <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
               <TaskDiff key={JSON.stringify([card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />
             </>
           ) : snapshot ? (
@@ -2075,6 +2085,8 @@ export function OperatorApp({
   initialCollaboration,
   initialLocale,
   fetchRepositoryObservation,
+  readTaskContext,
+  readTaskActivity,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -2273,6 +2285,9 @@ export function OperatorApp({
             revisionChangedFrom={revisionChangedFrom}
             boardUnstable={boardUnstable}
             modal={!wideLayout}
+            evidenceGeneration={collaborationRefreshGeneration}
+            readTaskContext={readTaskContext}
+            readTaskActivity={readTaskActivity}
             onClose={() => setSelection(null)}
             onSent={() => void refresh()}
             sendMessage={sendMessage}

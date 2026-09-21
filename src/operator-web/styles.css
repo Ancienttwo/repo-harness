@@ -378,3 +378,17 @@ code, .mono-value { font-family: var(--font-mono); }
   .automation-heading h2 { font-size: 22px; }
   .automation-scope { overflow-wrap: anywhere; }
 }
+
+.task-evidence { display: grid; gap: 24px; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; min-width: 0; }
+.task-evidence h3 { font-size: 16px; }
+.task-evidence h4 { font-size: 14px; margin-top: 12px; }
+.task-evidence__facts { display: grid; gap: 8px; }
+.task-evidence__facts dt { color: var(--text-muted); }
+.task-evidence__facts dd { margin: 0; white-space: pre-wrap; }
+.task-evidence__message { border-top: 1px solid var(--border-subtle); padding: 16px 0; }
+.task-evidence__body { white-space: pre-wrap; }
+.task-evidence__original pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 360px; overflow: auto; }
+.task-evidence button, .task-evidence summary { min-height: 44px; padding: 10px 12px; cursor: pointer; }
+.task-evidence button { border: 1px solid var(--border-subtle); background: var(--surface-card); color: inherit; border-radius: 6px; }
+.task-evidence button:disabled { cursor: wait; opacity: .6; }
+.task-evidence__historical, .task-evidence__coverage { border-left: 3px solid var(--text-muted); padding-left: 10px; }

@@ -1922,3 +1922,126 @@ test('does not relabel a regressed generation in the same service epoch as curre
   expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('failed');
   expect(document.querySelector('.automation-summary')?.textContent).toContain('Previous observation');
 });
+
+describe('task detail original evidence', () => {
+  const task = fixtureTasks.working;
+  const evidenceProps = () => ({ repositoryId: 'repo-harness', taskId: task.task_id, revision: task.task_revision, generation: 0, t: ((key: never, args: never) => translate('en', key, args)) as import('../../src/operator-web/i18n').OperatorTranslate });
+
+  test('shows original context, recipient ACK and recorded actor without interpreting adoption; exact reply and parent lookup', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => taskContextFixture(request)} readActivity={async request => { requests.push(request); return taskActivityFixture(request); }} />);
+    expect(document.body.textContent).toContain(task.task_label);
+    expect(document.body.textContent).toContain('acknowledged');
+    expect(document.body.textContent).toContain('recorded_claim_actor');
+    expect(document.body.textContent).toContain('do not prove adoption');
+    expect(requests[0]).toEqual({ repository_id: 'repo-harness', task_id: task.task_id, limit: 50, after: null, message_id: null });
+    await act(async () => buttonWithText('Read reply message').click());
+    expect(requests.at(-1)?.limit).toBe(1);
+    expect(requests.at(-1)?.message_id).toBe('22222222-2222-4222-8222-222222222222');
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(1);
+    await act(async () => buttonWithText('Read parent message').click());
+    expect(requests.at(-1)?.message_id).toBe('11111111-1111-4111-8111-111111111111');
+    expect(document.body.textContent).not.toContain('The boundary is preserved; inspect');
+    await act(async () => buttonWithText('Return to first page').click());
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(2);
+  });
+
+  test('rejects wrong context scope independently and renders empty untrusted bodies as text', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => ({ ...taskContextFixture(request), repository_id: 'wrong' })} readActivity={async request => {
+      const value = taskActivityFixture(request);
+      return { ...value, entries: value.entries.map((entry, index) => ({ ...entry, event: { ...entry.event, body: index === 0 ? '<img src=x onerror=alert(1)>' : '' } })) };
+    }} />);
+    expect(document.querySelector('.task-evidence__context')?.textContent).toContain('Evidence unavailable');
+    expect(document.querySelector('.task-evidence__activity')?.textContent).toContain('(Empty message body)');
+    expect(document.querySelector('.task-evidence__activity')?.textContent).toContain('<img src=x');
+    expect(document.querySelector('.task-evidence img')).toBeNull();
+    expect(document.querySelector('.task-evidence__context')?.textContent).not.toContain(task.task_label);
+  });
+
+  test('cancels both sources on task revision switch and ignores late replies from transports ignoring abort', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const contexts: { request: import('../../src/core/operator/task-context').OperatorTaskContextRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-context').OperatorTaskContext) => void }[] = [];
+    const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-activity').OperatorTaskActivity) => void }[] = [];
+    const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = (request, signal) => new Promise(resolve => contexts.push({ request, signal, resolve }));
+    const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = (request, signal) => new Promise(resolve => activities.push({ request, signal, resolve }));
+    await mount(<TaskEvidence {...evidenceProps()} readContext={readContext} readActivity={readActivity} />);
+    await act(async () => root?.render(<TaskEvidence {...evidenceProps()} revision={'c'.repeat(64)} readContext={readContext} readActivity={readActivity} />));
+    expect(contexts[0].signal.aborted).toBe(true);
+    expect(activities[0].signal.aborted).toBe(true);
+    expect(contexts[1].request.expected_task_revision).toBe('c'.repeat(64));
+    await act(async () => { contexts[0].resolve(taskContextFixture(contexts[0].request)); activities[0].resolve(taskActivityFixture(activities[0].request)); });
+    expect(document.body.textContent).not.toContain(task.task_label);
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(0);
+    await act(async () => { contexts[1].resolve(taskContextFixture(contexts[1].request)); activities[1].resolve(taskActivityFixture(activities[1].request)); });
+    expect(document.body.textContent).toContain(task.task_label);
+    await act(async () => root?.unmount()); root = null;
+    expect(contexts[1].signal.aborted).toBe(true);
+    expect(activities[1].signal.aborted).toBe(true);
+  });
+
+  test('refresh failure retains only labelled historical evidence and hides raw diagnostics', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    let fail = false;
+    const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = async request => { if (fail) throw new Error('/private/secret'); return taskContextFixture(request); };
+    const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = async request => { if (fail) throw new Error('timeout'); return taskActivityFixture(request); };
+    await mount(<TaskEvidence {...evidenceProps()} readContext={readContext} readActivity={readActivity} />);
+    fail = true;
+    await act(async () => root?.render(<TaskEvidence {...evidenceProps()} generation={1} readContext={readContext} readActivity={readActivity} />));
+    expect(document.querySelectorAll('.task-evidence__historical')).toHaveLength(2);
+    expect(document.body.textContent).toContain(task.task_label);
+    expect(document.body.textContent).not.toContain('/private/secret');
+    expect(document.body.textContent).toContain('timeout');
+  });
+
+  test('replaces a full bounded page and preserves partial coverage instead of accumulating history', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
+    const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = async request => {
+      requests.push(request);
+      const value = taskActivityFixture({ ...request, after: null });
+      const entry = { ...value.entries[0], receipts: [], replies: [] };
+      const entries = Array.from({ length: 50 }, (_, i) => ({ ...entry, event: { ...entry.event, message_id: `${String(i + 1).padStart(8, '0')}-1111-4111-8111-111111111111`, body: `page-one-${i}` } }));
+      return request.after === null ? { ...value, entries, coverage: { ...value.coverage, complete: false, reason: 'page', scanned: 50 }, next_cursor: entries[49].event.message_id } : { ...value, after: request.after, entries: [], coverage: { ...value.coverage, complete: false, reason: 'scan' }, next_cursor: null };
+    };
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => taskContextFixture(request)} readActivity={readActivity} />);
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(50);
+    expect(document.body.textContent).toContain('Partial history');
+    await act(async () => buttonWithText('Next page').click());
+    expect(requests[1].after).toBe('00000050-1111-4111-8111-111111111111');
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('page-one');
+    expect(document.body.textContent).toContain('scan');
+    expect(document.body.textContent).not.toContain('Next page');
+  });
+});
+
+test('OperatorApp selects, refreshes and cancels exact task evidence without a message write', async () => {
+  const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+  const contexts: { request: import('../../src/core/operator/task-context').OperatorTaskContextRequest; signal: AbortSignal }[] = [];
+  const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal }[] = [];
+  let writes = 0;
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" fetchSnapshot={async () => stableSnapshot} sendMessage={async () => { writes += 1; }}
+    readTaskContext={async (request, signal) => { contexts.push({ request, signal }); return taskContextFixture(request); }}
+    readTaskActivity={async (request, signal) => { activities.push({ request, signal }); return taskActivityFixture(request); }} />);
+  expect(contexts).toHaveLength(0);
+  expect(activities).toHaveLength(0);
+  await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+  expect(document.querySelector('.task-evidence')?.textContent).toContain('Steer 与回复历史');
+  expect(contexts[0].request).toEqual({ repository_id: 'repo-harness', task_id: fixtureTasks.blocked.task_id, expected_task_revision: fixtureTasks.blocked.task_revision });
+  await act(async () => buttonWithText('刷新').click());
+  expect(contexts).toHaveLength(2);
+  expect(activities).toHaveLength(2);
+  expect(contexts[0].signal.aborted).toBe(true);
+  await selectRepository('repo-console');
+  expect(contexts[1].signal.aborted).toBe(true);
+  expect(activities[1].signal.aborted).toBe(true);
+  expect(document.querySelector('.task-evidence')).toBeNull();
+  expect(writes).toBe(0);
+});
