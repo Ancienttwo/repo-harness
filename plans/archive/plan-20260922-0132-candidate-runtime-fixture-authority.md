@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-22 01:48
+> **Related Plan**: plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260922-0148
+> **Archive Projection V1**: `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md` => `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md` => `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md` => `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md` => `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+
 # Plan: Repair candidate runtime fixture after timeout authority move
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260922-0132
 > **Slug**: candidate-runtime-fixture-authority
 > **Planning Source**: repo-harness-plan
@@ -12,9 +22,9 @@
 > **Rollback Surface**: Revert the test fixture edit and own documents; no installed or production state mutation
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md`
-> **Task Review**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md`
-> **Implementation Notes**: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Task Review**: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Implementation Notes**: `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
 
 ## Agentic Routing
 - Selected route: planning
@@ -28,16 +38,16 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md`
-- Sprint contract: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md`
-- Sprint review: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md`
-- Implementation notes: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md`
+- Active plan: `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md`
+- Sprint contract: `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`
+- Sprint review: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+- Implementation notes: `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md` `allowed_paths`
+- Scope authority: `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260922-0132-candidate-runtime-fixture-authority.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260922-0132-candidate-runtime-fixture-authority.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md`.
 
 ## Approach
 ### Strategy
@@ -66,11 +76,11 @@ See captured planning output.
 | Captured plan lacks enough detail | Medium | Execution may need clarification | Stop before implementation if the captured output contradicts repo rules or lacks concrete file targets |
 
 ## Task Contracts
-- Contract file: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md`
-- Review file: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md`
-- Implementation notes file: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md`
+- Contract file: `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`
+- Review file: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+- Implementation notes file: `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md --strict`
 - Active plan rule: this captured plan is written to `.ai/harness/active-plan` and the owning worktree is written to `.ai/harness/active-worktree` unless --no-active is used. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -80,18 +90,18 @@ See captured planning output.
 
 ## Promotion Gate
 
-- **Merge/PR unit**: Captured plan `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Merge/PR unit**: Captured plan `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
 - **Rollback surface**: Revert the test fixture edit and own documents; no installed or production state mutation
 - **Verification boundary**: Existing candidate reconciliation tests must fail before and pass after the test-only authority correction
-- **Review/acceptance boundary**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md` must record pass against the captured acceptance criteria.
+- **Review/acceptance boundary**: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
 - **Why not checklist row**: verification_boundary
 
 ## Evidence Contract
 
-- **State/progress path**: `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md`, `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md`, and `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md`
+- **State/progress path**: `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`, `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`, and `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
-- **Evaluator rubric**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md` must record a passing Waza /check style recommendation
+- **Evaluator rubric**: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
 - **Rollback surface**: Revert the test fixture edit and own documents; no installed or production state mutation
 

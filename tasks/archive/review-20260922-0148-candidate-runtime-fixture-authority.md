@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 01:48
+> **Related Plan**: plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-0148
+> **Archive Projection V1**: `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md` => `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md` => `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md` => `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md` => `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+
 # Task Review: candidate-runtime-fixture-authority
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0132-candidate-runtime-fixture-authority.md
-> **Contract**: tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md
-> **Notes File**: tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md
+> **Plan**: plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+> **Contract**: tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
+> **Notes File**: tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 01:32
 > **Recommendation**: pass

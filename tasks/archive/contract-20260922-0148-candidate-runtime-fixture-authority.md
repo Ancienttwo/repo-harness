@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 01:48
+> **Related Plan**: plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-0148
+> **Archive Projection V1**: `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md` => `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md` => `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md` => `tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md` => `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+
 # Task Contract: candidate-runtime-fixture-authority
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0132-candidate-runtime-fixture-authority.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 01:32
-> **Review File**: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md`
-> **Notes File**: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md`
+> **Review File**: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+> **Notes File**: `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ If the existing B/C cases still fail or stop asserting the actual installed cand
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0132-candidate-runtime-fixture-authority.md`
+- Source plan: `plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md`
-- Notes file: `tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md`
+- Review file: `tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md`
+- Notes file: `tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -72,10 +82,10 @@ allowed_paths:
   - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0132-candidate-runtime-fixture-authority.md
-  - tasks/contracts/20260922-0132-candidate-runtime-fixture-authority.contract.md
-  - tasks/reviews/20260922-0132-candidate-runtime-fixture-authority.review.md
-  - tasks/notes/20260922-0132-candidate-runtime-fixture-authority.notes.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
 ```
 
 ## Evidence Requirements
