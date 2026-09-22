@@ -88,3 +88,7 @@ Source `92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e`; subject `sha256:de587bc919908
 - pre_fix_failure_artifact: .ai/harness/runs/akn05-reader-corrections/pagination-red.log (PRE_FIX_EXIT=1)
 
 The original review rejection remains. This correction supersedes prior source-bound verification and owner-acceptance subjects; it is not a new external review or a passing receipt.
+
+## Pagination correction architecture refresh
+
+The authorized local index is current for source bd557f81. Deterministic architecture projection updates only the manifest; no human action or refresh signal was requested. Plan/apply receipts are `.ai/harness/runs/akn03-protected-replies/pagination-projection-{plan,apply}.json`. The corrected source is frozen for canonical verification; earlier de587bc9 verification and acceptance requests remain superseded.
