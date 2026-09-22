@@ -21,7 +21,7 @@ Existing cancellation regression failed before the fix because cancellation reti
 
 ## Open Questions
 
-Current worktree CodeGraph indexing permission and exact canonical/semantic acceptance are pending. No review run has been consumed.
+Index permission is granted and canonical verification has passed. The one semantic review found P1 and is consumed; the corrected candidate still requires owner acceptance and hosted CI.
 
 ## Frozen upstream integration
 

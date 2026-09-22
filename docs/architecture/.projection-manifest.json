@@ -1228,8 +1228,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/akn04-repository-snapshot",
-        "commit": "414e57919750ec3240fc0144196b6a6da60e96e9",
-        "committedAt": "2026-09-22T16:47:24+08:00"
+        "commit": "1283e883fa7f06a76c17e2247287812976f94051",
+        "committedAt": "2026-09-22T17:17:41+08:00"
       }
     },
     {
