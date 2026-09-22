@@ -1,0 +1,72 @@
+> **Archived**: 2026-09-22 16:32
+> **Related Plan**: plans/archive/plan-20260922-0418-akn04-activity.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1632
+> **Archive Projection V1**: `plans/plan-20260922-0418-akn04-activity.md` => `plans/archive/plan-20260922-0418-akn04-activity.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0418-akn04-activity.notes.md` => `tasks/archive/notes-20260922-1632-akn04-activity.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0418-akn04-activity.contract.md` => `tasks/archive/contract-20260922-1632-akn04-activity.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0418-akn04-activity.review.md` => `tasks/archive/review-20260922-1632-akn04-activity.md`
+
+# Task Review: akn04-activity
+
+> **Status**: Accepted
+> **Plan**: plans/archive/plan-20260922-0418-akn04-activity.md
+> **Contract**: tasks/archive/contract-20260922-1632-akn04-activity.md
+> **Notes File**: tasks/archive/notes-20260922-1632-akn04-activity.md
+> **Checks File**: .ai/harness/checks/latest.json
+> **Recommendation**: pass
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: sha256:8fc98afbd604512d8457eea1e203b2bc86f9c711181bb6c67fd960ea1cbb752f
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Substantive Change SHA256**: `sha256:bf28a74cac834d96b264bed0ec55c7c0c4e4887c0566303c11d4fe0468b61cf0`
+
+## Human Review Card
+
+- Verdict: accepted through the single Codex plugin review against policy origin/main, with zero findings.
+- Scope: registered-repository historical activity GET, original TaskInbox/ClaimActor provenance, bounded worker lifecycle and strict browser transport. UI presentation remains a downstream slice.
+- User-visible behavior: exact stored messages remain inspectable after current Task, Lease and Binding authority changes.
+- Rollback: remove the GET and historical readers together, preserving all stored message and reply records.
+
+## Mode Evidence
+
+P1: Operator registry/HTTP boundary, canonical TaskInbox records, immutable ClaimActor store and browser decoder. P2: exact repository/task/message input flows through bounded historical parsing and original-chain validation to an allowlisted response. P3: history records observations independently of live execution authority; hard budgets expose incomplete coverage and hold admission until the worker exits.
+
+## Verification Evidence
+
+Frozen source192c2a764ca51cc78804c1c7b45c9f5bb9e3af00 passed24/24 criteria in `.ai/harness/runs/run-20260922T162242-47860-20260922-0418-akn04-activity.json`. The canonical Verification Plan executed19 checks, including browser decoder, typecheck, browser bundle, owning effects/server tests and all repository integrity checks. CodeGraph sync and deterministic projection required no human action or refresh signal.
+
+The single independent review approved exactly subject8fc98afbd604512d8457eea1e203b2bc86f9c711181bb6c67fd960ea1cbb752f against origin/main0d4371c3, with no findings. Its disposable environment passed101 focused tests but could not load the browser decoder suite because React was absent. That environment limitation is retained; the same decoder suite executed successfully in the canonical dependency-provisioned checkout before review. Acceptance finalization reused the prepared evidence without rerunning tests.
+
+## Integration corrections
+
+Accepted placement9394f197 carries protected replies, the encoded-record bound and the verified Windows fixture correction. After integration, the historical reader still referenced the retired local record constant. The existing activity suite failed before the one-call-site correction and passed11 tests/62 assertions afterward; `.ai/harness/runs/akn04-activity/upstream-limit-before.log` retains PRE_FIX_EXIT=1. The reader now consumes the canonical core limit without a fallback or duplicate authority.
+
+The existing empty-body regression also remains covered: historical transport preserves valid empty TaskReply bodies rather than applying nonempty metadata rules. Durable behavior and limits are documented in `docs/researches/20260922-operator-task-activity.md`.
+
+## Residual Risks / Follow-ups
+
+List discovery stops at hard budgets; exact known-message access is the recovery path. Cross-store observations are not atomic snapshots. Local acceptance does not prove installed/native Host behavior or the full Steer journey. Hosted CI is tracked against the published PR head separately.
+
+## Acceptance Receipt Projection
+
+
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
+> **Actor**: not-applicable
+> **Reviewed Subject SHA256**: sha256:8fc98afbd604512d8457eea1e203b2bc86f9c711181bb6c67fd960ea1cbb752f
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:ce8c67a9469345437f222eb7a18b73e1c36c40c8f124b308bb7375c715b496b1
+> **Issued At**: 2026-09-22T08:31:24.854Z
+
+- Summary: Pinned origin/main review approved with no findings and exact subject 8fc98afbd604512d8457eea1e203b2bc86f9c711181bb6c67fd960ea1cbb752f; canonical 24/24 includes the browser decoder test unavailable in reviewer React environment.
+- Findings: none
+
+## PR base verification binding
+
+This separate binding covers the activity-only PR diff against accepted placement head9394f197.
+
+> **Substantive Change SHA256**: `sha256:ebd54b0ee69721dd3afc83a0facc0efa9e4fefecb861de48aa347cb87056d4cb`

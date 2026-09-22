@@ -27,3 +27,7 @@ The GET reuses loopback Host/Origin and method guards. A Node worker isolates sy
 `tests/effects/operator-task-activity.test.ts` covers historical exact reads with no live execution authority, completed/interrupted/missing provenance, unchanged store bytes, registry isolation, unsafe paths, pagination and nested scan/input/output ceilings, strict decoding, and a real HTTP worker. Existing Operator server tests cover method/Host/Origin/query guards, cancellation and held admission. Existing Inbox/reply/actor and browser/write-inventory suites protect the owning boundaries. Canonical execution is declared only in the stage contract's Verification Plan.
 
 Rollback removes the new GET, transport and historical reader together. It preserves all existing event, delivery, intent, commit and ClaimActor bytes. Activity UI presentation and live Task context are subsequent roadmap slices.
+
+## Empty canonical bodies
+
+TaskMessage and authenticated TaskReply allow an empty UTF-8 body. Activity transport validation preserves this exact contract, including the8KiB ceiling, while metadata fields retain their nonempty requirement. An authentic persisted empty reply previously returned503 through the production HTTP worker; the regression now requires200, unchanged body digest and recorded ClaimActor provenance, with unchanged store bytes. The boundary also accepts an8192-byte multibyte body and rejects8193 bytes.

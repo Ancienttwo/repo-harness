@@ -1,26 +1,28 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { createServer } from 'net';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
 import type { McpCodingRuntime } from '../../src/cli/mcp/server';
+import { resolveMcpRepoRoot } from '../../src/cli/mcp/repo';
 import { runMcpSetupChatgpt } from '../../src/cli/mcp/setup';
 import {
   CodingAuthorizationRuntimeStore,
   createOAuthRateLimitMiddleware,
   startMcpHttp,
 } from '../../src/cli/mcp/transports/http';
-import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
-import { enrollEngineerPrincipal } from '../../src/effects/engineers/principal-store';
+import { engineerBindingStoreRoot } from '../../src/effects/engineers/binding-store';
+import { buildEngineerBindingCurrent, buildEngineerBindingEvent, canonicalEngineerBindingCurrentBytes, canonicalEngineerBindingEventBytes, deriveEngineerTransitionId, engineerCurrentPayloadSha256, engineerOperationFingerprint } from '../../src/core/engineers/profile-binding';
+import { buildEngineerPrincipalMapping, canonicalEngineerPrincipalMappingBytes } from '../../src/core/engineers/principal-claim';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
-import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
+import { readRegisteredRepoHarnessRepos, repoHarnessRegisteredReposPath, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -928,7 +930,7 @@ describe('mcp http transport', () => {
   }, 30_000);
 
   test('engineer OAuth E2E binds sessions to authorization and exposes only the exact Engineer tools', async () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));
+    let repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
     process.env.REPO_HARNESS_HOME = realpathSync(process.env.REPO_HARNESS_HOME!);
@@ -941,6 +943,8 @@ describe('mcp http transport', () => {
         if (result.exitCode !== 0) throw new Error(result.stderr.toString());
       };
       runGit('init', '-b', 'main');
+      // Git expands Windows 8.3 paths; seed identities from the same root used by the MCP server.
+      repoRoot = realpathSync(resolveMcpRepoRoot(repoRoot));
       runGit('config', 'user.email', 'tests@example.com');
       runGit('config', 'user.name', 'Repo Harness Tests');
       runGit('add', '.');
@@ -1104,10 +1108,41 @@ describe('mcp http transport', () => {
       runGit('commit', '-m', 'Engineer profile fixture');
       const engineerId = 'engineer:capability.verification.evals-checks';
       const profile = loadEngineerProfile(repoRoot, engineerId);
-      bindEngineer(repoRoot, { engineer_id: engineerId, idempotency_key: 'http-reply-bind', provider: 'codex-app-thread', provider_thread_id: 'fixture', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision });
+      // This HTTP reader fixture needs canonical Binding facts, not directory-fsync writer admission.
+      const createdAt = new Date().toISOString();
+      const request = { engineer_id: engineerId, idempotency_key: 'http-reply-bind', transition: 'initialize' as const, provider: 'codex-app-thread', provider_thread_id: 'fixture', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision };
+      const binding = {
+        protocol: 1 as const, kind: 'repo-harness-engineer-binding' as const,
+        binding_id: randomUUID(), engineer_id: engineerId, binding_generation: 1,
+        provider: request.provider, provider_thread_id: request.provider_thread_id, host_id: request.host_id,
+        engineer_contract_revision: profile.engineer_contract_revision, state: 'active' as const,
+        previous_binding_id: null, bound_at: createdAt, retired_at: null,
+      };
+      const event = buildEngineerBindingEvent({
+        transition_id: deriveEngineerTransitionId(engineerId, request.idempotency_key),
+        idempotency_key: request.idempotency_key, operation_fingerprint: engineerOperationFingerprint(request),
+        engineer_id: engineerId, transition: request.transition, expected_current_digest: null,
+        expected_binding_generation: 0, previous_binding_id: null, next_binding: binding,
+        next_current_payload_sha256: engineerCurrentPayloadSha256({
+          protocol: 1, kind: 'repo-harness-engineer-binding-current', engineer_id: engineerId,
+          binding_generation: 1, state: 'active', current_binding_id: binding.binding_id,
+          engineer_contract_revision: profile.engineer_contract_revision,
+        }), created_at: createdAt,
+      });
+      const bindingRoot = join(engineerBindingStoreRoot(repoRoot), createHash('sha256').update(engineerId).digest('hex'));
+      mkdirSync(join(bindingRoot, 'events'), { recursive: true });
+      writeFileSync(join(bindingRoot, 'events', `${event.transition_id.slice(7)}.json`), canonicalEngineerBindingEventBytes(event));
+      writeFileSync(join(bindingRoot, 'current.json'), canonicalEngineerBindingCurrentBytes(buildEngineerBindingCurrent(event)));
       const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath()); tokenStore.load();
       const authorization = tokenStore.listAuthorizations('engineer')[0]!;
-      enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: authorization.authorizationId, binding: readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding! });
+      expect(tokenStore.getAccessToken(firstHeaders.authorization!.slice('Bearer '.length))?.authorizationId).toBe(authorization.authorizationId);
+      const mapping = buildEngineerPrincipalMapping({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: authorization.authorizationId, binding, created_at: createdAt });
+      const mappingRoot = join(dirname(repoHarnessRegisteredReposPath()), 'engineer-principals/v1');
+      const mappingKey = createHash('sha256').update(`${mapping.repository_id}\0${mapping.authorization_id}`).digest('hex');
+      mkdirSync(mappingRoot, { recursive: true });
+      writeFileSync(join(mappingRoot, `${mappingKey}.json`), canonicalEngineerPrincipalMappingBytes(mapping));
+      const mappedStatus = await call(firstHeaders, 29, 'tools/call', { name: 'engineer_status', arguments: {} });
+      expect(JSON.parse(mappedStatus.result.content[0].text)).toMatchObject({ ok: true, principal: { engineer_id: engineerId, binding_id: binding.binding_id } });
       const communication = await call(firstHeaders, 30, 'tools/call', { name: 'engineer_task_messages', arguments: { work_envelope: {} } });
       // Reaching envelope validation proves SDK extra.authInfo carried this
       // request's token through the synchronous provider recheck.
