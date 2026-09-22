@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 16:46
+> **Related Plan**: plans/archive/plan-20260922-0450-akn04-context.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1646
+> **Archive Projection V1**: `plans/plan-20260922-0450-akn04-context.md` => `plans/archive/plan-20260922-0450-akn04-context.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0450-akn04-context.notes.md` => `tasks/archive/notes-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0450-akn04-context.contract.md` => `tasks/archive/contract-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0450-akn04-context.review.md` => `tasks/archive/review-20260922-1646-akn04-context.md`
+
 # Task Contract: akn04-context
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0450-akn04-context.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0450-akn04-context.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 04:50
-> **Review File**: `tasks/reviews/20260922-0450-akn04-context.review.md`
-> **Notes File**: `tasks/notes/20260922-0450-akn04-context.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1646-akn04-context.md`
+> **Notes File**: `tasks/archive/notes-20260922-1646-akn04-context.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -21,7 +31,7 @@ Implement the approved AKN-04c current Task context GET and browser transport us
 
 ## Scope
 
-- In scope: current context DTO/effect/worker/transport; internal exact-task offer selection; shared private activity/context worker lifecycle; owning tests and durable documentation.
+- In scope: current context DTO/effect/worker/transport; internal exact-task offer selection; shared private activity/context worker lifecycle; owning tests and durable documentation; integrate accepted activity26778190 and its accepted upstream source/archive inputs, then regenerate deterministic architecture proof.
 - Out of scope: historical source resolution, UI redesign, scoped automation summary, provider calls, write guard changes, runtime install and main merge.
 - Invariant: observations never authorize mutation; no alternate parser/classifier/source authority.
 
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0450-akn04-context.md`
+- Source plan: `plans/archive/plan-20260922-0450-akn04-context.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0450-akn04-context.review.md`
-- Notes file: `tasks/notes/20260922-0450-akn04-context.notes.md`
+- Review file: `tasks/archive/review-20260922-1646-akn04-context.md`
+- Notes file: `tasks/archive/notes-20260922-1646-akn04-context.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -84,11 +94,76 @@ allowed_paths:
   - tests/unit/fleet-acquire-effect.test.ts
   - docs/researches/20260922-operator-task-context.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0450-akn04-context.md
-  - tasks/contracts/20260922-0450-akn04-context.contract.md
-  - tasks/reviews/20260922-0450-akn04-context.review.md
-  - tasks/notes/20260922-0450-akn04-context.notes.md
+  - plans/archive/plan-20260922-0450-akn04-context.md
+  - tasks/archive/contract-20260922-1646-akn04-context.md
+  - tasks/archive/review-20260922-1646-akn04-context.md
+  - tasks/archive/notes-20260922-1646-akn04-context.md
   - tasks/todos.md
+  - docs/researches/20260922-candidate-runtime-fixture-authority.md
+  - docs/researches/20260922-operator-task-activity.md
+  - docs/researches/20260922-task-reply-protocol.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - plans/archive/plan-20260922-0204-akn03-protected-replies.md
+  - plans/archive/plan-20260922-0321-akn04-placement.md
+  - plans/archive/plan-20260922-0418-akn04-activity.md
+  - plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+  - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - plans/plan-20260922-0204-akn03-protected-replies.md
+  - plans/plan-20260922-0321-akn04-placement.md
+  - plans/plan-20260922-0418-akn04-activity.md
+  - scripts/check-tarball-install-smoke.sh
+  - src/core/fleet/task-reply.ts
+  - src/core/operator/task-activity.ts
+  - src/effects/engineers/task-inbox.ts
+  - src/effects/fleet/task-inbox.ts
+  - tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/contract-20260922-1405-akn04-placement.md
+  - tasks/archive/contract-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/contract-20260922-1632-akn04-activity.md
+  - tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/notes-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/notes-20260922-1405-akn04-placement.md
+  - tasks/archive/notes-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/notes-20260922-1632-akn04-activity.md
+  - tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/review-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/review-20260922-1405-akn04-placement.md
+  - tasks/archive/review-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/review-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/review-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/review-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/review-20260922-1632-akn04-activity.md
+  - tasks/archive/todo-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/todo-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/todo-20260922-1405-akn04-placement.md
+  - tasks/archive/todo-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/todo-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/todo-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/todo-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/todo-20260922-1632-akn04-activity.md
+  - tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
+  - tasks/contracts/20260922-0321-akn04-placement.contract.md
+  - tasks/contracts/20260922-0418-akn04-activity.contract.md
+  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+  - tasks/notes/20260922-0321-akn04-placement.notes.md
+  - tasks/notes/20260922-0418-akn04-activity.notes.md
+  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+  - tasks/reviews/20260922-0321-akn04-placement.review.md
+  - tasks/reviews/20260922-0418-akn04-activity.review.md
+  - tests/cli/mcp-http.test.ts
+  - tests/effects/operator-task-activity.test.ts
+  - tests/effects/task-reply.test.ts
+  - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
+  - tests/unit/task-reply.test.ts
 ```
 
 ## Evidence Requirements

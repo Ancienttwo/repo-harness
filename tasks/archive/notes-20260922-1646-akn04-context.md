@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 16:46
+> **Related Plan**: plans/archive/plan-20260922-0450-akn04-context.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1646
+> **Archive Projection V1**: `plans/plan-20260922-0450-akn04-context.md` => `plans/archive/plan-20260922-0450-akn04-context.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0450-akn04-context.notes.md` => `tasks/archive/notes-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0450-akn04-context.contract.md` => `tasks/archive/contract-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0450-akn04-context.review.md` => `tasks/archive/review-20260922-1646-akn04-context.md`
+
 # Implementation Notes: akn04-context
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-0450-akn04-context.md
-> **Contract**: tasks/contracts/20260922-0450-akn04-context.contract.md
-> **Review**: tasks/reviews/20260922-0450-akn04-context.review.md
+> **Plan**: plans/archive/plan-20260922-0450-akn04-context.md
+> **Contract**: tasks/archive/contract-20260922-1646-akn04-context.md
+> **Review**: tasks/archive/review-20260922-1646-akn04-context.md
 > **Last Updated**: 2026-09-22
 > **Lifecycle**: notes
 
@@ -23,8 +33,12 @@
 ## Open boundaries
 
 - Scoped automation observation, UI/refresh and historical context are separate approved roadmap slices.
-- CodeGraph index authorization is not yet granted for this worktree. Canonical verification and one independent semantic acceptance remain pending.
+- The owner approved the existing local CodeGraph index; integrated-source canonical verification and the single semantic acceptance remain pending.
 
 ## Final source verification
 
 Focused effects/offer/write-inventory/activity/browser tests:129 pass,0 fail,563 assertions (`.ai/harness/runs/akn04-context/focused-final.log`). Current context and historical activity route/lifecycle tests:7 pass,0 fail,30 assertions (`server-final.log`,28 unrelated server cases filtered). Final typecheck passes and browser transport bundles2 modules/5.72KB. These exact development checks do not replace the pending full contract Verification Plan or semantic acceptance. Substantive digest is `sha256:bebbd4a9cd42b3f409b9b11fd1378f28c97f7b00801f69cf2c4a4d181c97887e`.
+
+## Accepted upstream integration
+
+P1: accepted activity26778190 and its protected-reply/placement dependencies are upstream inputs; this slice owns current context and the private shared activity/context worker lifecycle. P2: each GET keeps its strict decoder and registry authority while sharing admission, cancellation and worker-exit release. P3: preserve context shared lifecycle and the incoming canonical reply limit; regenerate the conflicting projection through the provider. At10x concurrent reads, admission refuses busy before accumulating unbounded workers. Existing activity/context/server tests are the integration oracles; no new source authority or test file is introduced.

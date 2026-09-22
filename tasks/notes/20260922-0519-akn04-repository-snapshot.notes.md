@@ -22,3 +22,7 @@ Existing cancellation regression failed before the fix because cancellation reti
 ## Open Questions
 
 Current worktree CodeGraph indexing permission and exact canonical/semantic acceptance are pending. No review run has been consumed.
+
+## Frozen upstream integration
+
+P1: Context89837138 is canonically verified and in its one semantic review; activity26778190 is accepted with passing CI. This worktree can integrate frozen upstream source independently while preserving the context worktree freeze. P2: repository route -> versioned IPC scope -> pre-provider selection -> exactly matching envelope; Fleet and task-reader pools remain separate and each retains capacity until actual cleanup settlement. P3: preserve shared context/activity lifecycle and scoped Fleet queue; only generated architecture metadata needs regeneration. Context acceptance and its archive must be integrated before this package closeout. At10x distinct scopes, bounded queue admission fails busy before provider amplification. Existing server/collector/browser tests own the behavior; no second classifier or new test file.

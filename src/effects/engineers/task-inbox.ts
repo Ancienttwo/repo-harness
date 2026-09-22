@@ -53,6 +53,8 @@ export function withEngineerTaskInbox<T>(input: EngineerTaskInboxInput, action: 
         validateClaimActorReceiptLive(input.repo_root, actor, work);
         validateFleetCommunicationEnvelope(input.repo_root, work, input.env);
         if (frozen && (frozen.mapping.mapping_digest !== mapping.mapping_digest || frozen.actor.receipt_sha256 !== actor.receipt_sha256)) stale('Original task communication fence changed');
+        // Locks fence record changes, but cannot stop token expiry during validation.
+        input.verify_authorization();
         frozen = { mapping, actor };
         return frozen;
       };

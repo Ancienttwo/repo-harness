@@ -1,0 +1,71 @@
+> **Archived**: 2026-09-22 16:46
+> **Related Plan**: plans/archive/plan-20260922-0450-akn04-context.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1646
+> **Archive Projection V1**: `plans/plan-20260922-0450-akn04-context.md` => `plans/archive/plan-20260922-0450-akn04-context.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0450-akn04-context.notes.md` => `tasks/archive/notes-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0450-akn04-context.contract.md` => `tasks/archive/contract-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0450-akn04-context.review.md` => `tasks/archive/review-20260922-1646-akn04-context.md`
+
+# Task Review: akn04-context
+
+> **Status**: Accepted
+> **Plan**: plans/archive/plan-20260922-0450-akn04-context.md
+> **Contract**: tasks/archive/contract-20260922-1646-akn04-context.md
+> **Notes File**: tasks/archive/notes-20260922-1646-akn04-context.md
+> **Checks File**: .ai/harness/checks/latest.json
+> **Recommendation**: pass
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: sha256:e8e91bd236ef1da62764617ca98090c6d879f13dde436cf95a781d2d4acc76bd
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Substantive Change SHA256**: `sha256:e5eb341b6dcdcfd49168056935716411355156fafbe8fc03d42983867a3aed74`
+
+## Human Review Card
+
+- Verdict: accepted by the single Codex plugin review against policy origin/main with zero findings.
+- Scope: current Task context GET/DTO/transport, original Board/TaskOffer projection, exact internal offer selection and shared private activity/context worker lifecycle.
+- Behavior: inspect current Task identity and original preparation/source proof with optional expected revision; all observations remain read-only.
+- Source bases: canonical sprint commit versus explicitly labeled registered-worktree plan/contract proof.
+- Rollback: remove context readers/route/transport and exact target selector; preserve stored authority.
+
+## P1/P2/P3 Evidence
+
+Registry -> Board -> exact TaskOffer -> allowlisted DTO -> worker/browser decoder preserves existing identity, Lease and readiness owners. Double observation and final registry read reject changed evidence. Current context is not write authorization. Activity/context share exit-held task-reader admission; the complete semantics and limits remain in `docs/researches/20260922-operator-task-context.md`.
+
+## Verification Evidence
+
+Frozen source89837138070d3fb37515240a1f4afca05b4491f1 passed22/22 criteria with17 execution checks in `.ai/harness/runs/run-20260922T163713-19657-20260922-0450-akn04-context.json`. Context/activity/offer/server/browser suites, typecheck, browser bundle and all required integrity checks passed. CodeGraph sync and deterministic projection completed with no human actions or refresh signals.
+
+The single independent review approved exactly subjecte8e91bd236ef1da62764617ca98090c6d879f13dde436cf95a781d2d4acc76bd against origin/main0d4371c3, with no findings. The reviewer repeated101 focused tests; missing React and archctx-contracts dependencies limited broader repeats in its checkout. Canonical verification in the provisioned worktree passed before review. Acceptance finalization reused the prepared evidence without rerunning tests.
+
+## Integrated boundaries
+
+Accepted activity26778190 and its protected-reply/placement source and archives are integrated. The incoming canonical reply limit is preserved. Only generated architecture provenance and the deferred-ledger timestamp required conflict resolution; the provider rebuilt current proof. No product fallback or new source authority was added.
+
+## Residual Risks / Follow-ups
+
+Cross-store observations are not transactions or mutation authorization. Native Host admission, installed runtime, automation observation and full Steer journey remain separate boundaries. Hosted CI is tracked against the published PR head.
+
+## Acceptance Receipt Projection
+
+
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
+> **Actor**: not-applicable
+> **Reviewed Subject SHA256**: sha256:e8e91bd236ef1da62764617ca98090c6d879f13dde436cf95a781d2d4acc76bd
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:28afe8c62651d87435d95f85bc886a387ea2c512319eaec6c88df7b2b84f997c
+> **Issued At**: 2026-09-22T08:45:33.859Z
+
+- Summary: Single origin/main review approved exact subject e8e91bd236ef1da62764617ca98090c6d879f13dde436cf95a781d2d4acc76bd with no findings. Canonical 22/22 passed; reviewer repeated 101 tests, with broader repeats limited by missing React and archctx-contracts dependencies.
+- Findings: none
+
+## PR base verification binding
+
+Context-only diff against accepted activity26778190.
+
+> **Substantive Change SHA256**: `sha256:ed714c7ffbbba2ebb9a12095de59f530d1b36bc1c62bb76b61f7999ebf209499`
