@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:fde3422c830cc651d08553e79c146415a669b7bf6c17af8ac14075a4449c63a2`
+> **Substantive Change SHA256**: `sha256:66982e8d07e5277fe3e82c9585c54efa90fadbae116c737df3d06f878163c867`
 
 ## Design Decisions
 
@@ -59,3 +59,7 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+## Accepted dependency integration
+
+The owner approved #444 corrected subject `c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`. Its typed user-waiver receipt, canonical verification and provider-free seal completed, and lifecycle artifacts were archived at `daa05cbf`. This branch fast-forwarded to that accepted dependency, preserving this package's active contract and pinned verification base `12518117`. Allowed Paths now includes only the exact inherited dependency files and archived evidence. No persistence behavior changes during integration. `git diff 2948a041 HEAD -- src tests .github package.json bun.lock` was empty immediately after integration, so full CI35765127664 (Windows210 pass/6 skip/0 fail) remains valid source evidence. This package's 21-check Verification Plan is rerun for its own acceptance; the accepted dependency's unchanged unit checks are not independently repeated. This package's consumed review remains consumed and its own typed receipt is still pending.

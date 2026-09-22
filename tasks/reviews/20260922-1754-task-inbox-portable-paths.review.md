@@ -14,12 +14,12 @@
 
 ## Human Review Card
 
-- Verdict: independent review found one P2; corrected source passed canonical verification; native Windows CI is blocked by existing Binding/Lease directory fsync errors; acceptance remains pending.
+- Verdict: the original review and subsequent upstream review findings are corrected; owner-accepted dependency #444 is integrated; 21 current checks (27 total criteria) passed and evidence binding to the committed integration contract is being finalized. This contract's owner acceptance remains pending.
 - Change type: migration
 - Intended files changed: Task Inbox path owner, storage-only token, offline migration, fleet inbox CLI, owning fixtures, native matrix, research and runbook.
 - Actual files changed: within the contract allowlist; no Task/Lease/Binding/actor protocol or real data mutation.
 - Check IDs and evidence disposition: focused implementation evidence is recorded below; the contract Verification Plan remains the sole executable acceptance authority.
-- Residual risks: all clients must be offline; Windows directory durability differs from POSIX; exact published-head native CI is pending.
+- Residual risks: all clients must be offline; Windows directory durability differs from POSIX; full native CI is valid for unchanged source `2948a041`; this contract's receipt remains pending.
 - Reviewer action required: consume the original review and correction evidence; the one independent review for this boundary is consumed.
 - Rollback: revert code before migration; operator inverse requires exact receipt and unchanged v2 output.
 
@@ -31,7 +31,7 @@
 
 ## Verification Evidence
 
-- Canonical verification: `verify-sprint --prepare-acceptance` passed 27/27 at source `121b10e11c8240bbbcd84209f9f36baf90e91109`; run `run-20260922T234043-62075-20260922-1754-task-inbox-portable-paths.json`. Publication head `7f4397d89d8413aab7d373c429b1f4bdfb64b53c` preserves subject `sha256:ea02c8047350304f17f3f10b85aee60c3c9b3cd8b65896ea1076052ae3a44196`, verified by the canonical subject builder.
+- Historical canonical verification: `verify-sprint --prepare-acceptance` passed 27/27 at source `121b10e11c8240bbbcd84209f9f36baf90e91109`; run `run-20260922T234043-62075-20260922-1754-task-inbox-portable-paths.json`. Publication head `7f4397d89d8413aab7d373c429b1f4bdfb64b53c` preserves subject `sha256:ea02c8047350304f17f3f10b85aee60c3c9b3cd8b65896ea1076052ae3a44196`, verified by the canonical subject builder.
 - Focused migration effects: 38 passed, including transaction interruption, actual process exit, injected file-operation failures, exact-byte retention, external-link refusal and rollback after new writes.
 - Historical reply migration: three fixture cases passed for intent-only, event-uncommitted and complete; no active sprint or live historical actor required.
 - Native local lifecycle: deep-path delivery/ACK/reply and separate Alice/alice receipts passed. Windows/macOS/Linux hosted coverage is required on the published head.
@@ -106,3 +106,11 @@ Draft PR: https://github.com/Ancienttwo/repo-harness/pull/443, based on #442. Pu
 Windows job 106819723526 failed 31 tests: one migration unknown-Lease case reached `coordination-lease-store.ts:168` through `createLeaseDirectory`, and 30 Task reply cases reached `binding-store.ts:163` through `withEngineerLock` during fixture creation. Both call directory `fsyncSync` through a read-only handle and throw EPERM. Neither source file differs from approved baseline12518117, and neither is in this contract allowlist. Real deep-path delivery/ACK/reply is therefore unproven on Windows. Existing platform passing tests do not waive this blocker. Original job log is retained under `.ai/harness/runs/task-inbox-portable-paths/windows-ci-35749499343.log`.
 
 The user was asked to authorize a separate bounded Windows persistence work-package, following the second out-of-scope discovery stop rule. No production source fix, test skip, main merge, installation or real migration was performed in response to this failure.
+
+## Integrated accepted dependency and current evidence
+
+- Accepted dependency #444: `daa05cbf`, typed owner acceptance for subject `c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`, provider-free seal and archived lifecycle. Fast-forward integration retains this package's active contract.
+- Source comparison: `git diff 2948a041 HEAD -- src tests .github package.json bun.lock` is empty; [CI35765127664](https://github.com/Ancienttwo/repo-harness/actions/runs/35765127664) passed full Test, Governance and Windows/macOS/Linux. Windows: 210 pass, 6 existing skips, 0 fail, including exact identities and prepared receipt rollback/refusal guards. No new exact-head full run is claimed for workflow-only integration commits.
+- Current contract checks: 21/21 (27/27 total criteria) passed in `run-20260923T023742-64840-20260922-1754-task-inbox-portable-paths.json`. The first binding refused an uncommitted contract amendment; commit the exact contract and re-prepare using valid execution records before acceptance.
+- Frozen content subject remains `sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`, target `origin/main` at `0d4371c3`.
+- This package's own owner acceptance remains pending. The #444 receipt records that dependency's contract; it is not copied into this contract or represented as a second external review.

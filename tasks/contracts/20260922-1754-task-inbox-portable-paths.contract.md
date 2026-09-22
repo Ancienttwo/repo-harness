@@ -21,7 +21,7 @@ Deliver one portable v2 storage layout plus explicit offline byte-preserving mig
 
 ## Scope
 
-- In scope: the approved migration design, all Task Inbox path consumers, offline CLI, native fixtures and exact-boundary verification.
+- In scope: the approved migration design, all Task Inbox path consumers, offline CLI, native fixtures and exact-boundary verification; integration of the owner-accepted Windows authority persistence dependency #444 at daa05cbf. Its exact inherited source/test and archived evidence paths are listed below.
 - Out of scope: real data migration, architecture-queue, main merge, global installation, Host admission and homepage features.
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
@@ -94,6 +94,19 @@ allowed_paths:
   - tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
   - tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md
   - tasks/todos.md
+  - src/effects/evidence/atomic-append.ts
+  - src/effects/engineers/binding-store.ts
+  - src/effects/engineers/principal-store.ts
+  - src/effects/engineers/claim-actor-store.ts
+  - src/effects/state/coordination-lease-store.ts
+  - tests/unit/me0b-principal-store.test.ts
+  - tests/coordination-lease-store.test.ts
+  - docs/researches/20260923-windows-task-persistence.md
+  - plans/archive/plan-20260923-0031-windows-task-persistence.md
+  - tasks/archive/contract-20260923-0235-windows-task-persistence.md
+  - tasks/archive/notes-20260923-0235-windows-task-persistence.md
+  - tasks/archive/review-20260923-0235-windows-task-persistence.md
+  - tasks/archive/todo-20260923-0235-windows-task-persistence.md
 ```
 
 ## Evidence Requirements
