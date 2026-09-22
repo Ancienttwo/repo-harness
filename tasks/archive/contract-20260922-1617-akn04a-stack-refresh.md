@@ -1,29 +1,39 @@
-# Task Contract: akn04-placement
+> **Archived**: 2026-09-22 16:17
+> **Related Plan**: plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1617
+> **Archive Projection V1**: `plans/plan-20260922-1425-akn04a-stack-refresh.md` => `plans/archive/plan-20260922-1425-akn04a-stack-refresh.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md` => `tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1425-akn04a-stack-refresh.contract.md` => `tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md` => `tasks/archive/review-20260922-1617-akn04a-stack-refresh.md`
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0321-akn04-placement.md
+# Task Contract: akn04a-stack-refresh
+
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-22 03:21
-> **Review File**: `tasks/reviews/20260922-0321-akn04-placement.review.md`
-> **Notes File**: `tasks/notes/20260922-0321-akn04-placement.notes.md`
+> **Last Updated**: 2026-09-22 14:25
+> **Review File**: `tasks/archive/review-20260922-1617-akn04a-stack-refresh.md`
+> **Notes File**: `tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
 
-Fleet currently maps normal planning/inline work to null and degraded, drops TaskOffer blockers and includes missing-row execution records in task totals.
+PR #438 conflicts with its accepted upstream in the generated architecture manifest. The previous archived contract cannot authorize a new integration candidate.
 
 ## Goal
 
-Implement the approved AKN-04a exhaustive placement, exact readiness blockers and known canonical count conservation, with same-package Fleet 5 / Operator 6 consumer cutover.
+Integrate the accepted protected-reply branch and its post-review fixture correction, regenerate current projection proof and publish a verified update to PR #438.
 
 ## Scope
 
-- In scope: captured plan P1/P2/P3 and exact paths below.
-- Out of scope: new context/activity routes, full AKN-05 home redesign, Host activation, main merge and runtime install.
-- No dual column authority, old protocol fallback or persisted domain mutation.
+- In scope: accepted upstream source/tests and their workflow archive, current architecture manifest, and this integration package.
+- Out of scope: new Fleet behavior, main merge, Host admission or runtime installation.
+- Taste constraints: preserve upstream bytes and canonical projection ownership; no manual proof-digest combination.
 
 ## Stop Conditions
 
@@ -33,7 +43,7 @@ Implement the approved AKN-04a exhaustive placement, exact readiness blockers an
 
 ## Falsifier
 
-A normal missing-plan task degrades a readable repository; claimed work regresses to preparation; blocker ownership changes in transit; isolated execution increases known_tasks; decoder accepts old or nonconserving payloads; available implies live execution.
+The merged candidate changes existing Fleet placement behavior, fails Task reply regressions or retains a conflict with its published upstream.
 
 ## Root Cause Evidence
 
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0321-akn04-placement.md`
+- Source plan: `plans/archive/plan-20260922-1425-akn04a-stack-refresh.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0321-akn04-placement.review.md`
-- Notes file: `tasks/notes/20260922-0321-akn04-placement.notes.md`
+- Review file: `tasks/archive/review-20260922-1617-akn04a-stack-refresh.md`
+- Notes file: `tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -58,7 +68,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"fleet-placement","kind":"deterministic_test","paths":["*"]}]}
+{"protocol": 1, "oracles": [{"id": "fleet-board-unit", "kind": "deterministic_test", "paths": ["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -71,33 +81,44 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
-  - src/core/fleet/board.ts
-  - src/effects/fleet/board.ts
-  - src/core/operator/fleet-snapshot.ts
-  - src/operator-web/types.ts
-  - src/operator-web/App.tsx
-  - src/operator-web/fixture.ts
-  - src/operator-web/i18n.ts
-  - tests/unit/collaboration-authority-baseline.test.ts
-  - docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md
-  - tests/unit/fleet-board.test.ts
-  - tests/effects/fleet-board.test.ts
-  - tests/unit/operator-fleet-snapshot.test.ts
-  - tests/unit/operator-web-types.test.ts
-  - tests/cli/fleet-board.test.ts
-  - tests/cli/operator-serve.test.ts
-  - tests/effects/operator-write-boundary.test.ts
-  - tests/operator-web/operator-interactions.test.tsx
-  - tests/operator-web/operator-ui.test.tsx
-  - tests/operator-web/operator-collaboration.test.tsx
-  - tests/operator-web/operator-task-diff.test.tsx
-  - docs/researches/20260922-fleet-placement-contract.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0321-akn04-placement.md
-  - tasks/contracts/20260922-0321-akn04-placement.contract.md
-  - tasks/reviews/20260922-0321-akn04-placement.review.md
-  - tasks/notes/20260922-0321-akn04-placement.notes.md
+  - docs/researches/20260922-task-reply-protocol.md
+  - src/effects/fleet/task-inbox.ts
+  - tests/effects/task-reply.test.ts
+  - tests/cli/mcp-http.test.ts
+  - plans/archive/plan-20260922-0204-akn03-protected-replies.md
+  - plans/plan-20260922-0204-akn03-protected-replies.md
+  - tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
+  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+  - tasks/archive/
+  - plans/plan-20260922-1417-akn03b-windows-fixture.md
+  - plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+  - tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md
+  - tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md
+  - tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
+  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+  - tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/review-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md
   - tasks/todos.md
+  - docs/researches/20260922-candidate-runtime-fixture-authority.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - plans/plan-20260922-1452-akn03a-fixture-integration.md
+  - scripts/check-tarball-install-smoke.sh
+  - src/core/fleet/task-reply.ts
+  - src/effects/engineers/task-inbox.ts
+  - tasks/contracts/20260922-1452-akn03a-fixture-integration.contract.md
+  - tasks/notes/20260922-1452-akn03a-fixture-integration.notes.md
+  - tasks/reviews/20260922-1452-akn03a-fixture-integration.review.md
+  - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
+  - tests/unit/task-reply.test.ts
+  - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
+  - plans/plan-20260922-1548-akn03b-windows-identity.md
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md
+  - tasks/reviews/20260922-1548-akn03b-windows-identity.review.md
+  - tasks/notes/20260922-1548-akn03b-windows-identity.notes.md
 ```
 
 ## Evidence Requirements
@@ -392,7 +413,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=4e5556d61ed2ed9a58e3ed9b5d25c6d670ee94d4 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -453,6 +474,58 @@ exit_criteria:
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "reply-pagination",
+      "kind": "package_test",
+      "path": "tests/effects/task-reply.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Accepted upstream correction in integrated stack",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "http-fixture",
+      "kind": "package_test",
+      "path": "tests/cli/mcp-http.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Accepted upstream correction in integrated stack",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "installed-consumer",
+      "kind": "command",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Owner requires the integrated placement/protocol installed-package consumer path",
+      "inputs": {
+        "env": []
+      },
+      "command": "bash scripts/check-tarball-install-smoke.sh"
+    },
+    {
+      "id": "reply-core",
+      "kind": "command",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Retain the upstream encoded reply contract after integration",
+      "inputs": {
+        "env": []
+      },
+      "command": "bun test tests/unit/task-reply.test.ts"
     }
   ]
 }
@@ -460,9 +533,8 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-Existing tests cover the closed placement mapping, exact blocker ownership, count conservation, protocol and browser consumers. Source browser inspection is required for changed grouping/copy. No Host/H0 acceptance claimed. Freeze source and architecture before canonical evidence and one independent review.
+Use current canonical evidence for the merged stack. Existing Fleet/Operator checks and upstream reply/HTTP suites cover the changed integration surface. Preserve independent review and waiver history; no old receipt is claimed for this new contract. Hosted mergeability and CI remain separate readbacks.
 
 ## Rollback Point
 
-- Base: 92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e.
-- Roll back Fleet/Operator/browser as one schema unit; no persistent records are rewritten.
+Base 4e5556d61ed2ed9a58e3ed9b5d25c6d670ee94d4. Revert this integration as one unit.

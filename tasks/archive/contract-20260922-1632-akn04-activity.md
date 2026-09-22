@@ -1,29 +1,39 @@
-# Task Contract: akn04-context
+> **Archived**: 2026-09-22 16:32
+> **Related Plan**: plans/archive/plan-20260922-0418-akn04-activity.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1632
+> **Archive Projection V1**: `plans/plan-20260922-0418-akn04-activity.md` => `plans/archive/plan-20260922-0418-akn04-activity.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0418-akn04-activity.notes.md` => `tasks/archive/notes-20260922-1632-akn04-activity.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0418-akn04-activity.contract.md` => `tasks/archive/contract-20260922-1632-akn04-activity.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0418-akn04-activity.review.md` => `tasks/archive/review-20260922-1632-akn04-activity.md`
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0450-akn04-context.md
+# Task Contract: akn04-activity
+
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0418-akn04-activity.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-22 04:50
-> **Review File**: `tasks/reviews/20260922-0450-akn04-context.review.md`
-> **Notes File**: `tasks/notes/20260922-0450-akn04-context.notes.md`
+> **Last Updated**: 2026-09-22 04:18
+> **Review File**: `tasks/archive/review-20260922-1632-akn04-activity.md`
+> **Notes File**: `tasks/archive/notes-20260922-1632-akn04-activity.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
 
-Current Task details need canonical identity, original preparation reasons and server-resolved source proof without accepting arbitrary paths or collecting unrelated repositories.
+Historical replies must remain inspectable after Task/Lease/Binding changes. Current live Engineer reads cannot serve that browser history contract.
 
 ## Goal
 
-Implement the approved AKN-04c current Task context GET and browser transport using existing Board/TaskOffer authority, exact server-owned Source Ref proof and read-only registered repository isolation.
+Implement the approved AKN-04b bounded historical Task activity GET and strict browser transport with original recipient/reply provenance, no read mutations, explicit incomplete coverage and registered-repository isolation.
 
 ## Scope
 
-- In scope: current context DTO/effect/worker/transport; internal exact-task offer selection; shared private activity/context worker lifecycle; owning tests and durable documentation; integrate accepted activity26778190 and its accepted upstream source/archive inputs, then regenerate deterministic architecture proof.
-- Out of scope: historical source resolution, UI redesign, scoped automation summary, provider calls, write guard changes, runtime install and main merge.
-- Invariant: observations never authorize mutation; no alternate parser/classifier/source authority.
+- In scope: captured plan and exact paths below; integrate accepted upstream communication and placement source plus their workflow archives, regenerate deterministic projection, and align historical consumers with the single core encoded-record limit.
+- Out of scope: UI redesign, active context/automation summary, provider dispatch, runtime installation, main merge, new event store.
+- Taste constraints: existing stored authority and pure reply oracle; no semantic fallbacks or current-state fence on historical facts.
 
 ## Stop Conditions
 
@@ -33,7 +43,7 @@ Implement the approved AKN-04c current Task context GET and browser transport us
 
 ## Falsifier
 
-A browser path or Plan cell selects context; a stale expected revision is accepted; a bad unrelated repository prevents reading healthy A; reads mutate authority; private worktree/session data escapes; cancellation releases admission before worker exit.
+An old exact message becomes unreadable solely due to revision/Lease rotation; a GET changes stored bytes; a forged raw reply is shown as verified; an A repository request returns B facts; cancellation frees an active worker slot before termination.
 
 ## Root Cause Evidence
 
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0450-akn04-context.md`
+- Source plan: `plans/archive/plan-20260922-0418-akn04-activity.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0450-akn04-context.review.md`
-- Notes file: `tasks/notes/20260922-0450-akn04-context.notes.md`
+- Review file: `tasks/archive/review-20260922-1632-akn04-activity.md`
+- Notes file: `tasks/archive/notes-20260922-1632-akn04-activity.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -58,7 +68,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol": 1, "oracles": [{"id": "context", "kind": "deterministic_test", "paths": ["*"]}]}
+{"protocol": 1, "oracles": [{"id": "activity", "kind": "deterministic_test", "paths": ["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -71,89 +81,78 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
-  - src/core/operator/task-context.ts
-  - src/effects/operator/task-context.ts
-  - src/effects/operator/task-context-worker.ts
-  - src/operator-web/task-context.ts
-  - src/effects/fleet/acquire.ts
+  - src/core/operator/task-activity.ts
+  - src/effects/fleet/task-inbox.ts
+  - src/effects/engineers/claim-actor-store.ts
+  - src/effects/operator/task-activity.ts
+  - src/effects/operator/task-activity-worker.ts
   - src/effects/operator/server.ts
-  - tests/effects/operator-task-context.test.ts
+  - src/operator-web/task-activity.ts
+  - tests/effects/operator-task-activity.test.ts
+  - tests/effects/operator-write-boundary.test.ts
   - tests/cli/operator-serve.test.ts
   - tests/unit/operator-web-types.test.ts
-  - tests/effects/operator-write-boundary.test.ts
-  - tests/unit/fleet-acquire-effect.test.ts
-  - docs/researches/20260922-operator-task-context.md
+  - tests/unit/collaboration-authority-baseline.test.ts
+  - docs/researches/20260922-operator-task-activity.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0450-akn04-context.md
-  - tasks/contracts/20260922-0450-akn04-context.contract.md
-  - tasks/reviews/20260922-0450-akn04-context.review.md
-  - tasks/notes/20260922-0450-akn04-context.notes.md
+  - plans/archive/plan-20260922-0418-akn04-activity.md
+  - tasks/archive/contract-20260922-1632-akn04-activity.md
+  - tasks/archive/review-20260922-1632-akn04-activity.md
+  - tasks/archive/notes-20260922-1632-akn04-activity.md
   - tasks/todos.md
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
-  - docs/researches/20260922-operator-task-activity.md
   - docs/researches/20260922-task-reply-protocol.md
   - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
   - plans/archive/plan-20260922-0204-akn03-protected-replies.md
   - plans/archive/plan-20260922-0321-akn04-placement.md
-  - plans/archive/plan-20260922-0418-akn04-activity.md
   - plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
-  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
   - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
-  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
-  - plans/plan-20260922-0204-akn03-protected-replies.md
-  - plans/plan-20260922-0321-akn04-placement.md
-  - plans/plan-20260922-0418-akn04-activity.md
+  - plans/plan-20260922-1425-akn04a-stack-refresh.md
   - scripts/check-tarball-install-smoke.sh
   - src/core/fleet/task-reply.ts
-  - src/core/operator/task-activity.ts
   - src/effects/engineers/task-inbox.ts
-  - src/effects/fleet/task-inbox.ts
   - tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
   - tasks/archive/contract-20260922-1403-akn03-protected-replies.md
   - tasks/archive/contract-20260922-1405-akn04-placement.md
   - tasks/archive/contract-20260922-1510-akn03a-fixture-integration.md
   - tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md
-  - tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
-  - tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md
-  - tasks/archive/contract-20260922-1632-akn04-activity.md
   - tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
   - tasks/archive/notes-20260922-1403-akn03-protected-replies.md
   - tasks/archive/notes-20260922-1405-akn04-placement.md
   - tasks/archive/notes-20260922-1510-akn03a-fixture-integration.md
   - tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md
-  - tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
-  - tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md
-  - tasks/archive/notes-20260922-1632-akn04-activity.md
   - tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md
   - tasks/archive/review-20260922-1403-akn03-protected-replies.md
   - tasks/archive/review-20260922-1405-akn04-placement.md
   - tasks/archive/review-20260922-1510-akn03a-fixture-integration.md
   - tasks/archive/review-20260922-1532-akn03b-windows-fixture.md
-  - tasks/archive/review-20260922-1615-akn03b-windows-identity.md
-  - tasks/archive/review-20260922-1617-akn04a-stack-refresh.md
-  - tasks/archive/review-20260922-1632-akn04-activity.md
   - tasks/archive/todo-20260922-0148-candidate-runtime-fixture-authority.md
   - tasks/archive/todo-20260922-1403-akn03-protected-replies.md
   - tasks/archive/todo-20260922-1405-akn04-placement.md
   - tasks/archive/todo-20260922-1510-akn03a-fixture-integration.md
   - tasks/archive/todo-20260922-1532-akn03b-windows-fixture.md
-  - tasks/archive/todo-20260922-1615-akn03b-windows-identity.md
-  - tasks/archive/todo-20260922-1617-akn04a-stack-refresh.md
-  - tasks/archive/todo-20260922-1632-akn04-activity.md
-  - tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
-  - tasks/contracts/20260922-0321-akn04-placement.contract.md
-  - tasks/contracts/20260922-0418-akn04-activity.contract.md
-  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
-  - tasks/notes/20260922-0321-akn04-placement.notes.md
-  - tasks/notes/20260922-0418-akn04-activity.notes.md
-  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
-  - tasks/reviews/20260922-0321-akn04-placement.review.md
-  - tasks/reviews/20260922-0418-akn04-activity.review.md
+  - tasks/contracts/20260922-1425-akn04a-stack-refresh.contract.md
+  - tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md
+  - tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md
   - tests/cli/mcp-http.test.ts
-  - tests/effects/operator-task-activity.test.ts
   - tests/effects/task-reply.test.ts
   - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
   - tests/unit/task-reply.test.ts
+  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+  - tasks/archive/
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/review-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/todo-20260922-1615-akn03b-windows-identity.md
+  - plans/plan-20260922-0204-akn03-protected-replies.md
+  - plans/plan-20260922-0321-akn04-placement.md
+  - tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
+  - tasks/contracts/20260922-0321-akn04-placement.contract.md
+  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+  - tasks/notes/20260922-0321-akn04-placement.notes.md
+  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+  - tasks/reviews/20260922-0321-akn04-placement.review.md
 ```
 
 ## Evidence Requirements
@@ -201,9 +200,9 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/core/operator/task-context.ts
-    - src/effects/operator/task-context-worker.ts
-    - docs/researches/20260922-operator-task-context.md
+    - src/core/operator/task-activity.ts
+    - src/effects/operator/task-activity-worker.ts
+    - docs/researches/20260922-operator-task-activity.md
   artifacts_exist: []
 ```
 
@@ -214,32 +213,6 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "context",
-      "kind": "package_test",
-      "path": "tests/effects/operator-task-context.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Current context authority and existing shared read lifecycle",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "offers",
-      "kind": "package_test",
-      "path": "tests/unit/fleet-acquire-effect.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Current context authority and existing shared read lifecycle",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
       "id": "activity",
       "kind": "package_test",
       "path": "tests/effects/operator-task-activity.test.ts",
@@ -247,7 +220,46 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Current context authority and existing shared read lifecycle",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "reply",
+      "kind": "package_test",
+      "path": "tests/effects/task-reply.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "inbox",
+      "kind": "package_test",
+      "path": "tests/effects/task-inbox.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "actor",
+      "kind": "package_test",
+      "path": "tests/unit/me0b-engineer-principal-claim-actor.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
       "inputs": {
         "env": []
       }
@@ -260,20 +272,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Current context authority and existing shared read lifecycle",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "browser",
-      "kind": "package_test",
-      "path": "tests/unit/operator-web-types.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Current context authority and existing shared read lifecycle",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
       "inputs": {
         "env": []
       }
@@ -286,7 +285,33 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Current context authority and existing shared read lifecycle",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "browser-types",
+      "kind": "package_test",
+      "path": "tests/unit/operator-web-types.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "authority-inventory",
+      "kind": "package_test",
+      "path": "tests/unit/collaboration-authority-baseline.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Historical read, provenance, browser/server isolation and existing write authority boundary",
       "inputs": {
         "env": []
       }
@@ -299,20 +324,20 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "browser-build",
+      "id": "browser-transport",
       "kind": "command",
-      "command": "bun build src/operator-web/task-context.ts --target browser --outdir .ai/harness/runs/context-browser-build",
+      "command": "bun build src/operator-web/task-activity.ts --target browser --outdir .ai/harness/runs/activity-browser-build",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -325,7 +350,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -338,7 +363,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -351,7 +376,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -364,7 +389,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -377,7 +402,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -385,12 +410,12 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=f5142838 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=e5ffd48add85f00d4883ea5c4206b8242c6ab505 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -403,7 +428,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -416,7 +441,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -429,7 +454,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required integrity or browser-safe DTO boundary",
+      "necessity": "Required repository integrity and browser-safe wire decoder",
       "inputs": {
         "env": []
       }
@@ -440,9 +465,9 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-One new effects suite is admitted for the independent current Task context authority boundary and real HTTP worker. Existing suites protect shared activity cancellation and offer classification. No full suite, providers or credentials. Freeze source/projection before canonical verification and one independent semantic acceptance. Local reads do not prove runtime admission or adoption.
+A new effects test is admitted for historical event/receipt provenance, nested read budgets and real worker HTTP behavior; existing server/decoder/authority suites cover their owning boundaries. No full suite. These local records do not prove native Host isolation, adoption correctness or Campaign execution. Source/projection must be frozen before canonical verification and one independent review. No real provider or credentials are required.
 
 ## Rollback Point
 
-- Base: f5142838.
-- Remove context GET/readers/transport and internal target filter; preserve original stored records.
+- Base: e5ffd48add85f00d4883ea5c4206b8242c6ab505.
+- Revert new GET/transport/readers; preserve original messages, delivery receipts and reply/actor records.

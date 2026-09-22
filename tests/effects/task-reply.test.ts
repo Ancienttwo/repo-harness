@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -30,7 +31,7 @@ const initialHome = process.env.REPO_HARNESS_HOME;
 const PROJECT = resolve(import.meta.dir, '../..');
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); if (initialHome === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = initialHome; });
 function git(root: string, ...args: string[]) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
-function fixture() {
+function fixture(parentBody = 'Inspect existing work before answering.') {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'task-reply-effects-'))); roots.push(root);
   const home = join(root, 'test-home'); mkdirSync(home); process.env.REPO_HARNESS_HOME = home;
   const env = { ...process.env, REPO_HARNESS_HOME: home };
@@ -65,7 +66,7 @@ function fixture() {
   let authorized = true;
   const verify_authorization = () => { if (!authorized) throw new Error('request token revoked'); };
   const input = { repo_root: root, authorization_id: id(2), work_envelope: work, verify_authorization, env };
-  const parent = buildTaskMessageEvent({ message_id: id(4), task_id, task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'operator', sender_id: 'operator', sender_trust: 'local_operator', audience: 'owner', body: 'Inspect existing work before answering.', created_at: AT, in_reply_to: null });
+  const parent = buildTaskMessageEvent({ message_id: id(4), task_id, task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'operator', sender_id: 'operator', sender_trust: 'local_operator', audience: 'owner', body: parentBody, created_at: AT, in_reply_to: null });
   sendTaskMessage({ repo_root: root, canonical_source: { targetRef: 'main', sprintPath: SPRINT }, event: parent });
   const consume = () => withEngineerTaskInbox(input, inbox => consumeTaskSteer({ ...inbox, message_id: parent.message_id, event_digest: parent.event_digest, now: AT }));
   const ack = () => withEngineerTaskInbox(input, inbox => acknowledgeTaskSteer({ ...inbox, message_id: parent.message_id, event_digest: parent.event_digest, now: AT }));
@@ -77,6 +78,94 @@ function fixture() {
 }
 
 describe('protected Task reply storage and Engineer composition', () => {
+  test('encoded record rejects before intent persistence and permits retry with the original reply ID', () => {
+    const f = fixture('\u0001'.repeat(8192)); f.consume(); f.ack();
+    expect(() => withEngineerTaskInbox(f.input, inbox => replyToTaskSteer({
+      ...inbox, ...f.replyArgs, body: '\u0001'.repeat(8192),
+    }))).toThrow('encoded reply record exceeds 65536 bytes');
+    expect(f.history().observation.state).toBe('absent');
+    const reply = f.reply();
+    expect(reply.commit.effect_id).toBe(f.replyArgs.reply_message_id);
+    expect(f.history().observation.state).toBe('complete');
+    expect(f.reply().created).toBeFalse();
+  });
+
+  test.each(['intent', 'commit'] as const)('expiry during final %s canonical validation prevents publication', kind => {
+    const f = fixture(); f.consume(); f.ack();
+    if (kind === 'commit') expect(() => f.reply(boundary => {
+      if (boundary === 'event_published') throw new Error('interrupted');
+    })).toThrow('interrupted');
+    let staged = false, validating = false, expired = false;
+    const env = new Proxy(f.env, {
+      get(target, property, receiver) {
+        if (validating && property === 'REPO_HARNESS_HOME') expired = true;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const verify_authorization = () => {
+      if (expired) throw new Error('request token expired');
+      if (staged) validating = true;
+    };
+    expect(() => withEngineerTaskInbox({ ...f.input, env, verify_authorization }, inbox => replyToTaskSteer({
+      ...inbox, ...f.replyArgs, crash_hook: boundary => { if (boundary === `${kind}_file_fsynced`) staged = true; },
+    }))).toThrow('request token expired');
+    expect(expired).toBeTrue();
+    expect(f.history().observation.state).toBe(kind === 'intent' ? 'absent' : 'event_uncommitted');
+  });
+
+  test.each(['delivery', 'ACK', 'event'] as const)('expiry during %s staging fsync prevents publication', kind => {
+    const f = fixture();
+    if (kind !== 'delivery') f.consume();
+    if (kind === 'event') {
+      f.ack();
+      expect(() => f.reply(boundary => { if (boundary === 'intent_published') throw new Error('interrupted'); })).toThrow('interrupted');
+    }
+    let expired = false;
+    const stagedDescriptors = new Set<number>();
+    const open = fs.openSync, fsync = fs.fsyncSync;
+    const staging = join(taskInboxTaskDirectory(f.root, f.work.task_id), 'staging', kind === 'event' ? 'events' : 'delivery');
+    const openSpy = spyOn(fs, 'openSync').mockImplementation((...args: Parameters<typeof fs.openSync>) => {
+      const fd = open(...args);
+      if (String(args[0]).startsWith(staging + '/')) stagedDescriptors.add(fd);
+      return fd;
+    });
+    const syncSpy = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+      fsync(fd);
+      if (stagedDescriptors.has(fd)) expired = true;
+    });
+    const verify_authorization = () => { if (expired) throw new Error('request token expired'); };
+    try {
+      expect(() => withEngineerTaskInbox({ ...f.input, verify_authorization }, inbox => {
+        if (kind === 'event') return replyToTaskSteer({ ...inbox, ...f.replyArgs });
+        const args = { ...inbox, message_id: f.parent.message_id, event_digest: f.parent.event_digest, now: AT };
+        return kind === 'ACK' ? acknowledgeTaskSteer(args) : consumeTaskSteer(args);
+      })).toThrow('request token expired');
+    } finally { syncSpy.mockRestore(); openSpy.mockRestore(); }
+    expect(expired).toBeTrue();
+    const history = f.history();
+    if (kind === 'event') expect(history.observation.state).toBe('intent_only');
+    else expect(history.acknowledgement?.delivery_state ?? null).toBe(kind === 'ACK' ? 'delivered' : null);
+  });
+
+  test('mixed-case UUID pagination returns every original steer exactly once', () => {
+    const f = fixture();
+    const ids = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB'];
+    for (const message_id of ids) {
+      const event = buildTaskMessageEvent({ ...f.parent, message_id });
+      writeFileSync(taskInboxEventPath(f.root, f.work.task_id, message_id), `${canonicalTaskMessageEventBytes(event)}\n`);
+    }
+    const seen: string[] = [];
+    let after: string | undefined;
+    for (let n = 0; n < 4; n++) {
+      const page = withEngineerTaskInbox(f.input, inbox => observeTaskSteers({ ...inbox, limit: 1, after }));
+      seen.push(...page.entries.map(entry => entry.parent.message_id));
+      if (!page.next_cursor) { expect(page.coverage.complete).toBeTrue(); break; }
+      after = page.next_cursor;
+    }
+    expect(seen).toEqual([f.parent.message_id, ids[1], ids[0]]);
+    expect(new Set(seen).size).toBe(3);
+  });
+
   test('review recovery: unrelated canonical commits preserve communication but not acquisition or changed plans', () => {
     const f = fixture();
     git(f.root, 'commit', '--allow-empty', '-qm', 'unrelated main advancement');
