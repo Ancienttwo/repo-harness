@@ -39,9 +39,9 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "workspace-write",
   },
   "deep-worker": {
-    model: "gpt-6-astra",
-    effort: "medium",
-    descriptionLabel: "GPT-6 Astra at medium reasoning",
+    model: "gpt-5.6-sol",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Sol at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
