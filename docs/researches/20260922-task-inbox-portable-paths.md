@@ -105,3 +105,13 @@ A source scan at12518117 found the literal v1 root and filesystem recipient-key 
 Record limits remain owned by each existing canonical validator. Ordinary events permit metadata exceeding the separate 64 KiB reply-record limit; migration preserves such valid bytes rather than importing the reply limit into another protocol. A 70,677-byte valid-event fixture exposed and guards this distinction.
 
 The single independent review at source e6dd175c found that a completed rollback blocked every future upgrade. The original two regression cases reproduced both unchanged-v1 apply refusal and changed-v1 dry-run refusal. The correction adds the explicit fresh migration transition above. That consumed review does not approve the corrected subject; final acceptance requires the owner-bound receipt after current verification and CI.
+
+## Exact native filesystem identities
+
+Native Windows run [35756978653](https://github.com/Ancienttwo/repo-harness/actions/runs/35756978653), on downstream persistence candidate `ec1b2e74`, reported ten migration reapply failures at the staged inventory's hard-link check. The migration source was unchanged from `49c5f9dc`. The log contains no raw filesystem IDs or link counts, so the precise native trigger cannot be inferred from that message alone.
+
+A deterministic public-API regression proved that the old numeric stat identity was insufficient: distinct file IDs `9007199254740992n` and `9007199254740993n` have the same Number representation. With real independent files and their actual single-link counts, the inventory grouped them together and refused the migration. A second regression proved the same loss could hide a changed runtime layout identity. Both failed before the correction and passed afterward.
+
+The existing `inboxPathStat` owner now requests bigint stats. Inventory link accounting, common-directory manifest and rollback-history identities, and the runtime directory fence consume the same exact values; size and link-count comparisons use matching integer types. The file format, canonical message bytes, source-approval protocol, hard-link containment rule and failure behavior remain unchanged. No rounded-number fallback is accepted. This adds no scan or extra stat call; at 10x history the existing full inventory and file copies remain the cost. A pre-release manifest created from an already rounded identity must fail exact revalidation rather than silently gain authority. No real data migration has been executed.
+
+Owning migration and Inbox tests passed 44/44 locally, including existing internal-link acceptance and external-link refusal; typecheck and both new precision guards passed. Native corrected-source verification and refreshed canonical acceptance remain required.

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:96d6eeb46a1d70c1a9f8938548ce787f09c13c62e6537c27eff0918734a3c35b`
+> **Substantive Change SHA256**: `sha256:3ec054964de8656981bb3f636ce6cba32caa8c814dd3e64334376d9e53674578`
 
 ## Design Decisions
 
@@ -17,6 +17,7 @@
 - Interrupted canonical verification reached the outer helper hard timeout while owner-4 had no completed execution record. A bounded direct package test passed 33/33 in 75 seconds. The next canonical invocation reported an identical request running; subsequent readback found that request lock absent. Preserve those failures and require a new genuine canonical result; no execution receipt or cache entry is manually repaired.
 
 - Completed rollback receipts are immutable history. New v1 writes require a fresh source approval; the next transaction archives the old receipt before clearing its pointer. A prepared forward journal is validated and published before rollback consumes it, preserving the normal recovery fence.
+- Native follow-up in downstream PR444 (run 35756978653) exposed ten inventory link-count refusals on unchanged migration source. A public-API experiment reproduced the same refusal when distinct file IDs above Number's safe integer range collide after conversion. The selected correction keeps exact bigint stats at the existing inboxPathStat owner, covering inventory grouping, common-directory manifest/history identity and the runtime layout fence together. Link ownership checks remain mandatory; no Number fallback, stored-record translation or relaxed refusal is introduced. Native raw stat values were not logged, so that particular run's trigger remains unconfirmed until a native corrected-source observation.
 
 ## Deviations From Plan Or Spec
 
@@ -34,6 +35,15 @@
 - None.
 
 ## Evidence Links
+
+- Native follow-up correction relative to `49c5f9dc`: two real-filesystem regression guards failed before the exact-stat fix and pass afterward. Existing migration plus Inbox suites passed 44/44 with 350 assertions; after correcting the spy's optional-stat typing, both new cases passed again (2/2, 12 assertions) and typecheck passed. Canonical evidence and hosted native CI must be refreshed after downstream persistence integration; the prior review remains consumed.
+
+> **Substantive Change SHA256**: `sha256:f4f6c60def7610a29820ee1cc3241d816572ea2fcaf28346ee2dc82b41c483ea`
+
+- root_cause: Default Number-valued stat identities collapse adjacent file IDs above the safe integer range, both merging independent inventory entries and missing layout identity changes.
+- repro: `bun test tests/effects/task-inbox-layout-migration.test.ts --test-name-pattern 'default inode numbers collide|adjacent exact inode values'` against pre-fix source.
+- regression_guard: `tests/effects/task-inbox-layout-migration.test.ts`.
+- pre_fix_failure_artifact: `.ai/harness/runs/task-inbox-portable-paths/rounded-inode-pre-fix.log` (`PRE_FIX_EXIT=1`, two failures).
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`

@@ -44,7 +44,7 @@ function readFile(path: string, max = Number.MAX_SAFE_INTEGER): Buffer {
   return readFileSync(path);
 }
 function readObject(path: string): unknown {
-  if (inboxPathStat(path)?.nlink !== 1) refuse('migration metadata must have one owned path');
+  if (inboxPathStat(path)?.nlink !== 1n) refuse('migration metadata must have one owned path');
   const bytes = readFile(path);
   let value: unknown;
   try { value = JSON.parse(bytes.toString('utf8')); } catch { refuse('migration metadata is malformed'); }
@@ -55,7 +55,7 @@ function inventory(root: string): Entry[] {
   if (!inboxPathStat(root)?.isDirectory()) refuse('migration tree is missing');
   assertInboxDirectory(root);
   const entries: Entry[] = [];
-  const links = new Map<string, { count: number; expected: number }>();
+  const links = new Map<string, { count: bigint; expected: bigint }>();
   function visit(relative: string): void {
     for (const name of readdirSync(join(root, relative)).sort()) {
       if (!name || /[\\\x00-\x1f]/.test(name)) refuse('unsafe migration path');
@@ -66,7 +66,7 @@ function inventory(root: string): Entry[] {
       else {
         const bytes = readFile(join(root, path));
         const identity = `${stat.dev}:${stat.ino}`, observed = links.get(identity);
-        links.set(identity, { count: (observed?.count ?? 0) + 1, expected: stat.nlink });
+        links.set(identity, { count: (observed?.count ?? 0n) + 1n, expected: stat.nlink });
         entries.push({ path, kind: 'file', size: bytes.length, sha256: sha(bytes) });
       }
     }
@@ -210,7 +210,7 @@ function archiveRollback(common: string, input: InboxMigrationInput): void {
 /** Only transaction-owned paths may repair a prefix left by an interrupted exclusive write. */
 function writeOwned(path: string, bytes: Buffer): void {
   if (inboxPathStat(path)) {
-    if (inboxPathStat(path)?.nlink !== 1) refuse('transaction file has multiple paths');
+    if (inboxPathStat(path)?.nlink !== 1n) refuse('transaction file has multiple paths');
     const prior = readFile(path, bytes.length);
     if (prior.equals(bytes)) return;
     if (prior.length >= bytes.length || !bytes.subarray(0, prior.length).equals(prior)) refuse('conflicting transaction file');
