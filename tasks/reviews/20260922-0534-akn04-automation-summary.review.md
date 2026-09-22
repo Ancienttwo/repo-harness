@@ -19,3 +19,7 @@ No semantic review has run or AcceptanceReceipt been issued for this candidate. 
 ## Authorized index and deterministic projection
 
 The owner approved this worktree local index on 2026-09-22. CodeGraph initialization succeeded at source `2d90d44b339b4b86d5b7c453036671a7dece6ba4`. Deterministic plan/apply updated only `docs/architecture/.projection-manifest.json`, with no human actions or refresh signals. Receipts are `.ai/harness/runs/approved-index-proof/{plan,apply}.json`. Canonical verification and semantic acceptance remain pending; this proof does not establish Host admission.
+
+## Canonical verification after index approval
+
+Canonical prepare-acceptance passed 21/21 criteria with zero failures, covering 17 execution checks at `92f785d2104d400b5350f3ec9d7f8364244537b2`. Subject: `sha256:376538d3231ea1e5659f88ce182c716c4c38be1d8d002b6939a2dff86499035f`. Evidence: `.ai/harness/runs/run-20260922T142330-9765-20260922-0534-akn04-automation-summary.json` and `.ai/harness/checks/latest.json`. The current deterministic architecture check passed. This is local machine verification; semantic acceptance, hosted CI and installed/native journey claims remain separate.
