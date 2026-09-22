@@ -2444,3 +2444,21 @@ test('an explicit historical revision remains a historical read even when the Ta
     readTaskHistory={async request=>{calls++;expect(request.expected_task_revision).toBe(value.task_revision);return value;}} />);
   expect(calls).toBe(1);expect(document.querySelector('.task-history')?.textContent).toContain(value.task.title);expect(document.querySelector('.detail-pane')).toBeNull();
 });
+
+test('refresh removes stale acceptance readiness without creating Done or a merge action',async()=>{
+  const {classifyFleetBoardPlacement}=await import('../../src/core/fleet/board');
+  const current=stableSnapshot.repositories.flatMap(r=>r.cards).find(c=>c.task_id===fixtureTasks.ready.task_id)!;
+  const readiness={...current.merge_readiness!,ready:false,attention_owner:'agent' as const,blockers:[{code:'verification_evidence_stale' as const,attention_owner:'agent' as const},{code:'acceptance_missing' as const,attention_owner:'user' as const}]};
+  const placement=classifyFleetBoardPlacement({...current,error:null,task_state:'pending',lease_state:'reviewing',current_publication:{publication_id:readiness.publication_id,head_sha:readiness.expected_head_sha},merge_readiness:readiness});
+  const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
+  const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
+  let writes=0;
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async()=>next} sendMessage={async()=>{writes++}} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('1');
+  await act(async()=>buttonWithText('Refresh').click());
+  expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('0');
+  expect(document.querySelector('.worklist-group--done .worklist-group__count')?.textContent).toBe(String(stableSnapshot.counts.done));
+  expect(groupWorklist(next).find(g=>g.id==='ready_to_merge')?.cards.some(c=>c.task_id===current.task_id)).toBe(false);
+  expect(Array.from(document.querySelectorAll('button')).some(b=>/^merge$/i.test(b.textContent?.trim()??''))).toBe(false);
+  expect(writes).toBe(0);
+});

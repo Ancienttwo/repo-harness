@@ -161,3 +161,13 @@ describe('MergeReadinessV1', () => {
     ]);
   });
 });
+
+test.each(['head_sha','base_sha'] as const)('an otherwise green Publication loses readiness when provider %s moves', field => {
+  const input=readyInput();
+  const verdict=projectMergeReadiness({...input,provider:{...input.provider!,[field]:'9'.repeat(40)}});
+  expect(verdict.ready).toBe(false);
+  expect(verdict.blockers.map(b=>b.code)).toEqual([field==='head_sha'?'head_moved':'base_moved_since_verification']);
+});
+test('finishing an Agent run without a reviewing Publication cannot establish readiness',()=>{
+  expect(projectMergeReadiness({...readyInput(),lease_is_reviewing:false,pointer_matches_receipt:false}).ready).toBe(false);
+});
