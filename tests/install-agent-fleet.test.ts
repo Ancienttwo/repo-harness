@@ -32,9 +32,9 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "read-only",
   },
   "fast-worker": {
-    model: "gpt-6-astra",
-    effort: "low",
-    descriptionLabel: "GPT-6 Astra at low reasoning",
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    descriptionLabel: "GPT-5.6 Sol at medium reasoning",
     sourceDescription: "Opus at medium effort",
     sandboxMode: "workspace-write",
   },

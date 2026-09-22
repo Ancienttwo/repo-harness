@@ -143,10 +143,10 @@ const MODEL_EFFORT_MAP = {
 };
 
 // Per-agent Codex target overrides — the only model/effort remaps in the fleet.
-// fast-worker targets Astra at low reasoning; deep-worker and gatekeeper
+// fast-worker targets Sol at medium reasoning; deep-worker and gatekeeper
 // target Astra at medium. Everything else follows the family default.
 const AGENT_TARGET_OVERRIDES = {
-  "fast-worker": { model: "gpt-6-astra", effort: "low", targetDescription: "GPT-6 Astra at low reasoning" },
+  "fast-worker": { model: "gpt-5.6-sol", effort: "medium", targetDescription: "GPT-5.6 Sol at medium reasoning" },
   "deep-worker": { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
   gatekeeper: { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
 };
