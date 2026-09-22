@@ -1,4 +1,4 @@
-import { OrganizationSummary } from './OrganizationSummary';
+import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
 import type { OperatorWorkExchangeSnapshot } from './types';
 import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from './TaskEvidence';
 import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
@@ -30,7 +30,7 @@ import {
   snapshotViewKind,
   type OperatorApiErrorCode,
   type OperatorApiErrorV1,
-  type OperatorCollaborationSnapshotV2,
+  type OperatorCollaborationSnapshotV3,
   type OperatorCollaborationSource,
   type OperatorFleetCardV1,
   type OperatorFleetErrorV1,
@@ -49,7 +49,7 @@ export interface OperatorAppProps {
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
-  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorCollaborationSnapshotV2>;
+  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorCollaborationSnapshotV3>;
   /** A deterministic collaboration state for fixtures and server renders. */
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
@@ -977,7 +977,7 @@ function TaskDetail({
 export type CollaborationViewState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly repository_id: string }
-  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV2 }
+  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV3 }
   | {
       readonly kind: 'failed';
       readonly repository_id: string;
@@ -989,18 +989,22 @@ const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('coll
 const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_repository_mismatch');
 
 function assertCollaborationRepository(
-  snapshot: OperatorCollaborationSnapshotV2,
+  snapshot: OperatorCollaborationSnapshotV3,
   repositoryId: string,
-): OperatorCollaborationSnapshotV2 {
-  if (snapshot.repository_id !== repositoryId) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
+  decisionAfter: string | null = null,
+): OperatorCollaborationSnapshotV3 {
+  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
 
 async function fetchOperatorCollaborationSnapshot(
   repositoryId: string,
   signal?: AbortSignal,
-): Promise<OperatorCollaborationSnapshotV2> {
-  const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot`, {
+  decisionAfter: string | null = null,
+): Promise<OperatorCollaborationSnapshotV3> {
+  if (decisionAfter !== null && !/^[0-9a-f]{64}$/u.test(decisionAfter)) throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
+  const query = decisionAfter === null ? '' : `?decision_after=${decisionAfter}`;
+  const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot${query}`, {
     headers: { Accept: 'application/json' },
     cache: 'no-store',
     signal,
@@ -1012,7 +1016,7 @@ async function fetchOperatorCollaborationSnapshot(
     body = null;
   }
   if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
-  let snapshot: OperatorCollaborationSnapshotV2;
+  let snapshot: OperatorCollaborationSnapshotV3;
   try {
     snapshot = decodeOperatorCollaborationSnapshot(body);
   } catch {
@@ -1020,7 +1024,7 @@ async function fetchOperatorCollaborationSnapshot(
     // malformed collaboration response from borrowing Fleet diagnostics.
     throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
   }
-  return assertCollaborationRepository(snapshot, repositoryId);
+  return assertCollaborationRepository(snapshot, repositoryId, decisionAfter);
 }
 
 function sourceList(
@@ -2068,6 +2072,7 @@ export function OperatorApp({
   const [collaboration, setCollaboration] = useState<CollaborationViewState>(
     initialCollaboration ?? { kind: 'idle' },
   );
+  const [decisionPage, setDecisionPage] = useState<{ repositoryId: string; after: string | null } | null>(null);
   const [collaborationRefreshGeneration, setCollaborationRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
   const refreshInFlight = useRef(false);
@@ -2083,7 +2088,7 @@ export function OperatorApp({
     try { localStorage.setItem(OPERATOR_REPOSITORY_STORAGE_KEY, activeRepository.repository_id); } catch { /* Browser storage is optional UI preference. */ }
   }, [activeRepository]);
   const switchRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) setCollaboration({ kind: 'idle' });
+    if (id !== activeRepository?.repository_id) { setCollaboration({ kind: 'idle' }); setDecisionPage(null); }
     setRepositoryId(id);
     setSelection(null);
   };
@@ -2093,6 +2098,8 @@ export function OperatorApp({
   const refresh = async () => {
     // Every request supersedes the selected repository's collaboration read,
     // even when its Fleet collection is coalesced behind an active one.
+    setDecisionPage(null);
+    setCollaboration({ kind: 'idle' });
     setCollaborationRefreshGeneration((current) => current + 1);
     if (refreshInFlight.current) {
       refreshQueued.current = true;
@@ -2146,6 +2153,12 @@ export function OperatorApp({
     ? snapshot.repositories.find((repository) => repository.repository_id === selectedCard.repository_id) ?? null
     : null;
   const collaborationRepositoryId = activeRepository?.repository_id ?? null;
+  const decisionAfter = decisionPage?.repositoryId === collaborationRepositoryId ? decisionPage.after : null;
+  const changeDecisionPage = (after: string | null) => {
+    if (!collaborationRepositoryId) return;
+    setCollaboration({ kind: 'idle' });
+    setDecisionPage({ repositoryId: collaborationRepositoryId, after });
+  };
 
   // One observation belongs to the selected repository; task selection shares it.
   useEffect(() => {
@@ -2156,13 +2169,13 @@ export function OperatorApp({
     }
     const controller = new AbortController();
     setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
-    void fetchCollaboration(collaborationRepositoryId, controller.signal).then(
+    void fetchCollaboration(collaborationRepositoryId, controller.signal, decisionAfter).then(
       (next) => {
         if (!controller.signal.aborted) {
           try {
             setCollaboration({
               kind: 'ready',
-              snapshot: assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next), collaborationRepositoryId),
+              snapshot: assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next), collaborationRepositoryId, decisionAfter),
             });
           } catch (error) {
             setCollaboration({
@@ -2187,7 +2200,7 @@ export function OperatorApp({
     // The repository remains the scope; the explicit refresh generation is the
     // only extra trigger, so reads never fan out to other repositories.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collaborationRepositoryId, collaborationRefreshGeneration]);
+  }, [collaborationRepositoryId, collaborationRefreshGeneration, decisionAfter]);
   // A board that is stale, torn, or degraded is not a board you may write from.
   const boardUnstable = stateKind === 'stale'
     || stateKind === 'repo-degraded'
@@ -2224,6 +2237,7 @@ export function OperatorApp({
             readObservation={fetchRepositoryObservation}
             t={t}
           />}
+          {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
           {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />

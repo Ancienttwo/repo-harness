@@ -1,4 +1,5 @@
-import type { OperatorCollaborationSnapshotV2 } from '../../core/operator/collaboration-snapshot';
+import { isDecisionCursor } from '../../core/operator/decision-inventory';
+import type { OperatorCollaborationSnapshotV3 } from '../../core/operator/collaboration-snapshot';
 import {
   OperatorCollaborationError,
   readOperatorCollaborationSnapshot,
@@ -8,12 +9,13 @@ import {
 interface CollaborationWorkerRequest {
   readonly env?: Readonly<Record<string, string>>;
   readonly repository_id: string;
+  readonly decision_after: string | null;
 }
 
 type CollaborationWorkerResponse =
   | {
       readonly ok: true;
-      readonly snapshot: OperatorCollaborationSnapshotV2;
+      readonly snapshot: OperatorCollaborationSnapshotV3;
     }
   | {
       readonly ok: false;
@@ -31,6 +33,7 @@ self.onmessage = (event: MessageEvent<CollaborationWorkerRequest>): void => {
     || request === null
     || typeof request.repository_id !== 'string'
     || request.repository_id.length === 0
+    || !isDecisionCursor(request.decision_after)
   ) {
     self.postMessage(unavailable());
     return;
@@ -41,6 +44,7 @@ self.onmessage = (event: MessageEvent<CollaborationWorkerRequest>): void => {
       snapshot: readOperatorCollaborationSnapshot({
         env: request.env,
         repository_id: request.repository_id,
+        decision_after: request.decision_after,
       }),
     } satisfies CollaborationWorkerResponse);
   } catch (error) {

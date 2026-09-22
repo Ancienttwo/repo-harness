@@ -29,7 +29,7 @@ import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorCollaborationSnapshot,
   projectSnapshotViewState,
-  type OperatorCollaborationSnapshotV2,
+  type OperatorCollaborationSnapshotV3,
 } from '../../src/operator-web/types';
 
 let root: Root | null = null;
@@ -96,7 +96,7 @@ function paneText(): string {
   return document.querySelector('.collab-pane')?.textContent ?? '';
 }
 
-function render(snapshot: OperatorCollaborationSnapshotV2, locale: 'en' | 'zh' = 'en'): string {
+function render(snapshot: OperatorCollaborationSnapshotV3, locale: 'en' | 'zh' = 'en'): string {
   return renderToStaticMarkup(
     <OperatorApp
       initialState={projectSnapshotViewState(stableSnapshot)}
@@ -587,8 +587,8 @@ describe('operator collaboration read', () => {
   });
 
   test('late collaboration responses cannot replace the repository selected later', async () => {
-    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV2) => void>>();
-    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV2> => new Promise((resolve) => {
+    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV3) => void>>();
+    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV3> => new Promise((resolve) => {
       const requests = pending.get(repositoryId) ?? [];
       requests.push(resolve);
       pending.set(repositoryId, requests);
@@ -624,9 +624,9 @@ describe('operator collaboration read', () => {
     const requests: Array<{
       readonly repositoryId: string;
       readonly signal: AbortSignal;
-      readonly resolve: (snapshot: OperatorCollaborationSnapshotV2) => void;
+      readonly resolve: (snapshot: OperatorCollaborationSnapshotV3) => void;
     }> = [];
-    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV2> => new Promise((resolve, reject) => {
+    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV3> => new Promise((resolve, reject) => {
       requests.push({ repositoryId, signal, resolve });
       signal.addEventListener('abort', () => {
         const error = new Error('superseded');
@@ -663,7 +663,7 @@ describe('operator collaboration read', () => {
         initialLocale="en"
         fetchCollaboration={async (_repositoryId, nextSignal) => {
           observed.signal = nextSignal;
-          return new Promise<OperatorCollaborationSnapshotV2>(() => {});
+          return new Promise<OperatorCollaborationSnapshotV3>(() => {});
         }}
       />,
     );
@@ -681,7 +681,7 @@ describe('operator collaboration read', () => {
 
   test('refresh supersedes a collaboration generation without showing an abort failure', async () => {
     const signals: AbortSignal[] = [];
-    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV2> => {
+    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV3> => {
       signals.push(signal);
       return new Promise((resolve, reject) => {
         signal.addEventListener('abort', () => {
@@ -842,7 +842,7 @@ describe('Organization observation boundary', () => {
   test('refuses old transport and cross-source identity without hiding an explicitly unavailable exchange', async () => {
     const board = organizationBoardFixture();
     const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
-    const payload: OperatorCollaborationSnapshotV2 = { ...collaborationSnapshot, repository_id: view.repository_id,
+    const payload: OperatorCollaborationSnapshotV3 = { ...collaborationSnapshot, repository_id: view.repository_id,
       exchange: { status: 'unavailable', observed_at: view.observed_at, code: 'source_unavailable' },
       organization: { status: 'observed', observed_at: view.observed_at, snapshot: view } };
     expect(decodeOperatorCollaborationSnapshot(payload)).toEqual(payload);
@@ -857,5 +857,76 @@ describe('Organization observation boundary', () => {
     const stale = renderToStaticMarkup(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId="repo_1111111111111111" t={key => translate('en',key)} />);
     expect(stale).not.toContain('engineer:capability.runtime-harness.collaboration');
     expect(stale).toContain('Reading the selected repository');
+  });
+});
+
+import { decisionInventoryFixture } from '../../src/operator-web/fixture';
+import { DecisionSummary } from '../../src/operator-web/OrganizationSummary';
+
+function decisionEnvelope(repositoryId: string, after: string | null = null): OperatorCollaborationSnapshotV3 {
+  const page = decisionInventoryFixture(repositoryId);
+  const question = after === null ? 'First original question <img src=x onerror=alert(1)>' : 'Second original question';
+  return { ...collaborationObservationFixture({ ...exchangeFixture, repository_id: repositoryId }), decision_after: after,
+    decisions: { status: 'observed', observed_at: '2026-09-22T00:00:00Z', snapshot: {
+      ...page, query: { after, limit: 1 }, entries: [{ ...page.entries[0]!, question }],
+      coverage: { ...page.coverage, complete: after !== null, reason: after === null ? 'output_limit' : 'complete', next_after: after === null ? 'a'.repeat(64) : null },
+    } } };
+}
+
+describe('formal Human Decision observation UI', () => {
+  test('renders plain text and partial coverage without an approval write or a fabricated global count', () => {
+    const envelope = decisionEnvelope('repo-harness');
+    const markup = renderToStaticMarkup(<DecisionSummary state={{ kind: 'ready', snapshot: envelope }} repositoryId="repo-harness" after={null} onPage={() => {}} t={key => translate('en', key)} />);
+    expect(markup).toContain('&lt;img'); expect(markup).not.toContain('<img');
+    expect(markup).toContain('not a repository-wide pending count');
+    expect(markup).toContain('Decision owner: Human'); expect(markup).toContain('Next Decision page');
+    expect(markup).not.toContain('>Approve<');
+    const stale = renderToStaticMarkup(<DecisionSummary state={{ kind: 'ready', snapshot: envelope }} repositoryId="repo-harness" after={'a'.repeat(64)} onPage={() => {}} t={key => translate('zh', key)} />);
+    expect(stale).not.toContain('First original question'); expect(stale).toContain('正在读取');
+  });
+
+  test('replaces pages, keeps task selection scope, and cancels late pages on refresh or repository change', async () => {
+    const pending: Array<{ repositoryId: string; after: string | null; signal: AbortSignal; resolve: (snapshot: OperatorCollaborationSnapshotV3) => void }> = [];
+    let writes = 0;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+      sendMessage={async () => { writes++; }}
+      fetchCollaboration={(repositoryId, signal, after) => new Promise(resolve => pending.push({repositoryId, after, signal, resolve}))} />);
+    const finish = async (index: number) => act(async () => { const request = pending[index]!; request.resolve(decisionEnvelope(request.repositoryId, request.after)); });
+    const text = () => document.querySelector('.decision-summary')!.textContent!;
+    expect(pending.map(p => p.after)).toEqual([null]);
+    await finish(0);
+    expect(text()).toContain('First original question'); expect(document.querySelector('.decision-summary img')).toBeNull();
+    await act(async () => buttonWithText('Next Decision page').click());
+    expect(text()).not.toContain('First original question');
+    await finish(1); expect(text()).toContain('Second original question'); expect(text()).not.toContain('First original question');
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(pending.length).toBe(2);
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close task details"]')!.click());
+    await act(async () => buttonWithText('Back to first page').click()); await finish(2);
+    await act(async () => buttonWithText('Next Decision page').click());
+    await act(async () => buttonWithText('Refresh').click());
+    expect(pending[3]!.signal.aborted).toBe(true); expect(pending[4]!.after).toBeNull();
+    await finish(3); expect(text()).not.toContain('Second original question');
+    await finish(4); expect(text()).toContain('First original question');
+    await act(async () => buttonWithText('Next Decision page').click());
+    await selectRepository('repo-console');
+    expect(pending[5]!.signal.aborted).toBe(true); expect(pending[6]!.after).toBeNull();
+    await finish(5); expect(text()).not.toContain('Second original question');
+    await finish(6); expect(text()).toContain('First original question');
+    expect(writes).toBe(0);
+  });
+
+  test('fetch binds the exact cursor and rejects a stale first-page response', async () => {
+    const originalFetch = globalThis.fetch;
+    const cursor = 'a'.repeat(64);
+    const urls: string[] = [];
+    let payload = decisionEnvelope('repo-harness', cursor);
+    globalThis.fetch = (async (url: unknown) => { urls.push(String(url)); return new Response(JSON.stringify(payload)); }) as typeof fetch;
+    try {
+      await expect(fetchOperatorCollaborationSnapshot('repo-harness', undefined, cursor)).resolves.toEqual(payload);
+      expect(urls).toEqual(['/api/v1/collaboration/repo-harness/snapshot?decision_after=' + cursor]);
+      payload = decisionEnvelope('repo-harness');
+      await expect(fetchOperatorCollaborationSnapshot('repo-harness', undefined, cursor)).rejects.toMatchObject({ code: 'collaboration_repository_mismatch' });
+    } finally { globalThis.fetch = originalFetch; }
   });
 });

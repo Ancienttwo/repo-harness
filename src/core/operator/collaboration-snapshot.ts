@@ -287,15 +287,17 @@ export function projectOperatorWorkExchangeSnapshot(
   });
 }
 
-export const OPERATOR_COLLABORATION_PROTOCOL = 2 as const;
+export const OPERATOR_COLLABORATION_PROTOCOL = 3 as const;
 export const OPERATOR_COLLABORATION_SNAPSHOT_KIND = 'operator_collaboration_snapshot' as const;
 export type OperatorCollaborationSourceObservation<T> =
   | { readonly status: 'observed'; readonly observed_at: string; readonly snapshot: T }
   | { readonly status: 'unavailable'; readonly observed_at: string; readonly code: 'source_unavailable' };
-export interface OperatorCollaborationSnapshotV2 {
+export interface OperatorCollaborationSnapshotV3 {
   readonly protocol: typeof OPERATOR_COLLABORATION_PROTOCOL;
   readonly kind: typeof OPERATOR_COLLABORATION_SNAPSHOT_KIND;
   readonly repository_id: string;
+  readonly decision_after: string | null;
+  readonly decisions: OperatorCollaborationSourceObservation<import('./decision-inventory').OperatorDecisionInventory>;
   readonly exchange: OperatorCollaborationSourceObservation<OperatorWorkExchangeSnapshot>;
   readonly organization: OperatorCollaborationSourceObservation<import('./organization-snapshot').OperatorOrganizationSnapshot>;
 }

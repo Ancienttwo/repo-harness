@@ -7,7 +7,7 @@ import { createConnection } from 'node:net';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
-import type { OperatorCollaborationSnapshotV2 } from '../../src/core/operator/collaboration-snapshot';
+import type { OperatorCollaborationSnapshotV3 } from '../../src/core/operator/collaboration-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { OperatorCollaborationError, readOperatorCollaborationSnapshot } from '../../src/effects/operator/collaboration';
 import {
@@ -25,8 +25,9 @@ import {
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
 
-function unavailableCollaboration(repositoryId: string): OperatorCollaborationSnapshotV2 {
-  return { protocol: 2, kind: 'operator_collaboration_snapshot', repository_id: repositoryId,
+function unavailableCollaboration(repositoryId: string): OperatorCollaborationSnapshotV3 {
+  return { protocol: 3, kind: 'operator_collaboration_snapshot', decision_after: null,
+    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: repositoryId,
     exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
 }
@@ -655,7 +656,7 @@ describe('operator serve command and HTTP boundary', () => {
     let calls = 0;
     let aborts = 0;
     let healthy = false;
-    let resolveFirst!: (snapshot: OperatorCollaborationSnapshotV2) => void;
+    let resolveFirst!: (snapshot: OperatorCollaborationSnapshotV3) => void;
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
@@ -665,7 +666,7 @@ describe('operator serve command and HTTP boundary', () => {
         calls += 1;
         if (healthy) return Promise.resolve(unavailableCollaboration('repo-write'));
         signal.addEventListener('abort', () => { aborts += 1; }, { once: true });
-        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorCollaborationSnapshotV2) => void; });
+        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorCollaborationSnapshotV3) => void; });
       },
     });
     const firstController = new AbortController();
@@ -697,7 +698,7 @@ describe('operator serve command and HTTP boundary', () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-queue-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     const started: string[] = [];
-    const resolvers = new Map<string, (snapshot: OperatorCollaborationSnapshotV2) => void>();
+    const resolvers = new Map<string, (snapshot: OperatorCollaborationSnapshotV3) => void>();
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
@@ -705,7 +706,7 @@ describe('operator serve command and HTTP boundary', () => {
       collect_fleet_board: async () => snapshot(),
       read_collaboration_snapshot: ({ repository_id }) => new Promise((resolve) => {
         started.push(repository_id);
-        resolvers.set(repository_id, resolve as (snapshot: OperatorCollaborationSnapshotV2) => void);
+        resolvers.set(repository_id, resolve as (snapshot: OperatorCollaborationSnapshotV3) => void);
       }),
     });
     const url = (repositoryId: string) => `${server.url}/api/v1/collaboration/${repositoryId}/snapshot`;
@@ -1542,7 +1543,7 @@ test('repository snapshot rejects automation from another repository', async () 
 });
 
 
-describe('collaboration protocol2 source collection', () => {
+describe('collaboration protocol3 source collection', () => {
   test('reads real registered stores without writes and retains organization when WorkExchange is corrupt', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
@@ -1557,9 +1558,10 @@ describe('collaboration protocol2 source collection', () => {
       writeFileSync(policy, JSON.stringify({ collaboration: { mode: 'off' } }));
       const before = tree(repoRoot);
       const observed = readOperatorCollaborationSnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(observed.protocol).toBe(2);
+      expect(observed.protocol).toBe(3);
       expect(observed.exchange.status).toBe('observed');
       expect(observed.organization.status).toBe('observed');
+      expect(observed.decisions).toMatchObject({ status: 'observed', snapshot: { entries: [], coverage: { complete: true } } });
       expect(tree(repoRoot)).toEqual(before);
       writeFileSync(policy, '{invalid-json');
       const corruptBefore = tree(repoRoot);
@@ -1568,9 +1570,55 @@ describe('collaboration protocol2 source collection', () => {
       expect(partial.organization.status).toBe('observed');
       expect(tree(repoRoot)).toEqual(corruptBefore);
       expect(JSON.stringify(partial)).not.toContain(repoRoot);
+      writeFileSync(policy, JSON.stringify({ collaboration: { mode: 'off' } }));
+      const decisionsRoot = join(repoRoot, '.git/repo-harness/verified-context/v1/decisions');
+      mkdirSync(decisionsRoot, { recursive: true });
+      writeFileSync(join(decisionsRoot, 'invalid-entry'), 'corrupt');
+      const brokenBefore = tree(repoRoot);
+      const broken = readOperatorCollaborationSnapshot({ env: registry.env, repository_id: registry.ids[0]! });
+      expect(broken.decisions.status).toBe('unavailable');
+      expect(broken.organization.status).toBe('observed');
+      expect(broken.exchange.status).toBe('observed');
+      expect(tree(repoRoot)).toEqual(brokenBefore);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
     }
   });
+});
+
+test('Decision cursors are bounded, bind responses and partition single-flight within the shared worker budget', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'operator-decision-query-'));
+  const calls: Array<string | null> = [];
+  const resolvers: Array<(value: OperatorCollaborationSnapshotV3) => void> = [];
+  const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 1,
+    read_collaboration_snapshot: input => { calls.push(input.decision_after ?? null); return new Promise(resolve => resolvers.push(resolve)); },
+  });
+  const url = server.url + '/api/v1/collaboration/repo-a/snapshot';
+  const cursor = 'a'.repeat(64);
+  try {
+    for (const query of ['?decision_after=', '?decision_after=../secret', '?path=private', `?decision_after=${cursor}&decision_after=${cursor}`]) {
+      expect((await fetch(url + query)).status).toBe(400);
+    }
+    expect(calls).toEqual([]);
+    const first = fetch(url);
+    await waitFor(() => calls.length === 1, 'first Decision page not started');
+    const second = fetch(url + '?decision_after=' + cursor);
+    const samePage = fetch(url + '?decision_after=' + cursor);
+    await Bun.sleep(30);
+    expect(calls).toEqual([null]);
+    resolvers[0]!(unavailableCollaboration('repo-a'));
+    expect((await first).status).toBe(200);
+    await waitFor(() => calls.length === 2, 'next Decision page not started');
+    expect(calls).toEqual([null, cursor]);
+    resolvers[1]!({ ...unavailableCollaboration('repo-a'), decision_after: cursor });
+    expect((await second).status).toBe(200); expect((await samePage).status).toBe(200);
+    expect(calls.length).toBe(2);
+    const mismatch = fetch(url + '?decision_after=' + cursor);
+    await waitFor(() => calls.length === 3, 'mismatch probe not started');
+    resolvers[2]!(unavailableCollaboration('repo-a'));
+    const refused = await mismatch;
+    expect(refused.status).toBe(500);
+    expect(await refused.json()).toMatchObject({ error: { code: 'collaboration_repository_mismatch' } });
+  } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });

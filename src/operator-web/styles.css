@@ -410,3 +410,7 @@ code, .mono-value { font-family: var(--font-mono); }
 .organization-summary dd { margin: 0; }
 .organization-summary dt { color: var(--text-muted); }
 .organization-engineers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+
+.decision-pagination { display: flex; flex-wrap: wrap; gap: 12px; }
+.decision-pagination button { min-height: 44px; }
+.decision-summary h3 { white-space: pre-wrap; overflow-wrap: anywhere; }

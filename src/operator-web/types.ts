@@ -1,3 +1,4 @@
+import { decodeOperatorDecisionInventory, isDecisionCursor } from '../core/operator/decision-inventory';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
 import type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
 export type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
@@ -12,7 +13,7 @@ export type {
   OperatorCollaborationOpportunityV1,
   OperatorCollaborationParticipantV1,
   OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV2,
+  OperatorCollaborationSnapshotV3,
   OperatorCollaborationSource,
   OperatorCollaborationThreadV1,
 } from '../core/operator/collaboration-snapshot';
@@ -33,7 +34,7 @@ import type {
   OperatorCollaborationOpportunityV1,
   OperatorCollaborationParticipantV1,
   OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV2,
+  OperatorCollaborationSnapshotV3,
   OperatorCollaborationSource,
   OperatorCollaborationThreadV1,
 } from '../core/operator/collaboration-snapshot';
@@ -59,7 +60,7 @@ export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'
  * same reason and typed against the core literal, so a bump that forgets the
  * browser fails typecheck.
  */
-export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV2['protocol'] = 2;
+export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV3['protocol'] = 3;
 
 export interface OperatorApiErrorV1 {
   readonly code: string;
@@ -742,12 +743,14 @@ export function decodeOperatorWorkExchangeSnapshot(value: unknown): OperatorWork
   }
 }
 
-export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV2 {
+export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV3 {
   try {
     const v = requireRecord(value);
-    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'exchange', 'organization']);
+    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'decision_after', 'decisions', 'exchange', 'organization']);
     if (v.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL || v.kind !== 'operator_collaboration_snapshot') throw new OperatorPayloadError();
     const repositoryId = requireString(v.repository_id);
+    if (!isDecisionCursor(v.decision_after)) throw new OperatorPayloadError();
+    const decisionAfter = v.decision_after;
     const source = <T,>(value: unknown, decode: (snapshot: unknown) => T): import('../core/operator/collaboration-snapshot').OperatorCollaborationSourceObservation<T> => {
       const s = requireRecord(value);
       const observed_at = requireInstant(s.observed_at);
@@ -768,6 +771,8 @@ export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCol
         return exchange;
       }),
       organization: source(v.organization, raw => decodeOperatorOrganizationSnapshot(raw, repositoryId)),
+      decision_after: decisionAfter,
+      decisions: source(v.decisions, raw => decodeOperatorDecisionInventory(raw, repositoryId, decisionAfter)),
     };
   } catch { throw new OperatorCollaborationPayloadError(); }
 }
