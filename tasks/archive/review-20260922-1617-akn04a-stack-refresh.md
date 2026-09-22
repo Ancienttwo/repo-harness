@@ -55,9 +55,9 @@ The Windows8.3 fixture correction is integrated from9bf22e82 (source111a8a27). I
 
 ## PR base verification binding
 
-This separate binding covers the complete #438 diff against corrected #437 head9bf22e82.
+This separate binding covers the complete #438 diff against accepted and archived #437 head3e725850.
 
-> **Substantive Change SHA256**: `sha256:43236c2bd589338423b6d09df40f84ab7a6e85164b327ce1f0247b17e62f1bf5`
+> **Substantive Change SHA256**: `sha256:32555776b417c62d32a216bb389e589846eb7d00608ff3dc1ec2b62a30e85a02`
 
 ## Frozen owner acceptance candidate
 
