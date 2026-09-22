@@ -11,7 +11,7 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Substantive Change SHA256**: `sha256:666e3c928d10cdb2865b481cc584621fdbd306a5572f30c92a926f312c04fa05`
+> **Substantive Change SHA256**: `sha256:a2a67035038f1fd1cdd823e41ee3a7d76dfac58bf0f6f79218ed4947cbda65b5`
 
 ## Human Review Card
 
@@ -38,3 +38,13 @@ Canonical verification passed 29/30 criteria; installed-consumer exited 141 (exe
 The unchanged installed-package smoke passed under a complete shell trace; canonical retry then passed30/30 at source0333e61a, snapshot `.ai/harness/runs/run-20260922T154324-87119-20260922-1425-akn04a-stack-refresh.json`. No production or test correction was needed for the exit141 run.
 
 The plugin was invoked with the wrong acceptance base:4e5556d6. Its 11-path subject0a9bbb85 covers only upstream integration. The policy requires origin/main@0d4371c3 and the40-path subject `sha256:fa34b2061c967094adee21316d2283743208779af088a68bf4568e0a3bf37d4b`, including existing placement source. The narrow approve transcript above is advisory and cannot authorize an external_pass receipt for the canonical candidate. The package has consumed its one review; owner acceptance must be bound to the final canonical subject after the upstream Windows failure is resolved. No receipt was synthesized.
+
+## Final Windows integration candidate
+
+The Windows8.3 fixture correction is integrated from9bf22e82 (source111a8a27). Its Windows, macOS and Ubuntu MCP jobs passed. Merge conflicts were limited to generated manifest and ledger Updated metadata; placement production source is unchanged. Rebuilt the manifest through the configured provider. No second independent review is requested for this package; the earlier narrow-scope review remains advisory. Final full-policy canonical subject and owner acceptance follow after verification.
+
+## PR base verification binding
+
+This separate binding covers the complete #438 diff against corrected #437 head9bf22e82.
+
+> **Substantive Change SHA256**: `sha256:43236c2bd589338423b6d09df40f84ab7a6e85164b327ce1f0247b17e62f1bf5`
