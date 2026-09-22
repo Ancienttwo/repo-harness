@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 14:03
+> **Related Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1403
+> **Archive Projection V1**: `plans/plan-20260922-0204-akn03-protected-replies.md` => `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md` => `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0204-akn03-protected-replies.contract.md` => `tasks/archive/contract-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md` => `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+
 # Task Review: AKN-03b protected Task reply persistence and Engineer MCP
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0204-akn03-protected-replies.md
-> **Contract**: tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
-> **Notes File**: tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+> **Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Contract**: tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+> **Notes File**: tasks/archive/notes-20260922-1403-akn03-protected-replies.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Recommendation**: pass
 > **Review Rubric Version**: 2

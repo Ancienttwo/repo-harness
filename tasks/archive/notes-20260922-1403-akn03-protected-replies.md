@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 14:03
+> **Related Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1403
+> **Archive Projection V1**: `plans/plan-20260922-0204-akn03-protected-replies.md` => `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md` => `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0204-akn03-protected-replies.contract.md` => `tasks/archive/contract-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md` => `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+
 # Implementation Notes: akn03-protected-replies
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-0204-akn03-protected-replies.md
-> **Contract**: tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
-> **Review**: tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+> **Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Contract**: tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+> **Review**: tasks/archive/review-20260922-1403-akn03-protected-replies.md
 > **Last Updated**: 2026-09-22 02:04
 > **Lifecycle**: notes
 
