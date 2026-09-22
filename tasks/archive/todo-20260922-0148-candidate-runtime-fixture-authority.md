@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-22 01:48
+> **Related Plan**: plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260922-0148
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: 2026-09-22 14:52
+> **Updated**: (archive-workflow)
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
