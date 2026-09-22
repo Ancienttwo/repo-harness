@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 16:17
+> **Related Plan**: plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1617
+> **Archive Projection V1**: `plans/plan-20260922-1425-akn04a-stack-refresh.md` => `plans/archive/plan-20260922-1425-akn04a-stack-refresh.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md` => `tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1425-akn04a-stack-refresh.contract.md` => `tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md` => `tasks/archive/review-20260922-1617-akn04a-stack-refresh.md`
+
 # Task Contract: akn04a-stack-refresh
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-1425-akn04a-stack-refresh.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 14:25
-> **Review File**: `tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md`
-> **Notes File**: `tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1617-akn04a-stack-refresh.md`
+> **Notes File**: `tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-1425-akn04a-stack-refresh.md`
+- Source plan: `plans/archive/plan-20260922-1425-akn04a-stack-refresh.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md`
-- Notes file: `tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md`
+- Review file: `tasks/archive/review-20260922-1617-akn04a-stack-refresh.md`
+- Notes file: `tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -87,10 +97,10 @@ allowed_paths:
   - tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md
   - tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md
   - tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
-  - plans/plan-20260922-1425-akn04a-stack-refresh.md
-  - tasks/contracts/20260922-1425-akn04a-stack-refresh.contract.md
-  - tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md
-  - tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md
+  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+  - tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/review-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md
   - tasks/todos.md
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
   - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
