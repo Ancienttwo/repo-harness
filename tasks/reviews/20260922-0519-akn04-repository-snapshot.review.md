@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260922-0519-akn04-repository-snapshot.md
 > **Contract**: tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md
 > **Notes File**: tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md
-> **Substantive Change SHA256**: `sha256:0e04d8034b9d7531fe3fbee248019bf73001083bbf66686e0e83a9aaca7bc146`
+> **Substantive Change SHA256**: `sha256:aa2b8b7fff37627f3df6883d0fff094c35b593f5484f080e0b9c67d34097ee3f`
 
 ## Development Verification
 
@@ -23,3 +23,13 @@ The owner approved this worktree local index on 2026-09-22. CodeGraph initializa
 ## Canonical verification after index approval
 
 Canonical prepare-acceptance passed 20/20 criteria with zero failures, covering 16 execution checks at `d48fc95181e3e00a2e521a9ae494ccd8f8eba23f`. Subject: `sha256:96b9a2ea2dae1e5f0a7e7c356cd6fbfec2ac121a229d0ca7419ba64ad43873f5`. Evidence: `.ai/harness/runs/run-20260922T142213-88740-20260922-0519-akn04-repository-snapshot.json` and `.ai/harness/checks/latest.json`. The current deterministic architecture check passed. This is local machine verification; semantic acceptance, hosted CI and installed/native journey claims remain separate.
+
+## Accepted upstream integration
+
+Contexte7eb8073 and activity26778190 are accepted and integrated with upstream protected communication source and workflow archives. Source merged without textual conflicts; only generated architecture provenance and the deferred-ledger timestamp conflicted. The provider regenerated proof with no human actions or refresh signals. Canonical verification now includes the existing context/activity real-worker suites because shared server shutdown is an integration boundary. Freeze before the single policy-origin/main review.
+
+## PR base verification binding
+
+Repository-snapshot-only diff against accepted contexte7eb8073.
+
+> **Substantive Change SHA256**: `sha256:826cf183dcfdb322f58d5361935314e9beab1a31649d8d82887e5caf7b712996`

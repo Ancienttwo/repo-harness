@@ -258,6 +258,32 @@ exit_criteria:
       }
     },
     {
+      "id": "activity-integration",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-activity.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Shared server shutdown and task-reader lifecycle must preserve both existing real HTTP worker boundaries after scoped Fleet integration",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "context-integration",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-context.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Shared server shutdown and task-reader lifecycle must preserve both existing real HTTP worker boundaries after scoped Fleet integration",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
       "id": "browser",
       "kind": "package_test",
       "path": "tests/unit/operator-web-types.test.ts",
