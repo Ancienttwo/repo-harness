@@ -59,3 +59,9 @@ P1: #443 is owner-accepted and archived at `1c99e618`, incorporating accepted #4
 Full CI35765127664 on `2948a041` covers the identical source, tests and CI configuration, including the actual Windows matrix (210 pass,6 existing skips,0 fail). Canonical verification is refreshed for this contract; no full hosted suite is repeated for workflow-only integration. The original P1 review remains consumed and its correction retains real blocked-Git proof. The user's updated whole-program authorization permits autonomous staged execution and acceptance; record the policy-allowed delegated owner disposition truthfully after current verification, never an invented external review.
 
 > **Substantive Change SHA256**: `sha256:a36e8c77cbda9ee354a0c509ce73e76dd0b430d2f40f2f6a4f6d0029c3651e39`
+
+## PR governance diff binding
+
+Hosted run35771207086 rejected the workflow binding because PR442 uses context e7eb8073 while canonical verification uses source base9227c93c. The local task-sync command with e7eb8073 reproduced the identical missing digest. The following additional binding covers the actual PR range without changing accepted source, contract authority or canonical evidence. The original failed CI remains failure; its Draft functional jobs were skipped.
+
+> **Substantive Change SHA256**: `sha256:019a490f42e680d450c8aad572fb600a079e1072319db16d6a27687c5693fc41`
