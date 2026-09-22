@@ -1,16 +1,16 @@
 # Task Review: akn03b-windows-fixture
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-1417-akn03b-windows-fixture.md
 > **Contract**: tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md
 > **Notes File**: tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 14:17
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:25dc1cd91acb024a7824139f30a43cebf2cbd230480c655db8433d2bac545fe6
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 > **Substantive Change SHA256**: `sha256:eb40de57270da0207fcc532908417567720dfef93fe7897ba9f82d864690dcd1`
 
 ## Human Review Card
@@ -67,3 +67,19 @@ Accepted fixture commit 8c7fd593 is now an ancestor of this candidate through th
 - Installed-package check: execution `vx-c872ed06cf9e4e8d9d80`, exit 0, 23.9 seconds; includes successful mapped status plus authorization/context/session checks.
 - External review request was rejected before provider invocation with `review_budget_exhausted`: this work-package already consumed its one semantic review and requires owner acceptance after repairs. No third provider attempt or substitute acceptance was used.
 - Earlier `reject` remains historical; current corrected subject is pending owner acceptance. No main merge, real Host grant, Campaign, or global runtime installation.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:25dc1cd91acb024a7824139f30a43cebf2cbd230480c655db8433d2bac545fe6
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:61d1750ee93c2bc7c10b47e1592f5ae48b2602f7160fcaeadf4fae7ad45460c4
+> **Issued At**: 2026-09-22T07:31:53.293Z
+
+- Summary: Owner explicitly approved the corrected PR #437 candidate subject sha256:25dc1cd91acb024a7824139f30a43cebf2cbd230480c655db8433d2bac545fe6 after 30/30 canonical criteria and the one-review budget rejection. Accept the expiry publication fence, encoded 64 KiB total-record contract, Windows fixture and installed-package evidence; permit PR update and downstream integration. Main merge, global install, native Host admission, Campaign and real canary remain outside this approval.
+- Findings: none
+
