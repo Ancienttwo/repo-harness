@@ -27,6 +27,8 @@
 |--------|----------|--------|
 | ... | ... | ... |
 
+- Native CI runs on the Draft candidate before consuming semantic review; platform corrections must land before that single review. The first canonical preparation refused missing CodeGraph proof before executing contract checks, so its failure is retained rather than counted as verification.
+
 ## Open Questions
 
 - None.
