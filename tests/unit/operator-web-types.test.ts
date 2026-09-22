@@ -522,3 +522,26 @@ test('Fleet protocol7 requires a valid service epoch and rejects protocol6', () 
   }
   expect(decodeOperatorFleetSnapshot(payload).service_epoch).toBe('00000000-0000-4000-8000-000000000001');
 });
+
+test('Task URL selectors reject ambiguity, source paths and revisions without explicit history mode',async()=>{
+  const {parseTaskLocation,taskLocationSearch}=await import('../../src/operator-web/task-location');
+  const id='a'.repeat(64),revision='b'.repeat(64);
+  const selected=parseTaskLocation(`?repository=repo-1&task=${id}&view=history&task_revision=${revision}`);
+  expect(selected).toMatchObject({invalid:false,repositoryId:'repo-1',selection:{taskId:id,revision,historical:true}});
+  expect(parseTaskLocation(taskLocationSearch(selected.repositoryId,selected.selection))).toEqual(selected);
+  for(const query of [`?repository=repo-1&task=${id}&task=${id}`,`?repository=repo-1&task=${id}&ref=HEAD`,`?repository=repo-1&task=${id}&task_revision=${revision}`,'?task='+id,'?repository=../private','?repository=repo-1&task=old-title'])expect(parseTaskLocation(query).invalid).toBe(true);
+  expect(parseTaskLocation('?repository=missing-repo')).toEqual({repositoryId:'missing-repo',selection:null,invalid:false});
+});
+
+test('history transport uses only the explicit context mode, uncached signal and named refusal',async()=>{
+  const {fetchTaskHistory}=await import('../../src/operator-web/task-history');
+  const original=globalThis.fetch,controller=new AbortController();
+  try {
+    globalThis.fetch=(async(input,init)=>{
+      expect(String(input)).toBe('/api/v1/fleet/tasks/repo-1/'+ 'a'.repeat(64)+'/context?view=history');
+      expect(init?.signal).toBe(controller.signal);expect(init?.cache).toBe('no-store');
+      return Response.json({code:'history_unavailable'},{status:404});
+    }) as typeof fetch;
+    await expect(fetchTaskHistory({repository_id:'repo-1',task_id:'a'.repeat(64),expected_task_revision:null},controller.signal)).rejects.toThrow('history_unavailable');
+  } finally {globalThis.fetch=original;}
+});

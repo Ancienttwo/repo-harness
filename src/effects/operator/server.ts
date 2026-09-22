@@ -1,3 +1,4 @@
+import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
 import { isDecisionCursor } from '../../core/operator/decision-inventory';
 import { readOperatorAutomationSummary, type AutomationSummaryReadInput } from './automation-summary';
 import { decodeOperatorAutomationSummary, type OperatorAutomationSummary } from '../../core/operator/automation-summary';
@@ -147,6 +148,7 @@ export type OperatorCollaborationSnapshotReaderInput = ReadOperatorCollaboration
 
 export interface OperatorServerOptions {
   readonly read_automation_summary?: (input: AutomationSummaryReadInput & { readonly signal: AbortSignal }) => OperatorAutomationSummary | Promise<OperatorAutomationSummary>;
+  readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
   readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
   readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
@@ -2087,6 +2089,14 @@ export async function startOperatorServer(
 
     const contextRoute = OPERATOR_TASK_CONTEXT_ROUTE.exec(pathname);
     if (contextRoute !== null) {
+      if (url.searchParams.get('view') === 'history') {
+        let input: OperatorTaskHistoryRequest;
+        try { input = parseTaskHistoryRequest(contextRoute[1]!, contextRoute[2]!, url.searchParams); }
+        catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid history selector.'),headOnly); return; }
+        handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskHistory,TASK_HISTORY_FAILURES,
+          new URL('./task-history-worker.ts',import.meta.url),options.read_task_history);
+        return;
+      }
       let input: OperatorTaskContextRequest;
       try { input = parseTaskContextRequest(contextRoute[1]!, contextRoute[2]!, url.searchParams); }
       catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid context selector.'),headOnly); return; }

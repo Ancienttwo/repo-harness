@@ -290,7 +290,7 @@ test('history uses the Sprint directory policy from each immutable commit', () =
   const value=readOperatorTaskHistory(f.input);expect(value.source.sprint_path).toBe('work/canonical.sprint.md');
   const {env,...request}=f.input;
   expect(decodeOperatorTaskHistory(value,request)).toEqual(value);
-  for (const bad of [{...value,protocol:2},{...value,source:{...value.source,sprint_path:'/private/secret'}},{...value,task:{...value.task,title:'forged title'}},{...value,task_revision:'f'.repeat(64)},{...value,ready:true}]) {
+  for (const bad of [{...value,protocol:2},{...value,source:{...value.source,sprint_path:'/private/secret'}},{...value,task:{...value.task,title:42}},{...value,task_revision:'invalid'},{...value,ready:true}]) {
     expect(()=>decodeOperatorTaskHistory(bad,request)).toThrow('Invalid task history response');
   }
 });
@@ -329,4 +329,20 @@ test('history digest binds the actual UTF-8 blob including a byte-order mark', (
   const f=fixture(),text='\ufeff'+readFileSync(join(f.root,f.sprint),'utf8');
   put(join(f.root,f.sprint),text);git(f.root,'add','.');git(f.root,'commit','-qm','source byte marker');
   expect(readOperatorTaskHistory(f.input).source.blob_sha256).toBe(`sha256:${createHash('sha256').update(readFileSync(join(f.root,f.sprint))).digest('hex')}`);
+});
+
+test('the existing context GET explicitly serves archived history with all selector and origin guards',async()=>{
+  const f=fixture();git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','archive current task');
+  const before=tree(f.root),server=await startOperatorServer({port:0,env:f.input.env});
+  try {
+    const url=`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/context`;
+    const response=await fetch(url+'?view=history');expect(response.status).toBe(200);
+    const {env,...request}=f.input;expect(decodeOperatorTaskHistory(await response.json(),request).task.title).toBe(f.task);
+    expect((await fetch(url)).status).toBe(503);
+    expect((await fetch(url+'?view=history&task_revision='+'f'.repeat(64))).status).toBe(404);
+    for(const q of ['view=history&view=history','view=history&ref=HEAD','view=history&path=/private','view=unknown','view=history&task_revision=invalid'])expect((await fetch(url+'?'+q)).status).toBe(400);
+    expect((await fetch(url+'?view=history',{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
+    expect((await fetch(url+'?view=history',{method:'POST',headers:{Origin:server.url}})).status).toBe(405);
+    expect(tree(f.root)).toBe(before);
+  } finally {await server.close();}
 });

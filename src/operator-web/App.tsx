@@ -1,3 +1,5 @@
+import { TaskHistory, type TaskHistoryReader } from './TaskHistory';
+import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
 import { useObservationRefresh } from './useObservationRefresh';
 import { PlanningView } from './PlanningView';
 import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
@@ -57,6 +59,7 @@ export interface OperatorAppProps {
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
   readonly fetchRepositoryObservation?: RepositoryObservationReader;
+  readonly readTaskHistory?: TaskHistoryReader;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
 }
@@ -2089,10 +2092,7 @@ function FatalState({ error, onRetry, t }: { readonly error: OperatorApiErrorV1;
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
 
-interface Selection {
-  readonly key: string;
-  readonly revision: string;
-}
+type Selection = NonNullable<TaskLocation['selection']>;
 
 export function OperatorApp({
   initialState,
@@ -2105,15 +2105,18 @@ export function OperatorApp({
   fetchRepositoryObservation,
   readTaskContext,
   readTaskActivity,
+  readTaskHistory,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
+  const [location, setLocation] = useState(() => parseTaskLocation(typeof window === 'undefined' ? '' : window.location.search));
   const [repositoryId, setRepositoryId] = useState<string | null>(() => {
+    if (location.repositoryId !== null) return location.repositoryId;
     if (typeof window === 'undefined') return null;
     try { return localStorage.getItem(OPERATOR_REPOSITORY_STORAGE_KEY); } catch { return null; }
   });
   const [view, setView] = useState<ObservationView>('organization');
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(location.selection);
   const [collaboration, setCollaboration] = useState<CollaborationViewState>(
     initialCollaboration ?? { kind: 'idle' },
   );
@@ -2130,10 +2133,26 @@ export function OperatorApp({
     setRepositoryId(activeRepository.repository_id);
     try { localStorage.setItem(OPERATOR_REPOSITORY_STORAGE_KEY, activeRepository.repository_id); } catch { /* Browser storage is optional UI preference. */ }
   }, [activeRepository]);
+  useEffect(() => {
+    const restore = () => {
+      const next = parseTaskLocation(window.location.search);
+      setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
+      setCollaboration({kind:'idle'}); setDecisionPage(null);
+    };
+    window.addEventListener('popstate',restore);
+    return () => window.removeEventListener('popstate',restore);
+  }, []);
+  const navigate = (id: string | null, next: Selection | null) => {
+    const search=taskLocationSearch(id,next);
+    window.history.pushState(null,'',window.location.pathname+search);
+    setLocation({repositoryId:id,selection:next,invalid:false});
+    setSelection(next);
+  };
+  const closeSelection = () => navigate(activeRepositoryId || null,null);
   const switchRepository = (id: string) => {
     if (id !== activeRepository?.repository_id) { setCollaboration({ kind: 'idle' }); setDecisionPage(null); }
     setRepositoryId(id);
-    setSelection(null);
+    navigate(id,null);
   };
   const busy = state.kind === 'loading';
   const stateKind = state.kind;
@@ -2151,7 +2170,6 @@ export function OperatorApp({
         setCollaboration({ kind: 'idle' });
         setCollaborationRefreshGeneration(current => current + 1);
       }
-      setSelection(current => current === null || allCards(nextSnapshot).some(card => taskKey(card) === current.key) ? current : null);
       const nextState = stateFromSnapshot(nextSnapshot);
       stateRef.current = nextState; setState(nextState);
       return true;
@@ -2175,7 +2193,7 @@ export function OperatorApp({
     requestFleet();
   };
 
-  const selectedCard = selection && snapshot
+  const selectedCard = selection && !selection.historical && snapshot
     ? activeRepository?.cards.find((card) => taskKey(card) === selection.key) ?? null
     : null;
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
@@ -2218,7 +2236,7 @@ export function OperatorApp({
     || (selectedRepository !== null && (
       selectedRepository.status !== 'ok' || selectedRepository.snapshot_consistency !== 'stable'
     ));
-  const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
+  const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id,{ key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
 
   return (
     <div
@@ -2240,6 +2258,11 @@ export function OperatorApp({
       />
       <div className="operator-main">
         <main className="operator-content">
+          {location.invalid && <p role="alert">{t('history.invalidLink')}</p>}
+          {selection && (selection.historical || (snapshot !== null && !selectedCard)) && <TaskHistory
+            repositoryId={activeRepositoryId} taskId={selection.taskId} revision={selection.revision}
+            generation={collaborationRefreshGeneration} read={readTaskHistory} onClose={closeSelection} t={t} />}
+
           {activeRepository && <ObservationTabs view={view} onChange={setView} t={t} />}
           <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={activeRepository !== null && view !== 'organization'}>
           {activeRepository && <AutomationSummary
@@ -2295,7 +2318,7 @@ export function OperatorApp({
             evidenceGeneration={collaborationRefreshGeneration}
             readTaskContext={readTaskContext}
             readTaskActivity={readTaskActivity}
-            onClose={() => setSelection(null)}
+            onClose={closeSelection}
             onRefresh={() => void refresh()}
             onSent={() => void refresh()}
             sendMessage={sendMessage}

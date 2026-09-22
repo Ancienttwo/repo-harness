@@ -1731,3 +1731,20 @@ test('Decision cursors are bounded, bind responses and partition single-flight w
     expect(await refused.json()).toMatchObject({ error: { code: 'collaboration_repository_mismatch' } });
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+test('history context inherits pre-reader guards and holds shared capacity until retirement',async()=>{
+  let started!:()=>void,retire!:()=>void;const entered=new Promise<void>(resolve=>{started=resolve;});let signal:AbortSignal|undefined,calls=0;
+  const server=await startOperatorServer({port:0,max_concurrency:1,timeout_ms:1000,
+    read_task_history:input=>{calls++;signal=input.signal;started();return new Promise((_,reject)=>{retire=()=>reject(new Error('retired'));});},
+  });
+  const path='/api/v1/fleet/tasks/repo-a/'+ 'a'.repeat(64)+'/context?view=history';
+  try {
+    expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
+    expect((await fetch(server.url+path+'&path=/private')).status).toBe(400);expect(calls).toBe(0);
+    const pending=fetch(server.url+path);await entered;
+    expect(await(await fetch(server.url+path.replace('?view=history',''))).json()).toEqual({code:'busy'});
+    expect(await(await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBe(true);
+    expect(await(await fetch(server.url+path)).json()).toEqual({code:'busy'});expect(calls).toBe(1);
+    retire();await new Promise(resolve=>setTimeout(resolve,0));
+  } finally {retire?.();await server.close();}
+});

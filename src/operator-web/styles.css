@@ -447,3 +447,6 @@ code, .mono-value { font-family: var(--font-mono); }
 .decision-pagination { display: flex; flex-wrap: wrap; gap: 12px; }
 .decision-pagination button { min-height: 44px; }
 .decision-summary h3 { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.task-history { padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-subtle); background: var(--surface-card); }
+.task-history pre { overflow-wrap: anywhere; white-space: pre-wrap; max-width: 100%; }

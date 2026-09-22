@@ -1,12 +1,10 @@
-import { deriveTaskRevision } from '../state/coordination-identity';
-
 export const TASK_HISTORY_MAX_COMMITS = 64;
 export const TASK_HISTORY_MAX_CARRIERS = 128;
 export const TASK_HISTORY_MAX_BLOBS = 256;
 export const TASK_HISTORY_MAX_BYTES = 2 * 1024 * 1024;
 export const TASK_HISTORY_MAX_BLOB_BYTES = 256 * 1024;
 export const TASK_HISTORY_DEADLINE_MS = 3000;
-export const TASK_HISTORY_FAILURES = ['history_unavailable', 'history_ambiguous', 'unavailable', 'stale', 'too_large', 'timeout'] as const;
+export const TASK_HISTORY_FAILURES = ['history_unavailable', 'history_ambiguous', 'unavailable', 'stale', 'too_large', 'timeout', 'busy'] as const;
 export type TaskHistoryFailure = typeof TASK_HISTORY_FAILURES[number];
 export interface OperatorTaskHistoryRequest {
   readonly repository_id: string;
@@ -47,6 +45,12 @@ export function decodeOperatorTaskHistory(value: unknown, request: OperatorTaskH
     || !Number.isSafeInteger(c.commits_examined) || (c.commits_examined as number) < 1 || (c.commits_examined as number) > TASK_HISTORY_MAX_COMMITS
     || !Number.isSafeInteger(c.blobs_examined) || (c.blobs_examined as number) < 1 || (c.blobs_examined as number) > TASK_HISTORY_MAX_BLOBS
     || !text(value.observed_at,128) || !Number.isFinite(Date.parse(value.observed_at))) return invalid();
-  if (deriveTaskRevision({taskId:request.task_id,taskCell:t.title,modeCell:t.mode,acceptanceCell:t.acceptance}) !== value.task_revision) return invalid();
   return value as unknown as OperatorTaskHistory;
+}
+
+export function parseTaskHistoryRequest(repository_id: string, task_id: string, params: URLSearchParams): OperatorTaskHistoryRequest {
+  if ([...params.keys()].some(k => !['view','task_revision'].includes(k)) || params.getAll('view').length !== 1 || params.get('view') !== 'history' || params.getAll('task_revision').length > 1) throw new Error('Invalid task history selector');
+  const request={repository_id,task_id,expected_task_revision:params.get('task_revision')};
+  if (!isTaskHistoryRequest(request)) throw new Error('Invalid task history selector');
+  return request;
 }
