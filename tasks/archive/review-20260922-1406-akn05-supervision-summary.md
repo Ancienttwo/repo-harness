@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 14:06
+> **Related Plan**: plans/archive/plan-20260922-0600-akn05-supervision-summary.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1406
+> **Archive Projection V1**: `plans/plan-20260922-0600-akn05-supervision-summary.md` => `plans/archive/plan-20260922-0600-akn05-supervision-summary.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0600-akn05-supervision-summary.notes.md` => `tasks/archive/notes-20260922-1406-akn05-supervision-summary.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0600-akn05-supervision-summary.contract.md` => `tasks/archive/contract-20260922-1406-akn05-supervision-summary.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0600-akn05-supervision-summary.review.md` => `tasks/archive/review-20260922-1406-akn05-supervision-summary.md`
+
 # Task Review: AKN-05a repository automation supervision
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0600-akn05-supervision-summary.md
-> **Contract**: tasks/contracts/20260922-0600-akn05-supervision-summary.contract.md
-> **Notes File**: tasks/notes/20260922-0600-akn05-supervision-summary.notes.md
+> **Plan**: plans/archive/plan-20260922-0600-akn05-supervision-summary.md
+> **Contract**: tasks/archive/contract-20260922-1406-akn05-supervision-summary.md
+> **Notes File**: tasks/archive/notes-20260922-1406-akn05-supervision-summary.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Recommendation**: pass
 > **Substantive Change SHA256**: `sha256:b96e1395cb28a4b34ca0a773df7590727794470e199ddbc1904bdef1c82c85cd`
