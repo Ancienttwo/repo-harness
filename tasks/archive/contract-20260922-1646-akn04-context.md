@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 16:46
+> **Related Plan**: plans/archive/plan-20260922-0450-akn04-context.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1646
+> **Archive Projection V1**: `plans/plan-20260922-0450-akn04-context.md` => `plans/archive/plan-20260922-0450-akn04-context.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0450-akn04-context.notes.md` => `tasks/archive/notes-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0450-akn04-context.contract.md` => `tasks/archive/contract-20260922-1646-akn04-context.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0450-akn04-context.review.md` => `tasks/archive/review-20260922-1646-akn04-context.md`
+
 # Task Contract: akn04-context
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0450-akn04-context.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0450-akn04-context.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 04:50
-> **Review File**: `tasks/reviews/20260922-0450-akn04-context.review.md`
-> **Notes File**: `tasks/notes/20260922-0450-akn04-context.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1646-akn04-context.md`
+> **Notes File**: `tasks/archive/notes-20260922-1646-akn04-context.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0450-akn04-context.md`
+- Source plan: `plans/archive/plan-20260922-0450-akn04-context.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0450-akn04-context.review.md`
-- Notes file: `tasks/notes/20260922-0450-akn04-context.notes.md`
+- Review file: `tasks/archive/review-20260922-1646-akn04-context.md`
+- Notes file: `tasks/archive/notes-20260922-1646-akn04-context.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -84,10 +94,10 @@ allowed_paths:
   - tests/unit/fleet-acquire-effect.test.ts
   - docs/researches/20260922-operator-task-context.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0450-akn04-context.md
-  - tasks/contracts/20260922-0450-akn04-context.contract.md
-  - tasks/reviews/20260922-0450-akn04-context.review.md
-  - tasks/notes/20260922-0450-akn04-context.notes.md
+  - plans/archive/plan-20260922-0450-akn04-context.md
+  - tasks/archive/contract-20260922-1646-akn04-context.md
+  - tasks/archive/review-20260922-1646-akn04-context.md
+  - tasks/archive/notes-20260922-1646-akn04-context.md
   - tasks/todos.md
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
   - docs/researches/20260922-operator-task-activity.md
