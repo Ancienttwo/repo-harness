@@ -72,3 +72,7 @@ The orchestrator incorrectly launched the sole independent review before canonic
   "message": "review subject changed while the official Codex plugin was running"
 }
 ```
+
+## Frozen owner acceptance candidate
+
+Subject `sha256:d2b7cca69399f8d2a1a9a666b0bac399d7ce0d8808549178aeb8ff1e134f2997`; canonical22/22 passed. Full GitHub run35702537370 at source111a8a27 completed successfully, including Test, Governance and Windows/macOS/Ubuntu MCP. The local follow-up only records manifest/review metadata and does not claim a new hosted CI run for those metadata commits. The invalidated semantic review is not a pass. Await owner acceptance for this exact corrected subject; main merge and runtime/Host/Campaign/canary remain excluded.
