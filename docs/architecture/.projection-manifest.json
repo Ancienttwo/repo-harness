@@ -1228,8 +1228,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/akn03-protected-replies",
-        "commit": "bd557f812ac448a405f00f581c7650fe804b9c0d",
-        "committedAt": "2026-09-22T06:32:43+08:00"
+        "commit": "1407747ac0246aa621eecf76025ed9ed92f5c4c8",
+        "committedAt": "2026-09-22T14:20:38+08:00"
       }
     },
     {
