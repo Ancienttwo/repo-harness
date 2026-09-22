@@ -4,6 +4,7 @@
 > **Plan**: plans/plan-20260922-1452-akn03a-fixture-integration.md
 > **Task Profile**: code-change
 > **Owner**: ancienttwo
+> **Capability ID**: root
 > **Review File**: `tasks/reviews/20260922-1452-akn03a-fixture-integration.review.md`
 > **Notes File**: `tasks/notes/20260922-1452-akn03a-fixture-integration.notes.md`
 
