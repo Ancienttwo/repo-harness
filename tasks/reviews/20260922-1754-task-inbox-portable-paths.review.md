@@ -1,16 +1,16 @@
 # Task Review: task-inbox-portable-paths
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-1754-task-inbox-portable-paths.md
 > **Contract**: tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md
 > **Notes File**: tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 18:01
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 
 ## Human Review Card
 
@@ -44,17 +44,17 @@ No non-built-in manual check is declared by this contract. Real data migration, 
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:1886c5b95cda21c8319266b9a00b3d9c3086198ef71af9a74bf669b462ab80ab
+> **Issued At**: 2026-09-22T18:52:30.841Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Owner explicitly approved PR443 subject c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770 at883530e6 after27/27 canonical criteria and full CI35765127664 source equivalence. Includes accepted dependency PR444 and corrected migration findings. Authorizes this contract acceptance, archive and downstream PR442/automation-summary integration; excludes main merge, global install, real data migration, Host admission, Campaign and canary.
 - Findings: none
 
 ## Behavior Diff Notes
