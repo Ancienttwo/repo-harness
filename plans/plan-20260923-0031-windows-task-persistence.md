@@ -99,7 +99,7 @@ See captured planning output.
 
 ## Objective and authorization
 
-The owner approved a separate repair of the Windows persistence blockers found in PR443 and then continuation of the whole refactor. Source baseline is49c5f9dcf90b3a0248d4fa78764554673b8db161. Execution is isolated in codex/windows-task-persistence at /Users/ancienttwo/Projects/repo-harness-wt-windows-task-persistence. Existing PR443 and other worktrees remain separate. No main merge, global installation, real data migration, Host admission, Campaign activation or canary.
+The owner approved a separate repair of the Windows persistence blockers found in PR443 and then continuation of the whole refactor. Source baseline is6167e89506597e9a6340043830d12daa2db81918. Execution is isolated in codex/windows-task-persistence at /Users/ancienttwo/Projects/repo-harness-wt-windows-task-persistence. Existing PR443 and other worktrees remain separate. No main merge, global installation, real data migration, Host admission, Campaign activation or canary.
 
 ## P1 Map
 
@@ -121,7 +121,7 @@ Add a before/after regression to an existing owning suite simulating the Windows
 
 ## Acceptance and integration
 
-Publish a Draft candidate to obtain native CI before consuming the one independent semantic review. Capture that review only after canonical evidence and native CI pass on the final source. Bind review to the policy-selected origin/main subject, while source verification is scoped to baseline49c5f9dc. Do not spend the review before final source freeze. Publish a stacked PR against codex/task-inbox-portable-paths with honest evidence. After accepted repair, integrate into PR443 and then its reader downstreams; existing consumed review budgets do not reset. Continue the full refactor without adding homepage features.
+Publish a Draft candidate to obtain native CI before consuming the one independent semantic review. Capture that review only after canonical evidence and native CI pass on the final source. Bind review to the policy-selected origin/main subject, while source verification is scoped to baseline6167e895. Do not spend the review before final source freeze. Publish a stacked PR against codex/task-inbox-portable-paths with honest evidence. After accepted repair, integrate into PR443 and then its reader downstreams; existing consumed review budgets do not reset. Continue the full refactor without adding homepage features.
 
 ## Task Breakdown
 
