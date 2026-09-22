@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/fleet/task-inbox-layout-migration';
+import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
 import { pruneRepoHarnessRegistry } from '../../effects/repo-registry';
 import { randomUUID } from 'crypto';
 import { lstatSync, realpathSync, readdirSync, readFileSync } from 'fs';
@@ -95,7 +97,7 @@ function feedbackEnvironment() {
 }
 
 function outputTaskInboxError(error: unknown): void {
-  const code = error instanceof TaskInboxError || error instanceof TaskMessageError
+  const code = error instanceof TaskInboxError || error instanceof TaskMessageError || error instanceof TaskInboxMigrationError || error instanceof TaskInboxLayoutError
     ? error.code
     : 'invalid_argument';
   const message = error instanceof Error ? error.message : String(error);
@@ -845,6 +847,26 @@ export function buildFleetCommand(): Command {
   const inbox = fleet
     .command('inbox')
     .description('Inspect and acknowledge task-message delivery receipts');
+
+  inbox.command('migrate-layout')
+    .description('Inspect or explicitly migrate the offline Task Inbox storage layout')
+    .requiredOption('--json', 'Output migration inventory and digests as JSON')
+    .option('--apply', 'Apply a dry-run-bound migration')
+    .option('--resume', 'Resume the exact interrupted migration')
+    .option('--rollback', 'Restore v1 only before any subsequent v2 writes')
+    .option('--expected-source-sha256 <digest>', 'Exact source digest returned by dry-run')
+    .option('--receipt-sha256 <digest>', 'Exact migration receipt digest for rollback')
+    .option('--confirm-quiescent', 'Confirm all repository clients and hooks are stopped')
+    .action((options: { apply?: boolean; resume?: boolean; rollback?: boolean; expectedSourceSha256?: string; receiptSha256?: string; confirmQuiescent?: boolean }) => {
+      try {
+        if ([options.apply, options.resume, options.rollback].filter(Boolean).length > 1) throw new Error('--apply, --resume and --rollback are mutually exclusive');
+        const mode = options.apply ? 'apply' : options.resume ? 'resume' : options.rollback ? 'rollback' : 'dry-run';
+        const result = migrateTaskInboxLayout({ repo_root: process.cwd(), mode,
+          expected_source_sha256: options.expectedSourceSha256, receipt_sha256: options.receiptSha256,
+          confirm_quiescent: options.confirmQuiescent });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+      } catch (error) { outputTaskInboxError(error); }
+    });
 
   inbox
     .command('list')

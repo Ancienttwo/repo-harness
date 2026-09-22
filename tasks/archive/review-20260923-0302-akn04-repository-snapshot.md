@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 03:02
+> **Related Plan**: plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260923-0302
+> **Archive Projection V1**: `plans/plan-20260922-0519-akn04-repository-snapshot.md` => `plans/archive/plan-20260922-0519-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md` => `tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md` => `tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md` => `tasks/archive/review-20260923-0302-akn04-repository-snapshot.md`
+
 # Task Review: akn04-repository-snapshot
 
-> **Status**: Pending
-> **Plan**: plans/plan-20260922-0519-akn04-repository-snapshot.md
-> **Contract**: tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md
-> **Notes File**: tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md
+> **Status**: Accepted
+> **Plan**: plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+> **Contract**: tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md
+> **Notes File**: tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md
 > **Substantive Change SHA256**: `sha256:0058b2181d40d3fcec22493b1d769155a0c1419d1c2186d6375c439c1808bb13`
 
 ## Development Verification
@@ -47,3 +57,19 @@ Focused context/activity/server/collector verification passed68 tests and465 ass
 ## Corrected candidate canonical evidence
 
 Source1283e883fa7f06a76c17e2247287812976f94051 passed25/25 criteria with zero failures in run-20260922T171741-68474. Frozen review subject: `sha256:638fbb6249adb21f69b9dc3be39ea9b4bd085dca7915081579854a7467688042`. All declared execution checks and required repository checks passed. The generated manifest restamp records that source commit. Hosted CI and exact owner acceptance remain pending; no second semantic review is permitted for this work-package.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:8b3926693bd34d03265216accd6ead32a632ec06777ce9a3ad4e6012a359bd47
+> **Issued At**: 2026-09-22T19:01:50.683Z
+
+- Summary: Delegated stage acceptance under the owner instruction to execute the entire reconstruction autonomously, accept each stage and submit PRs. PR442 current subject c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770 passed 26/26 canonical criteria. The consumed independent P1 review is preserved; its synchronous Git cancellation finding has real pre-fix failures, corrected process-tree tests and successful CI35765127664 on source-equivalent2948a041. Accepted PR443 and PR444 dependencies are integrated. This is delegated owner disposition, not a new external pass or a claim that the user separately inspected this candidate. Authorizes archive and downstream PR integration only; no main merge, global install, real migration, Host admission, Campaign or canary.
+- Findings: none
+

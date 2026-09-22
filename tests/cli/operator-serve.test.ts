@@ -576,7 +576,7 @@ describe('operator serve command and HTTP boundary', () => {
       // free for every other repository while it hangs.
       expect(existsSync(registryLockPath)).toBe(false);
       expect(existsSync(join(repoRoot, '.git/repo-harness/coordination/v1/locks/tasks', `${TASK_ID}.lock`))).toBe(false);
-      expect(existsSync(join(repoRoot, '.git/repo-harness/task-inbox/v1', TASK_ID, 'events'))).toBe(false);
+      expect(existsSync(join(repoRoot, '.git/repo-harness/task-inbox/v2', TASK_ID, 'events'))).toBe(false);
 
       writer.kill('SIGTERM');
       rmSync(markerPath);

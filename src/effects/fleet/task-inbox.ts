@@ -1,3 +1,5 @@
+import { TASK_INBOX_V2_RELATIVE_PATH, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
+import { inspectTaskInboxLayout, assertTaskInboxLayoutUnchanged, syncInboxDirectory, TaskInboxLayoutError } from './task-inbox-layout';
 import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, opendirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeSync } from 'fs';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { randomUUID } from 'crypto';
@@ -30,7 +32,7 @@ import { readCanonicalSprint, resolveRepoIdentity, type CanonicalSprintSource } 
 import { readClaimActorReceipt } from '../engineers/claim-actor-store';
 import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
 
-export const TASK_INBOX_RELATIVE_PATH = 'repo-harness/task-inbox/v1';
+export const TASK_INBOX_RELATIVE_PATH = TASK_INBOX_V2_RELATIVE_PATH;
 
 export type TaskInboxErrorCode =
   | 'task_message_invalid'
@@ -161,6 +163,7 @@ export interface TaskInboxFleetSummaryV1 {
 function asInboxError(error: unknown, fallback: TaskInboxErrorCode, context: string): TaskInboxError {
   if (error instanceof TaskInboxError) return error;
   if (error instanceof TaskMessageError) return new TaskInboxError(error.code, error.message, error);
+  if (error instanceof TaskInboxLayoutError) return new TaskInboxError('task_message_unreadable', error.message, error);
   return new TaskInboxError(fallback, context, error);
 }
 
@@ -182,7 +185,13 @@ class TaskInboxAuthorityRejection extends Error {
 
 function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T): T {
   try {
-    return withTaskLock(repoRoot, taskId, action);
+    return withTaskLock(repoRoot, taskId, () => {
+      const common = resolveGitCommonDirectory(repoRoot);
+      inspectTaskInboxLayout(common);
+      const result = action();
+      inspectTaskInboxLayout(common);
+      return result;
+    });
   } catch (error) {
     if (error instanceof TaskInboxAuthorityRejection) throw error.reason;
     throw asInboxError(error, 'task_message_unreadable', `cannot operate task inbox under the task lock for ${taskId}`);
@@ -190,7 +199,9 @@ function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T)
 }
 
 function taskInboxRoot(repoRoot: string): string {
-  return join(resolveGitCommonDirectory(repoRoot), TASK_INBOX_RELATIVE_PATH);
+  const common = resolveGitCommonDirectory(repoRoot);
+  inspectTaskInboxLayout(common);
+  return join(common, TASK_INBOX_RELATIVE_PATH);
 }
 
 /** Crash residue is not a canonical record and must never enter strict scans. */
@@ -217,7 +228,7 @@ export function taskInboxDeliveryPath(
 ): string {
   assertTaskId(taskId);
   assertMessageId(messageId);
-  return join(taskInboxTaskDirectory(repoRoot, taskId), 'delivery', messageId, `${deriveTaskMessageRecipientKey(recipient)}.json`);
+  return join(taskInboxTaskDirectory(repoRoot, taskId), 'delivery', messageId, `${taskInboxRecipientStorageKey(recipient)}.json`);
 }
 
 function assertTaskId(value: string): void {
@@ -388,7 +399,7 @@ function listReceipts(repoRoot: string, taskId: string, messageId: string): Task
   return names.map((name) => {
     if (!name.endsWith('.json')) fail('task_message_unreadable', `task message delivery filename is invalid: ${name}`);
     const receipt = readReceiptAt(join(directory, name));
-    if (receipt.message_id !== messageId || `${deriveTaskMessageRecipientKey(recipientFromReceipt(receipt))}.json` !== name) {
+    if (receipt.message_id !== messageId || `${taskInboxRecipientStorageKey(recipientFromReceipt(receipt))}.json` !== name) {
       fail('task_message_unreadable', `task message delivery path identity is mismatched: ${name}`);
     }
     return receipt;
@@ -502,14 +513,7 @@ function writeAll(fd: number, bytes: Buffer): void {
   while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-}
+function fsyncDirectory(path: string): void { syncInboxDirectory(path); }
 
 function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: string): void {
   const commonDirectory = resolveGitCommonDirectory(repoRoot);
@@ -554,6 +558,7 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1, before
     if (fd !== null) closeSync(fd);
   }
   try {
+    inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
     beforePublish?.();
     try {
       linkSync(temporary, target);
@@ -611,7 +616,7 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
   const directory = dirname(target);
   const temporary = join(
     taskInboxStagingDirectory(repoRoot, taskId, 'delivery'),
-    `.${receipt.message_id}.${deriveTaskMessageRecipientKey(recipient)}.${process.pid}.${randomUUID()}.tmp`,
+    `.${receipt.message_id}.${taskInboxRecipientStorageKey(recipient)}.${process.pid}.${randomUUID()}.tmp`,
   );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
   let fd: number | null = null;
@@ -625,6 +630,7 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
     } catch (error) {
       throw asInboxError(error, 'task_message_unreadable', `cannot stage task message delivery receipt: ${target}`);
     }
+    inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
     beforePublish?.();
     try {
       renameSync(temporary, target);
@@ -738,6 +744,9 @@ function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskIn
  * keeps output bounded and never manufactures a mixed generation.
  */
 export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): TaskInboxFleetSummaryV1 {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
   const first = observeTaskInboxFleetSummary(input);
   const second = observeTaskInboxFleetSummary(input);
   if (first.revision === second.revision) {
@@ -754,6 +763,9 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
     addressed_to_current_claim: retryBefore.addressed_to_current_claim,
     snapshot_consistency: retryBefore.revision === retryAfter.revision ? 'stable' : 'changed_during_read',
   });
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
 }
 
 function sendTaskMessageWithAuthority(
@@ -853,6 +865,9 @@ export function readTaskMessageDelivery(input: {
   readonly message_id: string;
   readonly recipient: TaskMessageRecipient;
 }): TaskInboxEventEntry {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
   const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
   if (event.task_id !== input.task_id || event.message_id !== input.message_id) {
     fail('task_message_invalid', 'message does not belong to the requested Task inbox');
@@ -863,6 +878,9 @@ export function readTaskMessageDelivery(input: {
     receipt,
     globally_satisfied: receipt?.delivery_state === 'acknowledged',
   });
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
 }
 
 /**
@@ -1019,7 +1037,11 @@ function withRestrictedInbox<T>(input: RestrictedTaskInboxInput, action: (author
       || authority.actor.claim_id !== input.recipient.claim_id || authority.actor.lease_generation !== input.recipient.generation) {
       throw new TaskReplyError('task_reply_fence_changed', 'authenticated actor differs from the current inbox recipient');
     }
-    return action(authority);
+    const common = resolveGitCommonDirectory(input.repo_root);
+    inspectTaskInboxLayout(common);
+    const result = action(authority);
+    inspectTaskInboxLayout(common);
+    return result;
   }));
 }
 
@@ -1073,7 +1095,7 @@ export type TaskReplyWriteBoundary = 'intent_file_fsynced' | 'intent_published' 
 
 function replyDirectory(repoRoot: string, taskId: string, parentId: string, recipient: TaskMessageRecipient): string {
   assertMessageId(parentId);
-  return join(taskInboxTaskDirectory(repoRoot, taskId), 'reply-effects', parentId, deriveTaskMessageRecipientKey(recipient));
+  return join(taskInboxTaskDirectory(repoRoot, taskId), 'reply-effects', parentId, taskInboxRecipientStorageKey(recipient));
 }
 
 function optionalReplyRecord<T>(commonDirectory: string, path: string, validate: (value: unknown) => T, canonical: (value: T) => string, charge?: (bytes: number) => void): T | null {
@@ -1091,7 +1113,7 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
 function readReplyChain(input: { repo_root: string; task_id: string; recipient: TaskMessageRecipient }, parent: TaskMessageEventV1, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
   assertTaskId(input.task_id); assertMessageId(parent.message_id);
   const taskDirectory = join(commonDirectory, TASK_INBOX_RELATIVE_PATH, input.task_id);
-  const recipientKey = deriveTaskMessageRecipientKey(input.recipient);
+  const recipientKey = taskInboxRecipientStorageKey(input.recipient);
   const directory = join(taskDirectory, 'reply-effects', parent.message_id, recipientKey);
   const intent = optionalReplyRecord(commonDirectory, join(directory, 'intent.json'), validateTaskReplyIntent, canonicalTaskReplyIntentBytes, charge);
   const commit = optionalReplyRecord(commonDirectory, join(directory, 'commit.json'), validateTaskReplyCommit, canonicalTaskReplyCommitBytes, charge);
@@ -1123,6 +1145,7 @@ function persistReplyRecord(input: RestrictedTaskInboxInput, parentId: string, k
     fsyncSync(fd);
     closeSync(fd); fd = null;
     hook?.(`${kind}_file_fsynced`);
+    inspectTaskInboxLayout(common);
     beforePublish();
     try { linkSync(temporary, target); }
     catch (error) {
@@ -1172,10 +1195,14 @@ export function replyToTaskSteer(input: RestrictedTaskInboxInput & {
 /** Exact stored facts only; complete describes a chain, never the current owner's authorization. */
 export function readTaskSteerReply(input: { repo_root: string; task_id: string; parent_message_id: string; recipient: TaskMessageRecipient }) {
   return withTaskLock(input.repo_root, input.task_id, () => {
+    const common = resolveGitCommonDirectory(input.repo_root);
+    const identity = inspectTaskInboxLayout(common);
     const parent = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.parent_message_id));
     assertEventStored(parent, input.task_id);
     if (parent.message_id !== input.parent_message_id) fail('task_message_unreadable', 'steer path identity is mismatched');
-    return { parent, ...readReplyChain(input, parent) };
+    const result = { parent, ...readReplyChain(input, parent) };
+    assertTaskInboxLayoutUnchanged(common, identity);
+    return result;
   });
 }
 
@@ -1264,6 +1291,9 @@ export function readHistoricalTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
   budget: { max_scan: number; max_bytes: number; deadline_ms: number };
 }) {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
   assertTaskId(input.task_id);
   if (input.message_id !== null) assertMessageId(input.message_id);
   if (input.after !== null) assertMessageId(input.after);
@@ -1303,7 +1333,7 @@ export function readHistoricalTaskActivity(input: {
     each(path, name => {
       const receipt = optionalReplyRecord(common, join(path, name), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
       if (!receipt || receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
-        || `${deriveTaskMessageRecipientKey(recipientFromReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
+        || `${taskInboxRecipientStorageKey(recipientFromReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
       receipts.push(receipt);
     });
     return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromReceipt(b))));
@@ -1347,4 +1377,7 @@ export function readHistoricalTaskActivity(input: {
   return { history_exists: historyExists, entries,
     coverage: { complete: reason === null, reason, scanned, bytes },
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
 }

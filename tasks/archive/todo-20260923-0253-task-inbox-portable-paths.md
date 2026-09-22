@@ -1,3 +1,9 @@
+> **Archived**: 2026-09-23 02:53
+> **Related Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260923-0253
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
