@@ -1,6 +1,6 @@
 # Task Review: akn04-automation-summary
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-0534-akn04-automation-summary.md
 > **Contract**: tasks/contracts/20260922-0534-akn04-automation-summary.contract.md
 > **Notes File**: tasks/notes/20260922-0534-akn04-automation-summary.notes.md
@@ -23,3 +23,31 @@ The owner approved this worktree local index on 2026-09-22. CodeGraph initializa
 ## Canonical verification after index approval
 
 Canonical prepare-acceptance passed 21/21 criteria with zero failures, covering 17 execution checks at `92f785d2104d400b5350f3ec9d7f8364244537b2`. Subject: `sha256:376538d3231ea1e5659f88ce182c716c4c38be1d8d002b6939a2dff86499035f`. Evidence: `.ai/harness/runs/run-20260922T142330-9765-20260922-0534-akn04-automation-summary.json` and `.ai/harness/checks/latest.json`. The current deterministic architecture check passed. This is local machine verification; semantic acceptance, hosted CI and installed/native journey claims remain separate.
+
+## Current integrated verification and independent acceptance
+
+At76f989cc, canonical run20260923T030703-30025 passed20 execution checks and24 total criteria. Subject: `sha256:51cded6ae80f7e99bca5a548302915bae6fa1c3e233f030a363bc959138c13a2`; policy baseorigin/main0d4371c3. Current CodeGraph projection is a deterministic manifest-only refresh. The single Codex plugin review matched this exact frozen subject and returned approve with no findings. Its private checkout could not rerun browser tests because React was absent; the canonical local UI decoder/build, effects and HTTP suites passed independently. Full hosted CI for this new source is pending.
+
+Verbatim provider transcript:
+
+```json
+{"verdict":"approve","summary":"No material blocker found in the scoped diff against the pinned base. Checkout is clean. 101 unit tests passed; browser tests were blocked by missing React, and effect/HTTP suites were not rerun.","findings":[],"next_steps":[]}
+```
+
+Original structured result: `.ai/harness/runs/akn04-automation-summary/cross-review.json`.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
+> **Actor**: not-applicable
+> **Reviewed Subject SHA256**: sha256:51cded6ae80f7e99bca5a548302915bae6fa1c3e233f030a363bc959138c13a2
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:bb30e23173877eed3bace5b4a6572034e9f5ec4de3ea947947ec8f0ac9907f61
+> **Issued At**: 2026-09-22T19:19:16.310Z
+
+- Summary: The single official Codex plugin review approved exact subject51cded6ae80f7e99bca5a548302915bae6fa1c3e233f030a363bc959138c13a2 against pinned origin/main0d4371c3 with no findings. Canonical20 checks and24 criteria passed locally. Reviewer browser rerun was unavailable due to missing React; canonical local effect/HTTP/browser evidence remains authoritative. Full hosted CI is pending separately.
+- Findings: none
+
