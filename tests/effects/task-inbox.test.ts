@@ -12,13 +12,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 import { buildTaskMessageEvent } from '../../src/core/fleet/task-message';
 import { deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   TaskInboxError,
   deliverTaskInbox,
+  acknowledgeTaskInbox,
   listTaskInbox,
   sendTaskMessage,
   taskInboxDeliveryPath,
@@ -36,6 +37,37 @@ const TASK_CELL = 'keep staging outside canonical scans';
 const MESSAGE_ONE = '123e4567-e89b-42d3-a456-426614174010';
 const MESSAGE_TWO = '123e4567-e89b-42d3-a456-426614174011';
 const RECIPIENT = { kind: 'user' as const, id: 'alice' };
+
+test('delivery paths use portable bounded components without folding recipient identity', async () => {
+  await withFixtureAsync(async value => {
+    const recipients = [
+      { kind: 'claim' as const, claim_id: MESSAGE_ONE, generation: 1 },
+      { kind: 'user' as const, id: 'Alice' },
+      { kind: 'user' as const, id: 'alice' },
+      { kind: 'orchestrator' as const, id: 'CON.' },
+      { kind: 'user' as const, id: 'a'.repeat(128) },
+    ];
+    const names = recipients.map(recipient => basename(taskInboxDeliveryPath(value.root, value.taskId, MESSAGE_ONE, recipient)));
+    for (const name of names) {
+      expect(name).toMatch(/^[a-z0-9-]+\.json$/);
+      expect(name.length).toBeLessThanOrEqual(71);
+    }
+    expect(new Set(names).size).toBe(recipients.length);
+  });
+});
+
+test('case-distinct recipients persist independently through delivery and ACK on the native filesystem', async () => {
+  await withFixtureAsync(async value => {
+    sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: event(value, MESSAGE_ONE) });
+    const inputs = ['Alice', 'alice'].map(id => ({ repo_root: value.root, canonical_source: value.source,
+      task_id: value.taskId, recipient: { kind: 'user' as const, id } }));
+    for (const input of inputs) deliverTaskInbox({ ...input, delivery_channel: 'manual', delivered_at: '2026-09-22T00:00:00Z' });
+    acknowledgeTaskInbox({ ...inputs[0]!, message_id: MESSAGE_ONE, acknowledged_at: '2026-09-22T00:01:00Z' });
+    const receipts = inputs.map(input => JSON.parse(readFileSync(taskInboxDeliveryPath(value.root, value.taskId, MESSAGE_ONE, input.recipient), 'utf8')));
+    expect(receipts.map(receipt => receipt.recipient_id)).toEqual(['Alice', 'alice']);
+    expect(receipts.map(receipt => receipt.delivery_state)).toEqual(['acknowledged', 'delivered']);
+  });
+});
 
 interface Fixture {
   readonly root: string;

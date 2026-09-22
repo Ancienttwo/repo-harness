@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { buildClaimActorReceipt } from '../../src/core/engineers/principal-claim';
@@ -21,6 +21,10 @@ import { readRepoHarnessRegistrySnapshot, repoHarnessRepoIdFor, setRepoHarnessAc
 import { callMcpTool } from '../../src/cli/mcp/tools';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
+import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
+import { migrateTaskInboxLayout } from '../../src/effects/fleet/task-inbox-layout-migration';
+import { inboxLayoutPaths } from '../../src/effects/fleet/task-inbox-layout';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 const ENGINEER = 'engineer:capability.verification.evals-checks';
 const id = (n: number) => `123e4567-e89b-42d3-a456-${String(n).padStart(12, '0')}`;
@@ -31,8 +35,10 @@ const initialHome = process.env.REPO_HARNESS_HOME;
 const PROJECT = resolve(import.meta.dir, '../..');
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); if (initialHome === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = initialHome; });
 function git(root: string, ...args: string[]) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
-function fixture(parentBody = 'Inspect existing work before answering.') {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'task-reply-effects-'))); roots.push(root);
+function fixture(parentBody = 'Inspect existing work before answering.', deep = false) {
+  const container = realpathSync(mkdtempSync(join(tmpdir(), 'task-reply-effects-'))); roots.push(container);
+  const root = deep ? join(container, 'nested-repository-'.repeat(4)) : container;
+  if (deep) mkdirSync(root);
   const home = join(root, 'test-home'); mkdirSync(home); process.env.REPO_HARNESS_HOME = home;
   const env = { ...process.env, REPO_HARNESS_HOME: home };
   git(root, 'init', '-q', '-b', 'main'); git(root, 'config', 'user.email', 'test@example.invalid'); git(root, 'config', 'user.name', 'Test');
@@ -78,6 +84,35 @@ function fixture(parentBody = 'Inspect existing work before answering.') {
 }
 
 describe('protected Task reply storage and Engineer composition', () => {
+  test('native deep-path delivery, ACK and reply retain the complete chain', () => {
+    const f = fixture(undefined, true); f.consume(); f.ack(); f.reply();
+    expect(f.history().observation.state).toBe('complete');
+    const recipient = { kind: 'claim' as const, claim_id: f.work.claim_id, generation: 1 };
+    const directory = join(taskInboxTaskDirectory(f.root, f.work.task_id), 'reply-effects', f.parent.message_id, taskInboxRecipientStorageKey(recipient));
+    expect(join(directory, 'intent.json').length).toBeGreaterThan(260);
+    expect(JSON.parse(readFileSync(join(directory, 'intent.json'), 'utf8')).intent_sha256).toBe(f.history().intent!.intent_sha256);
+  });
+
+  test.skipIf(process.platform === 'win32').each(['intent_published', 'event_published', 'commit_published'] as const)('offline migration preserves %s facts without live actor authority', boundary => {
+      const f = fixture(); f.consume(); f.ack();
+      expect(() => f.reply(point => { if (point === boundary) throw new Error('interrupted'); })).toThrow('interrupted');
+      const before = f.history();
+      const paths = inboxLayoutPaths(resolveGitCommonDirectory(f.root));
+      const recipient = { kind: 'claim' as const, claim_id: f.work.claim_id, generation: 1 };
+      const token = taskInboxRecipientStorageKey(recipient), legacyKey = `claim:${f.work.claim_id}:g1`;
+      const delivery = join(paths.current, f.work.task_id, 'delivery', f.parent.message_id);
+      renameSync(join(delivery, `${token}.json`), join(delivery, `${legacyKey}.json`));
+      const replies = join(paths.current, f.work.task_id, 'reply-effects', f.parent.message_id);
+      renameSync(join(replies, token), join(replies, legacyKey));
+      renameSync(paths.current, paths.legacy);
+      rmSync(join(resolveGitCommonDirectory(f.root), 'repo-harness/coordination/v1/leases', f.work.task_id), { recursive: true });
+      rmSync(join(f.root, '.ai/harness/sprint/active-sprint'));
+      const plan = migrateTaskInboxLayout({ repo_root: f.root });
+      if (!plan.manifest) throw new Error('migration manifest required');
+      migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true, expected_source_sha256: plan.manifest.source_sha256 });
+      expect(f.history()).toEqual(before);
+  });
+
   test('encoded record rejects before intent persistence and permits retry with the original reply ID', () => {
     const f = fixture('\u0001'.repeat(8192)); f.consume(); f.ack();
     expect(() => withEngineerTaskInbox(f.input, inbox => replyToTaskSteer({

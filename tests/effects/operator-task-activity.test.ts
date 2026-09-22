@@ -1,3 +1,4 @@
+import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -6,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { canonicalClaimActorReceiptBytes, validateClaimActorReceipt, validateEngineerPrincipalMapping } from '../../src/core/engineers/principal-claim';
-import { buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, canonicalTaskMessageEventBytes, deriveTaskMessageRecipientKey, transitionTaskMessageDeliveryReceipt } from '../../src/core/fleet/task-message';
+import { buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, canonicalTaskMessageEventBytes, transitionTaskMessageDeliveryReceipt } from '../../src/core/fleet/task-message';
 import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes } from '../../src/core/fleet/task-reply';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_MAX_OUTPUT_BYTES } from '../../src/core/operator/task-activity';
 import { OperatorTaskActivityError, readOperatorTaskActivity } from '../../src/effects/operator/task-activity';
@@ -34,7 +35,7 @@ function fixture(replyBody = '  Exact old reply.\n') {
   const ack=transitionTaskMessageDeliveryReceipt(transitionTaskMessageDeliveryReceipt(buildTaskMessageDeliveryReceipt({message_id:parent.message_id,recipient,task_revision:revision,delivery_channel:'hook_session'}),{state:'delivered',at:AT}),{state:'acknowledged',at:AT});
   const intent=buildTaskReplyIntent({parent,acknowledgement:ack,principal_mapping:mapping,claim_actor:actor,reply_message_id:id(2),body:replyBody,prepared_at:AT});
   const commit=buildTaskReplyCommit({intent,committed_at:AT});
-  const inbox=join(root,'.git/repo-harness/task-inbox/v1',task), key=deriveTaskMessageRecipientKey(recipient);
+  const inbox=join(root,'.git/repo-harness/task-inbox/v2',task), key=taskInboxRecipientStorageKey(recipient);
   const event=(message:typeof parent) => put(join(inbox,'events',`${message.message_id}.json`),canonicalTaskMessageEventBytes(message)+'\n');
   event(parent); event(intent.reply);
   put(join(inbox,'delivery',id(1),`${key}.json`),canonicalTaskMessageDeliveryReceiptBytes(ack)+'\n');

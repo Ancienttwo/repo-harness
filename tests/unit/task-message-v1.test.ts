@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 
 import {
   TASK_MESSAGE_BODY_MAX_BYTES,
@@ -17,6 +18,21 @@ const TASK_ID = '1'.repeat(64);
 const REVISION = '2'.repeat(64);
 const MESSAGE_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CLAIM_ID = '223e4567-e89b-42d3-a456-426614174000';
+
+test('storage token preserves exact semantic identity with bounded portable filenames', () => {
+  const values = [
+    { kind: 'claim' as const, claim_id: CLAIM_ID, generation: Number.MAX_VALUE },
+    { kind: 'claim' as const, claim_id: CLAIM_ID, generation: 1 },
+    { kind: 'user' as const, id: 'Alice' }, { kind: 'user' as const, id: 'alice' },
+    { kind: 'orchestrator' as const, id: 'CON.' }, { kind: 'user' as const, id: 'A'.repeat(128) },
+  ];
+  const semantic = values.map(deriveTaskMessageRecipientKey);
+  const tokens = values.map(taskInboxRecipientStorageKey);
+  expect(new Set(tokens).size).toBe(values.length);
+  for (const token of tokens) expect(token).toMatch(/^r-[0-9a-f]{64}$/);
+  expect(values.map(deriveTaskMessageRecipientKey)).toEqual(semantic);
+  expect(() => taskInboxRecipientStorageKey({ kind: 'user', id: '../unsafe' })).toThrow();
+});
 
 function event(overrides: Partial<Parameters<typeof buildTaskMessageEvent>[0]> = {}) {
   return buildTaskMessageEvent({

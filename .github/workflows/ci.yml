@@ -198,6 +198,9 @@ jobs:
           tests/effects/operator-task-diff.test.ts
           tests/effects/operator-task-context.test.ts
           tests/effects/operator-task-activity.test.ts
+          tests/effects/task-inbox.test.ts
+          tests/effects/task-reply.test.ts
+          tests/effects/task-inbox-layout-migration.test.ts
           tests/cli/windows-protected-helper-runtime-smoke.test.ts
           tests/evidence-checkpoint.test.ts
 
