@@ -15,6 +15,8 @@ import {
   type TaskMessageEventV1,
 } from './task-message';
 
+/** Total canonical UTF-8 record bytes, including the persisted trailing LF. */
+export const TASK_REPLY_RECORD_MAX_BYTES = 64 * 1024;
 export const TASK_REPLY_PROTOCOL = 1 as const;
 export const TASK_REPLY_INTENT_KIND = 'repo-harness-task-reply-intent' as const;
 export const TASK_REPLY_COMMIT_KIND = 'repo-harness-task-reply-commit' as const;
@@ -56,6 +58,13 @@ export class TaskReplyError extends Error {
 
 function invalid(message: string): never {
   throw new TaskReplyError('task_reply_invalid', message);
+}
+
+function assertReplyRecordSize(value: object): void {
+  const bytes = Buffer.byteLength(canonicalEngineerJson(value), 'utf8') + 1;
+  if (bytes > TASK_REPLY_RECORD_MAX_BYTES) {
+    invalid(`encoded reply record exceeds ${TASK_REPLY_RECORD_MAX_BYTES} bytes including the trailing LF; reduce the reply body or source metadata`);
+  }
 }
 
 function source<T>(read: () => T): T {
@@ -153,7 +162,9 @@ export function buildTaskReplyIntent(input: {
     effect_id: reply.message_id, idempotency_key: reply.message_id,
     ...sources, reply, prepared_at: preparedAt,
   };
-  return Object.freeze({ ...basis, intent_sha256: sha(basis) });
+  const intent = { ...basis, intent_sha256: sha(basis) };
+  assertReplyRecordSize(intent);
+  return Object.freeze(intent);
 }
 
 export function validateTaskReplyIntent(value: unknown): TaskReplyIntentV1 {
@@ -186,7 +197,9 @@ export function buildTaskReplyCommit(input: {
     acknowledgement_sha256: acknowledgementDigest(intent.acknowledgement),
     committed_at: timestamp(input.committed_at, 'committed_at'),
   };
-  return Object.freeze({ ...basis, commit_sha256: sha(basis) });
+  const commit = { ...basis, commit_sha256: sha(basis) };
+  assertReplyRecordSize(commit);
+  return Object.freeze(commit);
 }
 
 export function validateTaskReplyCommit(value: unknown): TaskReplyCommitV1 {
@@ -200,7 +213,9 @@ export function validateTaskReplyCommit(value: unknown): TaskReplyCommitV1 {
     committed_at: timestamp(input.committed_at, 'committed_at'),
   };
   if (input.commit_sha256 !== sha(basis)) invalid('reply commit digest mismatch');
-  return Object.freeze({ ...basis, commit_sha256: sha(basis) });
+  const commit = { ...basis, commit_sha256: sha(basis) };
+  assertReplyRecordSize(commit);
+  return Object.freeze(commit);
 }
 
 export function canonicalTaskReplyCommitBytes(value: TaskReplyCommitV1): string {

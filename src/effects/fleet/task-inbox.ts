@@ -21,7 +21,7 @@ import {
   type TaskMessageEventV1,
   type TaskMessageRecipient,
 } from '../../core/fleet/task-message';
-import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes, validateTaskReplyIntent, validateTaskReplyCommit, assertTaskReplyRetry, assertTaskReplyResumeFence, inspectTaskReplyChain, TaskReplyError, type TaskReplyIntentV1, type TaskReplyCommitV1 } from '../../core/fleet/task-reply';
+import { TASK_REPLY_RECORD_MAX_BYTES, buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes, validateTaskReplyIntent, validateTaskReplyCommit, assertTaskReplyRetry, assertTaskReplyResumeFence, inspectTaskReplyChain, TaskReplyError, type TaskReplyIntentV1, type TaskReplyCommitV1 } from '../../core/fleet/task-reply';
 import type { ClaimActorReceiptV1, EngineerPrincipalMappingV1 } from '../../core/engineers/principal-claim';
 import { lookupCanonicalTask, PENDING_ROW_STATUS, type CanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -1069,7 +1069,6 @@ export function acknowledgeTaskSteer(input: RestrictedTaskInboxInput & { message
 }
 
 export type TaskReplyWriteBoundary = 'intent_file_fsynced' | 'intent_published' | 'event_published' | 'commit_file_fsynced' | 'commit_published';
-const REPLY_RECORD_MAX_BYTES = 64 * 1024;
 
 function replyDirectory(repoRoot: string, taskId: string, parentId: string, recipient: TaskMessageRecipient): string {
   assertMessageId(parentId);
@@ -1080,7 +1079,7 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
   if (!inspectSafeDirectoryChain(commonDirectory, dirname(path), false, 'reply record directory')) return null;
   let stat;
   try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
   charge?.(stat.size);
   const bytes = readCanonicalFile(path, 'reply record');
   const value = validate(JSON.parse(bytes));
@@ -1114,7 +1113,7 @@ function persistReplyRecord(input: RestrictedTaskInboxInput, parentId: string, k
   inspectSafeDirectoryChain(common, staging, true, 'reply staging directory');
   const target = join(directory, `${kind}.json`);
   const bytes = Buffer.from(`${canonical}\n`, 'utf8');
-  if (bytes.length > REPLY_RECORD_MAX_BYTES) fail('task_message_invalid', 'reply record exceeds its byte bound');
+  if (bytes.length > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_invalid', 'reply record exceeds its byte bound');
   const temporary = join(staging, `.${kind}.${process.pid}.${randomUUID()}.tmp`);
   let fd: number | null = null;
   try {

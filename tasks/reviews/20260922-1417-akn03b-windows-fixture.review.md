@@ -11,7 +11,7 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Substantive Change SHA256**: `sha256:8e5462c747be7ab4b9c8ee8375b0365aae6475c8d63991449545424657759f87`
+> **Substantive Change SHA256**: `sha256:237b8a1dd5db2c8c73c9c4c9199f1eda15f36b2973a20e343f9763b170cf00dc`
 
 ## Human Review Card
 
@@ -48,3 +48,7 @@ Subject: `sha256:d16a5e2e95c2976815da1a33db6c3284711e3b7d0dc885f223adbc4f42b7cdd
 ```
 
 The original fixture-only scope was revised before production edits to include this unmet AKN-03 requirement. Five formal pre-fix regressions failed on the unfixed source; all five pass after the correction (17 assertions, 7.9 seconds). Evidence: `.ai/harness/runs/akn03b-windows-fixture/expiry-pre-fix.log`. The prior rejection remains recorded; no second independent review or owner waiver has been obtained for the corrected subject.
+
+## Owner review response: encoded record size
+
+The owner review on 2026-09-22 requires reacceptance of the corrected communication slice. Reproduced four failures before the size correction (five existing-compatible encoding cases already passed), then all nine focused cases pass (26 assertions, 2.24 seconds). Evidence: `.ai/harness/runs/akn03b-windows-fixture/size-pre-fix.log`; coverage includes control characters, quote/backslash escaping, multibyte UTF-8, total encoded boundary, metadata and same-ID recovery. The correction retains 64 KiB as an explicit core total-record contract; it does not invent a larger storage constant. The prior expiry candidate passed 26/26 canonical criteria before this new source change; final verification must bind the new combined subject.

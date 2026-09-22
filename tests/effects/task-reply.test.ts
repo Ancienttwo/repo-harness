@@ -31,7 +31,7 @@ const initialHome = process.env.REPO_HARNESS_HOME;
 const PROJECT = resolve(import.meta.dir, '../..');
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); if (initialHome === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = initialHome; });
 function git(root: string, ...args: string[]) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
-function fixture() {
+function fixture(parentBody = 'Inspect existing work before answering.') {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'task-reply-effects-'))); roots.push(root);
   const home = join(root, 'test-home'); mkdirSync(home); process.env.REPO_HARNESS_HOME = home;
   const env = { ...process.env, REPO_HARNESS_HOME: home };
@@ -66,7 +66,7 @@ function fixture() {
   let authorized = true;
   const verify_authorization = () => { if (!authorized) throw new Error('request token revoked'); };
   const input = { repo_root: root, authorization_id: id(2), work_envelope: work, verify_authorization, env };
-  const parent = buildTaskMessageEvent({ message_id: id(4), task_id, task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'operator', sender_id: 'operator', sender_trust: 'local_operator', audience: 'owner', body: 'Inspect existing work before answering.', created_at: AT, in_reply_to: null });
+  const parent = buildTaskMessageEvent({ message_id: id(4), task_id, task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'operator', sender_id: 'operator', sender_trust: 'local_operator', audience: 'owner', body: parentBody, created_at: AT, in_reply_to: null });
   sendTaskMessage({ repo_root: root, canonical_source: { targetRef: 'main', sprintPath: SPRINT }, event: parent });
   const consume = () => withEngineerTaskInbox(input, inbox => consumeTaskSteer({ ...inbox, message_id: parent.message_id, event_digest: parent.event_digest, now: AT }));
   const ack = () => withEngineerTaskInbox(input, inbox => acknowledgeTaskSteer({ ...inbox, message_id: parent.message_id, event_digest: parent.event_digest, now: AT }));
@@ -78,6 +78,18 @@ function fixture() {
 }
 
 describe('protected Task reply storage and Engineer composition', () => {
+  test('encoded record rejects before intent persistence and permits retry with the original reply ID', () => {
+    const f = fixture('\u0001'.repeat(8192)); f.consume(); f.ack();
+    expect(() => withEngineerTaskInbox(f.input, inbox => replyToTaskSteer({
+      ...inbox, ...f.replyArgs, body: '\u0001'.repeat(8192),
+    }))).toThrow('encoded reply record exceeds 65536 bytes');
+    expect(f.history().observation.state).toBe('absent');
+    const reply = f.reply();
+    expect(reply.commit.effect_id).toBe(f.replyArgs.reply_message_id);
+    expect(f.history().observation.state).toBe('complete');
+    expect(f.reply().created).toBeFalse();
+  });
+
   test.each(['intent', 'commit'] as const)('expiry during final %s canonical validation prevents publication', kind => {
     const f = fixture(); f.consume(); f.ack();
     if (kind === 'commit') expect(() => f.reply(boundary => {

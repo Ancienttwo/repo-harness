@@ -17,12 +17,13 @@ The Windows MCP path job fails during Binding fixture setup before the authentic
 
 ## Goal
 
-Correct the Windows HTTP fixture and the publication-time authorization expiry finding on PR #437. Preserve canonical readers, authenticated transport assertions, immutable reply identity and crash recovery; prevent expired requests publishing delivery, ACK, intent, event or commit records.
+Correct the Windows HTTP fixture, publication-time authorization expiry and encoded reply record size findings on PR #437. Preserve canonical readers, authenticated transport assertions, immutable reply identity and crash recovery; prevent expired requests publishing delivery, ACK, intent, event or commit records.
 
 ## Scope
 
 - In scope: existing HTTP fixture setup, authenticated Engineer Task communication publication fences, existing reply regression suite and this package evidence.
-- Scope revision: the original AKN-03 authorization-at-publication requirement covers the confirmed semantic finding. The prior rejection is retained; widening this contract does not waive acceptance or trigger a second review.
+- Scope revision: the owner review dated 2026-09-22 additionally requires encoded size boundaries, exact CI subject attribution and downstream stack alignment. This package owns the first two for PR #437; downstream integration retains its own package.
+- Earlier scope revision: the original AKN-03 authorization-at-publication requirement covers the confirmed semantic finding. The prior rejection is retained; widening this contract does not waive acceptance. The owner now explicitly requests reacceptance after fixes.
 - Out of scope: changes to filesystem durability policy, Host admission, main merge and runtime installation.
 - Taste constraints: no Windows skip, no product fallback, no replacement protocol or helper abstraction.
 
@@ -70,6 +71,8 @@ The Windows job still fails before the HTTP assertion, or the canonical readers 
 
 ```yaml
 allowed_paths:
+  - src/core/fleet/task-reply.ts
+  - tests/unit/task-reply.test.ts
   - src/effects/engineers/task-inbox.ts
   - src/effects/fleet/task-inbox.ts
   - tests/effects/task-reply.test.ts
@@ -132,6 +135,7 @@ exit_criteria:
   artifacts_exist:
     - .ai/harness/runs/akn03b-windows-fixture/windows-pre-fix.log
     - .ai/harness/runs/akn03b-windows-fixture/expiry-pre-fix.log
+    - .ai/harness/runs/akn03b-windows-fixture/size-pre-fix.log
 ```
 
 ## Verification Plan
@@ -140,6 +144,19 @@ exit_criteria:
 {
   "protocol": 1,
   "checks": [
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Encoded byte boundary and pure validator agreement for legal UTF-8 bodies",
+      "inputs": {
+        "env": []
+      },
+      "id": "reply-contract",
+      "kind": "package_test",
+      "path": "tests/unit/task-reply.test.ts"
+    },
     {
       "cwd": ".",
       "phase": "verification",
@@ -318,6 +335,8 @@ exit_criteria:
 The existing HTTP suite covers authenticated SDK token propagation, tool inventory, session isolation and permission revocation. Add focused regressions in the existing reply suite for expiry during validation and staging. No new test file or full suite is required. Local passing evidence does not establish Windows acceptance; read back the hosted Windows job after push. The one semantic review rejected the earlier candidate; preserve that evidence. Corrected canonical evidence does not itself create semantic acceptance.
 
 Test admission: existing revocation tests revoke before validation, leaving expiry during canonical validation and staging uncovered. Five parameterized cases in the existing effects suite expire inside the actual filesystem/composition boundary and assert the durable record remains unpublished. Real fixture Git and filesystem operations are necessary to expose this ordering; focused command `bun test tests/effects/task-reply.test.ts --test-name-pattern "expiry during"` takes about 8 seconds.
+
+Size test admission: the existing byte test covers individual message bodies, not complete JSON records. Extend the existing unit suite for control characters, escaped quotes/backslashes, multibyte UTF-8 and exact encoded limits; add one effects test proving rejected oversize replies leave no intent and retry with the original ID. Unit probes cost under 1 second; the real Git/filesystem recovery fixture costs about 3 seconds.
 
 ## Rollback Point
 

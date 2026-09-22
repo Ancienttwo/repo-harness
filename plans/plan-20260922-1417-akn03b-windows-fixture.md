@@ -140,3 +140,14 @@ P3: retain the early check for fast rejection and recheck after canonical valida
 - [ ] Capture pre-fix failure using real staging fsync and controlled expiry during canonical validation.
 - [ ] Fix the existing writer callbacks and final token validation, rerun focused coverage and canonical checks once source is frozen.
 - [ ] Preserve semantic rejection until corrected subject obtains valid acceptance; no main merge or runtime installation.
+
+## Owner review revision: encoded reply record boundary
+
+P1: core message validation owns 8 KiB raw UTF-8 body limits, core reply validation composes parent/ACK/mapping/actor/reply, and Fleet persistence currently alone owns a 64 KiB encoded record bound. Some metadata strings are unbounded by their source schema.
+P2: individually valid 8192-byte control-character parent and reply expand beyond 98 KiB when encoded, then fail only at persistence.
+P3: retain the existing storage ceiling as an explicit 64 KiB total canonical UTF-8 record limit including the trailing LF. Export it from the reply contract, apply it in intent/commit construction and validation, and use it for disk read/write bounds. This avoids inventing a larger constant or changing identity schemas. A legal message body alone does not guarantee the full reply envelope fits. Reject before intent persistence so the same ID can be retried with a smaller body; retain raw-body limits and exact bytes. At 10x size, fail before writes instead of consuming disk or replacing identity.
+
+- [ ] Capture pre-fix core and effects failures for JSON expansion and early rejection.
+- [ ] Implement the common encoded limit; verify escaping, UTF-8, exact limit, one byte above, reader/writer agreement and same-ID retry.
+- [ ] Attribute CI failures to exact jobs and source; run the installed-package path selected from that evidence.
+- [ ] Reaccept the corrected frozen subject under the owner's latest explicit review request; preserve prior rejection history.

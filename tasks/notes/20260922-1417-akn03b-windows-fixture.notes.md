@@ -18,3 +18,7 @@ Pre-fix: GitHub run 35693364932 job 106634890098. Local focused corrected HTTP t
 ## Publication expiry scope
 
 The corrected probe must expire inside actual canonical validation or after a real staging fsync. Verifier call-count-only probes and expiry immediately after every verifier return do not prove these windows; omit them. Use existing test-file instrumentation, retain wire/storage shapes, and preserve the earlier semantic rejection.
+
+## Encoded size decision
+
+Choose an explicit total encoded-record limit because sender_id and Engineer IDs are not finitely bounded by their source schemas. Deriving a universal intent maximum would require changing those separate contracts. Keep 64 KiB including LF, move authority into core constructors/validators, and preserve a bounded disk reader/writer. A reply rejected before intent can reuse its original ID with reduced text. Owner feedback explicitly requests acceptance again after these fixes; the old verdict remains historical evidence.
