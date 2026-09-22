@@ -71,6 +71,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  - docs/architecture/.projection-manifest.json
   - tests/cli/mcp-http.test.ts
   - docs/researches/20260922-task-reply-protocol.md
   - plans/plan-20260922-1548-akn03b-windows-identity.md

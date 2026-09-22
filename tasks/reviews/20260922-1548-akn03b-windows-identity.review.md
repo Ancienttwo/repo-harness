@@ -5,98 +5,19 @@
 > **Contract**: tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md
 > **Notes File**: tasks/notes/20260922-1548-akn03b-windows-identity.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-09-22 15:48
 > **Recommendation**: fail
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-
-## Human Review Card
-
-- Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
-- Intended files changed:
-- Actual files changed:
-- Check IDs and evidence disposition:
-- Residual risks:
-- Reviewer action required: inspect diff and card
-- Rollback:
-
-## Mode Evidence
-
-- Selected route:
-- P1/P2/P3 evidence:
-- Root cause or plan evidence:
-
-## Verification Evidence
-
-Follow [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
-Consume canonical evidence; do not rerun checks to populate this review or
-copy the executable plan. Return missing/stale evidence to its execution owner.
-
-- Waza `/check` review reference, when required:
-- Check IDs and disposition (executed / exact reuse / baseline with delta / failed / missing / not run):
-- Verified subject, relevant environment and immutable execution references:
-- Historical baseline and current delta references, if applicable:
-- Manual observations, failures and coverage limitations:
-- Implementation notes reviewed, if present:
-- Run snapshot:
-
-## Manual Check Evidence
-
-Copy each non-built-in contract `manual_checks` requirement exactly. Check it only after
-the observation is complete and replace the placeholder with concrete command output,
-screenshot/artifact path, or reviewer observation.
-
-- [ ] Exact manual_checks requirement
-  - Evidence: concrete observation, command output, screenshot path, or reviewer note
-
-## Acceptance Receipt Projection
-
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
-> **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
-
-- Summary: No AcceptanceReceipt has been recorded.
-- Findings: none
-
-## Behavior Diff Notes
-
-- ...
-
-## Residual Risks / Follow-ups
-
-- ...
-
-## Scorecard
-
-| Dimension | Score | Notes |
-|-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
-
-## Failing Items
-
-- ...
-
-## Retest Steps
-
-- Re-run:
-- Re-check:
-
-## Summary
-
-- ...
+> **Substantive Change SHA256**: `sha256:169f0d0f13082f9f1927d81790dcf079f95e59774befb770f0d1f13163a21acc`
 
 ## Diagnostic candidate
 
-Two Windows attempts for #437 head769c065c failed the same mapped-status assertion. The existing fixture now checks the same-token authorization ID and a fresh child process using the server Git-root resolver, canonical principal mapping reader and inherited environment. Local focused E2E passes with all original assertions retained. These probes diagnose identity disagreement; they do not constitute a fix or current Windows acceptance. Production source is unchanged.
+Two Windows attempts for #437 head769c065c failed the same mapped-status assertion. The existing fixture now checks the same-token authorization ID and a fresh child process using the server Git-root resolver, canonical principal mapping reader and inherited environment. Local focused E2E passes 28 assertions with all original assertions retained. These probes diagnose identity disagreement; they do not constitute a fix or current Windows acceptance. Production source is unchanged. No semantic review has been invoked for this diagnostic candidate.
+
+## PR base verification binding
+
+The narrow diagnosis starts at769c065c. The complete PR diff is separately bound against the actual #435 base3195ffc6 below.
+
+> **Substantive Change SHA256**: `sha256:ac2a9db93e840c5fa68c305701f3a176bd95f55257e44d751225415f1525e601`
