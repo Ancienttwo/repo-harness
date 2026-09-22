@@ -191,6 +191,11 @@ allowed_paths:
   - tests/unit/me0b-principal-store.test.ts
   - tests/unit/task-message-v1.test.ts
   - tests/unit/task-reply.test.ts
+  - plans/archive/plan-20260922-0534-akn04-automation-summary.md
+  - tasks/archive/contract-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/notes-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/review-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/todo-20260923-0319-akn04-automation-summary.md
 ```
 
 ## Evidence Requirements
@@ -447,7 +452,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=76f989cc REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=0e07d97f REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -506,5 +511,5 @@ Existing UI and real source/HTTP suites cover this composition without a new tes
 
 ## Rollback Point
 
-- Candidate base: automation-summary76f989cc; replace with its final accepted SHA before canonical evidence.
+- Accepted integration base: automation-summary0e07d97f.
 - Revert only this integration to original PR439 head796b3746; no stored authority is migrated.

@@ -43,3 +43,7 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 ## Integration decision
 
 Read-only merge-tree against76f989cc shows only generated manifest conflict. The resulting product delta is seven UI/test files (472 insertions,1 deletion); the scoped automation decoder and source owners come entirely from upstream. Pin accepted dependency evidence before merge and final verification. Preserve task drafts, original unavailable states and the deferred Windows mutation-store entry.
+
+## Dependency freeze
+
+Automation-summary0e07d97f is archived with an exact external_pass receipt after24/24 canonical criteria and its single Codex plugin approve verdict. Source subject51cded6ae80f7e99bca5a548302915bae6fa1c3e233f030a363bc959138c13a2 is unchanged; full hosted CI is the remaining publication check. Pin0e07d97f as this package source/rollback base and enumerate its exact archive paths before integration.
