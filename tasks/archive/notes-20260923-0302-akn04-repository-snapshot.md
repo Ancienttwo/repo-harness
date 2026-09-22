@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 03:02
+> **Related Plan**: plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260923-0302
+> **Archive Projection V1**: `plans/plan-20260922-0519-akn04-repository-snapshot.md` => `plans/archive/plan-20260922-0519-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md` => `tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md` => `tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md` => `tasks/archive/review-20260923-0302-akn04-repository-snapshot.md`
+
 # Implementation Notes: akn04-repository-snapshot
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-0519-akn04-repository-snapshot.md
-> **Contract**: tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md
-> **Review**: tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md
+> **Plan**: plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+> **Contract**: tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md
+> **Review**: tasks/archive/review-20260923-0302-akn04-repository-snapshot.md
 > **Last Updated**: 2026-09-22 05:19
 > **Lifecycle**: notes
 

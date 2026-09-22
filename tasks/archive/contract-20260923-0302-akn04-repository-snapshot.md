@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-23 03:02
+> **Related Plan**: plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260923-0302
+> **Archive Projection V1**: `plans/plan-20260922-0519-akn04-repository-snapshot.md` => `plans/archive/plan-20260922-0519-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md` => `tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md` => `tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md` => `tasks/archive/review-20260923-0302-akn04-repository-snapshot.md`
+
 # Task Contract: akn04-repository-snapshot
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0519-akn04-repository-snapshot.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 04:50
-> **Review File**: `tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md`
-> **Notes File**: `tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md`
+> **Review File**: `tasks/archive/review-20260923-0302-akn04-repository-snapshot.md`
+> **Notes File**: `tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ An unrelated repository/provider is read; concurrent scopes exceed the single co
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0519-akn04-repository-snapshot.md`
+- Source plan: `plans/archive/plan-20260922-0519-akn04-repository-snapshot.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md`
-- Notes file: `tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md`
+- Review file: `tasks/archive/review-20260923-0302-akn04-repository-snapshot.md`
+- Notes file: `tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -81,10 +91,10 @@ allowed_paths:
   - tests/effects/operator-write-boundary.test.ts
   - docs/researches/20260922-operator-repository-snapshot.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0519-akn04-repository-snapshot.md
-  - tasks/contracts/20260922-0519-akn04-repository-snapshot.contract.md
-  - tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md
-  - tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md
+  - plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+  - tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/review-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md
   - tasks/todos.md
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
   - docs/researches/20260922-operator-task-activity.md
