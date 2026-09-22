@@ -1,11 +1,11 @@
 # Task Review: AKN-05a repository automation supervision
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-0600-akn05-supervision-summary.md
 > **Contract**: tasks/contracts/20260922-0600-akn05-supervision-summary.contract.md
 > **Notes File**: tasks/notes/20260922-0600-akn05-supervision-summary.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Recommendation**: pending
+> **Recommendation**: pass
 > **Substantive Change SHA256**: `sha256:b96e1395cb28a4b34ca0a773df7590727794470e199ddbc1904bdef1c82c85cd`
 
 ## Local evidence
@@ -59,3 +59,18 @@ The two findings were reproduced before production edits, with PRE_FIX_EXIT=1. O
 ## Corrected canonical verification
 
 Candidate ef70e8d7; normalized subject `sha256:dd37050e8aa4b370cad2d1195491f7620844dea0cd4a024a733d0623f2fbfc19`. Final canonical run `.ai/harness/runs/run-20260922T064358-47626-20260922-0600-akn05-supervision-summary.json` passes21/21 criteria, zero failures, including both corrected dependency suites and all required integrity checks. Architecture materialization is noop and the source stayed frozen. Semantic acceptance remains pending; the previous reject receipt is retained.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:dd37050e8aa4b370cad2d1195491f7620844dea0cd4a024a733d0623f2fbfc19
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:ecce2f4aa9674102ee143e84b7c916cc1c164582a470c7fb8341687606792399
+> **Issued At**: 2026-09-22T06:02:06.299Z
+
+- Summary: Contract owner approved the pending AKN-03b, AKN-04a and AKN-05a owner acceptance requests on 2026-09-22 after corrected canonical verification. No merge or runtime installation authorization.
+- Findings: none
