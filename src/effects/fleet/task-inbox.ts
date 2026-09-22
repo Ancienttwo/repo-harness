@@ -21,7 +21,7 @@ import {
   type TaskMessageEventV1,
   type TaskMessageRecipient,
 } from '../../core/fleet/task-message';
-import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes, validateTaskReplyIntent, validateTaskReplyCommit, assertTaskReplyRetry, assertTaskReplyResumeFence, inspectTaskReplyChain, TaskReplyError, type TaskReplyIntentV1, type TaskReplyCommitV1 } from '../../core/fleet/task-reply';
+import { TASK_REPLY_RECORD_MAX_BYTES, buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes, validateTaskReplyIntent, validateTaskReplyCommit, assertTaskReplyRetry, assertTaskReplyResumeFence, inspectTaskReplyChain, TaskReplyError, type TaskReplyIntentV1, type TaskReplyCommitV1 } from '../../core/fleet/task-reply';
 import type { ClaimActorReceiptV1, EngineerPrincipalMappingV1 } from '../../core/engineers/principal-claim';
 import { lookupCanonicalTask, PENDING_ROW_STATUS, type CanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -525,7 +525,7 @@ function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: st
   }
 }
 
-function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskInboxSendResult {
+function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1, beforePublish?: () => void): TaskInboxSendResult {
   ensureInboxDirectories(repoRoot, event.task_id);
   const target = taskInboxEventPath(repoRoot, event.task_id, event.message_id);
   const canonical = canonicalTaskMessageEventBytes(event);
@@ -553,18 +553,21 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskI
     if (fd !== null) closeSync(fd);
   }
   try {
-    linkSync(temporary, target);
-    fsyncDirectory(directory);
-    return { event, event_path: target, created: true };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      const existing = readEventAt(target);
-      if (!sameEventRetry(existing, event)) {
-        fail('message_id_conflict', `task message id ${event.message_id} conflicts with existing immutable event`);
+    beforePublish?.();
+    try {
+      linkSync(temporary, target);
+      fsyncDirectory(directory);
+      return { event, event_path: target, created: true };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        const existing = readEventAt(target);
+        if (!sameEventRetry(existing, event)) {
+          fail('message_id_conflict', `task message id ${event.message_id} conflicts with existing immutable event`);
+        }
+        return { event: existing, event_path: target, created: false };
       }
-      return { event: existing, event_path: target, created: false };
+      throw asInboxError(error, 'task_message_unreadable', `cannot publish task message event: ${target}`);
     }
-    throw asInboxError(error, 'task_message_unreadable', `cannot publish task message event: ${target}`);
   } finally {
     try {
       unlinkSync(temporary);
@@ -598,7 +601,7 @@ function sameEventRetry(existing: TaskMessageEventV1, candidate: TaskMessageEven
   return canonicalTaskMessageEventBytes(existing) === canonicalTaskMessageEventBytes(rebased);
 }
 
-function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1): TaskMessageDeliveryReceiptV1 {
+function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1, beforePublish?: () => void): TaskMessageDeliveryReceiptV1 {
   const recipient = recipientFromReceipt(receipt);
   ensureInboxDirectories(repoRoot, taskId, receipt.message_id);
   const target = taskInboxDeliveryPath(repoRoot, taskId, receipt.message_id, recipient);
@@ -612,15 +615,22 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
   let fd: number | null = null;
   try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = null;
-    renameSync(temporary, target);
-    fsyncDirectory(directory);
-  } catch (error) {
-    throw asInboxError(error, 'task_message_unreadable', `cannot persist task message delivery receipt: ${target}`);
+    try {
+      fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      writeAll(fd, bytes);
+      fsyncSync(fd);
+      closeSync(fd);
+      fd = null;
+    } catch (error) {
+      throw asInboxError(error, 'task_message_unreadable', `cannot stage task message delivery receipt: ${target}`);
+    }
+    beforePublish?.();
+    try {
+      renameSync(temporary, target);
+      fsyncDirectory(directory);
+    } catch (error) {
+      throw asInboxError(error, 'task_message_unreadable', `cannot persist task message delivery receipt: ${target}`);
+    }
   } finally {
     if (fd !== null) closeSync(fd);
     try {
@@ -1041,7 +1051,7 @@ export function consumeTaskSteer(input: RestrictedTaskInboxInput & { message_id:
     authority.revalidate();
     const receipt = transitionTaskMessageDeliveryReceipt(prior ?? receiptFor(input.repo_root, input.task_id, event, input.recipient, 'manual'),
       { state: 'delivered', at: input.now, delivery_channel: 'manual' });
-    writeReceipt(input.repo_root, input.task_id, receipt);
+    writeReceipt(input.repo_root, input.task_id, receipt, authority.revalidate);
     return { event, receipt, context: renderTaskMessageUntrustedContext([event]) };
   });
 }
@@ -1053,13 +1063,12 @@ export function acknowledgeTaskSteer(input: RestrictedTaskInboxInput & { message
     if (!prior) fail('recipient_unavailable', 'steer has not been delivered to this recipient');
     const receipt = transitionTaskMessageDeliveryReceipt(prior, { state: 'acknowledged', at: input.now });
     authority.revalidate();
-    if (canonicalTaskMessageDeliveryReceiptBytes(prior) !== canonicalTaskMessageDeliveryReceiptBytes(receipt)) writeReceipt(input.repo_root, input.task_id, receipt);
+    if (canonicalTaskMessageDeliveryReceiptBytes(prior) !== canonicalTaskMessageDeliveryReceiptBytes(receipt)) writeReceipt(input.repo_root, input.task_id, receipt, authority.revalidate);
     return receipt;
   });
 }
 
 export type TaskReplyWriteBoundary = 'intent_file_fsynced' | 'intent_published' | 'event_published' | 'commit_file_fsynced' | 'commit_published';
-const REPLY_RECORD_MAX_BYTES = 64 * 1024;
 
 function replyDirectory(repoRoot: string, taskId: string, parentId: string, recipient: TaskMessageRecipient): string {
   assertMessageId(parentId);
@@ -1070,7 +1079,7 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
   if (!inspectSafeDirectoryChain(commonDirectory, dirname(path), false, 'reply record directory')) return null;
   let stat;
   try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
   charge?.(stat.size);
   const bytes = readCanonicalFile(path, 'reply record');
   const value = validate(JSON.parse(bytes));
@@ -1104,7 +1113,7 @@ function persistReplyRecord(input: RestrictedTaskInboxInput, parentId: string, k
   inspectSafeDirectoryChain(common, staging, true, 'reply staging directory');
   const target = join(directory, `${kind}.json`);
   const bytes = Buffer.from(`${canonical}\n`, 'utf8');
-  if (bytes.length > REPLY_RECORD_MAX_BYTES) fail('task_message_invalid', 'reply record exceeds its byte bound');
+  if (bytes.length > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_invalid', 'reply record exceeds its byte bound');
   const temporary = join(staging, `.${kind}.${process.pid}.${randomUUID()}.tmp`);
   let fd: number | null = null;
   try {
@@ -1145,7 +1154,7 @@ export function replyToTaskSteer(input: RestrictedTaskInboxInput & {
     authority.revalidate();
     if (!chain.intent) persistReplyRecord(input, parent.message_id, 'intent', canonicalTaskReplyIntentBytes(intent), authority.revalidate, input.crash_hook);
     authority.revalidate();
-    const published = writeImmutableEvent(input.repo_root, intent.reply);
+    const published = writeImmutableEvent(input.repo_root, intent.reply, authority.revalidate);
     if (published.event.event_digest !== intent.reply.event_digest) replyInconsistent('event bytes differ from frozen intent');
     input.crash_hook?.('event_published');
     authority.revalidate();
