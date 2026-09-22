@@ -56,7 +56,7 @@ A canonical record digest changes during migration, an old layout appears as emp
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"migration","kind":"deterministic_test","paths":["*"]}]}
+{"protocol":1,"oracles":[{"id":"migration","kind":"deterministic_test","paths":["*"]},{"id":"owner-7","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -451,6 +451,8 @@ baseline and named current delta checks; never infer it from paths or command te
 ## Acceptance Notes (Human Review)
 
 Existing inbox/reply/reader suites own behavior; one new effects suite owns the independently meaningful migration recovery boundary. Native CI is required for filesystem behavior. No local full suite is requested. All real-data operations are excluded; migration runs only in disposable fixtures. See the plan and research for byte preservation, refusal and offline rollout conditions.
+
+The runtime_readback oracle is owner-7: it invokes the real candidate CLI in a disposable Git repository, reads back migrated record bytes and receipts, kills an actual child at retirement, resumes from retained state and verifies rollback refusal after a new write. Owner-5 additionally exercises production HTTP GETs under ready, legacy and migration layouts. These are local candidate runtime observations, not global installation, real-data migration or Host admission evidence.
 
 ## Rollback Point
 
