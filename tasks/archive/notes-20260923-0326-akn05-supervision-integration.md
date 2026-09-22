@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 03:26
+> **Related Plan**: plans/archive/plan-20260923-0311-akn05-supervision-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260923-0326
+> **Archive Projection V1**: `plans/plan-20260923-0311-akn05-supervision-integration.md` => `plans/archive/plan-20260923-0311-akn05-supervision-integration.md`
+> **Archive Projection V1**: `tasks/notes/20260923-0311-akn05-supervision-integration.notes.md` => `tasks/archive/notes-20260923-0326-akn05-supervision-integration.md`
+> **Archive Projection V1**: `tasks/contracts/20260923-0311-akn05-supervision-integration.contract.md` => `tasks/archive/contract-20260923-0326-akn05-supervision-integration.md`
+> **Archive Projection V1**: `tasks/reviews/20260923-0311-akn05-supervision-integration.review.md` => `tasks/archive/review-20260923-0326-akn05-supervision-integration.md`
+
 # Implementation Notes: akn05-supervision-integration
 
 > **Status**: Active
-> **Plan**: plans/plan-20260923-0311-akn05-supervision-integration.md
-> **Contract**: tasks/contracts/20260923-0311-akn05-supervision-integration.contract.md
-> **Review**: tasks/reviews/20260923-0311-akn05-supervision-integration.review.md
+> **Plan**: plans/archive/plan-20260923-0311-akn05-supervision-integration.md
+> **Contract**: tasks/archive/contract-20260923-0326-akn05-supervision-integration.md
+> **Review**: tasks/archive/review-20260923-0326-akn05-supervision-integration.md
 > **Last Updated**: 2026-09-23 03:11
 > **Lifecycle**: notes
 

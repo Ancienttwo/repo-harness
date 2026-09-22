@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-23 03:26
+> **Related Plan**: plans/archive/plan-20260923-0311-akn05-supervision-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260923-0326
+> **Archive Projection V1**: `plans/plan-20260923-0311-akn05-supervision-integration.md` => `plans/archive/plan-20260923-0311-akn05-supervision-integration.md`
+> **Archive Projection V1**: `tasks/notes/20260923-0311-akn05-supervision-integration.notes.md` => `tasks/archive/notes-20260923-0326-akn05-supervision-integration.md`
+> **Archive Projection V1**: `tasks/contracts/20260923-0311-akn05-supervision-integration.contract.md` => `tasks/archive/contract-20260923-0326-akn05-supervision-integration.md`
+> **Archive Projection V1**: `tasks/reviews/20260923-0311-akn05-supervision-integration.review.md` => `tasks/archive/review-20260923-0326-akn05-supervision-integration.md`
+
 # Task Contract: akn05-supervision-integration
 
-> **Status**: Active
-> **Plan**: plans/plan-20260923-0311-akn05-supervision-integration.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260923-0311-akn05-supervision-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-23 03:11
-> **Review File**: `tasks/reviews/20260923-0311-akn05-supervision-integration.review.md`
-> **Notes File**: `tasks/notes/20260923-0311-akn05-supervision-integration.notes.md`
+> **Review File**: `tasks/archive/review-20260923-0326-akn05-supervision-integration.md`
+> **Notes File**: `tasks/archive/notes-20260923-0326-akn05-supervision-integration.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -41,10 +51,10 @@ Not applicable: bounded integration of previously accepted UI and reader stages;
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260923-0311-akn05-supervision-integration.md`
+- Source plan: `plans/archive/plan-20260923-0311-akn05-supervision-integration.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260923-0311-akn05-supervision-integration.review.md`
-- Notes file: `tasks/notes/20260923-0311-akn05-supervision-integration.notes.md`
+- Review file: `tasks/archive/review-20260923-0326-akn05-supervision-integration.md`
+- Notes file: `tasks/archive/notes-20260923-0326-akn05-supervision-integration.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -90,7 +100,7 @@ allowed_paths:
   - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
   - plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
   - plans/archive/plan-20260923-0031-windows-task-persistence.md
-  - plans/plan-20260923-0311-akn05-supervision-integration.md
+  - plans/archive/plan-20260923-0311-akn05-supervision-integration.md
   - scripts/check-tarball-install-smoke.sh
   - src/cli/commands/fleet.ts
   - src/core/fleet/task-inbox-layout.ts
@@ -166,15 +176,15 @@ allowed_paths:
   - tasks/archive/todo-20260923-0253-task-inbox-portable-paths.md
   - tasks/archive/todo-20260923-0302-akn04-repository-snapshot.md
   - tasks/contracts/20260922-0534-akn04-automation-summary.contract.md
-  - tasks/contracts/20260923-0311-akn05-supervision-integration.contract.md
+  - tasks/archive/contract-20260923-0326-akn05-supervision-integration.md
   - tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md
   - tasks/notes/20260922-0534-akn04-automation-summary.notes.md
-  - tasks/notes/20260923-0311-akn05-supervision-integration.notes.md
+  - tasks/archive/notes-20260923-0326-akn05-supervision-integration.md
   - tasks/reviews/20260922-0418-akn04-activity.review.md
   - tasks/reviews/20260922-0450-akn04-context.review.md
   - tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md
   - tasks/reviews/20260922-0534-akn04-automation-summary.review.md
-  - tasks/reviews/20260923-0311-akn05-supervision-integration.review.md
+  - tasks/archive/review-20260923-0326-akn05-supervision-integration.md
   - tasks/todos.md
   - tests/cli/mcp-http.test.ts
   - tests/cli/operator-serve.test.ts
