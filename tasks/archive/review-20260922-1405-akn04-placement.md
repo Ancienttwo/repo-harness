@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 14:05
+> **Related Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1405
+> **Archive Projection V1**: `plans/plan-20260922-0321-akn04-placement.md` => `plans/archive/plan-20260922-0321-akn04-placement.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0321-akn04-placement.notes.md` => `tasks/archive/notes-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0321-akn04-placement.contract.md` => `tasks/archive/contract-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0321-akn04-placement.review.md` => `tasks/archive/review-20260922-1405-akn04-placement.md`
+
 # Task Review: akn04-placement
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0321-akn04-placement.md
-> **Contract**: tasks/contracts/20260922-0321-akn04-placement.contract.md
-> **Notes File**: tasks/notes/20260922-0321-akn04-placement.notes.md
+> **Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Contract**: tasks/archive/contract-20260922-1405-akn04-placement.md
+> **Notes File**: tasks/archive/notes-20260922-1405-akn04-placement.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
