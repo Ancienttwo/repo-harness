@@ -7,7 +7,7 @@
 > **Last Updated**: 2026-09-23 00:31
 > **Lifecycle**: notes
 
-> **Substantive Change SHA256**: `sha256:06887121c7c8a95ee4e911fb6d21f1f3e13c49c2a841017eb0419c76d74aad7d`
+> **Substantive Change SHA256**: `sha256:1aa0e7f51ac52f746c6e01df181f4bc8317d093ad6104b7a0a56594920a5ef98`
 
 ## Design Decisions
 
@@ -20,6 +20,7 @@
 ## Deviations From Plan Or Spec
 
 - Native run 35755604887 reached the real reply lifecycle after the persistence fix, exposing four existing fixture failures: the staging spy appended a POSIX separator on Windows, and scan exhaustion raced the independent deadline. The approved test-file boundary covers both corrections. Native filesystem writes, authorization refusal and exact-parent recovery assertions remain intact; only the synchronous scan/byte-budget assertion fixes its clock, restored before MCP recovery.
+- Run 35756978653 confirmed those corrected cases pass on Windows. It exposed another scan/byte-budget assertion with the same host-speed race and three process-recovery tests cut off by their explicit 20-second outer limit. The sibling assertion now fixes the clock only around the query; process tests retain every exit/storage/recovery assertion with a 60-second outer limit, within the matrix's existing 180-second default. Ten migration inventory refusals belong to the still-active upstream PR443 contract and are returned there for diagnosis before another native run.
 
 ## Tradeoffs Considered
 
@@ -34,6 +35,10 @@
 - None.
 
 ## Evidence Links
+
+- Remaining fixture correction relative to `ec1b2e74`: local reply suite passed 33/33 with 144 assertions in 64.73 seconds. Retained native failure log: `.ai/harness/runs/windows-task-persistence/native-fixture-correction.log`.
+
+> **Substantive Change SHA256**: `sha256:a801bfabc3019c8666477d4e854e82da7f676033ba3570e9798ebb849ad8e53e`
 
 - Native-fixture correction relative to `eb8195e3`: local protected reply suite passed 33/33 with 144 assertions; typecheck passed. The complete package digest above remains bound to `49c5f9dc`.
 

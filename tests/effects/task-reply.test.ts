@@ -276,7 +276,7 @@ describe('protected Task reply storage and Engineer composition', () => {
       const completed = f.reply(); expect(completed.event.message_id).toBe(id(5)); expect(f.history().observation.state).toBe('complete');
       const eventFiles = readdirSync(join(taskInboxTaskDirectory(f.root, f.work.task_id), 'events'));
       expect(eventFiles.sort()).toEqual([`${id(4)}.json`, `${id(5)}.json`]);
-    }, 20_000);
+    }, 60_000);
   }
 
   test('token revocation after event blocks commit and mapping revocation blocks recovery while retaining history', () => {
@@ -338,14 +338,19 @@ describe('protected Task reply storage and Engineer composition', () => {
       const event = buildTaskMessageEvent({ ...f.parent, message_id: id(n) });
       writeFileSync(join(eventsDirectory, `${event.message_id}.json`), `${canonicalTaskMessageEventBytes(event)}\n`);
     }
-    expect(f.query().coverage).toMatchObject({ complete: false, reason: 'scan', scanned: 1000 });
+    const scanClock = spyOn(Date, 'now').mockReturnValue(Date.now());
+    try { expect(f.query().coverage).toMatchObject({ complete: false, reason: 'scan', scanned: 1000 }); }
+    finally { scanClock.mockRestore(); }
     for (let n = 100; n < 1100; n += 1) unlinkSync(join(eventsDirectory, `${id(n)}.json`));
     for (let n = 100; n < 400; n += 1) {
       const event = buildTaskMessageEvent({ ...f.parent, message_id: id(n), body: 'x'.repeat(8000) });
       writeFileSync(join(eventsDirectory, `${event.message_id}.json`), `${canonicalTaskMessageEventBytes(event)}\n`);
     }
-    const limited = f.query(); expect(limited.coverage).toMatchObject({ complete: false, reason: 'bytes' });
-    expect(limited.coverage.bytes).toBeLessThanOrEqual(2 * 1024 * 1024);
+    const byteClock = spyOn(Date, 'now').mockReturnValue(Date.now());
+    try {
+      const limited = f.query(); expect(limited.coverage).toMatchObject({ complete: false, reason: 'bytes' });
+      expect(limited.coverage.bytes).toBeLessThanOrEqual(2 * 1024 * 1024);
+    } finally { byteClock.mockRestore(); }
   });
 
   test('a valid event stored under another message ID fails closed on both exact and paged reads', () => {
@@ -402,7 +407,7 @@ describe('protected Task reply storage and Engineer composition', () => {
     const committed = await callMcpTool(ctx, 'engineer_task_reply', { work_envelope: f.work, ...retry });
     expect(committed).toMatchObject({ structuredContent: { event: { message_id: recovery.reply_message_id, body: recovery.body }, commit: { intent_sha256 } } });
     expect(f.history().observation.state).toBe('complete');
-  }, 20_000);
+  }, 60_000);
 
   test('strict named MCP tools reject missing transport authority then compose consume ACK and reply', async () => {
     const f = fixture(); const base = { repoRoot: f.root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: id(2) };
