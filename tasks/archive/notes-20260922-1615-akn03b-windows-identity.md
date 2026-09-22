@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 16:15
+> **Related Plan**: plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1615
+> **Archive Projection V1**: `plans/plan-20260922-1548-akn03b-windows-identity.md` => `plans/archive/plan-20260922-1548-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1548-akn03b-windows-identity.notes.md` => `tasks/archive/notes-20260922-1615-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md` => `tasks/archive/contract-20260922-1615-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1548-akn03b-windows-identity.review.md` => `tasks/archive/review-20260922-1615-akn03b-windows-identity.md`
+
 # Implementation Notes: akn03b-windows-identity
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-1548-akn03b-windows-identity.md
-> **Contract**: tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md
-> **Review**: tasks/reviews/20260922-1548-akn03b-windows-identity.review.md
+> **Plan**: plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+> **Contract**: tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+> **Review**: tasks/archive/review-20260922-1615-akn03b-windows-identity.md
 > **Last Updated**: 2026-09-22 15:48
 > **Lifecycle**: notes
 
