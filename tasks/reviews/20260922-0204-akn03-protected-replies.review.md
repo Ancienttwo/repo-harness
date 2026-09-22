@@ -14,7 +14,7 @@
 
 ## Human Review Card
 
-- Verdict: independent needs-attention; original findings fixed; cumulative AKN-04a dependency findings corrected with pre-fix failures and targeted regressions; corrected final verification and owner acceptance pending.
+- Verdict: independent needs-attention; original and cumulative dependency findings corrected with pre-fix failures and targeted regressions; final canonical verification passed, owner acceptance pending.
 - Change type: code-change; protected message disposition and current-request auth.
 - Scope: roadmap sections 5.3 and 5.5-5.7, as frozen in the captured plan.
 - P1/P2/P3: existing inbox authority; Binding to Task to mapping to registry lock order; original WorkEnvelope digest; synchronous OAuth recheck and physical crash boundaries.
@@ -92,3 +92,9 @@ The original review rejection remains. This correction supersedes prior source-b
 ## Pagination correction architecture refresh
 
 The authorized local index is current for source bd557f81. Deterministic architecture projection updates only the manifest; no human action or refresh signal was requested. Plan/apply receipts are `.ai/harness/runs/akn03-protected-replies/pagination-projection-{plan,apply}.json`. The corrected source is frozen for canonical verification; earlier de587bc9 verification and acceptance requests remain superseded.
+
+## Final pagination correction verification
+
+Canonical prepare-acceptance at `802b9da87de283f873ecc89c029f5031e466e939` passed all 23 criteria, including 19 executed checks, with zero failures and no snapshot change during execution. The exact normalized implementation subject is `sha256:39106a9170288dc78b696474265778fdbf7ee513ad8a56741ffeb7bff694ef68`. Evidence: `.ai/harness/runs/run-20260922T110720-33976-20260922-0204-akn03-protected-replies.json`; architecture acceptance materialization was noop.
+
+The preceding attempt stopped at allowed-path preflight because the invocation omitted the stacked package base. The successful run explicitly used the contract's existing base `749e9e92cc0f3da384dfca4e24ebb20f39b98277` and merge-base mode; neither allowed paths nor checks were widened. The original independent rejection is retained. The AcceptanceReceipt remains pending; machine verification does not establish owner acceptance or installed Host admission.
