@@ -1,15 +1,15 @@
 # Task Review: AKN-03b protected Task reply persistence and Engineer MCP
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-0204-akn03-protected-replies.md
 > **Contract**: tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
 > **Notes File**: tasks/notes/20260922-0204-akn03-protected-replies.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:39106a9170288dc78b696474265778fdbf7ee513ad8a56741ffeb7bff694ef68
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 > **Substantive Change SHA256**: `sha256:ed3b605a02dcb742514baa338ae21111bfcb14d557611325251af711230e97e4`
 
 ## Human Review Card
@@ -98,3 +98,18 @@ The authorized local index is current for source bd557f81. Deterministic archite
 Canonical prepare-acceptance at `802b9da87de283f873ecc89c029f5031e466e939` passed all 23 criteria, including 19 executed checks, with zero failures and no snapshot change during execution. The exact normalized implementation subject is `sha256:39106a9170288dc78b696474265778fdbf7ee513ad8a56741ffeb7bff694ef68`. Evidence: `.ai/harness/runs/run-20260922T110720-33976-20260922-0204-akn03-protected-replies.json`; architecture acceptance materialization was noop.
 
 The preceding attempt stopped at allowed-path preflight because the invocation omitted the stacked package base. The successful run explicitly used the contract's existing base `749e9e92cc0f3da384dfca4e24ebb20f39b98277` and merge-base mode; neither allowed paths nor checks were widened. The original independent rejection is retained. The AcceptanceReceipt remains pending; machine verification does not establish owner acceptance or installed Host admission.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:39106a9170288dc78b696474265778fdbf7ee513ad8a56741ffeb7bff694ef68
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:af635f5a768f26ef373bcaf04a4c23d9b50f76f612e3562318f595d626f60d39
+> **Issued At**: 2026-09-22T06:02:04.647Z
+
+- Summary: Contract owner approved the pending AKN-03b, AKN-04a and AKN-05a owner acceptance requests on 2026-09-22 after corrected canonical verification. No merge or runtime installation authorization.
+- Findings: none
