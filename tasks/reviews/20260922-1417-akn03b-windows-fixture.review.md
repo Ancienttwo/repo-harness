@@ -58,3 +58,12 @@ The owner review on 2026-09-22 requires reacceptance of the corrected communicat
 GitHub run 35693364932 belongs to head fdc2081f and checked out PR merge e2f74143c536d2eb29c317aafd0836e5889477f5 (base 749e9e92). Windows job 106634890098 failed directory fsync in Binding fixture setup; Ubuntu Test job 106634890110 failed only the two candidate Stop-timeout fixtures. The Test job did not reach npm pack or tarball-install smoke. Governance context checks, Ubuntu MCP and macOS MCP succeeded. No package/context-wiring failure appears in this run; the merged source forwards requestContext and engineerVerifyAuthorization.
 
 Accepted fixture commit 8c7fd593 is now an ancestor of this candidate through the refreshed #435 branch. The installed smoke reuses the existing HTTP E2E against package runtime source and adds a successful mapped status call. Semantic acceptance remains pending on the new frozen subject.
+
+## Current corrected candidate awaiting owner acceptance
+
+- Candidate source commit: `e46cfe4e21a886bc39350bf8be8954e52146cff7`.
+- Subject: `sha256:25dc1cd91acb024a7824139f30a43cebf2cbd230480c655db8433d2bac545fe6`.
+- Canonical evidence: `.ai/harness/runs/run-20260922T150319-21443-20260922-1417-akn03b-windows-fixture.json`; 30/30 criteria passed.
+- Installed-package check: execution `vx-c872ed06cf9e4e8d9d80`, exit 0, 23.9 seconds; includes successful mapped status plus authorization/context/session checks.
+- External review request was rejected before provider invocation with `review_budget_exhausted`: this work-package already consumed its one semantic review and requires owner acceptance after repairs. No third provider attempt or substitute acceptance was used.
+- Earlier `reject` remains historical; current corrected subject is pending owner acceptance. No main merge, real Host grant, Campaign, or global runtime installation.
