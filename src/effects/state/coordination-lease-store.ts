@@ -27,12 +27,8 @@
  * and `unknown` is never silently deleted -- `removeLease` refuses to touch it.
  */
 import {
-  closeSync,
-  constants,
-  fsyncSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -47,7 +43,7 @@ import {
   type LeaseOwnerRecord,
   type LeaseState,
 } from '../../core/state/coordination-identity';
-import { writeFileDurably } from '../evidence/atomic-append';
+import { syncDirectoryDurably, writeFileDurably } from '../evidence/atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
@@ -162,15 +158,6 @@ export function withBacklogLock<T>(
   });
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-}
-
 /**
  * Atomic `mkdir` election of the lease directory. `false` means another caller
  * already elected it; the caller must then read the owner record under the
@@ -185,13 +172,14 @@ export function createLeaseDirectory(cwd: string, taskId: string): boolean {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw error;
   }
-  fsyncDirectory(dirname(target));
+  syncDirectoryDurably(dirname(target));
   return true;
 }
 
 /**
  * Publish an owner record durably: temp file, fsync, atomic rename, then fsync
- * the containing directory so the rename itself survives a crash. A reader
+ * the containing directory on POSIX. Windows retains file flushes and atomic
+ * publication without claiming equivalent directory power-loss durability. A reader
  * therefore observes either the previous record or the new one, never a
  * partial write.
  */
@@ -219,7 +207,7 @@ export function writeLeaseOwnerDurably(
     }
     throw error;
   }
-  fsyncDirectory(directory);
+  syncDirectoryDurably(directory);
 }
 
 function classifyUnknown(
@@ -362,7 +350,7 @@ export function removeLease(cwd: string, taskId: string, expectedClaimId: string
   const directory = leaseDirectory(cwd, taskId);
   unlinkSync(join(directory, LEASE_OWNER_FILE_NAME));
   rmdirSync(directory);
-  fsyncDirectory(dirname(directory));
+  syncDirectoryDurably(dirname(directory));
 }
 
 /**
@@ -394,5 +382,5 @@ export function removeOwnLeaseAfterFailedClaim(
     throw new Error(`refusing to roll back non-empty lease directory ${taskId}`);
   }
   rmdirSync(directory);
-  fsyncDirectory(dirname(directory));
+  syncDirectoryDurably(dirname(directory));
 }

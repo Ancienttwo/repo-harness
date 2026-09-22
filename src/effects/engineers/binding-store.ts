@@ -1,3 +1,4 @@
+import { syncDirectoryDurably } from '../evidence/atomic-append';
 import { createHash, randomUUID } from 'crypto';
 import {
   closeSync,
@@ -132,7 +133,7 @@ function ensureSafeDirectory(root: string, target: string): void {
       }
       const stat = lstatSync(current);
       if (!stat.isDirectory() || stat.isSymbolicLink()) fail('unsafe_engineer_path', `unsafe store directory: ${current}`);
-      fsyncDirectory(dirname(current));
+      syncDirectoryDurably(dirname(current));
     }
   }
 }
@@ -155,15 +156,6 @@ function storePaths(cwd: string, engineerId: string): StorePaths {
 
 export function engineerBindingStoreRoot(cwd: string): string {
   return resolve(resolveGitCommonDirectory(cwd), ENGINEER_STORE_RELATIVE_ROOT);
-}
-
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
 }
 
 function readRegularFile(path: string, subject: string): string | null {
@@ -345,7 +337,7 @@ function writeCurrentDurably(paths: StorePaths, current: EngineerBindingCurrentV
     const target = readRegularFile(paths.current, 'current.json');
     if (target !== expectedRaw) fail('binding_stale', 'current.json changed during publication');
     renameSync(temp, paths.current);
-    fsyncDirectory(paths.engineer);
+    syncDirectoryDurably(paths.engineer);
   } catch (error) {
     try {
       unlinkSync(temp);
@@ -474,7 +466,7 @@ function publishNewEvent(
       fail('idempotency_conflict', 'transition event already exists with different bytes', error);
     }
   }
-  fsyncDirectory(paths.events);
+  syncDirectoryDurably(paths.events);
   crashHook?.('after_event_fsync');
   const current = buildEngineerBindingCurrent(event);
   writeCurrentDurably(paths, current, before.raw);
