@@ -1,29 +1,39 @@
-# Task Contract: akn04-placement
+> **Archived**: 2026-09-22 14:03
+> **Related Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1403
+> **Archive Projection V1**: `plans/plan-20260922-0204-akn03-protected-replies.md` => `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md` => `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0204-akn03-protected-replies.contract.md` => `tasks/archive/contract-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md` => `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0321-akn04-placement.md
+# Task Contract: akn03-protected-replies
+
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-22 03:21
-> **Review File**: `tasks/reviews/20260922-0321-akn04-placement.review.md`
-> **Notes File**: `tasks/notes/20260922-0321-akn04-placement.notes.md`
+> **Last Updated**: 2026-09-22 02:04
+> **Review File**: `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+> **Notes File**: `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
 
-Fleet currently maps normal planning/inline work to null and degraded, drops TaskOffer blockers and includes missing-row execution records in task totals.
+ACKed steer currently disappears from delivery even when no reply exists. Raw agent-shaped events do not establish authenticated provenance or crash-safe completion.
 
 ## Goal
 
-Implement the approved AKN-04a exhaustive placement, exact readiness blockers and known canonical count conservation, with same-package Fleet 5 / Operator 6 consumer cutover.
+Implement the approved AKN-03b protected communication slice: durable original-ID reply, bounded pending disposition, and exact-authority Engineer MCP consume/ACK/reply.
 
 ## Scope
 
 - In scope: captured plan P1/P2/P3 and exact paths below.
-- Out of scope: new context/activity routes, full AKN-05 home redesign, Host activation, main merge and runtime install.
-- No dual column authority, old protocol fallback or persisted domain mutation.
+- Out of scope: Host activation/canary, notification effect reconciliation, browser writes, Task/Lease/Acceptance changes, main merge or runtime installation.
+- Taste constraints: no dual WorkEnvelope authority, semantic prose parser, generic transaction framework or compatibility fallback.
 
 ## Stop Conditions
 
@@ -33,7 +43,7 @@ Implement the approved AKN-04a exhaustive placement, exact readiness blockers an
 
 ## Falsifier
 
-A normal missing-plan task degrades a readable repository; claimed work regresses to preparation; blocker ownership changes in transit; isolated execution increases known_tasks; decoder accepts old or nonconserving payloads; available implies live execution.
+A partial reply reports committed, revoked identity can commit, ACKed unanswered steer disappears, or recovery changes ID/body/fence. Physical crash and current-authority tests must reject each.
 
 ## Root Cause Evidence
 
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0321-akn04-placement.md`
+- Source plan: `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0321-akn04-placement.review.md`
-- Notes file: `tasks/notes/20260922-0321-akn04-placement.notes.md`
+- Review file: `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+- Notes file: `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -58,7 +68,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"fleet-placement","kind":"deterministic_test","paths":["*"]}]}
+{"protocol":1,"oracles":[{"id":"reply-effects","kind":"deterministic_test","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -71,32 +81,28 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
-  - src/core/fleet/board.ts
-  - src/effects/fleet/board.ts
-  - src/core/operator/fleet-snapshot.ts
-  - src/operator-web/types.ts
-  - src/operator-web/App.tsx
-  - src/operator-web/fixture.ts
-  - src/operator-web/i18n.ts
+  - src/effects/fleet/acquire.ts
+  - src/effects/fleet/task-inbox.ts
+  - src/effects/engineers/task-inbox.ts
+  - src/effects/engineers/principal-store.ts
+  - src/effects/repo-registry.ts
+  - src/cli/mcp/oauth.ts
+  - src/cli/mcp/server.ts
+  - src/cli/mcp/tools.ts
+  - src/cli/mcp/engineer-tools.ts
+  - src/cli/mcp/transports/http.ts
+  - tests/effects/task-reply.test.ts
+  - tests/cli/mcp-engineer-tools.test.ts
+  - tests/cli/mcp-http.test.ts
+  - tests/cli/mcp-oauth.test.ts
   - tests/unit/collaboration-authority-baseline.test.ts
+  - docs/researches/20260922-task-reply-protocol.md
   - docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md
-  - tests/unit/fleet-board.test.ts
-  - tests/effects/fleet-board.test.ts
-  - tests/unit/operator-fleet-snapshot.test.ts
-  - tests/unit/operator-web-types.test.ts
-  - tests/cli/fleet-board.test.ts
-  - tests/cli/operator-serve.test.ts
-  - tests/effects/operator-write-boundary.test.ts
-  - tests/operator-web/operator-interactions.test.tsx
-  - tests/operator-web/operator-ui.test.tsx
-  - tests/operator-web/operator-collaboration.test.tsx
-  - tests/operator-web/operator-task-diff.test.tsx
-  - docs/researches/20260922-fleet-placement-contract.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0321-akn04-placement.md
-  - tasks/contracts/20260922-0321-akn04-placement.contract.md
-  - tasks/reviews/20260922-0321-akn04-placement.review.md
-  - tasks/notes/20260922-0321-akn04-placement.notes.md
+  - plans/archive/plan-20260922-0204-akn03-protected-replies.md
+  - tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/review-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/notes-20260922-1403-akn03-protected-replies.md
   - tasks/todos.md
 ```
 
@@ -145,7 +151,8 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - docs/researches/20260922-fleet-placement-contract.md
+    - src/effects/engineers/task-inbox.ts
+    - tests/effects/task-reply.test.ts
   artifacts_exist: []
 ```
 
@@ -156,6 +163,108 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
+      "id": "reply-effects",
+      "kind": "package_test",
+      "path": "tests/effects/task-reply.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "acquire-effects",
+      "kind": "package_test",
+      "path": "tests/unit/fleet-acquire-effect.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Shared authority validator must retain strict acquisition fencing",
+      "inputs": { "env": [] }
+    },
+    {
+      "id": "reply-core",
+      "kind": "package_test",
+      "path": "tests/unit/task-reply.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "task-inbox",
+      "kind": "package_test",
+      "path": "tests/effects/task-inbox.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "engineer-mcp",
+      "kind": "package_test",
+      "path": "tests/cli/mcp-engineer-tools.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "oauth",
+      "kind": "package_test",
+      "path": "tests/cli/mcp-oauth.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "http",
+      "kind": "package_test",
+      "path": "tests/cli/mcp-http.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "operator-write",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-message.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Changed communication persistence, authentication and existing inbox/authorization invariants",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
       "id": "authority-inventory",
       "kind": "package_test",
       "path": "tests/unit/collaboration-authority-baseline.test.ts",
@@ -163,150 +272,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Fleet protocol cutover must update its existing closed authority inventory and recorded digest",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "fleet-board-unit",
-      "kind": "package_test",
-      "path": "tests/unit/fleet-board.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "fleet-board-effects",
-      "kind": "package_test",
-      "path": "tests/effects/fleet-board.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-fleet-snapshot-unit",
-      "kind": "package_test",
-      "path": "tests/unit/operator-fleet-snapshot.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-web-types-unit",
-      "kind": "package_test",
-      "path": "tests/unit/operator-web-types.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "fleet-board-cli",
-      "kind": "package_test",
-      "path": "tests/cli/fleet-board.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-serve-cli",
-      "kind": "package_test",
-      "path": "tests/cli/operator-serve.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-write-boundary-effects",
-      "kind": "package_test",
-      "path": "tests/effects/operator-write-boundary.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-interactions-operator-web",
-      "kind": "package_test",
-      "path": "tests/operator-web/operator-interactions.test.tsx",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-ui-operator-web",
-      "kind": "package_test",
-      "path": "tests/operator-web/operator-ui.test.tsx",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-collaboration-operator-web",
-      "kind": "package_test",
-      "path": "tests/operator-web/operator-collaboration.test.tsx",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "operator-task-diff-operator-web",
-      "kind": "package_test",
-      "path": "tests/operator-web/operator-task-diff.test.tsx",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Shared Fleet/Operator projection, decoder, failure containment and browser protocol cutover",
+      "necessity": "Task reply now has a protected consumer; preserve closed delivery-plane inventory and frozen identities",
       "inputs": {
         "env": []
       }
@@ -392,7 +358,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=749e9e92cc0f3da384dfca4e24ebb20f39b98277 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -440,19 +406,6 @@ exit_criteria:
       "inputs": {
         "env": []
       }
-    },
-    {
-      "id": "browser-build",
-      "kind": "command",
-      "command": "bun run build:operator-web",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Fleet/Operator protocol cutover must produce a valid browser bundle",
-      "inputs": {
-        "env": []
-      }
     }
   ]
 }
@@ -460,9 +413,9 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-Existing tests cover the closed placement mapping, exact blocker ownership, count conservation, protocol and browser consumers. Source browser inspection is required for changed grouping/copy. No Host/H0 acceptance claimed. Freeze source and architecture before canonical evidence and one independent review.
+New effects test is admitted because pure protocol tests do not exercise physical fsync/link boundaries, authority composition or recovery reads. Existing MCP/OAuth/HTTP and inbox/operator suites are extended/reused. These fixtures prove local contract behavior only, not H0 protected-store isolation or native Host/campaign acceptance. The stage is based on published PR #435 at 749e9e92. Source and automatic projection must be frozen and committed before one final independent review.
 
 ## Rollback Point
 
-- Base: 92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e.
-- Roll back Fleet/Operator/browser as one schema unit; no persistent records are rewritten.
+- Base: 749e9e92cc0f3da384dfca4e24ebb20f39b98277.
+- Revert entrypoints/writer; preserve original event/receipt bytes and incomplete reply evidence for explicit reconciliation.

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 14:05
+> **Related Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1405
+> **Archive Projection V1**: `plans/plan-20260922-0321-akn04-placement.md` => `plans/archive/plan-20260922-0321-akn04-placement.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0321-akn04-placement.notes.md` => `tasks/archive/notes-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0321-akn04-placement.contract.md` => `tasks/archive/contract-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0321-akn04-placement.review.md` => `tasks/archive/review-20260922-1405-akn04-placement.md`
+
 # Implementation Notes: akn04-placement
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-0321-akn04-placement.md
-> **Contract**: tasks/contracts/20260922-0321-akn04-placement.contract.md
-> **Review**: tasks/reviews/20260922-0321-akn04-placement.review.md
+> **Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Contract**: tasks/archive/contract-20260922-1405-akn04-placement.md
+> **Review**: tasks/archive/review-20260922-1405-akn04-placement.md
 > **Last Updated**: 2026-09-22
 > **Lifecycle**: notes
 
