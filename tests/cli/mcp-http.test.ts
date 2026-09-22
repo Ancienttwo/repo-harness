@@ -8,6 +8,7 @@ import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
 import type { McpCodingRuntime } from '../../src/cli/mcp/server';
+import { resolveMcpRepoRoot } from '../../src/cli/mcp/repo';
 import { runMcpSetupChatgpt } from '../../src/cli/mcp/setup';
 import {
   CodingAuthorizationRuntimeStore,
@@ -929,7 +930,7 @@ describe('mcp http transport', () => {
   }, 30_000);
 
   test('engineer OAuth E2E binds sessions to authorization and exposes only the exact Engineer tools', async () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));
+    let repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
     process.env.REPO_HARNESS_HOME = realpathSync(process.env.REPO_HARNESS_HOME!);
@@ -942,6 +943,8 @@ describe('mcp http transport', () => {
         if (result.exitCode !== 0) throw new Error(result.stderr.toString());
       };
       runGit('init', '-b', 'main');
+      // Git expands Windows 8.3 paths; seed identities from the same root used by the MCP server.
+      repoRoot = realpathSync(resolveMcpRepoRoot(repoRoot));
       runGit('config', 'user.email', 'tests@example.com');
       runGit('config', 'user.name', 'Repo Harness Tests');
       runGit('add', '.');
@@ -1132,6 +1135,7 @@ describe('mcp http transport', () => {
       writeFileSync(join(bindingRoot, 'current.json'), canonicalEngineerBindingCurrentBytes(buildEngineerBindingCurrent(event)));
       const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath()); tokenStore.load();
       const authorization = tokenStore.listAuthorizations('engineer')[0]!;
+      expect(tokenStore.getAccessToken(firstHeaders.authorization!.slice('Bearer '.length))?.authorizationId).toBe(authorization.authorizationId);
       const mapping = buildEngineerPrincipalMapping({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: authorization.authorizationId, binding, created_at: createdAt });
       const mappingRoot = join(dirname(repoHarnessRegisteredReposPath()), 'engineer-principals/v1');
       const mappingKey = createHash('sha256').update(`${mapping.repository_id}\0${mapping.authorization_id}`).digest('hex');

@@ -85,3 +85,7 @@ Oversize reply input raises `task_reply_invalid` while constructing the intent, 
 ## Installed transport verification
 
 The tarball-install smoke runs the existing Engineer OAuth E2E from the disposable installed package root. Only the test and canonical architecture fixture model are copied; all runtime imports, the spawned MCP server and Engineer profiles resolve from the installed tarball. The suite covers the closed tool inventory, missing mapping, a successful mapped status call, WorkEnvelope rejection after request-token propagation, session isolation and read-only revocation. These transport facts do not establish native Host admission or a real Task/steer journey.
+
+## Windows fixture identity
+
+Run35702134633 at255ecbb0 proved the HTTP fixture hashed the Windows8.3 temporary root (`RUNNER~1`) while the server's existing Git-root resolver expanded it (`runneradmin`), producing different repository IDs for the same directory. Mapping-home and token-authorization identities agreed. The fixture now resolves its initialized Git repository through `resolveMcpRepoRoot` before setup and mapping construction. The real successful mapped-status assertion remains the regression guard; no production identity normalizer, alternate mapping lookup or durability policy was changed.
