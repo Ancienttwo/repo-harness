@@ -42,3 +42,9 @@ Subject: `sha256:6dcbc3767c1d4f7c66ac7b7d77f3afd12e76dcdc75adca784e9b87408715148
 
 - Summary: No material blocking findings in the exact scoped diff against the pinned base. Staged, unstaged, and untracked sources were empty. Admission remains fail-closed; reconciliation assertions remain intact. Tests were not executed in the read-only environment.
 - Findings: none
+
+## PR base verification binding
+
+The original integration digest above binds its narrow follow-up base. Hosted CI verifies the full PR against `0d4371c3f95e63851f4e083718f3337bf9646345`; the independent review already covered that pinned base and the same unchanged substantive sources. This additional range binding records that exact full-PR diff without changing accepted contract or goal authority.
+
+> **Substantive Change SHA256**: `sha256:2ebd6bc857ce0fd057e2fa872ddbb77cf8544e8b19d0a2e806a8b071b6838d3b`
