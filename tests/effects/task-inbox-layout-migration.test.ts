@@ -121,6 +121,49 @@ test.each([false, true])('completed rollback permits a fresh approved upgrade af
   expect(JSON.parse(readFileSync(history, 'utf8')).receipt_sha256).toBe(f.plan.receipt_sha256);
 });
 
+test.each([false, true])('rollback clears an interrupted receipt before a fresh upgrade, partial=%s', partial => {
+  const f = fixture();
+  const rename = fs.renameSync;
+  const fault = spyOn(fs, 'renameSync').mockImplementation((source, target) => {
+    if (String(target) === f.paths.receipt) throw new Error('receipt publication interrupted');
+    return rename(source, target);
+  });
+  try { expect(() => f.apply()).toThrow('receipt publication interrupted'); }
+  finally { fault.mockRestore(); }
+  const pending = `${f.paths.receipt}.pending`;
+  const prepared = readFileSync(pending);
+  if (partial) writeFileSync(pending, prepared.subarray(0, 50));
+  expect(f.rollback().state).toBe('rolled_back');
+  expect(existsSync(pending)).toBeFalse();
+  const later = '223e4567-e89b-42d3-a456-426614174000';
+  put(join(f.paths.legacy, TASK, 'events', `${later}.json`), `${canonicalTaskMessageEventBytes(buildTaskMessageEvent({ ...f.event, message_id: later, body: 'history after interrupted receipt rollback' }))}\n`);
+  const original = tree(f.paths.legacy);
+  const plan = migrateTaskInboxLayout({ repo_root: f.root });
+  const applied = migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true, expected_source_sha256: plan.manifest!.source_sha256 });
+  expect(applied.state).toBe('committed');
+  expect(tree(f.paths.backup)).toEqual(original);
+  expect(existsSync(pending)).toBeFalse();
+});
+
+test.each(['foreign', 'linked'] as const)('rollback preserves an unowned prepared receipt: %s', kind => {
+  const f = fixture();
+  const rename = fs.renameSync;
+  const fault = spyOn(fs, 'renameSync').mockImplementation((source, target) => {
+    if (String(target) === f.paths.receipt) throw new Error('receipt publication interrupted');
+    return rename(source, target);
+  });
+  try { expect(() => f.apply()).toThrow('receipt publication interrupted'); }
+  finally { fault.mockRestore(); }
+  const pending = `${f.paths.receipt}.pending`;
+  if (kind === 'foreign') writeFileSync(pending, 'foreign receipt');
+  else linkSync(pending, join(f.root, 'outside-receipt'));
+  const bytes = readFileSync(pending), current = tree(f.paths.current), backup = tree(f.paths.backup);
+  expect(() => f.rollback()).toThrow(kind === 'foreign' ? 'conflicting prepared receipt' : 'multiple paths');
+  expect(readFileSync(pending)).toEqual(bytes);
+  expect(tree(f.paths.current)).toEqual(current);
+  expect(tree(f.paths.backup)).toEqual(backup);
+});
+
 test.each(['journal-prepared', 'journal', 'rollback-archived', 'reapply-ready', 'staged', 'retired', 'fenced', 'published', 'receipt'] as const)(
   'fresh migration after rollback recovers at %s and retains both receipts', boundary => {
     for (const rollback of [false, true]) {

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:3ec054964de8656981bb3f636ce6cba32caa8c814dd3e64334376d9e53674578`
+> **Substantive Change SHA256**: `sha256:fde3422c830cc651d08553e79c146415a669b7bf6c17af8ac14075a4449c63a2`
 
 ## Design Decisions
 
@@ -29,6 +29,8 @@
 |--------|----------|--------|
 | Mutable phase journal | Rejected | Rewriting a phase adds a second state to reconcile; immutable manifest plus validated directory transitions suffices. |
 | Case-only v1 fixture pair on default macOS | Rejected | The old layout already overwrites the first identity. Native fresh-v2 tests prove separate Alice/alice delivery and ACK; migration refuses mismatched historical paths. |
+
+- The downstream #444 review returned a P2 for stale prepared forward receipts after rollback. This correction stays in the existing #443 migration ownership and allowed paths; no new work-package or real-data operation is introduced. Root cause: finishRollback removed only the published receipt. Repro: real rename interruption followed by rollback/new v1 history/reapply. Guard: the existing migration suite's complete/prefix and foreign/linked receipt cases. Pre-fix artifacts: `.ai/harness/runs/task-inbox-portable-paths/pending-receipt-pre-fix.log` and `pending-receipt-pre-fix-cleanup.log`. Current focused evidence: `pending-receipt-focused.log`, 48/48. The consumed reviews do not approve the corrected subject; final owner acceptance remains required.
 
 ## Open Questions
 

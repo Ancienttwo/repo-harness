@@ -277,6 +277,16 @@ function finishForward(common: string, manifest: Manifest, input: InboxMigration
 function finishRollback(common: string, manifest: Manifest, input: InboxMigrationInput): Receipt {
   const p = inboxLayoutPaths(common);
   checkedManifest(common, manifest);
+  const receipt = receiptFor(manifest);
+  const pendingReceipt = `${p.receipt}.pending`;
+  if (inboxPathStat(pendingReceipt)) {
+    if (inboxPathStat(pendingReceipt)?.nlink !== 1n) refuse('transaction file has multiple paths');
+    const expected = Buffer.from(json(receipt));
+    const prepared = readFile(pendingReceipt, expected.length);
+    if (!expected.subarray(0, prepared.length).equals(prepared)) refuse('conflicting prepared receipt');
+    // The inverse owns only this transaction's complete receipt or interrupted prefix.
+    removeMetadata(pendingReceipt);
+  }
   if (inboxPathStat(p.current)) {
     if (inboxPathStat(p.stage)) refuse('both serving and staged trees exist');
     assertTree(p.current, manifest.target); marker(common);
@@ -287,7 +297,6 @@ function finishRollback(common: string, manifest: Manifest, input: InboxMigratio
     renameSync(p.backup, p.legacy); syncInboxDirectory(p.root); input.on_boundary?.('rollback-restored');
   }
   assertTree(p.legacy, manifest.source);
-  const receipt = receiptFor(manifest);
   publishMetadata(p.rolledBack, receipt);
   if (inboxPathStat(p.stage)) {
     // Rollback can also discard an incomplete copy, but only entries and prefixes owned by this manifest.
