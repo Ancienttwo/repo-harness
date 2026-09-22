@@ -21,7 +21,7 @@ Implement AKN-04d2 automation summary from original grant/budget/controller/Camp
 
 ## Scope
 
-- In scope: strict public projection, read-only source joins, original receipt reader and env propagation; scoped IPC/HTTP/browser protocol cutover and owning verification; integrate frozen repository snapshot23fab610 plus accepted context/activity/upstream source and workflow evidence, then regenerate architecture proof. Repository snapshot acceptance is required before this package closeout.
+- In scope: strict public projection, read-only source joins, original receipt reader and env propagation; scoped IPC/HTTP/browser protocol cutover and owning verification; integrate frozen repository snapshot12518117, including its task-reader cancellation correction plus accepted context/activity/upstream source and workflow evidence, then regenerate architecture proof. Repository snapshot acceptance is required before this package closeout.
 - Out of scope: execution, repair, runtime installation, main merge and UI redesign.
 - Invariant: original observations never authorize writes or prove native execution.
 
@@ -164,6 +164,14 @@ allowed_paths:
   - tests/effects/task-reply.test.ts
   - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
   - tests/unit/task-reply.test.ts
+  - .github/workflows/ci.yml
+  - docs/researches/20260922-operator-repository-snapshot.md
+  - docs/researches/20260922-operator-task-context.md
+  - plans/plan-20260922-0519-akn04-repository-snapshot.md
+  - src/effects/operator/task-activity-worker.ts
+  - src/effects/operator/task-context-worker.ts
+  - src/effects/operator/task-read-process.ts
+  - tests/effects/operator-task-context.test.ts
 ```
 
 ## Evidence Requirements
@@ -283,6 +291,32 @@ exit_criteria:
       "cost": "normal",
       "evidence_policy": "current_exact",
       "necessity": "Original automation records and scoped read lifecycle",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "activity-integration",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-activity.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Protocol2 Fleet result must preserve shared task-reader process cleanup after integration",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "context-integration",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-context.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Protocol2 Fleet result must preserve shared task-reader process cleanup after integration",
       "inputs": {
         "env": []
       }
