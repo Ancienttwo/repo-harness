@@ -21,7 +21,7 @@ Implement AKN-04d1 scoped Fleet GET with one shared exit-held collector, bounded
 
 ## Scope
 
-- In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests.
+- In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests; integrate frozen context89837138 and accepted activity/upstream source and workflow evidence, then regenerate deterministic projection. Context acceptance remains an upstream prerequisite for this package closeout.
 - Out of scope: automation summary (AKN-04d2), refresh UI, native execution, existing write guards, installation and main merge.
 - Invariant: only original registry and Fleet readers define repository facts; no process slot release before cleanup settlement.
 
@@ -86,6 +86,74 @@ allowed_paths:
   - tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md
   - tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md
   - tasks/todos.md
+  - docs/researches/20260922-candidate-runtime-fixture-authority.md
+  - docs/researches/20260922-operator-task-activity.md
+  - docs/researches/20260922-task-reply-protocol.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - plans/archive/plan-20260922-0204-akn03-protected-replies.md
+  - plans/archive/plan-20260922-0321-akn04-placement.md
+  - plans/archive/plan-20260922-0418-akn04-activity.md
+  - plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+  - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - plans/plan-20260922-0204-akn03-protected-replies.md
+  - plans/plan-20260922-0321-akn04-placement.md
+  - plans/plan-20260922-0418-akn04-activity.md
+  - scripts/check-tarball-install-smoke.sh
+  - src/core/fleet/task-reply.ts
+  - src/core/operator/task-activity.ts
+  - src/effects/engineers/task-inbox.ts
+  - src/effects/fleet/task-inbox.ts
+  - tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/contract-20260922-1405-akn04-placement.md
+  - tasks/archive/contract-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/contract-20260922-1632-akn04-activity.md
+  - tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/notes-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/notes-20260922-1405-akn04-placement.md
+  - tasks/archive/notes-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/notes-20260922-1632-akn04-activity.md
+  - tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/review-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/review-20260922-1405-akn04-placement.md
+  - tasks/archive/review-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/review-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/review-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/review-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/review-20260922-1632-akn04-activity.md
+  - tasks/archive/todo-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/todo-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/todo-20260922-1405-akn04-placement.md
+  - tasks/archive/todo-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/todo-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/todo-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/todo-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/todo-20260922-1632-akn04-activity.md
+  - tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
+  - tasks/contracts/20260922-0321-akn04-placement.contract.md
+  - tasks/contracts/20260922-0418-akn04-activity.contract.md
+  - tasks/contracts/20260922-0450-akn04-context.contract.md
+  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+  - tasks/notes/20260922-0321-akn04-placement.notes.md
+  - tasks/notes/20260922-0418-akn04-activity.notes.md
+  - tasks/notes/20260922-0450-akn04-context.notes.md
+  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+  - tasks/reviews/20260922-0321-akn04-placement.review.md
+  - tasks/reviews/20260922-0418-akn04-activity.review.md
+  - tasks/reviews/20260922-0450-akn04-context.review.md
+  - tests/cli/mcp-http.test.ts
+  - tests/effects/operator-task-activity.test.ts
+  - tests/effects/task-reply.test.ts
+  - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
+  - tests/unit/task-reply.test.ts
 ```
 
 ## Evidence Requirements
