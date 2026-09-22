@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { buildClaimActorReceipt } from '../../src/core/engineers/principal-claim';
 import { buildTaskMessageEvent, canonicalTaskMessageEventBytes } from '../../src/core/fleet/task-message';
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
@@ -161,7 +161,7 @@ describe('protected Task reply storage and Engineer composition', () => {
     const staging = join(taskInboxTaskDirectory(f.root, f.work.task_id), 'staging', kind === 'event' ? 'events' : 'delivery');
     const openSpy = spyOn(fs, 'openSync').mockImplementation((...args: Parameters<typeof fs.openSync>) => {
       const fd = open(...args);
-      if (String(args[0]).startsWith(staging + '/')) stagedDescriptors.add(fd);
+      if (dirname(String(args[0])) === staging) stagedDescriptors.add(fd);
       return fd;
     });
     const syncSpy = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
@@ -225,7 +225,10 @@ describe('protected Task reply storage and Engineer composition', () => {
         const event = buildTaskMessageEvent({ ...f.parent, message_id: id(n), body });
         writeFileSync(join(directory, `${event.message_id}.json`), `${canonicalTaskMessageEventBytes(event)}\n`);
       }
-      expect(f.query().coverage).toMatchObject({ complete: false, reason });
+      // Isolate the scan/byte budget from host filesystem speed.
+      const clock = spyOn(Date, 'now').mockReturnValue(Date.now());
+      try { expect(f.query().coverage).toMatchObject({ complete: false, reason }); }
+      finally { clock.mockRestore(); }
       const ctx = { repoRoot: f.root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: id(2), engineerVerifyAuthorization: f.input.verify_authorization };
       const args = { work_envelope: f.work, parent_message_id: f.parent.message_id, parent_event_digest: f.parent.event_digest };
       const result = await callMcpTool(ctx, 'engineer_task_messages', args);

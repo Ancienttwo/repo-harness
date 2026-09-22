@@ -7,7 +7,7 @@
 > **Last Updated**: 2026-09-23 00:31
 > **Lifecycle**: notes
 
-> **Substantive Change SHA256**: `sha256:6fd0101d5bcd964a27e1013b580d3ed4ae8b893ee69a51391f864bd712f03f60`
+> **Substantive Change SHA256**: `sha256:06887121c7c8a95ee4e911fb6d21f1f3e13c49c2a841017eb0419c76d74aad7d`
 
 ## Design Decisions
 
@@ -19,7 +19,7 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Native run 35755604887 reached the real reply lifecycle after the persistence fix, exposing four existing fixture failures: the staging spy appended a POSIX separator on Windows, and scan exhaustion raced the independent deadline. The approved test-file boundary covers both corrections. Native filesystem writes, authorization refusal and exact-parent recovery assertions remain intact; only the synchronous scan/byte-budget assertion fixes its clock, restored before MCP recovery.
 
 ## Tradeoffs Considered
 
@@ -34,6 +34,10 @@
 - None.
 
 ## Evidence Links
+
+- Native-fixture correction relative to `eb8195e3`: local protected reply suite passed 33/33 with 144 assertions; typecheck passed. The complete package digest above remains bound to `49c5f9dc`.
+
+> **Substantive Change SHA256**: `sha256:5af80f796ff4b62a301c007a1156d427ea4e8228833b58f3f521e045a7f33a2e`
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`

@@ -355,14 +355,13 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Changed behavior/boundary, existing covering tests and remaining gap:
-- New test case/file rationale, or why existing coverage is sufficient:
-- Selected check IDs and why their coverage is sufficient; omitted coverage:
-- Full/expensive check justification and expected cost, if applicable:
-- Execution/baseline references, subject, current delta and disposition:
-- Residual risks and incomplete observations:
+- Changed boundary: directory flush selection for four actual authority stores and Principal writable descriptor lifetime. Existing exact validators, locks and record formats retain authority.
+- Regression admission: extend existing Principal and Lease suites for the observed read-only descriptor failure, file-flush refusal before replacement, and POSIX directory error propagation. No new test file.
+- Verification Plan selects six owning suites plus typecheck and every repository-integrity command; native Windows/macOS/Linux and full Test are existing CI requirements. No full local suite is added.
+- Source baseline:49c5f9dc; local pre-fix and focused artifacts live under .ai/harness/runs/windows-task-persistence. Native Windows before evidence is CI35749499343. Current candidate CI and canonical proof remain pending.
+- Residual limit: Windows directory power-loss durability is not claimed equivalent to POSIX. Real data migration and production admission remain excluded.
 
 ## Rollback Point
 
-- Commit / checkpoint:
-- Revert strategy:
+- Baseline:49c5f9dcf90b3a0248d4fa78764554673b8db161.
+- Revert this package's code; no persisted format, command, configuration or identity migration exists.
