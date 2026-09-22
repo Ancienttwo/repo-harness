@@ -15,3 +15,7 @@ Typecheck, browser build (4 modules,29.37KB), all9 required integrity checks and
 ## Acceptance Boundary
 
 No semantic review has run or AcceptanceReceipt been issued for this candidate. Local CodeGraph proof, canonical verification and stage PR remain pending this worktree's indexing decision. Native execution/turn authority remains explicitly unavailable. Main merge and runtime install have not occurred.
+
+## Authorized index and deterministic projection
+
+The owner approved this worktree local index on 2026-09-22. CodeGraph initialization succeeded at source `2d90d44b339b4b86d5b7c453036671a7dece6ba4`. Deterministic plan/apply updated only `docs/architecture/.projection-manifest.json`, with no human actions or refresh signals. Receipts are `.ai/harness/runs/approved-index-proof/{plan,apply}.json`. Canonical verification and semantic acceptance remain pending; this proof does not establish Host admission.
