@@ -32,7 +32,7 @@
 ## Verification Evidence
 
 - Canonical verification: pending source freeze and verify-sprint --prepare-acceptance.
-- Focused migration effects: 26 passed, including transaction interruption, actual process exit, injected file-operation failures, exact-byte retention, external-link refusal and rollback after new writes.
+- Focused migration effects: 27 passed, including transaction interruption, actual process exit, injected file-operation failures, exact-byte retention, external-link refusal and rollback after new writes.
 - Historical reply migration: three fixture cases passed for intent-only, event-uncommitted and complete; no active sprint or live historical actor required.
 - Native local lifecycle: deep-path delivery/ACK/reply and separate Alice/alice receipts passed. Windows/macOS/Linux hosted coverage is required on the published head.
 - Implementation-stage correction: one test grouped three expensive fixtures into a single default five-second test. Split the three semantic cases into independent parameterized tests; all three passed without raising timeouts or weakening assertions.

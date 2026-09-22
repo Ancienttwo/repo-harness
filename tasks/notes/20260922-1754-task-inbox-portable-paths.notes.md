@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:3d3fb54fb43e57035ddb588269a601e983b6d20f6629c21b2c2f55db8dfbdcb8`
+> **Substantive Change SHA256**: `sha256:44ba93def74208d1efef789ee49ec5fb09f65b48f1ef7f68d258a0e28634900f`
 
 ## Design Decisions
 

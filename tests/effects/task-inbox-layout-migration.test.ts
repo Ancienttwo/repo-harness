@@ -189,6 +189,18 @@ test('publication residue may retain an internal hard link but external links re
   expect(tree(f.paths.backup)).toEqual(original);
 });
 
+test('migration retains legal event metadata beyond the separate reply-record size limit', () => {
+  const f = fixture();
+  const event = buildTaskMessageEvent({ ...f.event, sender_id: 'a'.repeat(70000) });
+  const relative = join(TASK, 'events', `${ID}.json`);
+  const bytes = `${canonicalTaskMessageEventBytes(event)}\n`;
+  put(join(f.paths.legacy, relative), bytes);
+  const plan = migrateTaskInboxLayout({ repo_root: f.root });
+  migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true, expected_source_sha256: plan.manifest!.source_sha256 });
+  expect(readFileSync(join(f.paths.current, relative), 'utf8')).toBe(bytes);
+  expect(readFileSync(join(f.paths.backup, relative), 'utf8')).toBe(bytes);
+});
+
 test('layout readers reject legacy reappearance and inconsistent retirement artifacts without writes', () => {
   const f = fixture(); f.apply();
   rmSync(f.paths.legacy); mkdirSync(f.paths.legacy);

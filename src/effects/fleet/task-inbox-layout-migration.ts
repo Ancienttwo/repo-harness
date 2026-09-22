@@ -5,8 +5,7 @@ import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
   validateTaskMessageEvent, validateTaskMessageDeliveryReceipt, recipientFromTaskMessageReceipt, type TaskMessageRecipient } from '../../core/fleet/task-message';
-import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateTaskReplyCommit, validateTaskReplyIntent,
-  TASK_REPLY_RECORD_MAX_BYTES } from '../../core/fleet/task-reply';
+import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateTaskReplyCommit, validateTaskReplyIntent } from '../../core/fleet/task-reply';
 import { createFileExclusiveDurably } from '../evidence/atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
@@ -77,7 +76,7 @@ function inventory(root: string): Entry[] {
   return entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
 function canonicalRecord<T>(path: string, validate: (value: unknown) => T, serialize: (value: T) => string): T {
-  const bytes = readFile(path, TASK_REPLY_RECORD_MAX_BYTES);
+  const bytes = readFile(path);
   const value = validate(JSON.parse(bytes.toString('utf8')));
   if (`${serialize(value)}\n` !== bytes.toString('utf8')) refuse('record bytes are not canonical');
   return value;

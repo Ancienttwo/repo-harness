@@ -74,7 +74,7 @@ The fragile assumption is operator quiescence of old clients: their binaries do 
 
 Publication may leave a hard-linked staging file if the process exits after linking a canonical record but before unlinking its temporary name. Inventory accepts that residue only when every hard link is contained inside the same inventoried tree. External links and symbolic links are refused. The retained backup preserves the original bytes and links; v2 contains independent copies of canonical records only.
 
-Focused implementation evidence: the migration suite covers 26 passing transaction/refusal cases, including actual process exit and injected write/rename/fsync failures. Existing reply fixtures independently prove byte/observation preservation for intent-only, event-uncommitted and complete chains without an active sprint. Native deep-path and case-distinct delivery/ACK tests pass locally; exact-head Windows CI remains the required platform proof.
+Focused implementation evidence: the migration suite covers 27 passing transaction/refusal cases, including actual process exit and injected write/rename/fsync failures. Existing reply fixtures independently prove byte/observation preservation for intent-only, event-uncommitted and complete chains without an active sprint. Native deep-path and case-distinct delivery/ACK tests pass locally; exact-head Windows CI remains the required platform proof.
 
 ## Preservation and rollback
 
@@ -99,3 +99,5 @@ Integrate the accepted package back into the #442 source branch, then into autom
 ## Final inventory cross-check
 
 A source scan at12518117 found the literal v1 root and filesystem recipient-key construction only in src/effects/fleet/task-inbox.ts; semantic key derivation remains in src/core/fleet/task-message.ts. The explicit test literals are Activity fixture setup and the no-store-write assertion in tests/cli/operator-serve.test.ts:579; the latter must move to the v2 root or its negative assertion becomes vacuous. This is a source inventory, not native migration execution evidence.
+
+Record limits remain owned by each existing canonical validator. Ordinary events permit metadata exceeding the separate 64 KiB reply-record limit; migration preserves such valid bytes rather than importing the reply limit into another protocol. A 70,677-byte valid-event fixture exposed and guards this distinction.
