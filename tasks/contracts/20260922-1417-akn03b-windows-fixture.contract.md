@@ -1,4 +1,4 @@
-# Task Contract: akn03b-windows-fixture
+# Task Contract: AKN-03b acceptance fixes
 
 > **Status**: Active
 > **Plan**: plans/plan-20260922-1417-akn03b-windows-fixture.md
@@ -17,12 +17,13 @@ The Windows MCP path job fails during Binding fixture setup before the authentic
 
 ## Goal
 
-Prepare canonical Binding and principal fixture records without invoking directory-fsync writers; retain the existing real OAuth/HTTP identity assertions and update PR #437 after verification.
+Correct the Windows HTTP fixture and the publication-time authorization expiry finding on PR #437. Preserve canonical readers, authenticated transport assertions, immutable reply identity and crash recovery; prevent expired requests publishing delivery, ACK, intent, event or commit records.
 
 ## Scope
 
-- In scope: existing HTTP fixture setup and this package evidence.
-- Out of scope: production durability, Host admission, merge and runtime installation.
+- In scope: existing HTTP fixture setup, authenticated Engineer Task communication publication fences, existing reply regression suite and this package evidence.
+- Scope revision: the original AKN-03 authorization-at-publication requirement covers the confirmed semantic finding. The prior rejection is retained; widening this contract does not waive acceptance or trigger a second review.
+- Out of scope: changes to filesystem durability policy, Host admission, main merge and runtime installation.
 - Taste constraints: no Windows skip, no product fallback, no replacement protocol or helper abstraction.
 
 ## Stop Conditions
@@ -37,10 +38,10 @@ The Windows job still fails before the HTTP assertion, or the canonical readers 
 
 ## Root Cause Evidence
 
-- root_cause: tests/cli/mcp-http.test.ts:1107 called bindEngineer; binding-store directory fsync returned Windows EPERM before transport assertions.
-- repro: GitHub run 35693364932, job 106634890098, Engineer OAuth E2E on Windows.
-- regression_guard: tests/cli/mcp-http.test.ts
-- pre_fix_failure_artifact: .ai/harness/runs/akn03b-windows-fixture/windows-pre-fix.log
+- root_cause: Engineer revalidation checked the token before expensive canonical validation; ACK and event writers then staged and fsynced without a final publication callback. The independent fixture issue called directory-fsync writers on Windows before HTTP assertions.
+- repro: Deterministic expiry during canonical validation and real staging fsync, plus GitHub Windows run 35693364932 job 106634890098.
+- regression_guard: tests/effects/task-reply.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/akn03b-windows-fixture/expiry-pre-fix.log
 
 ## Workflow Inventory
 
@@ -69,6 +70,9 @@ The Windows job still fails before the HTTP assertion, or the canonical readers 
 
 ```yaml
 allowed_paths:
+  - src/effects/engineers/task-inbox.ts
+  - src/effects/fleet/task-inbox.ts
+  - tests/effects/task-reply.test.ts
   - tests/cli/mcp-http.test.ts
   - docs/researches/20260922-task-reply-protocol.md
   - docs/architecture/.projection-manifest.json
@@ -127,6 +131,7 @@ exit_criteria:
     - tests/cli/mcp-http.test.ts
   artifacts_exist:
     - .ai/harness/runs/akn03b-windows-fixture/windows-pre-fix.log
+    - .ai/harness/runs/akn03b-windows-fixture/expiry-pre-fix.log
 ```
 
 ## Verification Plan
@@ -135,6 +140,32 @@ exit_criteria:
 {
   "protocol": 1,
   "checks": [
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Publication-time expiry and existing authenticated reply/crash recovery invariants",
+      "inputs": {
+        "env": []
+      },
+      "id": "reply-expiry",
+      "kind": "package_test",
+      "path": "tests/effects/task-reply.test.ts"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing generic inbox persistence callers share the changed event and receipt writer and must retain storage error and retry behavior",
+      "inputs": {
+        "env": []
+      },
+      "id": "inbox-storage",
+      "kind": "package_test",
+      "path": "tests/effects/task-inbox.test.ts"
+    },
     {
       "cwd": ".",
       "phase": "verification",
@@ -284,7 +315,9 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-The existing HTTP suite covers authenticated SDK token propagation, tool inventory, session isolation and permission revocation. No new test or full suite is required. Local passing evidence does not establish Windows acceptance; read back the hosted Windows job after push. One semantic review follows the current canonical candidate.
+The existing HTTP suite covers authenticated SDK token propagation, tool inventory, session isolation and permission revocation. Add focused regressions in the existing reply suite for expiry during validation and staging. No new test file or full suite is required. Local passing evidence does not establish Windows acceptance; read back the hosted Windows job after push. The one semantic review rejected the earlier candidate; preserve that evidence. Corrected canonical evidence does not itself create semantic acceptance.
+
+Test admission: existing revocation tests revoke before validation, leaving expiry during canonical validation and staging uncovered. Five parameterized cases in the existing effects suite expire inside the actual filesystem/composition boundary and assert the durable record remains unpublished. Real fixture Git and filesystem operations are necessary to expose this ordering; focused command `bun test tests/effects/task-reply.test.ts --test-name-pattern "expiry during"` takes about 8 seconds.
 
 ## Rollback Point
 

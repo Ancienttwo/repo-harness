@@ -11,12 +11,12 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Substantive Change SHA256**: `sha256:428f46a738f43f5d82d80e489de7c3174f1bf47898a8c971a0b02a323b8414bd`
+> **Substantive Change SHA256**: `sha256:8e5462c747be7ab4b9c8ee8375b0365aae6475c8d63991449545424657759f87`
 
 ## Human Review Card
 
 - Verdict: pending current canonical and semantic acceptance.
-- Scope: fixture-only correction for PR #437; production code unchanged.
+- Scope: Windows fixture correction and original AKN-03 publication-time authorization requirement on PR #437.
 - Root cause: real Windows job 106634890098 directory fsync EPERM in fixture bindEngineer.
 - Development verification: Engineer OAuth E2E passes locally, 23 assertions.
 - Remaining evidence: actual hosted Windows job after candidate publication.
@@ -47,4 +47,4 @@ Subject: `sha256:d16a5e2e95c2976815da1a33db6c3284711e3b7d0dc885f223adbc4f42b7cdd
 }
 ```
 
-The finding targets cumulative protected-reply production behavior, outside this fixture-only package. A bounded root-cause proof is in progress under the original roadmap effect-time authorization requirement. No second independent review was requested.
+The original fixture-only scope was revised before production edits to include this unmet AKN-03 requirement. Five formal pre-fix regressions failed on the unfixed source; all five pass after the correction (17 assertions, 7.9 seconds). Evidence: `.ai/harness/runs/akn03b-windows-fixture/expiry-pre-fix.log`. The prior rejection remains recorded; no second independent review or owner waiver has been obtained for the corrected subject.

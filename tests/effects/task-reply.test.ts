@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -77,6 +78,63 @@ function fixture() {
 }
 
 describe('protected Task reply storage and Engineer composition', () => {
+  test.each(['intent', 'commit'] as const)('expiry during final %s canonical validation prevents publication', kind => {
+    const f = fixture(); f.consume(); f.ack();
+    if (kind === 'commit') expect(() => f.reply(boundary => {
+      if (boundary === 'event_published') throw new Error('interrupted');
+    })).toThrow('interrupted');
+    let staged = false, validating = false, expired = false;
+    const env = new Proxy(f.env, {
+      get(target, property, receiver) {
+        if (validating && property === 'REPO_HARNESS_HOME') expired = true;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const verify_authorization = () => {
+      if (expired) throw new Error('request token expired');
+      if (staged) validating = true;
+    };
+    expect(() => withEngineerTaskInbox({ ...f.input, env, verify_authorization }, inbox => replyToTaskSteer({
+      ...inbox, ...f.replyArgs, crash_hook: boundary => { if (boundary === `${kind}_file_fsynced`) staged = true; },
+    }))).toThrow('request token expired');
+    expect(expired).toBeTrue();
+    expect(f.history().observation.state).toBe(kind === 'intent' ? 'absent' : 'event_uncommitted');
+  });
+
+  test.each(['delivery', 'ACK', 'event'] as const)('expiry during %s staging fsync prevents publication', kind => {
+    const f = fixture();
+    if (kind !== 'delivery') f.consume();
+    if (kind === 'event') {
+      f.ack();
+      expect(() => f.reply(boundary => { if (boundary === 'intent_published') throw new Error('interrupted'); })).toThrow('interrupted');
+    }
+    let expired = false;
+    const stagedDescriptors = new Set<number>();
+    const open = fs.openSync, fsync = fs.fsyncSync;
+    const staging = join(taskInboxTaskDirectory(f.root, f.work.task_id), 'staging', kind === 'event' ? 'events' : 'delivery');
+    const openSpy = spyOn(fs, 'openSync').mockImplementation((...args: Parameters<typeof fs.openSync>) => {
+      const fd = open(...args);
+      if (String(args[0]).startsWith(staging + '/')) stagedDescriptors.add(fd);
+      return fd;
+    });
+    const syncSpy = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+      fsync(fd);
+      if (stagedDescriptors.has(fd)) expired = true;
+    });
+    const verify_authorization = () => { if (expired) throw new Error('request token expired'); };
+    try {
+      expect(() => withEngineerTaskInbox({ ...f.input, verify_authorization }, inbox => {
+        if (kind === 'event') return replyToTaskSteer({ ...inbox, ...f.replyArgs });
+        const args = { ...inbox, message_id: f.parent.message_id, event_digest: f.parent.event_digest, now: AT };
+        return kind === 'ACK' ? acknowledgeTaskSteer(args) : consumeTaskSteer(args);
+      })).toThrow('request token expired');
+    } finally { syncSpy.mockRestore(); openSpy.mockRestore(); }
+    expect(expired).toBeTrue();
+    const history = f.history();
+    if (kind === 'event') expect(history.observation.state).toBe('intent_only');
+    else expect(history.acknowledgement?.delivery_state ?? null).toBe(kind === 'ACK' ? 'delivered' : null);
+  });
+
   test('mixed-case UUID pagination returns every original steer exactly once', () => {
     const f = fixture();
     const ids = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB'];

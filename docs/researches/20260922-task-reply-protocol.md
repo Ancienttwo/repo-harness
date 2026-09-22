@@ -69,3 +69,9 @@ Protected steer paging compares original UUID strings in code-point order for bo
 ## Cross-platform HTTP fixture boundary
 
 The OAuth transport fixture seeds Binding event/current and principal mapping records using the canonical core constructors and serializers. This lets the same authenticated HTTP reader assertions run on Windows, where directory fsync in the production Binding writer failed before the test reached those assertions (PR #437, run 35693364932, job 106634890098). Production durability remains unchanged; this fixture does not establish Windows writable-runtime admission.
+
+## Expiry at record publication
+
+Request authorization is checked both before and after synchronous principal, registry, Claim and canonical Git validation. Existing locks protect record identity but do not freeze the token clock. Restricted delivery and ACK receipts revalidate after staging/fsync immediately before rename; reply events do so immediately before link. Intent and commit retain their existing post-staging callback and use the same final token check. Authorization errors propagate without being relabelled as storage errors, and unpublished temporary records are removed. No wire or durable-record format changes.
+
+Regression coverage in `tests/effects/task-reply.test.ts` expires authorization during actual staging fsync or the canonical validation triggered after intent/commit staging, then checks the stored chain remains at its prior state. A final callback does not claim an atomic wall-clock check plus operating-system syscall; it removes work between the last authorization check and publication.

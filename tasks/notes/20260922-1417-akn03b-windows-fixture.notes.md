@@ -14,3 +14,7 @@ Use canonical core builders and serializers to seed reader facts on every platfo
 ## Evidence
 
 Pre-fix: GitHub run 35693364932 job 106634890098. Local focused corrected HTTP test: 1 pass, 23 assertions.
+
+## Publication expiry scope
+
+The corrected probe must expire inside actual canonical validation or after a real staging fsync. Verifier call-count-only probes and expiry immediately after every verifier return do not prove these windows; omit them. Use existing test-file instrumentation, retain wire/storage shapes, and preserve the earlier semantic rejection.

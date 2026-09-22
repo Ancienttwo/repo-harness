@@ -128,3 +128,15 @@ Revert this fixture-only correction as one commit; prior source semantics and du
 ## Task Breakdown
 - [ ] Replace only the HTTP fixture writer setup and retain all existing authenticated HTTP assertions.
 - [ ] Run focused HTTP/type and required integrity checks, obtain one semantic acceptance, update PR #437 and inspect Windows CI.
+
+## Scope revision: publication-time expiry
+
+The one semantic review found an unmet original AKN-03 publication-time authorization requirement. Expand this same package before source edits; preserve the rejection and do not request another review of the same boundary.
+
+P1: Engineer composition owns request-token validation and mapping/Binding/Claim checks under existing locks. Fleet inbox owns durable record staging and link/rename publication.
+P2: token check -> synchronous mapping/registry/Claim/Git validation -> writer staging/fsync -> public record. Expiry can occur in either intervening interval; no lock freezes time.
+P3: retain the early check for fast rejection and recheck after canonical validation; pass final authority callbacks to restricted delivery/ACK and event writers after staging and before rename/link. Intent/commit already expose this boundary and gain the final token check through composition. Keep general local-operator writers unchanged. No serialized format or permission authority changes; at 10x concurrency existing per-Task locks still bound throughput, and the extra verification cost is limited to authenticated publication.
+
+- [ ] Capture pre-fix failure using real staging fsync and controlled expiry during canonical validation.
+- [ ] Fix the existing writer callbacks and final token validation, rerun focused coverage and canonical checks once source is frozen.
+- [ ] Preserve semantic rejection until corrected subject obtains valid acceptance; no main merge or runtime installation.
