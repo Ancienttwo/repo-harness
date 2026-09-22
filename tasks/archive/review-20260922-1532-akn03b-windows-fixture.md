@@ -93,3 +93,9 @@ Accepted fixture commit 8c7fd593 is now an ancestor of this candidate through th
 - Summary: Owner explicitly approved the corrected PR #437 candidate subject sha256:25dc1cd91acb024a7824139f30a43cebf2cbd230480c655db8433d2bac545fe6 after 30/30 canonical criteria and the one-review budget rejection. Accept the expiry publication fence, encoded 64 KiB total-record contract, Windows fixture and installed-package evidence; permit PR update and downstream integration. Main merge, global install, native Host admission, Campaign and real canary remain outside this approval.
 - Findings: none
 
+
+## PR base verification binding
+
+The owner accepted corrected subject `sha256:25dc1cd91acb024a7824139f30a43cebf2cbd230480c655db8433d2bac545fe6`. Final #435 head `3195ffc658a8502940555e43fc65ec7d30388e92` is integrated; this adds only its already accepted workflow archival metadata and leaves all product, test and package source bytes unchanged. Its CI run 35698999678 passed, as did #434 run 35698998444 at 82430ee6. The binding below covers the complete #437 diff against its current PR base, distinct from the narrow follow-up digest above. Hosted #437 verification remains pending on the new published head.
+
+> **Substantive Change SHA256**: `sha256:2531e4b5da54248a2bd2f66152783b0c5e4cbf104f1f2a26e64dab169193cd99`
