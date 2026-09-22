@@ -47,3 +47,9 @@ Read-only merge-tree against76f989cc shows only generated manifest conflict. The
 ## Dependency freeze
 
 Automation-summary0e07d97f is archived with an exact external_pass receipt after24/24 canonical criteria and its single Codex plugin approve verdict. Source subject51cded6ae80f7e99bca5a548302915bae6fa1c3e233f030a363bc959138c13a2 is unchanged; full hosted CI is the remaining publication check. Pin0e07d97f as this package source/rollback base and enumerate its exact archive paths before integration.
+
+## Frozen integration proof
+
+At a7e06bb0, the product delta against accepted0e07d97f remains exactly the seven existing UI/test files (472 insertions,1 deletion). No source conflict required repair. CodeGraph indexed1192 files; projection updates only the generated manifest with no human actions or refresh signals.
+
+> **Substantive Change SHA256**: `sha256:38ac78458ac2f3ac3e3f01255dc7155fe8dd41b7192db7472aa88061de24b9e2`

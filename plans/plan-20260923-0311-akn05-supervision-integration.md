@@ -113,8 +113,8 @@ Preserve docs/researches/20260922-operator-supervision-summary.md, accepted upst
 Use existing UI/interactions/collaboration/task-diff suites, actual automation-record and scoped HTTP/IPC integration suites, existing migration effects runtime-readback for the inherited irreversible-effect classification, typecheck and operator browser build; retain all nine repository integrity checks in one contract Verification Plan. Do not repeat full hosted tests until the final integrated source is frozen. Obtain current CodeGraph proof using the already authorized worktree index; deterministic projection only. Preserve the original consumed AKN-05a review. This new package validates the composition and current acceptance; it does not rerun the prior UI review. Under the owner's autonomous stage acceptance instruction, use a truthful delegated disposition when no new semantic decision is introduced, without inventing external approval. Keep no-main-merge and no-install boundaries. PR439 must point to the accepted automation-summary branch and include actual CI/acceptance limitations.
 
 ## Task Breakdown
-- [ ] Capture bounded integration contract and enumerate exact dependency paths.
-- [ ] Integrate accepted automation summary and regenerate architecture proof; retain the seven-file UI delta.
+- [x] Capture bounded integration contract and enumerate exact dependency paths.
+- [x] Integrate accepted automation summary and regenerate architecture proof; retain the seven-file UI delta.
 - [ ] Verify current UI/protocol composition and record stage acceptance.
 - [ ] Archive the integration package, update PR439 base and delivery evidence, and verify remote state.
 
@@ -122,7 +122,7 @@ Use existing UI/interactions/collaboration/task-diff suites, actual automation-r
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Capture bounded integration contract and enumerate exact dependency paths.
-- [ ] Integrate accepted automation summary and regenerate architecture proof; retain the seven-file UI delta.
+- [x] Capture bounded integration contract and enumerate exact dependency paths.
+- [x] Integrate accepted automation summary and regenerate architecture proof; retain the seven-file UI delta.
 - [ ] Verify current UI/protocol composition and record stage acceptance.
 - [ ] Archive the integration package, update PR439 base and delivery evidence, and verify remote state.
