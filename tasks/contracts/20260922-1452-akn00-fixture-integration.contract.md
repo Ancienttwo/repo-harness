@@ -4,6 +4,7 @@
 > **Plan**: plans/plan-20260922-1452-akn00-fixture-integration.md
 > **Task Profile**: code-change
 > **Owner**: ancienttwo
+> **Capability ID**: root
 > **Review File**: `tasks/reviews/20260922-1452-akn00-fixture-integration.review.md`
 > **Notes File**: `tasks/notes/20260922-1452-akn00-fixture-integration.notes.md`
 
@@ -79,21 +80,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "H0\u7248\u672c/subject\u9519\u914d\u3001\u7f3a\u5931\u80fd\u529b\u3001\u6d4b\u8bd5\u6ce8\u5165\u3001\u7ec8\u6b62\u672a\u77e5\u4e0eCLI\u65e0\u526f\u4f5c\u7528",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-40e483b1aeb3499bae0a.json",
-        "execution_id": "vx-40e483b1aeb3499bae0a"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "id": "native-readback",
@@ -115,21 +106,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "\u8de8\u811a\u672c\u5171\u4eabtyped discovery\u4e0e\u6d4b\u8bd5\u7c7b\u578b\u9a8c\u8bc1",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-16352de65ea949f89a6b.json",
-        "execution_id": "vx-16352de65ea949f89a6b"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "id": "check-hooks",
@@ -138,21 +119,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "required repository integrity",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-dd326c7a319d409891d6.json",
-        "execution_id": "vx-dd326c7a319d409891d6"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "id": "check-helpers",
@@ -161,21 +132,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "required repository integrity",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-3977eebfbbde48f7a8b0.json",
-        "execution_id": "vx-3977eebfbbde48f7a8b0"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "id": "check-reference-configs",
@@ -184,21 +145,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "required repository integrity",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-8d6c666258af4650acad.json",
-        "execution_id": "vx-8d6c666258af4650acad"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "id": "deploy-sql-order",
@@ -207,21 +158,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "required repository integrity",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-e2b0d80313164ac28132.json",
-        "execution_id": "vx-e2b0d80313164ac28132"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "id": "architecture-sync",
@@ -282,21 +223,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
-      "evidence_policy": "baseline_with_delta",
+      "evidence_policy": "current_exact",
       "necessity": "required repository integrity",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-b6693f9ee01c47e597ac.json",
-        "execution_id": "vx-b6693f9ee01c47e597ac"
-      },
-      "delta_checks": [
-        "workflow-delta",
-        "task-sync",
-        "task-workflow",
-        "architecture-sync"
-      ]
+      }
     },
     {
       "cwd": ".",
