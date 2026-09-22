@@ -18,7 +18,8 @@ export function inboxLayoutPaths(common: string) {
 }
 
 export function inboxPathStat(path: string) {
-  try { return lstatSync(path); }
+  // File IDs must remain exact for hard-link accounting and layout identity fences.
+  try { return lstatSync(path, { bigint: true }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
 }
 
@@ -38,7 +39,7 @@ export function inspectTaskInboxLayout(common: string): string {
   }
   const legacy = inboxPathStat(p.legacy);
   if (legacy?.isDirectory()) throw new TaskInboxLayoutError('task_inbox_migration_required', 'Task Inbox v1 history must be migrated before use');
-  if (legacy && (!legacy.isFile() || legacy.isSymbolicLink() || legacy.size !== Buffer.byteLength(TASK_INBOX_RETIREMENT_MARKER)
+  if (legacy && (!legacy.isFile() || legacy.isSymbolicLink() || legacy.size !== BigInt(Buffer.byteLength(TASK_INBOX_RETIREMENT_MARKER))
     || readFileSync(p.legacy, 'utf8') !== TASK_INBOX_RETIREMENT_MARKER)) {
     throw new TaskInboxLayoutError('task_inbox_layout_invalid', 'Task Inbox retirement marker is invalid');
   }

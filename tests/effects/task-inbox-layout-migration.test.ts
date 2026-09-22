@@ -3,12 +3,12 @@ import * as fs from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { buildTaskMessageDeliveryReceipt, buildTaskMessageEvent, canonicalTaskMessageDeliveryReceiptBytes,
   canonicalTaskMessageEventBytes, deriveTaskMessageRecipientKey, type TaskMessageRecipient } from '../../src/core/fleet/task-message';
 import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 import { migrateTaskInboxLayout, type InboxMigrationBoundary } from '../../src/effects/fleet/task-inbox-layout-migration';
-import { inboxLayoutPaths, inspectTaskInboxLayout } from '../../src/effects/fleet/task-inbox-layout';
+import { assertTaskInboxLayoutUnchanged, inboxLayoutPaths, inspectTaskInboxLayout } from '../../src/effects/fleet/task-inbox-layout';
 import { readTaskMessageDelivery, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { createLeaseDirectory } from '../../src/effects/state/coordination-lease-store';
@@ -226,6 +226,101 @@ test('publication residue may retain an internal hard link but external links re
   const result = migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true, expected_source_sha256: plan.manifest!.source_sha256 });
   expect(result.state).toBe('committed');
   expect(tree(f.paths.backup)).toEqual(original);
+});
+
+test('migration keeps independent stage files distinct when default inode numbers collide', () => {
+  const f = fixture(false);
+  const later = '223e4567-e89b-42d3-a456-426614174000';
+  put(join(f.paths.legacy, TASK, 'events', `${later}.json`), `${canonicalTaskMessageEventBytes(buildTaskMessageEvent({
+    ...f.event, message_id: later, body: 'a separate authoritative event',
+  }))}\n`);
+  const original = tree(f.paths.legacy);
+  const plan = migrateTaskInboxLayout({ repo_root: f.root });
+  const originalLstatSync = fs.lstatSync.bind(fs);
+  const stageEvents = join(f.paths.stage, TASK, 'events');
+  const currentEvents = join(f.paths.current, TASK, 'events');
+  const ids = new Map([[`${ID}.json`, 9007199254740992n], [`${later}.json`, 9007199254740993n]]);
+  let defaultStageFileStats = 0, exactStageFileStats = 0;
+  let fault: ReturnType<typeof spyOn> | undefined;
+  try {
+    const result = migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true,
+      expected_source_sha256: plan.manifest!.source_sha256, on_boundary: boundary => {
+      if (boundary !== 'staged-file' || fault) return;
+      fault = spyOn(fs, 'lstatSync').mockImplementation(((path: fs.PathLike, options?: fs.StatOptions) => {
+        const stat = originalLstatSync(path, options);
+        if (!stat) return stat;
+        const syntheticIno = stat.isFile() && (dirname(String(path)) === stageEvents || dirname(String(path)) === currentEvents)
+          ? ids.get(basename(String(path))) : undefined;
+        if (syntheticIno === undefined) return stat;
+        if (options?.bigint) {
+          exactStageFileStats += 1;
+          return new Proxy(stat, { get(target, property, receiver) {
+            if (property === 'dev') return 1n;
+            if (property === 'ino') return syntheticIno;
+            if (property === 'nlink') return stat.nlink;
+            return Reflect.get(target, property, receiver);
+          } });
+        }
+        defaultStageFileStats += 1;
+        return new Proxy(stat, { get(target, property, receiver) {
+          if (property === 'dev') return 1;
+          if (property === 'ino') return Number(syntheticIno);
+          if (property === 'nlink') return stat.nlink;
+          return Reflect.get(target, property, receiver);
+        } });
+      }) as typeof fs.lstatSync);
+      } });
+    expect(result.state).toBe('committed');
+    expect(tree(f.paths.backup)).toEqual(original);
+    const first = fs.lstatSync(join(currentEvents, `${ID}.json`));
+    const second = fs.lstatSync(join(currentEvents, `${later}.json`));
+    expect(first.ino).toBe(second.ino);
+    expect(first.nlink).toBe(1);
+    expect(second.nlink).toBe(1);
+  } finally {
+    fault?.mockRestore();
+  }
+  expect(defaultStageFileStats).toBeGreaterThanOrEqual(2);
+  expect(exactStageFileStats).toBeGreaterThanOrEqual(2);
+  const source = originalLstatSync(join(f.paths.backup, TASK, 'events', `${ID}.json`), { bigint: true });
+  const second = originalLstatSync(join(f.paths.backup, TASK, 'events', `${later}.json`), { bigint: true });
+  expect(source.ino).not.toBe(second.ino);
+  expect(source.nlink).toBe(1n);
+  expect(second.nlink).toBe(1n);
+});
+
+test('layout identity fence distinguishes adjacent exact inode values', () => {
+  const f = fixture(false); f.apply();
+  const originalLstatSync = fs.lstatSync.bind(fs);
+  const exact = [9007199254740992n, 9007199254740993n];
+  let epoch = 0, exactCurrentStats = 0;
+  const fault = spyOn(fs, 'lstatSync').mockImplementation(((path: fs.PathLike, options?: fs.StatOptions) => {
+    const stat = originalLstatSync(path, options);
+    if (!stat) return stat;
+    if (String(path) !== f.paths.current) return stat;
+    const ino = exact[epoch]!;
+    if (options?.bigint) {
+      exactCurrentStats += 1;
+      return new Proxy(stat, { get(target, property, receiver) {
+        if (property === 'dev') return 1n;
+        if (property === 'ino') return ino;
+        return Reflect.get(target, property, receiver);
+      } });
+    }
+    return new Proxy(stat, { get(target, property, receiver) {
+      if (property === 'dev') return 1;
+      if (property === 'ino') return Number(ino);
+      return Reflect.get(target, property, receiver);
+    } });
+  }) as typeof fs.lstatSync);
+  try {
+    const identity = inspectTaskInboxLayout(f.common);
+    epoch = 1;
+    expect(() => assertTaskInboxLayoutUnchanged(f.common, identity)).toThrow('changed during observation');
+  } finally {
+    fault.mockRestore();
+  }
+  expect(exactCurrentStats).toBeGreaterThanOrEqual(2);
 });
 
 test('migration retains legal event metadata beyond the separate reply-record size limit', () => {
