@@ -1,12 +1,22 @@
+> **Archived**: 2026-09-22 15:10
+> **Related Plan**: plans/archive/plan-20260922-1452-akn00-fixture-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1510
+> **Archive Projection V1**: `plans/plan-20260922-1452-akn00-fixture-integration.md` => `plans/archive/plan-20260922-1452-akn00-fixture-integration.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1452-akn00-fixture-integration.notes.md` => `tasks/archive/notes-20260922-1510-akn00-fixture-integration.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1452-akn00-fixture-integration.contract.md` => `tasks/archive/contract-20260922-1510-akn00-fixture-integration.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1452-akn00-fixture-integration.review.md` => `tasks/archive/review-20260922-1510-akn00-fixture-integration.md`
+
 # Task Contract: accepted fixture integration
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-1452-akn00-fixture-integration.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-1452-akn00-fixture-integration.md
 > **Task Profile**: code-change
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Review File**: `tasks/reviews/20260922-1452-akn00-fixture-integration.review.md`
-> **Notes File**: `tasks/notes/20260922-1452-akn00-fixture-integration.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1510-akn00-fixture-integration.md`
+> **Notes File**: `tasks/archive/notes-20260922-1510-akn00-fixture-integration.md`
 
 ## Why
 
@@ -33,10 +43,10 @@ allowed_paths:
   - docs/architecture/.projection-manifest.json
   - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
   - tasks/archive/
-  - plans/plan-20260922-1452-akn00-fixture-integration.md
-  - tasks/contracts/20260922-1452-akn00-fixture-integration.contract.md
-  - tasks/reviews/20260922-1452-akn00-fixture-integration.review.md
-  - tasks/notes/20260922-1452-akn00-fixture-integration.notes.md
+  - plans/archive/plan-20260922-1452-akn00-fixture-integration.md
+  - tasks/archive/contract-20260922-1510-akn00-fixture-integration.md
+  - tasks/archive/review-20260922-1510-akn00-fixture-integration.md
+  - tasks/archive/notes-20260922-1510-akn00-fixture-integration.md
   - tasks/todos.md
 ```
 

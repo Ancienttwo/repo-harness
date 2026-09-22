@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 15:10
+> **Related Plan**: plans/archive/plan-20260922-1452-akn00-fixture-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1510
+> **Archive Projection V1**: `plans/plan-20260922-1452-akn00-fixture-integration.md` => `plans/archive/plan-20260922-1452-akn00-fixture-integration.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1452-akn00-fixture-integration.notes.md` => `tasks/archive/notes-20260922-1510-akn00-fixture-integration.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1452-akn00-fixture-integration.contract.md` => `tasks/archive/contract-20260922-1510-akn00-fixture-integration.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1452-akn00-fixture-integration.review.md` => `tasks/archive/review-20260922-1510-akn00-fixture-integration.md`
+
 # Task Review: accepted fixture integration
 
 > **Status**: Accepted
 > **Recommendation**: pass
-> **Plan**: plans/plan-20260922-1452-akn00-fixture-integration.md
-> **Contract**: tasks/contracts/20260922-1452-akn00-fixture-integration.contract.md
+> **Plan**: plans/archive/plan-20260922-1452-akn00-fixture-integration.md
+> **Contract**: tasks/archive/contract-20260922-1510-akn00-fixture-integration.md
 > **Substantive Change SHA256**: `sha256:a895d110874fd76e4ac58be4931c4abfe13fc63f5eebe81b30410cfe6a249cd7`
 
 ## Integration scope
