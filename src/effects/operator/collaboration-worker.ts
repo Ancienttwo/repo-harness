@@ -1,5 +1,5 @@
 import { isDecisionCursor } from '../../core/operator/decision-inventory';
-import type { OperatorCollaborationSnapshotV3 } from '../../core/operator/collaboration-snapshot';
+import type { OperatorCollaborationSnapshotV4 } from '../../core/operator/collaboration-snapshot';
 import {
   OperatorCollaborationError,
   readOperatorCollaborationSnapshot,
@@ -15,7 +15,7 @@ interface CollaborationWorkerRequest {
 type CollaborationWorkerResponse =
   | {
       readonly ok: true;
-      readonly snapshot: OperatorCollaborationSnapshotV3;
+      readonly snapshot: OperatorCollaborationSnapshotV4;
     }
   | {
       readonly ok: false;

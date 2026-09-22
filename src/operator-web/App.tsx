@@ -1,3 +1,4 @@
+import { PlanningView } from './PlanningView';
 import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
 import type { OperatorWorkExchangeSnapshot } from './types';
 import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from './TaskEvidence';
@@ -30,7 +31,7 @@ import {
   snapshotViewKind,
   type OperatorApiErrorCode,
   type OperatorApiErrorV1,
-  type OperatorCollaborationSnapshotV3,
+  type OperatorCollaborationSnapshotV4,
   type OperatorCollaborationSource,
   type OperatorFleetCardV1,
   type OperatorFleetErrorV1,
@@ -49,7 +50,7 @@ export interface OperatorAppProps {
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
-  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorCollaborationSnapshotV3>;
+  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorCollaborationSnapshotV4>;
   /** A deterministic collaboration state for fixtures and server renders. */
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
@@ -729,6 +730,43 @@ function Worklist({
   );
 }
 
+type ObservationView = 'planning' | 'delivery' | 'organization';
+const OBSERVATION_VIEWS: readonly ObservationView[] = ['planning', 'delivery', 'organization'];
+function ObservationTabs({ view, onChange, t }: { readonly view: ObservationView; readonly onChange: (view: ObservationView) => void; readonly t: OperatorTranslate }) {
+  return <div className="observation-tabs" role="tablist" aria-label={t('view.label')}>
+    {OBSERVATION_VIEWS.map((item,index) => <button key={item} type="button" role="tab" id={`view-tab-${item}`} aria-controls={`view-panel-${item}`} aria-selected={view === item} tabIndex={view === item ? 0 : -1}
+      onClick={() => onChange(item)} onKeyDown={event => {
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? OBSERVATION_VIEWS.length - 1
+          : event.key === 'ArrowRight' ? (index + 1) % OBSERVATION_VIEWS.length : event.key === 'ArrowLeft' ? (index + OBSERVATION_VIEWS.length - 1) % OBSERVATION_VIEWS.length : null;
+        if (next === null) return;
+        event.preventDefault(); onChange(OBSERVATION_VIEWS[next]!);
+        event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+      }}>{t(`view.${item}`)}</button>)}
+  </div>;
+}
+
+function DeliveryView({ repository, selectedKey, onSelect, t }: {
+  readonly repository: OperatorFleetRepositoryV1;
+  readonly selectedKey: string | null;
+  readonly onSelect: (card: OperatorFleetCardV1) => void;
+  readonly t: OperatorTranslate;
+}) {
+  const cards = repository.cards;
+  const group = (id:string, label:string, rows:readonly OperatorFleetCardV1[]) => <section className="delivery-stage" key={id} data-delivery-stage={id} aria-labelledby={`delivery-${id}`}>
+    <h3 id={`delivery-${id}`}>{label} <span>{rows.length}</span></h3>
+    {rows.length === 0 ? <p>{t('delivery.empty')}</p> : rows.map(card => <WorklistRow key={taskKey(card)} card={card} selected={selectedKey === taskKey(card)} onSelect={onSelect} t={t} />)}
+  </section>;
+  return <section className="delivery-view" aria-labelledby="delivery-heading">
+    <h2 id="delivery-heading">{t('view.delivery')}</h2>
+    {repository.status === 'unreadable' ? <UnreadableRepositoryRow repository={repository} t={t} /> : <>
+      <div className="delivery-columns">{OPERATOR_COLUMNS.map(column => group(column.id,t(stageKey({kind:'column',column:column.id})),cards.filter(card => card.task_state !== 'missing' && card.placement.kind === 'column' && card.placement.column === column.id)))}</div>
+      <div className="delivery-other">{(['preparation','alternate_workflow','unclassified'] as const).map(kind => group(kind,t(`stage.${kind}`),cards.filter(card => card.task_state !== 'missing' && card.placement.kind === kind)))}
+        {group('isolated',t('repo.isolatedHeading'),cards.filter(card => card.task_state === 'missing'))}
+      </div>
+    </>}
+  </section>;
+}
+
 function StageMatrix({ snapshot, t }: { readonly snapshot: Pick<OperatorFleetSnapshotV1, 'repositories'>; readonly t: OperatorTranslate }) {
   return (
     <div className="stage-matrix__scroll">
@@ -977,7 +1015,7 @@ function TaskDetail({
 export type CollaborationViewState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly repository_id: string }
-  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV3 }
+  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV4 }
   | {
       readonly kind: 'failed';
       readonly repository_id: string;
@@ -989,10 +1027,10 @@ const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('coll
 const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_repository_mismatch');
 
 function assertCollaborationRepository(
-  snapshot: OperatorCollaborationSnapshotV3,
+  snapshot: OperatorCollaborationSnapshotV4,
   repositoryId: string,
   decisionAfter: string | null = null,
-): OperatorCollaborationSnapshotV3 {
+): OperatorCollaborationSnapshotV4 {
   if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
@@ -1001,7 +1039,7 @@ async function fetchOperatorCollaborationSnapshot(
   repositoryId: string,
   signal?: AbortSignal,
   decisionAfter: string | null = null,
-): Promise<OperatorCollaborationSnapshotV3> {
+): Promise<OperatorCollaborationSnapshotV4> {
   if (decisionAfter !== null && !/^[0-9a-f]{64}$/u.test(decisionAfter)) throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
   const query = decisionAfter === null ? '' : `?decision_after=${decisionAfter}`;
   const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot${query}`, {
@@ -1016,7 +1054,7 @@ async function fetchOperatorCollaborationSnapshot(
     body = null;
   }
   if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
-  let snapshot: OperatorCollaborationSnapshotV3;
+  let snapshot: OperatorCollaborationSnapshotV4;
   try {
     snapshot = decodeOperatorCollaborationSnapshot(body);
   } catch {
@@ -2068,6 +2106,7 @@ export function OperatorApp({
     if (typeof window === 'undefined') return null;
     try { return localStorage.getItem(OPERATOR_REPOSITORY_STORAGE_KEY); } catch { return null; }
   });
+  const [view, setView] = useState<ObservationView>('organization');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [collaboration, setCollaboration] = useState<CollaborationViewState>(
     initialCollaboration ?? { kind: 'idle' },
@@ -2231,6 +2270,8 @@ export function OperatorApp({
       />
       <div className="operator-main">
         <main className="operator-content">
+          {activeRepository && <ObservationTabs view={view} onChange={setView} t={t} />}
+          <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={activeRepository !== null && view !== 'organization'}>
           {activeRepository && <AutomationSummary
             repositoryId={activeRepository.repository_id}
             refreshGeneration={collaborationRefreshGeneration}
@@ -2254,6 +2295,14 @@ export function OperatorApp({
                     t={t}
                   />
               ) : null}
+          </div>
+          <div role="tabpanel" id="view-panel-planning" aria-labelledby="view-tab-planning" hidden={view !== 'planning'}>
+            {view === 'planning' && activeRepository && <PlanningView state={collaboration} repositoryId={activeRepository.repository_id} cards={activeRepository.cards} onSelect={selectCard} t={t} />}
+          </div>
+          <div role="tabpanel" id="view-panel-delivery" aria-labelledby="view-tab-delivery" hidden={view !== 'delivery'}>
+            {view === 'delivery' && activeRepository && <DeliveryView repository={activeRepository} selectedKey={selection?.key ?? null} onSelect={selectCard} t={t} />}
+          </div>
+          {view !== 'organization' && <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />}
           {activeRepository && <details className="repository-overview">
             <summary>{t('detail.overviewTitle')}</summary>
             <StageMatrix snapshot={{ repositories: visibleRepositories }} t={t} />

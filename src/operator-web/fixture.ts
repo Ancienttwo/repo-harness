@@ -500,13 +500,25 @@ export const offExchangeSnapshot: OperatorWorkExchangeSnapshot = {
   mode: 'off',
 };
 
-export function collaborationObservationFixture(exchange: OperatorWorkExchangeSnapshot): import('../core/operator/collaboration-snapshot').OperatorCollaborationSnapshotV3 {
-  return { protocol: 3, kind: 'operator_collaboration_snapshot', decision_after: null,
+export function collaborationObservationFixture(exchange: OperatorWorkExchangeSnapshot): import('../core/operator/collaboration-snapshot').OperatorCollaborationSnapshotV4 {
+  return { protocol: 4, kind: 'operator_collaboration_snapshot', decision_after: null,
+    planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: exchange.repository_id,
     exchange: { status: 'observed', observed_at: '2026-09-22T07:00:00.000Z', snapshot: exchange },
     organization: { status: 'unavailable', observed_at: '2026-09-22T07:00:00.000Z', code: 'source_unavailable' } };
 }
 export const collaborationSnapshot = collaborationObservationFixture(exchangeSnapshot);
+
+export function planningObservationFixture(repositoryId: string, cards: readonly OperatorFleetCardV1[]): import('../core/operator/planning-snapshot').OperatorPlanningSnapshot {
+  const tasks = cards.filter(card => card.task_state !== 'missing').map(card => ({
+    ...taskContextFixture({repository_id:repositoryId,task_id:card.task_id,expected_task_revision:card.task_revision}),
+    task: {title:card.task_label ?? card.task_id,mode:'contract',acceptance:'Read the canonical requirements and preserve the exact Task identity.',state:card.task_state},
+  }));
+  const canonical = tasks[0]?.canonical ?? null;
+  const observation = {observed_at:'2026-09-22T07:00:00+08:00',authorization_revision:1,board_revision:canonical ? `sha256:${'b'.repeat(64)}` : null};
+  return {protocol:1,kind:'operator_planning_snapshot',repository_id:repositoryId,canonical,tasks,observation,
+    graph:{status:'observed',observed_at:observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:null,packages:[],sources:[]}}};
+}
 export const degradedCollaborationSnapshot = collaborationObservationFixture(degradedExchangeSnapshot);
 export const changedCollaborationSnapshot = collaborationObservationFixture(changedExchangeSnapshot);
 export const offCollaborationSnapshot = collaborationObservationFixture(offExchangeSnapshot);

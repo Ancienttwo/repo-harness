@@ -13,12 +13,37 @@ import {
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
 import { collaborationObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
+import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
 
 const taskId = 'a'.repeat(64);
 const taskRevision = 'b'.repeat(64);
 const claimId = '00000000-0000-4000-8000-000000000001';
 const snapshotDigest = `sha256:${'c'.repeat(64)}`;
+
+test('Planning transport binds canonical task observations and requires protocol4 source isolation',()=>{
+  const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(collaborationSnapshot.repository_id,repository.cards);
+  const envelope={...collaborationSnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
+  expect(decodeOperatorCollaborationSnapshot(envelope).planning).toEqual(envelope.planning);
+  const {planning:_,...missing}=envelope;
+  expect(()=>decodeOperatorCollaborationSnapshot(missing)).toThrow();
+  expect(()=>decodeOperatorCollaborationSnapshot({...envelope,protocol:3})).toThrow();
+  const canonical=snapshot.canonical!,task=snapshot.tasks[0]!;
+  for(const bad of [
+    {...snapshot,repository_id:'another-repo'},
+    {...snapshot,canonical:{...canonical,commit:'d'.repeat(40)}},
+    {...snapshot,tasks:[task,task]},
+    {...snapshot,tasks:Array.from({length:201},()=>task)},
+    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'engineering-v2',work_graph_revision:snapshotDigest,packages:[],sources:Array.from({length:9},(_,index)=>({repository_id:`repo_${index.toString(16).padStart(16,'0')}`,commit:canonical.commit,work_graph_revision:snapshotDigest}))}}},
+    {...snapshot,tasks:[{...task,observation:{...task.observation,authorization_revision:2}}]},
+    {...snapshot,tasks:[{...task,canonical:{...canonical,sprint_path:'../secret'}}]},
+    {...snapshot,graph:{...snapshot.graph,observed_at:'2025-01-01T00:00:00Z'}},
+    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:snapshotDigest,packages:[],sources:[]}}},
+  ])expect(()=>decodeOperatorPlanningSnapshot(bad,collaborationSnapshot.repository_id)).toThrow();
+  const unavailable={status:'unavailable' as const,observed_at:snapshot.observation.observed_at,code:'source_unavailable' as const};
+  expect(decodeOperatorCollaborationSnapshot({...envelope,planning:unavailable}).exchange.status).toBe('observed');
+});
 
 function validFleetPayload(): Record<string, unknown> {
   return {

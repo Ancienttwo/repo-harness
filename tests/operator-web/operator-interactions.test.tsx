@@ -24,6 +24,7 @@ import {
   fixtureTasks,
   leaseStateSnapshot,
   preparationSnapshot,
+  planningObservationFixture,
   stableSnapshot,
 } from '../../src/operator-web/fixture';
 import {
@@ -40,6 +41,59 @@ import {
   projectSnapshotViewState,
   type OperatorFleetSnapshotV1,
 } from '../../src/operator-web/types';
+
+describe('three observation views',()=>{
+  test('defaults to Organization, supports roving keyboard tabs and preserves delivery placement counts',async()=>{
+    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+    const tabs = () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs()).toHaveLength(3);expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
+    await act(async()=>tabs()[2]!.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true})));
+    expect(document.activeElement).toBe(tabs()[0]);expect(tabs()[0]!.tabIndex).toBe(0);
+    await act(async()=>tabs()[0]!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
+    expect(document.activeElement).toBe(tabs()[1]);
+    expect(document.querySelectorAll('.delivery-columns > section')).toHaveLength(5);
+    expect(document.querySelectorAll('.delivery-view button.worklist-row')).toHaveLength(4);
+    expect(document.querySelectorAll('[data-delivery-stage="available"] button.worklist-row')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-delivery-stage="preparation"] button.worklist-row')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-delivery-stage="alternate_workflow"] button.worklist-row')).toHaveLength(1);
+    await act(async()=>tabs()[1]!.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true})));
+    expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  test('Planning opens only the exact Task revision and view changes preserve the mounted draft without reads or writes',async()=>{
+    const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
+    let reads=0,writes=0,contextReads=0,activityReads=0;
+    const payload={...collaborationSnapshot,repository_id:repository.repository_id,exchange:{status:'unavailable' as const,observed_at:'2026-09-22T00:00:00Z',code:'source_unavailable' as const},planning:{status:'observed' as const,observed_at:planning.observation.observed_at,snapshot:planning}};
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchCollaboration={async()=>{reads++;return payload;}} sendMessage={async()=>{writes++;}}
+      readTaskContext={async()=>{contextReads++;throw Error('fixture unavailable');}}
+      readTaskActivity={async()=>{activityReads++;throw Error('fixture unavailable');}} />);
+    const tab=(name:string)=>document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!;
+    await act(async()=>tab('planning').click());
+    expect(document.querySelector('.planning-view')?.textContent).toContain('dependency coverage is unknown');
+    expect(document.querySelector('.planning-view')?.textContent).not.toContain('declares no dependencies');
+    const task=repository.cards.find(card=>card.task_id===fixtureTasks.working.task_id)!;
+    await act(async()=>document.querySelector<HTMLButtonElement>(`[data-planning-task="${task.task_id}"] > button`)!.click());
+    expect(document.querySelector('#detail-pane-title')?.textContent).toBe(task.task_label!);
+    await act(async()=>document.querySelector<HTMLButtonElement>('.composer__toggle')!.click());
+    const textarea=document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+    const setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')!.set!;
+    await act(async()=>{textarea.dispatchEvent(new window.Event('focusin',{bubbles:true}) as unknown as Event);setter.call(textarea,'保留跨视图草稿');textarea.dispatchEvent(new window.Event('keyup',{bubbles:true}) as unknown as Event);});
+    const counts=[reads,contextReads,activityReads];
+    await act(async()=>tab('delivery').click());await act(async()=>tab('organization').click());await act(async()=>tab('planning').click());
+    expect(document.querySelector('#composer-body')).toBe(textarea);expect(textarea.value).toBe('保留跨视图草稿');
+    expect([reads,contextReads,activityReads]).toEqual(counts);expect(writes).toBe(0);
+  });
+
+  test('Planning source with the same Task id but a different revision cannot open details',async()=>{
+    const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
+    const stale={...planning,tasks:planning.tasks.map(task=>({...task,task_revision:'f'.repeat(64)}))};
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" initialCollaboration={{kind:'ready',snapshot:{...collaborationSnapshot,repository_id:repository.repository_id,exchange:{status:'unavailable' as const,observed_at:'2026-09-22T00:00:00Z',code:'source_unavailable' as const},planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:stale}}}} />);
+    await act(async()=>document.querySelector<HTMLButtonElement>('#view-tab-planning')!.click());
+    const buttons=Array.from(document.querySelectorAll<HTMLButtonElement>('.planning-tasks > li > button'));
+    expect(buttons.length).toBeGreaterThan(0);expect(buttons.every(button=>button.disabled)).toBe(true);
+    expect(document.querySelector('.planning-view')?.textContent).toContain('没有匹配此 Task 精确版本');
+  });
+});
 
 let root: Root | null = null;
 let window: Window;
@@ -782,7 +836,7 @@ describe('operator web interactions', () => {
     expect(css).toContain('.operator-app[data-state="stale"] .operator-content { filter: saturate(.55); }');
     expect(css).toContain('@media (max-width: 900px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
-    expect(css).not.toContain('@media (max-width: 1100px)');
+    expect(css).toContain('.delivery-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }');
 
     const sizes = Array.from(css.matchAll(/font-size:\s*(\d+)px/gu), (match) => Number(match[1]));
     expect(sizes.length).toBeGreaterThan(0);

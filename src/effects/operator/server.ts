@@ -12,7 +12,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { OperatorCollaborationSnapshotV3 } from '../../core/operator/collaboration-snapshot';
+import type { OperatorCollaborationSnapshotV4 } from '../../core/operator/collaboration-snapshot';
 import {
   projectOperatorFleetSnapshot,
   type OperatorFleetSnapshotV1,
@@ -161,7 +161,7 @@ export interface OperatorServerOptions {
   ) => Promise<FleetBoardSnapshotV1>;
   readonly read_collaboration_snapshot?: (
     input: OperatorCollaborationSnapshotReaderInput,
-  ) => Promise<OperatorCollaborationSnapshotV3>;
+  ) => Promise<OperatorCollaborationSnapshotV4>;
   readonly send_task_message?: (
     input: SendOperatorTaskMessageInput & { readonly signal: AbortSignal },
   ) => SendOperatorTaskMessageResult | Promise<SendOperatorTaskMessageResult>;
@@ -468,7 +468,7 @@ const OPERATOR_TASK_MESSAGE_REQUEST_ABORTED = Symbol('operator-task-message-requ
 type OperatorCollaborationWorkerResponse =
   | {
       readonly ok: true;
-      readonly snapshot: OperatorCollaborationSnapshotV3;
+      readonly snapshot: OperatorCollaborationSnapshotV4;
     }
   | {
       readonly ok: false;
@@ -485,7 +485,7 @@ function collaborationWorkerEnvironment(env: NodeJS.ProcessEnv | undefined): Rec
 function collaborationWorkerResponse(value: unknown): OperatorCollaborationWorkerResponse | null {
   if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
   if (value.ok === true && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as OperatorCollaborationSnapshotV3 };
+    return { ok: true, snapshot: value.snapshot as OperatorCollaborationSnapshotV4 };
   }
   if (
     value.ok === false
@@ -507,13 +507,13 @@ function collaborationWorkerResponse(value: unknown): OperatorCollaborationWorke
  */
 function readDefaultCollaborationSnapshot(
   input: OperatorCollaborationSnapshotReaderInput,
-): Promise<OperatorCollaborationSnapshotV3> {
+): Promise<OperatorCollaborationSnapshotV4> {
   return new Promise((resolveRead, rejectRead) => {
     const worker = new Worker(new URL('./collaboration-worker.ts', import.meta.url));
     let settled = false;
     const finish = (
       outcome:
-        | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV3 }
+        | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
         | { readonly ok: false; readonly error: unknown },
     ): void => {
       if (settled) return;
@@ -1456,8 +1456,8 @@ export async function startOperatorServer(
     readonly decisionAfter: string | null;
     readonly key: string;
     readonly controller: AbortController;
-    readonly promise: Promise<OperatorCollaborationSnapshotV3>;
-    readonly resolve: (snapshot: OperatorCollaborationSnapshotV3) => void;
+    readonly promise: Promise<OperatorCollaborationSnapshotV4>;
+    readonly resolve: (snapshot: OperatorCollaborationSnapshotV4) => void;
     readonly reject: (error: unknown) => void;
     timer: ReturnType<typeof setTimeout> | null;
     subscribers: number;
@@ -1476,7 +1476,7 @@ export async function startOperatorServer(
   const settleCollaborationObservation = (
     observation: CollaborationObservation,
     outcome:
-      | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV3 }
+      | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
       | { readonly ok: false; readonly error: unknown },
   ): void => {
     if (observation.settled) return;
@@ -1526,12 +1526,12 @@ export async function startOperatorServer(
     if (activeCollaborationWorkers >= maxConcurrency && collaborationQueue.length >= collaborationQueueCapacity) {
       throw new OperatorCollaborationBusyError();
     }
-    let resolveObservation!: (snapshot: OperatorCollaborationSnapshotV3) => void;
+    let resolveObservation!: (snapshot: OperatorCollaborationSnapshotV4) => void;
     let rejectObservation!: (error: unknown) => void;
     const observation: CollaborationObservation = {
       repositoryId, decisionAfter, key,
       controller: new AbortController(),
-      promise: new Promise<OperatorCollaborationSnapshotV3>((resolveObservationPromise, rejectObservationPromise) => {
+      promise: new Promise<OperatorCollaborationSnapshotV4>((resolveObservationPromise, rejectObservationPromise) => {
         resolveObservation = resolveObservationPromise;
         rejectObservation = rejectObservationPromise;
       }),

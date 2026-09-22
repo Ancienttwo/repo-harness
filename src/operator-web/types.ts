@@ -1,3 +1,4 @@
+import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
 import { decodeOperatorDecisionInventory, isDecisionCursor } from '../core/operator/decision-inventory';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
 import type { OperatorWorkExchangeSnapshot } from '../core/operator/collaboration-snapshot';
@@ -13,7 +14,7 @@ export type {
   OperatorCollaborationOpportunityV1,
   OperatorCollaborationParticipantV1,
   OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV3,
+  OperatorCollaborationSnapshotV4,
   OperatorCollaborationSource,
   OperatorCollaborationThreadV1,
 } from '../core/operator/collaboration-snapshot';
@@ -34,7 +35,7 @@ import type {
   OperatorCollaborationOpportunityV1,
   OperatorCollaborationParticipantV1,
   OperatorCollaborationSignalV1,
-  OperatorCollaborationSnapshotV3,
+  OperatorCollaborationSnapshotV4,
   OperatorCollaborationSource,
   OperatorCollaborationThreadV1,
 } from '../core/operator/collaboration-snapshot';
@@ -60,7 +61,7 @@ export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'
  * same reason and typed against the core literal, so a bump that forgets the
  * browser fails typecheck.
  */
-export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV3['protocol'] = 3;
+export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV4['protocol'] = 4;
 
 export interface OperatorApiErrorV1 {
   readonly code: string;
@@ -743,10 +744,10 @@ export function decodeOperatorWorkExchangeSnapshot(value: unknown): OperatorWork
   }
 }
 
-export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV3 {
+export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV4 {
   try {
     const v = requireRecord(value);
-    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'decision_after', 'decisions', 'exchange', 'organization']);
+    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'decision_after', 'decisions', 'exchange', 'organization', 'planning']);
     if (v.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL || v.kind !== 'operator_collaboration_snapshot') throw new OperatorPayloadError();
     const repositoryId = requireString(v.repository_id);
     if (!isDecisionCursor(v.decision_after)) throw new OperatorPayloadError();
@@ -771,6 +772,7 @@ export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCol
         return exchange;
       }),
       organization: source(v.organization, raw => decodeOperatorOrganizationSnapshot(raw, repositoryId)),
+      planning: source(v.planning, raw => decodeOperatorPlanningSnapshot(raw, repositoryId)),
       decision_after: decisionAfter,
       decisions: source(v.decisions, raw => decodeOperatorDecisionInventory(raw, repositoryId, decisionAfter)),
     };

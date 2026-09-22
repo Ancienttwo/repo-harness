@@ -7,7 +7,7 @@ import { createConnection } from 'node:net';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
-import type { OperatorCollaborationSnapshotV3 } from '../../src/core/operator/collaboration-snapshot';
+import type { OperatorCollaborationSnapshotV4 } from '../../src/core/operator/collaboration-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { OperatorCollaborationError, readOperatorCollaborationSnapshot } from '../../src/effects/operator/collaboration';
 import {
@@ -25,8 +25,9 @@ import {
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
 
-function unavailableCollaboration(repositoryId: string): OperatorCollaborationSnapshotV3 {
-  return { protocol: 3, kind: 'operator_collaboration_snapshot', decision_after: null,
+function unavailableCollaboration(repositoryId: string): OperatorCollaborationSnapshotV4 {
+  return { protocol: 4, kind: 'operator_collaboration_snapshot', decision_after: null,
+    planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: repositoryId,
     exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
     organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
@@ -656,7 +657,7 @@ describe('operator serve command and HTTP boundary', () => {
     let calls = 0;
     let aborts = 0;
     let healthy = false;
-    let resolveFirst!: (snapshot: OperatorCollaborationSnapshotV3) => void;
+    let resolveFirst!: (snapshot: OperatorCollaborationSnapshotV4) => void;
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
@@ -666,7 +667,7 @@ describe('operator serve command and HTTP boundary', () => {
         calls += 1;
         if (healthy) return Promise.resolve(unavailableCollaboration('repo-write'));
         signal.addEventListener('abort', () => { aborts += 1; }, { once: true });
-        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorCollaborationSnapshotV3) => void; });
+        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorCollaborationSnapshotV4) => void; });
       },
     });
     const firstController = new AbortController();
@@ -698,7 +699,7 @@ describe('operator serve command and HTTP boundary', () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-queue-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     const started: string[] = [];
-    const resolvers = new Map<string, (snapshot: OperatorCollaborationSnapshotV3) => void>();
+    const resolvers = new Map<string, (snapshot: OperatorCollaborationSnapshotV4) => void>();
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
@@ -706,7 +707,7 @@ describe('operator serve command and HTTP boundary', () => {
       collect_fleet_board: async () => snapshot(),
       read_collaboration_snapshot: ({ repository_id }) => new Promise((resolve) => {
         started.push(repository_id);
-        resolvers.set(repository_id, resolve as (snapshot: OperatorCollaborationSnapshotV3) => void);
+        resolvers.set(repository_id, resolve as (snapshot: OperatorCollaborationSnapshotV4) => void);
       }),
     });
     const url = (repositoryId: string) => `${server.url}/api/v1/collaboration/${repositoryId}/snapshot`;
@@ -1543,7 +1544,7 @@ test('repository snapshot rejects automation from another repository', async () 
 });
 
 
-describe('collaboration protocol3 source collection', () => {
+describe('collaboration protocol4 source collection', () => {
   test('reads real registered stores without writes and retains organization when WorkExchange is corrupt', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
@@ -1558,7 +1559,7 @@ describe('collaboration protocol3 source collection', () => {
       writeFileSync(policy, JSON.stringify({ collaboration: { mode: 'off' } }));
       const before = tree(repoRoot);
       const observed = readOperatorCollaborationSnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(observed.protocol).toBe(3);
+      expect(observed.protocol).toBe(4);
       expect(observed.exchange.status).toBe('observed');
       expect(observed.organization.status).toBe('observed');
       expect(observed.decisions).toMatchObject({ status: 'observed', snapshot: { entries: [], coverage: { complete: true } } });
@@ -1590,7 +1591,7 @@ describe('collaboration protocol3 source collection', () => {
 test('Decision cursors are bounded, bind responses and partition single-flight within the shared worker budget', async () => {
   const root = mkdtempSync(join(tmpdir(), 'operator-decision-query-'));
   const calls: Array<string | null> = [];
-  const resolvers: Array<(value: OperatorCollaborationSnapshotV3) => void> = [];
+  const resolvers: Array<(value: OperatorCollaborationSnapshotV4) => void> = [];
   const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 1,
     read_collaboration_snapshot: input => { calls.push(input.decision_after ?? null); return new Promise(resolve => resolvers.push(resolve)); },
   });

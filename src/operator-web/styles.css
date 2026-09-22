@@ -10,6 +10,39 @@
 @import '@fontsource/jetbrains-mono/latin-500.css';
 @import '@fontsource/jetbrains-mono/latin-700.css';
 
+.observation-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.observation-tabs button { min-height: 44px; padding: 10px 16px; border: 1px solid var(--ink-300); border-radius: 8px; background: var(--paper-0); color: var(--ink-800); font: inherit; font-size: 14px; cursor: pointer; }
+.observation-tabs button[aria-selected="true"] { background: var(--ink-800); color: var(--paper-0); border-color: var(--ink-800); }
+.observation-tabs button:focus-visible { outline: 3px solid var(--codex-500); outline-offset: 3px; }
+.operator-content > [role="tabpanel"][hidden] { display: none; }
+.planning-view, .delivery-view { min-width: 0; margin-bottom: 24px; font-size: 14px; }
+.planning-view h2, .delivery-view h2 { font-size: 20px; margin: 0 0 16px; }
+.planning-tasks { list-style: none; padding: 0; display: grid; gap: 16px; }
+.planning-tasks > li { min-width: 0; padding: 18px; border: 1px solid var(--paper-300); border-radius: 10px; background: var(--paper-0); }
+.planning-view h3 { margin: 0 0 12px; font-size: 17px; }
+.planning-view h4 { margin: 12px 0 6px; font-size: 14px; }
+.planning-view p, .planning-view dd, .planning-view code, .planning-view li { overflow-wrap: anywhere; }
+.planning-view p, .planning-view li { line-height: 1.6; }
+.planning-requirement { white-space: pre-wrap; }
+.planning-view dl > div { display: flex; gap: 16px; flex-wrap: wrap; }
+.planning-view dd { margin: 0; }
+.planning-view details { margin: 12px 0; }
+.planning-view summary { min-height: 44px; display: list-item; align-content: center; cursor: pointer; }
+.planning-view pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+.planning-view .operator-button { min-height: 44px; }
+.planning-package { border-top: 1px solid var(--paper-300); margin-top: 16px; padding-top: 8px; }
+.delivery-columns { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.delivery-other { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.delivery-stage { min-width: 0; border: 1px solid var(--paper-300); border-radius: 10px; padding: 12px; background: var(--paper-0); }
+.delivery-stage h3 { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; margin: 0 0 12px; }
+.delivery-stage .worklist-row { margin-top: 8px; min-width: 0; }
+.delivery-stage .worklist-row__head, .delivery-stage .worklist-row__meta, .delivery-stage .worklist-row__signals { flex-wrap: wrap; }
+.delivery-stage .worklist-row__label, .delivery-stage .worklist-row__repository, .delivery-stage .cause-text { overflow-wrap: anywhere; white-space: normal; }
+.delivery-stage .worklist-row__meta, .delivery-stage .worklist-row__repository, .delivery-stage .worklist-row__stage, .delivery-stage .worklist-row__signals, .delivery-stage .cause-text, .delivery-stage .cause-code, .delivery-stage .operator-badge, .delivery-stage .worklist-row__cause { font-size: 14px; }
+.delivery-stage .cause-code { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .delivery-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .delivery-columns, .delivery-other { grid-template-columns: minmax(0, 1fr); } .planning-tasks > li { padding: 14px; } .observation-tabs button { flex: 1 1 auto; } }
+
 :root {
   --ink-950: #0E1822;
   --ink-900: #14202E;

@@ -29,7 +29,7 @@ import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorCollaborationSnapshot,
   projectSnapshotViewState,
-  type OperatorCollaborationSnapshotV3,
+  type OperatorCollaborationSnapshotV4,
 } from '../../src/operator-web/types';
 
 let root: Root | null = null;
@@ -96,7 +96,7 @@ function paneText(): string {
   return document.querySelector('.collab-pane')?.textContent ?? '';
 }
 
-function render(snapshot: OperatorCollaborationSnapshotV3, locale: 'en' | 'zh' = 'en'): string {
+function render(snapshot: OperatorCollaborationSnapshotV4, locale: 'en' | 'zh' = 'en'): string {
   return renderToStaticMarkup(
     <OperatorApp
       initialState={projectSnapshotViewState(stableSnapshot)}
@@ -587,8 +587,8 @@ describe('operator collaboration read', () => {
   });
 
   test('late collaboration responses cannot replace the repository selected later', async () => {
-    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV3) => void>>();
-    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV3> => new Promise((resolve) => {
+    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV4) => void>>();
+    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV4> => new Promise((resolve) => {
       const requests = pending.get(repositoryId) ?? [];
       requests.push(resolve);
       pending.set(repositoryId, requests);
@@ -624,9 +624,9 @@ describe('operator collaboration read', () => {
     const requests: Array<{
       readonly repositoryId: string;
       readonly signal: AbortSignal;
-      readonly resolve: (snapshot: OperatorCollaborationSnapshotV3) => void;
+      readonly resolve: (snapshot: OperatorCollaborationSnapshotV4) => void;
     }> = [];
-    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV3> => new Promise((resolve, reject) => {
+    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV4> => new Promise((resolve, reject) => {
       requests.push({ repositoryId, signal, resolve });
       signal.addEventListener('abort', () => {
         const error = new Error('superseded');
@@ -663,7 +663,7 @@ describe('operator collaboration read', () => {
         initialLocale="en"
         fetchCollaboration={async (_repositoryId, nextSignal) => {
           observed.signal = nextSignal;
-          return new Promise<OperatorCollaborationSnapshotV3>(() => {});
+          return new Promise<OperatorCollaborationSnapshotV4>(() => {});
         }}
       />,
     );
@@ -681,7 +681,7 @@ describe('operator collaboration read', () => {
 
   test('refresh supersedes a collaboration generation without showing an abort failure', async () => {
     const signals: AbortSignal[] = [];
-    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV3> => {
+    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV4> => {
       signals.push(signal);
       return new Promise((resolve, reject) => {
         signal.addEventListener('abort', () => {
@@ -842,7 +842,7 @@ describe('Organization observation boundary', () => {
   test('refuses old transport and cross-source identity without hiding an explicitly unavailable exchange', async () => {
     const board = organizationBoardFixture();
     const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
-    const payload: OperatorCollaborationSnapshotV3 = { ...collaborationSnapshot, repository_id: view.repository_id,
+    const payload: OperatorCollaborationSnapshotV4 = { ...collaborationSnapshot, repository_id: view.repository_id,
       exchange: { status: 'unavailable', observed_at: view.observed_at, code: 'source_unavailable' },
       organization: { status: 'observed', observed_at: view.observed_at, snapshot: view } };
     expect(decodeOperatorCollaborationSnapshot(payload)).toEqual(payload);
@@ -863,7 +863,7 @@ describe('Organization observation boundary', () => {
 import { decisionInventoryFixture } from '../../src/operator-web/fixture';
 import { DecisionSummary } from '../../src/operator-web/OrganizationSummary';
 
-function decisionEnvelope(repositoryId: string, after: string | null = null): OperatorCollaborationSnapshotV3 {
+function decisionEnvelope(repositoryId: string, after: string | null = null): OperatorCollaborationSnapshotV4 {
   const page = decisionInventoryFixture(repositoryId);
   const question = after === null ? 'First original question <img src=x onerror=alert(1)>' : 'Second original question';
   return { ...collaborationObservationFixture({ ...exchangeFixture, repository_id: repositoryId }), decision_after: after,
@@ -886,7 +886,7 @@ describe('formal Human Decision observation UI', () => {
   });
 
   test('replaces pages, keeps task selection scope, and cancels late pages on refresh or repository change', async () => {
-    const pending: Array<{ repositoryId: string; after: string | null; signal: AbortSignal; resolve: (snapshot: OperatorCollaborationSnapshotV3) => void }> = [];
+    const pending: Array<{ repositoryId: string; after: string | null; signal: AbortSignal; resolve: (snapshot: OperatorCollaborationSnapshotV4) => void }> = [];
     let writes = 0;
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
       sendMessage={async () => { writes++; }}
