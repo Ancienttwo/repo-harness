@@ -1228,8 +1228,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/task-inbox-portable-paths",
-        "commit": "4c4669960914c9ed77da9510c79e05d2758002f2",
-        "committedAt": "2026-09-22T18:35:03+08:00"
+        "commit": "727f79de21db1e4d61852e2848692d3c6dce6a17",
+        "committedAt": "2026-09-22T18:38:38+08:00"
       }
     },
     {

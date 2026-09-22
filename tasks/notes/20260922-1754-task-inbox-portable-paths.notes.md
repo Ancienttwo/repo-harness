@@ -6,6 +6,7 @@
 > **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
+> **Substantive Change SHA256**: `sha256:3d3fb54fb43e57035ddb588269a601e983b6d20f6629c21b2c2f55db8dfbdcb8`
 
 ## Design Decisions
 
@@ -13,6 +14,7 @@
 - Source approval includes the resolved common-directory path and device/inode identity. A matching history copied into another repository cannot reuse approval.
 - Existing canonical record validators remain the only record authority. Runtime reads v2 only; legacy parsing is confined to the explicit migration.
 - Contract verification uses the approved source base12518117 through REPO_HARNESS_DIFF_BASE. The policy-owned review subject remains the complete candidate against its configured review base; do not override the external review base to a different subject.
+- Interrupted canonical verification reached the outer helper hard timeout while owner-4 had no completed execution record. A bounded direct package test passed 33/33 in 75 seconds. The next canonical invocation reported an identical request running; subsequent readback found that request lock absent. Preserve those failures and require a new genuine canonical result; no execution receipt or cache entry is manually repaired.
 
 ## Deviations From Plan Or Spec
 
