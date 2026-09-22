@@ -36,3 +36,5 @@ Integrated source3979fb5b passes74 focused tests and500 assertions, with3 Window
 ## Accepted repository dependency and verification base
 
 P1: repository snapshot b076513b is accepted and archived, including separate accepted Inbox migration and Windows persistence contracts. P2: automation records still flow through the same scoped collector and strict protocol2, without adding a write owner. P3: integrate the accepted dependency and pin the source diff/rollback base to b076513b before canonical evidence; semantic review remains policy origin/main. Preserve the new deferred Windows ledger entry and regenerate only architecture provenance. Add the existing migration oracle because the normalized final-content review includes that accepted irreversible-effect dependency. At10x source records the existing count/deadline bounds still fail unavailable. No new production change is required by this integration.
+
+> **Substantive Change SHA256**: `sha256:1e735326319b4f02b2883dc4c570c5e59d582ce313ee547728e83878e1702012`
