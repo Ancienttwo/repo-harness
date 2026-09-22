@@ -21,7 +21,7 @@ Implement AKN-04d1 scoped Fleet GET with one shared exit-held collector, bounded
 
 ## Scope
 
-- In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests; integrate frozen context89837138 and accepted activity/upstream source and workflow evidence, then regenerate deterministic projection. Context acceptance remains an upstream prerequisite for this package closeout.
+- In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests; integrate frozen context89837138 and accepted activity/upstream source and workflow evidence, then regenerate deterministic projection. Context acceptance is recorded at archived head e7eb8073 and integrated before this package closeout.
 - Out of scope: automation summary (AKN-04d2), refresh UI, native execution, existing write guards, installation and main merge.
 - Invariant: only original registry and Fleet readers define repository facts; no process slot release before cleanup settlement.
 
@@ -154,6 +154,12 @@ allowed_paths:
   - tests/effects/task-reply.test.ts
   - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
   - tests/unit/task-reply.test.ts
+  - plans/archive/plan-20260922-0450-akn04-context.md
+  - plans/plan-20260922-0450-akn04-context.md
+  - tasks/archive/contract-20260922-1646-akn04-context.md
+  - tasks/archive/notes-20260922-1646-akn04-context.md
+  - tasks/archive/review-20260922-1646-akn04-context.md
+  - tasks/archive/todo-20260922-1646-akn04-context.md
 ```
 
 ## Evidence Requirements
