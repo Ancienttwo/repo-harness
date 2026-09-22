@@ -1,0 +1,291 @@
+# Task Contract: akn03b-windows-fixture
+
+> **Status**: Active
+> **Plan**: plans/plan-20260922-1417-akn03b-windows-fixture.md
+> **Task Profile**: bugfix
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
+> **Owner**: ancienttwo
+> **Capability ID**: root
+> **Last Updated**: 2026-09-22 14:17
+> **Review File**: `tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md`
+> **Notes File**: `tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
+
+## Why
+
+The Windows MCP path job fails during Binding fixture setup before the authenticated HTTP assertions execute.
+
+## Goal
+
+Prepare canonical Binding and principal fixture records without invoking directory-fsync writers; retain the existing real OAuth/HTTP identity assertions and update PR #437 after verification.
+
+## Scope
+
+- In scope: existing HTTP fixture setup and this package evidence.
+- Out of scope: production durability, Host admission, merge and runtime installation.
+- Taste constraints: no Windows skip, no product fallback, no replacement protocol or helper abstraction.
+
+## Stop Conditions
+
+- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
+- Stop if an Exit Criteria command cannot be run in this environment.
+- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+
+## Falsifier
+
+The Windows job still fails before the HTTP assertion, or the canonical readers reject the seeded Binding/current/mapping records. The existing Engineer OAuth E2E is the guard.
+
+## Root Cause Evidence
+
+- root_cause: tests/cli/mcp-http.test.ts:1107 called bindEngineer; binding-store directory fsync returned Windows EPERM before transport assertions.
+- repro: GitHub run 35693364932, job 106634890098, Engineer OAuth E2E on Windows.
+- regression_guard: tests/cli/mcp-http.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/akn03b-windows-fixture/windows-pre-fix.log
+
+## Workflow Inventory
+
+- Source plan: `plans/plan-20260922-1417-akn03b-windows-fixture.md`
+- Deferred-goal ledger: `tasks/todos.md`
+- Review file: `tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md`
+- Notes file: `tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+
+## Change Assessment
+
+```json
+{"protocol": 1, "oracles": [{"id": "http", "kind": "deterministic_test", "paths": ["*"]}]}
+```
+
+## Acceptance Policy
+
+```json
+{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}
+```
+
+## Allowed Paths
+
+```yaml
+allowed_paths:
+  - tests/cli/mcp-http.test.ts
+  - docs/researches/20260922-task-reply-protocol.md
+  - docs/architecture/.projection-manifest.json
+  - plans/plan-20260922-1417-akn03b-windows-fixture.md
+  - tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md
+  - tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md
+  - tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
+  - tasks/todos.md
+```
+
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
+  benchmark: not_applicable
+```
+
+## Delegation Contract
+
+```yaml
+delegation:
+  budget:
+    tokens: null
+    runner_invocations: null
+    wall_time_minutes: null
+  permission_scope:
+    mode: inherit_allowed_paths
+    writable_paths: []
+    network: inherited
+  roles:
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+    fallback: null
+    brief_is_authoritative: true
+```
+
+## Exit Criteria (Machine Verifiable)
+
+```yaml
+exit_criteria:
+  files_exist:
+    - tests/cli/mcp-http.test.ts
+  artifacts_exist:
+    - .ai/harness/runs/akn03b-windows-fixture/windows-pre-fix.log
+```
+
+## Verification Plan
+
+```json
+{
+  "protocol": 1,
+  "checks": [
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "http",
+      "kind": "package_test",
+      "path": "tests/cli/mcp-http.test.ts"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "type",
+      "kind": "command",
+      "command": "bun run check:type"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "hooks",
+      "kind": "command",
+      "command": "bun run check:hooks"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "helpers",
+      "kind": "command",
+      "command": "bun run check:helpers"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "reference-configs",
+      "kind": "command",
+      "command": "bun run check:reference-configs"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "deploy-sql",
+      "kind": "command",
+      "command": "bash scripts/check-deploy-sql-order.sh"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "architecture",
+      "kind": "command",
+      "command": "bash scripts/check-architecture-sync.sh"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "task-sync",
+      "kind": "command",
+      "command": "REPO_HARNESS_DIFF_BASE=fdc2081f165ea495da9852ba057ca939dc44d95e REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "task-workflow",
+      "kind": "command",
+      "command": "bash scripts/check-task-workflow.sh --strict"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "project-state",
+      "kind": "command",
+      "command": "bun scripts/inspect-project-state.ts --repo . --format text"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing HTTP fixture boundary and mandatory repository integrity",
+      "inputs": {
+        "env": []
+      },
+      "id": "init-dry-run",
+      "kind": "command",
+      "command": "bun src/cli/index.ts init --repo . --dry-run"
+    }
+  ]
+}
+```
+
+## Acceptance Notes (Human Review)
+
+The existing HTTP suite covers authenticated SDK token propagation, tool inventory, session isolation and permission revocation. No new test or full suite is required. Local passing evidence does not establish Windows acceptance; read back the hosted Windows job after push. One semantic review follows the current canonical candidate.
+
+## Rollback Point
+
+Base fdc2081f165ea495da9852ba057ca939dc44d95e; revert only the fixture correction.
