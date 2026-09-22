@@ -42,3 +42,9 @@ Subject: `sha256:c9452738b373eea2455925043a6eb7762da6a8f46e970331915b8cb93604ff2
 
 - Summary: No material findings in the eight-path diff against the pinned base. No local changes were present. All 58 reply-protocol tests passed; broader verification was limited by the read-only sandbox.
 - Findings: none
+
+## PR base verification binding
+
+The original integration digest above binds its narrow follow-up base. Hosted CI verifies the full PR against `0d4371c3f95e63851f4e083718f3337bf9646345`; the independent review already covered that pinned base and the same unchanged substantive sources. This additional range binding records that exact full-PR diff without changing accepted contract or goal authority.
+
+> **Substantive Change SHA256**: `sha256:e85c3273f10f04d1a0f82fef01f909c99ddcb06a5b539b0b7c40f91f2bd66473`
