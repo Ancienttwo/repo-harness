@@ -92,6 +92,18 @@ allowed_paths:
   - tasks/reviews/20260922-1425-akn04a-stack-refresh.review.md
   - tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md
   - tasks/todos.md
+  - docs/researches/20260922-candidate-runtime-fixture-authority.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - plans/plan-20260922-1452-akn03a-fixture-integration.md
+  - scripts/check-tarball-install-smoke.sh
+  - src/core/fleet/task-reply.ts
+  - src/effects/engineers/task-inbox.ts
+  - tasks/contracts/20260922-1452-akn03a-fixture-integration.contract.md
+  - tasks/notes/20260922-1452-akn03a-fixture-integration.notes.md
+  - tasks/reviews/20260922-1452-akn03a-fixture-integration.review.md
+  - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
+  - tests/unit/task-reply.test.ts
+  - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
 ```
 
 ## Evidence Requirements
@@ -473,6 +485,32 @@ exit_criteria:
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "installed-consumer",
+      "kind": "command",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Owner requires the integrated placement/protocol installed-package consumer path",
+      "inputs": {
+        "env": []
+      },
+      "command": "bash scripts/check-tarball-install-smoke.sh"
+    },
+    {
+      "id": "reply-core",
+      "kind": "command",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Retain the upstream encoded reply contract after integration",
+      "inputs": {
+        "env": []
+      },
+      "command": "bun test tests/unit/task-reply.test.ts"
     }
   ]
 }

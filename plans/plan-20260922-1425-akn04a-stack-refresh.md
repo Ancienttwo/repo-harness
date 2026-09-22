@@ -128,3 +128,7 @@ Base 4e5556d61ed2ed9a58e3ed9b5d25c6d670ee94d4. Revert the stack integration as a
 ## Task Breakdown
 - [ ] Integrate the accepted upstream branch and regenerate its manifest against current source.
 - [ ] Verify the integrated stack under a fresh post-closeout contract, obtain one semantic acceptance, and update PR #438.
+
+## Owner review integration boundary
+
+Pin the corrected #437 head including expiry, encoded size, accepted #436 fixture and installed transport verification. Merge the exact upstream candidate, preserve all placement sources, regenerate manifest conflicts through the provider, and rerun this contract's protocol/projection/decoder/statistics/installed-consumer checks. The old placement waiver remains historical; it does not cover new integration conflicts or CI. No main merge or Host admission.
