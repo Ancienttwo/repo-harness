@@ -21,4 +21,8 @@ The initial Campaign receipt test compared the API result wrapper with the store
 
 ## Open Questions
 
-This worktree has no local CodeGraph index authorization. Canonical verification, one independent semantic acceptance and stage PR remain outstanding. Runtime installation and main merge are outside this slice.
+The owner approved this worktree existing local CodeGraph index. Canonical verification, one independent semantic acceptance and stage PR remain outstanding. Runtime installation and main merge are outside this slice.
+
+## Frozen upstream integration
+
+P1: repository snapshot23fab610 is canonically verified22/22 and under its single semantic review; accepted context/activity and protected communication are upstream inputs. P2: selected repository scope crosses strict IPC, original Fleet/automation readers, registry recheck and closed browser projection while retaining one exit-held collector. P3: preserve protocol2 cutover and original source validators; integrate only frozen upstream source and archive evidence, then regenerate deterministic proof. No native admission or authorization is inferred from observed records. At10x source history, explicit count/byte/deadline bounds refuse unavailable observations. Upstream acceptance/archive must be integrated before this slice closeout.
