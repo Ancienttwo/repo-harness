@@ -11,7 +11,7 @@
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Substantive Change SHA256**: `sha256:237b8a1dd5db2c8c73c9c4c9199f1eda15f36b2973a20e343f9763b170cf00dc`
+> **Substantive Change SHA256**: `sha256:eb40de57270da0207fcc532908417567720dfef93fe7897ba9f82d864690dcd1`
 
 ## Human Review Card
 
@@ -52,3 +52,9 @@ The original fixture-only scope was revised before production edits to include t
 ## Owner review response: encoded record size
 
 The owner review on 2026-09-22 requires reacceptance of the corrected communication slice. Reproduced four failures before the size correction (five existing-compatible encoding cases already passed), then all nine focused cases pass (26 assertions, 2.24 seconds). Evidence: `.ai/harness/runs/akn03b-windows-fixture/size-pre-fix.log`; coverage includes control characters, quote/backslash escaping, multibyte UTF-8, total encoded boundary, metadata and same-ID recovery. The correction retains 64 KiB as an explicit core total-record contract; it does not invent a larger storage constant. The prior expiry candidate passed 26/26 canonical criteria before this new source change; final verification must bind the new combined subject.
+
+## CI subject attribution
+
+GitHub run 35693364932 belongs to head fdc2081f and checked out PR merge e2f74143c536d2eb29c317aafd0836e5889477f5 (base 749e9e92). Windows job 106634890098 failed directory fsync in Binding fixture setup; Ubuntu Test job 106634890110 failed only the two candidate Stop-timeout fixtures. The Test job did not reach npm pack or tarball-install smoke. Governance context checks, Ubuntu MCP and macOS MCP succeeded. No package/context-wiring failure appears in this run; the merged source forwards requestContext and engineerVerifyAuthorization.
+
+Accepted fixture commit 8c7fd593 is now an ancestor of this candidate through the refreshed #435 branch. The installed smoke reuses the existing HTTP E2E against package runtime source and adds a successful mapped status call. Semantic acceptance remains pending on the new frozen subject.
