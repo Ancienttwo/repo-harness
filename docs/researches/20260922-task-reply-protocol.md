@@ -65,3 +65,27 @@ Notification effects still need bounded reconciliation under the original contro
 ## Cursor ordering correction
 
 Protected steer paging compares original UUID strings in code-point order for both sorting and exclusive cursor filtering. UUIDs remain case-preserving protocol identifiers; no normalization or alternate identity is introduced. Locale sorting is unsuitable because uppercase and lowercase UUIDs are both valid. A mixed-case three-steer regression reproduced an omitted uppercase entry on the old comparator and now requires every original ID exactly once. The historical activity reader already uses the same code-point order.
+
+## Cross-platform HTTP fixture boundary
+
+The OAuth transport fixture seeds Binding event/current and principal mapping records using the canonical core constructors and serializers. This lets the same authenticated HTTP reader assertions run on Windows, where directory fsync in the production Binding writer failed before the test reached those assertions (PR #437, run 35693364932, job 106634890098). Production durability remains unchanged; this fixture does not establish Windows writable-runtime admission.
+
+## Expiry at record publication
+
+Request authorization is checked both before and after synchronous principal, registry, Claim and canonical Git validation. Existing locks protect record identity but do not freeze the token clock. Restricted delivery and ACK receipts revalidate after staging/fsync immediately before rename; reply events do so immediately before link. Intent and commit retain their existing post-staging callback and use the same final token check. Authorization errors propagate without being relabelled as storage errors, and unpublished temporary records are removed. No wire or durable-record format changes.
+
+Regression coverage in `tests/effects/task-reply.test.ts` expires authorization during actual staging fsync or the canonical validation triggered after intent/commit staging, then checks the stored chain remains at its prior state. A final callback does not claim an atomic wall-clock check plus operating-system syscall; it removes work between the last authorization check and publication.
+
+## Encoded reply record limit
+
+The reply protocol permits at most 65,536 bytes for a complete canonical UTF-8 intent or commit including its final LF. `TASK_REPLY_RECORD_MAX_BYTES` in the core reply contract is the single limit consumed by constructors, validators and persistence. The existing 8 KiB raw UTF-8 message-body limit remains independent: two individually valid bodies may exceed the total when JSON escapes control characters. Metadata is included in the total; no unproven maximum for all legal source fields is assumed.
+
+Oversize reply input raises `task_reply_invalid` while constructing the intent, before persistence allocates a record. No replacement identity is generated. If the unchanged parent and authority snapshots leave enough room, retry with a smaller reply body and the same reply ID; completed retries remain idempotent. Exact 65,536-byte records round-trip, and a one-byte larger record is rejected by the same core validator.
+
+## Installed transport verification
+
+The tarball-install smoke runs the existing Engineer OAuth E2E from the disposable installed package root. Only the test and canonical architecture fixture model are copied; all runtime imports, the spawned MCP server and Engineer profiles resolve from the installed tarball. The suite covers the closed tool inventory, missing mapping, a successful mapped status call, WorkEnvelope rejection after request-token propagation, session isolation and read-only revocation. These transport facts do not establish native Host admission or a real Task/steer journey.
+
+## Windows fixture identity
+
+Run35702134633 at255ecbb0 proved the HTTP fixture hashed the Windows8.3 temporary root (`RUNNER~1`) while the server's existing Git-root resolver expanded it (`runneradmin`), producing different repository IDs for the same directory. Mapping-home and token-authorization identities agreed. The fixture now resolves its initialized Git repository through `resolveMcpRepoRoot` before setup and mapping construction. The real successful mapped-status assertion remains the regression guard; no production identity normalizer, alternate mapping lookup or durability policy was changed.

@@ -6,7 +6,8 @@
  * worktree. Every hazard here is a filesystem-ordering hazard, so a mocked fs
  * would prove nothing about `mkdir` atomicity or the crash windows.
  */
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
 import {
   existsSync,
@@ -87,6 +88,20 @@ function createRepo(): string {
   run(root, ['commit', '--quiet', '-m', 'init']);
   return root;
 }
+
+test.skipIf(process.platform === 'win32')('POSIX directory flush failure leaves the created lease unknown and propagates', () => {
+  const root = createRepo(), taskId = '7'.repeat(64);
+  const flush = fs.fsyncSync;
+  const sync = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    if (fs.fstatSync(fd).isDirectory()) throw Object.assign(new Error('directory flush failed'), { code: 'EIO' });
+    flush(fd);
+  });
+  try {
+    expect(() => createLeaseDirectory(root, taskId)).toThrow('directory flush failed');
+    expect(readLease(root, taskId).classification).toBe('unknown');
+    expect(readLease(root, taskId).record).toBeNull();
+  } finally { sync.mockRestore(); }
+});
 
 const REPO_ROOT = join(import.meta.dir, '..');
 const REPO_IDENTITY = '/tmp/lease-store-fixture/.git';

@@ -19,6 +19,13 @@ function ensureParentDir(path: string): void {
   mkdirSync(dirname(path), { recursive: true });
 }
 
+/** File flushes remain mandatory on Windows; directory fsync is POSIX-only. */
+export function syncDirectoryDurably(path: string): void {
+  if (process.platform === 'win32') return;
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+
 /** Append one line plus a trailing newline; creates the file if missing. Whole-line append + fsync (D5). */
 export function appendLineDurably(path: string, line: string, mode = 0o600): void {
   ensureParentDir(path);

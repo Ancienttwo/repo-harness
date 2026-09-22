@@ -1,3 +1,5 @@
+import { TASK_INBOX_V2_RELATIVE_PATH, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
+import { inspectTaskInboxLayout, assertTaskInboxLayoutUnchanged, syncInboxDirectory, TaskInboxLayoutError } from './task-inbox-layout';
 import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, opendirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeSync } from 'fs';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { randomUUID } from 'crypto';
@@ -21,7 +23,7 @@ import {
   type TaskMessageEventV1,
   type TaskMessageRecipient,
 } from '../../core/fleet/task-message';
-import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes, validateTaskReplyIntent, validateTaskReplyCommit, assertTaskReplyRetry, assertTaskReplyResumeFence, inspectTaskReplyChain, TaskReplyError, type TaskReplyIntentV1, type TaskReplyCommitV1 } from '../../core/fleet/task-reply';
+import { TASK_REPLY_RECORD_MAX_BYTES, buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes, validateTaskReplyIntent, validateTaskReplyCommit, assertTaskReplyRetry, assertTaskReplyResumeFence, inspectTaskReplyChain, TaskReplyError, type TaskReplyIntentV1, type TaskReplyCommitV1 } from '../../core/fleet/task-reply';
 import type { ClaimActorReceiptV1, EngineerPrincipalMappingV1 } from '../../core/engineers/principal-claim';
 import { lookupCanonicalTask, PENDING_ROW_STATUS, type CanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -30,7 +32,7 @@ import { readCanonicalSprint, resolveRepoIdentity, type CanonicalSprintSource } 
 import { readClaimActorReceipt } from '../engineers/claim-actor-store';
 import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
 
-export const TASK_INBOX_RELATIVE_PATH = 'repo-harness/task-inbox/v1';
+export const TASK_INBOX_RELATIVE_PATH = TASK_INBOX_V2_RELATIVE_PATH;
 
 export type TaskInboxErrorCode =
   | 'task_message_invalid'
@@ -161,6 +163,7 @@ export interface TaskInboxFleetSummaryV1 {
 function asInboxError(error: unknown, fallback: TaskInboxErrorCode, context: string): TaskInboxError {
   if (error instanceof TaskInboxError) return error;
   if (error instanceof TaskMessageError) return new TaskInboxError(error.code, error.message, error);
+  if (error instanceof TaskInboxLayoutError) return new TaskInboxError('task_message_unreadable', error.message, error);
   return new TaskInboxError(fallback, context, error);
 }
 
@@ -182,7 +185,13 @@ class TaskInboxAuthorityRejection extends Error {
 
 function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T): T {
   try {
-    return withTaskLock(repoRoot, taskId, action);
+    return withTaskLock(repoRoot, taskId, () => {
+      const common = resolveGitCommonDirectory(repoRoot);
+      inspectTaskInboxLayout(common);
+      const result = action();
+      inspectTaskInboxLayout(common);
+      return result;
+    });
   } catch (error) {
     if (error instanceof TaskInboxAuthorityRejection) throw error.reason;
     throw asInboxError(error, 'task_message_unreadable', `cannot operate task inbox under the task lock for ${taskId}`);
@@ -190,7 +199,9 @@ function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T)
 }
 
 function taskInboxRoot(repoRoot: string): string {
-  return join(resolveGitCommonDirectory(repoRoot), TASK_INBOX_RELATIVE_PATH);
+  const common = resolveGitCommonDirectory(repoRoot);
+  inspectTaskInboxLayout(common);
+  return join(common, TASK_INBOX_RELATIVE_PATH);
 }
 
 /** Crash residue is not a canonical record and must never enter strict scans. */
@@ -217,7 +228,7 @@ export function taskInboxDeliveryPath(
 ): string {
   assertTaskId(taskId);
   assertMessageId(messageId);
-  return join(taskInboxTaskDirectory(repoRoot, taskId), 'delivery', messageId, `${deriveTaskMessageRecipientKey(recipient)}.json`);
+  return join(taskInboxTaskDirectory(repoRoot, taskId), 'delivery', messageId, `${taskInboxRecipientStorageKey(recipient)}.json`);
 }
 
 function assertTaskId(value: string): void {
@@ -388,7 +399,7 @@ function listReceipts(repoRoot: string, taskId: string, messageId: string): Task
   return names.map((name) => {
     if (!name.endsWith('.json')) fail('task_message_unreadable', `task message delivery filename is invalid: ${name}`);
     const receipt = readReceiptAt(join(directory, name));
-    if (receipt.message_id !== messageId || `${deriveTaskMessageRecipientKey(recipientFromReceipt(receipt))}.json` !== name) {
+    if (receipt.message_id !== messageId || `${taskInboxRecipientStorageKey(recipientFromReceipt(receipt))}.json` !== name) {
       fail('task_message_unreadable', `task message delivery path identity is mismatched: ${name}`);
     }
     return receipt;
@@ -502,14 +513,7 @@ function writeAll(fd: number, bytes: Buffer): void {
   while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-}
+function fsyncDirectory(path: string): void { syncInboxDirectory(path); }
 
 function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: string): void {
   const commonDirectory = resolveGitCommonDirectory(repoRoot);
@@ -526,7 +530,7 @@ function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: st
   }
 }
 
-function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskInboxSendResult {
+function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1, beforePublish?: () => void): TaskInboxSendResult {
   ensureInboxDirectories(repoRoot, event.task_id);
   const target = taskInboxEventPath(repoRoot, event.task_id, event.message_id);
   const canonical = canonicalTaskMessageEventBytes(event);
@@ -554,18 +558,22 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskI
     if (fd !== null) closeSync(fd);
   }
   try {
-    linkSync(temporary, target);
-    fsyncDirectory(directory);
-    return { event, event_path: target, created: true };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      const existing = readEventAt(target);
-      if (!sameEventRetry(existing, event)) {
-        fail('message_id_conflict', `task message id ${event.message_id} conflicts with existing immutable event`);
+    inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
+    beforePublish?.();
+    try {
+      linkSync(temporary, target);
+      fsyncDirectory(directory);
+      return { event, event_path: target, created: true };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        const existing = readEventAt(target);
+        if (!sameEventRetry(existing, event)) {
+          fail('message_id_conflict', `task message id ${event.message_id} conflicts with existing immutable event`);
+        }
+        return { event: existing, event_path: target, created: false };
       }
-      return { event: existing, event_path: target, created: false };
+      throw asInboxError(error, 'task_message_unreadable', `cannot publish task message event: ${target}`);
     }
-    throw asInboxError(error, 'task_message_unreadable', `cannot publish task message event: ${target}`);
   } finally {
     try {
       unlinkSync(temporary);
@@ -599,7 +607,7 @@ function sameEventRetry(existing: TaskMessageEventV1, candidate: TaskMessageEven
   return canonicalTaskMessageEventBytes(existing) === canonicalTaskMessageEventBytes(rebased);
 }
 
-function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1): TaskMessageDeliveryReceiptV1 {
+function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1, beforePublish?: () => void): TaskMessageDeliveryReceiptV1 {
   const recipient = recipientFromReceipt(receipt);
   ensureInboxDirectories(repoRoot, taskId, receipt.message_id);
   const target = taskInboxDeliveryPath(repoRoot, taskId, receipt.message_id, recipient);
@@ -608,20 +616,28 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
   const directory = dirname(target);
   const temporary = join(
     taskInboxStagingDirectory(repoRoot, taskId, 'delivery'),
-    `.${receipt.message_id}.${deriveTaskMessageRecipientKey(recipient)}.${process.pid}.${randomUUID()}.tmp`,
+    `.${receipt.message_id}.${taskInboxRecipientStorageKey(recipient)}.${process.pid}.${randomUUID()}.tmp`,
   );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
   let fd: number | null = null;
   try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = null;
-    renameSync(temporary, target);
-    fsyncDirectory(directory);
-  } catch (error) {
-    throw asInboxError(error, 'task_message_unreadable', `cannot persist task message delivery receipt: ${target}`);
+    try {
+      fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      writeAll(fd, bytes);
+      fsyncSync(fd);
+      closeSync(fd);
+      fd = null;
+    } catch (error) {
+      throw asInboxError(error, 'task_message_unreadable', `cannot stage task message delivery receipt: ${target}`);
+    }
+    inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
+    beforePublish?.();
+    try {
+      renameSync(temporary, target);
+      fsyncDirectory(directory);
+    } catch (error) {
+      throw asInboxError(error, 'task_message_unreadable', `cannot persist task message delivery receipt: ${target}`);
+    }
   } finally {
     if (fd !== null) closeSync(fd);
     try {
@@ -728,6 +744,9 @@ function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskIn
  * keeps output bounded and never manufactures a mixed generation.
  */
 export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): TaskInboxFleetSummaryV1 {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
   const first = observeTaskInboxFleetSummary(input);
   const second = observeTaskInboxFleetSummary(input);
   if (first.revision === second.revision) {
@@ -744,6 +763,9 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
     addressed_to_current_claim: retryBefore.addressed_to_current_claim,
     snapshot_consistency: retryBefore.revision === retryAfter.revision ? 'stable' : 'changed_during_read',
   });
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
 }
 
 function sendTaskMessageWithAuthority(
@@ -843,6 +865,9 @@ export function readTaskMessageDelivery(input: {
   readonly message_id: string;
   readonly recipient: TaskMessageRecipient;
 }): TaskInboxEventEntry {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
   const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
   if (event.task_id !== input.task_id || event.message_id !== input.message_id) {
     fail('task_message_invalid', 'message does not belong to the requested Task inbox');
@@ -853,6 +878,9 @@ export function readTaskMessageDelivery(input: {
     receipt,
     globally_satisfied: receipt?.delivery_state === 'acknowledged',
   });
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
 }
 
 /**
@@ -1009,7 +1037,11 @@ function withRestrictedInbox<T>(input: RestrictedTaskInboxInput, action: (author
       || authority.actor.claim_id !== input.recipient.claim_id || authority.actor.lease_generation !== input.recipient.generation) {
       throw new TaskReplyError('task_reply_fence_changed', 'authenticated actor differs from the current inbox recipient');
     }
-    return action(authority);
+    const common = resolveGitCommonDirectory(input.repo_root);
+    inspectTaskInboxLayout(common);
+    const result = action(authority);
+    inspectTaskInboxLayout(common);
+    return result;
   }));
 }
 
@@ -1042,7 +1074,7 @@ export function consumeTaskSteer(input: RestrictedTaskInboxInput & { message_id:
     authority.revalidate();
     const receipt = transitionTaskMessageDeliveryReceipt(prior ?? receiptFor(input.repo_root, input.task_id, event, input.recipient, 'manual'),
       { state: 'delivered', at: input.now, delivery_channel: 'manual' });
-    writeReceipt(input.repo_root, input.task_id, receipt);
+    writeReceipt(input.repo_root, input.task_id, receipt, authority.revalidate);
     return { event, receipt, context: renderTaskMessageUntrustedContext([event]) };
   });
 }
@@ -1054,24 +1086,23 @@ export function acknowledgeTaskSteer(input: RestrictedTaskInboxInput & { message
     if (!prior) fail('recipient_unavailable', 'steer has not been delivered to this recipient');
     const receipt = transitionTaskMessageDeliveryReceipt(prior, { state: 'acknowledged', at: input.now });
     authority.revalidate();
-    if (canonicalTaskMessageDeliveryReceiptBytes(prior) !== canonicalTaskMessageDeliveryReceiptBytes(receipt)) writeReceipt(input.repo_root, input.task_id, receipt);
+    if (canonicalTaskMessageDeliveryReceiptBytes(prior) !== canonicalTaskMessageDeliveryReceiptBytes(receipt)) writeReceipt(input.repo_root, input.task_id, receipt, authority.revalidate);
     return receipt;
   });
 }
 
 export type TaskReplyWriteBoundary = 'intent_file_fsynced' | 'intent_published' | 'event_published' | 'commit_file_fsynced' | 'commit_published';
-const REPLY_RECORD_MAX_BYTES = 64 * 1024;
 
 function replyDirectory(repoRoot: string, taskId: string, parentId: string, recipient: TaskMessageRecipient): string {
   assertMessageId(parentId);
-  return join(taskInboxTaskDirectory(repoRoot, taskId), 'reply-effects', parentId, deriveTaskMessageRecipientKey(recipient));
+  return join(taskInboxTaskDirectory(repoRoot, taskId), 'reply-effects', parentId, taskInboxRecipientStorageKey(recipient));
 }
 
 function optionalReplyRecord<T>(commonDirectory: string, path: string, validate: (value: unknown) => T, canonical: (value: T) => string, charge?: (bytes: number) => void): T | null {
   if (!inspectSafeDirectoryChain(commonDirectory, dirname(path), false, 'reply record directory')) return null;
   let stat;
   try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
   charge?.(stat.size);
   const bytes = readCanonicalFile(path, 'reply record');
   const value = validate(JSON.parse(bytes));
@@ -1082,7 +1113,7 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
 function readReplyChain(input: { repo_root: string; task_id: string; recipient: TaskMessageRecipient }, parent: TaskMessageEventV1, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
   assertTaskId(input.task_id); assertMessageId(parent.message_id);
   const taskDirectory = join(commonDirectory, TASK_INBOX_RELATIVE_PATH, input.task_id);
-  const recipientKey = deriveTaskMessageRecipientKey(input.recipient);
+  const recipientKey = taskInboxRecipientStorageKey(input.recipient);
   const directory = join(taskDirectory, 'reply-effects', parent.message_id, recipientKey);
   const intent = optionalReplyRecord(commonDirectory, join(directory, 'intent.json'), validateTaskReplyIntent, canonicalTaskReplyIntentBytes, charge);
   const commit = optionalReplyRecord(commonDirectory, join(directory, 'commit.json'), validateTaskReplyCommit, canonicalTaskReplyCommitBytes, charge);
@@ -1105,7 +1136,7 @@ function persistReplyRecord(input: RestrictedTaskInboxInput, parentId: string, k
   inspectSafeDirectoryChain(common, staging, true, 'reply staging directory');
   const target = join(directory, `${kind}.json`);
   const bytes = Buffer.from(`${canonical}\n`, 'utf8');
-  if (bytes.length > REPLY_RECORD_MAX_BYTES) fail('task_message_invalid', 'reply record exceeds its byte bound');
+  if (bytes.length > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_invalid', 'reply record exceeds its byte bound');
   const temporary = join(staging, `.${kind}.${process.pid}.${randomUUID()}.tmp`);
   let fd: number | null = null;
   try {
@@ -1114,6 +1145,7 @@ function persistReplyRecord(input: RestrictedTaskInboxInput, parentId: string, k
     fsyncSync(fd);
     closeSync(fd); fd = null;
     hook?.(`${kind}_file_fsynced`);
+    inspectTaskInboxLayout(common);
     beforePublish();
     try { linkSync(temporary, target); }
     catch (error) {
@@ -1146,7 +1178,7 @@ export function replyToTaskSteer(input: RestrictedTaskInboxInput & {
     authority.revalidate();
     if (!chain.intent) persistReplyRecord(input, parent.message_id, 'intent', canonicalTaskReplyIntentBytes(intent), authority.revalidate, input.crash_hook);
     authority.revalidate();
-    const published = writeImmutableEvent(input.repo_root, intent.reply);
+    const published = writeImmutableEvent(input.repo_root, intent.reply, authority.revalidate);
     if (published.event.event_digest !== intent.reply.event_digest) replyInconsistent('event bytes differ from frozen intent');
     input.crash_hook?.('event_published');
     authority.revalidate();
@@ -1163,10 +1195,14 @@ export function replyToTaskSteer(input: RestrictedTaskInboxInput & {
 /** Exact stored facts only; complete describes a chain, never the current owner's authorization. */
 export function readTaskSteerReply(input: { repo_root: string; task_id: string; parent_message_id: string; recipient: TaskMessageRecipient }) {
   return withTaskLock(input.repo_root, input.task_id, () => {
+    const common = resolveGitCommonDirectory(input.repo_root);
+    const identity = inspectTaskInboxLayout(common);
     const parent = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.parent_message_id));
     assertEventStored(parent, input.task_id);
     if (parent.message_id !== input.parent_message_id) fail('task_message_unreadable', 'steer path identity is mismatched');
-    return { parent, ...readReplyChain(input, parent) };
+    const result = { parent, ...readReplyChain(input, parent) };
+    assertTaskInboxLayoutUnchanged(common, identity);
+    return result;
   });
 }
 
@@ -1255,6 +1291,9 @@ export function readHistoricalTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
   budget: { max_scan: number; max_bytes: number; deadline_ms: number };
 }) {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
   assertTaskId(input.task_id);
   if (input.message_id !== null) assertMessageId(input.message_id);
   if (input.after !== null) assertMessageId(input.after);
@@ -1294,7 +1333,7 @@ export function readHistoricalTaskActivity(input: {
     each(path, name => {
       const receipt = optionalReplyRecord(common, join(path, name), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
       if (!receipt || receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
-        || `${deriveTaskMessageRecipientKey(recipientFromReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
+        || `${taskInboxRecipientStorageKey(recipientFromReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
       receipts.push(receipt);
     });
     return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromReceipt(b))));
@@ -1309,7 +1348,7 @@ export function readHistoricalTaskActivity(input: {
       const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
       let actor: ClaimActorReceiptV1 | null = null;
       if (chain.intent && chain.observation.state !== 'inconsistent') {
-        const recorded = readClaimActorReceipt(input.repo_root, input.task_id, recipient.claim_id, { max_bytes: REPLY_RECORD_MAX_BYTES, charge });
+        const recorded = readClaimActorReceipt(input.repo_root, input.task_id, recipient.claim_id, { max_bytes: TASK_REPLY_RECORD_MAX_BYTES, charge });
         if (recorded && recorded.receipt_sha256 === chain.intent.claim_actor.receipt_sha256
           && recorded.task_id === input.task_id && recorded.task_revision === parent.task_revision
           && recorded.claim_id === recipient.claim_id && recorded.lease_generation === recipient.generation) actor = recorded;
@@ -1338,4 +1377,7 @@ export function readHistoricalTaskActivity(input: {
   return { history_exists: historyExists, entries,
     coverage: { complete: reason === null, reason, scanned, bytes },
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
 }

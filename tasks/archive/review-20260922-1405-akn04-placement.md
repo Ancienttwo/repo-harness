@@ -1,0 +1,107 @@
+> **Archived**: 2026-09-22 14:05
+> **Related Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1405
+> **Archive Projection V1**: `plans/plan-20260922-0321-akn04-placement.md` => `plans/archive/plan-20260922-0321-akn04-placement.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0321-akn04-placement.notes.md` => `tasks/archive/notes-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0321-akn04-placement.contract.md` => `tasks/archive/contract-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0321-akn04-placement.review.md` => `tasks/archive/review-20260922-1405-akn04-placement.md`
+
+# Task Review: akn04-placement
+
+> **Status**: Accepted
+> **Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Contract**: tasks/archive/contract-20260922-1405-akn04-placement.md
+> **Notes File**: tasks/archive/notes-20260922-1405-akn04-placement.md
+> **Checks File**: .ai/harness/checks/latest.json
+> **Recommendation**: pass
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: sha256:55a5543cf6b48fea4688d0741be93d8dbf1c418adc69f3b37e6cb7074b3394a6
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Substantive Change SHA256**: `sha256:1ebd6a440ec8f9ab523974fc08db1f7782b0eba0268ac8bc6557fe3cd56e4b69`
+
+## Human Review Card
+
+- Verdict: FAIL; independent provider returned needs-attention with a P1 and P2 in the AKN-03b dependency.
+- Source commit: `b59038ffd38013bd4998c193a555d5f69c4d0692`; stage base `75036305`; frozen semantic review base `0d4371c3`.
+- Machine verification: 25 criteria passed, including 22 executable checks from the canonical Verification Plan. 11 targeted test files, typecheck, browser build and all required root integrity checks passed.
+- Architecture: authorized local CodeGraph index; projection check noop, no files/humanActions/refreshSignals.
+- Canonical run: `.ai/harness/runs/run-20260922T034340-69122-20260922-0321-akn04-placement.json`.
+- Browser: GET-only built fixture preview at 127.0.0.1:43924; English and Chinese grouping and preparation detail inspected in AX and screenshots. Preview closed after inspection; no runtime write was enabled.
+- Rollback: Fleet, Operator and browser together; no persisted domain migration.
+
+## Independent Review Transcript
+
+Verbatim provider transcript; no advisory PASS interpretation overrides this verdict.
+
+```json
+{
+  "verdict": "needs-attention",
+  "summary": "Do not ship yet: ordinary base-branch advancement disables Task communication, and inbox growth can permanently block reply recovery.",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Do not apply the acquisition-time commit fence to ongoing communication",
+      "body": "Every new Task communication tool calls validateFleetWorkEnvelope, whose revalidateClaimAuthority requires the current canonical commit to equal the acquisition-time OID. An unrelated commit on main therefore disables reads, consume, ACK and reply recovery even when the Task revision, plan, Lease, Binding and authorization remain unchanged. Updating the supplied envelope cannot recover access because validateClaimActorReceiptLive requires its original sealed digest. An isolated execution of the validator confirmed that changing only the observed commit produces offer_stale.",
+      "file": "src/effects/engineers/task-inbox.ts",
+      "line_start": 53,
+      "line_end": 54,
+      "confidence": 0.99,
+      "recommendation": "Use a communication-specific live validation that preserves the sealed envelope and checks current Task/Claim/authorization identity without requiring an unchanged repository-wide commit. Add coverage for an unrelated main commit between acquisition and read/reply recovery."
+    },
+    {
+      "severity": "medium",
+      "title": "Allow bounded inbox reads to make progress after scan exhaustion",
+      "body": "The reader scans all events before applying after or limit. Once history exceeds 1,000 entries or 2 MiB, exhausted prevents any entries from being returned, and next_cursor is null. Every retry starts the same scan, so smaller pages cannot help. Replies and superseded revisions also consume this budget. A restarted caller can consequently lose access to every pending steer and its frozen recovery body permanently, despite coverage correctly reporting incompleteness.",
+      "file": "src/effects/fleet/task-inbox.ts",
+      "line_start": 1206,
+      "line_end": 1213,
+      "confidence": 0.99,
+      "recommendation": "Provide resumable bounded traversal or an authenticated exact-parent recovery read. Test that successive requests can retrieve pending recovery records beyond the scan and byte limits without deleting history."
+    }
+  ],
+  "next_steps": [
+    "Fix both recovery barriers and add focused regression coverage.",
+    "Rerun browser decoder tests with dependencies installed; this checkout lacked react. The other three selected suites passed 93 tests."
+  ]
+}
+```
+
+## Resolution Boundary
+
+Both findings concern the earlier AKN-03b communication/recovery implementation, not placement files. They remain material blockers for this cumulative candidate. Diagnose and repair in the owning AKN-03b scope, then propagate the corrected dependency; preserve both old and new evidence. This contract has consumed its one independent review; no provider rerun or review-budget reset is authorized by the goal. Any later owner acceptance must name the corrected subject and the findings being accepted.
+
+The reviewer temporary snapshot lacked React for its independent browser test attempt. The canonical owner execution above includes the installed dependencies and passed browser decoder and UI suites. This does not dismiss either communication/recovery finding.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:55a5543cf6b48fea4688d0741be93d8dbf1c418adc69f3b37e6cb7074b3394a6
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:d99bcbf16b1104863ac0310303b8593b95df91b783f6050b3fc7f2044612cb9b
+> **Issued At**: 2026-09-22T06:02:05.115Z
+
+- Summary: Contract owner approved the pending AKN-03b, AKN-04a and AKN-05a owner acceptance requests on 2026-09-22 after corrected canonical verification. No merge or runtime installation authorization.
+- Findings: none
+
+## Corrected candidate pending acceptance
+
+The communication dependency is now `92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e`. AKN-03b recorded three pre-fix failures and passing correction regressions for canonical advancement and scan/byte recovery. This stage retains its original rejection above and requires a new exact verification subject and owner acceptance; it has not received a second independent review.
+
+## Corrected canonical verification
+
+Source `77a56a4d`; subject `sha256:82442603f07ebe87dce712d81076106c87c33671ec0e81d686901cb4cb0cb808`. All 25 criteria passed with zero failures in `.ai/harness/runs/run-20260922T041211-87266-20260922-0321-akn04-placement.json`. The first corrected-base run passed behavior checks but rejected the stale review substantive digest; only that workflow binding was corrected before this final pass. Architecture materialization is noop. The retained external rejection is not overwritten or represented as passing: explicit owner acceptance of this corrected subject remains required.
+
+## Inventory correction pending final verification
+
+Two stale Fleet v4 inventory assertions reproduced in the owning worktree. The existing inventory now expects Fleet v5 and its computed digest, with an explicit dated revision in the C0 record preserving earlier history. Targeted inventory verification is 19/19 pass. The canonical Verification Plan now includes it; prior subject 82442603 is superseded and cannot authorize this corrected candidate.
+
+## Final inventory-bound canonical verification
+
+Source `e5ffd48add85f00d4883ea5c4206b8242c6ab505`, architecture projection `e0ecfe8a389797a387e85b61a9ac05ec32416cc6`; current subject `sha256:55a5543cf6b48fea4688d0741be93d8dbf1c418adc69f3b37e6cb7074b3394a6`. Canonical run `.ai/harness/runs/run-20260922T043513-21883-20260922-0321-akn04-placement.json` passes 26/26 criteria and all 23 executable checks, including the Fleet v5 authority inventory. No snapshot change occurred during execution. This supersedes the 82442603 owner-acceptance request. The original independent rejection remains recorded; the corrected subject has no semantic acceptance receipt yet. No additional independent review was performed.

@@ -90,8 +90,8 @@ describe('Fleet collector supervision protocol', () => {
     })).toBeNull();
   });
 
-  test('collector exits through the cooperative cancel protocol before it is started', async () => {
-    const collector = spawn(process.execPath, [join(ROOT, 'src/effects/operator/fleet-collector-process.ts')], {
+  test.each(['fleet-collector-process.ts','task-read-process.ts'])('%s exits through the cooperative cancel protocol before it is started', async (entrypoint) => {
+    const collector = spawn(process.execPath, [join(ROOT, 'src/effects/operator',entrypoint)], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -142,8 +142,8 @@ describe('Fleet collector supervision protocol', () => {
       server.indexOf("if (response.type === 'assigned')"),
       server.indexOf("if (response.type === 'cleanup_ack')"),
     );
-    expect(assignmentBranch).toContain("type: 'start',");
-    expect(assignmentBranch.indexOf("if (controllerAssigned")).toBeLessThan(assignmentBranch.indexOf("type: 'start',"));
+    expect(assignmentBranch).toContain("writeChildJsonLine(controller, input.start)");
+    expect(assignmentBranch.indexOf("if (controllerAssigned")).toBeLessThan(assignmentBranch.indexOf("writeChildJsonLine(controller, input.start)"));
     expect(server).toContain("requestWindowsCleanup(true)");
     expect(server).toContain("'cleanup_ack'");
     const fleetBoundary = server.slice(
@@ -156,18 +156,19 @@ describe('Fleet collector supervision protocol', () => {
     expect(fleetBoundary).toContain('controllerCleanupAcknowledged && controllerClosed');
   });
 
-  testWindows('Windows Job controller terminates its own collector and inherited descendant before cleanup acknowledgement', async () => {
+  testWindows.each([false,true])('Windows Job controller terminates collector and descendants before cleanup acknowledgement, synchronous child=%s', async (synchronous) => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-windows-job-'));
     const fixture = join(fixtureRoot, 'collector.js');
     writeFileSync(fixture, [
       "const { createInterface } = require('node:readline');",
-      "const { spawn } = require('node:child_process');",
+      "const { spawn, execFileSync } = require('node:child_process');",
       "let descendant = null;",
       "createInterface({ input: process.stdin }).on('line', (line) => {",
       '  const request = JSON.parse(line);',
       "  if (request.type === 'start' && descendant === null) {",
       "    descendant = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
       "    process.stdout.write(JSON.stringify({ collector_pid: process.pid, descendant_pid: descendant.pid }) + '\\n');",
+      ...(synchronous ? ["    execFileSync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });"] : []),
       '  }',
       '});',
     ].join('\n'));
