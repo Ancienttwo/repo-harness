@@ -104,6 +104,11 @@ allowed_paths:
   - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
   - tests/unit/task-reply.test.ts
   - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
+  - plans/plan-20260922-1548-akn03b-windows-identity.md
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md
+  - tasks/reviews/20260922-1548-akn03b-windows-identity.review.md
+  - tasks/notes/20260922-1548-akn03b-windows-identity.notes.md
 ```
 
 ## Evidence Requirements
