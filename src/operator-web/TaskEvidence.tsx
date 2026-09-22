@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useObservationRefresh } from './useObservationRefresh';
+import { useCallback, useState, type ReactNode } from 'react';
 import { decodeOperatorTaskContext, TASK_CONTEXT_FAILURES, type OperatorTaskContext, type OperatorTaskContextRequest } from '../core/operator/task-context';
 import { decodeOperatorTaskActivity, TASK_ACTIVITY_FAILURES, type OperatorTaskActivity, type OperatorTaskActivityRequest } from '../core/operator/task-activity';
 import { fetchTaskContext } from './task-context';
@@ -11,19 +12,21 @@ export type TaskActivityReader = typeof fetchTaskActivity;
 // Both independent sources obey the same scope and supersession invariant.
 function useObservation<T>(key: string, generation: number, read: (signal: AbortSignal) => Promise<T>) {
   const [state, setState] = useState<{ key: string; generation: number; value: T | null; loading: boolean; failed: boolean; code: string | null }>({ key, generation, value: null, loading: true, failed: false, code: null });
-  useEffect(() => {
-    const controller = new AbortController();
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     setState(previous => ({ key, generation, value: previous.key === key ? previous.value : null, loading: true, failed: false, code: null }));
-    void read(controller.signal).then(value => {
-      if (!controller.signal.aborted) setState({ key, generation, value, loading: false, failed: false, code: null });
-    }, error => {
-      if (!controller.signal.aborted) {
-        const code = error instanceof Error && [...TASK_CONTEXT_FAILURES, ...TASK_ACTIVITY_FAILURES].includes(error.message as never) ? error.message : 'unavailable';
-        setState(previous => ({ key, generation, value: previous.key === key ? previous.value : null, loading: false, failed: true, code }));
-      }
-    });
-    return () => controller.abort();
-  }, [key, generation, read]);
+    try {
+      const value = await read(signal);
+      if (signal.aborted) return false;
+      setState({key,generation,value,loading:false,failed:false,code:null});
+      return true;
+    } catch (error) {
+      if (signal.aborted) return false;
+      const code = error instanceof Error && [...TASK_CONTEXT_FAILURES, ...TASK_ACTIVITY_FAILURES].includes(error.message as never) ? error.message : 'unavailable';
+      setState(previous => ({key,generation,value:previous.key===key ? previous.value : null,loading:false,failed:true,code}));
+      return false;
+    }
+  }, [key,generation,read]);
+  useObservationRefresh(observe, JSON.stringify([key,generation]));
   // Render-time identity prevents one frame of old data before effect cleanup.
   if (state.key !== key) return { value: null, loading: true, failed: false, code: null };
   if (state.generation !== generation) return { ...state, loading: true, failed: false, code: null };

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
+import { useObservationRefresh } from '../../src/operator-web/useObservationRefresh';
 
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import {
@@ -235,6 +236,159 @@ afterEach(async () => {
   if (root) await act(async () => root?.unmount());
   root = null;
   window.close();
+});
+
+function observationClock() {
+  const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
+  const timers = new Map<number,{at:number;run:()=>void}>();
+  let now=0,id=-1;
+  globalThis.setTimeout = ((run:()=>void,delay=0) => {
+    if(delay<30_000)return originalSet(run,delay);
+    const handle=id--;timers.set(handle,{at:now+delay,run});return handle;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((handle:ReturnType<typeof setTimeout>) => {
+    if(!timers.delete(handle as unknown as number))originalClear(handle);
+  }) as typeof clearTimeout;
+  return {
+    delays:()=>[...timers.values()].map(timer=>timer.at-now).sort((a,b)=>a-b),
+    advance:async(ms:number)=>{
+      const target=now+ms;
+      while(true){
+        const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];
+        if(!next||next[1].at>target)break;
+        now=next[1].at;timers.delete(next[0]);await act(async()=>next[1].run());
+      }
+      now=target;
+    },
+    restore:()=>{globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;timers.clear();},
+  };
+}
+
+function RefreshProbe({read,identity='source'}:{read:(signal:AbortSignal)=>Promise<boolean>;identity?:string}) {
+  const refresh=useObservationRefresh(read,identity);
+  return <button onClick={refresh}>Request observation</button>;
+}
+
+describe('bounded observation lifecycle',()=>{
+  test('automatic and visible refresh preserve Decision and activity queries and the original Composer draft', async () => {
+    const { repositoryObservationFixture, taskContextFixture, taskActivityFixture, decisionInventoryFixture } = await import('../../src/operator-web/fixture');
+    const clock = observationClock();
+    const counts = { fleet: 0, repository: 0, context: 0, writes: 0 };
+    const decisions: (string | null)[] = [];
+    const activities: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
+    let visibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    const setVisibility = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new Event('visibilitychange'))); };
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+        fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
+        fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
+        fetchCollaboration={async (id, _signal, after) => {
+          decisions.push(after);
+          const page = decisionInventoryFixture(id);
+          return { ...collaborationSnapshot, repository_id: id, decision_after: after,
+            exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00Z', code: 'source_unavailable' },
+            decisions: { status: 'observed', observed_at: '2026-09-22T00:00:00Z', snapshot: {
+              ...page, query: { after, limit: 1 },
+              coverage: { ...page.coverage, complete: after !== null, reason: after === null ? 'output_limit' : 'complete', next_after: after === null ? 'a'.repeat(64) : null },
+            } } };
+        }}
+        readTaskContext={async request => { counts.context++; return taskContextFixture(request); }}
+        readTaskActivity={async request => { activities.push(request); return taskActivityFixture(request); }}
+        sendMessage={async () => { counts.writes++; }} />);
+      await act(async () => buttonWithText('Next Decision page').click());
+      await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+      await act(async () => buttonWithText('Read reply message').click());
+      await act(async () => document.querySelector<HTMLButtonElement>('.composer__toggle')!.click());
+      const textarea = document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!;
+      await act(async () => {
+        textarea.dispatchEvent(new window.Event('focusin', { bubbles: true }) as unknown as Event);
+        setter.call(textarea, '保留原始 Task 和 Claim 草稿');
+        textarea.dispatchEvent(new window.Event('keyup', { bubbles: true }) as unknown as Event);
+      });
+      const card = stableSnapshot.repositories[0]!.cards.find(value => value.task_id === fixtureTasks.blocked.task_id)!;
+      const draftKey = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
+      const draft = window.localStorage.getItem(draftKey);
+      expect(draft).not.toBeNull();
+      const query = activities.at(-1)!;
+      expect(query.message_id).toBe('22222222-2222-4222-8222-222222222222');
+      expect(counts).toEqual({ fleet: 0, repository: 1, context: 1, writes: 0 });
+      await clock.advance(30_000);
+      expect(counts).toEqual({ fleet: 1, repository: 2, context: 2, writes: 0 });
+      expect(decisions).toEqual([null, 'a'.repeat(64), 'a'.repeat(64)]);
+      expect(activities).toHaveLength(3); expect(activities.at(-1)).toEqual(query);
+      await setVisibility('hidden'); await clock.advance(120_000);
+      expect(counts).toEqual({ fleet: 1, repository: 2, context: 2, writes: 0 });
+      expect(decisions).toHaveLength(3); expect(activities).toHaveLength(3);
+      await setVisibility('visible');
+      expect(counts).toEqual({ fleet: 2, repository: 3, context: 3, writes: 0 });
+      expect(decisions).toHaveLength(4); expect(decisions.at(-1)).toBe('a'.repeat(64));
+      expect(activities).toHaveLength(4); expect(activities.at(-1)).toEqual(query);
+      expect(document.querySelector('#composer-body')).toBe(textarea);
+      expect(textarea.value).toBe('保留原始 Task 和 Claim 草稿');
+      expect(window.localStorage.getItem(draftKey)).toBe(draft);
+    } finally {
+      await act(async () => root?.unmount()); root = null; clock.restore();
+    }
+  });
+
+  test('waits30s after completion, coalesces manual work and caps failure backoff at120s',async()=>{
+    const clock=observationClock(),pending:Array<{signal:AbortSignal;finish:(success:boolean)=>void}>=[];
+    const read=(signal:AbortSignal)=>new Promise<boolean>(finish=>pending.push({signal,finish}));
+    try{
+      await mount(<RefreshProbe read={read}/>);expect(pending).toHaveLength(1);expect(clock.delays()).toEqual([]);
+      await clock.advance(90_000);expect(pending).toHaveLength(1);
+      await act(async()=>pending[0]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await clock.advance(29_999);expect(pending).toHaveLength(1);
+      await clock.advance(1);expect(pending).toHaveLength(2);expect(pending[0]!.signal.aborted).toBe(true);
+      await act(async()=>{buttonWithText('Request observation').click();buttonWithText('Request observation').click();});
+      expect(pending).toHaveLength(2);await act(async()=>pending[1]!.finish(false));expect(pending).toHaveLength(3);
+      await act(async()=>pending[2]!.finish(false));expect(clock.delays()).toEqual([120_000]);
+      await clock.advance(120_000);await act(async()=>pending[3]!.finish(false));expect(clock.delays()).toEqual([120_000]);
+      await clock.advance(120_000);await act(async()=>pending[4]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await clock.advance(30_000);await act(async()=>pending[5]!.finish(false));expect(clock.delays()).toEqual([60_000]);
+      await act(async()=>root?.unmount());root=null;expect(pending[5]!.signal.aborted).toBe(true);expect(clock.delays()).toEqual([]);
+    }finally{clock.restore();}
+  });
+
+  test('starts nothing while hidden, aborts on hide and queues visible refresh until the old promise retires',async()=>{
+    const clock=observationClock(),pending:Array<{signal:AbortSignal;finish:(success:boolean)=>void}>=[];let visibility='hidden';
+    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>visibility});
+    const read=(signal:AbortSignal)=>new Promise<boolean>(finish=>pending.push({signal,finish}));
+    const visible=async(value:string)=>{visibility=value;await act(async()=>document.dispatchEvent(new Event('visibilitychange')));};
+    try{
+      await mount(<RefreshProbe read={read}/>);await clock.advance(120_000);expect(pending).toHaveLength(0);
+      await visible('visible');expect(pending).toHaveLength(1);
+      await visible('hidden');expect(pending[0]!.signal.aborted).toBe(true);await clock.advance(120_000);expect(pending).toHaveLength(1);
+      await visible('visible');expect(pending).toHaveLength(1);
+      await act(async()=>pending[0]!.finish(true));expect(pending).toHaveLength(2);
+      await act(async()=>pending[1]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await visible('hidden');expect(clock.delays()).toEqual([]);await visible('visible');expect(pending).toHaveLength(3);
+      await act(async()=>root?.unmount());root=null;await act(async()=>pending[2]!.finish(true));expect(clock.delays()).toEqual([]);
+    }finally{clock.restore();}
+  });
+
+  test('scope replacement invalidates the old promise and late completion cannot schedule it again',async()=>{
+    const clock=observationClock(),pending:Array<{signal:AbortSignal;finish:(success:boolean)=>void}>=[];
+    const read=(signal:AbortSignal)=>new Promise<boolean>(finish=>pending.push({signal,finish}));
+    try{
+      await mount(<RefreshProbe read={read} identity="repo-a"/>);
+      await act(async()=>root?.render(<RefreshProbe read={read} identity="repo-b"/>));
+      expect(pending[0]!.signal.aborted).toBe(true);expect(pending).toHaveLength(2);
+      await act(async()=>pending[0]!.finish(true));expect(clock.delays()).toEqual([]);
+      await act(async()=>pending[1]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await act(async()=>root?.unmount());root=null;expect(clock.delays()).toEqual([]);
+    }finally{clock.restore();}
+  });
+
+  test('Fleet transport passes cancellation through the existing uncached request',async()=>{
+    const original=globalThis.fetch,controller=new AbortController();let options:RequestInit|undefined;
+    try{
+      globalThis.fetch=(async(_input:unknown,init?:RequestInit)=>{options=init;return Response.json(stableSnapshot);}) as typeof fetch;
+      await fetchOperatorSnapshot(controller.signal);expect(options).toMatchObject({signal:controller.signal,cache:'no-store'});
+    }finally{globalThis.fetch=original;}
+  });
 });
 
 describe('operator web worklist projection', () => {

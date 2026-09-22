@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useObservationRefresh } from './useObservationRefresh';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { AutomationSource, OperatorAutomationSummary } from '../core/operator/automation-summary';
 import type { OperatorRepositorySnapshot } from '../core/operator/repository-snapshot';
 import { decodeOperatorRepositorySnapshot, fetchRepositorySnapshot } from './repository-snapshot';
@@ -117,25 +118,27 @@ export function AutomationSummary({ repositoryId, refreshGeneration, readObserva
   readonly readObservation?: RepositoryObservationReader; readonly t: OperatorTranslate;
 }) {
   const [state, setState] = useState<ObservationState | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    setState((previous) => ({ repositoryId, refreshGeneration, status: 'loading', observation: previous?.repositoryId === repositoryId ? previous.observation : null }));
-    void (async () => {
-      try {
-        const result = decodeOperatorRepositorySnapshot(await readObservation(repositoryId, controller.signal), repositoryId);
-        if (!controller.signal.aborted) setState((previous) => {
-          const last = previous?.repositoryId === repositoryId ? previous.observation : null;
-          if (last?.service_epoch === result.service_epoch && result.generation < last.generation) {
-            return { repositoryId, refreshGeneration, status: 'failed', observation: last };
-          }
-          return { repositoryId, refreshGeneration, status: 'ready', observation: result };
-        });
-      } catch {
-        if (!controller.signal.aborted) setState((previous) => ({ repositoryId, refreshGeneration, status: 'failed', observation: previous?.repositoryId === repositoryId ? previous.observation : null }));
+  const stateRef = useRef<ObservationState | null>(null);
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    const previous = stateRef.current?.repositoryId === repositoryId ? stateRef.current.observation : null;
+    const publish = (status: ObservationState['status'], observation: OperatorRepositorySnapshot | null) => {
+      const next = {repositoryId,refreshGeneration,status,observation};
+      stateRef.current = next; setState(next);
+    };
+    publish('loading',previous);
+    try {
+      const result = decodeOperatorRepositorySnapshot(await readObservation(repositoryId, signal), repositoryId);
+      if (signal.aborted) return false;
+      if (previous?.service_epoch === result.service_epoch && result.generation < previous.generation) {
+        publish('failed',previous); return false;
       }
-    })();
-    return () => controller.abort();
-  }, [repositoryId, refreshGeneration, readObservation]);
+      publish('ready',result); return true;
+    } catch {
+      if (!signal.aborted) publish('failed',previous);
+      return false;
+    }
+  }, [repositoryId,refreshGeneration,readObservation]);
+  useObservationRefresh(observe, JSON.stringify([repositoryId,refreshGeneration]));
   // Render-time identity also fences the frame before the replacement effect runs.
   const scoped = state?.repositoryId === repositoryId ? state : null;
   const status = scoped?.refreshGeneration === refreshGeneration ? scoped.status : 'loading';

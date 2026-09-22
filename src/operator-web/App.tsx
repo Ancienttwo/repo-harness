@@ -1,3 +1,4 @@
+import { useObservationRefresh } from './useObservationRefresh';
 import { PlanningView } from './PlanningView';
 import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
 import type { OperatorWorkExchangeSnapshot } from './types';
@@ -46,7 +47,7 @@ export interface OperatorAppProps {
   readonly initialState?: OperatorSnapshotViewState;
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
-  readonly fetchSnapshot?: () => Promise<OperatorFleetSnapshotV1>;
+  readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
@@ -124,10 +125,10 @@ export function asApiError(value: unknown, fallback = DEFAULT_API_ERROR): Operat
   return fallback;
 }
 
-async function fetchOperatorSnapshot(): Promise<OperatorFleetSnapshotV1> {
+async function fetchOperatorSnapshot(signal?: AbortSignal): Promise<OperatorFleetSnapshotV1> {
   const response = await fetch('/api/v1/fleet/snapshot', {
     headers: { Accept: 'application/json' },
-    cache: 'no-store',
+    cache: 'no-store', signal,
   });
   let body: unknown = null;
   try {
@@ -2114,8 +2115,6 @@ export function OperatorApp({
   const [decisionPage, setDecisionPage] = useState<{ repositoryId: string; after: string | null } | null>(null);
   const [collaborationRefreshGeneration, setCollaborationRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
-  const refreshInFlight = useRef(false);
-  const refreshQueued = useRef(false);
   const stateRef = useRef<OperatorSnapshotViewState>(initial);
   const snapshot = snapshotForState(state);
   const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
@@ -2134,53 +2133,37 @@ export function OperatorApp({
   const busy = state.kind === 'loading';
   const stateKind = state.kind;
 
-  const refresh = async () => {
-    // Every request supersedes the selected repository's collaboration read,
-    // even when its Fleet collection is coalesced behind an active one.
+  const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    const previous = snapshotForState(stateRef.current);
+    const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
+    stateRef.current = loading;
+    setState(loading);
+    try {
+      const nextSnapshot = await fetchSnapshot(signal);
+      if (signal.aborted) return false;
+      setSelection(current => current === null || allCards(nextSnapshot).some(card => taskKey(card) === current.key) ? current : null);
+      const nextState = stateFromSnapshot(nextSnapshot);
+      stateRef.current = nextState; setState(nextState);
+      return true;
+    } catch (error) {
+      if (signal.aborted) return false;
+      const apiError = asApiError(error);
+      const nextState: OperatorSnapshotViewState = previous
+        ? { kind: 'stale', snapshot: previous, error: apiError }
+        : { kind: 'fatal', error: apiError };
+      stateRef.current = nextState; setState(nextState);
+      return false;
+    }
+  }, [fetchSnapshot]);
+  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot });
+  const refresh = () => {
+    // Explicit refresh still supersedes scoped observations and returns the
+    // Decision inventory to page one. Automatic reads preserve the current page.
     setDecisionPage(null);
     setCollaboration({ kind: 'idle' });
-    setCollaborationRefreshGeneration((current) => current + 1);
-    if (refreshInFlight.current) {
-      refreshQueued.current = true;
-      return;
-    }
-    refreshInFlight.current = true;
-    try {
-      do {
-        refreshQueued.current = false;
-        const previous = snapshotForState(stateRef.current);
-        const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
-        stateRef.current = loading;
-        setState(loading);
-        try {
-          const nextSnapshot = await fetchSnapshot();
-          setSelection((current) => (current === null || allCards(nextSnapshot).some((card) => taskKey(card) === current.key))
-            ? current
-            : null);
-          const nextState = stateFromSnapshot(nextSnapshot);
-          stateRef.current = nextState;
-          setState(nextState);
-        } catch (error) {
-          const apiError = asApiError(error);
-          const nextState: OperatorSnapshotViewState = previous
-            ? { kind: 'stale', snapshot: previous, error: apiError }
-            : { kind: 'fatal', error: apiError };
-          stateRef.current = nextState;
-          setState(nextState);
-        }
-      } while (refreshQueued.current);
-    } finally {
-      refreshInFlight.current = false;
-    }
+    setCollaborationRefreshGeneration(current => current + 1);
+    requestFleet();
   };
-
-  useEffect(() => {
-    if (initialState || initialSnapshot) return;
-    void refresh();
-    // The initial browser read is intentionally one-shot. Explicit refresh
-    // owns subsequent collection and single-flight behavior.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const selectedCard = selection && snapshot
     ? activeRepository?.cards.find((card) => taskKey(card) === selection.key) ?? null
@@ -2200,46 +2183,23 @@ export function OperatorApp({
   };
 
   // One observation belongs to the selected repository; task selection shares it.
-  useEffect(() => {
-    if (initialCollaboration) return;
-    if (collaborationRepositoryId === null) {
-      setCollaboration({ kind: 'idle' });
-      return;
-    }
-    const controller = new AbortController();
+  const readCollaboration = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (collaborationRepositoryId === null) return false;
     setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
-    void fetchCollaboration(collaborationRepositoryId, controller.signal, decisionAfter).then(
-      (next) => {
-        if (!controller.signal.aborted) {
-          try {
-            setCollaboration({
-              kind: 'ready',
-              snapshot: assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next), collaborationRepositoryId, decisionAfter),
-            });
-          } catch (error) {
-            setCollaboration({
-              kind: 'failed',
-              repository_id: collaborationRepositoryId,
-              error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR),
-            });
-          }
-        }
-      },
-      (error) => {
-        if (!controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError')) {
-          setCollaboration({
-            kind: 'failed',
-            repository_id: collaborationRepositoryId,
-            error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR),
-          });
-        }
-      },
-    );
-    return () => { controller.abort(); };
-    // The repository remains the scope; the explicit refresh generation is the
-    // only extra trigger, so reads never fan out to other repositories.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collaborationRepositoryId, collaborationRefreshGeneration, decisionAfter]);
+    try {
+      const next = await fetchCollaboration(collaborationRepositoryId, signal, decisionAfter);
+      if (signal.aborted) return false;
+      setCollaboration({kind:'ready',snapshot:assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next),collaborationRepositoryId,decisionAfter)});
+      return true;
+    } catch (error) {
+      if (signal.aborted) return false;
+      setCollaboration({kind:'failed',repository_id:collaborationRepositoryId,error:asApiError(error,COLLABORATION_UNAVAILABLE_ERROR)});
+      return false;
+    }
+  }, [collaborationRepositoryId,decisionAfter,fetchCollaboration]);
+  useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId,decisionAfter,collaborationRefreshGeneration]), {
+    enabled: !initialCollaboration && collaborationRepositoryId !== null,
+  });
   // A board that is stale, torn, or degraded is not a board you may write from.
   const boardUnstable = stateKind === 'stale'
     || stateKind === 'repo-degraded'
