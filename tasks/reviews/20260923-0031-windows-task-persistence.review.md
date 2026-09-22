@@ -1,16 +1,16 @@
 # Task Review: windows-task-persistence
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260923-0031-windows-task-persistence.md
 > **Contract**: tasks/contracts/20260923-0031-windows-task-persistence.contract.md
 > **Notes File**: tasks/notes/20260923-0031-windows-task-persistence.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-23 01:36
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 
 ## Human Review Card
 
@@ -49,17 +49,17 @@ copy the executable plan. Return missing/stale evidence to its execution owner.
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:f96e3d9a8ef41c6b96aa6b08a36104a380d1a08049e9246161016e2184ee2b29
+> **Issued At**: 2026-09-22T18:34:20.598Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Owner explicitly approved corrected PR444 subject c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770 after 28/28 canonical criteria and successful full CI35765127664 on source2948a041. The consumed review finding was corrected upstream in271f4d31 with real red/green and native tests. Authorized acceptance, archive and downstream integration; excludes main merge, global install, real migration, Host admission, Campaign and canary.
 - Findings: none
 
 ## Behavior Diff Notes
