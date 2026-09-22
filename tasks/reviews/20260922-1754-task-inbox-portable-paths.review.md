@@ -14,7 +14,7 @@
 
 ## Human Review Card
 
-- Verdict: the original review and subsequent upstream review findings are corrected; owner-accepted dependency #444 is integrated; 21 current checks (27 total criteria) passed and evidence binding to the committed integration contract is being finalized. This contract's owner acceptance remains pending.
+- Verdict: the original review and subsequent upstream review findings are corrected; owner-accepted dependency #444 is integrated; 21 current checks (27 total criteria) passed and are bound to the committed integration contract. This contract's owner acceptance remains pending.
 - Change type: migration
 - Intended files changed: Task Inbox path owner, storage-only token, offline migration, fleet inbox CLI, owning fixtures, native matrix, research and runbook.
 - Actual files changed: within the contract allowlist; no Task/Lease/Binding/actor protocol or real data mutation.
@@ -111,6 +111,6 @@ The user was asked to authorize a separate bounded Windows persistence work-pack
 
 - Accepted dependency #444: `daa05cbf`, typed owner acceptance for subject `c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`, provider-free seal and archived lifecycle. Fast-forward integration retains this package's active contract.
 - Source comparison: `git diff 2948a041 HEAD -- src tests .github package.json bun.lock` is empty; [CI35765127664](https://github.com/Ancienttwo/repo-harness/actions/runs/35765127664) passed full Test, Governance and Windows/macOS/Linux. Windows: 210 pass, 6 existing skips, 0 fail, including exact identities and prepared receipt rollback/refusal guards. No new exact-head full run is claimed for workflow-only integration commits.
-- Current contract checks: 21/21 (27/27 total criteria) passed in `run-20260923T023742-64840-20260922-1754-task-inbox-portable-paths.json`. The first binding refused an uncommitted contract amendment; commit the exact contract and re-prepare using valid execution records before acceptance.
+- Current contract checks: 21/21 (27/27 total criteria) passed in `run-20260923T023742-64840-20260922-1754-task-inbox-portable-paths.json`. The first binding refused an uncommitted contract amendment. After the exact amendment was committed as `71c049ee`, run `run-20260923T024229-30848-20260922-1754-task-inbox-portable-paths.json` passed 27/27 and materialized current canonical evidence with source event `evt-01M356Z4W2J90M407K22BZ6PAG`.
 - Frozen content subject remains `sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`, target `origin/main` at `0d4371c3`.
 - This package's own owner acceptance remains pending. The #444 receipt records that dependency's contract; it is not copied into this contract or represented as a second external review.
