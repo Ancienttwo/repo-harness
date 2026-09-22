@@ -1318,7 +1318,7 @@ export function readHistoricalTaskActivity(input: {
       const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
       let actor: ClaimActorReceiptV1 | null = null;
       if (chain.intent && chain.observation.state !== 'inconsistent') {
-        const recorded = readClaimActorReceipt(input.repo_root, input.task_id, recipient.claim_id, { max_bytes: REPLY_RECORD_MAX_BYTES, charge });
+        const recorded = readClaimActorReceipt(input.repo_root, input.task_id, recipient.claim_id, { max_bytes: TASK_REPLY_RECORD_MAX_BYTES, charge });
         if (recorded && recorded.receipt_sha256 === chain.intent.claim_actor.receipt_sha256
           && recorded.task_id === input.task_id && recorded.task_revision === parent.task_revision
           && recorded.claim_id === recipient.claim_id && recorded.lease_generation === recipient.generation) actor = recorded;
