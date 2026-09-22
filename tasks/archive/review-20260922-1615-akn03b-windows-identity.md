@@ -1,15 +1,25 @@
+> **Archived**: 2026-09-22 16:15
+> **Related Plan**: plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1615
+> **Archive Projection V1**: `plans/plan-20260922-1548-akn03b-windows-identity.md` => `plans/archive/plan-20260922-1548-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1548-akn03b-windows-identity.notes.md` => `tasks/archive/notes-20260922-1615-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md` => `tasks/archive/contract-20260922-1615-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1548-akn03b-windows-identity.review.md` => `tasks/archive/review-20260922-1615-akn03b-windows-identity.md`
+
 # Task Review: akn03b-windows-identity
 
-> **Status**: Pending
-> **Plan**: plans/plan-20260922-1548-akn03b-windows-identity.md
-> **Contract**: tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md
-> **Notes File**: tasks/notes/20260922-1548-akn03b-windows-identity.notes.md
+> **Status**: Accepted
+> **Plan**: plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+> **Contract**: tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+> **Notes File**: tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:d2b7cca69399f8d2a1a9a666b0bac399d7ce0d8808549178aeb8ff1e134f2997
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 > **Substantive Change SHA256**: `sha256:bbb69d3755af718e4916e05944555d109c2b0bc84b989bcfcee5047853238394`
 
 ## Diagnostic candidate
@@ -72,3 +82,23 @@ The orchestrator incorrectly launched the sole independent review before canonic
   "message": "review subject changed while the official Codex plugin was running"
 }
 ```
+
+## Frozen owner acceptance candidate
+
+Subject `sha256:d2b7cca69399f8d2a1a9a666b0bac399d7ce0d8808549178aeb8ff1e134f2997`; canonical22/22 passed. Full GitHub run35702537370 at source111a8a27 completed successfully, including Test, Governance and Windows/macOS/Ubuntu MCP. The local follow-up only records manifest/review metadata and does not claim a new hosted CI run for those metadata commits. The invalidated semantic review is not a pass. Await owner acceptance for this exact corrected subject; main merge and runtime/Host/Campaign/canary remain excluded.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:d2b7cca69399f8d2a1a9a666b0bac399d7ce0d8808549178aeb8ff1e134f2997
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:830265ee60d7e21cb92e03800e5e1b665c17d33f1d8d811eadfaa362d57fdfce
+> **Issued At**: 2026-09-22T08:15:11.750Z
+
+- Summary: Owner explicitly approved both frozen candidates and continued archive, PR updates and downstream integration: this subject sha256:d2b7cca69399f8d2a1a9a666b0bac399d7ce0d8808549178aeb8ff1e134f2997. Accept the verified correction/integration after invalid independent review evidence; no CI waiver, main merge, global install, Host admission, Campaign or real canary.
+- Findings: none
+

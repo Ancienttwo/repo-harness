@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 16:15
+> **Related Plan**: plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1615
+> **Archive Projection V1**: `plans/plan-20260922-1548-akn03b-windows-identity.md` => `plans/archive/plan-20260922-1548-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1548-akn03b-windows-identity.notes.md` => `tasks/archive/notes-20260922-1615-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md` => `tasks/archive/contract-20260922-1615-akn03b-windows-identity.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1548-akn03b-windows-identity.review.md` => `tasks/archive/review-20260922-1615-akn03b-windows-identity.md`
+
 # Task Contract: akn03b-windows-identity
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-1548-akn03b-windows-identity.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-1548-akn03b-windows-identity.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 15:48
-> **Review File**: `tasks/reviews/20260922-1548-akn03b-windows-identity.review.md`
-> **Notes File**: `tasks/notes/20260922-1548-akn03b-windows-identity.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1615-akn03b-windows-identity.md`
+> **Notes File**: `tasks/archive/notes-20260922-1615-akn03b-windows-identity.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ The child and parent canonical mapping identities match yet the live HTTP reques
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-1548-akn03b-windows-identity.md`
+- Source plan: `plans/archive/plan-20260922-1548-akn03b-windows-identity.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-1548-akn03b-windows-identity.review.md`
-- Notes file: `tasks/notes/20260922-1548-akn03b-windows-identity.notes.md`
+- Review file: `tasks/archive/review-20260922-1615-akn03b-windows-identity.md`
+- Notes file: `tasks/archive/notes-20260922-1615-akn03b-windows-identity.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -72,10 +82,10 @@ allowed_paths:
   - docs/architecture/.projection-manifest.json
   - tests/cli/mcp-http.test.ts
   - docs/researches/20260922-task-reply-protocol.md
-  - plans/plan-20260922-1548-akn03b-windows-identity.md
-  - tasks/contracts/20260922-1548-akn03b-windows-identity.contract.md
-  - tasks/reviews/20260922-1548-akn03b-windows-identity.review.md
-  - tasks/notes/20260922-1548-akn03b-windows-identity.notes.md
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/review-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
   - tasks/todos.md
 ```
 
