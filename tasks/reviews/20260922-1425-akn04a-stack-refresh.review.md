@@ -48,3 +48,7 @@ The Windows8.3 fixture correction is integrated from9bf22e82 (source111a8a27). I
 This separate binding covers the complete #438 diff against corrected #437 head9bf22e82.
 
 > **Substantive Change SHA256**: `sha256:43236c2bd589338423b6d09df40f84ab7a6e85164b327ce1f0247b17e62f1bf5`
+
+## Frozen owner acceptance candidate
+
+Sourcec0751d9b; full-policy subject `sha256:71448b1afb25e68746fb39380d028b5d92f1d8df95d7e1374bd1dc668068bca6`. Canonical30/30 passed in `.ai/harness/runs/run-20260922T160913-87690-20260922-1425-akn04a-stack-refresh.json`, including protocol/projection/decoder/statistics and installed-package checks. Upstream #437 source111a8a27 has passing complete CI run35702537370. This new #438 candidate is local and has no current hosted CI yet. The earlier11-path advisory review cannot authorize the full-policy subject; owner acceptance is required before finishing and publishing the integration package.
