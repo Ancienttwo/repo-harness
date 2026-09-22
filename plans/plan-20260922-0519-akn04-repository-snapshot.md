@@ -119,7 +119,9 @@ Check selected-only collector calls, invalid/missing identity, malformed registr
 - [x] Implement selected repository collection and versioned internal IPC.
 - [x] Implement shared exit-held observation admission and scoped HTTP/browser envelope.
 - [x] Verify concurrency, identity and no-write behavior; document original authority boundary.
-- [ ] Freeze architecture/canonical evidence, obtain one semantic acceptance and submit stage PR.
+- [x] Consume the single semantic review and retain its P1 task-reader cancellation finding.
+- [x] Reproduce blocked native Git reads and replace thread cancellation with shared supervised process-tree cleanup.
+- [ ] Freeze corrected architecture/canonical evidence, obtain owner acceptance and submit the stage PR with exact hosted CI status.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->

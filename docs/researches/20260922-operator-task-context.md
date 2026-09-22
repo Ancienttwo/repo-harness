@@ -18,7 +18,7 @@ Strict browser and worker-boundary decoding checks identities, version, closed s
 
 ## Lifecycle and limits
 
-Context and activity share one private server worker lifecycle and admission pool, with the existing server concurrency/deadline configuration. HTTP completion, timeout or disconnect does not release an executing worker's slot. Native exit releases capacity; injected readers release it when settled. Shutdown aborts requests and awaits native worker exits. Existing TaskDiff and collaboration paths are unchanged.
+Context and activity share one private server admission pool and supervised child-process lifecycle, with the existing server concurrency/deadline configuration. HTTP completion, timeout or disconnect does not release a running process tree's slot. POSIX group cleanup or Windows Job cleanup releases capacity; injected readers release it when settled. Shutdown aborts requests and awaits the same completion. Existing TaskDiff and collaboration paths are unchanged.
 
 The browser transport uses no-store and AbortSignal and preserves the expected revision. Typed failures are unavailable, task_not_found, stale, too_large, busy and timeout. No cache, permanent watcher or domain store is created. At tenfold repository Task/plan volume, existing Board/source scans dominate cost; timeout refuses the read. This slice does not claim exact-task Board scan optimization.
 
@@ -29,3 +29,9 @@ The effects suite exercises canonical versus dirty source, source basis and exac
 Repository-scoped automation summaries, UI presentation, target-scoped write affordances, refresh scheduling and archived context recovery remain later roadmap slices. In particular this GET does not relax the existing POST authorization or claim completion of OB-04 by itself. Historical messages remain available through activity's exact-ID reader.
 
 Rollback removes the context DTO/GET/readers/transport and internal offer selector while preserving all stored authority. No migration, runtime installation or main merge is part of this slice.
+
+## Blocked synchronous Git cancellation
+
+Thread termination cannot interrupt an in-flight synchronous Git subprocess. A real Git read blocked on a POSIX FIFO at `.git/HEAD` reproduced timeout followed by permanent busy admission and unbounded close for both context and activity. The task readers now use the same process-tree supervisor as Fleet while retaining their own admission pool and DTOs. Their private process stays inert until an explicit start payload; Windows assigns the process to its Job before forwarding start. The retired thread entrypoints are removed.
+
+The existing context effects suite contains the two real blocked-Git regressions. Both fail before the change and pass afterward, proving a later unknown-repository request is admitted and shutdown completes without manually unblocking Git. The existing Windows Job test additionally blocks the collector in execFileSync and requires cleanup acknowledgement after all Job members exit. The CI matrix runs the real context/activity HTTP suites on all three platforms; local macOS evidence alone does not establish the Windows result.

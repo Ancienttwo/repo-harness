@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { projectOperatorRepositorySnapshot } from '../../core/operator/repository-snapshot';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
-import { Worker as ActivityWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
 import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff, type TaskDiffFailure } from '../../core/operator/task-diff';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -690,12 +689,41 @@ function readDefaultFleetSnapshot(
     readonly signal: AbortSignal;
   },
 ): Promise<FleetBoardSnapshotV1> {
+  return readSupervisedOperatorProcess({
+    process_path: fleetCollectorProcessPath(), env: input.env, signal: input.signal,
+    start: { type:'start', protocol:1,
+      scope: input.repository_id === undefined ? {kind:'fleet'} : {kind:'repository',repository_id:input.repository_id},
+      sequence:input.sequence, max_concurrency:input.max_concurrency, timeout_ms:input.timeout_ms,
+      ...(process.platform === 'win32' ? {} : {env:collaborationWorkerEnvironment(input.env)}),
+    },
+    response: fleetCollectorResponse,
+    failure: code => new FleetBoardError(code as FleetBoardFatalErrorCode, `Fleet collector failed with ${code}`),
+  });
+}
+
+class OperatorTaskReadError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+
+type SupervisedReadResponse<T> =
+  | { readonly ok: true; readonly snapshot: T }
+  | { readonly ok: false; readonly code: string }
+  | { readonly ok: false; readonly cancelled: true };
+
+function readSupervisedOperatorProcess<T>(input: {
+  readonly process_path: string;
+  readonly start: Readonly<Record<string, unknown>>;
+  readonly response: (value: unknown) => SupervisedReadResponse<T> | null;
+  readonly failure: (code: string) => Error;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly signal: AbortSignal;
+}): Promise<T> {
   if (input.signal.aborted) return Promise.reject(new OperatorFleetTimeoutError());
   return new Promise((resolveRead, rejectRead) => {
     const workerEnvironment = { ...process.env, ...collaborationWorkerEnvironment(input.env) };
     const collector = process.platform === 'win32'
       ? null
-      : spawn(process.execPath, [fleetCollectorProcessPath()], {
+      : spawn(process.execPath, [input.process_path], {
         env: workerEnvironment,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true,
@@ -716,15 +744,15 @@ function readDefaultFleetSnapshot(
     let controllerFailed = false;
     let controllerCleanupAcknowledged = controller === null;
     let controllerCleanupRequested = false;
-    let collectorResponse: OperatorFleetCollectorResponse | null = null;
-    let intended: { readonly ok: true; readonly snapshot: FleetBoardSnapshotV1 } | { readonly ok: false; readonly error: unknown } | null = null;
+    let collectorResponse: SupervisedReadResponse<T> | null = null;
+    let intended: { readonly ok: true; readonly snapshot: T } | { readonly ok: false; readonly error: unknown } | null = null;
     let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
     let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
     let controllerCloseTimer: ReturnType<typeof setTimeout> | null = null;
     let posixFinalizing = false;
     const finish = (
       outcome:
-        | { readonly ok: true; readonly snapshot: FleetBoardSnapshotV1 }
+        | { readonly ok: true; readonly snapshot: T }
         | { readonly ok: false; readonly error: unknown },
     ): void => {
       if (settled) return;
@@ -806,7 +834,7 @@ function readDefaultFleetSnapshot(
       finalizePosix();
     };
     const recordCollectorResponse = (value: unknown): void => {
-      const response = fleetCollectorResponse(value);
+      const response = input.response(value);
       if (response === null) {
         intended = { ok: false, error: unavailable('Fleet collector returned an invalid response') };
       } else if (response.ok) {
@@ -819,7 +847,7 @@ function readDefaultFleetSnapshot(
         intended = { ok: false, error: new OperatorFleetTimeoutError() };
       } else {
         collectorResponse = response;
-        intended = { ok: false, error: new FleetBoardError(response.code, `Fleet collector failed with ${response.code}`) };
+        intended = { ok: false, error: input.failure(response.code) };
       }
       finalize();
     };
@@ -883,14 +911,7 @@ function readDefaultFleetSnapshot(
           }
           controllerAssigned = true;
           if (cancellationRequested) return;
-          if (!writeChildJsonLine(controller, {
-            type: 'start',
-            protocol: 1,
-            scope: input.repository_id === undefined ? { kind: 'fleet' } : { kind: 'repository', repository_id: input.repository_id },
-            sequence: input.sequence,
-            max_concurrency: input.max_concurrency,
-            timeout_ms: input.timeout_ms,
-          })) {
+          if (!writeChildJsonLine(controller, input.start)) {
             intended = { ok: false, error: unavailable('Fleet Windows Job controller cannot forward the assigned start payload') };
             requestWindowsCleanup(true);
           }
@@ -928,19 +949,11 @@ function readDefaultFleetSnapshot(
       if (!writeChildJsonLine(controller, {
         type: 'launch',
         executable: process.execPath,
-        collector_path: fleetCollectorProcessPath(),
+        collector_path: input.process_path,
       })) {
         failWindowsController('Fleet Windows Job controller cannot accept collector launch');
       }
-    } else if (collector !== null && !writeChildJsonLine(collector, {
-      type: 'start',
-      protocol: 1,
-      scope: input.repository_id === undefined ? { kind: 'fleet' } : { kind: 'repository', repository_id: input.repository_id },
-      env: collaborationWorkerEnvironment(input.env),
-      sequence: input.sequence,
-      max_concurrency: input.max_concurrency,
-      timeout_ms: input.timeout_ms,
-    })) {
+    } else if (collector !== null && !writeChildJsonLine(collector, input.start)) {
       finish({ ok: false, error: unavailable('Fleet collector cannot accept start payload') });
     }
     if (input.signal.aborted) {
@@ -1864,13 +1877,12 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], workerUrl: URL,
+    failures: readonly string[], kind: 'context' | 'activity',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
   ): void => {
     if (closed) { sendJson(response,503,{code:'unavailable'},headOnly); return; }
     if (activeTaskReadCancellers.size >= maxConcurrency) { sendJson(response,503,{code:'busy'},headOnly); return; }
     const controller = new AbortController();
-    let worker: ActivityWorker | undefined;
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const cancel = () => finish('unavailable');
@@ -1880,8 +1892,6 @@ export async function startOperatorServer(
       settled = true;
       clearTimeout(timer);
       controller.abort();
-      // HTTP completion cannot release capacity still owned by a worker.
-      if (worker) void worker.terminate().catch(() => {});
       response.removeListener('close',cancel);
       if (response.destroyed) return;
       if (failure) sendJson(response, failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,{code:failure},headOnly);
@@ -1894,27 +1904,31 @@ export async function startOperatorServer(
     activeTaskReadCancellers.add(cancel);
     response.once('close',cancel);
     timer = setTimeout(()=>finish('timeout'),timeoutMs);
-    if (injected) {
-      void Promise.resolve().then(()=>injected({...input,signal:controller.signal}))
-        .then(accept,()=>finish('unavailable')).finally(release);
-    } else {
-      try {
-        worker = new ActivityWorker(workerUrl,{
-          workerData:{...input,env:collaborationWorkerEnvironment(options.env)},
-          env:{...process.env,GIT_NO_LAZY_FETCH:'1',GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'},
-        });
-        const completion = new Promise<void>(resolveExit=>{
-          worker!.once('exit',()=>{release();if (!settled) finish('unavailable');resolveExit();});
-        });
-        activeTaskReadWorkers.add(completion);
-        void completion.finally(()=>activeTaskReadWorkers.delete(completion));
-        worker.once('message',(value:{ok?:unknown;snapshot?:unknown;code?:unknown}|null)=>{
-          if (value?.ok === true) accept(value.snapshot);
-          else finish(typeof value?.code === 'string' && failures.includes(value.code) ? value.code : 'unavailable');
-        });
-        worker.once('error',()=>finish('unavailable'));
-      } catch {release();finish('unavailable');}
-    }
+    const pending = injected
+      ? Promise.resolve().then(()=>injected({...input,signal:controller.signal}))
+      : readSupervisedOperatorProcess<TSnapshot>({
+        process_path:fileURLToPath(new URL('./task-read-process.ts',import.meta.url)),
+        env:{...options.env,GIT_NO_LAZY_FETCH:'1',GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'},
+        signal:controller.signal,
+        start:{type:'start',protocol:1,kind,request:input,env:collaborationWorkerEnvironment(options.env)},
+        response:value=>{
+          if (!value || typeof value !== 'object') return null;
+          const record=value as Record<string,unknown>;
+          if (record.ok === true && Object.keys(record).length === 2 && 'snapshot' in record) {
+            try { return {ok:true,snapshot:decode(record.snapshot,input)}; } catch { return null; }
+          }
+          if (record.ok === false && Object.keys(record).length === 2 && typeof record.code === 'string' && failures.includes(record.code)) {
+            return {ok:false,code:record.code};
+          }
+          if (record.ok === false && Object.keys(record).length === 2 && record.cancelled === true) return {ok:false,cancelled:true};
+          return null;
+        },
+        failure:code=>new OperatorTaskReadError(code),
+      });
+    // The supervisor settles only after process-tree cleanup, including blocked sync Git.
+    const completion = pending.then(accept,error=>finish(error instanceof OperatorTaskReadError ? error.code : 'unavailable')).finally(release);
+    activeTaskReadWorkers.add(completion);
+    void completion.finally(()=>activeTaskReadWorkers.delete(completion));
   };
 
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -2020,7 +2034,7 @@ export async function startOperatorServer(
       try { input = parseTaskContextRequest(contextRoute[1]!, contextRoute[2]!, url.searchParams); }
       catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid context selector.'),headOnly); return; }
       handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskContext,TASK_CONTEXT_FAILURES,
-        new URL('./task-context-worker.ts',import.meta.url),options.read_task_context);
+        'context',options.read_task_context);
       return;
     }
     const activityRoute = OPERATOR_TASK_ACTIVITY_ROUTE.exec(pathname);
@@ -2029,7 +2043,7 @@ export async function startOperatorServer(
       try { input = parseTaskActivityRequest(activityRoute[1]!,activityRoute[2]!,url.searchParams); }
       catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid activity selector.'),headOnly); return; }
       handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskActivity,TASK_ACTIVITY_FAILURES,
-        new URL('./task-activity-worker.ts',import.meta.url),options.read_task_activity);
+        'activity',options.read_task_activity);
       return;
     }
 

@@ -20,7 +20,7 @@ Budgets are 1,000 scanned directory entries including nested recipients, 2 MiB t
 
 ## HTTP and process lifecycle
 
-The GET reuses loopback Host/Origin and method guards. A Node worker isolates synchronous filesystem reads. Admission is held until actual worker exit, including after timeout or disconnect. Server shutdown cancels reads and awaits native worker completion. Injected asynchronous readers receive AbortSignal and retain admission until their promise settles. The browser transport uses `no-store`, propagates AbortSignal and rejects mismatched response identities. Failures expose typed codes without internal paths.
+The GET reuses loopback Host/Origin and method guards. A supervised child process isolates synchronous filesystem and Git reads. POSIX process groups and the existing Windows Job controller terminate the entire process tree after timeout or disconnect. Admission is held until cleanup settles, and server shutdown waits for that same completion. Injected asynchronous readers receive AbortSignal and retain admission until their promise settles. The browser transport uses `no-store`, propagates AbortSignal and rejects mismatched response identities. Failures expose typed codes without internal paths.
 
 ## Verification and rollback
 

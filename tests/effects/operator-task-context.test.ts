@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, openSync, renameSync, writeSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { decodeOperatorTaskContext, parseTaskContextRequest } from '../../src/core/operator/task-context';
@@ -112,3 +112,40 @@ test('registry authorization changed during the second Board read invalidates th
   try {expect(()=>readOperatorTaskContext(f.input)).toThrow('stale');}
   finally {reader.mockRestore();}
 });
+
+// A real Git subprocess blocked on HEAD cannot be interrupted by Worker.terminate.
+// Keep this POSIX fixture out of Windows; the shared Job supervisor has its own native tests.
+test.skipIf(process.platform === 'win32').each(['context', 'activity'] as const)(
+  'blocked native %s Git read releases admission and permits bounded shutdown after timeout',
+  async (kind) => {
+    const f = fixture();
+    const head = join(f.root, '.git', 'HEAD');
+    const original = head + '.original', pipe = head + '.blocked';
+    const bytes = readFileSync(head);
+    renameSync(head, original);
+    execFileSync('mkfifo', [head]);
+    const server = await startOperatorServer({port:0,env:f.input.env,timeout_ms:1000,max_concurrency:1});
+    let closing: Promise<void> | undefined;
+    try {
+      const response = await fetch(`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/${kind}`);
+      expect(await response.json()).toEqual({code:'timeout'});
+      let status = 503;
+      const until = Date.now() + 2200;
+      while (Date.now() < until) {
+        status = (await fetch(`${server.url}/api/v1/fleet/tasks/unknown-repo/${f.input.task_id}/${kind}`)).status;
+        if (status !== 503) break;
+        await Bun.sleep(25);
+      }
+      closing = server.close();
+      const closed = await Promise.race([closing.then(()=>true),Bun.sleep(1000).then(()=>false)]);
+      expect({status,closed}).toEqual({status:404,closed:true});
+    } finally {
+      // Restore future opens, then release any pre-fix reader already waiting on the FIFO.
+      renameSync(head, pipe); renameSync(original, head);
+      try { const fd=openSync(pipe,constants.O_WRONLY|constants.O_NONBLOCK);try{writeSync(fd,bytes);}finally{closeSync(fd);} } catch(error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENXIO') throw error;
+      }
+      await (closing ?? server.close());
+    }
+  }, 15000,
+);
