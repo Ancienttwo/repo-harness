@@ -7,13 +7,13 @@
 > **Last Updated**: 2026-09-23 00:31
 > **Lifecycle**: notes
 
-> **Substantive Change SHA256**: `sha256:6d57a77617a0475e7e36852a0ef67d8c8abf75cb2d5bb205db72b6f9acbb7392`
+> **Substantive Change SHA256**: `sha256:f8e7202eaf99f9fb1b7c18c4c5e7a3c0d422bae824d0fb6dc5533ab4e6348792`
 
 ## Design Decisions
 
 - Repair the four observed authority stores through the existing low-level durable-write module; retain the already compliant Inbox/checkpoint boundaries. Principal retains its original writable descriptor through fsync.
-- Source verification is bound to6167e895; independent review remains on the policy-selected origin/main subject.
-- Upstream PR443 correction `6167e895` replaces rounded filesystem identities with exact bigint stats. It was integrated into this candidate before final native verification; the persistence package's comparison and rollback base now retain that upstream correction. Original pre-fix logs remain evidence of their recorded older source, not current acceptance.
+- Source verification is bound to271f4d31; independent review remains on the policy-selected origin/main subject.
+- Upstream PR443 includes exact bigint identities (`6167e895`) and owned prepared-receipt rollback cleanup (`271f4d31`). It was integrated into this candidate before final native verification; the persistence package's comparison and rollback base now retain that upstream correction. Original pre-fix logs remain evidence of their recorded older source, not current acceptance.
 - Real native Windows evidence is mandatory; simulated syscall restrictions only establish the deterministic local regression.
 
 - ...
@@ -41,7 +41,7 @@
 
 > **Substantive Change SHA256**: `sha256:a801bfabc3019c8666477d4e854e82da7f676033ba3570e9798ebb849ad8e53e`
 
-- Native-fixture correction relative to `eb8195e3`: local protected reply suite passed 33/33 with 144 assertions; typecheck passed. The complete package digest above remains bound to `6167e895`.
+- Native-fixture correction relative to `eb8195e3`: local protected reply suite passed 33/33 with 144 assertions; typecheck passed. The complete package digest above remains bound to `271f4d31`.
 
 > **Substantive Change SHA256**: `sha256:5af80f796ff4b62a301c007a1156d427ea4e8228833b58f3f521e045a7f33a2e`
 
@@ -57,3 +57,5 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+- The one codex-plugin review of subject `c34055e0e40205783e955c94f78760c72a39d510ad30bf8eb1b7ef8e0309d7ff` returned one P2 in upstream migration rollback. Its real-filesystem regression reproduced the failure, and PR443 correction `271f4d31` was integrated before acceptance. No second review is permitted; final owner acceptance must use the corrected frozen subject. The earlier 16/16 canonical run and native source `e3d86d48` are historical evidence, not acceptance of this correction.

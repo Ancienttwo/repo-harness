@@ -300,7 +300,7 @@ exit_criteria:
     {
       "id": "integrity-7",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=6167e895 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=271f4d31 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -358,10 +358,10 @@ exit_criteria:
 - Changed boundary: directory flush selection for four actual authority stores and Principal writable descriptor lifetime. Existing exact validators, locks and record formats retain authority.
 - Regression admission: extend existing Principal and Lease suites for the observed read-only descriptor failure, file-flush refusal before replacement, and POSIX directory error propagation. No new test file.
 - Verification Plan selects six owning suites plus typecheck and every repository-integrity command; native Windows/macOS/Linux and full Test are existing CI requirements. No full local suite is added.
-- Source baseline:6167e895; local pre-fix and focused artifacts live under .ai/harness/runs/windows-task-persistence. Native Windows before evidence is CI35749499343. Current candidate CI and canonical proof remain pending.
+- Source baseline:271f4d31; local pre-fix and focused artifacts live under .ai/harness/runs/windows-task-persistence. Native Windows before evidence is CI35749499343. Current candidate CI and canonical proof remain pending.
 - Residual limit: Windows directory power-loss durability is not claimed equivalent to POSIX. Real data migration and production admission remain excluded.
 
 ## Rollback Point
 
-- Baseline:6167e89506597e9a6340043830d12daa2db81918.
+- Baseline:271f4d31696d70a2011a542ffa74e7f5171a5e87.
 - Revert this package's code; no persisted format, command, configuration or identity migration exists.
