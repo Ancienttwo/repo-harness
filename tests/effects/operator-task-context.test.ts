@@ -227,3 +227,106 @@ test('Planning refuses unstable proof, authorization drift and oversized Board b
     try{expect(()=>readOperatorPlanningSnapshot(f.input)).toThrow();expect(reads).toBe(change==='limit'?1:2);}finally{reader.mockRestore();}
   }
 });
+
+// Historical definition is independent from current activity/claim state.
+import { readOperatorTaskHistory } from '../../src/effects/operator/task-history';
+import { decodeOperatorTaskHistory, isTaskHistoryRequest, TASK_HISTORY_MAX_BLOB_BYTES } from '../../src/core/operator/task-history';
+
+test('historical Task survives archive and deletion through exact canonical commit evidence without writes', () => {
+  const f=fixture(); const original=git(f.root,'rev-parse','HEAD');
+  const originalText=readFileSync(join(f.root,f.sprint),'utf8');
+  git(f.root,'mv',f.sprint,'plans/sprints/renamed.sprint.md');git(f.root,'commit','-qm','rename carrier');
+  const renamed=git(f.root,'rev-parse','HEAD');
+  mkdirSync(join(f.root,'plans/archive'),{recursive:true});
+  git(f.root,'mv','plans/sprints/renamed.sprint.md','plans/archive/unrelated-name.md');git(f.root,'commit','-qm','archive carrier');
+  const target=git(f.root,'rev-parse','HEAD'); const before=tree(f.root);
+  const value=readOperatorTaskHistory(f.input);
+  expect(value.source).toEqual({target_ref:'main',target_commit:target,commit:renamed,sprint_path:'plans/sprints/renamed.sprint.md',blob_sha256:`sha256:${createHash('sha256').update(originalText).digest('hex')}`});
+  expect(value.task_id).toBe(f.input.task_id);expect(value.task.title).toBe('Inspect current task');
+  expect(value.source.commit).not.toBe(original);expect(value.coverage.commits_examined).toBe(2);
+  expect(JSON.stringify(value)).not.toContain(f.root);expect(JSON.stringify(value)).not.toContain('execution');
+  expect(tree(f.root)).toBe(before);
+});
+
+test('history selects persisted ID across title changes and honors an explicit historical revision', () => {
+  const f=fixture(),original=git(f.root,'rev-parse','HEAD');
+  const old=readOperatorTaskHistory(f.input);
+  put(join(f.root,f.sprint),readFileSync(join(f.root,f.sprint),'utf8').replace('Inspect current task','Renamed canonical task'));
+  git(f.root,'add','.');git(f.root,'commit','-qm','rename task');
+  expect(readOperatorTaskHistory(f.input).task.title).toBe('Renamed canonical task');
+  const historical=readOperatorTaskHistory({...f.input,expected_task_revision:old.task_revision});
+  expect(historical.source.commit).toBe(original);expect(historical.task.title).toBe(old.task.title);
+  expect(()=>readOperatorTaskHistory({...f.input,task_id:'f'.repeat(64)})).toThrow('history_unavailable');
+  expect(()=>readOperatorTaskHistory({...f.input,expected_task_revision:'f'.repeat(64)})).toThrow('history_unavailable');
+});
+
+test('uncommitted history lookalikes and client source coordinates cannot supply Task identity', () => {
+  const f=fixture();
+  git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','remove task');
+  put(join(f.root,'plans/archive/title-match.md'),`# Inspect current task\n${f.input.task_id}`);
+  const value=readOperatorTaskHistory(f.input);expect(value.coverage.commits_examined).toBe(2);
+  expect(()=>readOperatorTaskHistory({...f.input,repository_id:'missing'})).toThrow('history_unavailable');
+  expect(isTaskHistoryRequest({...f.input,env:undefined})).toBe(false);
+  expect(()=>readOperatorTaskHistory({...f.input,target_ref:'HEAD'} as never)).toThrow('unavailable');
+  expect(()=>readOperatorTaskHistory({...f.input,sprint_path:f.sprint} as never)).toThrow('unavailable');
+});
+
+test('history checks every carrier before returning an exact match and refuses oversized evidence', () => {
+  const f=fixture(),text=readFileSync(join(f.root,f.sprint),'utf8');
+  put(join(f.root,'plans/sprints/duplicate.sprint.md'),text);git(f.root,'add','.');git(f.root,'commit','-qm','ambiguous ID');
+  expect(()=>readOperatorTaskHistory(f.input)).toThrow('history_ambiguous');
+  git(f.root,'rm','plans/sprints/duplicate.sprint.md');
+  put(join(f.root,f.sprint),text+'\n'+'x'.repeat(TASK_HISTORY_MAX_BLOB_BYTES));
+  git(f.root,'add','.');git(f.root,'commit','-qm','oversize carrier');
+  expect(()=>readOperatorTaskHistory(f.input)).toThrow('too_large');
+});
+
+test('history uses the Sprint directory policy from each immutable commit', () => {
+  const f=fixture();mkdirSync(join(f.root,'work'),{recursive:true});
+  git(f.root,'mv',f.sprint,'work/canonical.sprint.md');
+  put(join(f.root,'.ai/harness/policy.json'),JSON.stringify({sprints:{dir:'work'}}));
+  git(f.root,'add','.');git(f.root,'commit','-qm','configured carrier directory');
+  put(join(f.root,'.ai/harness/policy.json'),JSON.stringify({sprints:{dir:'wrong-local-directory'}}));
+  const value=readOperatorTaskHistory(f.input);expect(value.source.sprint_path).toBe('work/canonical.sprint.md');
+  const {env,...request}=f.input;
+  expect(decodeOperatorTaskHistory(value,request)).toEqual(value);
+  for (const bad of [{...value,protocol:2},{...value,source:{...value.source,sprint_path:'/private/secret'}},{...value,task:{...value.task,title:'forged title'}},{...value,task_revision:'f'.repeat(64)},{...value,ready:true}]) {
+    expect(()=>decodeOperatorTaskHistory(bad,request)).toThrow('Invalid task history response');
+  }
+});
+
+test('schema1 history cannot manufacture a persisted Task ID from its title', () => {
+  const f=fixture();git(f.root,'checkout','--orphan','legacy');
+  put(join(f.root,f.sprint),'# Legacy\n\n## Backlog\n| # | Status | Task | Mode | Acceptance | Plan |\n|---|--------|------|------|------------|------|\n| 1 | [ ] | Inspect current task | contract | read only | |\n');
+  git(f.root,'add','.');git(f.root,'commit','-qm','legacy source');
+  put(join(f.root,'.ai/harness/policy.json'),JSON.stringify({worktree_strategy:{merge_back:{target:'legacy'}}}));
+  expect(()=>readOperatorTaskHistory(f.input)).toThrow('history_unavailable');
+});
+
+test('history refuses an otherwise valid Task beyond its64 canonical-commit budget', () => {
+  const f=fixture();git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','delete task');
+  for(let i=0;i<63;i++)git(f.root,'commit','--allow-empty','-qm',`later${i}`);
+  expect(()=>readOperatorTaskHistory(f.input)).toThrow('history_unavailable');
+});
+
+import * as registryModule from '../../src/effects/repo-registry';
+test('history rejects registry or canonical-target changes during its read', () => {
+  for(const change of ['registry','target']) {
+    const f=fixture();const original=registryModule.readRepoHarnessRegistryStrictSnapshot;let calls=0;
+    const spy=spyOn(registryModule,'readRepoHarnessRegistryStrictSnapshot').mockImplementation(options=>{
+      calls++;
+      if(calls===2) {
+        if(change==='registry') { const value=JSON.parse(readFileSync(f.registryPath,'utf8'));value.authorizationRevision++;put(f.registryPath,JSON.stringify(value)); }
+        else git(f.root,'commit','--allow-empty','-qm','target moved');
+      }
+      return original(options);
+    });
+    try {expect(()=>readOperatorTaskHistory(f.input)).toThrow('stale');} finally {spy.mockRestore();}
+  }
+});
+
+test('history digest binds the actual UTF-8 blob including a byte-order mark', () => {
+  const f=fixture(),text='\ufeff'+readFileSync(join(f.root,f.sprint),'utf8');
+  put(join(f.root,f.sprint),text);git(f.root,'add','.');git(f.root,'commit','-qm','source byte marker');
+  expect(readOperatorTaskHistory(f.input).source.blob_sha256).toBe(`sha256:${createHash('sha256').update(readFileSync(join(f.root,f.sprint))).digest('hex')}`);
+});
