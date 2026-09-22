@@ -16,10 +16,10 @@
 
 - Verdict: pending
 - Change type: code-change
-- Intended files changed: five production persistence files, three existing test suites and six workflow/research artifacts within the contract.
-- Actual files changed: 14 files against pinned source base `6167e895`, matching those categories.
+- Intended files changed: five production persistence files, three existing test suites and workflow/research artifacts plus the deterministic architecture manifest within the contract.
+- Actual files changed: the source diff against pinned base `271f4d31` stays within the contract, including the deterministic architecture manifest.
 - Check IDs and evidence disposition: full hosted CI passed on `e3d86d480fb09a96a670243fd1a3aa8b018e97c3`; canonical Verification Plan passed 16/16 (28/28 total criteria) in run-20260923T014911-15248-20260923-0031-windows-task-persistence.json.
-- Residual risks: Windows directory power-loss durability is not POSIX-equivalent; a P2 upstream migration finding blocks acceptance pending correction and refreshed evidence.
+- Residual risks: Windows directory power-loss durability is not POSIX-equivalent; the upstream P2 is corrected in `271f4d31`; all canonical and native checks pass, while exact owner acceptance remains pending.
 - Reviewer action required: the single independent review is consumed; resolve the upstream P2 and obtain owner acceptance on the final corrected subject.
 - Rollback: revert this package while retaining upstream `6167e895`; canonical stored records are unchanged.
 
@@ -35,7 +35,7 @@ Follow [Testing Policy and Artifact Standards](../../docs/reference-configs/spri
 Consume canonical evidence; do not rerun checks to populate this review or
 copy the executable plan. Return missing/stale evidence to its execution owner.
 
-- Independent semantic review: consumed via codex-plugin on subject `sha256:c34055e0e40205783e955c94f78760c72a39d510ad30bf8eb1b7ef8e0309d7ff`, base origin/main at `0d4371c3`. Verdict needs-attention, one P2: rollback leaves a prepared forward receipt that blocks a fresh upgrade after new v1 history. The provider advisory PASS mapping is not treated as acceptance.
+- Independent semantic review: consumed via codex-plugin on subject `sha256:c34055e0e40205783e955c94f78760c72a39d510ad30bf8eb1b7ef8e0309d7ff`, base origin/main at `0d4371c3`. Verdict needs-attention, one P2: rollback leaves a prepared forward receipt that blocks a fresh upgrade after new v1 history. The provider advisory PASS mapping is not treated as acceptance. The correction is integrated from upstream `271f4d31`; the original reviewed subject is retained as historical evidence.
 - Hosted execution: [CI 35759847282](https://github.com/Ancienttwo/repo-harness/actions/runs/35759847282), exact source head `e3d86d480fb09a96a670243fd1a3aa8b018e97c3`, passed Governance, full Test, Windows, macOS, Linux and Required / CI. The documentation lane was skipped by CI selection and is not counted as a pass.
 - Windows job `106854943539`: 206 pass, 6 existing platform-specific skips, 0 fail across 15 files. Actual deep-path delivery/ACK/reply, exact-ID migration guards, staging expiry, scan/byte limits and process-exit recovery passed. The event-published recovery case took 22.85 seconds, confirming the former 20-second outer test limit was insufficient on this runner.
 - Native logs and structured run readback: `.ai/harness/runs/windows-task-persistence/native-final.log` and `native-final-run.json`.
@@ -119,3 +119,12 @@ Pre-fix Principal restriction test:4 pass,1 fail with EBADF at the read-only flu
   ]
 }
 ```
+
+## Corrected candidate verification
+
+- Source: `2948a041df8e3ecbf2ccecba5e72eb7879229cb6`, retaining upstream source/rollback base `271f4d31`.
+- Frozen corrected subject: `sha256:c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`; target `origin/main` at `0d4371c3`.
+- Canonical: 16/16 checks, 28/28 total criteria, run `.ai/harness/runs/run-20260923T020805-38146-20260923-0031-windows-task-persistence.json`.
+- Architecture: current local index and deterministic manifest materialization; no semantic model changes.
+- Native/full CI: [run `35765127664`](https://github.com/Ancienttwo/repo-harness/actions/runs/35765127664), success on `2948a041`. Governance, Test, Windows, macOS, Linux and Required / CI passed; documentation assertions were skipped. Windows: 210 pass, 6 existing skips, 0 fail across 216 tests/15 files. All four new complete/prefix and foreign/linked prepared-receipt cases passed natively. Logs: `.ai/harness/runs/windows-task-persistence/native-corrected.log` and `native-corrected-run.json`.
+- Acceptance remains unavailable. The one independent review is consumed; owner acceptance must bind the corrected candidate after native CI.

@@ -128,7 +128,7 @@ Publish a Draft candidate to obtain native CI before consuming the one independe
 - [x] Record the observed call chain, exact Windows failure evidence and bounded sibling classification in research; bind the approved plan and bugfix contract.
 - [x] Add and run a failing owning regression before editing production persistence.
 - [x] Repair directory-flush platform selection and Principal writable file-handle lifetime while retaining canonical bytes, locks and error propagation.
-- [ ] Run focused suites and required checks, materialize current architecture proof, freeze source and obtain canonical verification.
+- [x] Run focused suites and required checks, materialize current architecture proof, freeze source and obtain canonical verification.
 - [ ] Run one independent review, publish a stacked PR and verify full native CI; record exact acceptance without main merge.
 - [ ] Carry the accepted repair into PR443 and resume the existing staged reader/homepage integration roadmap.
 
@@ -139,6 +139,6 @@ Publish a Draft candidate to obtain native CI before consuming the one independe
 - [x] Record the observed call chain, exact Windows failure evidence and bounded sibling classification in research; bind the approved plan and bugfix contract.
 - [x] Add and run a failing owning regression before editing production persistence.
 - [x] Repair directory-flush platform selection and Principal writable file-handle lifetime while retaining canonical bytes, locks and error propagation.
-- [ ] Run focused suites and required checks, materialize current architecture proof, freeze source and obtain canonical verification.
+- [x] Run focused suites and required checks, materialize current architecture proof, freeze source and obtain canonical verification.
 - [ ] Run one independent review, publish a stacked PR and verify full native CI; record exact acceptance without main merge.
 - [ ] Carry the accepted repair into PR443 and resume the existing staged reader/homepage integration roadmap.
