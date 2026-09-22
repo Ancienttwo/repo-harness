@@ -2,7 +2,7 @@
 
 > **Status**: Active
 > **Plan**: plans/plan-20260922-1548-akn03b-windows-identity.md
-> **Task Profile**: code-change
+> **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
@@ -37,12 +37,10 @@ The child and parent canonical mapping identities match yet the live HTTP reques
 
 ## Root Cause Evidence
 
-Required when Task Profile is `bugfix`; leave as-is otherwise.
-
-- root_cause: one sentence naming file:line/condition (testable, not "a state issue").
-- repro: the command or UI path that reproduces the symptom.
-- regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear as a `package_test` check in Verification Plan).
-- pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
+- root_cause: tests/cli/mcp-http.test.ts hashes the Windows8.3 temp root before Git expands it; the server hashes the Git-expanded long root and finds no mapping.
+- repro: Windows job106662452605 at255ecbb0 showed RUNNER~1 and runneradmin roots with different repo IDs, identical mapping_root and the same-token authorization assertion passed.
+- regression_guard: tests/cli/mcp-http.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/akn03b-windows-identity/windows-before.log
 
 ## Workflow Inventory
 
