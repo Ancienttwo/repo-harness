@@ -96,3 +96,7 @@ screenshot/artifact path, or reviewer observation.
 ## Summary
 
 - ...
+
+## Diagnostic candidate
+
+Two Windows attempts for #437 head769c065c failed the same mapped-status assertion. The existing fixture now checks the same-token authorization ID and a fresh child process using the server Git-root resolver, canonical principal mapping reader and inherited environment. Local focused E2E passes with all original assertions retained. These probes diagnose identity disagreement; they do not constitute a fix or current Windows acceptance. Production source is unchanged.

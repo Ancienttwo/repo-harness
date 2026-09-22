@@ -1132,11 +1132,38 @@ describe('mcp http transport', () => {
       writeFileSync(join(bindingRoot, 'current.json'), canonicalEngineerBindingCurrentBytes(buildEngineerBindingCurrent(event)));
       const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath()); tokenStore.load();
       const authorization = tokenStore.listAuthorizations('engineer')[0]!;
+      expect(tokenStore.getAccessToken(firstHeaders.authorization!.slice('Bearer '.length))?.authorizationId).toBe(authorization.authorizationId);
       const mapping = buildEngineerPrincipalMapping({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: authorization.authorizationId, binding, created_at: createdAt });
       const mappingRoot = join(dirname(repoHarnessRegisteredReposPath()), 'engineer-principals/v1');
       const mappingKey = createHash('sha256').update(`${mapping.repository_id}\0${mapping.authorization_id}`).digest('hex');
       mkdirSync(mappingRoot, { recursive: true });
       writeFileSync(join(mappingRoot, `${mappingKey}.json`), canonicalEngineerPrincipalMappingBytes(mapping));
+      // Match the server's Git-root resolution in a separate process before testing HTTP lookup.
+      const identityProbe = Bun.spawnSync(['bun', '--eval', `
+        import { realpathSync } from 'fs';
+        import { dirname, join } from 'path';
+        import { resolveMcpRepoRoot } from './src/cli/mcp/repo';
+        import { repoHarnessRepoIdFor, repoHarnessRegisteredReposPath } from './src/effects/repo-registry';
+        import { readEngineerPrincipalMapping } from './src/effects/engineers/principal-store';
+        const input = JSON.parse(process.argv[1]);
+        const repositoryRoot = realpathSync(resolveMcpRepoRoot(input.repoRoot));
+        const repositoryId = repoHarnessRepoIdFor(repositoryRoot);
+        console.log(JSON.stringify({
+          repository_root: repositoryRoot,
+          repository_id: repositoryId,
+          mapping_root: join(dirname(repoHarnessRegisteredReposPath()), 'engineer-principals/v1'),
+          mapping: readEngineerPrincipalMapping(repositoryId, input.authorizationId),
+        }));
+      `, JSON.stringify({ repoRoot, authorizationId: authorization.authorizationId })], {
+        cwd: process.cwd(), env: { ...process.env }, stdout: 'pipe', stderr: 'pipe',
+      });
+      expect(identityProbe.exitCode).toBe(0);
+      expect(JSON.parse(identityProbe.stdout.toString())).toEqual({
+        repository_root: repoRoot,
+        repository_id: mapping.repository_id,
+        mapping_root: mappingRoot,
+        mapping,
+      });
       const mappedStatus = await call(firstHeaders, 29, 'tools/call', { name: 'engineer_status', arguments: {} });
       expect(JSON.parse(mappedStatus.result.content[0].text)).toMatchObject({ ok: true, principal: { engineer_id: engineerId, binding_id: binding.binding_id } });
       const communication = await call(firstHeaders, 30, 'tools/call', { name: 'engineer_task_messages', arguments: { work_envelope: {} } });
