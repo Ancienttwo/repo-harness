@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:44ba93def74208d1efef789ee49ec5fb09f65b48f1ef7f68d258a0e28634900f`
+> **Substantive Change SHA256**: `sha256:96d6eeb46a1d70c1a9f8938548ce787f09c13c62e6537c27eff0918734a3c35b`
 
 ## Design Decisions
 
@@ -15,6 +15,8 @@
 - Existing canonical record validators remain the only record authority. Runtime reads v2 only; legacy parsing is confined to the explicit migration.
 - Contract verification uses the approved source base12518117 through REPO_HARNESS_DIFF_BASE. The policy-owned review subject remains the complete candidate against its configured review base; do not override the external review base to a different subject.
 - Interrupted canonical verification reached the outer helper hard timeout while owner-4 had no completed execution record. A bounded direct package test passed 33/33 in 75 seconds. The next canonical invocation reported an identical request running; subsequent readback found that request lock absent. Preserve those failures and require a new genuine canonical result; no execution receipt or cache entry is manually repaired.
+
+- Completed rollback receipts are immutable history. New v1 writes require a fresh source approval; the next transaction archives the old receipt before clearing its pointer. A prepared forward journal is validated and published before rollback consumes it, preserving the normal recovery fence.
 
 ## Deviations From Plan Or Spec
 

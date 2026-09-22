@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: implementation complete; canonical verification and independent acceptance pending.
+- Verdict: independent review found one P2; corrected source requires fresh canonical verification, native CI and exact-subject owner acceptance.
 - Change type: migration
 - Intended files changed: Task Inbox path owner, storage-only token, offline migration, fleet inbox CLI, owning fixtures, native matrix, research and runbook.
 - Actual files changed: within the contract allowlist; no Task/Lease/Binding/actor protocol or real data mutation.
 - Check IDs and evidence disposition: focused implementation evidence is recorded below; the contract Verification Plan remains the sole executable acceptance authority.
 - Residual risks: all clients must be offline; Windows directory durability differs from POSIX; exact published-head native CI is pending.
-- Reviewer action required: consume frozen canonical evidence and evaluate the single migration boundary.
+- Reviewer action required: consume the original review and correction evidence; the one independent review for this boundary is consumed.
 - Rollback: revert code before migration; operator inverse requires exact receipt and unchanged v2 output.
 
 ## Mode Evidence
@@ -32,7 +32,7 @@
 ## Verification Evidence
 
 - Canonical verification: pending source freeze and verify-sprint --prepare-acceptance.
-- Focused migration effects: 27 passed, including transaction interruption, actual process exit, injected file-operation failures, exact-byte retention, external-link refusal and rollback after new writes.
+- Focused migration effects: 38 passed, including transaction interruption, actual process exit, injected file-operation failures, exact-byte retention, external-link refusal and rollback after new writes.
 - Historical reply migration: three fixture cases passed for intent-only, event-uncommitted and complete; no active sprint or live historical actor required.
 - Native local lifecycle: deep-path delivery/ACK/reply and separate Alice/alice receipts passed. Windows/macOS/Linux hosted coverage is required on the published head.
 - Implementation-stage correction: one test grouped three expensive fixtures into a single default five-second test. Split the three semantic cases into independent parameterized tests; all three passed without raising timeouts or weakening assertions.
@@ -65,5 +65,34 @@ No non-built-in manual check is declared by this contract. Real data migration, 
 
 ## Residual Risks / Follow-ups
 
-- Complete exact-subject canonical verification, the new package's independent review and native CI.
+- Complete corrected exact-subject canonical verification and native CI, then record explicit owner acceptance; do not repeat semantic review.
 - Carry the accepted source into #442 and automation-summary before narrowing #439; #442 uses owner acceptance for its already-consumed review boundary.
+
+## Independent review and correction
+
+Reviewed source: e6dd175c322d887b6488ef9815676ab55f13394b. Reviewed subject: `sha256:eba1112be474bd925cafbd0b5e96ec8cfd58790cc126e78f8f814a5cde3dc457`. The original transcript follows verbatim:
+
+```json
+{
+  "verdict": "needs-attention",
+  "summary": "Do not ship yet: successful rollback prevents any supported future upgrade to v2.",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "Completed rollback permanently blocks migration",
+      "body": "The retained rollback receipt forces inspection into `rolled_back`: apply rejects that state, while resume returns without migrating. After the previous release writes new v1 history, checkedReceipt also rejects the changed inventory, blocking even dry-run. Confirmed through the actual migration function with an in-memory filesystem. Following the documented rollback procedure therefore strands the repository on v1 unless operators manually remove transaction evidence.",
+      "file": "src/effects/fleet/task-inbox-layout-migration.ts",
+      "line_start": 311,
+      "line_end": 311,
+      "confidence": 0.99,
+      "recommendation": "Add an explicit transition from completed rollback to a fresh, digest-approved migration, preserving the old receipt separately. Cover apply → rollback → reapply both with unchanged history and after legitimate v1 writes."
+    }
+  ],
+  "next_steps": [
+    "Implement and verify the post-rollback migration transition.",
+    "Restore checkout dependencies and rerun browser types tests; the attempted run had 106 passes and one suite blocked by missing React."
+  ]
+}
+```
+
+Both requested regression cases failed before correction. Current migration coverage verifies fresh approval after rollback with unchanged or newly appended v1 history, and resume/rollback after nine reapply boundaries, preserving both old and new receipts. A prepared-journal rollback additionally failed before its correction. Reviewer-checkout missing React is not current canonical evidence; the corrected candidate will have its own declared verification. No second semantic review is authorized by this package's review budget.

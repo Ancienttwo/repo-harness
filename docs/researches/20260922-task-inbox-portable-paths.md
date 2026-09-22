@@ -74,13 +74,15 @@ The fragile assumption is operator quiescence of old clients: their binaries do 
 
 Publication may leave a hard-linked staging file if the process exits after linking a canonical record but before unlinking its temporary name. Inventory accepts that residue only when every hard link is contained inside the same inventoried tree. External links and symbolic links are refused. The retained backup preserves the original bytes and links; v2 contains independent copies of canonical records only.
 
-Focused implementation evidence: the migration suite covers 27 passing transaction/refusal cases, including actual process exit and injected write/rename/fsync failures. Existing reply fixtures independently prove byte/observation preservation for intent-only, event-uncommitted and complete chains without an active sprint. Native deep-path and case-distinct delivery/ACK tests pass locally; exact-head Windows CI remains the required platform proof.
+Focused implementation evidence: the migration suite covers 38 passing transaction/refusal cases, including actual process exit and injected write/rename/fsync failures. Existing reply fixtures independently prove byte/observation preservation for intent-only, event-uncommitted and complete chains without an active sprint. Native deep-path and case-distinct delivery/ACK tests pass locally; exact-head Windows CI remains the required platform proof.
 
 ## Preservation and rollback
 
 Migration does not require an active sprint, live Lease/Binding or reauthorization of a historical actor. Those facts cannot be prerequisites for preserving old history. Existing active Task/Lease state must be quiescent for mutation; historical claims inside records are not evidence of a currently live lease. The transaction refuses live execution rather than terminating it.
 
 Before serving v2, rollback restores the exact preserved v1 tree under the same offline fence. After v2 has served writes, automatic rollback is refused by output-digest comparison. Retaining the new runtime or preparing a separately approved data-aware inverse is then necessary. No lossy rollback, reverse semantic derivation or old/new merge is allowed.
+
+A completed rollback is historical evidence, not authority over later v1 writes. A new dry-run inventories current v1 bytes and a fresh digest-approved apply archives the prior rollback receipt by its hash before continuing the new journal. The old receipt remains byte-for-byte retained; resume stays bound to its original transaction. Recovery tests cover all nine reapply interruption boundaries, including completing or abandoning a prepared forward journal.
 
 For a Windows import of a POSIX v1 store, migrate on the source filesystem before copying the v2 store. Do not claim to recover illegal filenames from NTFS alternate streams. Native Windows tests must cover fresh v2 history and the migration states representable on Windows.
 
@@ -101,3 +103,5 @@ Integrate the accepted package back into the #442 source branch, then into autom
 A source scan at12518117 found the literal v1 root and filesystem recipient-key construction only in src/effects/fleet/task-inbox.ts; semantic key derivation remains in src/core/fleet/task-message.ts. The explicit test literals are Activity fixture setup and the no-store-write assertion in tests/cli/operator-serve.test.ts:579; the latter must move to the v2 root or its negative assertion becomes vacuous. This is a source inventory, not native migration execution evidence.
 
 Record limits remain owned by each existing canonical validator. Ordinary events permit metadata exceeding the separate 64 KiB reply-record limit; migration preserves such valid bytes rather than importing the reply limit into another protocol. A 70,677-byte valid-event fixture exposed and guards this distinction.
+
+The single independent review at source e6dd175c found that a completed rollback blocked every future upgrade. The original two regression cases reproduced both unchanged-v1 apply refusal and changed-v1 dry-run refusal. The correction adds the explicit fresh migration transition above. That consumed review does not approve the corrected subject; final acceptance requires the owner-bound receipt after current verification and CI.

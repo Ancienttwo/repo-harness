@@ -108,6 +108,45 @@ test('rollback refuses any later v2 write before modifying either tree', () => {
   expect(tree(f.paths.root)).toEqual(before);
 });
 
+test.each([false, true])('completed rollback permits a fresh approved upgrade after new v1 writes=%s', changed => {
+  const f = fixture(); f.apply(); f.rollback();
+  const later = '223e4567-e89b-42d3-a456-426614174000';
+  if (changed) put(join(f.paths.legacy, TASK, 'events', `${later}.json`), `${canonicalTaskMessageEventBytes(buildTaskMessageEvent({ ...f.event, message_id: later, body: 'new v1 history' }))}\n`);
+  const original = tree(f.paths.legacy);
+  const plan = migrateTaskInboxLayout({ repo_root: f.root });
+  const result = migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true, expected_source_sha256: plan.manifest!.source_sha256 });
+  expect(result.state).toBe('committed');
+  expect(tree(f.paths.backup)).toEqual(original);
+  const history = join(f.paths.root, 'migration-history', `${f.plan.receipt_sha256!.slice('sha256:'.length)}.json`);
+  expect(JSON.parse(readFileSync(history, 'utf8')).receipt_sha256).toBe(f.plan.receipt_sha256);
+});
+
+test.each(['journal-prepared', 'journal', 'rollback-archived', 'reapply-ready', 'staged', 'retired', 'fenced', 'published', 'receipt'] as const)(
+  'fresh migration after rollback recovers at %s and retains both receipts', boundary => {
+    for (const rollback of [false, true]) {
+      const f = fixture(); f.apply(); f.rollback();
+      const later = '223e4567-e89b-42d3-a456-426614174000';
+      put(join(f.paths.legacy, TASK, 'events', `${later}.json`), `${canonicalTaskMessageEventBytes(buildTaskMessageEvent({ ...f.event, message_id: later }))}\n`);
+      const original = tree(f.paths.legacy), before = tree(f.paths.root);
+      const plan = migrateTaskInboxLayout({ repo_root: f.root });
+      expect(tree(f.paths.root)).toEqual(before);
+      expect(() => f.apply()).toThrow('exact --expected-source');
+      const input = { repo_root: f.root, confirm_quiescent: true, expected_source_sha256: plan.manifest!.source_sha256 };
+      expect(() => migrateTaskInboxLayout({ ...input, mode: 'apply', on_boundary(value) {
+        if (value === boundary) throw new Error('interrupted reapply');
+      } })).toThrow('interrupted reapply');
+      expect(() => inspectTaskInboxLayout(f.common)).toThrow();
+      const result = migrateTaskInboxLayout({ ...input, mode: rollback ? 'rollback' : 'resume', receipt_sha256: plan.receipt_sha256 });
+      expect(result.state).toBe(rollback ? 'rolled_back' : 'committed');
+      expect(tree(rollback ? f.paths.legacy : f.paths.backup)).toEqual(original);
+      if (!rollback) expect(inspectTaskInboxLayout(f.common)).toBeString();
+      expect(existsSync(`${f.paths.journal}.pending`)).toBeFalse();
+      const history = join(f.paths.root, 'migration-history', `${f.plan.receipt_sha256!.slice('sha256:'.length)}.json`);
+      expect(JSON.parse(readFileSync(history, 'utf8')).receipt_sha256).toBe(f.plan.receipt_sha256);
+      expect(JSON.parse(readFileSync(rollback ? f.paths.rolledBack : f.paths.receipt, 'utf8')).receipt_sha256).toBe(plan.receipt_sha256);
+    }
+  });
+
 test('source changes, wrong digest, and unconfirmed operation fail closed', () => {
   const f = fixture();
   expect(() => migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply' })).toThrow('confirm-quiescent');

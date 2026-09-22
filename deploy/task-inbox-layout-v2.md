@@ -48,6 +48,10 @@ repo-harness fleet inbox migrate-layout --rollback --receipt-sha256 '<receipt di
 
 This also permits abandoning an incomplete staged copy. If v2 was published, its entire inventory must still match the migration output. **Any subsequent v2 write refuses rollback**, including an ACK or staging residue; later records must never be lost. In that case retain v2 and plan a separate data-aware recovery. Successful rollback restores the original v1 bytes and leaves a rollback receipt; the v2 runtime deliberately refuses that legacy layout. Reopening v1 requires the coordinated previous release, not mixed clients.
 
+## Upgrade again after rollback
+
+After a completed rollback, run a new dry-run and explicitly apply its current source digest using the same commands above. This also supports new history written by the coordinated v1 release. `--resume` remains bound to the old transaction; it does not approve new history. The fresh transaction durably archives the previous rollback receipt under `migration-history/<receipt hash>.json` before replacing its active pointer. Preserve that history; no manual evidence deletion is required. If interrupted, resume or rollback with the new transaction's digests.
+
 ## Platform boundary
 
 Migrate POSIX v1 history on its source filesystem before transporting it to Windows. Illegal v1 colon filenames cannot be recovered by treating NTFS alternate streams as records. The v2 token removes recipient component restrictions; actual long-path support remains a runtime/filesystem requirement exercised by the native CI lifecycle tests.

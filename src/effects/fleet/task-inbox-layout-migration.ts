@@ -19,7 +19,8 @@ interface Manifest {
 }
 interface Receipt { manifest: Manifest; manifest_sha256: string; receipt_sha256: string }
 export type InboxMigrationBoundary = 'journal-prepared' | 'journal' | 'staged-file' | 'staged' | 'retired' | 'fenced'
-  | 'published' | 'receipt' | 'rollback-journal' | 'rollback-staged' | 'rollback-restored';
+  | 'published' | 'receipt' | 'rollback-journal' | 'rollback-staged' | 'rollback-restored'
+  | 'rollback-archived' | 'reapply-ready';
 export interface InboxMigrationInput {
   repo_root: string;
   mode?: 'dry-run' | 'apply' | 'resume' | 'rollback';
@@ -181,6 +182,31 @@ function checkedReceipt(common: string, path: string): Receipt {
   if (!equal(value, expected)) refuse('receipt digest mismatch');
   return expected;
 }
+/** A completed rollback is history, not authority over subsequent v1 writes. */
+function checkedRollbackHistory(common: string): Receipt {
+  const value = readObject(inboxLayoutPaths(common).rolledBack) as Receipt;
+  const manifest = value?.manifest;
+  const stat = inboxPathStat(common)!;
+  const identity = `${stat.dev}:${stat.ino}`;
+  if (!manifest || !Array.isArray(manifest.source) || !Array.isArray(manifest.target)) refuse('invalid rollback receipt');
+  const expected: Manifest = { protocol: 1, kind: 'task-inbox-layout-migration', common, identity, from: 1, to: 2,
+    source: manifest.source, target: manifest.target,
+    source_sha256: sha(json({ common, identity, source: manifest.source })), target_sha256: sha(json(manifest.target)) };
+  if (!equal(manifest, expected) || !equal(value, receiptFor(expected))) refuse('rollback receipt identity or digest mismatch');
+  return value;
+}
+function archiveRollback(common: string, input: InboxMigrationInput): void {
+  const p = inboxLayoutPaths(common);
+  if (!inboxPathStat(p.rolledBack)) return;
+  const receipt = checkedRollbackHistory(common);
+  const directory = join(p.root, 'migration-history');
+  assertInboxDirectory(directory);
+  if (!inboxPathStat(directory)) { mkdirSync(directory, { mode: 0o700 }); syncInboxDirectory(p.root); }
+  publishMetadata(join(directory, `${receipt.receipt_sha256.slice('sha256:'.length)}.json`), receipt);
+  input.on_boundary?.('rollback-archived');
+  removeMetadata(p.rolledBack);
+  input.on_boundary?.('reapply-ready');
+}
 /** Only transaction-owned paths may repair a prefix left by an interrupted exclusive write. */
 function writeOwned(path: string, bytes: Buffer): void {
   if (inboxPathStat(path)) {
@@ -308,7 +334,14 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
       const receipt = checkedReceipt(common, p.receipt);
       return { state: 'committed', manifest: receipt.manifest };
     }
-    if (inboxPathStat(p.rolledBack)) return { state: 'rolled_back', manifest: checkedReceipt(common, p.rolledBack).manifest };
+    if (inboxPathStat(p.rolledBack)) {
+      const receipt = checkedRollbackHistory(common);
+      if ([p.current, p.backup, p.stage, `${p.rollback}.pending`].some(path => inboxPathStat(path))) refuse('unexpected completed rollback state');
+      if (mode === 'dry-run' || mode === 'apply' || inboxPathStat(`${p.journal}.pending`)) {
+        return { state: 'planned', manifest: buildManifest(common, p.legacy) };
+      }
+      return { state: 'rolled_back', manifest: checkedManifest(common, receipt.manifest) };
+    }
     if (!inboxPathStat(p.legacy)) {
       if ([p.backup, p.stage, `${p.journal}.pending`, `${p.rollback}.pending`].some(path => inboxPathStat(path))) refuse('orphan migration artifacts');
       assertInboxDirectory(p.current);
@@ -336,10 +369,13 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
     if (observed.state === 'rolled_back' && !inboxPathStat(p.rollback)) { assertTree(p.legacy, manifest.source); return result('rolled_back', manifest); }
     const rollback = mode === 'rollback' || observed.state === 'rollback_required' || !!inboxPathStat(`${p.rollback}.pending`);
     if (rollback && inboxPathStat(p.current)) assertTree(p.current, manifest.target);
+    // A rollback must consume a prepared forward journal through its exact-byte publication path.
+    if (rollback && inboxPathStat(`${p.journal}.pending`)) publishMetadata(p.journal, manifest);
     const journal = rollback ? p.rollback : p.journal;
     publishMetadata(journal, manifest, () => input.on_boundary?.('journal-prepared'));
     input.on_boundary?.(rollback ? 'rollback-journal' : 'journal');
     return withTasks(input, manifest, () => {
+      archiveRollback(common, input);
       const receipt = rollback ? finishRollback(common, manifest, input) : finishForward(common, manifest, input);
       return { ok: true, state: rollback ? 'rolled_back' : 'committed', ...receipt };
     });
