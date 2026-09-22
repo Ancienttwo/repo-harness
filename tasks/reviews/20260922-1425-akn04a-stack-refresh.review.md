@@ -1,16 +1,16 @@
 # Task Review: akn04a-stack-refresh
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260922-1425-akn04a-stack-refresh.md
 > **Contract**: tasks/contracts/20260922-1425-akn04a-stack-refresh.contract.md
 > **Notes File**: tasks/notes/20260922-1425-akn04a-stack-refresh.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 14:25
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:71448b1afb25e68746fb39380d028b5d92f1d8df95d7e1374bd1dc668068bca6
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
 > **Substantive Change SHA256**: `sha256:a2a67035038f1fd1cdd823e41ee3a7d76dfac58bf0f6f79218ed4947cbda65b5`
 
 ## Human Review Card
@@ -52,3 +52,19 @@ This separate binding covers the complete #438 diff against corrected #437 head9
 ## Frozen owner acceptance candidate
 
 Sourcec0751d9b; full-policy subject `sha256:71448b1afb25e68746fb39380d028b5d92f1d8df95d7e1374bd1dc668068bca6`. Canonical30/30 passed in `.ai/harness/runs/run-20260922T160913-87690-20260922-1425-akn04a-stack-refresh.json`, including protocol/projection/decoder/statistics and installed-package checks. Upstream #437 source111a8a27 has passing complete CI run35702537370. This new #438 candidate is local and has no current hosted CI yet. The earlier11-path advisory review cannot authorize the full-policy subject; owner acceptance is required before finishing and publishing the integration package.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:71448b1afb25e68746fb39380d028b5d92f1d8df95d7e1374bd1dc668068bca6
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 0d4371c3f95e63851f4e083718f3337bf9646345
+> **Verification Evidence SHA256**: sha256:cbb897c8139ef7eceabdf3553e1ede5d5d2ecfc410bd78241bed8bd1c6d4f6d3
+> **Issued At**: 2026-09-22T08:15:14.336Z
+
+- Summary: Owner explicitly approved both frozen candidates and continued archive, PR updates and downstream integration: this subject sha256:71448b1afb25e68746fb39380d028b5d92f1d8df95d7e1374bd1dc668068bca6. Accept the verified correction/integration after invalid independent review evidence; no CI waiver, main merge, global install, Host admission, Campaign or real canary.
+- Findings: none
+
