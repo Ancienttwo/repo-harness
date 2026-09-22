@@ -2,7 +2,7 @@ import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-la
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
@@ -120,6 +120,21 @@ test('production HTTP worker reads historical records in a read-only repository'
     const response=await fetch(server.url+path); expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({entries:[{provenance:'recorded_claim_actor'}]});
     const missing=await fetch(server.url+path.replace(id(2),id(99))); expect(missing.status).toBe(404); expect(await missing.json()).toEqual({code:'history_unavailable'});
+    expect(tree(f.root)).toBe(before);
+  } finally { await server.close(); }
+});
+
+test.each(['legacy', 'migration'] as const)('production HTTP GET refuses %s layout without changing stored bytes', async state => {
+  const f = fixture();
+  const root = join(f.root, '.git/repo-harness/task-inbox');
+  if (state === 'legacy') renameSync(join(root, 'v2'), join(root, 'v1'));
+  else put(join(root, 'migration-v1-v2.json'), '{}\n');
+  const before = tree(f.root), server = await startOperatorServer({ port: 0, env: f.input.env });
+  try {
+    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/activity?message_id=${id(2)}`;
+    const response = await fetch(server.url + path);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: 'unavailable' });
     expect(tree(f.root)).toBe(before);
   } finally { await server.close(); }
 });

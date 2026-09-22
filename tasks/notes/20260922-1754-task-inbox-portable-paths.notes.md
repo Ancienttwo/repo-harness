@@ -12,6 +12,7 @@
 - The journal is an immutable source/target manifest, published from a durable prepared file. Filesystem state plus exact inventory determines recovery; no phase counter can falsely admit a partial cutover. A separate immutable rollback journal preserves reversal intent across crashes.
 - Source approval includes the resolved common-directory path and device/inode identity. A matching history copied into another repository cannot reuse approval.
 - Existing canonical record validators remain the only record authority. Runtime reads v2 only; legacy parsing is confined to the explicit migration.
+- Contract verification uses the approved source base12518117 through REPO_HARNESS_DIFF_BASE. The policy-owned review subject remains the complete candidate against its configured review base; do not override the external review base to a different subject.
 
 ## Deviations From Plan Or Spec
 
