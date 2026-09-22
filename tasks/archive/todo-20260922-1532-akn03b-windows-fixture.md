@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-22 15:32
+> **Related Plan**: plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260922-1532
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-22 14:52
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 15:32
+> **Related Plan**: plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1532
+> **Archive Projection V1**: `plans/plan-20260922-1417-akn03b-windows-fixture.md` => `plans/archive/plan-20260922-1417-akn03b-windows-fixture.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md` => `tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md` => `tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md` => `tasks/archive/review-20260922-1532-akn03b-windows-fixture.md`
+
 # Task Contract: AKN-03b acceptance fixes
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-1417-akn03b-windows-fixture.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 14:17
-> **Review File**: `tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md`
-> **Notes File**: `tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1532-akn03b-windows-fixture.md`
+> **Notes File**: `tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ The Windows job still fails before the HTTP assertion, or the canonical readers 
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-1417-akn03b-windows-fixture.md`
+- Source plan: `plans/archive/plan-20260922-1417-akn03b-windows-fixture.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md`
-- Notes file: `tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md`
+- Review file: `tasks/archive/review-20260922-1532-akn03b-windows-fixture.md`
+- Notes file: `tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -80,10 +90,10 @@ allowed_paths:
   - tests/cli/mcp-http.test.ts
   - docs/researches/20260922-task-reply-protocol.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-1417-akn03b-windows-fixture.md
-  - tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md
-  - tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md
-  - tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
+  - plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+  - tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/review-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md
   - tasks/todos.md
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
   - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 15:32
+> **Related Plan**: plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260922-1532
+> **Archive Projection V1**: `plans/plan-20260922-1417-akn03b-windows-fixture.md` => `plans/archive/plan-20260922-1417-akn03b-windows-fixture.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md` => `tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md` => `tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md` => `tasks/archive/review-20260922-1532-akn03b-windows-fixture.md`
+
 # Task Review: akn03b-windows-fixture
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-1417-akn03b-windows-fixture.md
-> **Contract**: tasks/contracts/20260922-1417-akn03b-windows-fixture.contract.md
-> **Notes File**: tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
+> **Plan**: plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+> **Contract**: tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md
+> **Notes File**: tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 14:17
 > **Recommendation**: pass
