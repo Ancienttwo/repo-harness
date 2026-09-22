@@ -21,7 +21,7 @@ Implement AKN-04d1 scoped Fleet GET with one shared exit-held collector, bounded
 
 ## Scope
 
-- In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests; integrate frozen context89837138 and accepted activity/upstream source and workflow evidence, then regenerate deterministic projection. Context acceptance is recorded at archived head e7eb8073 and integrated before this package closeout.
+- In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests; integrate frozen context89837138 and accepted activity/upstream source and workflow evidence, then regenerate deterministic projection. Context acceptance is recorded at archived head e7eb8073. Owner-accepted Inbox migration #443 at1c99e618 and Windows persistence #444 atdaa05cbf are integrated with their exact inherited paths and archived evidence.
 - Out of scope: automation summary (AKN-04d2), refresh UI, native execution, existing write guards, installation and main merge.
 - Invariant: only original registry and Fleet readers define repository facts; no process slot release before cleanup settlement. Repair the in-scope P1 task-reader cancellation defect using supervised process-tree termination for synchronous Git reads, preserving activity/context DTOs and their separate admission pool.
 
@@ -56,7 +56,7 @@ An unrelated repository/provider is read; concurrent scopes exceed the single co
 ## Change Assessment
 
 ```json
-{"protocol": 1, "oracles": [{"id": "server", "kind": "deterministic_test", "paths": ["*"]}]}
+{"protocol":1,"oracles":[{"id":"server","kind":"deterministic_test","paths":["*"]},{"id":"migration-integration","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -166,6 +166,33 @@ allowed_paths:
   - tests/effects/operator-task-context.test.ts
   - docs/researches/20260922-operator-task-context.md
   - .github/workflows/ci.yml
+  - deploy/task-inbox-layout-v2.md
+  - docs/researches/20260922-task-inbox-portable-paths.md
+  - docs/researches/20260923-windows-task-persistence.md
+  - plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+  - plans/archive/plan-20260923-0031-windows-task-persistence.md
+  - src/cli/commands/fleet.ts
+  - src/core/fleet/task-inbox-layout.ts
+  - src/effects/engineers/binding-store.ts
+  - src/effects/engineers/claim-actor-store.ts
+  - src/effects/engineers/principal-store.ts
+  - src/effects/evidence/atomic-append.ts
+  - src/effects/fleet/task-inbox-layout-migration.ts
+  - src/effects/fleet/task-inbox-layout.ts
+  - src/effects/state/coordination-lease-store.ts
+  - tasks/archive/contract-20260923-0235-windows-task-persistence.md
+  - tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/notes-20260923-0235-windows-task-persistence.md
+  - tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/review-20260923-0235-windows-task-persistence.md
+  - tasks/archive/review-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/todo-20260923-0235-windows-task-persistence.md
+  - tasks/archive/todo-20260923-0253-task-inbox-portable-paths.md
+  - tests/coordination-lease-store.test.ts
+  - tests/effects/task-inbox-layout-migration.test.ts
+  - tests/effects/task-inbox.test.ts
+  - tests/unit/me0b-principal-store.test.ts
+  - tests/unit/task-message-v1.test.ts
 ```
 
 ## Evidence Requirements
@@ -288,6 +315,19 @@ exit_criteria:
       "cost": "normal",
       "evidence_policy": "current_exact",
       "necessity": "Shared server shutdown and task-reader lifecycle must preserve both existing real HTTP worker boundaries after scoped Fleet integration",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "migration-integration",
+      "kind": "package_test",
+      "path": "tests/effects/task-inbox-layout-migration.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Integrated accepted migration preserves real history and rollback at the reader boundary",
       "inputs": {
         "env": []
       }

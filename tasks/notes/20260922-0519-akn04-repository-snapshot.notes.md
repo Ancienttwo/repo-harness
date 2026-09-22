@@ -41,3 +41,11 @@ Focused verification:68 pass,3 Windows-only skips,465 assertions across context/
 Sibling boundary check: both activity/context thread entrypoints are removed and no source or package entry still references them. Existing TaskDiff and collaboration workers are outside this reader correction; their synchronous cancellation behavior is not accepted by these tests. No code changes were made to those unrelated paths.
 
 CI context: #441 rerun35706735105 attempt2 passed architecture-queue but failed two unchanged task-reply scan/byte assertions because the actual deadline budget exhausted first under hosted load. Original and retry logs are retained in /tmp/akn04c-ci-{failed,retry-failed}.log. No additional rerun or architecture-queue edit is authorized or performed.
+
+## Accepted migration and Windows dependency integration
+
+P1: #443 is owner-accepted and archived at `1c99e618`, incorporating accepted #444 at `daa05cbf`. Both typed receipts bind content subject `c21805db55803c9e4430b04ed63d788c55fd2d0bfe5684af7d6c2927c57c5770`. P2: repository-scoped reads retain their original registry, admission, process cleanup and no-write authorities while Inbox paths and the required persistence chain come from the accepted dependencies. P3: fast-forward the exact accepted source and archives, enumerate inherited paths in this contract, preserve source base `9227c93c`, and add the existing migration effects suite as the integrated runtime-readback oracle. No new source behavior is introduced. At10x reads the original admission and deadline bounds remain the bottleneck.
+
+Full CI35765127664 on `2948a041` covers the identical source, tests and CI configuration, including the actual Windows matrix (210 pass,6 existing skips,0 fail). Canonical verification is refreshed for this contract; no full hosted suite is repeated for workflow-only integration. The original P1 review remains consumed and its correction retains real blocked-Git proof. The user's updated whole-program authorization permits autonomous staged execution and acceptance; record the policy-allowed delegated owner disposition truthfully after current verification, never an invented external review.
+
+> **Substantive Change SHA256**: `sha256:a36e8c77cbda9ee354a0c509ce73e76dd0b430d2f40f2f6a4f6d0029c3651e39`
