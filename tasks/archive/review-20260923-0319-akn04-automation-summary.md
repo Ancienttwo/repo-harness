@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 03:19
+> **Related Plan**: plans/archive/plan-20260922-0534-akn04-automation-summary.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260923-0319
+> **Archive Projection V1**: `plans/plan-20260922-0534-akn04-automation-summary.md` => `plans/archive/plan-20260922-0534-akn04-automation-summary.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0534-akn04-automation-summary.notes.md` => `tasks/archive/notes-20260923-0319-akn04-automation-summary.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0534-akn04-automation-summary.contract.md` => `tasks/archive/contract-20260923-0319-akn04-automation-summary.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0534-akn04-automation-summary.review.md` => `tasks/archive/review-20260923-0319-akn04-automation-summary.md`
+
 # Task Review: akn04-automation-summary
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-0534-akn04-automation-summary.md
-> **Contract**: tasks/contracts/20260922-0534-akn04-automation-summary.contract.md
-> **Notes File**: tasks/notes/20260922-0534-akn04-automation-summary.notes.md
+> **Plan**: plans/archive/plan-20260922-0534-akn04-automation-summary.md
+> **Contract**: tasks/archive/contract-20260923-0319-akn04-automation-summary.md
+> **Notes File**: tasks/archive/notes-20260923-0319-akn04-automation-summary.md
 > **Substantive Change SHA256**: `sha256:3da78498fed3bb1bfc7b9317cf15680b79992984e3fe0ffa17d5fb4dcd6c46a7`
 
 ## Development Evidence

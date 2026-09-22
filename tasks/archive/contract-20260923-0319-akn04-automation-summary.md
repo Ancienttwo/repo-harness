@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-23 03:19
+> **Related Plan**: plans/archive/plan-20260922-0534-akn04-automation-summary.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260923-0319
+> **Archive Projection V1**: `plans/plan-20260922-0534-akn04-automation-summary.md` => `plans/archive/plan-20260922-0534-akn04-automation-summary.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0534-akn04-automation-summary.notes.md` => `tasks/archive/notes-20260923-0319-akn04-automation-summary.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0534-akn04-automation-summary.contract.md` => `tasks/archive/contract-20260923-0319-akn04-automation-summary.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0534-akn04-automation-summary.review.md` => `tasks/archive/review-20260923-0319-akn04-automation-summary.md`
+
 # Task Contract: akn04-automation-summary
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0534-akn04-automation-summary.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0534-akn04-automation-summary.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 04:50
-> **Review File**: `tasks/reviews/20260922-0534-akn04-automation-summary.review.md`
-> **Notes File**: `tasks/notes/20260922-0534-akn04-automation-summary.notes.md`
+> **Review File**: `tasks/archive/review-20260923-0319-akn04-automation-summary.md`
+> **Notes File**: `tasks/archive/notes-20260923-0319-akn04-automation-summary.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -41,10 +51,10 @@ Not applicable: new automation observation boundary. Existing source validators 
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0534-akn04-automation-summary.md`
+- Source plan: `plans/archive/plan-20260922-0534-akn04-automation-summary.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0534-akn04-automation-summary.review.md`
-- Notes file: `tasks/notes/20260922-0534-akn04-automation-summary.notes.md`
+- Review file: `tasks/archive/review-20260923-0319-akn04-automation-summary.md`
+- Notes file: `tasks/archive/notes-20260923-0319-akn04-automation-summary.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -82,10 +92,10 @@ allowed_paths:
   - tests/unit/operator-web-types.test.ts
   - docs/researches/20260922-operator-automation-summary.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0534-akn04-automation-summary.md
-  - tasks/contracts/20260922-0534-akn04-automation-summary.contract.md
-  - tasks/reviews/20260922-0534-akn04-automation-summary.review.md
-  - tasks/notes/20260922-0534-akn04-automation-summary.notes.md
+  - plans/archive/plan-20260922-0534-akn04-automation-summary.md
+  - tasks/archive/contract-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/review-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/notes-20260923-0319-akn04-automation-summary.md
   - tasks/todos.md
   - docs/researches/20260922-candidate-runtime-fixture-authority.md
   - docs/researches/20260922-operator-task-activity.md
