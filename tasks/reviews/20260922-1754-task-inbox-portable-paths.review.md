@@ -14,7 +14,7 @@
 
 ## Human Review Card
 
-- Verdict: independent review found one P2; corrected source requires fresh canonical verification, native CI and exact-subject owner acceptance.
+- Verdict: independent review found one P2; corrected source passed canonical verification; native Windows CI is blocked by existing Binding/Lease directory fsync errors; acceptance remains pending.
 - Change type: migration
 - Intended files changed: Task Inbox path owner, storage-only token, offline migration, fleet inbox CLI, owning fixtures, native matrix, research and runbook.
 - Actual files changed: within the contract allowlist; no Task/Lease/Binding/actor protocol or real data mutation.
@@ -31,7 +31,7 @@
 
 ## Verification Evidence
 
-- Canonical verification: pending source freeze and verify-sprint --prepare-acceptance.
+- Canonical verification: `verify-sprint --prepare-acceptance` passed 27/27 at source `121b10e11c8240bbbcd84209f9f36baf90e91109`; run `run-20260922T234043-62075-20260922-1754-task-inbox-portable-paths.json`. Publication head `7f4397d89d8413aab7d373c429b1f4bdfb64b53c` preserves subject `sha256:ea02c8047350304f17f3f10b85aee60c3c9b3cd8b65896ea1076052ae3a44196`, verified by the canonical subject builder.
 - Focused migration effects: 38 passed, including transaction interruption, actual process exit, injected file-operation failures, exact-byte retention, external-link refusal and rollback after new writes.
 - Historical reply migration: three fixture cases passed for intent-only, event-uncommitted and complete; no active sprint or live historical actor required.
 - Native local lifecycle: deep-path delivery/ACK/reply and separate Alice/alice receipts passed. Windows/macOS/Linux hosted coverage is required on the published head.
@@ -96,3 +96,13 @@ Reviewed source: e6dd175c322d887b6488ef9815676ab55f13394b. Reviewed subject: `sh
 ```
 
 Both requested regression cases failed before correction. Current migration coverage verifies fresh approval after rollback with unchanged or newly appended v1 history, and resume/rollback after nine reapply boundaries, preserving both old and new receipts. A prepared-journal rollback additionally failed before its correction. Reviewer-checkout missing React is not current canonical evidence; the corrected candidate will have its own declared verification. No second semantic review is authorized by this package's review budget.
+
+## Publication evidence
+
+Draft PR: https://github.com/Ancienttwo/repo-harness/pull/443, based on #442. Published head: `7f4397d89d8413aab7d373c429b1f4bdfb64b53c`. Full manual CI: https://github.com/Ancienttwo/repo-harness/actions/runs/35749499343 (FAILURE: Windows failed; full Test, Linux, macOS and Governance passed). Draft PR event 35749461228 passed Governance but deliberately deferred tests and failed Required / CI; it is not test evidence. The version/tag warnings from the release-gate helper concern the pre-existing package release baseline; this work publishes a Draft source PR, no package release.
+
+## Windows blocker outside the contract
+
+Windows job 106819723526 failed 31 tests: one migration unknown-Lease case reached `coordination-lease-store.ts:168` through `createLeaseDirectory`, and 30 Task reply cases reached `binding-store.ts:163` through `withEngineerLock` during fixture creation. Both call directory `fsyncSync` through a read-only handle and throw EPERM. Neither source file differs from approved baseline12518117, and neither is in this contract allowlist. Real deep-path delivery/ACK/reply is therefore unproven on Windows. Existing platform passing tests do not waive this blocker. Original job log is retained under `.ai/harness/runs/task-inbox-portable-paths/windows-ci-35749499343.log`.
+
+The user was asked to authorize a separate bounded Windows persistence work-package, following the second out-of-scope discovery stop rule. No production source fix, test skip, main merge, installation or real migration was performed in response to this failure.

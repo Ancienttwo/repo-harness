@@ -166,7 +166,7 @@ Required assertions: fresh v2 delivery/ACK/reply; semantic key and byte/digest i
 - [x] Implement every v2 read/write/path-validation consumer and fail-closed layout fence.
 - [x] Implement operator dry-run, digest-bound offline migration, crash recovery, receipt and guarded rollback in the same slice; add one migration effects suite.
 - [x] Update owning fixtures and native matrix; repair the observed Context fixture auto-maintenance race without relaxing the snapshot oracle.
-- [ ] Run targeted verification, provider architecture projection and required integrity checks; freeze source and execute canonical verification once.
+- [x] Run targeted verification, provider architecture projection and required integrity checks; freeze source and execute canonical verification once.
 - [ ] Obtain the new package's one independent semantic review and exact-head CI. Preserve failures and use owner acceptance only when required by its actual review outcome.
 - [ ] Record the accepted source and exact integration handoff for #442, automation-summary and #439. Execute those reader acceptance boundaries next under the continuing full-refactor goal; #442 requires exact owner acceptance because its semantic review budget is already consumed.
 
