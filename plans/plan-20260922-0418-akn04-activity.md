@@ -125,3 +125,7 @@ Rollback: revert GET/transport/readers; existing event/receipt/intent/commit/act
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
+
+## Upstream acceptance integration
+
+Pin the refreshed #438 branch after its integration acceptance. Preserve the historical GET and browser transport scope; propagate accepted #437 publication fences and its single core 64 KiB total-record contract into the shared historical reader. Merge upstream workflow archives, regenerate the architecture manifest and rebind verification to the combined source before this package's single independent review. Source inspection shows the historical ClaimActor reader still references the retired local reply-size constant; update that consumer to the canonical exported limit in this slice. No new storage or authorization authority is introduced.
