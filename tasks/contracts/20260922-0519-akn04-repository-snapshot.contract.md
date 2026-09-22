@@ -23,7 +23,7 @@ Implement AKN-04d1 scoped Fleet GET with one shared exit-held collector, bounded
 
 - In scope: exact repository collector selection; scope IPC; shared Fleet admission; repository GET and transport; owning tests; integrate frozen context89837138 and accepted activity/upstream source and workflow evidence, then regenerate deterministic projection. Context acceptance is recorded at archived head e7eb8073 and integrated before this package closeout.
 - Out of scope: automation summary (AKN-04d2), refresh UI, native execution, existing write guards, installation and main merge.
-- Invariant: only original registry and Fleet readers define repository facts; no process slot release before cleanup settlement.
+- Invariant: only original registry and Fleet readers define repository facts; no process slot release before cleanup settlement. Repair the in-scope P1 task-reader cancellation defect using supervised process-tree termination for synchronous Git reads, preserving activity/context DTOs and their separate admission pool.
 
 ## Stop Conditions
 
@@ -160,6 +160,12 @@ allowed_paths:
   - tasks/archive/notes-20260922-1646-akn04-context.md
   - tasks/archive/review-20260922-1646-akn04-context.md
   - tasks/archive/todo-20260922-1646-akn04-context.md
+  - src/effects/operator/task-read-process.ts
+  - src/effects/operator/task-context-worker.ts
+  - src/effects/operator/task-activity-worker.ts
+  - tests/effects/operator-task-context.test.ts
+  - docs/researches/20260922-operator-task-context.md
+  - .github/workflows/ci.yml
 ```
 
 ## Evidence Requirements
@@ -208,8 +214,11 @@ delegation:
 exit_criteria:
   files_exist:
     - src/core/operator/repository-snapshot.ts
+    - src/effects/operator/task-read-process.ts
     - docs/researches/20260922-operator-repository-snapshot.md
-  artifacts_exist: []
+  artifacts_exist:
+    - .ai/harness/runs/akn04-task-reader-cancellation/before.log
+    - .ai/harness/runs/akn04-task-reader-cancellation/after.log
 ```
 
 ## Verification Plan

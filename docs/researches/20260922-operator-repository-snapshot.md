@@ -23,3 +23,7 @@ AKN-04d2 adds automation summary from original records. Current source map: cont
 Controller executing is not native Agent-running proof. Current policy mode is a policy observation, not execution admission. A typed Campaign stop reason and a native turn reference are absent from existing public observations; those facts must remain explicitly unavailable until backed by an original record. This GET does not claim to complete the roadmap automation summary, OB-04 write affordances, runtime admission, deployment or stage acceptance.
 
 Rollback removes the scoped route/envelope and shared collector admission without touching durable authority. Local CodeGraph proof, canonical verification and one semantic acceptance remain stage gates before PR closeout. No main merge or runtime installation is included.
+
+## Shared process supervision
+
+Fleet and the provider-free activity/context readers reuse one private server process-tree supervisor. Fleet queue and task-reader admission remain separate. Each transport provides its own process entrypoint, start payload and typed response decoder; both retain POSIX group and Windows Job ownership through cleanup. This closes the task-reader synchronous Git cancellation gap without changing repository snapshot protocol or introducing a fallback worker path.
