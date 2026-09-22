@@ -622,8 +622,9 @@ describe('operator serve command and HTTP boundary', () => {
       read_collaboration_snapshot: async ({ signal }) => {
         collaborationCalls += 1;
         if (healthy) return unavailableCollaboration('repo-write');
-        signal.addEventListener('abort', () => { abortObserved = true; }, { once: true });
-        return new Promise<never>(() => {});
+        return new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => { abortObserved = true; reject(new Error('cancelled')); }, { once: true });
+        });
       },
     });
     try {
@@ -736,7 +737,7 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('isolates the default synchronous collaboration reader so its deadline remains enforceable', async () => {
+  test('isolates the default Collaboration reader and holds capacity until the blocked Worker exits', async () => {
     if (process.platform === 'win32') return;
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-worker-'));
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-repo-')));
@@ -750,11 +751,12 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
+      max_concurrency: 1,
       timeout_ms: 1_000,
       env: registry.env,
       collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
     });
-    const fifoWriter = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', policyPath], {
+    const fifoWriter = spawn('bash', ['-c', 'exec 3>"$1"; exec sleep 10', 'bash', policyPath], {
       stdio: 'ignore',
     });
     try {
@@ -764,10 +766,19 @@ describe('operator serve command and HTTP boundary', () => {
       expect(Date.now() - startedAt).toBeLessThan(2_500);
       expect(timedOut.status).toBe(503);
       expect(await timedOut.json()).toMatchObject({ error: { code: 'collaboration_snapshot_timeout' } });
+      const busy = await fetch(url);
+      expect(busy.status).toBe(503);
+      expect(await busy.json()).toMatchObject({ error: { code: 'collaboration_snapshot_busy' } });
+      let queuedFinished = false;
+      const cursor = 'a'.repeat(64);
+      const queued = fetch(url + '?decision_after=' + cursor).then(response => { queuedFinished = true; return response; });
+      await Bun.sleep(30);
+      expect(queuedFinished).toBe(false);
 
-      fifoWriter.kill('SIGTERM');
       rmSync(policyPath);
       writeFileSync(policyPath, `${JSON.stringify({ collaboration: { mode: 'off' } })}\n`);
+      fifoWriter.kill('SIGTERM');
+      expect((await queued).status).toBe(200);
       const retry = await fetch(url);
       expect(retry.status).toBe(200);
       expect(await retry.json()).toMatchObject({
@@ -1224,6 +1235,100 @@ describe('operator serve command and HTTP boundary', () => {
   });
 });
 
+describe('reader retirement', () => {
+  const diffPath = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  const diff = {
+    protocol: 1 as const, kind: 'operator_task_diff' as const, repository_id: 'repo-a', task_id: TASK_ID,
+    task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
+    target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
+    observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
+  };
+  for (const kind of ['collaboration', 'diff'] as const) {
+    const path = kind === 'diff' ? diffPath : '/api/v1/collaboration/repo-a/snapshot';
+    for (const ending of ['timeout', 'disconnect'] as const) {
+      test(`${kind} ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
+        let calls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
+        const hold = (signal: AbortSignal) => {
+          calls++; if (calls > 1) return Promise.resolve();
+          firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
+        };
+        const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
+          read_collaboration_snapshot: async input => { await hold(input.signal); return unavailableCollaboration(input.repository_id); },
+          read_task_diff: async input => { await hold(input.signal); return diff; },
+        });
+        const abort = new AbortController();
+        const first = fetch(server.url + path, { signal: abort.signal }).catch(() => null);
+        try {
+          await waitFor(() => calls === 1, 'reader not started');
+          if (ending === 'disconnect') abort.abort();
+          const response = await first;
+          if (ending === 'timeout') expect(response?.status).toBe(503);
+          await waitFor(() => firstSignal?.aborted === true, 'reader cancellation not observed');
+          const busy = await fetch(server.url + path);
+          expect(busy.status).toBe(503);
+          expect(await busy.json()).toMatchObject(kind === 'diff' ? { code: 'busy' } : { error: { code: 'collaboration_snapshot_busy' } });
+          expect(calls).toBe(1);
+          if (kind === 'diff') {
+            for (const route of ['activity', 'context?task_revision=' + TASK_REVISION]) {
+              const blocked = await fetch(`${server.url}/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`);
+              expect(await blocked.json()).toEqual({ code: 'busy' });
+            }
+          }
+          retire(); await Bun.sleep(0);
+          const fresh = await fetch(server.url + path);
+          expect(fresh.status).toBe(200);
+          expect(await fresh.json()).toEqual(kind === 'diff' ? diff : unavailableCollaboration('repo-a'));
+          expect(calls).toBe(2);
+        } finally { retire?.(); abort.abort(); await first; await server.close(); }
+      });
+    }
+
+    test(`${kind} shutdown awaits retirement for every concurrent close caller`, async () => {
+      let signal: AbortSignal | undefined, retire!: () => void;
+      const hold = (value: AbortSignal) => { signal = value; return new Promise<void>(resolve => { retire = resolve; }); };
+      const server = await startOperatorServer({ port: 0,
+        read_collaboration_snapshot: async input => { await hold(input.signal); return unavailableCollaboration(input.repository_id); },
+        read_task_diff: async input => { await hold(input.signal); return diff; },
+      });
+      const request = fetch(server.url + path).catch(() => null);
+      try {
+        await waitFor(() => signal !== undefined, 'reader not started');
+        const closed = [false, false];
+        const first = server.close().then(() => { closed[0] = true; });
+        const second = server.close().then(() => { closed[1] = true; });
+        await waitFor(() => signal?.aborted === true, 'shutdown did not abort');
+        await Bun.sleep(30);
+        expect(closed).toEqual([false, false]);
+        retire(); await Promise.all([first, second]);
+        expect(closed).toEqual([true, true]);
+        expect((await request)?.status).not.toBe(200);
+      } finally { retire?.(); await server.close(); await request; }
+    });
+  }
+
+  test('closing cancels queued Collaboration observations before waiting for the active reader', async () => {
+    const starts: string[] = []; let retire!: () => void;
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1,
+      read_collaboration_snapshot: async input => {
+        starts.push(input.repository_id);
+        if (starts.length === 1) await new Promise<void>(resolve => { retire = resolve; });
+        return unavailableCollaboration(input.repository_id);
+      },
+    });
+    const first = fetch(server.url + '/api/v1/collaboration/repo-a/snapshot').catch(() => null);
+    let queued: Promise<Response | null> | undefined;
+    try {
+      await waitFor(() => starts.length === 1, 'reader not started');
+      queued = fetch(server.url + '/api/v1/collaboration/repo-b/snapshot').catch(() => null);
+      await Bun.sleep(30);
+      const closing = server.close(); await Bun.sleep(30);
+      expect(starts).toEqual(['repo-a']);
+      retire(); await closing; await Promise.all([first, queued]);
+      expect(starts).toEqual(['repo-a']);
+    } finally { retire?.(); await server.close(); await Promise.all([first, queued]); }
+  });
+});
+
 describe('read-only task diff route', () => {
   const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
   const result = {
@@ -1249,7 +1354,7 @@ describe('read-only task diff route', () => {
     let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
     let signal: AbortSignal | undefined;
     const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
-      read_task_diff: input => { signal = input.signal; entered(); return new Promise(() => {}); },
+      read_task_diff: input => { signal = input.signal; entered(); return new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); },
     });
     try {
       const pending = fetch(server.url+path); await started;
@@ -1271,7 +1376,7 @@ test('task diff disconnect and shutdown cancel active reads', async () => {
   let started = new Promise<void>(resolve => { entered = resolve; });
   let cancelled = new Promise<void>(resolve => { stopped = resolve; });
   const server = await startOperatorServer({ port: 0, read_task_diff: ({ signal }) => {
-    signal.addEventListener('abort', () => stopped(), { once: true }); entered(); return new Promise(() => {});
+    entered(); return new Promise((_resolve, reject) => signal.addEventListener('abort', () => { stopped(); reject(new Error('cancelled')); }, { once: true }));
   } });
   try {
     const abort = new AbortController();

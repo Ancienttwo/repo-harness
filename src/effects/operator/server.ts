@@ -4,8 +4,9 @@ import { decodeOperatorAutomationSummary, type OperatorAutomationSummary } from 
 import { randomUUID } from 'node:crypto';
 import { projectOperatorRepositorySnapshot } from '../../core/operator/repository-snapshot';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
+import { Worker as ObservationWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
-import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff, type TaskDiffFailure } from '../../core/operator/task-diff';
+import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -509,8 +510,19 @@ function readDefaultCollaborationSnapshot(
   input: OperatorCollaborationSnapshotReaderInput,
 ): Promise<OperatorCollaborationSnapshotV4> {
   return new Promise((resolveRead, rejectRead) => {
-    const worker = new Worker(new URL('./collaboration-worker.ts', import.meta.url));
+    const worker = new ObservationWorker(new URL('./collaboration-worker.ts', import.meta.url), {
+      workerData: {
+        env: collaborationWorkerEnvironment(input.env),
+        repository_id: input.repository_id,
+        decision_after: input.decision_after ?? null,
+      },
+      env: { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
+    });
     let settled = false;
+    let result:
+      | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
+      | { readonly ok: false; readonly error: unknown }
+      | undefined;
     const finish = (
       outcome:
         | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV4 }
@@ -518,15 +530,21 @@ function readDefaultCollaborationSnapshot(
     ): void => {
       if (settled) return;
       settled = true;
+      result = outcome;
       input.signal.removeEventListener('abort', onAbort);
-      worker.terminate();
-      if (outcome.ok) resolveRead(outcome.snapshot);
-      else rejectRead(outcome.error);
+      // The outer subscription can finish at its deadline, but this promise
+      // continues owning capacity until the worker's exit event.
+      void worker.terminate().catch(() => {});
     };
     const onAbort = (): void => finish({ ok: false, error: OPERATOR_COLLABORATION_REQUEST_ABORTED });
     input.signal.addEventListener('abort', onAbort, { once: true });
-    worker.onmessage = (event: MessageEvent<unknown>) => {
-      const response = collaborationWorkerResponse(event.data);
+    worker.once('exit', () => {
+      input.signal.removeEventListener('abort', onAbort);
+      if (result?.ok) resolveRead(result.snapshot);
+      else rejectRead(result?.error ?? new OperatorCollaborationError('collaboration_snapshot_unavailable', 'collaboration worker exited without a response'));
+    });
+    worker.once('message', (value: unknown) => {
+      const response = collaborationWorkerResponse(value);
       if (response === null) {
         finish({
           ok: false,
@@ -549,8 +567,8 @@ function readDefaultCollaborationSnapshot(
           error: new OperatorCollaborationError(response.code, `collaboration worker failed with ${response.code}`),
         });
       }
-    };
-    worker.onerror = (error) => {
+    });
+    worker.once('error', (error) => {
       finish({
         ok: false,
         error: new OperatorCollaborationError(
@@ -559,16 +577,11 @@ function readDefaultCollaborationSnapshot(
           error,
         ),
       });
-    };
+    });
     if (input.signal.aborted) {
       onAbort();
       return;
     }
-    worker.postMessage({
-      env: collaborationWorkerEnvironment(input.env),
-      repository_id: input.repository_id,
-      decision_after: input.decision_after ?? null,
-    });
   });
 }
 
@@ -1446,9 +1459,9 @@ export async function startOperatorServer(
   const collaborationObservations = new Map<string, CollaborationObservation>();
   const collaborationQueue: CollaborationObservation[] = [];
   const collaborationQueueCapacity = maxConcurrency * 2;
-  const activeDiffCancellers = new Set<() => void>();
+  const collaborationCompletions = new Set<Promise<void>>();
   const activeTaskReadCancellers = new Set<() => void>();
-  const activeTaskReadWorkers = new Set<Promise<void>>();
+  const activeTaskReadCompletions = new Set<Promise<void>>();
   let activeCollaborationWorkers = 0;
 
   interface CollaborationObservation {
@@ -1466,6 +1479,7 @@ export async function startOperatorServer(
   }
 
   const drainCollaborationQueue = (): void => {
+    if (closed) return;
     while (activeCollaborationWorkers < maxConcurrency && collaborationQueue.length > 0) {
       const next = collaborationQueue.shift()!;
       if (next.settled || next.subscribers === 0) continue;
@@ -1482,17 +1496,13 @@ export async function startOperatorServer(
     if (observation.settled) return;
     observation.settled = true;
     if (observation.timer !== null) clearTimeout(observation.timer);
-    if (observation.started) activeCollaborationWorkers -= 1;
-    else {
+    if (!observation.started) {
       const queuedAt = collaborationQueue.indexOf(observation);
       if (queuedAt >= 0) collaborationQueue.splice(queuedAt, 1);
-    }
-    if (collaborationObservations.get(observation.key) === observation) {
-      collaborationObservations.delete(observation.key);
+      if (collaborationObservations.get(observation.key) === observation) collaborationObservations.delete(observation.key);
     }
     if (outcome.ok) observation.resolve(outcome.snapshot);
     else observation.reject(outcome.error);
-    drainCollaborationQueue();
   };
 
   const cancelCollaborationObservation = (observation: CollaborationObservation, error: unknown): void => {
@@ -1502,24 +1512,35 @@ export async function startOperatorServer(
   };
 
   const startCollaborationObservation = (observation: CollaborationObservation): void => {
-    if (observation.settled || observation.subscribers === 0) return;
+    if (closed || observation.settled || observation.subscribers === 0) return;
     observation.started = true;
     activeCollaborationWorkers += 1;
-    Promise.resolve().then(() => readCollaboration({
+    const completion = Promise.resolve().then(() => {
+      if (observation.controller.signal.aborted) throw OPERATOR_COLLABORATION_REQUEST_ABORTED;
+      return readCollaboration({
       env: options.env,
       repository_id: observation.repositoryId,
       decision_after: observation.decisionAfter,
       signal: observation.controller.signal,
-    })).then(
+      });
+    }).then(
       (snapshot) => settleCollaborationObservation(observation, { ok: true, snapshot }),
       (error) => settleCollaborationObservation(observation, { ok: false, error }),
-    );
+    ).finally(() => {
+      activeCollaborationWorkers -= 1;
+      if (collaborationObservations.get(observation.key) === observation) collaborationObservations.delete(observation.key);
+      collaborationCompletions.delete(completion);
+      drainCollaborationQueue();
+    });
+    collaborationCompletions.add(completion);
   };
 
   const acquireCollaborationObservation = (repositoryId: string, decisionAfter: string | null): CollaborationObservation => {
+    if (closed) throw OPERATOR_COLLABORATION_REQUEST_ABORTED;
     const key = JSON.stringify([repositoryId, decisionAfter]);
     const existing = collaborationObservations.get(key);
     if (existing !== undefined) {
+      if (existing.settled) throw new OperatorCollaborationBusyError();
       existing.subscribers += 1;
       return existing;
     }
@@ -1872,7 +1893,10 @@ export async function startOperatorServer(
       if (reason === 'client_disconnect') clientDisconnected = true;
       else serverClosing = true;
       release();
-      if (reason === 'server_shutdown' && !response.destroyed) response.destroy();
+      if (reason === 'server_shutdown' && !response.destroyed) {
+        const failure = publicCollaborationError(OPERATOR_COLLABORATION_REQUEST_ABORTED);
+        sendJson(response, failure.status, failure.body, headOnly);
+      }
       rejectCancellation?.(OPERATOR_COLLABORATION_REQUEST_ABORTED);
     };
     const onClientDisconnect = () => cancel('client_disconnect');
@@ -1906,8 +1930,9 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity',
+    failures: readonly string[], kind: 'context' | 'activity' | 'diff',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
+    failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
   ): void => {
     if (closed) { sendJson(response,503,{code:'unavailable'},headOnly); return; }
     if (activeTaskReadCancellers.size >= maxConcurrency) { sendJson(response,503,{code:'busy'},headOnly); return; }
@@ -1923,7 +1948,7 @@ export async function startOperatorServer(
       controller.abort();
       response.removeListener('close',cancel);
       if (response.destroyed) return;
-      if (failure) sendJson(response, failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,{code:failure},headOnly);
+      if (failure) sendJson(response, failureStatus(failure),{code:failure},headOnly);
       else sendJson(response,200,snapshot,headOnly);
     };
     const accept = (value: unknown) => {
@@ -1934,7 +1959,10 @@ export async function startOperatorServer(
     response.once('close',cancel);
     timer = setTimeout(()=>finish('timeout'),timeoutMs);
     const pending = injected
-      ? Promise.resolve().then(()=>injected({...input,signal:controller.signal}))
+      ? Promise.resolve().then(()=>{
+        if (controller.signal.aborted) throw new OperatorTaskReadError('unavailable');
+        return injected({...input,signal:controller.signal});
+      })
       : readSupervisedOperatorProcess<TSnapshot>({
         process_path:fileURLToPath(new URL('./task-read-process.ts',import.meta.url)),
         env:{...options.env,GIT_NO_LAZY_FETCH:'1',GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'},
@@ -1956,8 +1984,8 @@ export async function startOperatorServer(
       });
     // The supervisor settles only after process-tree cleanup, including blocked sync Git.
     const completion = pending.then(accept,error=>finish(error instanceof OperatorTaskReadError ? error.code : 'unavailable')).finally(release);
-    activeTaskReadWorkers.add(completion);
-    void completion.finally(()=>activeTaskReadWorkers.delete(completion));
+    activeTaskReadCompletions.add(completion);
+    void completion.finally(()=>activeTaskReadCompletions.delete(completion));
   };
 
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -2094,52 +2122,9 @@ export async function startOperatorServer(
         sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires the current task and claim fence.'), headOnly);
         return;
       }
-      if (activeDiffCancellers.size >= maxConcurrency) {
-        sendJson(response, 503, { code: 'busy' }, headOnly);
-        return;
-      }
-      const controller = new AbortController();
-      let worker: Worker | undefined;
-      let settled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const cancel = () => finish('unavailable');
-      const finish = (failure?: TaskDiffFailure, snapshot?: OperatorTaskDiff) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        controller.abort();
-        worker?.terminate();
-        activeDiffCancellers.delete(cancel);
-        response.removeListener('close', cancel);
-        if (response.destroyed) return;
-        if (failure) sendJson(response, failure === 'stale' ? 409 : 503, { code: failure }, headOnly);
-        else sendJson(response, 200, snapshot, headOnly);
-      };
-      const accept = (snapshot: unknown) => {
-        try { finish(undefined, decodeOperatorTaskDiff(snapshot, input)); }
-        catch { finish('unavailable'); }
-      };
-      activeDiffCancellers.add(cancel);
-      response.once('close', cancel);
-      timer = setTimeout(() => finish('timeout'), timeoutMs);
-      if (options.read_task_diff) {
-        void Promise.resolve().then(() => options.read_task_diff!({ ...input, signal: controller.signal }))
-          .then(accept, () => finish('unavailable'));
-      } else {
-        try {
-          // Include canonical authority readers in the no-fetch boundary.
-          worker = new Worker(new URL('./task-diff-worker.ts', import.meta.url), {
-            env: { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
-          });
-          worker.onmessage = (event: MessageEvent<unknown>) => {
-            const value = event.data as { ok?: unknown; snapshot?: unknown; code?: unknown } | null;
-            if (value?.ok === true) accept(value.snapshot);
-            else finish(TASK_DIFF_FAILURES.includes(value?.code as TaskDiffFailure) ? value!.code as TaskDiffFailure : 'unavailable');
-          };
-          worker.onerror = () => finish('unavailable');
-          worker.postMessage({ ...input, env: collaborationWorkerEnvironment(options.env) });
-        } catch { finish('unavailable'); }
-      }
+      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, TASK_DIFF_FAILURES,
+        'diff', options.read_task_diff,
+        failure => failure === 'stale' ? 409 : 503);
       return;
     }
 
@@ -2226,25 +2211,32 @@ export async function startOperatorServer(
   const actualPort = address.port;
   const urlHost = host === '::1' ? `[${host}]` : host;
   let closed = false;
-  const close = async (): Promise<void> => {
-    if (closed) return;
+  let closeCompletion: Promise<void> | null = null;
+  const close = (): Promise<void> => {
+    if (closeCompletion) return closeCompletion;
     closed = true;
     fleetClosing = true;
-    for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
-    await Promise.allSettled([...fleetCompletions]);
-    for (const cancel of activeDiffCancellers) cancel();
-    for (const cancel of activeTaskReadCancellers) cancel();
-    await Promise.allSettled([...activeTaskReadWorkers]);
-    for (const cancel of activeTaskMessageCancellers) cancel();
-    for (const cancel of activeCollaborationRequestCancellers) cancel();
-    await Promise.allSettled([...activeTaskMessageCompletions]);
-    if (!server.listening) return;
-    await new Promise<void>((resolveClose, rejectClose) => {
-      server.close((error?: Error) => {
-        if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') rejectClose(error);
-        else resolveClose();
+    closeCompletion = Promise.resolve().then(async () => {
+      // Close admission and cancel every owner before waiting for any one of
+      // them: a retiring Fleet read must not leave other queues launching work.
+      for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
+      for (const observation of [...collaborationObservations.values()]) cancelCollaborationObservation(observation, OPERATOR_COLLABORATION_REQUEST_ABORTED);
+      for (const cancel of activeTaskReadCancellers) cancel();
+      for (const cancel of activeTaskMessageCancellers) cancel();
+      for (const cancel of activeCollaborationRequestCancellers) cancel();
+      await Promise.allSettled([
+        ...fleetCompletions, ...collaborationCompletions,
+        ...activeTaskReadCompletions, ...activeTaskMessageCompletions,
+      ]);
+      if (!server.listening) return;
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error?: Error) => {
+          if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') rejectClose(error);
+          else resolveClose();
+        });
       });
     });
+    return closeCompletion;
   };
 
   return Object.freeze({
