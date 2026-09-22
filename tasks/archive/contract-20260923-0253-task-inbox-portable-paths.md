@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-23 02:53
+> **Related Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260923-0253
+> **Archive Projection V1**: `plans/plan-20260922-1754-task-inbox-portable-paths.md` => `plans/archive/plan-20260922-1754-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md` => `tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md` => `tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md` => `tasks/archive/review-20260923-0253-task-inbox-portable-paths.md`
+
 # Task Contract: task-inbox-portable-paths
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-1754-task-inbox-portable-paths.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 18:01
-> **Review File**: `tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md`
-> **Notes File**: `tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md`
+> **Review File**: `tasks/archive/review-20260923-0253-task-inbox-portable-paths.md`
+> **Notes File**: `tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -44,10 +54,10 @@ A canonical record digest changes during migration, an old layout appears as emp
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-1754-task-inbox-portable-paths.md`
+- Source plan: `plans/archive/plan-20260922-1754-task-inbox-portable-paths.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md`
-- Notes file: `tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md`
+- Review file: `tasks/archive/review-20260923-0253-task-inbox-portable-paths.md`
+- Notes file: `tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -89,10 +99,10 @@ allowed_paths:
   - docs/researches/20260922-task-inbox-portable-paths.md
   - deploy/task-inbox-layout-v2.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-1754-task-inbox-portable-paths.md
-  - tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md
-  - tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
-  - tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md
+  - plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+  - tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/review-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md
   - tasks/todos.md
   - src/effects/evidence/atomic-append.ts
   - src/effects/engineers/binding-store.ts

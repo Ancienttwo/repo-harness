@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 02:53
+> **Related Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260923-0253
+> **Archive Projection V1**: `plans/plan-20260922-1754-task-inbox-portable-paths.md` => `plans/archive/plan-20260922-1754-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md` => `tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md` => `tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md` => `tasks/archive/review-20260923-0253-task-inbox-portable-paths.md`
+
 # Implementation Notes: task-inbox-portable-paths
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-1754-task-inbox-portable-paths.md
-> **Contract**: tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md
-> **Review**: tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md
+> **Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+> **Contract**: tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md
+> **Review**: tasks/archive/review-20260923-0253-task-inbox-portable-paths.md
 > **Last Updated**: 2026-09-22 18:01
 > **Lifecycle**: notes
 > **Substantive Change SHA256**: `sha256:66982e8d07e5277fe3e82c9585c54efa90fadbae116c737df3d06f878163c867`

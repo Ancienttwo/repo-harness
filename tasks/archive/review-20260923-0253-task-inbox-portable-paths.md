@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 02:53
+> **Related Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260923-0253
+> **Archive Projection V1**: `plans/plan-20260922-1754-task-inbox-portable-paths.md` => `plans/archive/plan-20260922-1754-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md` => `tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md` => `tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1754-task-inbox-portable-paths.review.md` => `tasks/archive/review-20260923-0253-task-inbox-portable-paths.md`
+
 # Task Review: task-inbox-portable-paths
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260922-1754-task-inbox-portable-paths.md
-> **Contract**: tasks/contracts/20260922-1754-task-inbox-portable-paths.contract.md
-> **Notes File**: tasks/notes/20260922-1754-task-inbox-portable-paths.notes.md
+> **Plan**: plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+> **Contract**: tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md
+> **Notes File**: tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-22 18:01
 > **Recommendation**: pass
