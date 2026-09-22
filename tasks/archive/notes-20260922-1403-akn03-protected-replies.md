@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-22 14:03
+> **Related Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1403
+> **Archive Projection V1**: `plans/plan-20260922-0204-akn03-protected-replies.md` => `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md` => `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0204-akn03-protected-replies.contract.md` => `tasks/archive/contract-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md` => `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+
 # Implementation Notes: akn03-protected-replies
 
 > **Status**: Active
-> **Plan**: plans/plan-20260922-0204-akn03-protected-replies.md
-> **Contract**: tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
-> **Review**: tasks/reviews/20260922-0204-akn03-protected-replies.review.md
+> **Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Contract**: tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+> **Review**: tasks/archive/review-20260922-1403-akn03-protected-replies.md
 > **Last Updated**: 2026-09-22 02:04
 > **Lifecycle**: notes
 
@@ -50,3 +60,5 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Regression guard: `tests/effects/task-reply.test.ts`; pre-fix artifact `.ai/harness/runs/review-recovery-before.log` contains three failures and `PRE_FIX_EXIT=1`.
 - P3: share existing Task/Plan authority checks, preserving strict acquisition semantics. Use an exact-parent selector requiring the persisted intent and current original fence; fixed record count bounds recovery independent of history. At 10x history the list still reaches an explicit coverage ceiling; known-operation recovery does not scan that history. New-parent discovery at that scale remains AKN-06, not falsely solved by this correction.
 - The AKN-04a independent rejection is retained in its own review. The old owner-acceptance request for 75036305 is superseded; neither stage receives another independent review.
+
+AKN-05a cumulative review exposed mixed-case UUID paging loss. Preserve exact IDs and use code-point ordering consistently; do not lowercase stored IDs. The other task-message chronological tie-break already uses code-point ordering.

@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-22 14:03
+> **Related Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260922-1403
+> **Archive Projection V1**: `plans/plan-20260922-0204-akn03-protected-replies.md` => `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md` => `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0204-akn03-protected-replies.contract.md` => `tasks/archive/contract-20260922-1403-akn03-protected-replies.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md` => `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+
 # Task Contract: akn03-protected-replies
 
-> **Status**: Active
-> **Plan**: plans/plan-20260922-0204-akn03-protected-replies.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260922-0204-akn03-protected-replies.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-22 02:04
-> **Review File**: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md`
-> **Notes File**: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md`
+> **Review File**: `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+> **Notes File**: `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260922-0204-akn03-protected-replies.md`
+- Source plan: `plans/archive/plan-20260922-0204-akn03-protected-replies.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260922-0204-akn03-protected-replies.review.md`
-- Notes file: `tasks/notes/20260922-0204-akn03-protected-replies.notes.md`
+- Review file: `tasks/archive/review-20260922-1403-akn03-protected-replies.md`
+- Notes file: `tasks/archive/notes-20260922-1403-akn03-protected-replies.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -89,10 +99,10 @@ allowed_paths:
   - docs/researches/20260922-task-reply-protocol.md
   - docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0204-akn03-protected-replies.md
-  - tasks/contracts/20260922-0204-akn03-protected-replies.contract.md
-  - tasks/reviews/20260922-0204-akn03-protected-replies.review.md
-  - tasks/notes/20260922-0204-akn03-protected-replies.notes.md
+  - plans/archive/plan-20260922-0204-akn03-protected-replies.md
+  - tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/review-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/notes-20260922-1403-akn03-protected-replies.md
   - tasks/todos.md
 ```
 
