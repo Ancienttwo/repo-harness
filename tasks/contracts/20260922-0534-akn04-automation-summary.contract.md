@@ -21,7 +21,7 @@ Implement AKN-04d2 automation summary from original grant/budget/controller/Camp
 
 ## Scope
 
-- In scope: strict public projection, read-only source joins, original receipt reader and env propagation; scoped IPC/HTTP/browser protocol cutover and owning verification; integrate frozen repository snapshot12518117, including its task-reader cancellation correction plus accepted context/activity/upstream source and workflow evidence, then regenerate architecture proof. Repository snapshot acceptance is required before this package closeout.
+- In scope: strict public projection, read-only source joins, original receipt reader and env propagation; scoped IPC/HTTP/browser protocol cutover and owning verification; integrate accepted repository snapshot b076513b, including its accepted portable Inbox and Windows persistence dependencies; preserve the original reader cleanup boundary and regenerate architecture proof.
 - Out of scope: execution, repair, runtime installation, main merge and UI redesign.
 - Invariant: original observations never authorize writes or prove native execution.
 
@@ -53,7 +53,7 @@ Not applicable: new automation observation boundary. Existing source validators 
 ## Change Assessment
 
 ```json
-{"protocol": 1, "oracles": [{"id": "automation", "kind": "deterministic_test", "paths": ["*"]}]}
+{"protocol": 1, "oracles": [{"id": "automation", "kind": "deterministic_test", "paths": ["*"]}, {"id": "migration-integration", "kind": "runtime_readback", "paths": ["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -172,6 +172,38 @@ allowed_paths:
   - src/effects/operator/task-context-worker.ts
   - src/effects/operator/task-read-process.ts
   - tests/effects/operator-task-context.test.ts
+  - deploy/task-inbox-layout-v2.md
+  - docs/researches/20260922-task-inbox-portable-paths.md
+  - docs/researches/20260923-windows-task-persistence.md
+  - plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+  - plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+  - plans/archive/plan-20260923-0031-windows-task-persistence.md
+  - src/cli/commands/fleet.ts
+  - src/core/fleet/task-inbox-layout.ts
+  - src/effects/engineers/binding-store.ts
+  - src/effects/engineers/claim-actor-store.ts
+  - src/effects/engineers/principal-store.ts
+  - src/effects/evidence/atomic-append.ts
+  - src/effects/fleet/task-inbox-layout-migration.ts
+  - src/effects/fleet/task-inbox-layout.ts
+  - src/effects/state/coordination-lease-store.ts
+  - tasks/archive/contract-20260923-0235-windows-task-persistence.md
+  - tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/notes-20260923-0235-windows-task-persistence.md
+  - tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/review-20260923-0235-windows-task-persistence.md
+  - tasks/archive/review-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/review-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/todo-20260923-0235-windows-task-persistence.md
+  - tasks/archive/todo-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/todo-20260923-0302-akn04-repository-snapshot.md
+  - tests/coordination-lease-store.test.ts
+  - tests/effects/task-inbox-layout-migration.test.ts
+  - tests/effects/task-inbox.test.ts
+  - tests/unit/me0b-principal-store.test.ts
+  - tests/unit/task-message-v1.test.ts
 ```
 
 ## Evidence Requirements
@@ -322,6 +354,19 @@ exit_criteria:
       }
     },
     {
+      "id": "migration-integration",
+      "kind": "package_test",
+      "path": "tests/effects/task-inbox-layout-migration.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Accepted storage migration remains safe when composed with repository automation observation",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
       "id": "browser",
       "kind": "package_test",
       "path": "tests/unit/operator-web-types.test.ts",
@@ -428,7 +473,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=e6c41fdc REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=b076513b REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -487,5 +532,5 @@ One new effects suite owns original automation record joins, no-mutation and pub
 
 ## Rollback Point
 
-- Base e6c41fdc. Remove summary and transport revision together; durable authority is unchanged.
+- Accepted integration base b076513b (original implementation base e6c41fdc). Remove summary and transport revision together; durable authority is unchanged.
 
