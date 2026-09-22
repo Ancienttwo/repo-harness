@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-23 02:35
+> **Related Plan**: plans/archive/plan-20260923-0031-windows-task-persistence.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260923-0235
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-23 00:31
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 02:35
+> **Related Plan**: plans/archive/plan-20260923-0031-windows-task-persistence.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260923-0235
+> **Archive Projection V1**: `plans/plan-20260923-0031-windows-task-persistence.md` => `plans/archive/plan-20260923-0031-windows-task-persistence.md`
+> **Archive Projection V1**: `tasks/notes/20260923-0031-windows-task-persistence.notes.md` => `tasks/archive/notes-20260923-0235-windows-task-persistence.md`
+> **Archive Projection V1**: `tasks/contracts/20260923-0031-windows-task-persistence.contract.md` => `tasks/archive/contract-20260923-0235-windows-task-persistence.md`
+> **Archive Projection V1**: `tasks/reviews/20260923-0031-windows-task-persistence.review.md` => `tasks/archive/review-20260923-0235-windows-task-persistence.md`
+
 # Implementation Notes: windows-task-persistence
 
 > **Status**: Active
-> **Plan**: plans/plan-20260923-0031-windows-task-persistence.md
-> **Contract**: tasks/contracts/20260923-0031-windows-task-persistence.contract.md
-> **Review**: tasks/reviews/20260923-0031-windows-task-persistence.review.md
+> **Plan**: plans/archive/plan-20260923-0031-windows-task-persistence.md
+> **Contract**: tasks/archive/contract-20260923-0235-windows-task-persistence.md
+> **Review**: tasks/archive/review-20260923-0235-windows-task-persistence.md
 > **Last Updated**: 2026-09-23 00:31
 > **Lifecycle**: notes
 

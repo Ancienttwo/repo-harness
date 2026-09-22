@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-23 02:35
+> **Related Plan**: plans/archive/plan-20260923-0031-windows-task-persistence.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260923-0235
+> **Archive Projection V1**: `plans/plan-20260923-0031-windows-task-persistence.md` => `plans/archive/plan-20260923-0031-windows-task-persistence.md`
+> **Archive Projection V1**: `tasks/notes/20260923-0031-windows-task-persistence.notes.md` => `tasks/archive/notes-20260923-0235-windows-task-persistence.md`
+> **Archive Projection V1**: `tasks/contracts/20260923-0031-windows-task-persistence.contract.md` => `tasks/archive/contract-20260923-0235-windows-task-persistence.md`
+> **Archive Projection V1**: `tasks/reviews/20260923-0031-windows-task-persistence.review.md` => `tasks/archive/review-20260923-0235-windows-task-persistence.md`
+
 # Task Contract: windows-task-persistence
 
-> **Status**: Active
-> **Plan**: plans/plan-20260923-0031-windows-task-persistence.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260923-0031-windows-task-persistence.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-23 00:31
-> **Review File**: `tasks/reviews/20260923-0031-windows-task-persistence.review.md`
-> **Notes File**: `tasks/notes/20260923-0031-windows-task-persistence.notes.md`
+> **Review File**: `tasks/archive/review-20260923-0235-windows-task-persistence.md`
+> **Notes File**: `tasks/archive/notes-20260923-0235-windows-task-persistence.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -43,10 +53,10 @@ A file flush failure publishes new authority, a POSIX directory flush failure is
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260923-0031-windows-task-persistence.md`
+- Source plan: `plans/archive/plan-20260923-0031-windows-task-persistence.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260923-0031-windows-task-persistence.review.md`
-- Notes file: `tasks/notes/20260923-0031-windows-task-persistence.notes.md`
+- Review file: `tasks/archive/review-20260923-0235-windows-task-persistence.md`
+- Notes file: `tasks/archive/notes-20260923-0235-windows-task-persistence.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -78,10 +88,10 @@ allowed_paths:
   - tests/effects/task-reply.test.ts
   - docs/researches/20260923-windows-task-persistence.md
   - docs/architecture/.projection-manifest.json
-  - plans/plan-20260923-0031-windows-task-persistence.md
-  - tasks/contracts/20260923-0031-windows-task-persistence.contract.md
-  - tasks/reviews/20260923-0031-windows-task-persistence.review.md
-  - tasks/notes/20260923-0031-windows-task-persistence.notes.md
+  - plans/archive/plan-20260923-0031-windows-task-persistence.md
+  - tasks/archive/contract-20260923-0235-windows-task-persistence.md
+  - tasks/archive/review-20260923-0235-windows-task-persistence.md
+  - tasks/archive/notes-20260923-0235-windows-task-persistence.md
   - tasks/todos.md
 ```
 
