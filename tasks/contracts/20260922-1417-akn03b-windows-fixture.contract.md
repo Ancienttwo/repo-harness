@@ -13,7 +13,7 @@
 
 ## Why
 
-The Windows MCP path job fails during Binding fixture setup before the authenticated HTTP assertions execute.
+PR #437 requires correction of a Windows setup failure, request expiry during publication and an inconsistent encoded reply size boundary; its failed CI also needs the accepted #436 fixture integration before packaging can run.
 
 ## Goal
 
@@ -71,6 +71,7 @@ The Windows job still fails before the HTTP assertion, or the canonical readers 
 
 ```yaml
 allowed_paths:
+  - scripts/check-tarball-install-smoke.sh
   - src/core/fleet/task-reply.ts
   - tests/unit/task-reply.test.ts
   - src/effects/engineers/task-inbox.ts
@@ -84,6 +85,17 @@ allowed_paths:
   - tasks/reviews/20260922-1417-akn03b-windows-fixture.review.md
   - tasks/notes/20260922-1417-akn03b-windows-fixture.notes.md
   - tasks/todos.md
+  - docs/researches/20260922-candidate-runtime-fixture-authority.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - plans/plan-20260922-1452-akn03a-fixture-integration.md
+  - tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/todo-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/contracts/20260922-1452-akn03a-fixture-integration.contract.md
+  - tasks/notes/20260922-1452-akn03a-fixture-integration.notes.md
+  - tasks/reviews/20260922-1452-akn03a-fixture-integration.review.md
+  - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
 ```
 
 ## Evidence Requirements
@@ -156,6 +168,19 @@ exit_criteria:
       "id": "reply-contract",
       "kind": "package_test",
       "path": "tests/unit/task-reply.test.ts"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Accepted #436 fixture integrated from #435; confirm the failed Ubuntu prerequisite is corrected",
+      "inputs": {
+        "env": []
+      },
+      "id": "baseline-fixture",
+      "kind": "package_test",
+      "path": "tests/unit/candidate-bound-global-runtime-reconciliation.test.ts"
     },
     {
       "cwd": ".",
@@ -325,6 +350,19 @@ exit_criteria:
       "id": "init-dry-run",
       "kind": "command",
       "command": "bun src/cli/index.ts init --repo . --dry-run"
+    },
+    {
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Owner explicitly requires installed-package MCP registration, request context, permission rejection and successful authorized call; reuse the existing HTTP E2E against installed source",
+      "inputs": {
+        "env": []
+      },
+      "id": "installed-package",
+      "kind": "command",
+      "command": "bash scripts/check-tarball-install-smoke.sh"
     }
   ]
 }
@@ -337,6 +375,8 @@ The existing HTTP suite covers authenticated SDK token propagation, tool invento
 Test admission: existing revocation tests revoke before validation, leaving expiry during canonical validation and staging uncovered. Five parameterized cases in the existing effects suite expire inside the actual filesystem/composition boundary and assert the durable record remains unpublished. Real fixture Git and filesystem operations are necessary to expose this ordering; focused command `bun test tests/effects/task-reply.test.ts --test-name-pattern "expiry during"` takes about 8 seconds.
 
 Size test admission: the existing byte test covers individual message bodies, not complete JSON records. Extend the existing unit suite for control characters, escaped quotes/backslashes, multibyte UTF-8 and exact encoded limits; add one effects test proving rejected oversize replies leave no intent and retry with the original ID. Unit probes cost under 1 second; the real Git/filesystem recovery fixture costs about 3 seconds.
+
+Installed test admission: reuse the existing Engineer OAuth E2E from the installed package root, with only test/architecture fixture inputs copied. Runtime src and agents must come from the tarball. This closes the source-versus-package evidence gap without another authentication authority or a real Host canary.
 
 ## Rollback Point
 

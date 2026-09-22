@@ -1137,6 +1137,8 @@ describe('mcp http transport', () => {
       const mappingKey = createHash('sha256').update(`${mapping.repository_id}\0${mapping.authorization_id}`).digest('hex');
       mkdirSync(mappingRoot, { recursive: true });
       writeFileSync(join(mappingRoot, `${mappingKey}.json`), canonicalEngineerPrincipalMappingBytes(mapping));
+      const mappedStatus = await call(firstHeaders, 29, 'tools/call', { name: 'engineer_status', arguments: {} });
+      expect(JSON.parse(mappedStatus.result.content[0].text)).toMatchObject({ ok: true, principal: { engineer_id: engineerId, binding_id: binding.binding_id } });
       const communication = await call(firstHeaders, 30, 'tools/call', { name: 'engineer_task_messages', arguments: { work_envelope: {} } });
       // Reaching envelope validation proves SDK extra.authInfo carried this
       // request's token through the synchronous provider recheck.

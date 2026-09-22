@@ -22,3 +22,7 @@ The corrected probe must expire inside actual canonical validation or after a re
 ## Encoded size decision
 
 Choose an explicit total encoded-record limit because sender_id and Engineer IDs are not finitely bounded by their source schemas. Deriving a universal intent maximum would require changing those separate contracts. Keep 64 KiB including LF, move authority into core constructors/validators, and preserve a bounded disk reader/writer. A reply rejected before intent can reuse its original ID with reduced text. Owner feedback explicitly requests acceptance again after these fixes; the old verdict remains historical evidence.
+
+## Installed MCP evidence
+
+The real fdc2081f run checked out merge e2f74143; only Windows directory-fsync fixture and two Ubuntu Stop fixture tests failed. The Test job never reached packaging, and Governance context checks passed. Reuse the existing Engineer OAuth E2E in the tarball install smoke: copy only the test and canonical architecture fixture model into the disposable installed package, retain its packaged agents and runtime sources, and run from that installed root. A successful mapped status call plus malformed WorkEnvelope reaching the expected validator verifies request context without claiming a real Host turn.
