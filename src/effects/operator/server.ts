@@ -1639,11 +1639,11 @@ export async function startOperatorServer(
         }),
       }));
     }).then((raw) => {
-      const value = projectOperatorFleetSnapshot(raw.snapshot);
+      const value = projectOperatorFleetSnapshot(raw.snapshot, serviceEpoch);
       if (value.sequence !== observation.sequence) throw new Error('Fleet generation mismatch');
       const automation = observation.repositoryId === undefined ? null : decodeOperatorAutomationSummary(raw.automation, observation.repositoryId);
       if (observation.repositoryId === undefined && raw.automation !== null) throw new Error('unexpected global automation');
-      if (observation.repositoryId !== undefined) projectOperatorRepositorySnapshot(value, observation.repositoryId, serviceEpoch, automation!);
+      if (observation.repositoryId !== undefined) projectOperatorRepositorySnapshot(value, observation.repositoryId, automation!);
       settleFleetObservation(observation, { ok: true, value: { snapshot: value, automation } });
     }).catch((error: unknown) => {
       settleFleetObservation(observation, { ok: false, error });
@@ -1706,7 +1706,7 @@ export async function startOperatorServer(
       const current = await observation.promise;
       if (clientDisconnected || response.destroyed) return;
       sendJson(response, 200, repositoryId === undefined ? current.snapshot
-        : projectOperatorRepositorySnapshot(current.snapshot, repositoryId, serviceEpoch, current.automation!), headOnly);
+        : projectOperatorRepositorySnapshot(current.snapshot, repositoryId, current.automation!), headOnly);
     } catch (error) {
       if (clientDisconnected || response.destroyed) return;
       const failure = publicFleetError(error);

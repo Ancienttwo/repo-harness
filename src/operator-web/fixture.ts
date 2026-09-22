@@ -198,7 +198,8 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
 ];
 
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
-  protocol: 6,
+  protocol: 7,
+  service_epoch: '00000000-0000-4000-8000-000000000001',
   kind: 'operator_fleet_snapshot',
   registry_revision: `sha256:${'e'.repeat(64)}`,
   sequence: 18,
@@ -539,7 +540,7 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
   const missing = { status: 'missing' as const, observed_at, reason: null, records: [] };
   const known = <T,>(records: T[]) => ({ status: 'known' as const, observed_at, reason: null, records });
   return {
-    protocol: 2, kind: 'operator_repository_snapshot', repository_id: repositoryId,
+    protocol: 3, kind: 'operator_repository_snapshot', repository_id: repositoryId,
     service_epoch: '00000000-0000-4000-8000-000000000001', generation: 18,
     snapshot: { ...stableSnapshot, repositories: [selected], counts: repositoryId === 'repo-harness'
       ? { ...stableSnapshot.counts, working: 1, known_tasks: 6 }

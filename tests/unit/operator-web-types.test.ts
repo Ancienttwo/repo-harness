@@ -47,7 +47,8 @@ test('Planning transport binds canonical task observations and requires protocol
 
 function validFleetPayload(): Record<string, unknown> {
   return {
-    protocol: 6,
+    protocol: 7,
+    service_epoch: '00000000-0000-4000-8000-000000000001',
     kind: 'operator_fleet_snapshot',
     registry_revision: `sha256:${'d'.repeat(64)}`,
     sequence: 1,
@@ -445,10 +446,11 @@ test('current context transport preserves expected revision, abort and uncached 
 describe('repository snapshot transport', () => {
   test('binds nested identity and generation with a strict envelope', async () => {
     const { decodeOperatorRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
-    const value = { automation: automationFixture('repo-1'), protocol: 2, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
+    const value = { automation: automationFixture('repo-1'), protocol: 3, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
       service_epoch: '00000000-0000-4000-8000-000000000001', generation: 1, snapshot: validFleetPayload() };
     expect(decodeOperatorRepositorySnapshot(value, 'repo-1')).toMatchObject({ repository_id: 'repo-1' });
-    for (const bad of [{ ...value, protocol: 1 }, { ...value, generation: 2 }, { ...value, generation: 0 },
+    for (const bad of [{ ...value, protocol: 1 }, { ...value, protocol: 2 },
+      { ...value, snapshot: { ...value.snapshot, service_epoch: '00000000-0000-4000-8000-000000000002' } }, { ...value, generation: 2 }, { ...value, generation: 0 },
       { ...value, service_epoch: 'unknown' }, { ...value, repository_id: 'repo-2' }, { ...value, path: '/private' },
       { ...value, snapshot: { ...value.snapshot, repositories: [] } }]) {
       expect(() => decodeOperatorRepositorySnapshot(bad, 'repo-1')).toThrow();
@@ -510,4 +512,13 @@ describe('formal Decision wire boundary', () => {
     expect(() => decodeOperatorCollaborationSnapshot({ ...envelope, protocol: 2 })).toThrow();
     expect(() => decodeOperatorCollaborationSnapshot({ ...envelope, decision_after: 'f'.repeat(64) })).toThrow();
   });
+});
+
+test('Fleet protocol7 requires a valid service epoch and rejects protocol6', () => {
+  const payload = validFleetPayload();
+  expect(() => decodeOperatorFleetSnapshot({ ...payload, protocol: 6 })).toThrow();
+  for (const epoch of [undefined, null, '', 'unknown', '00000000-0000-1000-8000-000000000001']) {
+    expect(() => decodeOperatorFleetSnapshot({ ...payload, service_epoch: epoch })).toThrow();
+  }
+  expect(decodeOperatorFleetSnapshot(payload).service_epoch).toBe('00000000-0000-4000-8000-000000000001');
 });

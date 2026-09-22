@@ -1614,6 +1614,34 @@ describe('operator web task message composer', () => {
     });
   });
 
+  test('service epoch restart permits explicit recovery without silently rebinding the original draft', async () => {
+    const initial = { ...stableSnapshot, service_epoch: '00000000-0000-4000-8000-000000000001' };
+    const restarted = { ...initial, service_epoch: '00000000-0000-4000-8000-000000000002', sequence: 1 };
+    let writes = 0;
+    await openComposerFor(fixtureTasks.blocked.task_label, initial, {
+      fetchSnapshot: async () => restarted,
+      sendMessage: async () => { writes++; throw { code: 'canonical_source_stale', message: 'stale', next_action: 'refresh' }; },
+    });
+    await typeMessage('保留旧服务观察时的草稿');
+    const textarea = document.querySelector('#composer-body');
+    const card = initial.repositories[0]!.cards.find(value => value.task_id === fixtureTasks.blocked.task_id)!;
+    const key = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
+    await act(async () => sendButton().click());
+    const original = window.localStorage.getItem(key)!;
+    expect(buttonWithText('Rebind to current snapshot').disabled).toBe(true);
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    expect(window.localStorage.getItem(key)).toBe(original);
+    expect(writes).toBe(1);
+    expect(buttonWithText('Rebind to current snapshot').disabled).toBe(false);
+    await act(async () => buttonWithText('Rebind to current snapshot').click());
+    const rebound = JSON.parse(window.localStorage.getItem(key)!);
+    expect(rebound.message_id).not.toBe(JSON.parse(original).message_id);
+    expect(rebound.fence).toEqual(JSON.parse(original).fence);
+    expect(rebound.body).toBe('保留旧服务观察时的草稿');
+    expect(writes).toBe(1);
+  });
+
   test('rebinds a stale draft only through an explicit current-snapshot action', async () => {
     const initialCard = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.blocked.task_id)!;
     const reboundSnapshot: OperatorFleetSnapshotV1 = {
@@ -2113,7 +2141,7 @@ describe('scoped automation homepage observations', () => {
     expect(pending[0]!.signal.aborted).toBe(true);
     const next = repositoryObservationFixture();
     await act(async () => pending[1]!.resolve({ ...next, generation: 1,
-      service_epoch: '00000000-0000-4000-8000-000000000002', snapshot: { ...next.snapshot, sequence: 1 } }));
+      service_epoch: '00000000-0000-4000-8000-000000000002', snapshot: { ...next.snapshot, service_epoch: '00000000-0000-4000-8000-000000000002', sequence: 1 } }));
     await act(async () => pending[0]!.resolve(next));
     expect(document.querySelector('.automation-summary')?.textContent).toContain('00000000-0000-4000-8000-000000000002');
     expect(document.querySelector('.automation-summary')?.textContent).not.toContain('00000000-0000-4000-8000-000000000001');
@@ -2274,4 +2302,58 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
   expect(activities[1].signal.aborted).toBe(true);
   expect(document.querySelector('.task-evidence')).toBeNull();
   expect(writes).toBe(0);
+});
+
+ test('Fleet rejects a same-epoch sequence regression but accepts a new service epoch', async () => {
+  let next = { ...stableSnapshot, sequence: 1 };
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  await act(async () => buttonWithText('Refresh').click());
+  expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence));
+  expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stale');
+  next = { ...next, service_epoch: '00000000-0000-4000-8000-000000000002' };
+  await act(async () => buttonWithText('Refresh').click());
+  expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain('1');
+  expect(document.querySelector('[data-state]')?.getAttribute('data-state')).not.toBe('stale');
+});
+
+test('automatic epoch change cancels associated evidence and late responses cannot restore the old service view', async () => {
+  const { taskContextFixture, taskActivityFixture, repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+  const clock = observationClock(), originalFetch = globalThis.fetch;
+  const collaborationReads: Array<{signal: AbortSignal; finish: (value: typeof collaborationSnapshot) => void}> = [];
+  const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
+  let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
+  const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
+  globalThis.fetch = (async (_input, init) => {
+    diffSignal = init!.signal as AbortSignal;
+    return new Promise<Response>(resolve => { finishDiff = resolve; });
+  }) as typeof fetch;
+  try {
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}
+      fetchRepositoryObservation={async id => repositoryObservationFixture(id)}
+      fetchCollaboration={(_id, signal) => new Promise(resolve => collaborationReads.push({ signal: signal!, finish: resolve }))}
+      readTaskContext={(request, signal) => new Promise(resolve => contexts.push({request, signal, finish: resolve}))}
+      readTaskActivity={async request => taskActivityFixture(request)} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.task-diff button')!.click());
+    expect(collaborationReads).toHaveLength(1); expect(contexts).toHaveLength(1);
+    const previousDiff = document.querySelector('.task-diff');
+    await clock.advance(30_000);
+    expect(collaborationReads[0]!.signal.aborted).toBe(true);
+    expect(contexts[0]!.signal.aborted).toBe(true);
+    expect(diffSignal!.aborted).toBe(true);
+    expect(document.querySelector('.task-diff')).not.toBe(previousDiff);
+    expect(collaborationReads).toHaveLength(2); expect(contexts).toHaveLength(2);
+    await act(async () => {
+      collaborationReads[0]!.finish(collaborationSnapshot);
+      contexts[0]!.finish(taskContextFixture(contexts[0]!.request));
+      finishDiff(Response.json({ code:'stale' }, {status:409}));
+    });
+    expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain('1');
+    expect(document.querySelector<HTMLButtonElement>('.task-diff button')!.disabled).toBe(false);
+    expect(document.querySelector('.task-diff [role="status"]')).toBeNull();
+    expect(contexts[1]!.signal.aborted).toBe(false);
+  } finally {
+    await act(async () => root?.unmount()); root = null;
+    globalThis.fetch = originalFetch; clock.restore();
+  }
 });

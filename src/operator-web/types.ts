@@ -1,3 +1,4 @@
+import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
 import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
 import { decodeOperatorDecisionInventory, isDecisionCursor } from '../core/operator/decision-inventory';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
@@ -54,7 +55,7 @@ import type {
  * module's literal type, so a drift from the core constant fails typecheck
  * here rather than at runtime.
  */
-export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 6;
+export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 7;
 
 /**
  * The collaboration protocol the browser transport accepts, restated for the
@@ -782,7 +783,7 @@ export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCol
 /** Decode the complete browser payload before any component receives it. */
 export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapshotV1 {
   const snapshot = requireRecord(value);
-  if (snapshot.protocol !== OPERATOR_FLEET_PAYLOAD_PROTOCOL || snapshot.kind !== 'operator_fleet_snapshot') {
+  if (snapshot.protocol !== OPERATOR_FLEET_PAYLOAD_PROTOCOL || snapshot.kind !== 'operator_fleet_snapshot' || !isOperatorServiceEpoch(snapshot.service_epoch)) {
     throw new OperatorPayloadError();
   }
   const registryRevision = requireSha256(snapshot.registry_revision);
@@ -831,6 +832,7 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
   }
   return Object.freeze({
     protocol: OPERATOR_FLEET_PAYLOAD_PROTOCOL,
+    service_epoch: snapshot.service_epoch,
     kind: 'operator_fleet_snapshot',
     registry_revision: registryRevision,
     sequence,

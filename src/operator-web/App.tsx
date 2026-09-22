@@ -1622,6 +1622,7 @@ function Composer({
   repository,
   boardUnstable,
   sequence,
+  serviceEpoch,
   onSent,
   onDraftChange,
   sendMessage,
@@ -1631,6 +1632,7 @@ function Composer({
   readonly repository: OperatorFleetRepositoryV1;
   readonly boardUnstable: boolean;
   readonly sequence: number;
+  readonly serviceEpoch: string;
   readonly onSent: () => void;
   /** Reports whether discarding this panel would destroy operator text. */
   readonly onDraftChange: (hasDraft: boolean) => void;
@@ -1646,10 +1648,11 @@ function Composer({
     restored.failed ? 'composer.draftRestoreFailed' : null,
   );
   const [sending, setSending] = useState(false);
-  const [sentAt, setSentAt] = useState<number | null>(null);
+  const [sentAt, setSentAt] = useState<{ epoch: string; sequence: number } | null>(null);
   const [error, setError] = useState<OperatorApiErrorV1 | null>(null);
   const [staleFailure, setStaleFailure] = useState<{
     readonly failed_sequence: number;
+    readonly failed_epoch: string;
     readonly task_key: string;
     readonly failed_fence: TaskMessageFenceV1;
     readonly error_code: string;
@@ -1673,12 +1676,12 @@ function Composer({
   const targetGeneration = target.kind === 'unheld' ? '—' : target.generation ?? '—';
   const leaseLabel = t(`lease.${card.lease_state}` as OperatorMessageKey);
   const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
-  const sent = sentAt !== null && sentAt === sequence;
+  const sent = sentAt !== null && sentAt.epoch === serviceEpoch && sentAt.sequence === sequence;
   const recovery = composerRecovery(error);
   const recoveryEnabled = block === null && !sending && (recovery !== 'rebind' || (
     staleFailure !== null
     && staleFailure.task_key === taskKey(card)
-    && sequence > staleFailure.failed_sequence
+    && (serviceEpoch !== staleFailure.failed_epoch || sequence > staleFailure.failed_sequence)
     && repository.status === 'ok'
     && repository.snapshot_consistency === 'stable'
     && card.snapshot_consistency === 'stable'
@@ -1766,7 +1769,7 @@ function Composer({
       setBody('');
       setDraft(null);
       setStaleFailure(null);
-      setSentAt(sequence);
+      setSentAt({ epoch: serviceEpoch, sequence });
       onSent();
     } catch (failure) {
       const apiError = asApiError(failure, TASK_MESSAGE_FAILED_ERROR);
@@ -1774,6 +1777,7 @@ function Composer({
       setStaleFailure(composerRecovery(apiError) === 'rebind'
         ? {
             failed_sequence: sequence,
+            failed_epoch: serviceEpoch,
             task_key: taskKey(card),
             failed_fence: draft.fence,
             error_code: apiError.code,
@@ -2025,7 +2029,7 @@ function DetailPane({
         <div className="detail-pane__body">
           <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
           <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
-          <TaskDiff key={JSON.stringify([card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />
+          {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
           {/* Below the task's own facts, never above them: collaboration is
               context for a decision the worklist already surfaced. */}
           <CollaborationPane state={collaboration} t={t} />
@@ -2037,6 +2041,7 @@ function DetailPane({
             repository={repository}
             boardUnstable={boardUnstable}
             sequence={snapshot.sequence}
+            serviceEpoch={snapshot.service_epoch}
             onSent={onSent}
             onDraftChange={reportComposerDraft}
             sendMessage={sendMessage}
@@ -2141,6 +2146,11 @@ export function OperatorApp({
     try {
       const nextSnapshot = await fetchSnapshot(signal);
       if (signal.aborted) return false;
+      if (previous?.service_epoch === nextSnapshot.service_epoch && nextSnapshot.sequence < previous.sequence) throw OPERATOR_PAYLOAD_INVALID_ERROR;
+      if (previous && previous.service_epoch !== nextSnapshot.service_epoch) {
+        setCollaboration({ kind: 'idle' });
+        setCollaborationRefreshGeneration(current => current + 1);
+      }
       setSelection(current => current === null || allCards(nextSnapshot).some(card => taskKey(card) === current.key) ? current : null);
       const nextState = stateFromSnapshot(nextSnapshot);
       stateRef.current = nextState; setState(nextState);

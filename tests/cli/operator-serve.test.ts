@@ -199,7 +199,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(second.status).toBe(200);
       expect(collectCalls).toBe(1);
       const payload = await first.json() as Record<string, unknown>;
-      expect(payload).toMatchObject({ protocol: 6, kind: 'operator_fleet_snapshot', sequence: 1 });
+      expect(payload).toMatchObject({ protocol: 7, kind: 'operator_fleet_snapshot', sequence: 1 });
       expect(await second.json()).toMatchObject({ sequence: 1 });
       expect(JSON.stringify(payload)).not.toContain('repo_root');
 
@@ -1527,7 +1527,7 @@ describe('repository snapshot admission', () => {
       releases[0]!();
       const va = await (await a1).json() as Record<string, unknown>;
       expect(await (await a2).json()).toEqual(va);
-      expect(va).toMatchObject({ protocol: 2, kind: 'operator_repository_snapshot', repository_id: 'repo-a', generation: 1 });
+      expect(va).toMatchObject({ protocol: 3, kind: 'operator_repository_snapshot', repository_id: 'repo-a', generation: 1 });
       expect(JSON.stringify(va)).not.toContain('/private/');
       await waitFor(() => starts.length === 2, 'B did not start'); releases[1]!();
       const vb = await (await b).json() as Record<string, unknown>;
@@ -1614,12 +1614,15 @@ test('repository snapshots use a new service epoch after server restart', async 
     for (let i = 0; i < 2; i += 1) {
       const server = await startOperatorServer({ port: 0, static_root: root, read_automation_summary: input => automationFixture(input.repository_id), collect_fleet_board: async (input) =>
         projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence: input!.sequence!,
-          observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: input!.repository_id!,
+          observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: input!.repository_id ?? 'repo-a',
             repo_root: '/private/repo', access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards: [], error: null }] }),
       });
       try {
-        const result = await (await fetch(server.url + '/api/v1/fleet/repositories/repo-a/snapshot')).json() as {service_epoch: string;generation: number};
+        const result = await (await fetch(server.url + '/api/v1/fleet/repositories/repo-a/snapshot')).json() as {service_epoch: string;generation: number;snapshot: {service_epoch: string; protocol: number}};
         expect(result.generation).toBe(1); epochs.push(result.service_epoch);
+        expect(result.snapshot).toMatchObject({ protocol: 7, service_epoch: result.service_epoch });
+        const fleet = await (await fetch(server.url + '/api/v1/fleet/snapshot')).json() as {service_epoch: string; protocol: number};
+        expect(fleet).toMatchObject({ protocol: 7, service_epoch: result.service_epoch });
       } finally { await server.close(); }
     }
     expect(epochs[0]).not.toBe(epochs[1]);
