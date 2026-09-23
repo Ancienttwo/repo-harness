@@ -43,3 +43,5 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 ## Confirmed regression
 
 `tests/effects/task-inbox-layout-migration.test.ts` failed before the source edit: 44 pass, 1 fail, `PRE_FIX_EXIT=1`; the failing resume returned committed while the staged file had no successful flush. With the source edit, 46 migration tests and typecheck passed. The second test verifies complete prepared receipt recovery. Architecture plan/apply changed only the generated manifest after the owner approved this worktree's local CodeGraph index.
+
+> **Substantive Change SHA256**: `sha256:a9f593f96025b88f9d630c92ea4e2f9c282a834022f7d94c08158d255a3568f3`
