@@ -106,3 +106,9 @@ screenshot/artifact path, or reviewer observation.
 ## Summary
 
 - ...
+
+## PR base verification binding
+
+The owner-waiver AcceptanceReceipt binds subject `sha256:060508b2754d247b8b62ded2acbaa4b38742ff97d2972a4e483b9450220c4625` against `4271eba604fc759c114cb3ee122d8856acc09504`. After archiving, `origin/main` at `60ddefe6176c8d29af103468ac25b3d06113f38d` was merged; the merge conflicted only in the generated projection manifest, which was retained from `origin/main` and restamped by `repo-harness architecture-projection apply` with no human actions. The substantive sources are unchanged. This range binding records the exact full-PR diff that hosted CI verifies, without changing accepted contract or goal authority.
+
+> **Substantive Change SHA256**: `sha256:6ac02cf0df1fd2b0bbb087a04ecbec7a5bc2d1d45ba0b8288a884d32351890f2`
