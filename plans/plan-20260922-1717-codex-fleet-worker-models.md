@@ -98,7 +98,7 @@ See captured planning output.
 ## Captured Planning Output
 
 ## Goal
-Set Codex fast-worker to gpt-6-luna / xhigh and deep-worker to gpt-6-sol / high.
+Set Codex fast-worker to gpt-6-luna / max and deep-worker to gpt-6-sol / high.
 
 ## Scope
 scripts/install-agent-fleet.sh, assets/templates/helpers/install-agent-fleet.sh, .codex/agents/fast-worker.toml, .codex/agents/deep-worker.toml, assets/reference-configs/external-tooling.md and its docs/reference-configs projection, and tests/install-agent-fleet.test.ts. No Claude mapping or global installation changes.

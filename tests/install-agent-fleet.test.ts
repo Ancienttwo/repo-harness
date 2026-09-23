@@ -33,8 +33,8 @@ const CODEX_EXPECTATIONS: Record<
   },
   "fast-worker": {
     model: "gpt-6-luna",
-    effort: "xhigh",
-    descriptionLabel: "GPT-6 Luna at xhigh reasoning",
+    effort: "max",
+    descriptionLabel: "GPT-6 Luna at max reasoning",
     sourceDescription: "Opus at medium effort",
     sandboxMode: "workspace-write",
   },
