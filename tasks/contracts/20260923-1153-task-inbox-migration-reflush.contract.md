@@ -38,8 +38,8 @@ If resume invokes a successful file fsync on the previously failed inode before 
 
 - root_cause: `src/effects/fleet/task-inbox-layout-migration.ts:215` returns on equal existing bytes without retrying a failed file fsync; `publishMetadata` can then publish the receipt.
 - repro: `bun test tests/effects/task-inbox-layout-migration.test.ts --timeout 60000` with the complete-write/failed-fsync recovery case on unfixed source.
-- regression_guard: `tests/effects/task-inbox-layout-migration.test.ts`.
-- pre_fix_failure_artifact: `.ai/harness/runs/task-inbox-migration-reflush/pre-fix-failure.log`.
+- regression_guard: tests/effects/task-inbox-layout-migration.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/task-inbox-migration-reflush/pre-fix-failure.log
 
 ## Workflow Inventory
 
