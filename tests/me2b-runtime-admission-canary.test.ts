@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   classifyMe2bRuntimeObservation,
+  discoverCodexRuntime,
+  me2bProbeSupport,
   codexSandboxCommand,
   evaluateReadOnlySandboxControl,
   runMe2bRuntimeCanary,
@@ -163,5 +167,37 @@ describe('ME-2B managed Parent/sandbox runtime admission canary', () => {
       '--',
       '/tmp/repo/sentinel',
     ]);
+  });
+});
+
+
+describe('ME-2B runtime inventory does not grant probe support', () => {
+  test('returns typed unsupported discovery without executing any sandbox command', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'me2b-discovery-'));
+    try {
+      const executable = join(fixture, 'codex');
+      writeFileSync(executable, `#!/bin/sh
+case "$*" in
+  --version) echo 'codex-cli 0.154.0' ;;
+  'sandbox --help') echo 'inventory help' ;;
+  *) exit 91 ;;
+esac
+`, { mode: 0o700 });
+      const result = discoverCodexRuntime({ executable, cwd: fixture });
+      expect(result.runtime.version).toBe('codex-cli 0.154.0');
+      expect(result.runtime.executable_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(result.probe).toEqual({ status: 'unavailable', adapter_id: null, reason: 'host_probe_not_registered' });
+      expect(me2bProbeSupport('codex-cli 0.149.0')).toEqual({ status: 'registered', adapter_id: 'codex-cli-0.149.0-launch-only/v1' });
+      expect(me2bProbeSupport('codex-cli 0.149.1').status).toBe('unavailable');
+    } finally { rmSync(fixture, { recursive: true, force: true }); }
+  });
+
+  test('failed help discovery is an IO failure, not proof of a read-only sandbox denial', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'me2b-discovery-failure-'));
+    try {
+      const executable = join(fixture, 'codex');
+      writeFileSync(executable, '#!/bin/sh\nif [ "$1" = --version ]; then echo "codex-cli 0.154.0"; else exit 71; fi\n', { mode: 0o700 });
+      expect(() => discoverCodexRuntime({ executable, cwd: fixture })).toThrow('sandbox help probe failed');
+    } finally { rmSync(fixture, { recursive: true, force: true }); }
   });
 });

@@ -63,3 +63,9 @@ Automation-summary0e07d97f is archived with an exact external_pass receipt after
 At a7e06bb0, the product delta against accepted0e07d97f remains exactly the seven existing UI/test files (472 insertions,1 deletion). No source conflict required repair. CodeGraph indexed1192 files; projection updates only the generated manifest with no human actions or refresh signals.
 
 > **Substantive Change SHA256**: `sha256:38ac78458ac2f3ac3e3f01255dc7155fe8dd41b7192db7472aa88061de24b9e2`
+
+## PR base verification binding
+
+The frozen integration digest above binds the stacked base. After merging `origin/main` at `29727df7cc3798303f3c388fa68fd63fbd93454f`, hosted CI verifies the full PR against that base; the merge conflicted only in the generated projection manifest, which was retained from `origin/main` and restamped by `repo-harness architecture-projection apply` with no human actions. This range binding records that exact full-PR diff without changing accepted contract or goal authority.
+
+> **Substantive Change SHA256**: `sha256:9d81a0cfdc52ee2376622ec7480baf8714c57f0699ddacf264a223cb1c0e5a0c`
