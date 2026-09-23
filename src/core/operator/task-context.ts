@@ -1,5 +1,5 @@
-import type { BoardClaimV1, BoardLeaseState, TaskState } from '../state/types';
-import type { TaskOfferBlockerV1, TaskOfferExecutionReadiness, TaskOfferPlanProofV1 } from '../fleet/task-offer';
+import type { BoardDocumentV1, BoardCardV1, BoardClaimV1, BoardLeaseState, TaskState } from '../state/types';
+import type { TaskOfferBlockerV1, TaskOfferExecutionReadiness, TaskOfferPlanProofV1, TaskOfferV1 } from '../fleet/task-offer';
 
 export const TASK_CONTEXT_MAX_BYTES = 256 * 1024;
 export const TASK_CONTEXT_FAILURES = ['unavailable','task_not_found','stale','too_large','busy','timeout'] as const;
@@ -38,6 +38,10 @@ const integer = (v: unknown, min = 0): boolean => Number.isSafeInteger(v) && (v 
 const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && Object.keys(v).every(k=>keys.includes(k));
 const one = (v: unknown, choices: readonly unknown[]): boolean => choices.includes(v);
 const relativePath = (v: unknown): v is string => nonempty(v) && !v.startsWith('/') && !v.includes('\\') && !v.includes(':') && !v.split('/').some(s=>s === '..' || s === '.' || s === '') && !/[\r\n]/u.test(v);
+export function isOperatorTaskCanonical(value: unknown): value is OperatorTaskContext['canonical'] {
+  return exact(value,['target_ref','commit','sprint_path']) && nonempty(value.target_ref)
+    && typeof value.commit === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(value.commit) && relativePath(value.sprint_path);
+}
 const leaseStates = ['available','reserving','bound','completing','reviewing','released','unknown'];
 const persistedStates = ['reserving','bound','completing','reviewing','released'];
 const blockerCodes = ['repo_read_only','repo_unavailable','canonical_unavailable','canonical_target_mismatch','row_not_pending','lease_unavailable','lease_unknown','snapshot_changed_during_read','mode_unsupported','plan_missing','plan_ambiguous','plan_not_approved','plan_source_mismatch','plan_not_projectable','contract_missing','contract_not_projectable'];
@@ -59,7 +63,7 @@ export function decodeOperatorTaskContext(value: unknown, request: OperatorTaskC
   if (value.protocol !== 1 || value.kind !== 'operator_task_context' || value.repository_id !== request.repository_id || value.task_id !== request.task_id
     || !digest(value.task_revision) || (request.expected_task_revision !== null && value.task_revision !== request.expected_task_revision)) return invalid();
   const { canonical:c, task:t, execution:e, offer:o, observation:b } = value;
-  if (!exact(c,['target_ref','commit','sprint_path']) || !nonempty(c.target_ref) || typeof c.commit !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(c.commit) || !relativePath(c.sprint_path)
+  if (!isOperatorTaskCanonical(c)
     || !exact(t,['title','mode','acceptance','state']) || !nonempty(t.title,8192) || !text(t.mode,128) || !text(t.acceptance) || !one(t.state,['pending','done','missing','drifted'])
     || !exact(e,['lease_state','claim']) || !one(e.lease_state,leaseStates)) return invalid();
   if (e.claim !== null) {
@@ -83,4 +87,31 @@ export function decodeOperatorTaskContext(value: unknown, request: OperatorTaskC
     || !integer(b.authorization_revision) || b.consistency !== 'observed') return invalid();
   if (new TextEncoder().encode(JSON.stringify(value)).length > TASK_CONTEXT_MAX_BYTES) return invalid();
   return value as unknown as OperatorTaskContext;
+}
+
+
+/** Shared transport projection for the exact Board/Offer pair. Registered
+ * worktree plan proof retains its own basis; it is not relabelled as Git data. */
+export function projectOperatorTaskContext(input: {
+  readonly repository_id: string;
+  readonly board: BoardDocumentV1;
+  readonly card: BoardCardV1;
+  readonly offer: TaskOfferV1;
+  readonly authorization_revision: number;
+  readonly observed_at: string;
+}): OperatorTaskContext {
+  const { board, card, offer } = input;
+  if (offer.repo_id !== input.repository_id || offer.task_id !== card.task_id || offer.task_revision !== card.task_revision
+    || offer.canonical_target?.oid !== board.canonical_target.oid || offer.canonical_target.ref !== board.canonical_target.ref
+    || offer.sprint_path !== board.sprint_path || offer.authorization_revision !== input.authorization_revision) throw new Error('Task context source identity mismatch');
+  const claim = card.claim;
+  return {
+    protocol:1,kind:'operator_task_context',repository_id:input.repository_id,task_id:card.task_id,task_revision:card.task_revision,
+    canonical:{ target_ref:board.canonical_target.ref,commit:board.canonical_target.oid,sprint_path:board.sprint_path },
+    task:{ title:card.task,mode:card.mode,acceptance:card.acceptance,state:card.task_state },
+    execution:{ lease_state:card.lease_state,claim:claim ? { claim_id:claim.claim_id,generation:claim.generation,state:claim.state,branch:claim.branch,target_ref:claim.target_ref } : null },
+    offer:{ execution_readiness:offer.execution_readiness,blockers:offer.blockers.map(b=>({code:b.code,attention_owner:b.attention_owner})),offer_revision:offer.offer_revision,
+      plan:offer.plan ? { basis:'registered_worktree',plan_path:offer.plan.plan_path,contract_path:offer.plan.contract_path,source_ref:offer.plan.source_ref,plan_sha256:offer.plan.plan_sha256,contract_sha256:offer.plan.contract_sha256 } : null },
+    observation:{ observed_at:input.observed_at,board_revision:board.revisions.board,authorization_revision:input.authorization_revision,consistency:'observed' },
+  };
 }

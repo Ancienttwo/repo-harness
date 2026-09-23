@@ -1,0 +1,37 @@
+> **Archived**: 2026-09-23 14:09
+> **Related Plan**: plans/archive/plan-20260922-1049-akn06-readiness.md
+> **Outcome**: Superseded
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260923-1409
+> **Archive Projection V1**: `plans/plan-20260922-1049-akn06-readiness.md` => `plans/archive/plan-20260922-1049-akn06-readiness.md`
+> **Archive Projection V1**: `tasks/notes/20260922-1049-akn06-readiness.notes.md` => `tasks/archive/notes-20260923-1409-akn06-readiness.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-1049-akn06-readiness.contract.md` => `tasks/archive/contract-20260923-1409-akn06-readiness.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-1049-akn06-readiness.review.md` => `tasks/archive/review-20260923-1409-akn06-readiness.md`
+
+# AKN-06f review
+
+> **Status**: Pending
+> **Recommendation**: pending
+> **Substantive Change SHA256**: `sha256:303be77cbe6255fa523868f49fc228ac0819fa4ba0afdcb2aee99486428a5e0f`
+> **Plan**: plans/archive/plan-20260922-1049-akn06-readiness.md
+> **Notes File**: tasks/archive/notes-20260923-1409-akn06-readiness.md
+> **Checks File**: .ai/harness/checks/latest.json
+> **Contract**: tasks/archive/contract-20260923-1409-akn06-readiness.md
+
+Canonical and semantic acceptance have not run. This artifact reports candidate evidence only.
+
+## Root cause evidence
+
+The production local collector trusted effective-state's semantic-subject-only acceptance freshness; contract/goal edits could retain a ready Publication. The five real local guards in `tests/unit/merge-readiness-v1-effect.test.ts` first prove ready, then mutate contract, goal, observation existence/bytes or receipt bytes. All five fail on unfixed source with actual true versus expected false; `.ai/harness/runs/akn06-readiness/pre-fix.log` records PRE_FIX_EXIT=1. They pass with the canonical observation binding. The positive lifecycle normalization guard also passes.
+
+## Verification
+
+158 distinct tests across the four contract suites pass. `focused-final.log` holds readiness effect16/core7/Fleet28 passes and the original browser106 passes; its newly added browser test initially had missing test helper/type references. `browser-final.log` records all107 browser tests passing, and `browser-guard-final.log` records the final fully typed guard passing after replacing a partial input cast with the actual card fields. `type-final.log` and `build.log` exit0. The earlier positive fixture failure came from Bun homedir ignoring an in-process HOME mutation; an explicit internal effect seam now keeps all acceptance records in the disposable fixture home.
+
+All logs are under `.ai/harness/runs/akn06-readiness/`. All nine required repository integrity checks pass; results are in `integrity-results.json`. No provider/model call or real acceptance issuance occurred: controlled canonical records seed the regression; production local readers and real Git/Lease paths are exercised. Browser verification here is DOM integration, not a new installed/native journey.
+
+Current CodeGraph proof and independent semantic acceptance remain pending. No stage PR, main merge or runtime installation is claimed.
+
+## Supersession
+
+Superseded by the AKN-05/06 restack integration (`tasks/archive/notes-20260923-1351-akn05-06-restack.md`, PR #447). The per-slice verification and acceptance evidence recorded in this review is bound to pre-restack subjects and does not transfer to the integrated branch. Acceptance for the integrated code is PR #447 CI plus an independent gate.

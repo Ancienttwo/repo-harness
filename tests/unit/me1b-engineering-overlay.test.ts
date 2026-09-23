@@ -16,6 +16,7 @@ import {
 } from '../../src/effects/engineers/engineering-overlay';
 import { readProjectedWorkGraphAt } from '../../src/effects/engineers/scheduling';
 import { collectFleetBoard } from '../../src/effects/fleet/board';
+import { OPERATOR_COLLABORATION_SNAPSHOT_ROUTE, OPERATOR_ROUTES } from '../../src/effects/operator/server';
 import { listEngineerProfiles, loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
@@ -236,7 +237,7 @@ describe('ME-1B Engineering Overlay', () => {
     expect(boardAfter.overlay.snapshot_sha256).not.toBe(boardBefore.overlay.snapshot_sha256);
   }, 30_000);
 
-  test('the overlay registers no route on the operator server or web surface', () => {
+  test('the overlay adds no operator route and reaches operator code only through the read-only collaboration GET', () => {
     const sources = readdirSync(join(sourceRoot, 'src'), { recursive: true })
       .map((entry) => String(entry))
       .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
@@ -246,11 +247,23 @@ describe('ME-1B Engineering Overlay', () => {
       return /engineers\/engineering-overlay|collectEngineeringBoard/u.test(text);
     }).map((entry) => relative('src', entry).split('\\').join('/')).sort();
 
+    // The AKN Organization view projects the overlay through the existing
+    // collaboration snapshot; the overlay itself still owns no web surface.
     expect(importers).toEqual([
       'cli/commands/engineer.ts',
+      'core/operator/organization-snapshot.ts',
       'effects/engineers/engineering-overlay.ts',
+      'effects/operator/collaboration.ts',
     ]);
-    expect(importers.some((entry) => entry.startsWith('operator-web/') || entry.startsWith('effects/operator/'))).toBeFalse();
+    expect(importers.some((entry) => entry.startsWith('operator-web/'))).toBeFalse();
+    const organizationImports = readFileSync(join(sourceRoot, 'src/core/operator/organization-snapshot.ts'), 'utf8')
+      .split('\n').filter((line) => /engineers\/engineering-overlay/u.test(line));
+    expect(organizationImports.length).toBeGreaterThan(0);
+    expect(organizationImports.every((line) => line.startsWith('import type '))).toBeTrue();
+
+    expect(OPERATOR_ROUTES.filter((route) => /engineer|overlay|organization/iu.test(`${route.id} ${route.pattern}`))).toEqual([]);
+    expect(OPERATOR_ROUTES.filter((route) => route.id === 'collaboration_snapshot'))
+      .toEqual([{ id: 'collaboration_snapshot', method: 'GET', pattern: OPERATOR_COLLABORATION_SNAPSHOT_ROUTE.source, write: false }]);
   });
 
   test('keeps unreadable distinct from healthy empty and rejects illegal binding combinations', () => {

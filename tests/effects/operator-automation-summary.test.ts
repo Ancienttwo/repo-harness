@@ -81,7 +81,7 @@ describe('original automation observation', () => {
       const response = await fetch(`${server.url}/api/v1/fleet/repositories/${f.id}/snapshot`);
       expect(response.status).toBe(200);
       const result = await response.json() as {protocol:number;automation:unknown};
-      expect(result.protocol).toBe(2);
+      expect(result.protocol).toBe(3);
       const summary = decodeOperatorAutomationSummary(result.automation, f.id);
       expect(summary.grants.records[0]?.authorization_sha256).toBe(f.grant.authorization_sha256);
       expect(summary.controllers.records[0]?.run_sha256).toBe(f.run.run_sha256);

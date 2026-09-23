@@ -5,6 +5,9 @@ import {
   constants,
   existsSync,
   fsyncSync,
+  fstatSync,
+  opendirSync,
+  readSync,
   linkSync,
   lstatSync,
   mkdirSync,
@@ -72,7 +75,8 @@ export type VerifiedContextStoreErrorCode =
   | 'verified_context_store_not_found'
   | 'verified_context_store_conflict'
   | 'verified_context_store_unsafe_path'
-  | 'verified_context_store_persistence_failed';
+  | 'verified_context_store_persistence_failed'
+  | 'verified_context_store_limit_exceeded';
 
 export class VerifiedContextStoreError extends Error {
   constructor(readonly code: VerifiedContextStoreErrorCode, message: string, options?: { cause?: unknown }) {
@@ -205,8 +209,8 @@ function persistImmutable(repoRoot: string, kind: ImmutableKind, digest: string,
   }
 }
 
-function readImmutable<T>(repoRoot: string, kind: ImmutableKind, digest: string, validate: (value: unknown) => T, canonical: (value: T) => string): T {
-  const raw = regularBytes(immutablePath(repoRoot, kind, digest), `${kind} evidence`);
+function readImmutable<T>(repoRoot: string, kind: ImmutableKind, digest: string, validate: (value: unknown) => T, canonical: (value: T) => string, readBytes: typeof regularBytes = regularBytes): T {
+  const raw = readBytes(immutablePath(repoRoot, kind, digest), `${kind} evidence`);
   let parsed: unknown;
   try { parsed = JSON.parse(raw.toString('utf8')); } catch (error) { return fail('verified_context_store_invalid', `${kind} evidence is not JSON`, error); }
   let value: T;
@@ -443,4 +447,134 @@ export function readDecisionStatus(repoRoot: string, decisionId: string): { read
   const event = readImmutable(root, 'decision-events', current.current_event_sha256, validateDecisionRequestEvent, canonicalDecisionRequestEventBytes);
   if (request.decision_id !== decisionId || event.decision_id !== decisionId || event.event_sha256 !== current.current_event_sha256 || event.next_state !== current.state) fail('verified_context_store_conflict', 'decision request/event/current binding is invalid');
   return Object.freeze({ request, current });
+}
+
+export interface ReadOpenDecisionInventoryOptions {
+  readonly after?: string | null;
+  readonly limit?: number;
+  /** Clock injection for deterministic deadline tests, never a browser input. */
+  readonly now_ms?: () => number;
+  /** Simulates a concurrent writer between observation passes in tests. */
+  readonly between_reads?: () => void;
+}
+export interface OpenDecisionInventory {
+  readonly query: { readonly after: string | null; readonly limit: number };
+  readonly entries: readonly { readonly request: DecisionRequestV1; readonly current: DecisionRequestCurrentV1 }[];
+  readonly directory_revision: string;
+  readonly coverage: {
+    readonly complete: boolean;
+    readonly reason: 'complete' | 'output_limit' | 'scan_limit' | 'byte_limit';
+    readonly scanned: number;
+    readonly bytes_read: number;
+    readonly next_after: string | null;
+  };
+}
+
+/** Inventory only committed, canonical Decisions. No prepareStore, locks or
+ * transitions belong on this path. The last fully validated key owns progress;
+ * closed records are validated too, so corruption cannot masquerade as absence. */
+export function readOpenDecisionInventory(repoRoot: string, options: ReadOpenDecisionInventoryOptions = {}): OpenDecisionInventory {
+  const root = resolve(repoRoot);
+  const store = storePaths(root);
+  const directory = join(store.root, 'decisions');
+  const after = options.after ?? null, limit = options.limit ?? 50;
+  if ((after !== null && !/^[0-9a-f]{64}$/u.test(after)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('verified_context_store_invalid', 'decision inventory query is invalid');
+  const now = options.now_ms ?? Date.now;
+  const deadline = now() + 2_000;
+  const checkDeadline = () => { if (now() >= deadline) fail('verified_context_store_limit_exceeded', 'decision inventory deadline exceeded'); };
+  const safeDirectory = (target: string): boolean => {
+    let path = store.common;
+    for (const segment of scopedSegments(store.common, target)) {
+      path = join(path, segment);
+      let stat;
+      try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+      if (!stat.isDirectory() || stat.isSymbolicLink()) fail('verified_context_store_unsafe_path', 'decision inventory directory is unsafe');
+    }
+    return true;
+  };
+  const keys = (): string[] => {
+    checkDeadline();
+    if (!safeDirectory(directory)) return [];
+    const handle = opendirSync(directory);
+    const found: string[] = [];
+    try {
+      for (let entry = handle.readSync(); entry; entry = handle.readSync()) {
+        checkDeadline();
+        if (found.length >= 20_000) fail('verified_context_store_limit_exceeded', 'decision inventory directory limit exceeded');
+        if (!entry.isDirectory() || entry.isSymbolicLink() || !/^[0-9a-f]{64}$/u.test(entry.name)) fail('verified_context_store_unsafe_path', 'decision inventory entry is unsafe');
+        found.push(entry.name);
+      }
+    } finally { handle.closeSync(); }
+    return found.sort();
+  };
+  const beforeKeys = keys();
+  const candidates = beforeKeys.filter(key => after === null || key > after);
+  let bytesRead = 0, reservedValidationBytes = 0;
+  const currentBytes = new Map<string, Buffer>();
+  const byteLimit = Symbol('decision-inventory-byte-limit');
+  const boundedBytes = (path: string, label: string, reserveCurrent = false, validating = false): Buffer => {
+    checkDeadline();
+    if (!safeDirectory(dirname(path))) fail('verified_context_store_not_found', `${label} directory is missing`);
+    let stat;
+    try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') fail('verified_context_store_not_found', `${label} is missing`); throw error; }
+    if (!stat.isFile() || stat.isSymbolicLink()) fail('verified_context_store_unsafe_path', `${label} is not regular`);
+    if (stat.size > 128 * 1024) fail('verified_context_store_limit_exceeded', `${label} exceeds the record limit`);
+    if (bytesRead + (validating ? 0 : reservedValidationBytes) + stat.size * (reserveCurrent ? 2 : 1) > 8 * 1024 * 1024) throw byteLimit;
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    let raw: Buffer;
+    try {
+      const opened = fstatSync(fd);
+      if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size) fail('verified_context_store_conflict', `${label} changed before read`);
+      const buffer = Buffer.alloc(stat.size + 1);
+      let length = 0;
+      while (length < buffer.length) {
+        checkDeadline();
+        const count = readSync(fd, buffer, length, buffer.length - length, null);
+        if (count === 0) break;
+        length += count;
+      }
+      if (length !== stat.size || fstatSync(fd).size !== stat.size) fail('verified_context_store_conflict', `${label} changed during read`);
+      raw = buffer.subarray(0, length);
+    } finally { closeSync(fd); }
+    if (!safeDirectory(dirname(path))) fail('verified_context_store_conflict', `${label} directory changed`);
+    bytesRead += raw.length;
+    if (reserveCurrent) { currentBytes.set(path, raw); reservedValidationBytes += raw.length; }
+    return raw;
+  };
+  const entries: Array<OpenDecisionInventory['entries'][number]> = [];
+  let scanned = 0, lastKey: string | null = null;
+  let reason: OpenDecisionInventory['coverage']['reason'] = 'complete';
+  for (const key of candidates) {
+    if (entries.length >= limit) { reason = 'output_limit'; break; }
+    if (scanned >= 200) { reason = 'scan_limit'; break; }
+    try {
+      const path = join(directory, key, 'current.json');
+      const raw = boundedBytes(path, 'decision current', true);
+      let current: DecisionRequestCurrentV1;
+      try { current = validateDecisionRequestCurrent(JSON.parse(raw.toString('utf8'))); } catch (error) { return fail('verified_context_store_invalid', 'decision inventory current is invalid', error); }
+      if (!raw.equals(Buffer.from(`${canonicalDecisionRequestCurrentBytes(current)}\n`))) fail('verified_context_store_conflict', 'decision inventory current is not canonical');
+      if (decisionKey(current.decision_id) !== key) fail('verified_context_store_conflict', 'decision inventory key does not match UUID');
+      const request = readImmutable(root, 'decision-requests', current.request_sha256, validateDecisionRequest, canonicalDecisionRequestBytes, boundedBytes);
+      const event = readImmutable(root, 'decision-events', current.current_event_sha256, validateDecisionRequestEvent, canonicalDecisionRequestEventBytes, boundedBytes);
+      if (request.decision_id !== current.decision_id || request.request_sha256 !== current.request_sha256 || event.decision_id !== current.decision_id || event.request_sha256 !== current.request_sha256 || event.event_sha256 !== current.current_event_sha256 || event.next_state !== current.state || event.expected_current_digest !== current.previous_current_digest || current.answer !== (event.next_state === 'answered' ? event.answer : null) || current.answered_by !== (event.next_state === 'answered' ? event.actor.principal_ref : null)) fail('verified_context_store_conflict', 'decision inventory request/event/current binding is invalid');
+      if (current.state === 'open') entries.push(Object.freeze({ request, current }));
+      scanned++;
+      lastKey = key;
+    } catch (error) {
+      if (error !== byteLimit) throw error;
+      if (scanned === 0) fail('verified_context_store_limit_exceeded', 'decision inventory cannot progress within byte budget');
+      reason = 'byte_limit';
+      break;
+    }
+  }
+  options.between_reads?.();
+  // Reserved current bytes keep the final consistency pass inside the same cap.
+  for (const [path, raw] of currentBytes) {
+    let final: Buffer;
+    try { final = boundedBytes(path, 'decision current', false, true); } catch (error) { if (error === byteLimit) fail('verified_context_store_limit_exceeded', 'decision validation exceeds byte budget'); throw error; }
+    if (!raw.equals(final)) fail('verified_context_store_conflict', 'decision inventory changed during read');
+  }
+  if (JSON.stringify(keys()) !== JSON.stringify(beforeKeys)) fail('verified_context_store_conflict', 'decision inventory directory changed during read');
+  checkDeadline();
+  return Object.freeze({ query: Object.freeze({ after, limit }), entries: Object.freeze(entries), directory_revision: `sha256:${createHash('sha256').update(JSON.stringify(beforeKeys)).digest('hex')}`, coverage: Object.freeze({ complete: reason === 'complete', reason, scanned, bytes_read: bytesRead, next_after: reason === 'complete' ? null : lastKey }) });
 }

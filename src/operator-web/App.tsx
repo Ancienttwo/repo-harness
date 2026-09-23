@@ -1,3 +1,10 @@
+import { TaskHistory, type TaskHistoryReader } from './TaskHistory';
+import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
+import { useObservationRefresh } from './useObservationRefresh';
+import { PlanningView } from './PlanningView';
+import { DecisionSummary, OrganizationSummary } from './OrganizationSummary';
+import type { OperatorWorkExchangeSnapshot } from './types';
+import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from './TaskEvidence';
 import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { TaskDiff } from './TaskDiff';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -27,7 +34,7 @@ import {
   snapshotViewKind,
   type OperatorApiErrorCode,
   type OperatorApiErrorV1,
-  type OperatorCollaborationSnapshotV1,
+  type OperatorCollaborationSnapshotV4,
   type OperatorCollaborationSource,
   type OperatorFleetCardV1,
   type OperatorFleetErrorV1,
@@ -42,16 +49,19 @@ export interface OperatorAppProps {
   readonly initialState?: OperatorSnapshotViewState;
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
-  readonly fetchSnapshot?: () => Promise<OperatorFleetSnapshotV1>;
+  readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
-  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorCollaborationSnapshotV1>;
+  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorCollaborationSnapshotV4>;
   /** A deterministic collaboration state for fixtures and server renders. */
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
   readonly fetchRepositoryObservation?: RepositoryObservationReader;
+  readonly readTaskHistory?: TaskHistoryReader;
+  readonly readTaskContext?: TaskContextReader;
+  readonly readTaskActivity?: TaskActivityReader;
 }
 
 /**
@@ -118,10 +128,10 @@ export function asApiError(value: unknown, fallback = DEFAULT_API_ERROR): Operat
   return fallback;
 }
 
-async function fetchOperatorSnapshot(): Promise<OperatorFleetSnapshotV1> {
+async function fetchOperatorSnapshot(signal?: AbortSignal): Promise<OperatorFleetSnapshotV1> {
   const response = await fetch('/api/v1/fleet/snapshot', {
     headers: { Accept: 'application/json' },
-    cache: 'no-store',
+    cache: 'no-store', signal,
   });
   let body: unknown = null;
   try {
@@ -724,6 +734,43 @@ function Worklist({
   );
 }
 
+type ObservationView = 'planning' | 'delivery' | 'organization';
+const OBSERVATION_VIEWS: readonly ObservationView[] = ['planning', 'delivery', 'organization'];
+function ObservationTabs({ view, onChange, t }: { readonly view: ObservationView; readonly onChange: (view: ObservationView) => void; readonly t: OperatorTranslate }) {
+  return <div className="observation-tabs" role="tablist" aria-label={t('view.label')}>
+    {OBSERVATION_VIEWS.map((item,index) => <button key={item} type="button" role="tab" id={`view-tab-${item}`} aria-controls={`view-panel-${item}`} aria-selected={view === item} tabIndex={view === item ? 0 : -1}
+      onClick={() => onChange(item)} onKeyDown={event => {
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? OBSERVATION_VIEWS.length - 1
+          : event.key === 'ArrowRight' ? (index + 1) % OBSERVATION_VIEWS.length : event.key === 'ArrowLeft' ? (index + OBSERVATION_VIEWS.length - 1) % OBSERVATION_VIEWS.length : null;
+        if (next === null) return;
+        event.preventDefault(); onChange(OBSERVATION_VIEWS[next]!);
+        event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+      }}>{t(`view.${item}`)}</button>)}
+  </div>;
+}
+
+function DeliveryView({ repository, selectedKey, onSelect, t }: {
+  readonly repository: OperatorFleetRepositoryV1;
+  readonly selectedKey: string | null;
+  readonly onSelect: (card: OperatorFleetCardV1) => void;
+  readonly t: OperatorTranslate;
+}) {
+  const cards = repository.cards;
+  const group = (id:string, label:string, rows:readonly OperatorFleetCardV1[]) => <section className="delivery-stage" key={id} data-delivery-stage={id} aria-labelledby={`delivery-${id}`}>
+    <h3 id={`delivery-${id}`}>{label} <span>{rows.length}</span></h3>
+    {rows.length === 0 ? <p>{t('delivery.empty')}</p> : rows.map(card => <WorklistRow key={taskKey(card)} card={card} selected={selectedKey === taskKey(card)} onSelect={onSelect} t={t} />)}
+  </section>;
+  return <section className="delivery-view" aria-labelledby="delivery-heading">
+    <h2 id="delivery-heading">{t('view.delivery')}</h2>
+    {repository.status === 'unreadable' ? <UnreadableRepositoryRow repository={repository} t={t} /> : <>
+      <div className="delivery-columns">{OPERATOR_COLUMNS.map(column => group(column.id,t(stageKey({kind:'column',column:column.id})),cards.filter(card => card.task_state !== 'missing' && card.placement.kind === 'column' && card.placement.column === column.id)))}</div>
+      <div className="delivery-other">{(['preparation','alternate_workflow','unclassified'] as const).map(kind => group(kind,t(`stage.${kind}`),cards.filter(card => card.task_state !== 'missing' && card.placement.kind === kind)))}
+        {group('isolated',t('repo.isolatedHeading'),cards.filter(card => card.task_state === 'missing'))}
+      </div>
+    </>}
+  </section>;
+}
+
 function StageMatrix({ snapshot, t }: { readonly snapshot: Pick<OperatorFleetSnapshotV1, 'repositories'>; readonly t: OperatorTranslate }) {
   return (
     <div className="stage-matrix__scroll">
@@ -972,7 +1019,7 @@ function TaskDetail({
 export type CollaborationViewState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'loading'; readonly repository_id: string }
-  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV1 }
+  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV4 }
   | {
       readonly kind: 'failed';
       readonly repository_id: string;
@@ -984,18 +1031,22 @@ const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('coll
 const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('collaboration_repository_mismatch');
 
 function assertCollaborationRepository(
-  snapshot: OperatorCollaborationSnapshotV1,
+  snapshot: OperatorCollaborationSnapshotV4,
   repositoryId: string,
-): OperatorCollaborationSnapshotV1 {
-  if (snapshot.repository_id !== repositoryId) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
+  decisionAfter: string | null = null,
+): OperatorCollaborationSnapshotV4 {
+  if (snapshot.repository_id !== repositoryId || snapshot.decision_after !== decisionAfter) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
   return snapshot;
 }
 
 async function fetchOperatorCollaborationSnapshot(
   repositoryId: string,
   signal?: AbortSignal,
-): Promise<OperatorCollaborationSnapshotV1> {
-  const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot`, {
+  decisionAfter: string | null = null,
+): Promise<OperatorCollaborationSnapshotV4> {
+  if (decisionAfter !== null && !/^[0-9a-f]{64}$/u.test(decisionAfter)) throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
+  const query = decisionAfter === null ? '' : `?decision_after=${decisionAfter}`;
+  const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot${query}`, {
     headers: { Accept: 'application/json' },
     cache: 'no-store',
     signal,
@@ -1007,7 +1058,7 @@ async function fetchOperatorCollaborationSnapshot(
     body = null;
   }
   if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
-  let snapshot: OperatorCollaborationSnapshotV1;
+  let snapshot: OperatorCollaborationSnapshotV4;
   try {
     snapshot = decodeOperatorCollaborationSnapshot(body);
   } catch {
@@ -1015,7 +1066,7 @@ async function fetchOperatorCollaborationSnapshot(
     // malformed collaboration response from borrowing Fleet diagnostics.
     throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
   }
-  return assertCollaborationRepository(snapshot, repositoryId);
+  return assertCollaborationRepository(snapshot, repositoryId, decisionAfter);
 }
 
 function sourceList(
@@ -1037,7 +1088,7 @@ function CollaborationConsistency({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   if (snapshot.snapshot_consistency === 'degraded') {
@@ -1069,7 +1120,7 @@ function CollaborationLanes({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1111,7 +1162,7 @@ function CollaborationDiscoveries({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1149,7 +1200,7 @@ function CollaborationHandoffs({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1197,7 +1248,7 @@ function CollaborationContributors({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   return (
@@ -1232,7 +1283,7 @@ function CollaborationOpportunities({
   snapshot,
   t,
 }: {
-  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly snapshot: OperatorWorkExchangeSnapshot;
   readonly t: OperatorTranslate;
 }) {
   if (snapshot.opportunities.length === 0) return null;
@@ -1299,7 +1350,10 @@ export function CollaborationPane({
       </section>
     );
   }
-  const { snapshot } = state;
+  if (state.snapshot.exchange.status === 'unavailable') return (
+    <section className="detail-block collab-pane"><h3>{t('collab.title')}</h3><p role="status">{t('org.sourceUnavailable')}</p></section>
+  );
+  const snapshot = state.snapshot.exchange.snapshot;
   return (
     <section className="detail-block collab-pane" aria-labelledby="collab-heading" data-collab-mode={snapshot.mode}>
       <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
@@ -1571,6 +1625,7 @@ function Composer({
   repository,
   boardUnstable,
   sequence,
+  serviceEpoch,
   onSent,
   onDraftChange,
   sendMessage,
@@ -1580,6 +1635,7 @@ function Composer({
   readonly repository: OperatorFleetRepositoryV1;
   readonly boardUnstable: boolean;
   readonly sequence: number;
+  readonly serviceEpoch: string;
   readonly onSent: () => void;
   /** Reports whether discarding this panel would destroy operator text. */
   readonly onDraftChange: (hasDraft: boolean) => void;
@@ -1595,10 +1651,11 @@ function Composer({
     restored.failed ? 'composer.draftRestoreFailed' : null,
   );
   const [sending, setSending] = useState(false);
-  const [sentAt, setSentAt] = useState<number | null>(null);
+  const [sentAt, setSentAt] = useState<{ epoch: string; sequence: number } | null>(null);
   const [error, setError] = useState<OperatorApiErrorV1 | null>(null);
   const [staleFailure, setStaleFailure] = useState<{
     readonly failed_sequence: number;
+    readonly failed_epoch: string;
     readonly task_key: string;
     readonly failed_fence: TaskMessageFenceV1;
     readonly error_code: string;
@@ -1622,12 +1679,12 @@ function Composer({
   const targetGeneration = target.kind === 'unheld' ? '—' : target.generation ?? '—';
   const leaseLabel = t(`lease.${card.lease_state}` as OperatorMessageKey);
   const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
-  const sent = sentAt !== null && sentAt === sequence;
+  const sent = sentAt !== null && sentAt.epoch === serviceEpoch && sentAt.sequence === sequence;
   const recovery = composerRecovery(error);
   const recoveryEnabled = block === null && !sending && (recovery !== 'rebind' || (
     staleFailure !== null
     && staleFailure.task_key === taskKey(card)
-    && sequence > staleFailure.failed_sequence
+    && (serviceEpoch !== staleFailure.failed_epoch || sequence > staleFailure.failed_sequence)
     && repository.status === 'ok'
     && repository.snapshot_consistency === 'stable'
     && card.snapshot_consistency === 'stable'
@@ -1715,7 +1772,7 @@ function Composer({
       setBody('');
       setDraft(null);
       setStaleFailure(null);
-      setSentAt(sequence);
+      setSentAt({ epoch: serviceEpoch, sequence });
       onSent();
     } catch (failure) {
       const apiError = asApiError(failure, TASK_MESSAGE_FAILED_ERROR);
@@ -1723,6 +1780,7 @@ function Composer({
       setStaleFailure(composerRecovery(apiError) === 'rebind'
         ? {
             failed_sequence: sequence,
+            failed_epoch: serviceEpoch,
             task_key: taskKey(card),
             failed_fence: draft.fence,
             error_code: apiError.code,
@@ -1847,46 +1905,33 @@ function Composer({
   );
 }
 
-const WIDE_LAYOUT_QUERY = '(min-width: 901px)';
-
-function useWideLayout(): boolean {
-  const [wide, setWide] = useState(() => typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia(WIDE_LAYOUT_QUERY).matches);
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const query = window.matchMedia(WIDE_LAYOUT_QUERY);
-    const update = (event: MediaQueryListEvent) => setWide(event.matches);
-    setWide(query.matches);
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-  return wide;
-}
-
 function DetailPane({
   snapshot,
-  visibleRepositories,
   card,
   repository,
   collaboration,
   revisionChangedFrom,
   boardUnstable,
-  modal,
+  evidenceGeneration,
+  readTaskContext,
+  readTaskActivity,
   onClose,
+  onRefresh,
   onSent,
   sendMessage,
   t,
 }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null;
-  readonly visibleRepositories: readonly OperatorFleetRepositoryV1[];
-  readonly card: OperatorFleetCardV1 | null;
+  readonly card: OperatorFleetCardV1;
   readonly repository: OperatorFleetRepositoryV1 | null;
   readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
   readonly boardUnstable: boolean;
-  readonly modal: boolean;
+  readonly evidenceGeneration: number;
+  readonly readTaskContext?: TaskContextReader;
+  readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
+  readonly onRefresh: () => void;
   readonly onSent: () => void;
   readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
   readonly t: OperatorTranslate;
@@ -1895,19 +1940,18 @@ function DetailPane({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const composerDraftRef = useRef(false);
-  const cardKey = card ? taskKey(card) : null;
+  const cardKey = taskKey(card);
   const reportComposerDraft = useCallback((hasDraft: boolean) => {
     composerDraftRef.current = hasDraft;
   }, []);
 
   useEffect(() => {
-    if (!cardKey || typeof document === 'undefined') return;
-    if (modal) {
-      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      closeButtonRef.current?.focus();
-    }
+    if (typeof document === 'undefined') return;
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (event.isComposing || event.keyCode === 229) return;
         // Escape is the IME candidate-cancel key. Closing the pane on it while
         // the composer holds text would unmount the panel and take the draft
         // and its retry-bearing message id with it. The close button, the
@@ -1920,7 +1964,7 @@ function DetailPane({
         onClose();
         return;
       }
-      if (!modal || event.key !== 'Tab') return;
+      if (event.key !== 'Tab') return;
       const dialog = dialogRef.current;
       if (!dialog) return;
       const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
@@ -1944,76 +1988,63 @@ function DetailPane({
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      if (modal) returnFocusRef.current?.focus();
+      returnFocusRef.current?.focus();
       returnFocusRef.current = null;
     };
-    // Task identity and responsive modality own the focus lifecycle; incidental
+    // Task identity owns the focus lifecycle; resize and incidental
     // card replacement does not restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardKey, modal]);
+  }, [cardKey]);
 
   useEffect(() => {
-    if (!modal || !cardKey || typeof document === 'undefined') return;
+    if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
-  }, [cardKey, modal]);
+  }, [cardKey]);
 
-  if (modal && !card) return null;
-  const label = card ? taskDisplayLabel(card) : null;
+  const label = taskDisplayLabel(card);
   return (
     <>
-      {modal && card && (
-        <button className="pane-scrim" type="button" tabIndex={-1} aria-label={t('detail.close')} onClick={onClose} />
-      )}
+      <button className="pane-scrim" type="button" tabIndex={-1} aria-label={t('detail.close')} onClick={onClose} />
       <aside
         ref={dialogRef}
         className="detail-pane"
-        role={modal ? 'dialog' : 'complementary'}
-        aria-modal={modal ? 'true' : undefined}
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="detail-pane-title"
       >
         <div className="detail-pane__header">
           <div className="detail-pane__title">
-            <p className="detail-eyebrow">{card ? t('detail.taskDetail') : t('detail.overviewTitle')}</p>
-            <h2 id="detail-pane-title" className={label && !label.isLabel ? 'mono-value' : ''}>
-              {label ? label.text : t('detail.overviewTitle')}
+            <p className="detail-eyebrow">{t('detail.taskDetail')}</p>
+            <h2 id="detail-pane-title" className={!label.isLabel ? 'mono-value' : ''}>
+              {label.text}
             </h2>
-            {card && label?.isLabel && <code className="detail-pane__id">{card.task_id.slice(0, 12)}</code>}
+            {label.isLabel && <code className="detail-pane__id">{card.task_id.slice(0, 12)}</code>}
           </div>
-          {card && (
-            <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label={t('detail.close')}>
+          <div className="detail-pane__actions">
+          <button type="button" className="operator-button operator-button--secondary" onClick={onRefresh}>{t('status.refresh')}</button>
+          <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label={t('detail.close')}>
               <Icon name="close" size={18} />
-            </button>
-          )}
+          </button>
+          </div>
         </div>
         <div className="detail-pane__body">
-          {card ? (
-            <>
-              <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
-              <TaskDiff key={JSON.stringify([card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />
-            </>
-          ) : snapshot ? (
-            <>
-              <p className="detail-quiet">{t('detail.overviewHint')}</p>
-              <StageMatrix snapshot={{ repositories: visibleRepositories }} t={t} />
-              <section className="detail-block" aria-labelledby="detail-health-heading">
-                <h3 className="detail-eyebrow" id="detail-health-heading">{t('detail.repositoryHealth')}</h3>
-                <RepositoryHealth snapshot={{ repositories: visibleRepositories }} t={t} />
-              </section>
-            </>
-          ) : null}
+          <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
+          <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
+          {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
           {/* Below the task's own facts, never above them: collaboration is
               context for a decision the worklist already surfaced. */}
           <CollaborationPane state={collaboration} t={t} />
         </div>
-        {card && !(card.placement.kind === 'column' && card.placement.column === 'done') && repository && snapshot && (
+        {!(card.placement.kind === 'column' && card.placement.column === 'done') && repository && snapshot && (
           <Composer
             key={taskKey(card)}
             card={card}
             repository={repository}
             boardUnstable={boardUnstable}
             sequence={snapshot.sequence}
+            serviceEpoch={snapshot.service_epoch}
             onSent={onSent}
             onDraftChange={reportComposerDraft}
             sendMessage={sendMessage}
@@ -2061,10 +2092,7 @@ function FatalState({ error, onRetry, t }: { readonly error: OperatorApiErrorV1;
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
 
-interface Selection {
-  readonly key: string;
-  readonly revision: string;
-}
+type Selection = NonNullable<TaskLocation['selection']>;
 
 export function OperatorApp({
   initialState,
@@ -2075,22 +2103,26 @@ export function OperatorApp({
   initialCollaboration,
   initialLocale,
   fetchRepositoryObservation,
+  readTaskContext,
+  readTaskActivity,
+  readTaskHistory,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
+  const [location, setLocation] = useState(() => parseTaskLocation(typeof window === 'undefined' ? '' : window.location.search));
   const [repositoryId, setRepositoryId] = useState<string | null>(() => {
+    if (location.repositoryId !== null) return location.repositoryId;
     if (typeof window === 'undefined') return null;
     try { return localStorage.getItem(OPERATOR_REPOSITORY_STORAGE_KEY); } catch { return null; }
   });
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [view, setView] = useState<ObservationView>('organization');
+  const [selection, setSelection] = useState<Selection | null>(location.selection);
   const [collaboration, setCollaboration] = useState<CollaborationViewState>(
     initialCollaboration ?? { kind: 'idle' },
   );
+  const [decisionPage, setDecisionPage] = useState<{ repositoryId: string; after: string | null } | null>(null);
   const [collaborationRefreshGeneration, setCollaborationRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
-  const wideLayout = useWideLayout();
-  const refreshInFlight = useRef(false);
-  const refreshQueued = useRef(false);
   const stateRef = useRef<OperatorSnapshotViewState>(initial);
   const snapshot = snapshotForState(state);
   const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
@@ -2101,61 +2133,67 @@ export function OperatorApp({
     setRepositoryId(activeRepository.repository_id);
     try { localStorage.setItem(OPERATOR_REPOSITORY_STORAGE_KEY, activeRepository.repository_id); } catch { /* Browser storage is optional UI preference. */ }
   }, [activeRepository]);
+  useEffect(() => {
+    const restore = () => {
+      const next = parseTaskLocation(window.location.search);
+      setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
+      setCollaboration({kind:'idle'}); setDecisionPage(null);
+    };
+    window.addEventListener('popstate',restore);
+    return () => window.removeEventListener('popstate',restore);
+  }, []);
+  const navigate = (id: string | null, next: Selection | null) => {
+    const search=taskLocationSearch(id,next);
+    window.history.pushState(null,'',window.location.pathname+search);
+    setLocation({repositoryId:id,selection:next,invalid:false});
+    setSelection(next);
+  };
+  const closeSelection = () => navigate(activeRepositoryId || null,null);
   const switchRepository = (id: string) => {
+    if (id !== activeRepository?.repository_id) { setCollaboration({ kind: 'idle' }); setDecisionPage(null); }
     setRepositoryId(id);
-    setSelection(null);
-    setCollaboration({ kind: 'idle' });
+    navigate(id,null);
   };
   const busy = state.kind === 'loading';
   const stateKind = state.kind;
 
-  const refresh = async () => {
-    // Every request supersedes the selected repository's collaboration read,
-    // even when its Fleet collection is coalesced behind an active one.
-    setCollaborationRefreshGeneration((current) => current + 1);
-    if (refreshInFlight.current) {
-      refreshQueued.current = true;
-      return;
-    }
-    refreshInFlight.current = true;
+  const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    const previous = snapshotForState(stateRef.current);
+    const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
+    stateRef.current = loading;
+    setState(loading);
     try {
-      do {
-        refreshQueued.current = false;
-        const previous = snapshotForState(stateRef.current);
-        const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
-        stateRef.current = loading;
-        setState(loading);
-        try {
-          const nextSnapshot = await fetchSnapshot();
-          setSelection((current) => (current === null || allCards(nextSnapshot).some((card) => taskKey(card) === current.key))
-            ? current
-            : null);
-          const nextState = stateFromSnapshot(nextSnapshot);
-          stateRef.current = nextState;
-          setState(nextState);
-        } catch (error) {
-          const apiError = asApiError(error);
-          const nextState: OperatorSnapshotViewState = previous
-            ? { kind: 'stale', snapshot: previous, error: apiError }
-            : { kind: 'fatal', error: apiError };
-          stateRef.current = nextState;
-          setState(nextState);
-        }
-      } while (refreshQueued.current);
-    } finally {
-      refreshInFlight.current = false;
+      const nextSnapshot = await fetchSnapshot(signal);
+      if (signal.aborted) return false;
+      if (previous?.service_epoch === nextSnapshot.service_epoch && nextSnapshot.sequence < previous.sequence) throw OPERATOR_PAYLOAD_INVALID_ERROR;
+      if (previous && previous.service_epoch !== nextSnapshot.service_epoch) {
+        setCollaboration({ kind: 'idle' });
+        setCollaborationRefreshGeneration(current => current + 1);
+      }
+      const nextState = stateFromSnapshot(nextSnapshot);
+      stateRef.current = nextState; setState(nextState);
+      return true;
+    } catch (error) {
+      if (signal.aborted) return false;
+      const apiError = asApiError(error);
+      const nextState: OperatorSnapshotViewState = previous
+        ? { kind: 'stale', snapshot: previous, error: apiError }
+        : { kind: 'fatal', error: apiError };
+      stateRef.current = nextState; setState(nextState);
+      return false;
     }
+  }, [fetchSnapshot]);
+  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot });
+  const refresh = () => {
+    // Explicit refresh still supersedes scoped observations and returns the
+    // Decision inventory to page one. Automatic reads preserve the current page.
+    setDecisionPage(null);
+    setCollaboration({ kind: 'idle' });
+    setCollaborationRefreshGeneration(current => current + 1);
+    requestFleet();
   };
 
-  useEffect(() => {
-    if (initialState || initialSnapshot) return;
-    void refresh();
-    // The initial browser read is intentionally one-shot. Explicit refresh
-    // owns subsequent collection and single-flight behavior.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const selectedCard = selection && snapshot
+  const selectedCard = selection && !selection.historical && snapshot
     ? activeRepository?.cards.find((card) => taskKey(card) === selection.key) ?? null
     : null;
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
@@ -2164,52 +2202,32 @@ export function OperatorApp({
   const selectedRepository = selectedCard && snapshot
     ? snapshot.repositories.find((repository) => repository.repository_id === selectedCard.repository_id) ?? null
     : null;
-  const collaborationRepositoryId = selectedCard?.repository_id ?? null;
+  const collaborationRepositoryId = activeRepository?.repository_id ?? null;
+  const decisionAfter = decisionPage?.repositoryId === collaborationRepositoryId ? decisionPage.after : null;
+  const changeDecisionPage = (after: string | null) => {
+    if (!collaborationRepositoryId) return;
+    setCollaboration({ kind: 'idle' });
+    setDecisionPage({ repositoryId: collaborationRepositoryId, after });
+  };
 
-  // The collaboration store is per repository, so the read is scoped by the
-  // selected task's repository rather than by a default the board would have to
-  // invent. Deselecting returns to `idle`, which is not the same as an empty
-  // store and does not claim to have read one.
-  useEffect(() => {
-    if (initialCollaboration) return;
-    if (collaborationRepositoryId === null) {
-      setCollaboration({ kind: 'idle' });
-      return;
-    }
-    const controller = new AbortController();
+  // One observation belongs to the selected repository; task selection shares it.
+  const readCollaboration = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (collaborationRepositoryId === null) return false;
     setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
-    void fetchCollaboration(collaborationRepositoryId, controller.signal).then(
-      (next) => {
-        if (!controller.signal.aborted) {
-          try {
-            setCollaboration({
-              kind: 'ready',
-              snapshot: assertCollaborationRepository(next, collaborationRepositoryId),
-            });
-          } catch (error) {
-            setCollaboration({
-              kind: 'failed',
-              repository_id: collaborationRepositoryId,
-              error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR),
-            });
-          }
-        }
-      },
-      (error) => {
-        if (!controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError')) {
-          setCollaboration({
-            kind: 'failed',
-            repository_id: collaborationRepositoryId,
-            error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR),
-          });
-        }
-      },
-    );
-    return () => { controller.abort(); };
-    // The repository remains the scope; the explicit refresh generation is the
-    // only extra trigger, so reads never fan out to other repositories.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collaborationRepositoryId, collaborationRefreshGeneration]);
+    try {
+      const next = await fetchCollaboration(collaborationRepositoryId, signal, decisionAfter);
+      if (signal.aborted) return false;
+      setCollaboration({kind:'ready',snapshot:assertCollaborationRepository(decodeOperatorCollaborationSnapshot(next),collaborationRepositoryId,decisionAfter)});
+      return true;
+    } catch (error) {
+      if (signal.aborted) return false;
+      setCollaboration({kind:'failed',repository_id:collaborationRepositoryId,error:asApiError(error,COLLABORATION_UNAVAILABLE_ERROR)});
+      return false;
+    }
+  }, [collaborationRepositoryId,decisionAfter,fetchCollaboration]);
+  useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId,decisionAfter,collaborationRefreshGeneration]), {
+    enabled: !initialCollaboration && collaborationRepositoryId !== null,
+  });
   // A board that is stale, torn, or degraded is not a board you may write from.
   const boardUnstable = stateKind === 'stale'
     || stateKind === 'repo-degraded'
@@ -2218,7 +2236,7 @@ export function OperatorApp({
     || (selectedRepository !== null && (
       selectedRepository.status !== 'ok' || selectedRepository.snapshot_consistency !== 'stable'
     ));
-  const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
+  const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id,{ key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
 
   return (
     <div
@@ -2240,12 +2258,21 @@ export function OperatorApp({
       />
       <div className="operator-main">
         <main className="operator-content">
+          {location.invalid && <p role="alert">{t('history.invalidLink')}</p>}
+          {selection && (selection.historical || (snapshot !== null && !selectedCard)) && <TaskHistory
+            repositoryId={activeRepositoryId} taskId={selection.taskId} revision={selection.revision}
+            generation={collaborationRefreshGeneration} read={readTaskHistory} onClose={closeSelection} t={t} />}
+
+          {activeRepository && <ObservationTabs view={view} onChange={setView} t={t} />}
+          <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={activeRepository !== null && view !== 'organization'}>
           {activeRepository && <AutomationSummary
             repositoryId={activeRepository.repository_id}
             refreshGeneration={collaborationRefreshGeneration}
             readObservation={fetchRepositoryObservation}
             t={t}
           />}
+          {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
+          {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />
@@ -2261,19 +2288,38 @@ export function OperatorApp({
                     t={t}
                   />
               ) : null}
+          </div>
+          <div role="tabpanel" id="view-panel-planning" aria-labelledby="view-tab-planning" hidden={view !== 'planning'}>
+            {view === 'planning' && activeRepository && <PlanningView state={collaboration} repositoryId={activeRepository.repository_id} cards={activeRepository.cards} onSelect={selectCard} t={t} />}
+          </div>
+          <div role="tabpanel" id="view-panel-delivery" aria-labelledby="view-tab-delivery" hidden={view !== 'delivery'}>
+            {view === 'delivery' && activeRepository && <DeliveryView repository={activeRepository} selectedKey={selection?.key ?? null} onSelect={selectCard} t={t} />}
+          </div>
+          {view !== 'organization' && <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />}
+          {activeRepository && <details className="repository-overview">
+            <summary>{t('detail.overviewTitle')}</summary>
+            <StageMatrix snapshot={{ repositories: visibleRepositories }} t={t} />
+            <section aria-label={t('detail.repositoryHealth')}>
+              <h3>{t('detail.repositoryHealth')}</h3>
+              <RepositoryHealth snapshot={{ repositories: visibleRepositories }} t={t} />
+            </section>
+            {!selectedCard && <CollaborationPane state={collaboration} t={t} />}
+          </details>}
         </main>
-        {(wideLayout || selectedCard) && state.kind !== 'fatal' && (
+        {selectedCard && state.kind !== 'fatal' && (
           <DetailPane
             key={activeRepository?.repository_id ?? 'none'}
             snapshot={snapshot}
-            visibleRepositories={visibleRepositories}
             card={selectedCard}
             repository={selectedRepository}
             collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
             boardUnstable={boardUnstable}
-            modal={!wideLayout}
-            onClose={() => setSelection(null)}
+            evidenceGeneration={collaborationRefreshGeneration}
+            readTaskContext={readTaskContext}
+            readTaskActivity={readTaskActivity}
+            onClose={closeSelection}
+            onRefresh={() => void refresh()}
             onSent={() => void refresh()}
             sendMessage={sendMessage}
             t={t}

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
+import { useObservationRefresh } from '../../src/operator-web/useObservationRefresh';
 
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import {
@@ -24,6 +25,7 @@ import {
   fixtureTasks,
   leaseStateSnapshot,
   preparationSnapshot,
+  planningObservationFixture,
   stableSnapshot,
 } from '../../src/operator-web/fixture';
 import {
@@ -40,6 +42,59 @@ import {
   projectSnapshotViewState,
   type OperatorFleetSnapshotV1,
 } from '../../src/operator-web/types';
+
+describe('three observation views',()=>{
+  test('defaults to Organization, supports roving keyboard tabs and preserves delivery placement counts',async()=>{
+    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+    const tabs = () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs()).toHaveLength(3);expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
+    await act(async()=>tabs()[2]!.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true})));
+    expect(document.activeElement).toBe(tabs()[0]);expect(tabs()[0]!.tabIndex).toBe(0);
+    await act(async()=>tabs()[0]!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
+    expect(document.activeElement).toBe(tabs()[1]);
+    expect(document.querySelectorAll('.delivery-columns > section')).toHaveLength(5);
+    expect(document.querySelectorAll('.delivery-view button.worklist-row')).toHaveLength(4);
+    expect(document.querySelectorAll('[data-delivery-stage="available"] button.worklist-row')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-delivery-stage="preparation"] button.worklist-row')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-delivery-stage="alternate_workflow"] button.worklist-row')).toHaveLength(1);
+    await act(async()=>tabs()[1]!.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true})));
+    expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  test('Planning opens only the exact Task revision and view changes preserve the mounted draft without reads or writes',async()=>{
+    const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
+    let reads=0,writes=0,contextReads=0,activityReads=0;
+    const payload={...collaborationSnapshot,repository_id:repository.repository_id,exchange:{status:'unavailable' as const,observed_at:'2026-09-22T00:00:00Z',code:'source_unavailable' as const},planning:{status:'observed' as const,observed_at:planning.observation.observed_at,snapshot:planning}};
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchCollaboration={async()=>{reads++;return payload;}} sendMessage={async()=>{writes++;}}
+      readTaskContext={async()=>{contextReads++;throw Error('fixture unavailable');}}
+      readTaskActivity={async()=>{activityReads++;throw Error('fixture unavailable');}} />);
+    const tab=(name:string)=>document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!;
+    await act(async()=>tab('planning').click());
+    expect(document.querySelector('.planning-view')?.textContent).toContain('dependency coverage is unknown');
+    expect(document.querySelector('.planning-view')?.textContent).not.toContain('declares no dependencies');
+    const task=repository.cards.find(card=>card.task_id===fixtureTasks.working.task_id)!;
+    await act(async()=>document.querySelector<HTMLButtonElement>(`[data-planning-task="${task.task_id}"] > button`)!.click());
+    expect(document.querySelector('#detail-pane-title')?.textContent).toBe(task.task_label!);
+    await act(async()=>document.querySelector<HTMLButtonElement>('.composer__toggle')!.click());
+    const textarea=document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+    const setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')!.set!;
+    await act(async()=>{textarea.dispatchEvent(new window.Event('focusin',{bubbles:true}) as unknown as Event);setter.call(textarea,'保留跨视图草稿');textarea.dispatchEvent(new window.Event('keyup',{bubbles:true}) as unknown as Event);});
+    const counts=[reads,contextReads,activityReads];
+    await act(async()=>tab('delivery').click());await act(async()=>tab('organization').click());await act(async()=>tab('planning').click());
+    expect(document.querySelector('#composer-body')).toBe(textarea);expect(textarea.value).toBe('保留跨视图草稿');
+    expect([reads,contextReads,activityReads]).toEqual(counts);expect(writes).toBe(0);
+  });
+
+  test('Planning source with the same Task id but a different revision cannot open details',async()=>{
+    const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
+    const stale={...planning,tasks:planning.tasks.map(task=>({...task,task_revision:'f'.repeat(64)}))};
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" initialCollaboration={{kind:'ready',snapshot:{...collaborationSnapshot,repository_id:repository.repository_id,exchange:{status:'unavailable' as const,observed_at:'2026-09-22T00:00:00Z',code:'source_unavailable' as const},planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:stale}}}} />);
+    await act(async()=>document.querySelector<HTMLButtonElement>('#view-tab-planning')!.click());
+    const buttons=Array.from(document.querySelectorAll<HTMLButtonElement>('.planning-tasks > li > button'));
+    expect(buttons.length).toBeGreaterThan(0);expect(buttons.every(button=>button.disabled)).toBe(true);
+    expect(document.querySelector('.planning-view')?.textContent).toContain('没有匹配此 Task 精确版本');
+  });
+});
 
 let root: Root | null = null;
 let window: Window;
@@ -181,6 +236,159 @@ afterEach(async () => {
   if (root) await act(async () => root?.unmount());
   root = null;
   window.close();
+});
+
+function observationClock() {
+  const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
+  const timers = new Map<number,{at:number;run:()=>void}>();
+  let now=0,id=-1;
+  globalThis.setTimeout = ((run:()=>void,delay=0) => {
+    if(delay<30_000)return originalSet(run,delay);
+    const handle=id--;timers.set(handle,{at:now+delay,run});return handle;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((handle:ReturnType<typeof setTimeout>) => {
+    if(!timers.delete(handle as unknown as number))originalClear(handle);
+  }) as typeof clearTimeout;
+  return {
+    delays:()=>[...timers.values()].map(timer=>timer.at-now).sort((a,b)=>a-b),
+    advance:async(ms:number)=>{
+      const target=now+ms;
+      while(true){
+        const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];
+        if(!next||next[1].at>target)break;
+        now=next[1].at;timers.delete(next[0]);await act(async()=>next[1].run());
+      }
+      now=target;
+    },
+    restore:()=>{globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;timers.clear();},
+  };
+}
+
+function RefreshProbe({read,identity='source'}:{read:(signal:AbortSignal)=>Promise<boolean>;identity?:string}) {
+  const refresh=useObservationRefresh(read,identity);
+  return <button onClick={refresh}>Request observation</button>;
+}
+
+describe('bounded observation lifecycle',()=>{
+  test('automatic and visible refresh preserve Decision and activity queries and the original Composer draft', async () => {
+    const { repositoryObservationFixture, taskContextFixture, taskActivityFixture, decisionInventoryFixture } = await import('../../src/operator-web/fixture');
+    const clock = observationClock();
+    const counts = { fleet: 0, repository: 0, context: 0, writes: 0 };
+    const decisions: (string | null)[] = [];
+    const activities: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
+    let visibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    const setVisibility = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new Event('visibilitychange'))); };
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+        fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
+        fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
+        fetchCollaboration={async (id, _signal, after) => {
+          decisions.push(after);
+          const page = decisionInventoryFixture(id);
+          return { ...collaborationSnapshot, repository_id: id, decision_after: after,
+            exchange: { status: 'unavailable', observed_at: '2026-09-22T00:00:00Z', code: 'source_unavailable' },
+            decisions: { status: 'observed', observed_at: '2026-09-22T00:00:00Z', snapshot: {
+              ...page, query: { after, limit: 1 },
+              coverage: { ...page.coverage, complete: after !== null, reason: after === null ? 'output_limit' : 'complete', next_after: after === null ? 'a'.repeat(64) : null },
+            } } };
+        }}
+        readTaskContext={async request => { counts.context++; return taskContextFixture(request); }}
+        readTaskActivity={async request => { activities.push(request); return taskActivityFixture(request); }}
+        sendMessage={async () => { counts.writes++; }} />);
+      await act(async () => buttonWithText('Next Decision page').click());
+      await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+      await act(async () => buttonWithText('Read reply message').click());
+      await act(async () => document.querySelector<HTMLButtonElement>('.composer__toggle')!.click());
+      const textarea = document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!;
+      await act(async () => {
+        textarea.dispatchEvent(new window.Event('focusin', { bubbles: true }) as unknown as Event);
+        setter.call(textarea, '保留原始 Task 和 Claim 草稿');
+        textarea.dispatchEvent(new window.Event('keyup', { bubbles: true }) as unknown as Event);
+      });
+      const card = stableSnapshot.repositories[0]!.cards.find(value => value.task_id === fixtureTasks.blocked.task_id)!;
+      const draftKey = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
+      const draft = window.localStorage.getItem(draftKey);
+      expect(draft).not.toBeNull();
+      const query = activities.at(-1)!;
+      expect(query.message_id).toBe('22222222-2222-4222-8222-222222222222');
+      expect(counts).toEqual({ fleet: 0, repository: 1, context: 1, writes: 0 });
+      await clock.advance(30_000);
+      expect(counts).toEqual({ fleet: 1, repository: 2, context: 2, writes: 0 });
+      expect(decisions).toEqual([null, 'a'.repeat(64), 'a'.repeat(64)]);
+      expect(activities).toHaveLength(3); expect(activities.at(-1)).toEqual(query);
+      await setVisibility('hidden'); await clock.advance(120_000);
+      expect(counts).toEqual({ fleet: 1, repository: 2, context: 2, writes: 0 });
+      expect(decisions).toHaveLength(3); expect(activities).toHaveLength(3);
+      await setVisibility('visible');
+      expect(counts).toEqual({ fleet: 2, repository: 3, context: 3, writes: 0 });
+      expect(decisions).toHaveLength(4); expect(decisions.at(-1)).toBe('a'.repeat(64));
+      expect(activities).toHaveLength(4); expect(activities.at(-1)).toEqual(query);
+      expect(document.querySelector('#composer-body')).toBe(textarea);
+      expect(textarea.value).toBe('保留原始 Task 和 Claim 草稿');
+      expect(window.localStorage.getItem(draftKey)).toBe(draft);
+    } finally {
+      await act(async () => root?.unmount()); root = null; clock.restore();
+    }
+  });
+
+  test('waits30s after completion, coalesces manual work and caps failure backoff at120s',async()=>{
+    const clock=observationClock(),pending:Array<{signal:AbortSignal;finish:(success:boolean)=>void}>=[];
+    const read=(signal:AbortSignal)=>new Promise<boolean>(finish=>pending.push({signal,finish}));
+    try{
+      await mount(<RefreshProbe read={read}/>);expect(pending).toHaveLength(1);expect(clock.delays()).toEqual([]);
+      await clock.advance(90_000);expect(pending).toHaveLength(1);
+      await act(async()=>pending[0]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await clock.advance(29_999);expect(pending).toHaveLength(1);
+      await clock.advance(1);expect(pending).toHaveLength(2);expect(pending[0]!.signal.aborted).toBe(true);
+      await act(async()=>{buttonWithText('Request observation').click();buttonWithText('Request observation').click();});
+      expect(pending).toHaveLength(2);await act(async()=>pending[1]!.finish(false));expect(pending).toHaveLength(3);
+      await act(async()=>pending[2]!.finish(false));expect(clock.delays()).toEqual([120_000]);
+      await clock.advance(120_000);await act(async()=>pending[3]!.finish(false));expect(clock.delays()).toEqual([120_000]);
+      await clock.advance(120_000);await act(async()=>pending[4]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await clock.advance(30_000);await act(async()=>pending[5]!.finish(false));expect(clock.delays()).toEqual([60_000]);
+      await act(async()=>root?.unmount());root=null;expect(pending[5]!.signal.aborted).toBe(true);expect(clock.delays()).toEqual([]);
+    }finally{clock.restore();}
+  });
+
+  test('starts nothing while hidden, aborts on hide and queues visible refresh until the old promise retires',async()=>{
+    const clock=observationClock(),pending:Array<{signal:AbortSignal;finish:(success:boolean)=>void}>=[];let visibility='hidden';
+    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>visibility});
+    const read=(signal:AbortSignal)=>new Promise<boolean>(finish=>pending.push({signal,finish}));
+    const visible=async(value:string)=>{visibility=value;await act(async()=>document.dispatchEvent(new Event('visibilitychange')));};
+    try{
+      await mount(<RefreshProbe read={read}/>);await clock.advance(120_000);expect(pending).toHaveLength(0);
+      await visible('visible');expect(pending).toHaveLength(1);
+      await visible('hidden');expect(pending[0]!.signal.aborted).toBe(true);await clock.advance(120_000);expect(pending).toHaveLength(1);
+      await visible('visible');expect(pending).toHaveLength(1);
+      await act(async()=>pending[0]!.finish(true));expect(pending).toHaveLength(2);
+      await act(async()=>pending[1]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await visible('hidden');expect(clock.delays()).toEqual([]);await visible('visible');expect(pending).toHaveLength(3);
+      await act(async()=>root?.unmount());root=null;await act(async()=>pending[2]!.finish(true));expect(clock.delays()).toEqual([]);
+    }finally{clock.restore();}
+  });
+
+  test('scope replacement invalidates the old promise and late completion cannot schedule it again',async()=>{
+    const clock=observationClock(),pending:Array<{signal:AbortSignal;finish:(success:boolean)=>void}>=[];
+    const read=(signal:AbortSignal)=>new Promise<boolean>(finish=>pending.push({signal,finish}));
+    try{
+      await mount(<RefreshProbe read={read} identity="repo-a"/>);
+      await act(async()=>root?.render(<RefreshProbe read={read} identity="repo-b"/>));
+      expect(pending[0]!.signal.aborted).toBe(true);expect(pending).toHaveLength(2);
+      await act(async()=>pending[0]!.finish(true));expect(clock.delays()).toEqual([]);
+      await act(async()=>pending[1]!.finish(true));expect(clock.delays()).toEqual([30_000]);
+      await act(async()=>root?.unmount());root=null;expect(clock.delays()).toEqual([]);
+    }finally{clock.restore();}
+  });
+
+  test('Fleet transport passes cancellation through the existing uncached request',async()=>{
+    const original=globalThis.fetch,controller=new AbortController();let options:RequestInit|undefined;
+    try{
+      globalThis.fetch=(async(_input:unknown,init?:RequestInit)=>{options=init;return Response.json(stableSnapshot);}) as typeof fetch;
+      await fetchOperatorSnapshot(controller.signal);expect(options).toMatchObject({signal:controller.signal,cache:'no-store'});
+    }finally{globalThis.fetch=original;}
+  });
 });
 
 describe('operator web worklist projection', () => {
@@ -395,7 +603,7 @@ describe('operator web interactions', () => {
     const last = focusable.at(-1);
     last?.focus();
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }) as unknown as Event);
-    expect(document.activeElement).toBe(close);
+    expect(document.activeElement).toBe(focusable[0]);
 
     await act(async () => {
       document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
@@ -742,27 +950,28 @@ describe('operator web interactions', () => {
     expect(translate('zh', 'status.observedAgo', { age: '2 分钟' })).toBe('2 分钟前读到的快照');
   });
 
-  test('keeps a persistent complementary pane on wide layouts and a repository overview until a task is picked', async () => {
+  test('keeps overview secondary and opens the same modal with focus restoration on wide layouts', async () => {
     installDom(true);
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
-
-    const overview = document.querySelector('[role="complementary"]');
-    expect(overview?.getAttribute('aria-modal')).toBeNull();
-    expect(overview?.getAttribute('aria-labelledby')).toBe('detail-pane-title');
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(paneText()).toContain('Repository overview');
-    expect(paneText()).toContain('Tasks by repository and stage');
-    expect(paneText()).toContain('Repository health');
-    expect(paneText()).toContain('read write');
-    expect(document.querySelectorAll('.stage-matrix tbody tr').length).toBe(1);
-
+    expect(document.querySelector('[role="complementary"]')).toBeNull();
+    expect(document.querySelector('.detail-pane')).toBeNull();
+    const overview = document.querySelector<HTMLDetailsElement>('.repository-overview');
+    expect(overview?.open).toBe(false);
+    expect(overview?.textContent).toContain('Tasks by repository and stage');
+    expect(overview?.textContent).toContain('Repository health');
+    expect(document.querySelectorAll('.stage-matrix tbody tr')).toHaveLength(1);
     const trigger = buttonWithText(fixtureTasks.blocked.task_label);
     trigger.focus();
     await act(async () => trigger.click());
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const pane = document.querySelector('[role="dialog"]');
+    const close = document.querySelector<HTMLButtonElement>('.detail-pane [aria-label="Close task details"]');
+    expect(pane?.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(close);
+    expect(document.body.style.overflow).toBe('hidden');
+    await act(async () => close?.click());
+    expect(document.querySelector('.detail-pane')).toBeNull();
     expect(document.activeElement).toBe(trigger);
-    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
-    expect(trigger.getAttribute('aria-current')).toBe('true');
+    expect(document.body.style.overflow).toBe('');
   });
 
   test('attention carries a text encoding, not only a color', async () => {
@@ -776,11 +985,12 @@ describe('operator web interactions', () => {
   test('holds the layout, stale treatment, motion, and type-size contracts in one stylesheet', async () => {
     const css = await Bun.file('src/operator-web/styles.css').text();
 
-    expect(css).toContain('.operator-main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); flex: 1; align-items: start; }');
-    expect(css).toContain('.operator-app[data-state="stale"] .operator-main { filter: saturate(.55); }');
+    expect(css).toContain('.operator-main { display: block; flex: 1; }');
+    expect(css).toContain('width: min(720px, 100vw)');
+    expect(css).toContain('.operator-app[data-state="stale"] .operator-content { filter: saturate(.55); }');
     expect(css).toContain('@media (max-width: 900px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
-    expect(css).not.toContain('@media (max-width: 1100px)');
+    expect(css).toContain('.delivery-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }');
 
     const sizes = Array.from(css.matchAll(/font-size:\s*(\d+)px/gu), (match) => Number(match[1]));
     expect(sizes.length).toBeGreaterThan(0);
@@ -927,6 +1137,26 @@ describe('operator web task message composer', () => {
     await act(async () => buttonWithText(task).click());
     await act(async () => composerToggle().click());
   }
+
+  test('wide modal survives resize and IME cancellation without replacing draft or retry identity', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    const textarea = document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+    textarea.focus();
+    await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true }) as unknown as Event));
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    await typeMessage('保留中文草稿');
+    const card = stableSnapshot.repositories[0]!.cards.find(value => value.task_id === fixtureTasks.blocked.task_id)!;
+    const key = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
+    const before = window.localStorage.getItem(key);
+    textarea.focus();
+    await act(async () => window.dispatchEvent(new window.Event('resize')));
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
+    expect(window.localStorage.getItem(key)).toBe(before);
+    await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event));
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    expect(textarea.value).toBe('保留中文草稿');
+  });
 
   test('restores a draft after remount with the original retry identity and stale fence', async () => {
     const requests: TaskMessageRequestV1[] = [];
@@ -1382,6 +1612,34 @@ describe('operator web task message composer', () => {
       expected_claim_id: submitted[0]!.expected_claim_id,
       expected_generation: submitted[0]!.expected_generation,
     });
+  });
+
+  test('service epoch restart permits explicit recovery without silently rebinding the original draft', async () => {
+    const initial = { ...stableSnapshot, service_epoch: '00000000-0000-4000-8000-000000000001' };
+    const restarted = { ...initial, service_epoch: '00000000-0000-4000-8000-000000000002', sequence: 1 };
+    let writes = 0;
+    await openComposerFor(fixtureTasks.blocked.task_label, initial, {
+      fetchSnapshot: async () => restarted,
+      sendMessage: async () => { writes++; throw { code: 'canonical_source_stale', message: 'stale', next_action: 'refresh' }; },
+    });
+    await typeMessage('保留旧服务观察时的草稿');
+    const textarea = document.querySelector('#composer-body');
+    const card = initial.repositories[0]!.cards.find(value => value.task_id === fixtureTasks.blocked.task_id)!;
+    const key = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
+    await act(async () => sendButton().click());
+    const original = window.localStorage.getItem(key)!;
+    expect(buttonWithText('Rebind to current snapshot').disabled).toBe(true);
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('#composer-body')).toBe(textarea);
+    expect(window.localStorage.getItem(key)).toBe(original);
+    expect(writes).toBe(1);
+    expect(buttonWithText('Rebind to current snapshot').disabled).toBe(false);
+    await act(async () => buttonWithText('Rebind to current snapshot').click());
+    const rebound = JSON.parse(window.localStorage.getItem(key)!);
+    expect(rebound.message_id).not.toBe(JSON.parse(original).message_id);
+    expect(rebound.fence).toEqual(JSON.parse(original).fence);
+    expect(rebound.body).toBe('保留旧服务观察时的草稿');
+    expect(writes).toBe(1);
   });
 
   test('rebinds a stale draft only through an explicit current-snapshot action', async () => {
@@ -1883,7 +2141,7 @@ describe('scoped automation homepage observations', () => {
     expect(pending[0]!.signal.aborted).toBe(true);
     const next = repositoryObservationFixture();
     await act(async () => pending[1]!.resolve({ ...next, generation: 1,
-      service_epoch: '00000000-0000-4000-8000-000000000002', snapshot: { ...next.snapshot, sequence: 1 } }));
+      service_epoch: '00000000-0000-4000-8000-000000000002', snapshot: { ...next.snapshot, service_epoch: '00000000-0000-4000-8000-000000000002', sequence: 1 } }));
     await act(async () => pending[0]!.resolve(next));
     expect(document.querySelector('.automation-summary')?.textContent).toContain('00000000-0000-4000-8000-000000000002');
     expect(document.querySelector('.automation-summary')?.textContent).not.toContain('00000000-0000-4000-8000-000000000001');
@@ -1921,4 +2179,286 @@ test('does not relabel a regressed generation in the same service epoch as curre
   await act(async () => buttonWithText('Refresh').click());
   expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('failed');
   expect(document.querySelector('.automation-summary')?.textContent).toContain('Previous observation');
+});
+
+describe('task detail original evidence', () => {
+  const task = fixtureTasks.working;
+  const evidenceProps = () => ({ repositoryId: 'repo-harness', taskId: task.task_id, revision: task.task_revision, generation: 0, t: ((key: never, args: never) => translate('en', key, args)) as import('../../src/operator-web/i18n').OperatorTranslate });
+
+  test('shows original context, recipient ACK and recorded actor without interpreting adoption; exact reply and parent lookup', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => taskContextFixture(request)} readActivity={async request => { requests.push(request); return taskActivityFixture(request); }} />);
+    expect(document.body.textContent).toContain(task.task_label);
+    expect(document.body.textContent).toContain('acknowledged');
+    expect(document.body.textContent).toContain('recorded_claim_actor');
+    expect(document.body.textContent).toContain('do not prove adoption');
+    expect(requests[0]).toEqual({ repository_id: 'repo-harness', task_id: task.task_id, limit: 50, after: null, message_id: null });
+    await act(async () => buttonWithText('Read reply message').click());
+    expect(requests.at(-1)?.limit).toBe(1);
+    expect(requests.at(-1)?.message_id).toBe('22222222-2222-4222-8222-222222222222');
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(1);
+    await act(async () => buttonWithText('Read parent message').click());
+    expect(requests.at(-1)?.message_id).toBe('11111111-1111-4111-8111-111111111111');
+    expect(document.body.textContent).not.toContain('The boundary is preserved; inspect');
+    await act(async () => buttonWithText('Return to first page').click());
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(2);
+  });
+
+  test('rejects wrong context scope independently and renders empty untrusted bodies as text', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => ({ ...taskContextFixture(request), repository_id: 'wrong' })} readActivity={async request => {
+      const value = taskActivityFixture(request);
+      return { ...value, entries: value.entries.map((entry, index) => ({ ...entry, event: { ...entry.event, body: index === 0 ? '<img src=x onerror=alert(1)>' : '' } })) };
+    }} />);
+    expect(document.querySelector('.task-evidence__context')?.textContent).toContain('Evidence unavailable');
+    expect(document.querySelector('.task-evidence__activity')?.textContent).toContain('(Empty message body)');
+    expect(document.querySelector('.task-evidence__activity')?.textContent).toContain('<img src=x');
+    expect(document.querySelector('.task-evidence img')).toBeNull();
+    expect(document.querySelector('.task-evidence__context')?.textContent).not.toContain(task.task_label);
+  });
+
+  test('cancels both sources on task revision switch and ignores late replies from transports ignoring abort', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const contexts: { request: import('../../src/core/operator/task-context').OperatorTaskContextRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-context').OperatorTaskContext) => void }[] = [];
+    const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-activity').OperatorTaskActivity) => void }[] = [];
+    const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = (request, signal) => new Promise(resolve => contexts.push({ request, signal, resolve }));
+    const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = (request, signal) => new Promise(resolve => activities.push({ request, signal, resolve }));
+    await mount(<TaskEvidence {...evidenceProps()} readContext={readContext} readActivity={readActivity} />);
+    await act(async () => root?.render(<TaskEvidence {...evidenceProps()} revision={'c'.repeat(64)} readContext={readContext} readActivity={readActivity} />));
+    expect(contexts[0].signal.aborted).toBe(true);
+    expect(activities[0].signal.aborted).toBe(true);
+    expect(contexts[1].request.expected_task_revision).toBe('c'.repeat(64));
+    await act(async () => { contexts[0].resolve(taskContextFixture(contexts[0].request)); activities[0].resolve(taskActivityFixture(activities[0].request)); });
+    expect(document.body.textContent).not.toContain(task.task_label);
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(0);
+    await act(async () => { contexts[1].resolve(taskContextFixture(contexts[1].request)); activities[1].resolve(taskActivityFixture(activities[1].request)); });
+    expect(document.body.textContent).toContain(task.task_label);
+    await act(async () => root?.unmount()); root = null;
+    expect(contexts[1].signal.aborted).toBe(true);
+    expect(activities[1].signal.aborted).toBe(true);
+  });
+
+  test('refresh failure retains only labelled historical evidence and hides raw diagnostics', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    let fail = false;
+    const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = async request => { if (fail) throw new Error('/private/secret'); return taskContextFixture(request); };
+    const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = async request => { if (fail) throw new Error('timeout'); return taskActivityFixture(request); };
+    await mount(<TaskEvidence {...evidenceProps()} readContext={readContext} readActivity={readActivity} />);
+    fail = true;
+    await act(async () => root?.render(<TaskEvidence {...evidenceProps()} generation={1} readContext={readContext} readActivity={readActivity} />));
+    expect(document.querySelectorAll('.task-evidence__historical')).toHaveLength(2);
+    expect(document.body.textContent).toContain(task.task_label);
+    expect(document.body.textContent).not.toContain('/private/secret');
+    expect(document.body.textContent).toContain('timeout');
+  });
+
+  test('replaces a full bounded page and preserves partial coverage instead of accumulating history', async () => {
+    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
+    const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = async request => {
+      requests.push(request);
+      const value = taskActivityFixture({ ...request, after: null });
+      const entry = { ...value.entries[0], receipts: [], replies: [] };
+      const entries = Array.from({ length: 50 }, (_, i) => ({ ...entry, event: { ...entry.event, message_id: `${String(i + 1).padStart(8, '0')}-1111-4111-8111-111111111111`, body: `page-one-${i}` } }));
+      return request.after === null ? { ...value, entries, coverage: { ...value.coverage, complete: false, reason: 'page', scanned: 50 }, next_cursor: entries[49].event.message_id } : { ...value, after: request.after, entries: [], coverage: { ...value.coverage, complete: false, reason: 'scan' }, next_cursor: null };
+    };
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => taskContextFixture(request)} readActivity={readActivity} />);
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(50);
+    expect(document.body.textContent).toContain('Partial history');
+    await act(async () => buttonWithText('Next page').click());
+    expect(requests[1].after).toBe('00000050-1111-4111-8111-111111111111');
+    expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(0);
+    expect(document.body.textContent).not.toContain('page-one');
+    expect(document.body.textContent).toContain('scan');
+    expect(document.body.textContent).not.toContain('Next page');
+  });
+});
+
+test('OperatorApp selects, refreshes and cancels exact task evidence without a message write', async () => {
+  const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+  const contexts: { request: import('../../src/core/operator/task-context').OperatorTaskContextRequest; signal: AbortSignal }[] = [];
+  const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal }[] = [];
+  let writes = 0;
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" fetchSnapshot={async () => stableSnapshot} sendMessage={async () => { writes += 1; }}
+    readTaskContext={async (request, signal) => { contexts.push({ request, signal }); return taskContextFixture(request); }}
+    readTaskActivity={async (request, signal) => { activities.push({ request, signal }); return taskActivityFixture(request); }} />);
+  expect(contexts).toHaveLength(0);
+  expect(activities).toHaveLength(0);
+  await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+  expect(document.querySelector('.task-evidence')?.textContent).toContain('Steer 与回复历史');
+  expect(contexts[0].request).toEqual({ repository_id: 'repo-harness', task_id: fixtureTasks.blocked.task_id, expected_task_revision: fixtureTasks.blocked.task_revision });
+  await act(async () => buttonWithText('刷新').click());
+  expect(contexts).toHaveLength(2);
+  expect(activities).toHaveLength(2);
+  expect(contexts[0].signal.aborted).toBe(true);
+  await selectRepository('repo-console');
+  expect(contexts[1].signal.aborted).toBe(true);
+  expect(activities[1].signal.aborted).toBe(true);
+  expect(document.querySelector('.task-evidence')).toBeNull();
+  expect(writes).toBe(0);
+});
+
+ test('Fleet rejects a same-epoch sequence regression but accepts a new service epoch', async () => {
+  let next = { ...stableSnapshot, sequence: 1 };
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  await act(async () => buttonWithText('Refresh').click());
+  expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence));
+  expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stale');
+  next = { ...next, service_epoch: '00000000-0000-4000-8000-000000000002' };
+  await act(async () => buttonWithText('Refresh').click());
+  expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain('1');
+  expect(document.querySelector('[data-state]')?.getAttribute('data-state')).not.toBe('stale');
+});
+
+test('automatic epoch change cancels associated evidence and late responses cannot restore the old service view', async () => {
+  const { taskContextFixture, taskActivityFixture, repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+  const clock = observationClock(), originalFetch = globalThis.fetch;
+  const collaborationReads: Array<{signal: AbortSignal; finish: (value: typeof collaborationSnapshot) => void}> = [];
+  const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
+  let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
+  const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
+  globalThis.fetch = (async (_input, init) => {
+    diffSignal = init!.signal as AbortSignal;
+    return new Promise<Response>(resolve => { finishDiff = resolve; });
+  }) as typeof fetch;
+  try {
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}
+      fetchRepositoryObservation={async id => repositoryObservationFixture(id)}
+      fetchCollaboration={(_id, signal) => new Promise(resolve => collaborationReads.push({ signal: signal!, finish: resolve }))}
+      readTaskContext={(request, signal) => new Promise(resolve => contexts.push({request, signal, finish: resolve}))}
+      readTaskActivity={async request => taskActivityFixture(request)} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.task-diff button')!.click());
+    expect(collaborationReads).toHaveLength(1); expect(contexts).toHaveLength(1);
+    const previousDiff = document.querySelector('.task-diff');
+    await clock.advance(30_000);
+    expect(collaborationReads[0]!.signal.aborted).toBe(true);
+    expect(contexts[0]!.signal.aborted).toBe(true);
+    expect(diffSignal!.aborted).toBe(true);
+    expect(document.querySelector('.task-diff')).not.toBe(previousDiff);
+    expect(collaborationReads).toHaveLength(2); expect(contexts).toHaveLength(2);
+    await act(async () => {
+      collaborationReads[0]!.finish(collaborationSnapshot);
+      contexts[0]!.finish(taskContextFixture(contexts[0]!.request));
+      finishDiff(Response.json({ code:'stale' }, {status:409}));
+    });
+    expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain('1');
+    expect(document.querySelector<HTMLButtonElement>('.task-diff button')!.disabled).toBe(false);
+    expect(document.querySelector('.task-diff [role="status"]')).toBeNull();
+    expect(contexts[1]!.signal.aborted).toBe(false);
+  } finally {
+    await act(async () => root?.unmount()); root = null;
+    globalThis.fetch = originalFetch; clock.restore();
+  }
+});
+
+async function historyValue(repositoryId:string,taskId:string) {
+  const {deriveTaskRevision}=await import('../../src/core/state/coordination-identity');
+  const title='Archived task '+taskId.slice(0,4),mode='contract',acceptance='Recorded acceptance';
+  return {protocol:1 as const,kind:'operator_task_history' as const,repository_id:repositoryId,task_id:taskId,
+    task_revision:deriveTaskRevision({taskId,taskCell:title,modeCell:mode,acceptanceCell:acceptance}),task:{title,mode,acceptance,recorded_status:'[x]'},
+    source:{target_ref:'main',target_commit:'a'.repeat(40),commit:'b'.repeat(40),sprint_path:'plans/sprints/old.sprint.md',blob_sha256:'sha256:'+'c'.repeat(64)},
+    coverage:{scope:'canonical_first_parent' as const,commits_examined:2,blobs_examined:1},observed_at:'2026-09-22T00:00:00.000Z'};
+}
+
+test('an old exact Task URL shows committed history without constructing current actions',async()=>{
+  const id='f'.repeat(64),repo=stableSnapshot.repositories[0]!.repository_id;let writes=0;
+  window.history.replaceState(null,'',`?repository=${repo}&task=${id}`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+    readTaskHistory={async request=>historyValue(request.repository_id,request.task_id)} sendMessage={async()=>{writes++;}} />);
+  expect(document.querySelector('.task-history')?.textContent).toContain('Archived task ffff');
+  expect(document.querySelector('.task-history')?.textContent).toContain('b'.repeat(40));
+  expect(document.querySelector('.composer')).toBeNull();expect(document.querySelector('.task-diff')).toBeNull();expect(writes).toBe(0);
+  expect(document.activeElement?.id).toBe('task-history-title');
+  await act(async()=>document.querySelector<HTMLButtonElement>('.task-history button')!.click());
+  expect(document.querySelector('.task-history')).toBeNull();expect(new URLSearchParams(window.location.search).has('task')).toBe(false);
+});
+
+test('current Task links open current detail and selecting cards writes only navigation identifiers',async()=>{
+  const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
+  window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  expect(paneText()).toContain(fixtureTasks.blocked.task_label);expect(document.querySelector('.task-history')).toBeNull();
+  await act(async()=>document.querySelector<HTMLButtonElement>('.detail-pane__actions button[aria-label]')!.click());
+  await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
+  expect(new URLSearchParams(window.location.search).get('task')).toBe(card.task_id);
+  expect([...new URLSearchParams(window.location.search).keys()].sort()).toEqual(['repository','task']);
+});
+
+test('history navigation rejects late responses and preserves a removed repository scope',async()=>{
+  const pending:Array<{request:import('../../src/core/operator/task-history').OperatorTaskHistoryRequest;signal:AbortSignal;finish:(value:Awaited<ReturnType<typeof historyValue>>)=>void}>=[];
+  const repo=stableSnapshot.repositories[0]!.repository_id;
+  window.history.replaceState(null,'',`?repository=${repo}&task=${'e'.repeat(64)}&view=history`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+    readTaskHistory={(request,signal)=>new Promise(resolve=>pending.push({request,signal,finish:resolve}))} />);
+  await act(async()=>{window.history.pushState(null,'',`?repository=removed-repo&task=${'f'.repeat(64)}&view=history`);window.dispatchEvent(new window.PopStateEvent('popstate'));});
+  expect(pending[0]!.signal.aborted).toBe(true);expect(pending[1]!.request.repository_id).toBe('removed-repo');
+  await act(async()=>pending[1]!.finish(await historyValue('removed-repo','f'.repeat(64))));
+  await act(async()=>pending[0]!.finish(await historyValue(repo,'e'.repeat(64))));
+  expect(document.querySelector('.task-history')?.textContent).toContain('removed-repo');
+  expect(document.querySelector('.task-history')?.textContent).toContain('Archived task ffff');
+  expect(document.querySelector('.task-history')?.textContent).not.toContain('Archived task eeee');
+  expect(document.querySelector('.composer')).toBeNull();
+});
+
+test('malformed Task URLs expose refusal without requesting history',async()=>{
+  let calls=0;window.history.replaceState(null,'',`?repository=repo-harness&task=${'a'.repeat(64)}&ref=HEAD`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+    readTaskHistory={async()=>{calls++;throw new Error('unexpected');}} />);
+  expect(document.body.textContent).toContain('Invalid Task link');expect(calls).toBe(0);expect(document.querySelector('.composer')).toBeNull();
+});
+
+test('a disappearing selected Task keeps its original identity and draft while history is unavailable',async()=>{
+  const {emptySnapshot}=await import('../../src/operator-web/fixture');
+  const calls:import('../../src/core/operator/task-history').OperatorTaskHistoryRequest[]=[];
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+    fetchSnapshot={async()=>({...emptySnapshot,service_epoch:stableSnapshot.service_epoch,sequence:stableSnapshot.sequence+1})}
+    readTaskHistory={async request=>{calls.push(request);throw new Error('history_unavailable');}} />);
+  await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
+  await act(async()=>document.querySelector<HTMLButtonElement>('.composer__toggle')!.click());
+  const textarea=document.querySelector<HTMLTextAreaElement>('#composer-body')!;
+  await act(async()=>{
+    textarea.dispatchEvent(new window.Event('focusin',{bubbles:true}) as unknown as Event);
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')!.set!.call(textarea,'保留归档前草稿');
+    textarea.dispatchEvent(new window.Event('keyup',{bubbles:true}) as unknown as Event);
+  });
+  const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
+  const key=`repo-harness:task-message-draft:v1:${taskKey(card)}`,before=window.localStorage.getItem(key);expect(before).not.toBeNull();
+  await act(async()=>buttonWithText('Refresh').click());
+  expect(calls.at(-1)).toEqual({repository_id:card.repository_id,task_id:card.task_id,expected_task_revision:card.task_revision});
+  expect(document.querySelector('.task-history')?.textContent).toContain('history_unavailable');
+  expect(window.localStorage.getItem(key)).toBe(before);expect(document.querySelector('.composer')).toBeNull();
+  expect(new URLSearchParams(window.location.search).get('task')).toBe(card.task_id);
+});
+
+test('an explicit historical revision remains a historical read even when the Task is currently visible',async()=>{
+  const card=stableSnapshot.repositories[0]!.cards[0]!,value=await historyValue(card.repository_id,card.task_id);let calls=0;
+  window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}&view=history&task_revision=${value.task_revision}`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}}
+    readTaskHistory={async request=>{calls++;expect(request.expected_task_revision).toBe(value.task_revision);return value;}} />);
+  expect(calls).toBe(1);expect(document.querySelector('.task-history')?.textContent).toContain(value.task.title);expect(document.querySelector('.detail-pane')).toBeNull();
+});
+
+test('refresh removes stale acceptance readiness without creating Done or a merge action',async()=>{
+  const {classifyFleetBoardPlacement}=await import('../../src/core/fleet/board');
+  const current=stableSnapshot.repositories.flatMap(r=>r.cards).find(c=>c.task_id===fixtureTasks.ready.task_id)!;
+  const readiness={...current.merge_readiness!,ready:false,attention_owner:'agent' as const,blockers:[{code:'verification_evidence_stale' as const,attention_owner:'agent' as const},{code:'acceptance_missing' as const,attention_owner:'user' as const}]};
+  const placement=classifyFleetBoardPlacement({...current,error:null,task_state:'pending',lease_state:'reviewing',current_publication:{publication_id:readiness.publication_id,head_sha:readiness.expected_head_sha},merge_readiness:readiness});
+  const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
+  const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
+  let writes=0;
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async()=>next} sendMessage={async()=>{writes++}} initialCollaboration={{kind:'ready',snapshot:collaborationSnapshot}} />);
+  expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('1');
+  await act(async()=>buttonWithText('Refresh').click());
+  expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('0');
+  expect(document.querySelector('.worklist-group--done .worklist-group__count')?.textContent).toBe(String(stableSnapshot.counts.done));
+  expect(groupWorklist(next).find(g=>g.id==='ready_to_merge')?.cards.some(c=>c.task_id===current.task_id)).toBe(false);
+  expect(Array.from(document.querySelectorAll('button')).some(b=>/^merge$/i.test(b.textContent?.trim()??''))).toBe(false);
+  expect(writes).toBe(0);
 });
