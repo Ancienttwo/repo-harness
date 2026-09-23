@@ -98,10 +98,10 @@ See captured planning output.
 ## Captured Planning Output
 
 ## Goal
-Set Codex fast-worker to gpt-6-luna / max and deep-worker to gpt-6-sol / high.
+Map the full Codex fleet by responsibility: explorer to gpt-6-luna/high, deep-reasoner to gpt-6-astra/xhigh, fast-worker to gpt-6-luna/max, deep-worker to gpt-6-sol/high, gatekeeper to gpt-6-astra/medium, and root-cause-prover and harness-evaluator to gpt-6-sol/high.
 
 ## Scope
-scripts/install-agent-fleet.sh, assets/templates/helpers/install-agent-fleet.sh, .codex/agents/fast-worker.toml, .codex/agents/deep-worker.toml, assets/reference-configs/external-tooling.md and its docs/reference-configs projection, and tests/install-agent-fleet.test.ts. No Claude mapping or global installation changes.
+scripts/install-agent-fleet.sh, assets/templates/helpers/install-agent-fleet.sh, .codex/agents/*.toml, assets/reference-configs/external-tooling.md and its docs/reference-configs projection, and tests/install-agent-fleet.test.ts. No Claude mapping or global installation changes.
 
 ## Decision
 The installer per-agent override owns model selection. Keep its packaged helper, repository personas and existing test expectations aligned.

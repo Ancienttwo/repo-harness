@@ -18,16 +18,16 @@ const CODEX_EXPECTATIONS: Record<
   { model: string; effort: string; descriptionLabel: string; sourceDescription: string; sandboxMode: string }
 > = {
   explorer: {
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     effort: "high",
-    descriptionLabel: "GPT-5.6 Luna at high reasoning",
+    descriptionLabel: "GPT-6 Luna at high reasoning",
     sourceDescription: "Sonnet at high effort",
     sandboxMode: "read-only",
   },
   "deep-reasoner": {
-    model: "gpt-5.6-terra",
+    model: "gpt-6-astra",
     effort: "xhigh",
-    descriptionLabel: "GPT-5.6 Terra at xhigh reasoning",
+    descriptionLabel: "GPT-6 Astra at xhigh reasoning",
     sourceDescription: "Opus at xhigh effort",
     sandboxMode: "read-only",
   },
@@ -53,16 +53,16 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "read-only",
   },
   "root-cause-prover": {
-    model: "gpt-5.6-terra",
+    model: "gpt-6-sol",
     effort: "high",
-    descriptionLabel: "GPT-5.6 Terra at high reasoning",
+    descriptionLabel: "GPT-6 Sol at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
   "harness-evaluator": {
-    model: "gpt-5.6-terra",
+    model: "gpt-6-sol",
     effort: "high",
-    descriptionLabel: "GPT-5.6 Terra at high reasoning",
+    descriptionLabel: "GPT-6 Sol at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
@@ -262,7 +262,7 @@ describe("install-agent-fleet", () => {
         .replaceAll("Opus at xhigh effort", "Opus at max effort")
         .replace("effort: xhigh", "effort: max");
       const customCodex = readFileSync(codexTarget, "utf-8")
-        .replace('model = "gpt-5.6-luna"', 'model = "gpt-5.6-terra"');
+        .replace('model = "gpt-6-luna"', 'model = "gpt-6-sol"');
       writeFileSync(claudeTarget, customClaude);
       writeFileSync(codexTarget, customCodex);
 

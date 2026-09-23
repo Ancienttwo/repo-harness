@@ -1,12 +1,18 @@
 # Codex fleet worker model mappings
 
-> **Substantive Change SHA256**: `sha256:f848e9051e72ed5c2bc1fc62f316784a7b7e5368b10817d223581a6fa6f52fa3`
+> **Substantive Change SHA256**: `sha256:b0611921df3b5bf31eb20cecc45cf2217e2b7b13965aa82671fd12624c305e71`
 
 The Codex installer override and packaged helper now select `gpt-6-luna` with
 `max` reasoning for fast-worker. The tracked persona and existing installer
 expectations agree. Deep-worker selects `gpt-6-sol` with `high` reasoning. The
 fleet mapping in the authored external-tooling reference config and its
 projected documentation agree with the installer.
+
+The remaining Codex roles now use GPT-6 models by responsibility: explorer
+uses Luna/high, deep-reasoner uses Astra/xhigh, and root-cause-prover and
+harness-evaluator use Sol/high. Gatekeeper remains Astra/medium. The source
+family projection is updated to GPT-6, while the Claude role files keep their
+existing model and effort selections.
 
 Verification on 2026-09-23: `bun test tests/install-agent-fleet.test.ts` passed
 22 tests and 262 assertions. Hook, helper and reference-config projections,
