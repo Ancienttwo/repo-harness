@@ -43,7 +43,7 @@ export interface OperatorFleetRepositoryV1 {
 }
 
 export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV1, 'protocol' | 'kind' | 'repositories' | 'snapshot_sha256'> {
-  readonly protocol: 5;
+  readonly protocol: 6;
   readonly kind: 'operator_fleet_snapshot';
   readonly repositories: readonly OperatorFleetRepositoryV1[];
   /** Digest of the canonical source snapshot, not of this redacted document. */
@@ -73,9 +73,17 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
     task_index: card.task_index,
     claim_id: card.claim_id,
     generation: card.generation,
-    column: card.column,
+    task_state: card.task_state,
+    placement: Object.freeze(card.placement.kind === 'column'
+      ? { kind: 'column' as const, column: card.placement.column }
+      : card.placement.kind === 'alternate_workflow'
+        ? { kind: 'alternate_workflow' as const, workflow: card.placement.workflow }
+        : card.placement.kind === 'unclassified'
+          ? { kind: 'unclassified' as const, reason: card.placement.reason }
+          : { kind: 'preparation' as const }),
     attention_owner: card.attention_owner,
     execution_readiness: card.execution_readiness,
+    readiness_blockers: card.readiness_blockers === null ? null : Object.freeze(card.readiness_blockers.map(blocker => Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }))),
     lease_state: card.lease_state,
     publication_id: card.publication_id,
     head_sha: card.head_sha,
@@ -151,7 +159,7 @@ export function projectOperatorFleetSnapshot(
   const repositories = Object.freeze(snapshot.repositories.map(projectRepository));
   const sourceSnapshotSha256 = snapshot.snapshot_sha256;
   return Object.freeze({
-    protocol: 5,
+    protocol: 6,
     kind: 'operator_fleet_snapshot',
     registry_revision: snapshot.registry_revision,
     sequence: snapshot.sequence,
@@ -166,6 +174,10 @@ export function projectOperatorFleetSnapshot(
       done: snapshot.counts.done,
       unreadable: snapshot.counts.unreadable,
       unclassified: snapshot.counts.unclassified,
+      preparation: snapshot.counts.preparation,
+      alternate_workflow: snapshot.counts.alternate_workflow,
+      isolated_execution: snapshot.counts.isolated_execution,
+      known_tasks: snapshot.counts.known_tasks,
     }),
     source_snapshot_sha256: sourceSnapshotSha256,
   });

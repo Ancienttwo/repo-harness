@@ -207,7 +207,7 @@ function buildTaskOffer(
 export function collectRepoTaskOffers(
   repo: RepoHarnessRegisteredRepo,
   registry: RepoHarnessRegistrySnapshot,
-  options: Pick<FleetOffersOptions, 'env' | 'now_ms' | 'board_reader' | 'plan_reader'> = {},
+  options: Pick<FleetOffersOptions, 'env' | 'now_ms' | 'board_reader' | 'plan_reader'> & { readonly task_id?: string } = {},
 ): RepoTaskOffers | null {
   const sprintPath = readActiveSprintPath(repo.path);
   if (sprintPath === null) return null;
@@ -224,7 +224,8 @@ export function collectRepoTaskOffers(
   }
 
   const planReader = options.plan_reader ?? readCanonicalTaskPlanProof;
-  const offers = board.cards.map((card, index) => {
+  const offers = board.cards.flatMap((card, index) => {
+    if (options.task_id !== undefined && card.task_id !== options.task_id) return [];
     let proofResult: CanonicalTaskPlanProofResult | null = null;
     if (card.mode.trim().toLowerCase() === 'contract') {
       proofResult = planReader(repo.path, {
@@ -242,7 +243,7 @@ export function collectRepoTaskOffers(
         proofResult = { ok: false, code: 'plan_not_projectable', error: String(error), candidates: [proofResult.proof.plan_path] };
       }
     }
-    return buildTaskOffer(repo, registry, board, card, index, proofResult);
+    return [buildTaskOffer(repo, registry, board, card, index, proofResult)];
   });
   return Object.freeze({
     repo: Object.freeze({ ...repo }),
@@ -656,6 +657,7 @@ function revalidateClaimAuthority(
   repo: RepoHarnessRegisteredRepo,
   options: FleetAcquireOptions,
   deps: FleetAcquireDependencies,
+  canonicalFence: 'acquisition' | 'communication' = 'acquisition',
 ): ClaimAuthorityRevalidation {
   const registry = deps.readRegistry({ env: options.env, adoptedOnly: true });
   if (registry.authorizationRevision !== offer.authorization_revision
@@ -669,7 +671,7 @@ function revalidateClaimAuthority(
     targetRef: offer.canonical_target.ref,
     sprintPath: offer.sprint_path,
   });
-  if (!canonical.ok || canonical.commit !== offer.canonical_target.oid) {
+  if (!canonical.ok || (canonicalFence === 'acquisition' && canonical.commit !== offer.canonical_target.oid)) {
     return {
       ok: false,
       result: failure('offer_stale', canonical.ok
@@ -935,13 +937,24 @@ export function acquireFleetTask(options: FleetAcquireOptions = {}): FleetAcquir
   return failure('no_eligible_task', 'no execution-ready task is available after bounded claim retries');
 }
 
-/** A replayed envelope must pass the same post-claim authorities as a fresh acquisition. */
+/** A replayed acquisition must retain its original canonical commit. */
 export function validateFleetWorkEnvelope(root: string, work: WorkEnvelopeV1, env?: NodeJS.ProcessEnv): void {
+  validateWorkEnvelopeAuthority(root, work, 'acquisition', env);
+}
+
+/** Communication retains exact Task/Plan authority across unrelated canonical commits.
+ * The caller must also validate the original sealed ClaimActor and live Lease.
+ */
+export function validateFleetCommunicationEnvelope(root: string, work: WorkEnvelopeV1, env?: NodeJS.ProcessEnv): void {
+  validateWorkEnvelopeAuthority(root, work, 'communication', env);
+}
+
+function validateWorkEnvelopeAuthority(root: string, work: WorkEnvelopeV1, canonicalFence: 'acquisition' | 'communication', env?: NodeJS.ProcessEnv): void {
   const deps = acquisitionDependencies();
   const registry = deps.readRegistry({ env, adoptedOnly: true });
   const repo = registeredWritableRepo(registry, work);
   if (!repo || realpathSync(repo.path) !== realpathSync(root)) throw new Error('WorkEnvelope repository authorization is no longer current');
-  const authority = revalidateClaimAuthority(work, repo, { env }, deps);
+  const authority = revalidateClaimAuthority(work, repo, { env }, deps, canonicalFence);
   if (!authority.ok) throw new Error(authority.result.message);
 }
 

@@ -85,3 +85,7 @@ Audit evidence and closure rationale: `docs/researches/20260907-deferred-goal-le
 - Verified gap: partial/truncated 5,000-edge readback, 29 undeclared footprints and 75 multiply owned files; see `docs/researches/20260913-architecture-budget-recovery.md`.
 - Tradeoff: retain the existing proof_required gate while shipping the independently verified runtime scheduling fixes.
 - Revisit trigger: after the budget/queue repair is installed, trace ArchContext/CodeGraph coverage and reconcile `.archcontext/model/nodes/` in a separately scoped work-package.
+
+## Windows mutation-store durability outside protected Task replies
+
+- Deferred: audit the18 remaining directory-flush sites identified in `docs/researches/20260923-windows-task-persistence.md` before claiming native Windows support for their mutation workflows. They are outside the observed delivery/ACK/reply chain; changing them here would mix independent persistence and acceptance boundaries. Revisit when claim acquisition, Campaign, publication or another listed owner becomes an explicit native Windows delivery scope.

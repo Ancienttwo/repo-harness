@@ -21,7 +21,7 @@ const snapshotDigest = `sha256:${'c'.repeat(64)}`;
 
 function validFleetPayload(): Record<string, unknown> {
   return {
-    protocol: 5,
+    protocol: 6,
     kind: 'operator_fleet_snapshot',
     registry_revision: `sha256:${'d'.repeat(64)}`,
     sequence: 1,
@@ -41,9 +41,10 @@ function validFleetPayload(): Record<string, unknown> {
         task_index: 1,
         claim_id: claimId,
         generation: 1,
-        column: 'working',
+        task_state: 'pending',
+        placement: { kind: 'column', column: 'working' },
         attention_owner: 'agent',
-        execution_readiness: 'execution_ready',
+        execution_readiness: 'execution_ready', readiness_blockers: [],
         lease_state: 'bound',
         publication_id: null,
         head_sha: null,
@@ -63,7 +64,7 @@ function validFleetPayload(): Record<string, unknown> {
       }],
       error: null,
     }],
-    counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0 },
+    counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 1 },
     source_snapshot_sha256: snapshotDigest,
   };
 }
@@ -313,7 +314,10 @@ describe('notification delivery evidence protocol', () => {
     }
     const { value, card } = payload(null);
     card.error = { code: 'repo_runtime_effect_unreadable', message: 'unavailable' };
-    card.column = null;
+    card.placement = { kind: 'unclassified', reason: 'observation_failed' };
+    value.snapshot_consistency = 'degraded';
+    (value.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
+    value.counts = { ...(value.counts as object), working: 0, unclassified: 1 };
     expect(decodeOperatorFleetSnapshot(value).repositories[0]!.cards[0]!.inbox.delivery_evidence).toBeNull();
   });
   test('rejects old protocol and missing, inconsistent or malformed evidence', () => {
@@ -328,3 +332,123 @@ describe('notification delivery evidence protocol', () => {
     expect(() => decodeOperatorFleetSnapshot(failed.value)).toThrow(OperatorPayloadError);
   });
 });
+
+
+describe('placement protocol and count conservation', () => {
+  test.each([
+    { placement: undefined }, { task_state: undefined }, { readiness_blockers: undefined },
+    { column: 'working' }, { placement: { kind: 'preparation', column: 'working' } },
+    { placement: { kind: 'alternate_workflow', workflow: 'unknown' } },
+    { placement: { kind: 'unclassified', reason: 'unknown' } },
+    { readiness_blockers: [{ code: 'unknown', attention_owner: 'agent' }] },
+    { readiness_blockers: [{ code: 'plan_missing', attention_owner: 'none' }] },
+  ])('rejects malformed or retired card fields %j', changes => {
+    expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard(changes))).toThrow(OperatorPayloadError);
+  });
+  test('rejects protocol 5, missing counts, false totals and duplicated identities', () => {
+    expect(() => decodeOperatorFleetSnapshot({ ...validFleetPayload(), protocol: 5 })).toThrow(OperatorPayloadError);
+    for (const field of ['known_tasks', 'preparation', 'alternate_workflow', 'isolated_execution', 'unreadable', 'working']) {
+      const payload = validFleetPayload();
+      (payload.counts as Record<string, unknown>)[field] = 5;
+      expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+      delete (payload.counts as Record<string, unknown>)[field];
+      expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+    }
+    const payload = validFleetPayload();
+    const repositories = payload.repositories as { cards: unknown[] }[];
+    repositories[0]!.cards.push(repositories[0]!.cards[0]);
+    payload.counts = { ...(payload.counts as object), working: 2, known_tasks: 2 };
+    expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+  });
+  test('preserves exact preparation ownership without degrading health', () => {
+    const blockers = [{ code: 'plan_not_approved', attention_owner: 'user' }, { code: 'contract_missing', attention_owner: 'agent' }] as const;
+    const payload = fleetPayloadWithCard({ placement: { kind: 'preparation' }, execution_readiness: 'planning_required', readiness_blockers: blockers, lease_state: 'available', claim_id: null, generation: null });
+    payload.counts = { ...(payload.counts as object), working: 0, preparation: 1 };
+    const result = decodeOperatorFleetSnapshot(payload);
+    expect(result.snapshot_consistency).toBe('stable');
+    expect(result.repositories[0]!.cards[0]!.readiness_blockers).toEqual(blockers);
+  });
+  test('counts a missing canonical row only as isolated execution', () => {
+    const payload = fleetPayloadWithCard({ task_state: 'missing', task_label: null, task_index: null, placement: { kind: 'unclassified', reason: 'canonical_missing' } });
+    payload.snapshot_consistency = 'degraded';
+    (payload.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
+    payload.counts = { ...(payload.counts as object), working: 0, known_tasks: 0, isolated_execution: 1 };
+    expect(decodeOperatorFleetSnapshot(payload).counts).toMatchObject({ known_tasks: 0, isolated_execution: 1, unclassified: 0 });
+  });
+});
+
+describe('historical activity browser transport', () => {
+  test('sends only the exact selector, no-store and AbortSignal, then binds the decoded response', async () => {
+    const { fetchTaskActivity }=await import('../../src/operator-web/task-activity');
+    const request={repository_id:'repo-a',task_id:taskId,limit:50,after:null,message_id:null};
+    const snapshot={...request,protocol:1,kind:'operator_task_activity',observed_at:'2026-09-22T00:00:00.000Z',consistency:'observed',entries:[],coverage:{scope:'task',complete:true,reason:null,scanned:0,bytes:0},next_cursor:null} as const;
+    const original=globalThis.fetch;const controller=new AbortController();let observed:RequestInit|undefined;let url='';
+    try {
+      globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(snapshot);}) as typeof fetch;
+      expect(await fetchTaskActivity(request,controller.signal)).toEqual(snapshot);
+      expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/activity?limit=50`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+      globalThis.fetch=(async()=>Response.json({...snapshot,repository_id:'repo-b'})) as unknown as typeof fetch;
+      await expect(fetchTaskActivity(request,controller.signal)).rejects.toThrow('Invalid task activity response');
+    } finally {globalThis.fetch=original;}
+  });
+});
+
+test('current context transport preserves expected revision, abort and uncached read semantics',async()=>{
+  const {fetchTaskContext}=await import('../../src/operator-web/task-context');
+  const request={repository_id:'repo-a',task_id:taskId,expected_task_revision:taskRevision};
+  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
+    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:taskId,task_revision:taskRevision,
+    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},task:{title:'Task',mode:'contract',acceptance:'read only',state:'pending'},
+    execution:{lease_state:'available',claim:null},offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:snapshotDigest,plan:null},
+    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:snapshotDigest,authorization_revision:1,consistency:'observed'},
+  };
+  const original=globalThis.fetch,controller=new AbortController();let url='';let observed:RequestInit|undefined;
+  try {
+    globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(context);}) as typeof fetch;
+    expect(await fetchTaskContext(request,controller.signal)).toEqual(context);
+    expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/context?task_revision=${taskRevision}`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+    globalThis.fetch=(async()=>Response.json({...context,task_revision:'f'.repeat(64)})) as unknown as typeof fetch;
+    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('Invalid task context response');
+    globalThis.fetch=(async()=>Response.json({code:'stale'},{status:409})) as unknown as typeof fetch;
+    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('stale');
+  } finally {globalThis.fetch=original;}
+});
+
+describe('repository snapshot transport', () => {
+  test('binds nested identity and generation with a strict envelope', async () => {
+    const { decodeOperatorRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
+    const value = { automation: automationFixture('repo-1'), protocol: 2, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
+      service_epoch: '00000000-0000-4000-8000-000000000001', generation: 1, snapshot: validFleetPayload() };
+    expect(decodeOperatorRepositorySnapshot(value, 'repo-1')).toMatchObject({ repository_id: 'repo-1' });
+    for (const bad of [{ ...value, protocol: 1 }, { ...value, generation: 2 }, { ...value, generation: 0 },
+      { ...value, service_epoch: 'unknown' }, { ...value, repository_id: 'repo-2' }, { ...value, path: '/private' },
+      { ...value, snapshot: { ...value.snapshot, repositories: [] } }]) {
+      expect(() => decodeOperatorRepositorySnapshot(bad, 'repo-1')).toThrow();
+    }
+  });
+  test('fetches an uncached selected repository with cancellation and typed refusal', async () => {
+    const { fetchRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
+    const original = globalThis.fetch;
+    const controller = new AbortController();
+    let called = 0;
+    globalThis.fetch = (async (input, init) => {
+      called += 1;
+      expect(input).toBe('/api/v1/fleet/repositories/repo-1/snapshot');
+      expect(init?.cache).toBe('no-store'); expect(init?.signal).toBe(controller.signal);
+      return new Response(JSON.stringify({ error: { code: 'fleet_repository_not_found' } }), { status: 404 });
+    }) as typeof fetch;
+    try {
+      await expect(fetchRepositorySnapshot('repo-1', controller.signal)).rejects.toThrow('fleet_repository_not_found');
+      await expect(fetchRepositorySnapshot('../root', controller.signal)).rejects.toThrow('repository_snapshot_invalid');
+      expect(called).toBe(1);
+    } finally { globalThis.fetch = original; }
+  });
+});
+
+function automationFixture(repositoryId: string) {
+  const source = { status: 'missing' as const, observed_at: '2026-09-22T00:00:00.000Z', reason: null, records: [] };
+  return { protocol: 1 as const, repository_id: repositoryId, consistency: 'observed' as const, observed_at: source.observed_at,
+    policy: source, grants: source, budgets: source, controllers: source, campaigns: source,
+    native_execution: { status: 'unavailable' as const, reason: 'native_admission_authority_unavailable' as const, turn_ref: null },
+  };
+}

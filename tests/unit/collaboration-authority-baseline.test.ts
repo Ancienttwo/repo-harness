@@ -435,6 +435,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'untrusted peer payload under [TaskInboxUntrustedPeerMessages]; the operator POST route names its recipient from readLease, not from a message',
   },
   {
+    module: 'src/core/fleet/task-reply.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots; Task Inbox and restricted Engineer MCP consume them only for message disposition, and structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority',
+  },
+  {
     module: 'src/core/publication/feedback.ts',
     fails: ['C-1'],
     evidence: 'review/repair loop despite the publication/ directory (D12); merge-readiness imports only publication-receipt and no publication or merge decision reads a feedback event',
@@ -517,7 +522,7 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
  * re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787';
+  'sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
@@ -753,7 +758,7 @@ describe('C0 delivery-plane authority baseline', () => {
       'project-board': 1,
       'task-offer': 1,
       'fleet-offers': 1,
-      'fleet-board': 4,
+      'fleet-board': 5,
       'task-freeze-receipt': 1,
       'publication-receipt': 1,
       'publication-lineage': 1,

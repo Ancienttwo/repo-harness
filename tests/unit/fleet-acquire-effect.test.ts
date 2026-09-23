@@ -6,6 +6,7 @@ import { join } from 'path';
 import type { BoardDocumentV1, BoardCardV1 } from '../../src/core/state/types';
 import {
   collectFleetOffers,
+  collectRepoTaskOffers,
 } from '../../src/effects/fleet/acquire';
 import type {
   RepoHarnessRegisteredRepo,
@@ -163,4 +164,12 @@ describe('fleet offer read effect', () => {
       'snapshot_changed_during_read',
     ]);
   });
+});
+
+
+test('exact-task offer read preserves original row order and skips unrelated plan resolution',()=>{
+  const target=fixtureRepo('repo-scope','read_write');
+  const seen:string[]=[];
+  const result=collectRepoTaskOffers(target,registry([target]),{task_id:'task-b',board_reader:()=>board([card('task-a','1','other task','contract'),card('task-b','7','execute one task','contract')]),plan_reader:(_cwd,input)=>{seen.push(input.taskCell);return {ok:true,proof:PLAN_PROOF};}});
+  expect(seen).toEqual(['execute one task']);expect(result?.offers.map(o=>[o.task_id,o.row_order])).toEqual([['task-b',7]]);
 });

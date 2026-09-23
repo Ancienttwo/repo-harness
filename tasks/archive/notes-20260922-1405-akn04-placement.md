@@ -1,0 +1,59 @@
+> **Archived**: 2026-09-22 14:05
+> **Related Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1405
+> **Archive Projection V1**: `plans/plan-20260922-0321-akn04-placement.md` => `plans/archive/plan-20260922-0321-akn04-placement.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0321-akn04-placement.notes.md` => `tasks/archive/notes-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0321-akn04-placement.contract.md` => `tasks/archive/contract-20260922-1405-akn04-placement.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0321-akn04-placement.review.md` => `tasks/archive/review-20260922-1405-akn04-placement.md`
+
+# Implementation Notes: akn04-placement
+
+> **Status**: Active
+> **Plan**: plans/archive/plan-20260922-0321-akn04-placement.md
+> **Contract**: tasks/archive/contract-20260922-1405-akn04-placement.md
+> **Review**: tasks/archive/review-20260922-1405-akn04-placement.md
+> **Last Updated**: 2026-09-22
+> **Lifecycle**: notes
+
+## Design Decisions
+
+- `unsupported` is not a preparation alias: the complete authoritative blocker set must be from the approved preparation vocabulary. Valid claimed/review/done facts precede reacquisition blockers.
+- Missing canonical rows remain inspectable execution records, excluded from known tasks and placement totals. Browser counts are validated against the delivered set, never inferred from names or Lease availability.
+- Fleet 5 and Operator 6 cut over atomically with browser consumers. Rollback the package together; no persisted authority is rewritten.
+- Exact implementation contract is promoted to `docs/researches/20260922-fleet-placement-contract.md`.
+
+## Deviations From Plan Or Spec
+
+- None. The minimal browser cutover includes preparation reason/owner detail and isolated/unknown repository counts so the new DTO does not yield contradictory UI text. Context/activity routes and the broader home redesign are outside this slice.
+
+## Verification Decisions
+
+- Existing suites only; no new test module or full-suite run. Provider-sensitive fixtures use `tests/preload-home-isolation.ts` from `bunfig.toml`.
+- The first 11-file development run was 306 pass / 1 fail. The failed composer fixture mixed valid and unknown Lease rows while previously claiming stable health. The corrected fixture now reports degraded, and its send test explicitly selects a separate healthy single-card snapshot validated by the production decoder. The targeted correction passed. The production write guard was preserved.
+- Built-browser observation used a GET-only local fixture server. English and Chinese approval/preparation detail was read through browser AX and screenshots; no form was submitted. Removed an empty cause heading identified in the first rendering and confirmed the final Chinese detail after rebuilding/reloading.
+
+## Open Questions
+
+- The user explicitly authorized AKN-04a local indexing and deterministic reconcile. The index contains 1,173 files. Existing Fleet core paths resolve to the root umbrella; this slice changes the read-model protocol, not module ownership. No new capability node is justified. Architecture projection and final independent acceptance are still required before this stage's PR.
+
+## Evidence Links
+
+- Before fix: `.ai/harness/runs/akn04-placement/preparation-before.log`
+- Development suites: `.ai/harness/runs/akn04-placement/focused-development.log`
+- Fixture correction: `.ai/harness/runs/akn04-placement/composer-fixture-correction.log`
+- Browser build: `.ai/harness/runs/akn04-placement/browser-build-final.log`
+- Canonical acceptance evidence: `.ai/harness/checks/latest.json` after final verification, not the development logs.
+
+## Corrected communication dependency
+
+Merged AKN-03b correction `92f1b3b68fb3920fc47ff5a9f63ce0c6a1ef1d0e`. The deterministic architecture manifest conflict used the dependency preimage and will be regenerated for this tree. Placement source did not conflict. The earlier rejection and one-shot review remain in the review artifact; a new verification subject is required after dependency replacement.
+
+## Next read-model boundary
+
+The roadmap section 8.2 requires exact-message history across old revisions. `src/effects/engineers/task-inbox.ts` and `withRestrictedInbox` in `src/effects/fleet/task-inbox.ts` require the current sealed Engineer/Claim/Lease; those live communication validators cannot directly serve browser historical activity. Reuse server Host/Origin, registered repository isolation, bounded worker/cancellation and typed failures from TaskDiff/collaboration, but freeze historical event/receipt reads separately from active Task context in AKN-04b. No new route is included in this placement slice.
+
+## Protocol inventory gap
+
+The next activity slice ran the existing C0 inventory suite and exposed two stale v4 assertions. A direct pre-fix run in this owning worktree reproduced both failures (`inventory-before.log`). The v5 source was already correct; this cutover now updates the expected version/digest and records the new inventory revision without rewriting the historical freeze. Canonical verification now includes this suite. The owner request for 82442603 is superseded by the new subject after correction.

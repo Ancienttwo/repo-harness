@@ -32,6 +32,7 @@ export interface McpServerOptions {
   devRunnerTimeoutMs?: number;
   codingRuntime?: McpCodingRuntime | null;
   engineerAuthorizationId?: string;
+  verifyEngineerAuthorization?: (token: string, authorizationId: string) => void;
 }
 
 export interface McpCodingRuntime {
@@ -285,10 +286,17 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
     tools: buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true }),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-    return callMcpTool(ctx, name, args) as any;
+    const requestContext = ctx.policy.profile === 'engineer' ? {
+      ...ctx,
+      engineerVerifyAuthorization: opts.verifyEngineerAuthorization ? () => {
+        if (!extra.authInfo?.token || !ctx.engineerAuthorizationId) throw new Error('current Engineer request authentication is unavailable');
+        opts.verifyEngineerAuthorization!(extra.authInfo.token, ctx.engineerAuthorizationId);
+      } : undefined,
+    } : ctx;
+    return callMcpTool(requestContext, name, args) as any;
   });
 
   server.onclose = () => {

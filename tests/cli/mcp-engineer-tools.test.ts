@@ -151,6 +151,10 @@ describe('restricted Engineer MCP tools', () => {
     const policy = getMcpPolicy('engineer');
     const names = buildMcpToolDefinitions(policy, { enableChatgptBrowser: true }).map((tool) => tool.name);
     expect(names).toEqual([
+      'engineer_task_messages',
+      'engineer_task_message_consume',
+      'engineer_task_message_ack',
+      'engineer_task_reply',
       'engineer_status',
       'engineer_offers',
       'engineer_acquire',

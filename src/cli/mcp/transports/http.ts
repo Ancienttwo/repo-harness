@@ -440,6 +440,7 @@ async function handleMcpPost(
   sessions: McpSessionStore<McpHttpTransport>,
   codingRuntimes: CodingAuthorizationRuntimeStore | null,
   startupProfile: string,
+  verifyEngineerAuthorization?: (token: string, authorizationId: string) => void,
 ): Promise<void> {
   const authorizationScoped = startupProfile === 'coding' || startupProfile === 'engineer';
   let body: unknown;
@@ -514,6 +515,7 @@ async function handleMcpPost(
         profile: startupProfile,
         codingRuntime,
         engineerAuthorizationId: startupProfile === 'engineer' ? authorizationId : undefined,
+        verifyEngineerAuthorization,
       });
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
@@ -799,7 +801,12 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   }
 
   app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
-    handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions, codingRuntimes, profile).catch((error: unknown) => {
+    handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions, codingRuntimes, profile,
+      profile === 'engineer' && oauthProvider ? (token, authorizationId) => {
+        const current = oauthProvider.verifyAccessTokenCurrent(token) as McpStoredAuthInfo;
+        if (current.authorizationId !== authorizationId) throw new InvalidTokenError('Engineer authorization identity changed');
+      } : undefined,
+    ).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
   });

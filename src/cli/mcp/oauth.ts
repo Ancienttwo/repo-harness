@@ -287,7 +287,7 @@ export function createMcpOAuthProvider(
     readonly authorizationRevision?: number | (() => number);
     readonly onAuthorizationRevoked?: (authorizationId: string) => void | Promise<void>;
   } = {},
-): OAuthServerProvider {
+): OAuthServerProvider & { verifyAccessTokenCurrent(token: string): AuthInfo } {
   const authCodes = new Map<string, AuthorizationCodeRecord>();
   const clock = opts.nowSeconds ?? nowSeconds;
   store.setClock(clock);
@@ -328,6 +328,33 @@ export function createMcpOAuthProvider(
       throw new InvalidGrantError('Authorization code has expired');
     }
     return stored;
+  };
+
+  // The synchronous form lets a bounded store transaction revalidate its
+  // exact request token without yielding between authentication and publication.
+  const verifyAccessTokenCurrent = (token: string): AuthInfo => {
+    const info = store.getAccessToken(token);
+    if (!info) throw new InvalidTokenError('Token not found');
+    if ((info.profile ?? 'planner') !== profile) throw new InvalidTokenError('Token profile mismatch');
+    if (authorizationScoped && (
+      info.authorizationRevision !== currentAuthorizationRevision() ||
+      (requiredScope !== null && !info.scopes.includes(requiredScope)) ||
+      typeof info.authorizationId !== 'string' ||
+      !info.authorizationId.trim()
+    )) {
+      const refreshToken = store.findRefreshTokenByAccessToken(token);
+      if (refreshToken) store.deleteRefreshToken(refreshToken);
+      store.deleteAccessToken(token);
+      notifyAuthorizationRevoked(info);
+      throw new InvalidTokenError(`${profile} authorization is stale or missing`);
+    }
+    if (info.expiresAt && info.expiresAt < clock()) {
+      if (!store.findRefreshTokenByAccessToken(token)) {
+        store.deleteAccessToken(token);
+      }
+      throw new InvalidTokenError('Token has expired');
+    }
+    return info;
   };
 
   return {
@@ -440,29 +467,9 @@ export function createMcpOAuthProvider(
       };
     },
 
+    verifyAccessTokenCurrent,
     async verifyAccessToken(token: string): Promise<AuthInfo> {
-      const info = store.getAccessToken(token);
-      if (!info) throw new InvalidTokenError('Token not found');
-      if ((info.profile ?? 'planner') !== profile) throw new InvalidTokenError('Token profile mismatch');
-      if (authorizationScoped && (
-        info.authorizationRevision !== currentAuthorizationRevision() ||
-        (requiredScope !== null && !info.scopes.includes(requiredScope)) ||
-        typeof info.authorizationId !== 'string' ||
-        !info.authorizationId.trim()
-      )) {
-        const refreshToken = store.findRefreshTokenByAccessToken(token);
-        if (refreshToken) store.deleteRefreshToken(refreshToken);
-        store.deleteAccessToken(token);
-        notifyAuthorizationRevoked(info);
-        throw new InvalidTokenError(`${profile} authorization is stale or missing`);
-      }
-      if (info.expiresAt && info.expiresAt < clock()) {
-        if (!store.findRefreshTokenByAccessToken(token)) {
-          store.deleteAccessToken(token);
-        }
-        throw new InvalidTokenError('Token has expired');
-      }
-      return info;
+      return verifyAccessTokenCurrent(token);
     },
 
     async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest): Promise<void> {

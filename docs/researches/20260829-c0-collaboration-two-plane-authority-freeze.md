@@ -96,6 +96,7 @@ the historical `main@a490a5ef` count:
 | `src/core/refactor/program.ts` | C-1 | Refactor orchestration plane: binds provider recommendation identity to a Work Package before materialization; downstream scheduling reads the resulting canonical Work Graph, never the RefactorProgram bytes, as Task/Claim authority |
 | `src/core/refactor/board.ts` | C-1, C-2 | Refactor read model: projects Program, provider lifecycle, execution, and resolution authorities for display; no delivery-plane admission or ownership decision reads the board bytes |
 | `src/core/refactor/activation.ts` | C-1, C-2 | Refactor rollout-control plane: canary receipts gate mode activation but grant no Task/Claim, move no Lease generation, and publish or accept no delivery-plane fact |
+| `src/core/fleet/task-reply.ts` | C-1, C-2 | Messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots. AKN-03b Task Inbox and restricted Engineer MCP consume these records only for message disposition; structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority. The delivery-plane inventory and frozen identities remain unchanged. |
 
 **`project-board.ts` vs `fleet/board.ts`.** Both are Task/Lease-plane read
 models, and both are inventoried; the earlier split between them had no stated
@@ -666,3 +667,7 @@ unchanged. The resulting inventory digest is
 `sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787`.
 The protocol change and this explicit amendment are verified by
 `tests/unit/collaboration-authority-baseline.test.ts`.
+
+## AKN-04a Fleet protocol revision (2026-09-22)
+
+The placement cutover changes the existing Fleet board wire protocol from 4 to 5; its authority membership and store ownership remain unchanged. The earlier inventory digest `sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787` above records the prior freeze. The current inventory, differing in that protocol value, is `sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162`. The closed inventory regression remains required; this explicit revision does not retroactively change any earlier acceptance or establish a new delivery authority.

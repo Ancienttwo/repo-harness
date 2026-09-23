@@ -1,15 +1,20 @@
 import { createHash } from 'crypto';
 
-import type { TaskOfferExecutionReadiness } from './task-offer';
+import type { TaskOfferBlockerV1, TaskOfferExecutionReadiness } from './task-offer';
 import type { MergeReadinessBlockerCode, MergeReadinessV1 } from '../publication/merge-readiness';
 import type { BoardLeaseState, TaskState } from '../state/types';
 import type { AgentRuntimeFailureClass, AgentRuntimeAdapterKind, AgentRuntimeEffectState, AgentRuntimeReceiptKind } from '../engineers/agent-runtime-effect';
 
 /** A fleet projection is its own read model; it never changes BoardColumn. */
-export const FLEET_BOARD_PROTOCOL = 4 as const;
+export const FLEET_BOARD_PROTOCOL = 5 as const;
 export const FLEET_BOARD_KIND = 'fleet_board_snapshot' as const;
 
 export type FleetBoardColumn = 'available' | 'working' | 'in_review' | 'ready_to_merge' | 'done';
+export type FleetBoardPlacement =
+  | Readonly<{ kind: 'column'; column: FleetBoardColumn }>
+  | Readonly<{ kind: 'preparation' }>
+  | Readonly<{ kind: 'alternate_workflow'; workflow: 'inline' }>
+  | Readonly<{ kind: 'unclassified'; reason: 'observation_failed' | 'canonical_missing' | 'task_drifted' | 'readiness_unavailable' | 'unsupported_readiness' | 'state_unmapped' }>;
 export type FleetBoardAttentionOwner = 'user' | 'agent' | 'external' | 'none';
 export type FleetBoardSnapshotConsistency = 'stable' | 'changed_during_read' | 'degraded';
 export type FleetRepositoryStatus = 'ok' | 'unreadable';
@@ -79,10 +84,11 @@ export interface FleetBoardCardV1 {
   readonly task_index: number | null;
   readonly claim_id: string | null;
   readonly generation: number | null;
-  /** Null means no five-column classification was sound; it is not counted. */
-  readonly column: FleetBoardColumn | null;
+  readonly task_state: TaskState;
+  readonly placement: FleetBoardPlacement;
   readonly attention_owner: FleetBoardAttentionOwner;
   readonly execution_readiness: TaskOfferExecutionReadiness | null;
+  readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
   readonly lease_state: BoardLeaseState;
   /** Exact reviewing-pointer facts only; neither value is inferred from a branch or provider response. */
   readonly publication_id: string | null;
@@ -117,7 +123,11 @@ export interface FleetBoardCountsV1 {
   readonly ready_to_merge: number;
   readonly done: number;
   readonly unreadable: number;
-  /** Cards with no sound five-column classification, including failed cards. */
+  readonly preparation: number;
+  readonly alternate_workflow: number;
+  readonly isolated_execution: number;
+  readonly known_tasks: number;
+  /** Canonical cards without a sound placement, including failed observations. */
   readonly unclassified: number;
 }
 
@@ -145,6 +155,7 @@ export interface FleetBoardCardInputV1 {
   readonly current_publication: { readonly publication_id: string; readonly head_sha: string } | null;
   readonly merge_readiness: MergeReadinessV1 | null;
   readonly execution_readiness: TaskOfferExecutionReadiness | null;
+  readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
   readonly feedback: FleetBoardFeedbackSummaryV1;
   readonly inbox: FleetBoardInboxSummaryV1;
   readonly snapshot_consistency: 'stable' | 'changed_during_read';
@@ -203,26 +214,38 @@ function feedbackAttention(summary: FleetBoardFeedbackSummaryV1): FleetBoardAtte
   return 'none';
 }
 
-/** Closed five-column mapping; no unavailable task is promoted to available. */
-export function classifyFleetBoardColumn(input: FleetBoardCardInputV1): FleetBoardColumn | null {
-  if (input.task_state === 'done') return 'done';
+const PREPARATION_BLOCKERS = new Set<TaskOfferBlockerV1['code']>([
+  'repo_read_only', 'plan_missing', 'plan_not_approved', 'plan_not_projectable', 'contract_missing', 'contract_not_projectable',
+]);
+
+/** Existing execution facts precede reacquisition readiness. */
+export function classifyFleetBoardPlacement(input: FleetBoardCardInputV1): FleetBoardPlacement {
+  const unclassified = (reason: Extract<FleetBoardPlacement, { kind: 'unclassified' }>['reason']): FleetBoardPlacement => Object.freeze({ kind: 'unclassified', reason });
+  const column = (column: FleetBoardColumn): FleetBoardPlacement => Object.freeze({ kind: 'column', column });
+  if (input.error !== null) return unclassified('observation_failed');
+  if (input.task_state === 'missing') return unclassified('canonical_missing');
+  if (input.task_state === 'drifted') return unclassified('task_drifted');
+  if (input.task_state === 'done') return column('done');
   if (input.lease_state === 'reviewing' && input.current_publication !== null) {
-    return input.merge_readiness?.ready === true ? 'ready_to_merge' : 'in_review';
+    return column(input.merge_readiness?.ready === true ? 'ready_to_merge' : 'in_review');
   }
-  if (input.lease_state === 'reserving' || input.lease_state === 'bound' || input.lease_state === 'completing') {
-    return 'working';
-  }
-  if (input.task_state === 'pending' && input.lease_state === 'available'
-    && input.execution_readiness === 'execution_ready') {
-    return 'available';
-  }
-  return null;
+  if (input.lease_state === 'reserving' || input.lease_state === 'bound' || input.lease_state === 'completing') return column('working');
+  if (input.task_state !== 'pending' || input.lease_state !== 'available') return unclassified('state_unmapped');
+  const blockers = input.readiness_blockers;
+  if (input.execution_readiness === null || blockers === null) return unclassified('readiness_unavailable');
+  if (input.execution_readiness === 'execution_ready' && blockers.length === 0) return column('available');
+  if (input.execution_readiness === 'inline_ready' && blockers.length === 0) return Object.freeze({ kind: 'alternate_workflow', workflow: 'inline' });
+  if ((input.execution_readiness === 'planning_required' || input.execution_readiness === 'unsupported')
+    && blockers.length > 0 && blockers.every(blocker => PREPARATION_BLOCKERS.has(blocker.code))) return Object.freeze({ kind: 'preparation' });
+  return unclassified('unsupported_readiness');
 }
 
 export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCardInputV1): FleetBoardCardV1 {
   const readinessAttention = input.merge_readiness?.attention_owner ?? 'none';
   const publication = input.current_publication;
   const error = input.error;
+  const placement = classifyFleetBoardPlacement(input);
+  const preExecution = placement.kind !== 'column' || placement.column === 'available';
   if (error === null && input.inbox.delivery_evidence === null) throw new Error('Readable Fleet card requires delivery evidence');
   return Object.freeze({
     repository_id: repositoryId,
@@ -232,15 +255,16 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
     task_index: input.task_index,
     claim_id: input.claim_id,
     generation: input.generation,
-    // A failed observation has no sound classification, whatever its partial
-    // inputs happen to allow.
-    column: error === null ? classifyFleetBoardColumn(input) : null,
+    task_state: input.task_state,
+    placement,
     attention_owner: attention(
+      ...(preExecution && input.task_state === 'pending' ? input.readiness_blockers?.map(blocker => blocker.attention_owner) ?? [] : []),
       readinessAttention,
       feedbackAttention(input.feedback),
       input.inbox.addressed_to_current_claim ? 'agent' : 'none',
     ),
     execution_readiness: input.execution_readiness,
+    readiness_blockers: input.readiness_blockers === null ? null : Object.freeze(input.readiness_blockers.map(blocker => Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }))),
     lease_state: input.lease_state,
     publication_id: publication?.publication_id ?? null,
     head_sha: publication?.head_sha ?? null,
@@ -291,7 +315,8 @@ function projectRepository(input: FleetRepositoryBoardInputV1): FleetRepositoryB
   const cards = input.cards
     .map((card) => projectFleetBoardCard(input.repository_id, card))
     .sort((left, right) => compare(left.task_id, right.task_id) || compare(left.task_revision, right.task_revision));
-  const unclassified = cards.some((card) => card.column === null);
+  if (new Set(cards.map(card => card.task_id)).size !== cards.length) throw new Error('Fleet repository contains duplicate task identities');
+  const unclassified = cards.some((card) => card.placement.kind === 'unclassified');
   const changedCard = cards.some((card) => card.snapshot_consistency === 'changed_during_read');
   const consistency = input.snapshot_consistency === 'degraded' || unclassified
     ? 'degraded'
@@ -299,7 +324,7 @@ function projectRepository(input: FleetRepositoryBoardInputV1): FleetRepositoryB
       ? 'changed_during_read'
       : 'stable';
   const error = input.error ?? (unclassified
-    ? { code: 'repo_board_unavailable' as const, message: 'one or more cards have no sound fleet column classification' }
+    ? { code: 'repo_board_unavailable' as const, message: 'one or more cards have no sound Fleet placement' }
     : null);
   return Object.freeze({
     repository_id: input.repository_id,
@@ -332,8 +357,10 @@ export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV1): F
   const repositories = input.repositories
     .map(projectRepository)
     .sort((left, right) => compare(left.repository_id, right.repository_id));
+  if (new Set(repositories.map(repository => repository.repository_id)).size !== repositories.length) throw new Error('Fleet snapshot contains duplicate repository identities');
   const counts: { -readonly [Key in keyof FleetBoardCountsV1]: number } = {
     available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 0,
+    preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 0,
   };
   let consistency: FleetBoardSnapshotConsistency = 'stable';
   for (const repository of repositories) {
@@ -345,8 +372,10 @@ export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV1): F
     if (repository.snapshot_consistency === 'degraded') consistency = 'degraded';
     else if (repository.snapshot_consistency === 'changed_during_read' && consistency === 'stable') consistency = 'changed_during_read';
     for (const card of repository.cards) {
-      if (card.column === null) counts.unclassified += 1;
-      else counts[card.column] += 1;
+      if (card.task_state === 'missing') { counts.isolated_execution += 1; continue; }
+      counts.known_tasks += 1;
+      if (card.placement.kind === 'column') counts[card.placement.column] += 1;
+      else counts[card.placement.kind] += 1;
     }
   }
   const basis = {

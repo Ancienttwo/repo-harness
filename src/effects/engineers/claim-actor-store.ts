@@ -1,3 +1,4 @@
+import { syncDirectoryDurably } from '../evidence/atomic-append';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { dirname, join, relative, resolve, sep } from 'path';
 
@@ -25,11 +26,6 @@ function pathFor(cwd: string, taskId: string, claimId: string): { common: string
   return { common, root, task, receipt: join(task, `${claimId}.json`) };
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
-}
-
 function ensureSafeDirectory(root: string, target: string): void {
   const scoped = relative(root, target);
   if (!scoped || scoped === '..' || scoped.startsWith(`..${sep}`)) {
@@ -48,7 +44,7 @@ function ensureSafeDirectory(root: string, target: string): void {
       }
       const stat = lstatSync(current);
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new EngineerPrincipalError('claim_actor_receipt_invalid', `unsafe claim actor receipt directory: ${current}`);
-      fsyncDirectory(dirname(current));
+      syncDirectoryDurably(dirname(current));
     }
   }
 }
@@ -83,11 +79,15 @@ function parse(raw: string): ClaimActorReceiptV1 {
   }
 }
 
-export function readClaimActorReceipt(cwd: string, taskId: string, claimId: string): ClaimActorReceiptV1 | null {
+export function readClaimActorReceipt(cwd: string, taskId: string, claimId: string, budget?: { max_bytes: number; charge: (bytes: number) => void }): ClaimActorReceiptV1 | null {
   const paths = pathFor(cwd, taskId, claimId);
   if (!safeDirectoryExists(paths.common, paths.task) || !existsSync(paths.receipt)) return null;
   const stat = lstatSync(paths.receipt);
   if (!stat.isFile() || stat.isSymbolicLink()) throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'claim actor receipt path is unsafe');
+  if (budget) {
+    if (stat.size > budget.max_bytes) throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'claim actor receipt exceeds read budget');
+    budget.charge(stat.size);
+  }
   return parse(readFileSync(paths.receipt, 'utf8'));
 }
 
@@ -102,8 +102,8 @@ export function publishClaimActorReceipt(cwd: string, receiptInput: ClaimActorRe
       writeFileSync(fd, bytes, { encoding: 'utf8' });
       fsyncSync(fd);
     } finally { closeSync(fd); }
-    fsyncDirectory(paths.task);
-    fsyncDirectory(paths.root);
+    syncDirectoryDurably(paths.task);
+    syncDirectoryDurably(paths.root);
     return receipt;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;

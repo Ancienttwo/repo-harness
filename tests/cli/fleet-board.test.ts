@@ -25,11 +25,11 @@ describe('fleet board CLI transport', () => {
       expect(result.stderr).toBe('');
       const document = JSON.parse(result.stdout) as Record<string, unknown>;
       expect(document).toMatchObject({
-        protocol: 4,
+        protocol: 5,
         kind: 'fleet_board_snapshot',
         sequence: 1,
         repositories: [],
-        counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 },
+        counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, preparation: 0, alternate_workflow: 0, isolated_execution: 0, known_tasks: 0, unclassified: 0 },
       });
       expect(document.snapshot_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
       expect(existsSync(home)).toBe(false);

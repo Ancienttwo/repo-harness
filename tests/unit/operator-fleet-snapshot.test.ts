@@ -33,7 +33,7 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
             generation: null,
             current_publication: null,
             merge_readiness: null,
-            execution_readiness: 'execution_ready',
+            execution_readiness: 'execution_ready', readiness_blockers: [],
             feedback: { pending_count: 1, no_progress: false, repair_actions: [] },
             inbox: { unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
             snapshot_consistency: 'changed_during_read',
@@ -64,7 +64,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     const projected = projectOperatorFleetSnapshot(source);
 
     expect(projected).toMatchObject({
-      protocol: 5,
+      protocol: 6,
       kind: 'operator_fleet_snapshot',
       registry_revision: source.registry_revision,
       sequence: source.sequence,
@@ -95,7 +95,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     expect(Object.isFrozen(typed)).toBe(true);
     expect(Object.isFrozen(typed.repositories)).toBe(true);
     expect(Object.isFrozen(typed.repositories[0])).toBe(true);
-    expect(typed.repositories[0]?.cards[0]?.column).toBe('available');
+    expect(typed.repositories[0]?.cards[0]?.placement).toEqual({ kind: 'column', column: 'available' });
     expect(typed.repositories[0]?.cards[0]).toMatchObject({
       task_label: 'observe one registered repository',
       task_index: 1,
@@ -150,7 +150,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
             generation: null,
             current_publication: null,
             merge_readiness: null,
-            execution_readiness: 'execution_ready',
+            execution_readiness: 'execution_ready', readiness_blockers: [],
             feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
             inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
             snapshot_consistency: 'stable',
@@ -167,7 +167,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
             generation: null,
             current_publication: null,
             merge_readiness: null,
-            execution_readiness: null,
+            execution_readiness: null, readiness_blockers: null,
             feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
             inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
             snapshot_consistency: 'stable',
@@ -181,7 +181,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     const projected = projectOperatorFleetSnapshot(source);
     expect(projected.counts.unclassified).toBe(1);
     expect(projected.repositories[0]?.cards[1]).toMatchObject({
-      column: null,
+      placement: { kind: 'unclassified', reason: 'observation_failed' },
       error: { code: 'repo_inbox_unreadable', message: 'repository inbox observation is unavailable' },
     });
     expect(projected.repositories[0]?.cards[0]?.error).toBeNull();
@@ -200,12 +200,14 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     Object.defineProperty(source, 'future_env', { value: 'REPO_HARNESS_TOKEN=secret', enumerable: true });
     Object.defineProperty(repository, 'repo_root', { value: 'C:\\Users\\operator\\private', enumerable: true });
     Object.defineProperty(repository, 'future_unix_path', { value: '/Users/operator/.ssh/id_rsa', enumerable: true });
+    Object.defineProperty(card.placement, 'future_env', { value: 'PLACEMENT_PRIVATE_CONTROL', enumerable: true });
     Object.defineProperty(card, 'future_control', { value: 'line\u0000break', enumerable: true });
     Object.defineProperty(card, 'future_windows_path', { value: 'C:\\Users\\operator\\token.txt', enumerable: true });
 
     const projected = projectOperatorFleetSnapshot(source);
     const rendered = JSON.stringify(projected);
     expect(rendered).not.toContain('future_env');
+    expect(rendered).not.toContain('PLACEMENT_PRIVATE_CONTROL');
     expect(rendered).not.toContain('REPO_HARNESS_TOKEN=secret');
     expect(rendered).not.toContain('future_unix_path');
     expect(rendered).not.toContain('/Users/operator/.ssh/id_rsa');
@@ -220,10 +222,10 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
       'access_mode', 'cards', 'display_name', 'error', 'repository_id', 'snapshot_consistency', 'status',
     ]);
     expect(Object.keys(projected.repositories[0]?.cards[0] ?? {}).sort()).toEqual([
-      'attention_owner', 'blocker_codes', 'claim_id', 'column', 'error', 'execution_readiness',
+      'attention_owner', 'blocker_codes', 'claim_id', 'error', 'execution_readiness',
       'feedback', 'generation', 'head_sha', 'inbox', 'lease_state', 'merge_readiness',
-      'publication_id', 'repository_id', 'snapshot_consistency', 'task_id', 'task_index',
-      'task_label', 'task_revision',
+      'placement', 'publication_id', 'readiness_blockers', 'repository_id', 'snapshot_consistency', 'task_id', 'task_index',
+      'task_label', 'task_revision', 'task_state',
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import { syncDirectoryDurably } from '../evidence/atomic-append';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
 import { dirname, join } from 'path';
@@ -33,11 +34,6 @@ function fail(message: string, cause?: unknown): never {
   throw new EngineerPrincipalError('engineer_principal_store_corrupt', message, cause);
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
-}
-
 function assertStoreRootSafe(env: NodeJS.ProcessEnv): void {
   const root = storeRoot(env);
   if (!existsSync(root)) return;
@@ -67,11 +63,13 @@ function publishMapping(env: NodeJS.ProcessEnv, mapping: EngineerPrincipalMappin
   const target = mappingPath(env, mapping.repository_id, mapping.authorization_id);
   const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
   try {
-    writeFileSync(temp, canonicalEngineerPrincipalMappingBytes(mapping), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    const fd = openSync(temp, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try { fsyncSync(fd); } finally { closeSync(fd); }
+    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      writeFileSync(fd, canonicalEngineerPrincipalMappingBytes(mapping), 'utf8');
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
     renameSync(temp, target);
-    fsyncDirectory(root);
+    syncDirectoryDurably(root);
   } finally {
     try { unlinkSync(temp); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -79,7 +77,7 @@ function publishMapping(env: NodeJS.ProcessEnv, mapping: EngineerPrincipalMappin
   }
 }
 
-function withStoreLock<T>(env: NodeJS.ProcessEnv, run: () => T): T {
+export function withEngineerPrincipalStoreLock<T>(env: NodeJS.ProcessEnv, run: () => T): T {
   const home = dirname(repoHarnessRegisteredReposPath(env));
   mkdirSync(home, { recursive: true, mode: 0o700 });
   return withExclusiveDirectoryLock(home, PRINCIPAL_LOCK, run);
@@ -96,7 +94,7 @@ export interface EnrollEngineerPrincipalInput {
 export function enrollEngineerPrincipal(input: EnrollEngineerPrincipalInput): EngineerPrincipalMappingV1 {
   const env = input.env ?? process.env;
   if (input.binding.state !== 'active') throw new EngineerPrincipalError('engineer_principal_stale', 'only an active Binding can be enrolled');
-  return withStoreLock(env, () => {
+  return withEngineerPrincipalStoreLock(env, () => {
     const path = mappingPath(env, input.repository_id, input.authorization_id);
     const existing = readMapping(path);
     if (existing && (existing.repository_id !== input.repository_id || existing.authorization_id !== input.authorization_id)) {
@@ -142,7 +140,7 @@ export function revokeEngineerPrincipal(
   options: { readonly revoked_at?: string; readonly env?: NodeJS.ProcessEnv } = {},
 ): EngineerPrincipalMappingV1 {
   const env = options.env ?? process.env;
-  return withStoreLock(env, () => {
+  return withEngineerPrincipalStoreLock(env, () => {
     const current = readMapping(mappingPath(env, repositoryId, authorizationId));
     if (!current) throw new EngineerPrincipalError('engineer_principal_unmapped', 'authorization has no principal mapping');
     if (current.repository_id !== repositoryId || current.authorization_id !== authorizationId) {

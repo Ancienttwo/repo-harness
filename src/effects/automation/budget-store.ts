@@ -1144,6 +1144,7 @@ export function requireUnattendedAutomationRunBudget(repoRoot: string, runId: st
 export function readAutomationBudgetBoardSlice(
   repoRoot: string,
   runId: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): AutomationBudgetBoardSliceV1 {
   // One instant for the whole slice. Sampling the clock again for the
   // wall-clock row could straddle the deadline and render a run that the drift
@@ -1153,7 +1154,7 @@ export function readAutomationBudgetBoardSlice(
   // when the stored projection lags, so the slice never renders counts a crash
   // left behind. `projection_stale` still says the stored projection has not
   // caught up.
-  const status = readAutomationBudgetStatusAt(repoRoot, runId, observedAt);
+  const status = readAutomationBudgetStatusAt(repoRoot, runId, observedAt, env);
   let campaign: CampaignBudgetLedgerV1 | null = null;
   if (status.budget.authorization.campaign !== null) {
     const paths = runPaths(repoRoot, runId);

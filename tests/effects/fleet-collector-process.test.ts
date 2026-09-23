@@ -71,27 +71,27 @@ function processIsAlive(pid: number): boolean {
 describe('Fleet collector supervision protocol', () => {
   test('keeps the collector inert until a complete start payload arrives', () => {
     expect(parseFleetCollectorRequest({ type: 'cancel' })).toEqual({ type: 'cancel' });
-    expect(parseFleetCollectorRequest({ type: 'start', sequence: 1, max_concurrency: 1 })).toBeNull();
+    expect(parseFleetCollectorRequest({ type: 'start', protocol: 2, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1 })).toBeNull();
     expect(parseFleetCollectorRequest({
-      type: 'start',
+      type: 'start', protocol: 2, scope: { kind: 'fleet' },
       sequence: 1,
       max_concurrency: 1,
       timeout_ms: 1_000,
       env: { REPO_HARNESS_HOME: '/tmp/collector' },
     })).toEqual({
-      type: 'start',
+      type: 'start', protocol: 2, scope: { kind: 'fleet' },
       sequence: 1,
       max_concurrency: 1,
       timeout_ms: 1_000,
       env: { REPO_HARNESS_HOME: '/tmp/collector' },
     });
     expect(parseFleetCollectorRequest({
-      type: 'start', sequence: 1, max_concurrency: 1, timeout_ms: 1_000, env: { PATH: 42 },
+      type: 'start', protocol: 2, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1, timeout_ms: 1_000, env: { PATH: 42 },
     })).toBeNull();
   });
 
-  test('collector exits through the cooperative cancel protocol before it is started', async () => {
-    const collector = spawn(process.execPath, [join(ROOT, 'src/effects/operator/fleet-collector-process.ts')], {
+  test.each(['fleet-collector-process.ts','task-read-process.ts'])('%s exits through the cooperative cancel protocol before it is started', async (entrypoint) => {
+    const collector = spawn(process.execPath, [join(ROOT, 'src/effects/operator',entrypoint)], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -142,8 +142,8 @@ describe('Fleet collector supervision protocol', () => {
       server.indexOf("if (response.type === 'assigned')"),
       server.indexOf("if (response.type === 'cleanup_ack')"),
     );
-    expect(assignmentBranch).toContain("type: 'start',");
-    expect(assignmentBranch.indexOf("if (controllerAssigned")).toBeLessThan(assignmentBranch.indexOf("type: 'start',"));
+    expect(assignmentBranch).toContain("writeChildJsonLine(controller, input.start)");
+    expect(assignmentBranch.indexOf("if (controllerAssigned")).toBeLessThan(assignmentBranch.indexOf("writeChildJsonLine(controller, input.start)"));
     expect(server).toContain("requestWindowsCleanup(true)");
     expect(server).toContain("'cleanup_ack'");
     const fleetBoundary = server.slice(
@@ -156,18 +156,19 @@ describe('Fleet collector supervision protocol', () => {
     expect(fleetBoundary).toContain('controllerCleanupAcknowledged && controllerClosed');
   });
 
-  testWindows('Windows Job controller terminates its own collector and inherited descendant before cleanup acknowledgement', async () => {
+  testWindows.each([false,true])('Windows Job controller terminates collector and descendants before cleanup acknowledgement, synchronous child=%s', async (synchronous) => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-windows-job-'));
     const fixture = join(fixtureRoot, 'collector.js');
     writeFileSync(fixture, [
       "const { createInterface } = require('node:readline');",
-      "const { spawn } = require('node:child_process');",
+      "const { spawn, execFileSync } = require('node:child_process');",
       "let descendant = null;",
       "createInterface({ input: process.stdin }).on('line', (line) => {",
       '  const request = JSON.parse(line);',
       "  if (request.type === 'start' && descendant === null) {",
       "    descendant = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
       "    process.stdout.write(JSON.stringify({ collector_pid: process.pid, descendant_pid: descendant.pid }) + '\\n');",
+      ...(synchronous ? ["    execFileSync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });"] : []),
       '  }',
       '});',
     ].join('\n'));
@@ -183,7 +184,7 @@ describe('Fleet collector supervision protocol', () => {
       expect(await assigned).toEqual({ type: 'assigned' });
 
       const started = nextJsonLine(controller, 'collector identity response');
-      controller.stdin.write('{"type":"start","sequence":1,"max_concurrency":1,"timeout_ms":1000}\n');
+      controller.stdin.write('{"type":"start","protocol":2,"scope":{"kind":"fleet"},"sequence":1,"max_concurrency":1,"timeout_ms":1000}\n');
       const identities = await started;
       collectorPid = Number(identities.collector_pid);
       descendantPid = Number(identities.descendant_pid);
@@ -232,4 +233,16 @@ describe('Fleet collector supervision protocol', () => {
       unrelated.kill('SIGKILL');
     }
   }, 30_000);
+});
+
+test('collector requires versioned explicit scope and rejects malformed repository selectors', () => {
+  const base = { type: 'start', protocol: 2, sequence: 1, max_concurrency: 1, timeout_ms: 1_000 };
+  expect(parseFleetCollectorRequest(base)).toBeNull();
+  expect(parseFleetCollectorRequest({ ...base, protocol: 1, scope: { kind: 'fleet' } })).toBeNull();
+  for (const scope of [{ kind: 'fleet', repository_id: 'repo-a' }, { kind: 'repository' },
+    { kind: 'repository', repository_id: '../root' }, { kind: 'repository', repository_id: 'repo-a', extra: true }]) {
+    expect(parseFleetCollectorRequest({ ...base, scope })).toBeNull();
+  }
+  expect(parseFleetCollectorRequest({ ...base, scope: { kind: 'repository', repository_id: 'repo-a' } }))
+    .toMatchObject({ protocol: 2, scope: { kind: 'repository', repository_id: 'repo-a' } });
 });

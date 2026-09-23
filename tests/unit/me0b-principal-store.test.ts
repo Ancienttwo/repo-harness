@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'fs';
 import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -42,6 +43,43 @@ afterEach(() => {
 });
 
 describe('ME-0B principal mapping store', () => {
+  test('Windows flush restrictions preserve real enrollment and revocation bytes', () => {
+    const env = environment();
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const flush = fs.fsyncSync;
+    let fileFlushes = 0;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    const sync = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+      if (fs.fstatSync(fd).isDirectory()) throw Object.assign(new Error('Windows cannot flush directory handles'), { code: 'EPERM' });
+      // A zero-byte write verifies descriptor access without altering the canonical bytes.
+      fs.writeSync(fd, Buffer.alloc(0));
+      fileFlushes++;
+      flush(fd);
+    });
+    try {
+      const first = enrollEngineerPrincipal({ repository_id: repositoryId, authorization_id: authorizationId, binding, env });
+      expect(readEngineerPrincipalMapping(repositoryId, authorizationId, env)).toEqual(first);
+      const revoked = revokeEngineerPrincipal(repositoryId, authorizationId, { env });
+      expect(readEngineerPrincipalMapping(repositoryId, authorizationId, env)).toEqual(revoked);
+      expect(fileFlushes).toBe(2);
+    } finally { sync.mockRestore(); Object.defineProperty(process, 'platform', platform); }
+  });
+
+  test('failed file flush preserves the previous principal authority', () => {
+    const env = environment();
+    const first = enrollEngineerPrincipal({ repository_id: repositoryId, authorization_id: authorizationId, binding, env });
+    const flush = fs.fsyncSync;
+    const sync = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+      if (fs.fstatSync(fd).isFile()) throw Object.assign(new Error('file flush failed'), { code: 'EIO' });
+      flush(fd);
+    });
+    try {
+      expect(() => revokeEngineerPrincipal(repositoryId, authorizationId, { env })).toThrow('file flush failed');
+      expect(readEngineerPrincipalMapping(repositoryId, authorizationId, env)).toEqual(first);
+      expect(readdirSync(join(env.REPO_HARNESS_HOME!, 'engineer-principals/v1')).filter(name => name.includes('.tmp'))).toEqual([]);
+    } finally { sync.mockRestore(); }
+  });
+
   test('publishes canonical mode-0600 bytes and is byte-idempotent', () => {
     const env = environment();
     const first = enrollEngineerPrincipal({ repository_id: repositoryId, authorization_id: authorizationId, binding, created_at: '2026-08-25T00:00:00.000Z', env });

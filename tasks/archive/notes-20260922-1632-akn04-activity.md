@@ -1,0 +1,55 @@
+> **Archived**: 2026-09-22 16:32
+> **Related Plan**: plans/archive/plan-20260922-0418-akn04-activity.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260922-1632
+> **Archive Projection V1**: `plans/plan-20260922-0418-akn04-activity.md` => `plans/archive/plan-20260922-0418-akn04-activity.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0418-akn04-activity.notes.md` => `tasks/archive/notes-20260922-1632-akn04-activity.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0418-akn04-activity.contract.md` => `tasks/archive/contract-20260922-1632-akn04-activity.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0418-akn04-activity.review.md` => `tasks/archive/review-20260922-1632-akn04-activity.md`
+
+# Implementation Notes: akn04-activity
+
+> **Status**: Active
+> **Plan**: plans/archive/plan-20260922-0418-akn04-activity.md
+> **Contract**: tasks/archive/contract-20260922-1632-akn04-activity.md
+> **Review**: tasks/archive/review-20260922-1632-akn04-activity.md
+> **Last Updated**: 2026-09-22
+> **Lifecycle**: notes
+
+## Design Decisions
+
+- Historical reads reuse stored canonical parsers and reply-chain authority without a current Lease/Binding fence. Current communication remains independently protected.
+- Strict registry identity and authorization revision own repository isolation; no duplicate path-to-ID authority was added.
+- Native worker admission ends on exit, not HTTP completion. The existing TaskDiff lifecycle is outside this slice.
+- Exact known-message reads avoid unrelated history; list discovery remains explicitly bounded and can require a known ID after exhaustion.
+- Durable protocol semantics are in `docs/researches/20260922-operator-task-activity.md`.
+
+## Deviations From Plan Or Spec
+
+- The existing C0 inventory test exposed two inherited Fleet v4 assertions. They were reproduced and corrected in owning AKN-04a, then merged here at base `e5ffd48add85f00d4883ea5c4206b8242c6ab505`. This stage does not add another inventory authority.
+
+## Verification Decisions
+
+- One new effects suite owns the independent historical read boundary; existing server, browser, Inbox and actor suites remain the other oracles. No full-suite or provider calls.
+- Development evidence: historical effects 9 pass / 55 assertions, route/cancellation 4 pass / 16 assertions, earlier wire/inventory group 134 pass / 589 assertions. Final canonical verification has not run yet.
+- Browser transport builds with browser target and typecheck passed before the final decoder invariant tightening; current verification must cover the final tree.
+
+## Open Questions
+
+- This worktree has no CodeGraph index. Explicit user authorization is required before indexing for architecture proof.
+- Canonical verification and the one independent semantic acceptance remain pending; development tests are not an AcceptanceReceipt.
+
+## Frozen source development evidence
+
+The final historical decoder/effect suite passes 9 tests and 55 assertions. Existing Inbox, protected reply and ClaimActor suites pass 29 tests and 150 assertions (`.ai/harness/runs/akn04-activity/owning-boundaries.log`). Final typecheck passes; browser transport bundles 2 modules / 8.13 KB. Task-sync binds substantive digest `sha256:d4f5ea660c21c4207199762873a2ca47ba6bc3c3a99138991fd40e5eabaa8da9`. Canonical architecture and semantic acceptance remain pending.
+
+## Architecture acceptance checkpoint
+
+Source commit `c88a944ead698d6c0112a17067397faf3da5bf2e` is clean. `verify-sprint --prepare-acceptance` stopped before canonical contract execution with `human-action-required`, `unresolved-major-change` / `verified-flow-proof-changed`, and CodeGraph status `unavailable`; no current worktree index exists. Evidence: `.ai/harness/runs/akn04-activity/prepare-acceptance.log`, signal `sha256:d429e090086b56d6f7260a9d82b4370a022a76cd7cdad81f723437adc5361afa`. No index or gate state was manually created or advanced. A scoped indexing authorization request is pending. After authorization, build this worktree's index, inspect/reconcile the current signal, freeze deterministic projection, and run the canonical Verification Plan before the single independent acceptance.
+
+The body is a bounded UTF-8 string, not nonempty metadata. Keep the existing browser-safe decoder and original wire size; no Node-only canonical validator import or new parser is introduced. Source-shaped missing/invalid metadata still fails.
+
+## Accepted upstream record-limit integration
+
+P1: the historical activity reader shares optionalReplyRecord/readReplyChain with protected Task Inbox and reads immutable ClaimActor records. P2: repliesAt forwarded the retired local REPLY_RECORD_MAX_BYTES to readClaimActorReceipt after the upstream replaced that constant with TASK_REPLY_RECORD_MAX_BYTES from core; the thrown reference error became the API's fail-closed unavailable result. Existing historical fixtures reproduced the failure, including HTTP503, after the accepted upstream merge. P3: the only source adaptation is to consume the same exported core limit at this remaining historical call site. No alternate limit, parser or authority is introduced. Pre-fix evidence: .ai/harness/runs/akn04-activity/upstream-limit-before.log. The existing owning suite is sufficient; no new test file is admitted.
