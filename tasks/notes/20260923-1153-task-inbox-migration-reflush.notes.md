@@ -45,3 +45,9 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 `tests/effects/task-inbox-layout-migration.test.ts` failed before the source edit: 44 pass, 1 fail, `PRE_FIX_EXIT=1`; the failing resume returned committed while the staged file had no successful flush. With the source edit, 46 migration tests and typecheck passed. The second test verifies complete prepared receipt recovery. Architecture plan/apply changed only the generated manifest after the owner approved this worktree's local CodeGraph index.
 
 > **Substantive Change SHA256**: `sha256:a9f593f96025b88f9d630c92ea4e2f9c282a834022f7d94c08158d255a3568f3`
+
+## PR base verification binding
+
+The digest above binds the accepted slice. After merging `origin/main` at `4271eba604fc759c114cb3ee122d8856acc09504`, hosted CI verifies the full PR against that base; the merge conflicted only in the generated projection manifest, which was retained from `origin/main` and restamped by `repo-harness architecture-projection apply` with no human actions. This range binding records that exact full-PR diff without changing accepted contract or goal authority.
+
+> **Substantive Change SHA256**: `sha256:d9ee61971e66faee21e1b75778f05295642c031a5e158c1eedea4c987f748076`
