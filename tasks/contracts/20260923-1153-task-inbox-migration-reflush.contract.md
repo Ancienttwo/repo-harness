@@ -263,7 +263,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=164f3f52ab26f3ca576c7c3a3349253599db5ece REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=4271eba604fc759c114cb3ee122d8856acc09504 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -328,12 +328,12 @@ baseline and named current delta checks; never infer it from paths or command te
 
 ## Acceptance Notes (Human Review)
 
-- The migration suite's real CLI dry-run and resume cases are the runtime readback oracle for this explicit one-shot migration. The existing migration suite owns the regression: its complete staged-file test failed on unfixed source with `PRE_FIX_EXIT=1` and then passed after `syncMatchingOwnedFile`. A second case covers complete prepared receipt bytes and repeated flush failure. No new test file is needed.
-- The repair only reopens exact single-link, non-symlink transaction files with a writable descriptor, verifies inode and bytes, then fsyncs before using matching bytes as recovery evidence. The already-published but receiptless branch re-flushes current files and the retirement marker before publishing its receipt.
+- The migration suite's real CLI dry-run and resume cases are the runtime readback oracle for this explicit one-shot migration. The existing migration suite owns the regression: its complete staged-file test failed on unfixed source with `PRE_FIX_EXIT=1`. The suite now has 53 cases. Fault-injected cases rewrite a complete staged file, retirement marker and prepared receipt on fresh inodes, retract a published tree that has no receipt, replace an existing published journal through a fresh pending inode, and refuse hard-link or replaced-inode ownership changes. In every fault case, no receipt is published until the rewrite's own flush succeeds, and a later resume reaches committed. No new test file is needed.
+- The repair never trusts a re-fsync of a recovered inode. A complete or interrupted transaction-owned file (staged file, `.pending` metadata, retirement marker) must be this transaction's single-link, non-symlink inode, with the same identity across lstat/open/re-lstat, holding the exact bytes or a prefix. It is then unlinked and recreated through `createFileExclusiveDurably` plus a directory sync. Published metadata is verified and then replaced by renaming a fresh `.pending` inode over it. A published tree without a receipt is renamed back to the stage path and restaged onto fresh inodes before any receipt is published; the journal keeps the runtime closed throughout.
 - Selected checks: migration, Task Inbox and protected reply effects, typecheck, and the repository's nine integrity commands. They cover the changed recovery boundary and its neighboring live authority; full suite is reserved for hosted CI.
 - The pre-fix failure is `.ai/harness/runs/task-inbox-migration-reflush/pre-fix-failure.log`. No migration of real data or broader Windows filesystem guarantee is claimed.
 
 ## Rollback Point
 
-- Base: `164f3f52ab26f3ca576c7c3a3349253599db5ece` (accepted AKN-05a source and PR base).
+- Base: `164f3f52ab26f3ca576c7c3a3349253599db5ece` (accepted AKN-05a source); PR base after merging `origin/main`: `4271eba604fc759c114cb3ee122d8856acc09504`.
 - Revert only the recovery flush repair; the one-shot migration data contract remains unchanged.
