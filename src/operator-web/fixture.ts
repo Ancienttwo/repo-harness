@@ -547,3 +547,34 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
     },
   };
 }
+
+/** Stored-fact-shaped fixtures for the read-only detail preview and decoder tests. */
+export function taskContextFixture(request: import('../core/operator/task-context').OperatorTaskContextRequest): import('../core/operator/task-context').OperatorTaskContext {
+  const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
+  return {
+    protocol: 1, kind: 'operator_task_context', repository_id: request.repository_id, task_id: request.task_id,
+    task_revision: request.expected_task_revision ?? task.task_revision,
+    canonical: { target_ref: 'origin/main', commit: 'a'.repeat(40), sprint_path: 'plans/sprints/fixture.sprint.md' },
+    task: { title: task.task_label, mode: 'contract', acceptance: 'The exact candidate passes independent verification.', state: 'pending' },
+    execution: { lease_state: 'bound', claim: { claim_id: task.claim_id, generation: 1, state: 'bound', branch: 'codex/fixture', target_ref: 'origin/main' } },
+    offer: { execution_readiness: 'planning_required', blockers: [{ code: 'plan_missing', attention_owner: 'agent' }], offer_revision: `sha256:${'a'.repeat(64)}`, plan: null },
+    observation: { observed_at: '2026-09-22T07:00:00+08:00', board_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 1, consistency: 'observed' },
+  };
+}
+export function taskActivityFixture(request: import('../core/operator/task-activity').OperatorTaskActivityRequest): import('../core/operator/task-activity').OperatorTaskActivity {
+  const parentId = '11111111-1111-4111-8111-111111111111';
+  const replyId = '22222222-2222-4222-8222-222222222222';
+  const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
+  const sha = `sha256:${'a'.repeat(64)}`;
+  const at = '2026-09-22T07:00:00+08:00';
+  const actor = { engineer_id: 'engineer:capability.fixture.reader', binding_id: task.claim_id, binding_generation: 2, engineer_contract_revision: sha, claim_id: task.claim_id, lease_generation: 1, receipt_sha256: sha };
+  const reply = { claim_id: task.claim_id, generation: 1, reply_message_id: replyId, state: 'complete' as const, reason: null, actor };
+  const parent: import('../core/operator/task-activity').ActivityEntry = {
+    event: { message_id: parentId, task_revision: task.task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'user', sender_id: 'local_operator', sender_trust: 'local_operator', audience: 'owner', body: 'Please preserve the existing evidence boundary.', body_sha256: sha, created_at: at, in_reply_to: null, event_digest: sha },
+    receipts: [{ message_id: parentId, recipient_kind: 'claim', recipient_id: task.claim_id, recipient_task_revision: task.task_revision, recipient_claim_id: task.claim_id, recipient_generation: 1, delivery_state: 'acknowledged', delivery_channel: 'agent_runtime_effect', delivery_ref: 'fixture-effect', delivered_at: at, acknowledged_at: at }],
+    replies: [reply], provenance: 'not_reply',
+  };
+  const response: import('../core/operator/task-activity').ActivityEntry = { event: { ...parent.event, message_id: replyId, sender_kind: 'agent', sender_id: sha, sender_trust: 'lease_owner', audience: 'user', body: 'The boundary is preserved; inspect the candidate evidence.', in_reply_to: parentId }, receipts: [], replies: [reply], provenance: 'recorded_claim_actor' };
+  const entries = [parent, response].filter(value => request.message_id !== null ? value.event.message_id === request.message_id : request.after === null || value.event.message_id > request.after);
+  return { ...request, protocol: 1, kind: 'operator_task_activity', observed_at: at, consistency: 'observed', entries, coverage: { scope: request.message_id === null ? 'task' : 'message', complete: true, reason: null, scanned: 2, bytes: 2048 }, next_cursor: null };
+}
