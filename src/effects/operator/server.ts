@@ -1932,7 +1932,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'diff',
+    failures: readonly string[], kind: 'context' | 'activity' | 'diff' | 'history',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
   ): void => {
@@ -2094,7 +2094,7 @@ export async function startOperatorServer(
         try { input = parseTaskHistoryRequest(contextRoute[1]!, contextRoute[2]!, url.searchParams); }
         catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid history selector.'),headOnly); return; }
         handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskHistory,TASK_HISTORY_FAILURES,
-          new URL('./task-history-worker.ts',import.meta.url),options.read_task_history);
+          'history',options.read_task_history);
         return;
       }
       let input: OperatorTaskContextRequest;
