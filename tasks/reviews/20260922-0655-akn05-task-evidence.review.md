@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260922-0655-akn05-task-evidence.contract.md
 > **Notes File**: tasks/notes/20260922-0655-akn05-task-evidence.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Recommendation**: pending
+> **Recommendation**: fail
 > **Substantive Change SHA256**: `sha256:d5c75b72a8a3daeae8bfd6d7b49e8c2b1fb003eaeb841846ac4c3bf91b0b7486`
 
 ## Local evidence
@@ -25,3 +25,7 @@ The owner approved this worktree local index on 2026-09-22. CodeGraph initializa
 ## Canonical verification after index approval
 
 Canonical prepare-acceptance passed 19/19 criteria with zero failures, covering 15 execution checks at `b04b2398c075bc0d2680658e4d9369ef47aebae3`. Subject: `sha256:23d2af30b7d8993629896bc3cf97519eddfe39f07ef8f08f7afbfdcc8b72d27c`. Evidence: `.ai/harness/runs/run-20260922T142459-39949-20260922-0655-akn05-task-evidence.json` and `.ai/harness/checks/latest.json`. The current deterministic architecture check passed. This is local machine verification; semantic acceptance, hosted CI and installed/native journey claims remain separate.
+
+## Current integrated boundary: independent review
+
+Canonical `run-20260923T114055-98369-20260922-0655-akn05-task-evidence.json` passed 20 execution checks and 24 total criteria for source base `164f3f52` and subject `sha256:b8b29629b9086491cb65a492d79c119bc570b92969d68714faf39e526ab92cab`. The single Codex plugin review returned `needs-attention` with one high-severity finding against inherited migration source: a complete transaction-owned file can remain readable after its file `fsync` fails, and `writeOwned` returns on byte equality during resume without retrying the file flush (`src/effects/fleet/task-inbox-layout-migration.ts:211`). The same shortcut can affect prepared metadata. The review transcript is retained verbatim in ignored runtime evidence `.ai/harness/runs/akn05-task-evidence/cross-review.json`. Source inspection confirms `createFileExclusiveDurably` writes then fsyncs, while `finishForward` can publish a receipt after equality-based resume; directory flushes do not establish file-content durability. A fault-injected recovery test and an isolated repair are required before this integrated PR can be accepted. No Task Evidence acceptance receipt or PR has been created from this failed gate.
