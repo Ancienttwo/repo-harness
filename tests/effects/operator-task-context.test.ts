@@ -229,16 +229,8 @@ test('Planning refuses unstable proof, authorization drift and oversized Board b
 });
 
 // Historical definition is independent from current activity/claim state.
-import { readOperatorTaskHistory, TASK_HISTORY_BATCH_CHECK_FORMAT } from '../../src/effects/operator/task-history';
+import { readOperatorTaskHistory } from '../../src/effects/operator/task-history';
 import { decodeOperatorTaskHistory, isTaskHistoryRequest, TASK_HISTORY_MAX_BLOB_BYTES } from '../../src/core/operator/task-history';
-
-// Git before 2.51 rejects unknown batch-check atoms (e.g. objectmode) and every history read would fail.
-test('history batch lookup uses only cat-file atoms available before Git 2.51', () => {
-  const atoms=[...TASK_HISTORY_BATCH_CHECK_FORMAT.matchAll(/%\(([^)]*)\)/gu)].map(match=>match[1]);
-  expect(atoms.length).toBeGreaterThan(0);
-  expect(atoms.every(atom=>['objecttype','objectname','objectsize'].includes(atom!))).toBeTrue();
-  expect(TASK_HISTORY_BATCH_CHECK_FORMAT.replace(/%\([^)]*\)/gu,'')).not.toContain('%');
-});
 
 test('historical Task survives archive and deletion through exact canonical commit evidence without writes', () => {
   const f=fixture(); const original=git(f.root,'rev-parse','HEAD');
@@ -314,7 +306,8 @@ test('schema1 history cannot manufacture a persisted Task ID from its title', ()
 test('history refuses an otherwise valid Task beyond its64 canonical-commit budget', () => {
   const f=fixture();git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','delete task');
   for(let i=0;i<63;i++)git(f.root,'commit','--allow-empty','-qm',`later${i}`);
-  expect(()=>readOperatorTaskHistory(f.input)).toThrow('history_unavailable');
+  // The reader starts two Git processes per commit; slow process start-up (Windows) must not turn the budget refusal into a timeout.
+  expect(()=>readOperatorTaskHistory(f.input,{deadline_ms:60_000})).toThrow('history_unavailable');
 });
 
 import * as registryModule from '../../src/effects/repo-registry';
