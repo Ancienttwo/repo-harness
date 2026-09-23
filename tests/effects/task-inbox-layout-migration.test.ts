@@ -249,93 +249,126 @@ test.each(['writeSync', 'renameSync', 'fsyncSync'] as const)('%s failure retains
   expect(f.resume().state).toBe('committed');
 });
 
-test('resume re-flushes a complete staged file before publishing a migration receipt', () => {
-  const f = fixture(false);
-  const sync = fs.fsyncSync;
-  let failedAfterWrite = false;
-  let fault: ReturnType<typeof spyOn> | undefined;
-  try {
-    expect(() => f.apply(boundary => {
-      if (boundary === 'journal') fault = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
-        if (!failedAfterWrite && fs.fstatSync(fd).isFile()) {
-          failedAfterWrite = true;
-          throw new Error('staged file flush failed');
-        }
-        return sync(fd);
-      });
-    })).toThrow('staged file flush failed');
-  } finally { fault?.mockRestore(); }
-  expect(failedAfterWrite).toBeTrue();
-  const staged = join(f.paths.stage, TASK, 'events', `${ID}.json`);
-  expect(readFileSync(staged)).toEqual(Buffer.from(f.original[`${TASK}/events/${ID}.json`]!, 'base64'));
-  const stagedInode = fs.statSync(staged, { bigint: true }).ino;
-
-  let retriedFlush = false;
-  const failedRetry = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
-    if (fs.fstatSync(fd, { bigint: true }).ino === stagedInode) {
-      retriedFlush = true;
-      throw new Error('staged file flush still unavailable');
+/** Fail the flush of whichever inode sits at `path`, recording whether that path was unlinked first. */
+function faultFlushAt(path: string, message: string) {
+  const sync = fs.fsyncSync, unlink = fs.unlinkSync;
+  const seen = { unlinked: false, faulted: false, faultedAfterUnlink: false };
+  const flush = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    let at: fs.BigIntStats | null = null;
+    try { at = fs.lstatSync(path, { bigint: true }); } catch {}
+    const opened = fs.fstatSync(fd, { bigint: true });
+    if (at && opened.isFile() && at.dev === opened.dev && at.ino === opened.ino) {
+      seen.faulted = true; seen.faultedAfterUnlink = seen.unlinked;
+      throw new Error(message);
     }
     return sync(fd);
   });
-  try { expect(() => f.resume()).toThrow('staged file flush still unavailable'); }
-  finally { failedRetry.mockRestore(); }
-  expect(retriedFlush).toBeTrue();
-  expect(existsSync(f.paths.receipt)).toBeFalse();
-
-  let successfulFlushes = 0;
-  const recovered = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
-    if (fs.fstatSync(fd, { bigint: true }).ino === stagedInode) successfulFlushes++;
-    return sync(fd);
+  const removal = spyOn(fs, 'unlinkSync').mockImplementation(target => {
+    if (String(target) === path) seen.unlinked = true;
+    return unlink(target);
   });
-  try { expect(f.resume().state).toBe('committed'); }
-  finally { recovered.mockRestore(); }
-  expect(successfulFlushes).toBeGreaterThan(0);
-});
-
-test('resume re-flushes complete prepared metadata before committing', () => {
-  const f = fixture(false);
+  return { seen, restore() { flush.mockRestore(); removal.mockRestore(); } };
+}
+function failFirstFileFlush(f: ReturnType<typeof fixture>, boundary: InboxMigrationBoundary) {
   const sync = fs.fsyncSync;
-  let firstFailure = false;
-  let fault: ReturnType<typeof spyOn> | undefined;
+  let failed = false, fault: ReturnType<typeof spyOn> | undefined;
   try {
-    expect(() => f.apply(boundary => {
-      if (boundary === 'published') fault = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
-        if (!firstFailure && fs.fstatSync(fd).isFile()) {
-          firstFailure = true;
-          throw new Error('prepared receipt flush failed');
-        }
+    expect(() => f.apply(value => {
+      if (value === boundary) fault = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+        if (!failed && fs.fstatSync(fd).isFile()) { failed = true; throw new Error('first flush failed'); }
         return sync(fd);
       });
-    })).toThrow('prepared receipt flush failed');
+    })).toThrow('first flush failed');
   } finally { fault?.mockRestore(); }
-  expect(firstFailure).toBeTrue();
-  const pending = `${f.paths.receipt}.pending`;
-  const pendingInode = fs.statSync(pending, { bigint: true }).ino;
-  let retriedFlush = false;
-  const failedRetry = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
-    if (fs.fstatSync(fd, { bigint: true }).ino === pendingInode) {
-      retriedFlush = true;
-      throw new Error('prepared receipt flush still unavailable');
-    }
-    return sync(fd);
-  });
-  try { expect(() => f.resume()).toThrow('prepared receipt flush still unavailable'); }
-  finally { failedRetry.mockRestore(); }
-  expect(retriedFlush).toBeTrue();
-  expect(existsSync(f.paths.receipt)).toBeFalse();
-  expect(existsSync(pending)).toBeTrue();
+  expect(failed).toBeTrue();
+}
 
-  let successfulFlushes = 0;
-  const recovered = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
-    if (fs.fstatSync(fd, { bigint: true }).ino === pendingInode) successfulFlushes++;
-    return sync(fd);
+test.each(['staged file', 'retirement marker', 'prepared receipt'] as const)(
+  'resume rewrites a complete %s on a fresh inode and publishes no receipt until that flush succeeds', kind => {
+    const f = fixture(false);
+    const target = kind === 'staged file' ? join(f.paths.stage, TASK, 'events', `${ID}.json`)
+      : kind === 'retirement marker' ? f.paths.legacy : `${f.paths.receipt}.pending`;
+    failFirstFileFlush(f, kind === 'staged file' ? 'journal' : kind === 'retirement marker' ? 'retired' : 'published');
+    const complete = readFileSync(target);
+    expect(complete.length).toBeGreaterThan(0);
+
+    const fault = faultFlushAt(target, 'rewrite flush failed');
+    try { expect(() => f.resume()).toThrow('rewrite flush failed'); }
+    finally { fault.restore(); }
+    expect(fault.seen.faultedAfterUnlink).toBeTrue();
+    expect(existsSync(f.paths.receipt)).toBeFalse();
+    expect(() => inspectTaskInboxLayout(f.common)).toThrow();
+
+    expect(f.resume().state).toBe('committed');
+    expect(tree(f.paths.backup)).toEqual(f.original);
+    expect(existsSync(`${f.paths.receipt}.pending`)).toBeFalse();
+    expect(inspectTaskInboxLayout(f.common)).toBeString();
   });
-  try { expect(f.resume().state).toBe('committed'); }
-  finally { recovered.mockRestore(); }
-  expect(successfulFlushes).toBeGreaterThan(0);
-  expect(existsSync(pending)).toBeFalse();
+
+test('a published tree without a receipt is retracted and rewritten before any receipt', () => {
+  const f = fixture(false);
+  expect(() => f.apply(value => { if (value === 'published') throw new Error('interrupted after publication'); })).toThrow('interrupted after publication');
+  expect(existsSync(f.paths.current)).toBeTrue();
+  expect(existsSync(f.paths.receipt)).toBeFalse();
+  const fault = faultFlushAt(join(f.paths.stage, TASK, 'events', `${ID}.json`), 'published tree rewrite failed');
+  try { expect(() => f.resume()).toThrow('published tree rewrite failed'); }
+  finally { fault.restore(); }
+  expect(fault.seen.faultedAfterUnlink).toBeTrue();
+  expect(existsSync(f.paths.receipt)).toBeFalse();
+  expect(() => inspectTaskInboxLayout(f.common)).toThrow();
+  expect(f.resume().state).toBe('committed');
+  expect(readFileSync(join(f.paths.current, TASK, 'events', `${ID}.json`))).toEqual(Buffer.from(f.original[`${TASK}/events/${ID}.json`]!, 'base64'));
+  expect(tree(f.paths.backup)).toEqual(f.original);
 });
+
+test('existing published metadata is replaced through a fresh pending inode, never trusted in place', () => {
+  const f = fixture(false);
+  expect(() => f.apply(value => { if (value === 'journal') throw new Error('interrupted after journal'); })).toThrow('interrupted after journal');
+  const journal = readFileSync(f.paths.journal);
+  const fault = faultFlushAt(`${f.paths.journal}.pending`, 'journal rewrite failed');
+  try { expect(() => f.resume()).toThrow('journal rewrite failed'); }
+  finally { fault.restore(); }
+  expect(fault.seen.faulted).toBeTrue();
+  expect(readFileSync(f.paths.journal)).toEqual(journal);
+  expect(existsSync(f.paths.receipt)).toBeFalse();
+  expect(f.resume().state).toBe('committed');
+  expect(existsSync(f.paths.journal)).toBeFalse();
+  expect(existsSync(`${f.paths.journal}.pending`)).toBeFalse();
+});
+
+test.each(['external link', 'link during verification', 'replaced before open', 'replaced after verification'] as const)(
+  'rewrite refuses a staged file whose ownership changes: %s', kind => {
+    const f = fixture(false);
+    failFirstFileFlush(f, 'journal');
+    const staged = join(f.paths.stage, TASK, 'events', `${ID}.json`);
+    const bytes = readFileSync(staged), outside = join(f.root, 'outside.json'), replacement = join(f.root, 'replacement.json');
+    const open = fs.openSync, close = fs.closeSync;
+    let stagedFd: number | undefined;
+    const replace = () => { writeFileSync(replacement, bytes); renameSync(replacement, staged); };
+    const opening = spyOn(fs, 'openSync').mockImplementation(((path: fs.PathLike, ...rest: unknown[]) => {
+      if (String(path) === staged && stagedFd === undefined) {
+        if (kind === 'link during verification') linkSync(staged, outside);
+        if (kind === 'replaced before open') replace();
+        const fd = (open as (...args: unknown[]) => number)(path, ...rest);
+        stagedFd = fd;
+        return fd;
+      }
+      return (open as (...args: unknown[]) => number)(path, ...rest);
+    }) as typeof fs.openSync);
+    const closing = spyOn(fs, 'closeSync').mockImplementation(fd => {
+      close(fd);
+      if (fd === stagedFd && kind === 'replaced after verification') { stagedFd = -1; replace(); }
+    });
+    if (kind === 'external link') linkSync(staged, outside);
+    try {
+      expect(() => f.resume()).toThrow(kind === 'external link' ? 'links outside its inventory'
+        : kind === 'replaced after verification' ? 'transaction file changed before rewrite' : 'conflicting transaction file');
+    } finally { opening.mockRestore(); closing.mockRestore(); }
+    expect(readFileSync(staged)).toEqual(bytes);
+    expect(existsSync(f.paths.receipt)).toBeFalse();
+    rmSync(outside, { force: true });
+    expect(f.resume().state).toBe('committed');
+  });
 
 test('rollback before publication discards only the owned partial stage', () => {
   const f = fixture();

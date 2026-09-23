@@ -9,7 +9,9 @@
 
 ## Design Decisions
 
-- A complete write with failed file fsync is only readable evidence, not a durability receipt. Reuse of transaction-owned bytes must reopen and flush that same single-link inode before any migration receipt publication.
+- A complete write with failed file fsync is only readable evidence, not a durability receipt. After a failed writeback Linux can mark the pages clean and report the error once, so a later fsync of the same inode proves nothing. Every recovered transaction-owned file (staged file, `.pending` metadata, retirement marker) is verified as this transaction's single-link inode holding the exact bytes or a prefix, then unlinked and recreated through `createFileExclusiveDurably` plus a directory sync.
+- Published metadata (journal, rollback journal, receipt, rollback receipt, migration history) is rewritten by atomically renaming a fresh `.pending` inode over the verified published path, so the authority never disappears during the rewrite. Any residue from an interrupted rewrite is a complete owned `.pending` that the next pass consumes.
+- A published v2 tree without a receipt is never trusted in place: finishForward renames it back to the stage path and replays staging, which rewrites every file and the marker onto fresh inodes before the tree is published again. The journal keeps the runtime closed throughout. A present receipt is only published after a run rewrote or freshly created the whole tree, so the tree beside it is not retracted again.
 
 ## Deviations From Plan Or Spec
 
@@ -19,7 +21,9 @@
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| Recreate a matching complete file | Rejected | A rename/unlink introduces an avoidable identity and directory mutation; flushing the exact owned inode preserves the one-shot transaction. |
+| Re-fsync the matching owned inode | Rejected | A second fsync on a new descriptor can succeed after the failed writeback was consumed, while the byte compare reads only page cache. |
+| Recreate a matching complete file on a fresh inode | Chosen | Ownership checks (single link, same inode across lstat/open/re-lstat, exact bytes or prefix) run first; the fresh inode's own fsync is the durability proof. |
+| Fail closed on a receiptless published tree | Rejected | A crash between publication and receipt is a normal resumable boundary; retracting and replaying staging is a real rewrite, so fail-closed is not needed. |
 
 ## Open Questions
 
@@ -51,3 +55,9 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 The digest above binds the accepted slice. After merging `origin/main` at `4271eba604fc759c114cb3ee122d8856acc09504`, hosted CI verifies the full PR against that base; the merge conflicted only in the generated projection manifest, which was retained from `origin/main` and restamped by `repo-harness architecture-projection apply` with no human actions. This range binding records that exact full-PR diff without changing accepted contract or goal authority.
 
 > **Substantive Change SHA256**: `sha256:d9ee61971e66faee21e1b75778f05295642c031a5e158c1eedea4c987f748076`
+
+## Fresh-inode rewrite binding
+
+The independent gate rejected same-inode re-fsync as durability evidence. Recovered transaction files are now rewritten on fresh inodes, published metadata is replaced through a fresh pending inode, and a receiptless published tree is retracted and restaged. Fault-injected tests cover the staged file, retirement marker, prepared receipt, receiptless published tree, existing published journal, and hard-link or replaced-inode ownership changes. Each guard was checked by a local mutation that makes its test fail. This binding records the full PR diff against `origin/main` at `4271eba604fc759c114cb3ee122d8856acc09504`.
+
+> **Substantive Change SHA256**: `sha256:58e25833c1e594db51cccf7b92547d1bd1d25827b3766911a6fb72387ea6aa68`
