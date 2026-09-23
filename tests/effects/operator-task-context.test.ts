@@ -165,11 +165,11 @@ function graphFixture() {
   put(join(f.root, 'src/context.ts'), 'export {};\n');
   put(join(f.root, '.archcontext/model/nodes/context.yaml'), JSON.stringify({schemaVersion:'archcontext.node/v2',id:capability,kind:'capability',name:'Context',status:'active',summary:'Planning fixture',responsibilities:['Own context'],source:{include:['src/**']},extensions:{contractFiles:{agents:'AGENTS.md',claude:'CLAUDE.md'},lspProfile:'typescript-lsp',verification:[]}}));
   put(join(f.root, '.ai/harness/policy.json'), '{}');
-  put(join(f.root, 'plans/policy:module.json'), policy);
+  put(join(f.root, 'plans/policy-module.json'), policy);
   put(join(f.root, 'plans/rollback.json'), rollback);
   const definition = (id:string, taskId:string, depends_on:unknown[]) => ({
     work_package_id:id,task_id:taskId,primary_capability:capability,depends_on,priority:10,concurrency:{scope:'repo',key:id},execution_surface:'contract',integration_group:null,
-    required_acceptance:[{gate:'module',policy_id:'module-default',policy_ref:'plans/policy:module.json',policy_revision:hash(policy)}],
+    required_acceptance:[{gate:'module',policy_id:'module-default',policy_ref:'plans/policy-module.json',policy_revision:hash(policy)}],
     rollback_boundary:{kind:'work_package',boundary_id:id,boundary_ref:'plans/rollback.json',boundary_revision:hash(rollback)},
     retry_policy:{max_automated_attempts:3,retryable_failure_classes:['transient_failure'],backoff:{kind:'fixed',initial_seconds:30,maximum_seconds:30},attention_after_seconds:3600,revision_reset:'reset_on_work_package_revision'},
   });
