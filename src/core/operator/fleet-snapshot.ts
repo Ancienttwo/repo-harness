@@ -1,3 +1,4 @@
+import { isOperatorServiceEpoch } from './observation-identity';
 import { basename } from 'path';
 import {
   FLEET_BOARD_PROTOCOL,
@@ -43,7 +44,8 @@ export interface OperatorFleetRepositoryV1 {
 }
 
 export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV1, 'protocol' | 'kind' | 'repositories' | 'snapshot_sha256'> {
-  readonly protocol: 6;
+  readonly protocol: 7;
+  readonly service_epoch: string;
   readonly kind: 'operator_fleet_snapshot';
   readonly repositories: readonly OperatorFleetRepositoryV1[];
   /** Digest of the canonical source snapshot, not of this redacted document. */
@@ -150,8 +152,9 @@ function projectRepository(repository: FleetRepositoryBoardV1): OperatorFleetRep
  * model while absolute paths and diagnostic causes stay server-side.
  */
 export function projectOperatorFleetSnapshot(
-  snapshot: FleetBoardSnapshotV1,
+  snapshot: FleetBoardSnapshotV1, serviceEpoch: string,
 ): OperatorFleetSnapshotV1 {
+  if (!isOperatorServiceEpoch(serviceEpoch)) throw new Error('invalid operator service epoch');
   if (snapshot.protocol !== FLEET_BOARD_PROTOCOL) {
     throw new Error(`unsupported Fleet snapshot protocol: ${String(snapshot.protocol)}`);
   }
@@ -159,7 +162,8 @@ export function projectOperatorFleetSnapshot(
   const repositories = Object.freeze(snapshot.repositories.map(projectRepository));
   const sourceSnapshotSha256 = snapshot.snapshot_sha256;
   return Object.freeze({
-    protocol: 6,
+    protocol: 7,
+    service_epoch: serviceEpoch,
     kind: 'operator_fleet_snapshot',
     registry_revision: snapshot.registry_revision,
     sequence: snapshot.sequence,

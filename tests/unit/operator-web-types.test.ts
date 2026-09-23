@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   decodeOperatorCollaborationSnapshot,
+  decodeOperatorWorkExchangeSnapshot,
   decodeOperatorFleetSnapshot,
   decodeOperatorTaskMessageResponse,
   OPERATOR_API_ERROR_CODES,
@@ -11,7 +12,9 @@ import {
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { operatorFixtures } from '../../src/operator-web/fixture';
+import { collaborationObservationFixture, operatorFixtures } from '../../src/operator-web/fixture';
+import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
 
 const taskId = 'a'.repeat(64);
@@ -19,9 +22,33 @@ const taskRevision = 'b'.repeat(64);
 const claimId = '00000000-0000-4000-8000-000000000001';
 const snapshotDigest = `sha256:${'c'.repeat(64)}`;
 
+test('Planning transport binds canonical task observations and requires protocol4 source isolation',()=>{
+  const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(collaborationSnapshot.repository_id,repository.cards);
+  const envelope={...collaborationSnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
+  expect(decodeOperatorCollaborationSnapshot(envelope).planning).toEqual(envelope.planning);
+  const {planning:_,...missing}=envelope;
+  expect(()=>decodeOperatorCollaborationSnapshot(missing)).toThrow();
+  expect(()=>decodeOperatorCollaborationSnapshot({...envelope,protocol:3})).toThrow();
+  const canonical=snapshot.canonical!,task=snapshot.tasks[0]!;
+  for(const bad of [
+    {...snapshot,repository_id:'another-repo'},
+    {...snapshot,canonical:{...canonical,commit:'d'.repeat(40)}},
+    {...snapshot,tasks:[task,task]},
+    {...snapshot,tasks:Array.from({length:201},()=>task)},
+    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'engineering-v2',work_graph_revision:snapshotDigest,packages:[],sources:Array.from({length:9},(_,index)=>({repository_id:`repo_${index.toString(16).padStart(16,'0')}`,commit:canonical.commit,work_graph_revision:snapshotDigest}))}}},
+    {...snapshot,tasks:[{...task,observation:{...task.observation,authorization_revision:2}}]},
+    {...snapshot,tasks:[{...task,canonical:{...canonical,sprint_path:'../secret'}}]},
+    {...snapshot,graph:{...snapshot.graph,observed_at:'2025-01-01T00:00:00Z'}},
+    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:snapshotDigest,packages:[],sources:[]}}},
+  ])expect(()=>decodeOperatorPlanningSnapshot(bad,collaborationSnapshot.repository_id)).toThrow();
+  const unavailable={status:'unavailable' as const,observed_at:snapshot.observation.observed_at,code:'source_unavailable' as const};
+  expect(decodeOperatorCollaborationSnapshot({...envelope,planning:unavailable}).exchange.status).toBe('observed');
+});
+
 function validFleetPayload(): Record<string, unknown> {
   return {
-    protocol: 6,
+    protocol: 7,
+    service_epoch: '00000000-0000-4000-8000-000000000001',
     kind: 'operator_fleet_snapshot',
     registry_revision: `sha256:${'d'.repeat(64)}`,
     sequence: 1,
@@ -78,10 +105,10 @@ function fleetPayloadWithCard(changes: Record<string, unknown>): Record<string, 
   return payload;
 }
 
-function validCollaborationPayload(): Record<string, unknown> {
+function validExchangePayload(): import("../../src/core/operator/collaboration-snapshot").OperatorWorkExchangeSnapshot {
   return {
     protocol: 1,
-    kind: 'operator_collaboration_snapshot',
+    kind: 'operator_work_exchange_snapshot',
     repository_id: 'repo-1',
     mode: 'off',
     snapshot_consistency: 'stable',
@@ -96,6 +123,8 @@ function validCollaborationPayload(): Record<string, unknown> {
     source_snapshot_sha256: snapshotDigest,
   };
 }
+
+function validCollaborationPayload() { return collaborationObservationFixture(validExchangePayload()); }
 
 describe('operator browser payload contracts', () => {
   test('requires the named-repository protocol without accepting old or missing display names', () => {
@@ -192,8 +221,8 @@ describe('operator browser payload contracts', () => {
   });
 
   test('accepts mode as a closed collaboration consistency source', () => {
-    expect(decodeOperatorCollaborationSnapshot({
-      ...validCollaborationPayload(),
+    expect(decodeOperatorWorkExchangeSnapshot({
+      ...validExchangePayload(),
       snapshot_consistency: 'changed_during_read',
       changed_sources: ['mode'],
     }).changed_sources).toEqual(['mode']);
@@ -417,10 +446,11 @@ test('current context transport preserves expected revision, abort and uncached 
 describe('repository snapshot transport', () => {
   test('binds nested identity and generation with a strict envelope', async () => {
     const { decodeOperatorRepositorySnapshot } = await import('../../src/operator-web/repository-snapshot');
-    const value = { automation: automationFixture('repo-1'), protocol: 2, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
+    const value = { automation: automationFixture('repo-1'), protocol: 3, kind: 'operator_repository_snapshot', repository_id: 'repo-1',
       service_epoch: '00000000-0000-4000-8000-000000000001', generation: 1, snapshot: validFleetPayload() };
     expect(decodeOperatorRepositorySnapshot(value, 'repo-1')).toMatchObject({ repository_id: 'repo-1' });
-    for (const bad of [{ ...value, protocol: 1 }, { ...value, generation: 2 }, { ...value, generation: 0 },
+    for (const bad of [{ ...value, protocol: 1 }, { ...value, protocol: 2 },
+      { ...value, snapshot: { ...value.snapshot, service_epoch: '00000000-0000-4000-8000-000000000002' } }, { ...value, generation: 2 }, { ...value, generation: 0 },
       { ...value, service_epoch: 'unknown' }, { ...value, repository_id: 'repo-2' }, { ...value, path: '/private' },
       { ...value, snapshot: { ...value.snapshot, repositories: [] } }]) {
       expect(() => decodeOperatorRepositorySnapshot(bad, 'repo-1')).toThrow();
@@ -452,3 +482,66 @@ function automationFixture(repositoryId: string) {
     native_execution: { status: 'unavailable' as const, reason: 'native_admission_authority_unavailable' as const, turn_ref: null },
   };
 }
+
+import { decodeOperatorDecisionInventory } from '../../src/core/operator/decision-inventory';
+import { decisionInventoryFixture, collaborationSnapshot } from '../../src/operator-web/fixture';
+
+describe('formal Decision wire boundary', () => {
+  test('preserves original questions and exact fences, and rejects malformed or cross-query observations', () => {
+    const page = decisionInventoryFixture(collaborationSnapshot.repository_id);
+    expect(decodeOperatorDecisionInventory(page, page.repository_id, null)).toEqual(page);
+    expect(page.entries[0]!.task_fence.lease_generation).toBe(0);
+    const entry = page.entries[0]!;
+    const malformed: unknown[] = [
+      { ...page, repository_id: 'other' }, { ...page, protocol: 2 },
+      { ...page, query: { ...page.query, after: 'b'.repeat(64) } },
+      { ...page, entries: [entry, entry] },
+      { ...page, entries: [{ ...entry, question: 'x'.repeat(16 * 1024 + 1) }] },
+      { ...page, entries: [{ ...entry, question: '\u0000' }] },
+      { ...page, entries: [{ ...entry, binding_fence: { ...entry.binding_fence, host_id: 'private' } }] },
+      { ...page, entries: [{ ...entry, task_fence: { ...entry.task_fence, task_revision: entry.request_sha256 } }] },
+      { ...page, coverage: { ...page.coverage, complete: false } },
+      { ...page, coverage: { ...page.coverage, bytes_read: 8 * 1024 * 1024 + 1 } },
+      { ...page, coverage: { ...page.coverage, reason: 'output_limit', complete: false, next_after: 'a'.repeat(64) } },
+    ];
+    for (const value of malformed) expect(() => decodeOperatorDecisionInventory(value, page.repository_id, null)).toThrow();
+    const partial = { ...page, query: { after: 'b'.repeat(64), limit: 1 }, coverage: { ...page.coverage, complete: false, reason: 'output_limit', next_after: 'a'.repeat(64) } };
+    expect(() => decodeOperatorDecisionInventory(partial, page.repository_id, partial.query.after)).toThrow();
+    const envelope = { ...collaborationSnapshot, decisions: { status: 'observed' as const, observed_at: '2026-09-22T00:00:00Z', snapshot: page } };
+    expect(decodeOperatorCollaborationSnapshot(envelope)).toEqual(envelope);
+    expect(() => decodeOperatorCollaborationSnapshot({ ...envelope, protocol: 2 })).toThrow();
+    expect(() => decodeOperatorCollaborationSnapshot({ ...envelope, decision_after: 'f'.repeat(64) })).toThrow();
+  });
+});
+
+test('Fleet protocol7 requires a valid service epoch and rejects protocol6', () => {
+  const payload = validFleetPayload();
+  expect(() => decodeOperatorFleetSnapshot({ ...payload, protocol: 6 })).toThrow();
+  for (const epoch of [undefined, null, '', 'unknown', '00000000-0000-1000-8000-000000000001']) {
+    expect(() => decodeOperatorFleetSnapshot({ ...payload, service_epoch: epoch })).toThrow();
+  }
+  expect(decodeOperatorFleetSnapshot(payload).service_epoch).toBe('00000000-0000-4000-8000-000000000001');
+});
+
+test('Task URL selectors reject ambiguity, source paths and revisions without explicit history mode',async()=>{
+  const {parseTaskLocation,taskLocationSearch}=await import('../../src/operator-web/task-location');
+  const id='a'.repeat(64),revision='b'.repeat(64);
+  const selected=parseTaskLocation(`?repository=repo-1&task=${id}&view=history&task_revision=${revision}`);
+  expect(selected).toMatchObject({invalid:false,repositoryId:'repo-1',selection:{taskId:id,revision,historical:true}});
+  expect(parseTaskLocation(taskLocationSearch(selected.repositoryId,selected.selection))).toEqual(selected);
+  for(const query of [`?repository=repo-1&task=${id}&task=${id}`,`?repository=repo-1&task=${id}&ref=HEAD`,`?repository=repo-1&task=${id}&task_revision=${revision}`,'?task='+id,'?repository=../private','?repository=repo-1&task=old-title'])expect(parseTaskLocation(query).invalid).toBe(true);
+  expect(parseTaskLocation('?repository=missing-repo')).toEqual({repositoryId:'missing-repo',selection:null,invalid:false});
+});
+
+test('history transport uses only the explicit context mode, uncached signal and named refusal',async()=>{
+  const {fetchTaskHistory}=await import('../../src/operator-web/task-history');
+  const original=globalThis.fetch,controller=new AbortController();
+  try {
+    globalThis.fetch=(async(input,init)=>{
+      expect(String(input)).toBe('/api/v1/fleet/tasks/repo-1/'+ 'a'.repeat(64)+'/context?view=history');
+      expect(init?.signal).toBe(controller.signal);expect(init?.cache).toBe('no-store');
+      return Response.json({code:'history_unavailable'},{status:404});
+    }) as typeof fetch;
+    await expect(fetchTaskHistory({repository_id:'repo-1',task_id:'a'.repeat(64),expected_task_revision:null},controller.signal)).rejects.toThrow('history_unavailable');
+  } finally {globalThis.fetch=original;}
+});

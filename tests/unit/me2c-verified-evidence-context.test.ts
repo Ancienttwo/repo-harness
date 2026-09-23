@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, renameSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
   buildDecisionRequest,
+  buildDecisionRequestEvent,
+  buildDecisionRequestCurrent,
+  canonicalDecisionRequestBytes,
+  canonicalDecisionRequestCurrentBytes,
+  canonicalDecisionRequestEventBytes,
   buildEngineerStepProposal,
   buildSemanticContractProjection,
   buildSemanticVerificationAssertion,
@@ -31,6 +37,7 @@ import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engin
 import {
   projectSemanticContract,
   readDecisionStatus,
+  readOpenDecisionInventory,
   readSemanticContractProjection,
   transitionDecisionRequest,
   validateVerifiedEvidenceRef,
@@ -265,3 +272,129 @@ function contractMarkdown(): string {
 {"protocol":1,"constraints":[{"constraint_id":"constraint-a","statement":"A is exact."},{"constraint_id":"constraint-b","statement":"B is exact."}]}
 \`\`\``;
 }
+
+function inventoryFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'repo-harness-decision-inventory-'));
+  roots.push(root);
+  execFileSync('git', ['init', '-q', root]);
+  return root;
+}
+function seedInventoryDecision(root: string, id: string, state: 'open' | 'answered' | 'cancelled' = 'open', question = 'Proceed with the recorded scope?') {
+  const request = buildDecisionRequest({ decision_id: id, task_fence: task, binding_fence: binding, previous_assertion_sha256: null, question });
+  let event = buildDecisionRequestEvent(request, null, { idempotency_key: `open-${id}`, transition: 'open', expected_current_digest: null, actor: { kind: 'engineer', principal_ref: 'engineer-principal', binding_generation: binding.binding_generation }, answer: null });
+  let current = buildDecisionRequestCurrent(event, null);
+  if (state !== 'open') {
+    event = buildDecisionRequestEvent(request, current, { idempotency_key: `close-${id}`, transition: state === 'answered' ? 'answer' : 'cancel', expected_current_digest: current.current_digest, actor: { kind: 'human', principal_ref: 'human-owner', binding_generation: null }, answer: state === 'answered' ? question : null });
+    current = buildDecisionRequestCurrent(event, current);
+  }
+  const store = join(root, '.git/repo-harness/verified-context/v1');
+  const key = createHash('sha256').update(id).digest('hex');
+  const currentPath = join(store, 'decisions', key, 'current.json');
+  mkdirSync(join(store, 'decisions', key), { recursive: true });
+  mkdirSync(join(store, 'decision-requests'), { recursive: true });
+  mkdirSync(join(store, 'decision-events'), { recursive: true });
+  writeFileSync(currentPath, `${canonicalDecisionRequestCurrentBytes(current)}\n`);
+  writeFileSync(join(store, 'decision-requests', `${request.request_sha256.slice(7)}.json`), `${canonicalDecisionRequestBytes(request)}\n`);
+  writeFileSync(join(store, 'decision-events', `${event.event_sha256.slice(7)}.json`), `${canonicalDecisionRequestEventBytes(event)}\n`);
+  return { request, event, current, currentPath, store, key };
+}
+function inventoryTree(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
+    const path = join(root, entry.name);
+    return entry.isDirectory() ? inventoryTree(path) : [`${path}:${createHash('sha256').update(readFileSync(path)).digest('hex')}`];
+  }).sort();
+}
+
+describe('canonical open Decision inventory', () => {
+  test('observes a missing store as empty without creating it, and rejects invalid queries', () => {
+    const root = inventoryFixture();
+    const before = inventoryTree(root);
+    const result = readOpenDecisionInventory(root);
+    expect(result.entries).toEqual([]);
+    expect(result.coverage).toMatchObject({ complete: true, reason: 'complete', scanned: 0, next_after: null });
+    expect(existsSync(join(root, '.git/repo-harness'))).toBe(false);
+    expect(inventoryTree(root)).toEqual(before);
+    for (const query of [{ after: '../outside' }, { limit: 0 }, { limit: 101 }]) expect(() => readOpenDecisionInventory(root, query)).toThrow();
+  });
+
+  test('pages in stored-key order, validates closed records and preserves exact open fences without writes', () => {
+    const root = inventoryFixture();
+    const rows = [seedInventoryDecision(root, U('1')), seedInventoryDecision(root, U('2'), 'answered'), seedInventoryDecision(root, U('3'), 'cancelled'), seedInventoryDecision(root, U('4'))].sort((a,b) => a.key < b.key ? -1 : 1);
+    const before = inventoryTree(root);
+    const seen: string[] = []; let after: string | null = null, scanned = 0;
+    do {
+      const page = readOpenDecisionInventory(root, { after, limit: 1 });
+      expect(page.query).toEqual({ after, limit: 1 });
+      for (const entry of page.entries) {
+        seen.push(entry.request.decision_id);
+        expect(entry.request.task_fence).toEqual(task);
+        expect(entry.request.binding_fence).toEqual(binding);
+        expect(entry.current.state).toBe('open');
+      }
+      scanned += page.coverage.scanned;
+      expect(page.coverage.complete).toBe(page.coverage.next_after === null);
+      if (page.coverage.next_after !== null && after !== null) expect(page.coverage.next_after > after).toBe(true);
+      after = page.coverage.next_after;
+    } while (after !== null);
+    expect(scanned).toBe(4);
+    expect(seen).toEqual(rows.filter(row => row.current.state === 'open').map(row => row.request.decision_id));
+    expect(inventoryTree(root)).toEqual(before);
+  });
+
+  test('fails closed on misfiled UUIDs, half-written currents, corrupt closed records and unsafe links', () => {
+    const root = inventoryFixture();
+    const row = seedInventoryDecision(root, U('1'), 'answered');
+    const moved = join(row.store, 'decisions', '0'.repeat(64));
+    renameSync(join(row.store, 'decisions', row.key), moved);
+    expect(() => readOpenDecisionInventory(root)).toThrow('key does not match UUID');
+    renameSync(moved, join(row.store, 'decisions', row.key));
+    const bytes = readFileSync(row.currentPath);
+    writeFileSync(row.currentPath, '{');
+    expect(() => readOpenDecisionInventory(root)).toThrow('current is invalid');
+    rmSync(row.currentPath);
+    expect(() => readOpenDecisionInventory(root)).toThrow('current is missing');
+    const outside = join(root, 'outside.json'); writeFileSync(outside, bytes);
+    if (process.platform !== 'win32') {
+      symlinkSync(outside, row.currentPath);
+      expect(() => readOpenDecisionInventory(root)).toThrow('not regular');
+      rmSync(row.currentPath);
+      renameSync(join(row.store, 'decisions', row.key), moved);
+      symlinkSync(moved, join(row.store, 'decisions', row.key), 'dir');
+      expect(() => readOpenDecisionInventory(root)).toThrow('entry is unsafe');
+      rmSync(join(row.store, 'decisions', row.key));
+      renameSync(moved, join(row.store, 'decisions', row.key));
+    }
+    writeFileSync(row.currentPath, Buffer.alloc(128 * 1024 + 1));
+    expect(() => readOpenDecisionInventory(root)).toThrow('record limit');
+  });
+
+  test('checks immutable record identity and refuses a concurrent answer or directory addition', () => {
+    const root = inventoryFixture();
+    const row = seedInventoryDecision(root, U('1'));
+    const different = buildDecisionRequest({ ...row.request, question: 'Different authority' });
+    const requestPath = join(row.store, 'decision-requests', `${row.current.request_sha256.slice(7)}.json`);
+    writeFileSync(requestPath, `${canonicalDecisionRequestBytes(different)}\n`);
+    expect(() => readOpenDecisionInventory(root)).toThrow('binding is invalid');
+    writeFileSync(requestPath, `${canonicalDecisionRequestBytes(row.request)}\n`);
+    expect(() => readOpenDecisionInventory(root, { between_reads: () => { seedInventoryDecision(root, U('1'), 'answered'); } })).toThrow('changed during read');
+    expect(() => readOpenDecisionInventory(root, { between_reads: () => { seedInventoryDecision(root, U('2')); } })).toThrow('directory changed during read');
+    let calls = 0;
+    expect(() => readOpenDecisionInventory(root, { now_ms: () => calls++ === 0 ? 0 : 2000 })).toThrow('deadline exceeded');
+  });
+
+  test('scan coverage advances across closed history and byte coverage reserves the consistency pass', () => {
+    const root = inventoryFixture();
+    for (let i = 1; i <= 201; i++) seedInventoryDecision(root, `${i.toString(16).padStart(8,'0')}-1111-4111-8111-111111111111`, 'answered');
+    const first = readOpenDecisionInventory(root, { now_ms: () => 0 });
+    expect(first.entries).toEqual([]);
+    expect(first.coverage).toMatchObject({ complete: false, reason: 'scan_limit', scanned: 200 });
+    const last = readOpenDecisionInventory(root, { after: first.coverage.next_after, now_ms: () => 0 });
+    expect(last.coverage).toMatchObject({ complete: true, scanned: 1, next_after: null });
+    for (let i = 1; i <= 201; i++) seedInventoryDecision(root, `${i.toString(16).padStart(8,'0')}-1111-4111-8111-111111111111`, 'answered', 'x'.repeat(16 * 1024));
+    const bounded = readOpenDecisionInventory(root, { now_ms: () => 0 });
+    expect(bounded.coverage.reason).toBe('byte_limit');
+    expect(bounded.coverage.scanned).toBeGreaterThan(0);
+    expect(bounded.coverage.bytes_read).toBeLessThanOrEqual(8 * 1024 * 1024);
+    expect(bounded.coverage.next_after).not.toBeNull();
+  });
+});

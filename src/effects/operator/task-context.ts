@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import type { BoardDocumentV1 } from '../../core/state/types';
-import { decodeOperatorTaskContext, isTaskContextRequest, TASK_CONTEXT_MAX_BYTES, type OperatorTaskContext, type OperatorTaskContextRequest, type TaskContextFailure } from '../../core/operator/task-context';
+import { projectOperatorTaskContext, decodeOperatorTaskContext, TASK_CONTEXT_MAX_BYTES, isTaskContextRequest, type OperatorTaskContext, type OperatorTaskContextRequest, type TaskContextFailure } from '../../core/operator/task-context';
 import { collectRepoTaskOffers } from '../fleet/acquire';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { resolveBoard } from '../state/resolve-board';
@@ -35,16 +35,8 @@ export function readOperatorTaskContext(input: OperatorTaskContextRequest & { re
     const finalRepo = finalRegistry.repos.find(r=>r.id === input.repository_id);
     if (!finalRepo || finalRegistry.authorizationRevision !== after.authorization || realpathSync(finalRepo.path) !== after.root) return fail('stale');
     const {board,card,offer}=after;
-    const claim=card.claim;
-    const result:OperatorTaskContext = {
-      protocol:1,kind:'operator_task_context',repository_id:input.repository_id,task_id:card.task_id,task_revision:card.task_revision,
-      canonical:{ target_ref:board.canonical_target.ref,commit:board.canonical_target.oid,sprint_path:board.sprint_path },
-      task:{ title:card.task,mode:card.mode,acceptance:card.acceptance,state:card.task_state },
-      execution:{ lease_state:card.lease_state,claim:claim ? { claim_id:claim.claim_id,generation:claim.generation,state:claim.state,branch:claim.branch,target_ref:claim.target_ref } : null },
-      offer:{ execution_readiness:offer.execution_readiness,blockers:offer.blockers.map(b=>({code:b.code,attention_owner:b.attention_owner})),offer_revision:offer.offer_revision,
-        plan:offer.plan ? { basis:'registered_worktree',plan_path:offer.plan.plan_path,contract_path:offer.plan.contract_path,source_ref:offer.plan.source_ref,plan_sha256:offer.plan.plan_sha256,contract_sha256:offer.plan.contract_sha256 } : null },
-      observation:{ observed_at:new Date().toISOString(),board_revision:board.revisions.board,authorization_revision:after.authorization,consistency:'observed' },
-    };
+    const result = projectOperatorTaskContext({ repository_id:input.repository_id,board,card,offer,
+      authorization_revision:after.authorization,observed_at:new Date().toISOString() });
     if (Buffer.byteLength(JSON.stringify(result)) > TASK_CONTEXT_MAX_BYTES) return fail('too_large');
     return decodeOperatorTaskContext(result,input);
   } catch(error) { if (error instanceof OperatorTaskContextError) throw error; return fail('unavailable'); }

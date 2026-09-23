@@ -52,8 +52,8 @@ import type {
  * Node `createHash` dependency into the browser bundle; the annotation is the
  * source protocol's own type, so a bump that forgets this file fails typecheck.
  */
-export const OPERATOR_COLLABORATION_PROTOCOL: CollaborativeWorkExchangeSnapshotV1['protocol'] = 1;
-export const OPERATOR_COLLABORATION_SNAPSHOT_KIND = 'operator_collaboration_snapshot' as const;
+export const OPERATOR_WORK_EXCHANGE_PROTOCOL: CollaborativeWorkExchangeSnapshotV1['protocol'] = 1;
+export const OPERATOR_WORK_EXCHANGE_SNAPSHOT_KIND = 'operator_work_exchange_snapshot' as const;
 
 /**
  * The collector's own source vocabulary, restated here because the collector
@@ -145,9 +145,9 @@ export interface OperatorCollaborationOpportunityV1 {
   readonly source_refs: readonly string[];
 }
 
-export interface OperatorCollaborationSnapshotV1 {
-  readonly protocol: typeof OPERATOR_COLLABORATION_PROTOCOL;
-  readonly kind: typeof OPERATOR_COLLABORATION_SNAPSHOT_KIND;
+export interface OperatorWorkExchangeSnapshot {
+  readonly protocol: typeof OPERATOR_WORK_EXCHANGE_PROTOCOL;
+  readonly kind: typeof OPERATOR_WORK_EXCHANGE_SNAPSHOT_KIND;
   readonly repository_id: string;
   readonly mode: OperatorCollaborationMode;
   readonly snapshot_consistency: OperatorCollaborationConsistency;
@@ -192,9 +192,9 @@ function byRecencyThenId(
   return byText(right.created_at, left.created_at) || byText(left.id, right.id);
 }
 
-export function projectOperatorCollaborationSnapshot(
+export function projectOperatorWorkExchangeSnapshot(
   input: ProjectOperatorCollaborationSnapshotInput,
-): OperatorCollaborationSnapshotV1 {
+): OperatorWorkExchangeSnapshot {
   const { snapshot } = input;
 
   const threads = snapshot.threads
@@ -270,8 +270,8 @@ export function projectOperatorCollaborationSnapshot(
   }));
 
   return Object.freeze({
-    protocol: OPERATOR_COLLABORATION_PROTOCOL,
-    kind: OPERATOR_COLLABORATION_SNAPSHOT_KIND,
+    protocol: OPERATOR_WORK_EXCHANGE_PROTOCOL,
+    kind: OPERATOR_WORK_EXCHANGE_SNAPSHOT_KIND,
     repository_id: snapshot.repository_id,
     mode: input.mode,
     snapshot_consistency: snapshot.snapshot_consistency,
@@ -285,4 +285,20 @@ export function projectOperatorCollaborationSnapshot(
     unverified_execution_context_count: snapshot.unverified_execution_context_count,
     source_snapshot_sha256: snapshot.source_snapshot_sha256,
   });
+}
+
+export const OPERATOR_COLLABORATION_PROTOCOL = 4 as const;
+export const OPERATOR_COLLABORATION_SNAPSHOT_KIND = 'operator_collaboration_snapshot' as const;
+export type OperatorCollaborationSourceObservation<T> =
+  | { readonly status: 'observed'; readonly observed_at: string; readonly snapshot: T }
+  | { readonly status: 'unavailable'; readonly observed_at: string; readonly code: 'source_unavailable' };
+export interface OperatorCollaborationSnapshotV4 {
+  readonly protocol: typeof OPERATOR_COLLABORATION_PROTOCOL;
+  readonly kind: typeof OPERATOR_COLLABORATION_SNAPSHOT_KIND;
+  readonly repository_id: string;
+  readonly planning: OperatorCollaborationSourceObservation<import('./planning-snapshot').OperatorPlanningSnapshot>;
+  readonly decision_after: string | null;
+  readonly decisions: OperatorCollaborationSourceObservation<import('./decision-inventory').OperatorDecisionInventory>;
+  readonly exchange: OperatorCollaborationSourceObservation<OperatorWorkExchangeSnapshot>;
+  readonly organization: OperatorCollaborationSourceObservation<import('./organization-snapshot').OperatorOrganizationSnapshot>;
 }

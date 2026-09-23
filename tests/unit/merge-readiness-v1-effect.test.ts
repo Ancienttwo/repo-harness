@@ -316,3 +316,89 @@ describe('MergeReadinessV1 effect', () => {
     expect(aggregate.publications[1]?.verdict?.ready).toBe(true);
   });
 });
+
+// Real local evidence is required here: a static boolean snapshot cannot expose
+// contract edits excluded from the semantic implementation subject.
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { productionMergeReadinessCollector } from '../../src/effects/publication/merge-readiness';
+import { publicationSha256 } from '../../src/core/publication/publication-receipt';
+import { createEffectiveStateFixture, EFFECTIVE_STATE_SCENARIOS, CONTRACT, PLAN, writeFixture } from '../state/effective-state-fixture';
+import { resolveEffectiveStateReadOnly } from '../../src/effects/state/resolve-effective-state';
+import { bindLeaseRecord, beginLeaseCompletionRecord, buildLeaseOwnerRecord, deriveTaskRevision, enterReviewingLeaseRecord } from '../../src/core/state/coordination-identity';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import { acceptanceReceiptPath, acceptanceVerificationObservationPath, authorityFingerprint, writeAcceptanceVerificationObservation, type AcceptanceReceipt } from '../../scripts/acceptance-receipt';
+import { classifyFleetBoardPlacement } from '../../src/core/fleet/board';
+
+function withLocalAcceptance(run: (f: { root: string; observe: () => ReturnType<typeof resolvePublicationReadiness>; observationPath: string; receiptPath: string }) => void) {
+  const f=createEffectiveStateFixture();
+  const authorityHome=mkdtempSync(join(tmpdir(),'readiness-acceptance-home-'));
+  try {
+    const git=(...args:string[])=>execFileSync('git',args,{cwd:f.cwd,encoding:'utf8'}).trim();
+    const sprint='plans/sprints/readiness.sprint.md';
+    const title='verify current contract authority';
+    const revision=deriveTaskRevision({taskId:TASK_ID,taskCell:title,modeCell:'inline',acceptanceCell:'reject stale acceptance'});
+    writeFixture(f.cwd,sprint,`# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${TASK_ID} | [ ] | ${title} | inline | reject stale acceptance | (pending) |\n`);
+    writeFixture(f.cwd,'.ai/harness/policy.json',JSON.stringify({worktree_strategy:{review_base:'main',merge_back:{target:'main'}}}));
+    git('add','.');git('commit','-m','canonical task');
+    const base=git('rev-parse','HEAD');git('switch','-c','codex/readiness');
+    writeFixture(f.cwd,'src/feature.ts','export const value=1;\n');git('add','.');git('commit','-m','candidate');
+    const head=git('rev-parse','HEAD');
+    const now=Date.now();
+    EFFECTIVE_STATE_SCENARIOS.find(s=>s.name==='executing-fresh-evidence')!.setup!(f.cwd,now);
+    const effective=resolveEffectiveStateReadOnly(f.cwd,now);
+    expect(effective.checks.freshness).toBe('fresh');
+    const acceptance:AcceptanceReceipt={protocol:2,kind:'repo-harness-acceptance-receipt',repository_root:f.cwd,
+      contract_file:CONTRACT,contract_sha256:authorityFingerprint(readFileSync(join(f.cwd,CONTRACT),'utf8')),
+      goal_file:PLAN,goal_sha256:authorityFingerprint(readFileSync(join(f.cwd,PLAN),'utf8')),
+      verification_file:'.ai/harness/checks/latest.json',verification_evidence_sha256:'sha256:'+'6'.repeat(64),benchmark_evidence_sha256:'sha256:'+'7'.repeat(64),
+      subject_sha256:effective.review.recorded_subject_sha256!,subject_scope:'normalized-final-content',target_ref:'main',target_revision:base,
+      reviewed_paths:['src/feature.ts'],disposition:'external_pass',expected_reviewer:'Codex',reviewer:'Codex',source:'codex-plugin',actor:null,
+      summary:'Controlled acceptance observation fixture',findings:[],waiver_grant_sha256:null,issued_at:new Date(now).toISOString()};
+    const receiptPath=acceptanceReceiptPath(f.cwd,authorityHome,true);
+    writeFileSync(receiptPath,JSON.stringify(acceptance));
+    writeAcceptanceVerificationObservation({root:f.cwd,authorityHome,receipt:acceptance,archiveProjectionSha256:null});
+    const sealPath=join(authorityHome,'seal.json');
+    writeFileSync(sealPath,JSON.stringify({head_sha:head,base_sha:base,acceptance_receipt_sha256:publicationSha256(readFileSync(receiptPath))}));
+    const publication=buildPublicationReceipt({...receipt,repo_id:resolveRepoIdentity(f.cwd),task_revision:revision,head_sha:head,base_sha:base,tree_sha:git('rev-parse','HEAD^{tree}'),
+      review_subject_sha256:acceptance.subject_sha256,verification_evidence_sha256:publicationSha256(readFileSync(join(f.cwd,'.ai/harness/checks/latest.json'))),merge_seal_sha256:publicationSha256(readFileSync(sealPath))});
+    const owner=buildLeaseOwnerRecord({claimId:CLAIM_ID,taskId:TASK_ID,taskRevision:revision,sprintPath:sprint,targetRef:'main',generation:1,sessionId:'readiness-session',sourceWorktree:f.cwd});
+    const bound=bindLeaseRecord(owner,{claimId:CLAIM_ID,executionWorktree:f.cwd,branch:'codex/readiness',unitRef:PLAN});if(!bound.ok)throw Error(bound.error);
+    const completing=beginLeaseCompletionRecord(bound.record,{claimId:CLAIM_ID,executionWorktree:f.cwd,finishTransactionKey:null});if(!completing.ok)throw Error(completing.error);
+    const reviewing=enterReviewingLeaseRecord(completing.record,{claimId:CLAIM_ID,publication:{publication_id:publication.publication_id,receipt_sha256:publicationReceiptDigest(publication),head_sha:head,ship_transaction_key:'readiness-fixture'}});if(!reviewing.ok)throw Error(reviewing.error);
+    createLeaseDirectory(f.cwd,TASK_ID);writeLeaseOwnerDurably(f.cwd,TASK_ID,reviewing.record);
+    const observe=()=>resolvePublicationReadiness({repo_root:f.cwd,publication_id:publication.publication_id,merge_seal_path:sealPath,authority_home:authorityHome,now_ms:now},collector({resolve_receipt:()=>publication,collect_local:productionMergeReadinessCollector.collect_local,
+      observe_identity:()=>({...providerIdentity,head_sha:head,base_sha:base}),observe_facts:()=>({...providerFacts,head_sha:head,base_sha:base})}));
+    expect(observe().ready).toBe(true);
+    run({root:f.cwd,observe,receiptPath,observationPath:acceptanceVerificationObservationPath(f.cwd,authorityHome,CONTRACT,acceptance.contract_sha256)});
+  } finally {
+    f.cleanup();rmSync(authorityHome,{recursive:true,force:true});
+  }
+}
+
+test.each(['contract','goal','missing observation','malformed observation','receipt replacement'] as const)('production local readiness invalidates %s after a genuinely ready observation', change=>{
+  withLocalAcceptance(f=>{
+    if(change==='contract')writeFileSync(join(f.root,CONTRACT),readFileSync(join(f.root,CONTRACT),'utf8').replace('  - src/','  - docs/'));
+    if(change==='goal')writeFileSync(join(f.root,PLAN),readFileSync(join(f.root,PLAN),'utf8')+'\nChanged acceptance goal.\n');
+    if(change==='missing observation')rmSync(f.observationPath);
+    if(change==='malformed observation')writeFileSync(f.observationPath,'{}');
+    if(change==='receipt replacement')writeFileSync(f.receiptPath,'{}');
+    const before=execFileSync('git',['status','--porcelain'],{cwd:f.root,encoding:'utf8'});
+    const verdict=f.observe();
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map(b=>b.code)).toContain('acceptance_missing');
+    expect(verdict.blockers.map(b=>b.code)).toContain('verification_evidence_stale');
+    expect(execFileSync('git',['status','--porcelain'],{cwd:f.root,encoding:'utf8'})).toBe(before);
+    expect(classifyFleetBoardPlacement({error:null,task_state:'pending',lease_state:'reviewing',current_publication:{publication_id:verdict.publication_id,head_sha:verdict.expected_head_sha},merge_readiness:verdict} as Parameters<typeof classifyFleetBoardPlacement>[0])).toEqual({kind:'column',column:'in_review'});
+  });
+});
+
+test('canonical lifecycle normalization preserves a current accepted contract',()=>{
+  withLocalAcceptance(f=>{
+    writeFileSync(join(f.root,CONTRACT),readFileSync(join(f.root,CONTRACT),'utf8').replace('**Status**: Active','**Status**: Fulfilled'));
+    expect(f.observe().ready).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { spawn, spawnSync } from 'child_process';
@@ -22,6 +22,8 @@ import type { LeaseOwnerRecord } from '../../core/state/coordination-identity';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { readLease } from '../state/coordination-lease-store';
 import { resolveBoard } from '../state/resolve-board';
+import { acceptanceReceiptPath, authorityFingerprint, readAcceptanceVerificationObservation } from '../../../scripts/acceptance-receipt';
+import { resolveInsideRepo } from '../path-safety';
 import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { PublicationReceiptError, readPublicationReceiptCache } from './publication-receipt';
 
@@ -47,6 +49,8 @@ export interface PublicationReadinessInput {
   readonly git_bin?: string;
   readonly checks_path?: string;
   readonly merge_seal_path?: string;
+  /** Internal effect/test seam; HTTP callers never choose an authority store. */
+  readonly authority_home?: string;
   readonly now_ms?: number;
   /** Test/effect seam; production leaves this unset and invokes the configured gh binary. */
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
@@ -408,12 +412,38 @@ function readOptional(path: string): Buffer | null {
   try { return readFileSync(path); } catch { return null; }
 }
 
-function acceptanceFromEffective(effective: ReturnType<typeof resolveEffectiveStateReadOnly>): MergeReadinessAcceptance {
-  if (effective.external_acceptance.freshness === 'not_applicable') return 'not_required';
-  if (effective.external_acceptance.freshness !== 'fresh') return 'missing';
-  if (effective.external_acceptance.status === 'user_waiver') return 'waived';
-  if (effective.external_acceptance.status === 'external_pass') return 'pass';
-  return 'missing';
+/** Consume the acceptance authority's verified observation; GET never reruns its policy. */
+function currentAcceptance(
+  worktree: string | null,
+  effective: ReturnType<typeof resolveEffectiveStateReadOnly> | null,
+  receipt: PublicationReceiptV1,
+  seal: Record<string, unknown> | null,
+  authorityHome: string,
+): { readonly acceptance: MergeReadinessAcceptance; readonly token: string | null } {
+  const missing = { acceptance: 'missing', token: null } as const;
+  if (worktree === null || !effective?.contract || !effective.authoritative_plan) return missing;
+  try {
+    const readAuthority = (path: string): string => {
+      const resolved = resolveInsideRepo(worktree, path);
+      if (!resolved.ok || !resolved.path || !lstatSync(resolved.path).isFile()
+        || realpathSync(resolved.path) !== resolved.path) throw new Error('Acceptance authority is unavailable');
+      return readFileSync(resolved.path, 'utf8');
+    };
+    const observation = readAcceptanceVerificationObservation(worktree, authorityHome,
+      effective.contract.path, authorityFingerprint(readAuthority(effective.contract.path)));
+    if (observation === null) return missing;
+    const acceptanceBytes = readOptional(acceptanceReceiptPath(worktree, authorityHome));
+    const acceptanceHash = acceptanceBytes === null ? null : publicationSha256(acceptanceBytes);
+    const token = publicationSha256(JSON.stringify([observation.observation_id, acceptanceHash]));
+    if (observation.goal_file !== effective.authoritative_plan.path
+      || observation.goal_sha256 !== authorityFingerprint(readAuthority(observation.goal_file))
+      || observation.target_ref !== receipt.target_ref || observation.target_revision !== receipt.base_sha
+      || observation.subject_sha256 !== receipt.review_subject_sha256
+      || observation.acceptance_receipt_sha256 !== acceptanceHash
+      || seal?.acceptance_receipt_sha256 !== acceptanceHash
+      || !['external_pass', 'user_waiver'].includes(observation.disposition)) return { acceptance: 'missing', token };
+    return { acceptance: observation.disposition === 'user_waiver' ? 'waived' : 'pass', token };
+  } catch { return missing; }
 }
 
 function collectLocal(receipt: PublicationReceiptV1, input: PublicationReadinessInput): LocalReadinessSnapshot {
@@ -449,12 +479,14 @@ function collectLocal(receipt: PublicationReceiptV1, input: PublicationReadiness
     } catch { canonicalMatches = false; }
   }
   const sourceHashes = effective ? effective.source_hashes : {};
+  const acceptance = currentAcceptance(worktree, effective, receipt, seal, input.authority_home ?? homedir());
   return Object.freeze({
     token: publicationSha256(Buffer.from(JSON.stringify({
       lease: lease.raw,
       checks: checksRaw?.toString('base64') ?? null,
       seal: sealRaw?.toString('base64') ?? null,
       sourceHashes,
+      acceptance: acceptance.token,
       boardRevision,
     }))),
     lease: record,
@@ -474,11 +506,11 @@ function collectLocal(receipt: PublicationReceiptV1, input: PublicationReadiness
       && seal?.base_sha === receipt.base_sha,
     review_subject_matches_receipt: effective?.review.recorded_subject_sha256 === receipt.review_subject_sha256,
     verification_evidence_matches_receipt: checksRaw !== null && publicationSha256(checksRaw) === receipt.verification_evidence_sha256,
-    local_evidence_fresh: effective !== null
+    local_evidence_fresh: acceptance.acceptance !== 'missing' && effective !== null
       && effective.review.freshness === 'fresh'
       && effective.checks.freshness === 'fresh'
       && effective.checks.status === 'pass',
-    acceptance: effective ? acceptanceFromEffective(effective) : 'missing',
+    acceptance: acceptance.acceptance,
   });
 }
 

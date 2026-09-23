@@ -1,0 +1,343 @@
+> **Archived**: 2026-09-23 14:09
+> **Related Plan**: plans/archive/plan-20260922-0926-akn06-retirement.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260923-1409
+> **Archive Projection V1**: `plans/plan-20260922-0926-akn06-retirement.md` => `plans/archive/plan-20260922-0926-akn06-retirement.md`
+> **Archive Projection V1**: `tasks/notes/20260922-0926-akn06-retirement.notes.md` => `tasks/archive/notes-20260923-1409-akn06-retirement.md`
+> **Archive Projection V1**: `tasks/contracts/20260922-0926-akn06-retirement.contract.md` => `tasks/archive/contract-20260923-1409-akn06-retirement.md`
+> **Archive Projection V1**: `tasks/reviews/20260922-0926-akn06-retirement.review.md` => `tasks/archive/review-20260923-1409-akn06-retirement.md`
+
+# Task Contract: akn06-retirement
+
+> **Status**: Active
+> **Plan**: plans/archive/plan-20260922-0926-akn06-retirement.md
+> **Task Profile**: bugfix
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
+> **Owner**: ancienttwo
+> **Capability ID**: root
+> **Last Updated**: 2026-09-22 09:40
+> **Review File**: `tasks/archive/review-20260923-1409-akn06-retirement.md`
+> **Notes File**: `tasks/archive/notes-20260923-1409-akn06-retirement.md`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
+
+## Why
+
+HTTP timeout or disconnect currently frees Collaboration/TaskDiff slots while their reader or Worker may still be running.
+
+## Goal
+
+Bind server observation capacity and shutdown to actual reader/Worker retirement, preserving existing typed read-only routes.
+
+## Scope
+
+- In scope: Collaboration subscription versus retirement, TaskDiff reuse of bounded context/activity reader, injected-reader completion tracking, single shared shutdown completion.
+- Out of scope: browser cadence, aggregate provider budgeting, Fleet epoch schema, history authority, native execution, runtime installation and main merge.
+- Invariant: response completion never releases unretired work; no new source work starts while closing.
+
+## Stop Conditions
+
+- Stop on authority/path outside Allowed Paths or inability to observe real Worker exit.
+- No new runtime service, user setting, transport fallback or provider call.
+
+## Falsifier
+
+After a timeout/disconnect but before reader exit, retry starts another same-scope read or server.close resolves.
+
+## Root Cause Evidence
+
+- root_cause: Collaboration decrements its worker counter in subscription settlement and TaskDiff removes its canceller in HTTP finish, before actual work retires. Shutdown omits both actual completion sets and injected Task reads.
+- repro: Hold injected readers unresolved after abort, retry the same source and start close; the existing implementation admits overlap or resolves close before the held work completes.
+- regression_guard: tests/cli/operator-serve.test.ts
+- pre_fix_failure_artifact: tasks/archive/review-20260923-1409-akn06-retirement.md
+
+## Workflow Inventory
+
+- Source plan: `plans/archive/plan-20260922-0926-akn06-retirement.md`
+- Deferred-goal ledger: `tasks/todos.md`
+- Review file: `tasks/archive/review-20260923-1409-akn06-retirement.md`
+- Notes file: `tasks/archive/notes-20260923-1409-akn06-retirement.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+
+## Change Assessment
+
+```json
+{"protocol": 1, "oracles": [{"id": "retirement", "kind": "deterministic_test", "paths": ["*"]}]}
+```
+
+## Acceptance Policy
+
+```json
+{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}
+```
+
+## Allowed Paths
+
+```yaml
+allowed_paths:
+  - src/effects/operator/server.ts
+  - src/effects/operator/collaboration-worker.ts
+  - src/effects/operator/task-diff-worker.ts
+  - tests/cli/operator-serve.test.ts
+  - tests/effects/operator-task-diff.test.ts
+  - docs/researches/20260922-operator-reader-retirement.md
+  - docs/architecture/.projection-manifest.json
+  - plans/archive/plan-20260922-0926-akn06-retirement.md
+  - tasks/archive/contract-20260923-1409-akn06-retirement.md
+  - tasks/archive/review-20260923-1409-akn06-retirement.md
+  - tasks/archive/notes-20260923-1409-akn06-retirement.md
+  - tasks/todos.md
+```
+
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
+  benchmark: not_applicable
+```
+
+## Delegation Contract
+
+```yaml
+delegation:
+  budget:
+    tokens: null
+    runner_invocations: null
+    wall_time_minutes: null
+  permission_scope:
+    mode: inherit_allowed_paths
+    writable_paths: []
+    network: inherited
+  roles:
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+    fallback: null
+    brief_is_authoritative: true
+```
+
+## Exit Criteria (Machine Verifiable)
+
+```yaml
+exit_criteria:
+  files_exist:
+    - docs/researches/20260922-operator-reader-retirement.md
+  artifacts_exist: []
+```
+
+## Verification Plan
+
+```json
+{
+  "protocol": 1,
+  "checks": [
+    {
+      "id": "activity",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-activity.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "context",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-context.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "diff",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-diff.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "retirement",
+      "kind": "package_test",
+      "path": "tests/cli/operator-serve.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "type",
+      "kind": "command",
+      "command": "bun run check:type",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "hooks",
+      "kind": "command",
+      "command": "bun run check:hooks",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "helpers",
+      "kind": "command",
+      "command": "bun run check:helpers",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "reference-configs",
+      "kind": "command",
+      "command": "bun run check:reference-configs",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "deploy-sql",
+      "kind": "command",
+      "command": "bash scripts/check-deploy-sql-order.sh",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "architecture",
+      "kind": "command",
+      "command": "bash scripts/check-architecture-sync.sh",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "task-sync",
+      "kind": "command",
+      "command": "bash scripts/check-task-sync.sh",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "task-workflow",
+      "kind": "command",
+      "command": "bash scripts/check-task-workflow.sh --strict",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "project-state",
+      "kind": "command",
+      "command": "bun scripts/inspect-project-state.ts --repo . --format text",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "init-dry-run",
+      "kind": "command",
+      "command": "bun src/cli/index.ts init --repo . --dry-run",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Server reader retirement, unchanged read protocols and repository integrity",
+      "inputs": {
+        "env": []
+      }
+    }
+  ]
+}
+```
+
+## Acceptance Notes (Human Review)
+
+Reader completion and production Worker exit are the only slot-release authorities. Same-key retiring Collaboration reads refuse busy; queued work respects the existing capacity and no queue starts after shutdown. TaskDiff shares the existing bounded Task read owner; strict decoder/errors and one browser write remain unchanged.
+
+## Rollback Point
+
+- Base: 5018f0d7469833339b8da51b65d30714870d2cbb.
+- Revert server, Collaboration worker and TaskDiff worker together; no durable data migration.

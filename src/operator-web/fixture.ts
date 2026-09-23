@@ -1,5 +1,5 @@
 import type {
-  OperatorCollaborationSnapshotV1,
+  OperatorWorkExchangeSnapshot,
   OperatorFleetCardV1,
   OperatorFleetColumn,
   OperatorFleetRepositoryV1,
@@ -198,7 +198,8 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
 ];
 
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
-  protocol: 6,
+  protocol: 7,
+  service_epoch: '00000000-0000-4000-8000-000000000001',
   kind: 'operator_fleet_snapshot',
   registry_revision: `sha256:${'e'.repeat(64)}`,
   sequence: 18,
@@ -343,9 +344,9 @@ function collabDigest(seed: string): string {
 const ENGINEER_LINEAGE = 'module_engineerengineer:capability.runtime-harness.collaboration';
 const WORKER_LINEAGE = `delegated_worker${collabDigest('6b1f04d9c8a2e735')}`;
 
-export const collaborationSnapshot: OperatorCollaborationSnapshotV1 = {
+export const exchangeSnapshot: OperatorWorkExchangeSnapshot = {
   protocol: 1,
-  kind: 'operator_collaboration_snapshot',
+  kind: 'operator_work_exchange_snapshot',
   repository_id: COLLAB_REPOSITORY_ID,
   mode: 'shadow',
   snapshot_consistency: 'stable',
@@ -480,25 +481,48 @@ export const collaborationSnapshot: OperatorCollaborationSnapshotV1 = {
 };
 
 /** Two additive sources unreadable: the panel must say so, not show fewer lanes. */
-export const degradedCollaborationSnapshot: OperatorCollaborationSnapshotV1 = {
-  ...collaborationSnapshot,
+export const degradedExchangeSnapshot: OperatorWorkExchangeSnapshot = {
+  ...exchangeSnapshot,
   snapshot_consistency: 'degraded',
   degraded_sources: ['handoffs', 'adoptions'],
   handoffs: [],
 };
 
 /** A writer landed between the two reads. */
-export const changedCollaborationSnapshot: OperatorCollaborationSnapshotV1 = {
-  ...collaborationSnapshot,
+export const changedExchangeSnapshot: OperatorWorkExchangeSnapshot = {
+  ...exchangeSnapshot,
   snapshot_consistency: 'changed_during_read',
   changed_sources: ['signals'],
 };
 
 /** Collaboration switched off: readable, and nothing can be written to it. */
-export const offCollaborationSnapshot: OperatorCollaborationSnapshotV1 = {
-  ...collaborationSnapshot,
+export const offExchangeSnapshot: OperatorWorkExchangeSnapshot = {
+  ...exchangeSnapshot,
   mode: 'off',
 };
+
+export function collaborationObservationFixture(exchange: OperatorWorkExchangeSnapshot): import('../core/operator/collaboration-snapshot').OperatorCollaborationSnapshotV4 {
+  return { protocol: 4, kind: 'operator_collaboration_snapshot', decision_after: null,
+    planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
+    decisions: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' }, repository_id: exchange.repository_id,
+    exchange: { status: 'observed', observed_at: '2026-09-22T07:00:00.000Z', snapshot: exchange },
+    organization: { status: 'unavailable', observed_at: '2026-09-22T07:00:00.000Z', code: 'source_unavailable' } };
+}
+export const collaborationSnapshot = collaborationObservationFixture(exchangeSnapshot);
+
+export function planningObservationFixture(repositoryId: string, cards: readonly OperatorFleetCardV1[]): import('../core/operator/planning-snapshot').OperatorPlanningSnapshot {
+  const tasks = cards.filter(card => card.task_state !== 'missing').map(card => ({
+    ...taskContextFixture({repository_id:repositoryId,task_id:card.task_id,expected_task_revision:card.task_revision}),
+    task: {title:card.task_label ?? card.task_id,mode:'contract',acceptance:'Read the canonical requirements and preserve the exact Task identity.',state:card.task_state},
+  }));
+  const canonical = tasks[0]?.canonical ?? null;
+  const observation = {observed_at:'2026-09-22T07:00:00+08:00',authorization_revision:1,board_revision:canonical ? `sha256:${'b'.repeat(64)}` : null};
+  return {protocol:1,kind:'operator_planning_snapshot',repository_id:repositoryId,canonical,tasks,observation,
+    graph:{status:'observed',observed_at:observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:null,packages:[],sources:[]}}};
+}
+export const degradedCollaborationSnapshot = collaborationObservationFixture(degradedExchangeSnapshot);
+export const changedCollaborationSnapshot = collaborationObservationFixture(changedExchangeSnapshot);
+export const offCollaborationSnapshot = collaborationObservationFixture(offExchangeSnapshot);
 
 export const collaborationFixtures = {
   stable: collaborationSnapshot,
@@ -516,7 +540,7 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
   const missing = { status: 'missing' as const, observed_at, reason: null, records: [] };
   const known = <T,>(records: T[]) => ({ status: 'known' as const, observed_at, reason: null, records });
   return {
-    protocol: 2, kind: 'operator_repository_snapshot', repository_id: repositoryId,
+    protocol: 3, kind: 'operator_repository_snapshot', repository_id: repositoryId,
     service_epoch: '00000000-0000-4000-8000-000000000001', generation: 18,
     snapshot: { ...stableSnapshot, repositories: [selected], counts: repositoryId === 'repo-harness'
       ? { ...stableSnapshot.counts, working: 1, known_tasks: 6 }
@@ -546,4 +570,46 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
           action: 'observe', outcome: 'no_progress', observed_at, next_check_at: '2026-09-22T00:01:00.000Z' } }] }]),
     },
   };
+}
+
+/** Stored-fact-shaped fixtures for the read-only detail preview and decoder tests. */
+export function taskContextFixture(request: import('../core/operator/task-context').OperatorTaskContextRequest): import('../core/operator/task-context').OperatorTaskContext {
+  const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
+  return {
+    protocol: 1, kind: 'operator_task_context', repository_id: request.repository_id, task_id: request.task_id,
+    task_revision: request.expected_task_revision ?? task.task_revision,
+    canonical: { target_ref: 'origin/main', commit: 'a'.repeat(40), sprint_path: 'plans/sprints/fixture.sprint.md' },
+    task: { title: task.task_label, mode: 'contract', acceptance: 'The exact candidate passes independent verification.', state: 'pending' },
+    execution: { lease_state: 'bound', claim: { claim_id: task.claim_id, generation: 1, state: 'bound', branch: 'codex/fixture', target_ref: 'origin/main' } },
+    offer: { execution_readiness: 'planning_required', blockers: [{ code: 'plan_missing', attention_owner: 'agent' }], offer_revision: `sha256:${'a'.repeat(64)}`, plan: null },
+    observation: { observed_at: '2026-09-22T07:00:00+08:00', board_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 1, consistency: 'observed' },
+  };
+}
+export function taskActivityFixture(request: import('../core/operator/task-activity').OperatorTaskActivityRequest): import('../core/operator/task-activity').OperatorTaskActivity {
+  const parentId = '11111111-1111-4111-8111-111111111111';
+  const replyId = '22222222-2222-4222-8222-222222222222';
+  const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
+  const sha = `sha256:${'a'.repeat(64)}`;
+  const at = '2026-09-22T07:00:00+08:00';
+  const actor = { engineer_id: 'engineer:capability.fixture.reader', binding_id: task.claim_id, binding_generation: 2, engineer_contract_revision: sha, claim_id: task.claim_id, lease_generation: 1, receipt_sha256: sha };
+  const reply = { claim_id: task.claim_id, generation: 1, reply_message_id: replyId, state: 'complete' as const, reason: null, actor };
+  const parent: import('../core/operator/task-activity').ActivityEntry = {
+    event: { message_id: parentId, task_revision: task.task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'user', sender_id: 'local_operator', sender_trust: 'local_operator', audience: 'owner', body: 'Please preserve the existing evidence boundary.', body_sha256: sha, created_at: at, in_reply_to: null, event_digest: sha },
+    receipts: [{ message_id: parentId, recipient_kind: 'claim', recipient_id: task.claim_id, recipient_task_revision: task.task_revision, recipient_claim_id: task.claim_id, recipient_generation: 1, delivery_state: 'acknowledged', delivery_channel: 'agent_runtime_effect', delivery_ref: 'fixture-effect', delivered_at: at, acknowledged_at: at }],
+    replies: [reply], provenance: 'not_reply',
+  };
+  const response: import('../core/operator/task-activity').ActivityEntry = { event: { ...parent.event, message_id: replyId, sender_kind: 'agent', sender_id: sha, sender_trust: 'lease_owner', audience: 'user', body: 'The boundary is preserved; inspect the candidate evidence.', in_reply_to: parentId }, receipts: [], replies: [reply], provenance: 'recorded_claim_actor' };
+  const entries = [parent, response].filter(value => request.message_id !== null ? value.event.message_id === request.message_id : request.after === null || value.event.message_id > request.after);
+  return { ...request, protocol: 1, kind: 'operator_task_activity', observed_at: at, consistency: 'observed', entries, coverage: { scope: request.message_id === null ? 'task' : 'message', complete: true, reason: null, scanned: 2, bytes: 2048 }, next_cursor: null };
+}
+
+export function decisionInventoryFixture(repositoryId = 'repo-harness'): import('../core/operator/decision-inventory').OperatorDecisionInventory {
+  const hash = `sha256:${'a'.repeat(64)}`;
+  return { protocol: 1, kind: 'operator_decision_inventory', repository_id: repositoryId,
+    query: { after: null, limit: 50 }, directory_revision: hash,
+    entries: [{ decision_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', question: 'Approve the recorded migration scope?',
+      task_fence: { task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64), claim_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', lease_generation: 0 },
+      binding_fence: { engineer_id: 'engineer:capability.runtime-harness.collaboration', binding_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', binding_generation: 1, engineer_contract_revision: hash },
+      previous_assertion_sha256: null, request_sha256: hash, current_digest: hash, current_event_sha256: hash }],
+    coverage: { complete: true, reason: 'complete', scanned: 1, bytes_read: 4096, next_after: null } };
 }
