@@ -1,6 +1,6 @@
 # Task Contract: akn05-task-evidence
 
-> **Status**: Active
+> **Status**: Partial
 > **Plan**: plans/plan-20260922-0655-akn05-task-evidence.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -53,7 +53,7 @@ Not applicable: this is a new read-only presentation of existing validated proto
 ## Change Assessment
 
 ```json
-{"protocol": 1, "oracles": [{"id": "interactions", "kind": "deterministic_test", "paths": ["*"]}]}
+{"protocol": 1, "oracles": [{"id": "interactions", "kind": "deterministic_test", "paths": ["*"]}, {"id": "migration", "kind": "runtime_readback", "paths": ["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -66,20 +66,141 @@ Not applicable: this is a new read-only presentation of existing validated proto
 
 ```yaml
 allowed_paths:
-  - src/operator-web/TaskEvidence.tsx
+  - .github/workflows/ci.yml
+  - deploy/task-inbox-layout-v2.md
+  - docs/architecture/.projection-manifest.json
+  - docs/researches/20260922-candidate-runtime-fixture-authority.md
+  - docs/researches/20260922-operator-repository-snapshot.md
+  - docs/researches/20260922-operator-task-activity.md
+  - docs/researches/20260922-operator-task-context.md
+  - docs/researches/20260922-operator-task-evidence.md
+  - docs/researches/20260922-task-inbox-portable-paths.md
+  - docs/researches/20260922-task-reply-protocol.md
+  - docs/researches/20260923-windows-task-persistence.md
+  - plans/archive/plan-20260922-0132-candidate-runtime-fixture-authority.md
+  - plans/archive/plan-20260922-0204-akn03-protected-replies.md
+  - plans/archive/plan-20260922-0321-akn04-placement.md
+  - plans/archive/plan-20260922-0418-akn04-activity.md
+  - plans/archive/plan-20260922-0450-akn04-context.md
+  - plans/archive/plan-20260922-0519-akn04-repository-snapshot.md
+  - plans/archive/plan-20260922-0534-akn04-automation-summary.md
+  - plans/archive/plan-20260922-0600-akn05-supervision-summary.md
+  - plans/archive/plan-20260922-1417-akn03b-windows-fixture.md
+  - plans/archive/plan-20260922-1425-akn04a-stack-refresh.md
+  - plans/archive/plan-20260922-1452-akn03a-fixture-integration.md
+  - plans/archive/plan-20260922-1548-akn03b-windows-identity.md
+  - plans/archive/plan-20260922-1754-task-inbox-portable-paths.md
+  - plans/archive/plan-20260923-0031-windows-task-persistence.md
+  - plans/archive/plan-20260923-0311-akn05-supervision-integration.md
+  - plans/plan-20260922-0655-akn05-task-evidence.md
+  - scripts/check-tarball-install-smoke.sh
+  - src/cli/commands/fleet.ts
+  - src/core/fleet/task-inbox-layout.ts
+  - src/core/fleet/task-reply.ts
+  - src/effects/engineers/binding-store.ts
+  - src/effects/engineers/claim-actor-store.ts
+  - src/effects/engineers/principal-store.ts
+  - src/effects/engineers/task-inbox.ts
+  - src/effects/evidence/atomic-append.ts
+  - src/effects/fleet/task-inbox-layout-migration.ts
+  - src/effects/fleet/task-inbox-layout.ts
+  - src/effects/fleet/task-inbox.ts
+  - src/effects/operator/server.ts
+  - src/effects/operator/task-activity-worker.ts
+  - src/effects/operator/task-context-worker.ts
+  - src/effects/operator/task-read-process.ts
+  - src/effects/state/coordination-lease-store.ts
   - src/operator-web/App.tsx
+  - src/operator-web/TaskEvidence.tsx
+  - src/operator-web/fixture.ts
   - src/operator-web/i18n.ts
   - src/operator-web/styles.css
-  - src/operator-web/fixture.ts
-  - tests/operator-web/operator-ui.test.tsx
-  - tests/operator-web/operator-interactions.test.tsx
-  - docs/researches/20260922-operator-task-evidence.md
-  - docs/architecture/.projection-manifest.json
-  - plans/plan-20260922-0655-akn05-task-evidence.md
+  - tasks/archive/contract-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/contract-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/contract-20260922-1405-akn04-placement.md
+  - tasks/archive/contract-20260922-1406-akn05-supervision-summary.md
+  - tasks/archive/contract-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/contract-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/contract-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/contract-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/contract-20260922-1632-akn04-activity.md
+  - tasks/archive/contract-20260922-1646-akn04-context.md
+  - tasks/archive/contract-20260923-0235-windows-task-persistence.md
+  - tasks/archive/contract-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/contract-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/contract-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/contract-20260923-0326-akn05-supervision-integration.md
+  - tasks/archive/notes-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/notes-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/notes-20260922-1405-akn04-placement.md
+  - tasks/archive/notes-20260922-1406-akn05-supervision-summary.md
+  - tasks/archive/notes-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/notes-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/notes-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/notes-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/notes-20260922-1632-akn04-activity.md
+  - tasks/archive/notes-20260922-1646-akn04-context.md
+  - tasks/archive/notes-20260923-0235-windows-task-persistence.md
+  - tasks/archive/notes-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/notes-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/notes-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/notes-20260923-0326-akn05-supervision-integration.md
+  - tasks/archive/review-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/review-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/review-20260922-1405-akn04-placement.md
+  - tasks/archive/review-20260922-1406-akn05-supervision-summary.md
+  - tasks/archive/review-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/review-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/review-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/review-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/review-20260922-1632-akn04-activity.md
+  - tasks/archive/review-20260922-1646-akn04-context.md
+  - tasks/archive/review-20260923-0235-windows-task-persistence.md
+  - tasks/archive/review-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/review-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/review-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/review-20260923-0326-akn05-supervision-integration.md
+  - tasks/archive/todo-20260922-0148-candidate-runtime-fixture-authority.md
+  - tasks/archive/todo-20260922-1403-akn03-protected-replies.md
+  - tasks/archive/todo-20260922-1405-akn04-placement.md
+  - tasks/archive/todo-20260922-1406-akn05-supervision-summary.md
+  - tasks/archive/todo-20260922-1510-akn03a-fixture-integration.md
+  - tasks/archive/todo-20260922-1532-akn03b-windows-fixture.md
+  - tasks/archive/todo-20260922-1615-akn03b-windows-identity.md
+  - tasks/archive/todo-20260922-1617-akn04a-stack-refresh.md
+  - tasks/archive/todo-20260922-1632-akn04-activity.md
+  - tasks/archive/todo-20260922-1646-akn04-context.md
+  - tasks/archive/todo-20260923-0235-windows-task-persistence.md
+  - tasks/archive/todo-20260923-0253-task-inbox-portable-paths.md
+  - tasks/archive/todo-20260923-0302-akn04-repository-snapshot.md
+  - tasks/archive/todo-20260923-0319-akn04-automation-summary.md
+  - tasks/archive/todo-20260923-0326-akn05-supervision-integration.md
   - tasks/contracts/20260922-0655-akn05-task-evidence.contract.md
-  - tasks/reviews/20260922-0655-akn05-task-evidence.review.md
+  - tasks/notes/20260922-0519-akn04-repository-snapshot.notes.md
+  - tasks/notes/20260922-0534-akn04-automation-summary.notes.md
   - tasks/notes/20260922-0655-akn05-task-evidence.notes.md
+  - tasks/reviews/20260922-0418-akn04-activity.review.md
+  - tasks/reviews/20260922-0450-akn04-context.review.md
+  - tasks/reviews/20260922-0519-akn04-repository-snapshot.review.md
+  - tasks/reviews/20260922-0534-akn04-automation-summary.review.md
+  - tasks/reviews/20260922-0655-akn05-task-evidence.review.md
   - tasks/todos.md
+  - tests/cli/mcp-http.test.ts
+  - tests/cli/operator-serve.test.ts
+  - tests/coordination-lease-store.test.ts
+  - tests/effects/fleet-collector-process.test.ts
+  - tests/effects/operator-task-activity.test.ts
+  - tests/effects/operator-task-context.test.ts
+  - tests/effects/task-inbox-layout-migration.test.ts
+  - tests/effects/task-inbox.test.ts
+  - tests/effects/task-reply.test.ts
+  - tests/operator-web/operator-interactions.test.tsx
+  - tests/operator-web/operator-ui.test.tsx
+  - tests/unit/candidate-bound-global-runtime-reconciliation.test.ts
+  - tests/unit/me0b-principal-store.test.ts
+  - tests/unit/task-message-v1.test.ts
+  - tests/unit/task-reply.test.ts
+
 ```
 
 ## Evidence Requirements
@@ -191,6 +312,71 @@ exit_criteria:
       }
     },
     {
+      "id": "migration-runtime",
+      "kind": "package_test",
+      "path": "tests/effects/task-inbox-layout-migration.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Verify inherited task evidence readers and guarded migration against the frozen source base",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "operator-serve",
+      "kind": "package_test",
+      "path": "tests/cli/operator-serve.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Verify inherited task evidence readers and guarded migration against the frozen source base",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "http-integration",
+      "kind": "package_test",
+      "path": "tests/cli/mcp-http.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Verify inherited task evidence readers and guarded migration against the frozen source base",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "activity-source",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-activity.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Verify inherited task evidence readers and guarded migration against the frozen source base",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "context-source",
+      "kind": "package_test",
+      "path": "tests/effects/operator-task-context.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Verify inherited task evidence readers and guarded migration against the frozen source base",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
       "id": "type",
       "kind": "command",
       "command": "bun run check:type",
@@ -284,7 +470,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=164f3f52ab26f3ca576c7c3a3349253599db5ece REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
@@ -339,12 +525,14 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
+Freeze upstream source and PR base at `164f3f52ab26f3ca576c7c3a3349253599db5ece`; inherited paths are enumerated above. The new Task Evidence product delta stays a read-only six-file UI boundary. Existing source reader and migration suites are current exact evidence; neither historical AKN-05a acceptance nor its hosted CI substitutes for this slice's semantic review.
+
 The detail layout continuation removes wide complementary mode, makes modality independent of viewport and moves the existing overview facts into a secondary disclosure. Verify wide/narrow and live resize without remounting Composer, preserving focus and restoring it on close.
 
 Existing UI suites own this interaction boundary; extend them rather than adding a task-named suite. Inspect built wide/narrow EN/ZH fixture. Architecture and canonical verification precede one semantic acceptance. This does not prove native execution or complete AKN-05.
 
 ## Rollback Point
 
-- Base: 8895f3589ce9d064de8a0edbaee231ea8be46c3f
+- Base: 164f3f52ab26f3ca576c7c3a3349253599db5ece (accepted AKN-05a integration; source and PR base)
 - Remove read-only detail integration; durable records remain untouched.
 

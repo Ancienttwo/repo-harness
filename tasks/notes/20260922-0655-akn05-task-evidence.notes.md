@@ -6,3 +6,5 @@
 - Three-view navigation is still pending: it needs the canonical preparation/organization facts without remapping server-owned semantics. This detail slice supplies the common evidence entrypoint first.
 
 - Keep the roadmap overlay requirement in this existing detail work-package. CSS owns width, so viewport changes cannot restart focus or draft lifetime. Preserve prior overview/collaboration observations in a secondary disclosure instead of deleting them with the complementary pane.
+
+- Integration decision: use accepted supervision commit `164f3f52ab26f3ca576c7c3a3349253599db5ece` as source/PR base. The read path is App selection -> existing strict task-context and task-activity GET decoders -> independent TaskEvidence query lifetimes; failed/stale context must not suppress historical activity. The only anticipated merge conflict is generated architecture manifest and deferred todo timestamp; preserve upstream authority then regenerate projection. At 10x activity the 50-row replacement page remains bounded; server or exact-ID lookup fails first and must show incomplete coverage rather than imply a full scan.
