@@ -98,16 +98,16 @@ See captured planning output.
 ## Captured Planning Output
 
 ## Goal
-Set Codex fast-worker to gpt-5.6-sol / medium and deep-worker to gpt-5.6-sol / high.
+Set Codex fast-worker to gpt-6-sol / medium and deep-worker to gpt-6-sol / high.
 
 ## Scope
-scripts/install-agent-fleet.sh, assets/templates/helpers/install-agent-fleet.sh, .codex/agents/fast-worker.toml, .codex/agents/deep-worker.toml and tests/install-agent-fleet.test.ts. No Claude mapping or global installation changes.
+scripts/install-agent-fleet.sh, assets/templates/helpers/install-agent-fleet.sh, .codex/agents/fast-worker.toml, .codex/agents/deep-worker.toml, assets/reference-configs/external-tooling.md and its docs/reference-configs projection, and tests/install-agent-fleet.test.ts. No Claude mapping or global installation changes.
 
 ## Decision
 The installer per-agent override owns model selection. Keep its packaged helper, repository personas and existing test expectations aligned.
 
 ## Task Breakdown
-- [x] Update fast-worker mapping, helper mirror, persona and existing test expectation.
+- [x] Update worker mappings, helper mirror, personas, configuration documentation and existing test expectations.
 - [x] Run focused installer tests and required integrity checks; confirm deep-worker uses Sol high.
 
 ## Verification
@@ -118,5 +118,5 @@ Required repository integrity commands from AGENTS.md.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [x] Update fast-worker mapping, helper mirror, persona and existing test expectation.
+- [x] Update worker mappings, helper mirror, personas, configuration documentation and existing test expectations.
 - [x] Run focused installer tests and required integrity checks; confirm deep-worker uses Sol high.
