@@ -1,6 +1,6 @@
 /** Offline, exact-byte Task Inbox layout transaction. */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
@@ -207,25 +207,46 @@ function archiveRollback(common: string, input: InboxMigrationInput): void {
   removeMetadata(p.rolledBack);
   input.on_boundary?.('reapply-ready');
 }
-/** Only transaction-owned paths may repair a prefix left by an interrupted exclusive write. */
+/**
+ * Prove a recovered path is this transaction's single-link inode holding `bytes` (or, when `prefix`, an
+ * interrupted prefix of them). Re-fsyncing such an inode proves nothing after a failed writeback, so callers
+ * replace it with a freshly created inode instead of trusting it.
+ */
+function assertOwnedFile(path: string, bytes: Buffer, prefix: boolean): void {
+  assertInboxDirectory(dirname(path));
+  const before = inboxPathStat(path);
+  if (!before?.isFile() || before.isSymbolicLink() || before.nlink !== 1n
+    || (prefix ? before.size > BigInt(bytes.length) : before.size !== BigInt(bytes.length))) refuse('unsafe transaction file');
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const opened = fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n || opened.dev !== before.dev || opened.ino !== before.ino
+      || opened.size !== before.size || !readFileSync(fd).equals(bytes.subarray(0, Number(opened.size)))) {
+      refuse('conflicting transaction file');
+    }
+  } finally { closeSync(fd); }
+  const after = inboxPathStat(path);
+  if (!after?.isFile() || after.isSymbolicLink() || after.nlink !== 1n
+    || after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size) {
+    refuse('transaction file changed before rewrite');
+  }
+}
+
+/** Only transaction-owned paths may be rewritten; complete and interrupted files both get a fresh inode. */
 function writeOwned(path: string, bytes: Buffer): void {
   if (inboxPathStat(path)) {
     if (inboxPathStat(path)?.nlink !== 1n) refuse('transaction file has multiple paths');
-    const prior = readFile(path, bytes.length);
-    if (prior.equals(bytes)) return;
-    if (prior.length >= bytes.length || !bytes.subarray(0, prior.length).equals(prior)) refuse('conflicting transaction file');
+    assertOwnedFile(path, bytes, true);
     unlinkSync(path);
   }
   assertInboxDirectory(dirname(path));
   createFileExclusiveDurably(path, bytes);
   syncInboxDirectory(dirname(path));
 }
+/** A published path is replaced atomically through its pending sibling, so the authority never disappears. */
 function publishMetadata(path: string, value: unknown, beforePublish?: () => void): void {
   const bytes = Buffer.from(json(value));
-  if (inboxPathStat(path)) {
-    if (!readFile(path, bytes.length).equals(bytes)) refuse('conflicting migration metadata');
-    return;
-  }
+  if (inboxPathStat(path)) assertOwnedFile(path, bytes, false);
   const pending = `${path}.pending`;
   writeOwned(pending, bytes);
   beforePublish?.();
@@ -243,7 +264,11 @@ function finishForward(common: string, manifest: Manifest, input: InboxMigration
   if (inboxPathStat(p.current)) {
     if (inboxPathStat(p.stage) || !inboxPathStat(p.backup)) refuse('unexpected published migration state');
     marker(common); assertTree(p.current, manifest.target);
-  } else {
+    // Only a receipt proves a run rewrote this tree onto fresh inodes. Without one, retract the unobserved
+    // publication (runtime stays closed on the journal) and replay staging rather than re-flush old inodes.
+    if (!inboxPathStat(p.receipt)) { renameSync(p.current, p.stage); syncInboxDirectory(p.root); }
+  }
+  if (!inboxPathStat(p.current)) {
     const original = sourceRoot(common);
     checkedManifest(common, manifest);
     assertInboxDirectory(p.stage);
