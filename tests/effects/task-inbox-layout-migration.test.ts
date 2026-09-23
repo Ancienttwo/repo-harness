@@ -249,6 +249,94 @@ test.each(['writeSync', 'renameSync', 'fsyncSync'] as const)('%s failure retains
   expect(f.resume().state).toBe('committed');
 });
 
+test('resume re-flushes a complete staged file before publishing a migration receipt', () => {
+  const f = fixture(false);
+  const sync = fs.fsyncSync;
+  let failedAfterWrite = false;
+  let fault: ReturnType<typeof spyOn> | undefined;
+  try {
+    expect(() => f.apply(boundary => {
+      if (boundary === 'journal') fault = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+        if (!failedAfterWrite && fs.fstatSync(fd).isFile()) {
+          failedAfterWrite = true;
+          throw new Error('staged file flush failed');
+        }
+        return sync(fd);
+      });
+    })).toThrow('staged file flush failed');
+  } finally { fault?.mockRestore(); }
+  expect(failedAfterWrite).toBeTrue();
+  const staged = join(f.paths.stage, TASK, 'events', `${ID}.json`);
+  expect(readFileSync(staged)).toEqual(Buffer.from(f.original[`${TASK}/events/${ID}.json`]!, 'base64'));
+  const stagedInode = fs.statSync(staged, { bigint: true }).ino;
+
+  let retriedFlush = false;
+  const failedRetry = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    if (fs.fstatSync(fd, { bigint: true }).ino === stagedInode) {
+      retriedFlush = true;
+      throw new Error('staged file flush still unavailable');
+    }
+    return sync(fd);
+  });
+  try { expect(() => f.resume()).toThrow('staged file flush still unavailable'); }
+  finally { failedRetry.mockRestore(); }
+  expect(retriedFlush).toBeTrue();
+  expect(existsSync(f.paths.receipt)).toBeFalse();
+
+  let successfulFlushes = 0;
+  const recovered = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    if (fs.fstatSync(fd, { bigint: true }).ino === stagedInode) successfulFlushes++;
+    return sync(fd);
+  });
+  try { expect(f.resume().state).toBe('committed'); }
+  finally { recovered.mockRestore(); }
+  expect(successfulFlushes).toBeGreaterThan(0);
+});
+
+test('resume re-flushes complete prepared metadata before committing', () => {
+  const f = fixture(false);
+  const sync = fs.fsyncSync;
+  let firstFailure = false;
+  let fault: ReturnType<typeof spyOn> | undefined;
+  try {
+    expect(() => f.apply(boundary => {
+      if (boundary === 'published') fault = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+        if (!firstFailure && fs.fstatSync(fd).isFile()) {
+          firstFailure = true;
+          throw new Error('prepared receipt flush failed');
+        }
+        return sync(fd);
+      });
+    })).toThrow('prepared receipt flush failed');
+  } finally { fault?.mockRestore(); }
+  expect(firstFailure).toBeTrue();
+  const pending = `${f.paths.receipt}.pending`;
+  const pendingInode = fs.statSync(pending, { bigint: true }).ino;
+  let retriedFlush = false;
+  const failedRetry = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    if (fs.fstatSync(fd, { bigint: true }).ino === pendingInode) {
+      retriedFlush = true;
+      throw new Error('prepared receipt flush still unavailable');
+    }
+    return sync(fd);
+  });
+  try { expect(() => f.resume()).toThrow('prepared receipt flush still unavailable'); }
+  finally { failedRetry.mockRestore(); }
+  expect(retriedFlush).toBeTrue();
+  expect(existsSync(f.paths.receipt)).toBeFalse();
+  expect(existsSync(pending)).toBeTrue();
+
+  let successfulFlushes = 0;
+  const recovered = spyOn(fs, 'fsyncSync').mockImplementation(fd => {
+    if (fs.fstatSync(fd, { bigint: true }).ino === pendingInode) successfulFlushes++;
+    return sync(fd);
+  });
+  try { expect(f.resume().state).toBe('committed'); }
+  finally { recovered.mockRestore(); }
+  expect(successfulFlushes).toBeGreaterThan(0);
+  expect(existsSync(pending)).toBeFalse();
+});
+
 test('rollback before publication discards only the owned partial stage', () => {
   const f = fixture();
   expect(() => f.apply(boundary => { if (boundary === 'staged-file') throw new Error('interrupted'); })).toThrow();

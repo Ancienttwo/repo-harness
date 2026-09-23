@@ -1,6 +1,6 @@
 /** Offline, exact-byte Task Inbox layout transaction. */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
+import { closeSync, constants, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
@@ -207,12 +207,33 @@ function archiveRollback(common: string, input: InboxMigrationInput): void {
   removeMetadata(p.rolledBack);
   input.on_boundary?.('reapply-ready');
 }
+/** Match the same single-link inode before and after flushing recovered transaction bytes. */
+function syncMatchingOwnedFile(path: string, bytes: Buffer): void {
+  assertInboxDirectory(dirname(path));
+  const before = inboxPathStat(path);
+  if (!before?.isFile() || before.isSymbolicLink() || before.nlink !== 1n || before.size !== BigInt(bytes.length)) {
+    refuse('unsafe transaction file');
+  }
+  const fd = openSync(path, constants.O_RDWR | constants.O_NOFOLLOW);
+  try {
+    const opened = fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n || opened.dev !== before.dev || opened.ino !== before.ino
+      || opened.size !== before.size || !readFileSync(fd).equals(bytes)) refuse('conflicting transaction file');
+    fsyncSync(fd);
+    const after = inboxPathStat(path);
+    if (!after?.isFile() || after.isSymbolicLink() || after.nlink !== 1n
+      || after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size) {
+      refuse('transaction file changed during flush');
+    }
+  } finally { closeSync(fd); }
+}
+
 /** Only transaction-owned paths may repair a prefix left by an interrupted exclusive write. */
 function writeOwned(path: string, bytes: Buffer): void {
   if (inboxPathStat(path)) {
     if (inboxPathStat(path)?.nlink !== 1n) refuse('transaction file has multiple paths');
     const prior = readFile(path, bytes.length);
-    if (prior.equals(bytes)) return;
+    if (prior.equals(bytes)) { syncMatchingOwnedFile(path, bytes); return; }
     if (prior.length >= bytes.length || !bytes.subarray(0, prior.length).equals(prior)) refuse('conflicting transaction file');
     unlinkSync(path);
   }
@@ -223,7 +244,7 @@ function writeOwned(path: string, bytes: Buffer): void {
 function publishMetadata(path: string, value: unknown, beforePublish?: () => void): void {
   const bytes = Buffer.from(json(value));
   if (inboxPathStat(path)) {
-    if (!readFile(path, bytes.length).equals(bytes)) refuse('conflicting migration metadata');
+    syncMatchingOwnedFile(path, bytes);
     return;
   }
   const pending = `${path}.pending`;
@@ -243,6 +264,14 @@ function finishForward(common: string, manifest: Manifest, input: InboxMigration
   if (inboxPathStat(p.current)) {
     if (inboxPathStat(p.stage) || !inboxPathStat(p.backup)) refuse('unexpected published migration state');
     marker(common); assertTree(p.current, manifest.target);
+    syncMatchingOwnedFile(p.legacy, Buffer.from(TASK_INBOX_RETIREMENT_MARKER));
+    for (const entry of manifest.target) {
+      if (entry.kind !== 'file') continue;
+      const path = join(p.current, entry.path);
+      const bytes = readFile(path, entry.size);
+      if (bytes.length !== entry.size || sha(bytes) !== entry.sha256) refuse('published migration file changed');
+      syncMatchingOwnedFile(path, bytes);
+    }
   } else {
     const original = sourceRoot(common);
     checkedManifest(common, manifest);
