@@ -1,12 +1,13 @@
+import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { canonicalClaimActorReceiptBytes, validateClaimActorReceipt, validateEngineerPrincipalMapping } from '../../src/core/engineers/principal-claim';
-import { buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, canonicalTaskMessageEventBytes, deriveTaskMessageRecipientKey, transitionTaskMessageDeliveryReceipt } from '../../src/core/fleet/task-message';
+import { buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, canonicalTaskMessageEventBytes, transitionTaskMessageDeliveryReceipt } from '../../src/core/fleet/task-message';
 import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes } from '../../src/core/fleet/task-reply';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_MAX_OUTPUT_BYTES } from '../../src/core/operator/task-activity';
 import { OperatorTaskActivityError, readOperatorTaskActivity } from '../../src/effects/operator/task-activity';
@@ -34,7 +35,7 @@ function fixture(replyBody = '  Exact old reply.\n') {
   const ack=transitionTaskMessageDeliveryReceipt(transitionTaskMessageDeliveryReceipt(buildTaskMessageDeliveryReceipt({message_id:parent.message_id,recipient,task_revision:revision,delivery_channel:'hook_session'}),{state:'delivered',at:AT}),{state:'acknowledged',at:AT});
   const intent=buildTaskReplyIntent({parent,acknowledgement:ack,principal_mapping:mapping,claim_actor:actor,reply_message_id:id(2),body:replyBody,prepared_at:AT});
   const commit=buildTaskReplyCommit({intent,committed_at:AT});
-  const inbox=join(root,'.git/repo-harness/task-inbox/v1',task), key=deriveTaskMessageRecipientKey(recipient);
+  const inbox=join(root,'.git/repo-harness/task-inbox/v2',task), key=taskInboxRecipientStorageKey(recipient);
   const event=(message:typeof parent) => put(join(inbox,'events',`${message.message_id}.json`),canonicalTaskMessageEventBytes(message)+'\n');
   event(parent); event(intent.reply);
   put(join(inbox,'delivery',id(1),`${key}.json`),canonicalTaskMessageDeliveryReceiptBytes(ack)+'\n');
@@ -119,6 +120,21 @@ test('production HTTP worker reads historical records in a read-only repository'
     const response=await fetch(server.url+path); expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({entries:[{provenance:'recorded_claim_actor'}]});
     const missing=await fetch(server.url+path.replace(id(2),id(99))); expect(missing.status).toBe(404); expect(await missing.json()).toEqual({code:'history_unavailable'});
+    expect(tree(f.root)).toBe(before);
+  } finally { await server.close(); }
+});
+
+test.each(['legacy', 'migration'] as const)('production HTTP GET refuses %s layout without changing stored bytes', async state => {
+  const f = fixture();
+  const root = join(f.root, '.git/repo-harness/task-inbox');
+  if (state === 'legacy') renameSync(join(root, 'v2'), join(root, 'v1'));
+  else put(join(root, 'migration-v1-v2.json'), '{}\n');
+  const before = tree(f.root), server = await startOperatorServer({ port: 0, env: f.input.env });
+  try {
+    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/activity?message_id=${id(2)}`;
+    const response = await fetch(server.url + path);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: 'unavailable' });
     expect(tree(f.root)).toBe(before);
   } finally { await server.close(); }
 });

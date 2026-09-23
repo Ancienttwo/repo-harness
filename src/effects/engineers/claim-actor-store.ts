@@ -1,3 +1,4 @@
+import { syncDirectoryDurably } from '../evidence/atomic-append';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { dirname, join, relative, resolve, sep } from 'path';
 
@@ -25,11 +26,6 @@ function pathFor(cwd: string, taskId: string, claimId: string): { common: string
   return { common, root, task, receipt: join(task, `${claimId}.json`) };
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
-}
-
 function ensureSafeDirectory(root: string, target: string): void {
   const scoped = relative(root, target);
   if (!scoped || scoped === '..' || scoped.startsWith(`..${sep}`)) {
@@ -48,7 +44,7 @@ function ensureSafeDirectory(root: string, target: string): void {
       }
       const stat = lstatSync(current);
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new EngineerPrincipalError('claim_actor_receipt_invalid', `unsafe claim actor receipt directory: ${current}`);
-      fsyncDirectory(dirname(current));
+      syncDirectoryDurably(dirname(current));
     }
   }
 }
@@ -106,8 +102,8 @@ export function publishClaimActorReceipt(cwd: string, receiptInput: ClaimActorRe
       writeFileSync(fd, bytes, { encoding: 'utf8' });
       fsyncSync(fd);
     } finally { closeSync(fd); }
-    fsyncDirectory(paths.task);
-    fsyncDirectory(paths.root);
+    syncDirectoryDurably(paths.task);
+    syncDirectoryDurably(paths.root);
     return receipt;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;

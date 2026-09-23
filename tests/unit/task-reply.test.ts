@@ -71,6 +71,43 @@ function resign<T extends object>(value: T, key: keyof T): T {
 }
 
 describe('Task reply contract', () => {
+  test.each([
+    ['control', '\u0001'.repeat(8192)],
+    ['quote', '"'.repeat(8192)],
+    ['backslash', '\\'.repeat(8192)],
+    ['multibyte', '界'.repeat(2730) + 'ab'],
+    ['astral', '😀'.repeat(2048)],
+  ])('encoded record preserves an 8 KiB %s body within the total limit', (_label, body) => {
+    expect(Buffer.byteLength(body, 'utf8')).toBe(8192);
+    const intent = buildTaskReplyIntent({ ...fixture(), body });
+    expect(validateTaskReplyIntent(JSON.parse(canonicalTaskReplyIntentBytes(intent))).reply.body).toBe(body);
+    expect(Buffer.byteLength(canonicalTaskReplyIntentBytes(intent) + '\n')).toBeLessThanOrEqual(64 * 1024);
+  });
+
+  test('encoded record rejects individually valid bodies whose composed JSON exceeds 64 KiB', () => {
+    const input = { ...fixture({ body: '\u0001'.repeat(8192) }), body: '\u0001'.repeat(8192) };
+    expect(() => buildTaskReplyIntent(input)).toThrow('encoded reply record exceeds 65536 bytes');
+  });
+
+  test('encoded record includes its LF at the exact boundary and rejects one additional byte in builder and validator', () => {
+    const input = fixture({ body: '\u0001'.repeat(8192) });
+    const empty = buildTaskReplyIntent({ ...input, body: '' });
+    const room = 64 * 1024 - Buffer.byteLength(canonicalTaskReplyIntentBytes(empty) + '\n');
+    const body = '\u0001'.repeat(Math.floor(room / 6)) + 'x'.repeat(room % 6);
+    const intent = buildTaskReplyIntent({ ...input, body });
+    expect(Buffer.byteLength(canonicalTaskReplyIntentBytes(intent) + '\n')).toBe(64 * 1024);
+    expect(validateTaskReplyIntent(intent)).toEqual(intent);
+    expect(() => buildTaskReplyIntent({ ...input, body: body + 'x' })).toThrow('encoded reply record exceeds 65536 bytes');
+    const reply = buildTaskMessageEvent({ ...intent.reply, body: body + 'x' });
+    const oversize = resign({ ...intent, reply }, 'intent_sha256');
+    expect(() => validateTaskReplyIntent(oversize)).toThrow('encoded reply record exceeds 65536 bytes');
+  });
+
+  test('encoded record bounds metadata as well as message bodies', () => {
+    expect(() => buildTaskReplyIntent(fixture({ sender_id: 's'.repeat(64 * 1024) })))
+      .toThrow('encoded reply record exceeds 65536 bytes');
+  });
+
   test.each(['task', 'claim'] as const)('freezes a %s steer reply directed only to the user', (scope) => {
     const input = fixture(scope === 'claim' ? { scope, target_claim_id: id(3), target_generation: 1 } : {});
     const intent = buildTaskReplyIntent(input);

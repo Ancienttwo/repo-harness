@@ -513,4 +513,11 @@ if (result.capability_id !== "apps-web") {
 }
 JS_EOF
 
+# Copy only test inputs; imports and the spawned server resolve inside the installed package.
+INSTALLED_ROOT="$APP_DIR/node_modules/$PACKAGE_NAME"
+mkdir -p "$INSTALLED_ROOT/tests/cli" "$INSTALLED_ROOT/.archcontext/model"
+cp "$ROOT/tests/cli/mcp-http.test.ts" "$INSTALLED_ROOT/tests/cli/mcp-http.test.ts"
+cp -R "$ROOT/.archcontext/model/nodes" "$INSTALLED_ROOT/.archcontext/model/nodes"
+(cd "$INSTALLED_ROOT" && bun test tests/cli/mcp-http.test.ts --test-name-pattern 'engineer OAuth E2E')
+
 echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."

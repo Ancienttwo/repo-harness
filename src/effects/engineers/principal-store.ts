@@ -1,3 +1,4 @@
+import { syncDirectoryDurably } from '../evidence/atomic-append';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
 import { dirname, join } from 'path';
@@ -33,11 +34,6 @@ function fail(message: string, cause?: unknown): never {
   throw new EngineerPrincipalError('engineer_principal_store_corrupt', message, cause);
 }
 
-function fsyncDirectory(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
-}
-
 function assertStoreRootSafe(env: NodeJS.ProcessEnv): void {
   const root = storeRoot(env);
   if (!existsSync(root)) return;
@@ -67,11 +63,13 @@ function publishMapping(env: NodeJS.ProcessEnv, mapping: EngineerPrincipalMappin
   const target = mappingPath(env, mapping.repository_id, mapping.authorization_id);
   const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
   try {
-    writeFileSync(temp, canonicalEngineerPrincipalMappingBytes(mapping), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    const fd = openSync(temp, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try { fsyncSync(fd); } finally { closeSync(fd); }
+    const fd = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      writeFileSync(fd, canonicalEngineerPrincipalMappingBytes(mapping), 'utf8');
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
     renameSync(temp, target);
-    fsyncDirectory(root);
+    syncDirectoryDurably(root);
   } finally {
     try { unlinkSync(temp); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
