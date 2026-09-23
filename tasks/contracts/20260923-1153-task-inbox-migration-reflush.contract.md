@@ -55,7 +55,7 @@ If resume invokes a successful file fsync on the previously failed inode before 
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"migration","kind":"deterministic_test","paths":["*"]}]}
+{"protocol":1,"oracles":[{"id":"migration","kind":"deterministic_test","paths":["*"]},{"id":"migration-cli-readback","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -328,7 +328,7 @@ baseline and named current delta checks; never infer it from paths or command te
 
 ## Acceptance Notes (Human Review)
 
-- The existing migration suite owns the regression: its complete staged-file test failed on unfixed source with `PRE_FIX_EXIT=1` and then passed after `syncMatchingOwnedFile`. A second case covers complete prepared receipt bytes and repeated flush failure. No new test file is needed.
+- The migration suite's real CLI dry-run and resume cases are the runtime readback oracle for this explicit one-shot migration. The existing migration suite owns the regression: its complete staged-file test failed on unfixed source with `PRE_FIX_EXIT=1` and then passed after `syncMatchingOwnedFile`. A second case covers complete prepared receipt bytes and repeated flush failure. No new test file is needed.
 - The repair only reopens exact single-link, non-symlink transaction files with a writable descriptor, verifies inode and bytes, then fsyncs before using matching bytes as recovery evidence. The already-published but receiptless branch re-flushes current files and the retirement marker before publishing its receipt.
 - Selected checks: migration, Task Inbox and protected reply effects, typecheck, and the repository's nine integrity commands. They cover the changed recovery boundary and its neighboring live authority; full suite is reserved for hosted CI.
 - The pre-fix failure is `.ai/harness/runs/task-inbox-migration-reflush/pre-fix-failure.log`. No migration of real data or broader Windows filesystem guarantee is claimed.
