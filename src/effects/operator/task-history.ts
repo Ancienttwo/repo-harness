@@ -17,6 +17,12 @@ const safePath = (path: string) => path.length > 0 && !path.startsWith('/') && !
 interface Entry { mode: string; oid: string; path: string }
 type Resolution = { readonly missing: true } | { readonly missing: false; readonly line: string };
 const OID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
+/** Only atoms every supported Git provides; `%(objectmode)` needs Git 2.51. */
+export const TASK_HISTORY_BATCH_CHECK_FORMAT = '%(objecttype) %(objectname)';
+const parentSpec = (commit: string, path: string): string => {
+  const slash = path.lastIndexOf('/');
+  return slash < 0 ? `${commit}^{tree}` : `${commit}:${path.slice(0, slash)}`;
+};
 
 /** Immutable canonical snapshots only. This reader never resolves execution rights. */
 export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { readonly env?: NodeJS.ProcessEnv }): OperatorTaskHistory {
@@ -52,7 +58,7 @@ export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { re
     const resolve=(specs:readonly string[]): void => {
       const pending=[...new Set(specs)].filter(spec=>!resolutions.has(spec));
       if (pending.length === 0) return;
-      const raw=git(['cat-file','--batch-check=%(objectmode) %(objecttype) %(objectname)'],TASK_HISTORY_MAX_BLOB_BYTES,pending.map(spec=>`${spec}\n`).join(''));
+      const raw=git(['cat-file',`--batch-check=${TASK_HISTORY_BATCH_CHECK_FORMAT}`],TASK_HISTORY_MAX_BLOB_BYTES,pending.map(spec=>`${spec}\n`).join(''));
       const lines=raw.split('\n');
       if (lines.pop() !== '' || lines.length !== pending.length) return fail('unavailable');
       lines.forEach((line,index)=>resolutions.set(pending[index]!,line === `${pending[index]!} missing` ? {missing:true} : {missing:false,line}));
@@ -71,17 +77,43 @@ export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { re
       listings.set(tree,records);
       return records;
     };
+    const children=new Map<string,ReadonlyMap<string,{mode:string;type:string;oid:string}>>();
+    const listChildren=(tree:string) => {
+      const cached=children.get(tree);
+      if (cached) return cached;
+      const raw=git(['ls-tree','-z',tree]);
+      if (raw && !raw.endsWith('\0')) return fail('unavailable');
+      const records=new Map<string,{mode:string;type:string;oid:string}>();
+      for (const record of raw ? raw.slice(0,-1).split('\0') : []) {
+        const match=/^(\d{6}) (blob|tree|commit) ([a-f0-9]{40}|[a-f0-9]{64})\t([\s\S]+)$/u.exec(record);
+        if (!match || records.has(match[4]!)) return fail('unavailable');
+        records.set(match[4]!,{mode:match[1]!,type:match[2]!,oid:match[3]!});
+      }
+      children.set(tree,records);
+      return records;
+    };
+    const resolved=(spec:string) => {
+      resolve([spec]);
+      const resolution=resolutions.get(spec)!;
+      if (resolution.missing) return null;
+      // A gitlink prints `<oid> submodule` whatever the format; it is refused here.
+      const match=/^(blob|tree) ([a-f0-9]{40}|[a-f0-9]{64})$/u.exec(resolution.line);
+      return match ? {type:match[1]!,oid:match[2]!} : fail('unavailable');
+    };
     // Same records as `ls-tree -rz --full-tree <commit> -- <path>`.
     const entries=(commit:string,path:string): Entry[] => {
       if (!safePath(path)) return fail('unavailable');
-      const spec=`${commit}:${path}`;
-      resolve([spec]);
-      const resolution=resolutions.get(spec)!;
-      if (resolution.missing) return [];
-      const match=/^(\d{6}) (blob|tree) ([a-f0-9]{40}|[a-f0-9]{64})$/u.exec(resolution.line);
-      if (!match) return fail('unavailable');
-      if (match[2] === 'blob') return [{mode:match[1]!,oid:match[3]!,path}];
-      return listTree(match[3]!).map(record=>{
+      const object=resolved(`${commit}:${path}`);
+      if (object === null) return [];
+      if (object.type === 'blob') {
+        // The blob's mode lives in its parent tree, listed once per distinct tree.
+        const parent=resolved(parentSpec(commit,path));
+        if (parent === null || parent.type !== 'tree') return fail('unavailable');
+        const leaf=listChildren(parent.oid).get(path.slice(path.lastIndexOf('/')+1));
+        if (!leaf || leaf.type !== 'blob' || leaf.oid !== object.oid) return fail('unavailable');
+        return [{mode:leaf.mode,oid:object.oid,path}];
+      }
+      return listTree(object.oid).map(record=>{
         const full=`${path}/${record.relative}`;
         return safePath(full) ? {mode:record.mode,oid:record.oid,path:full} : fail('unavailable');
       });
@@ -103,7 +135,7 @@ export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { re
     if (!OID.test(targetCommit)) return fail('unavailable');
     const commits=git(['rev-list','--first-parent',`--max-count=${TASK_HISTORY_MAX_COMMITS}`,targetCommit]).trim().split('\n');
     if (!commits.every(commit=>OID.test(commit))) return fail('unavailable');
-    resolve(commits.map(commit=>`${commit}:${CANONICAL_POLICY_PATH}`));
+    resolve(commits.flatMap(commit=>[`${commit}:${CANONICAL_POLICY_PATH}`,parentSpec(commit,CANONICAL_POLICY_PATH)]));
     const prefetchedDirectories=new Set<string>();
     for (const [index,commit] of commits.entries()) {
       const directory=canonicalSprintsDirectory(root,commit,readFile);
