@@ -1,9 +1,9 @@
 # Codex fleet worker model mappings
 
-> **Substantive Change SHA256**: `sha256:989cbf147a123124f2994e54343d3fb7fc041141c504aa8b5562b553396d1ed1`
+> **Substantive Change SHA256**: `sha256:ac40ba6bef28237b9bd3aa3379443bb0ce5a82bcdef3b07c61289a236203dfbe`
 
-The Codex installer override and packaged helper now select `gpt-6-sol` with
-`medium` reasoning for fast-worker. The tracked persona and existing installer
+The Codex installer override and packaged helper now select `gpt-6-luna` with
+`xhigh` reasoning for fast-worker. The tracked persona and existing installer
 expectations agree. Deep-worker selects `gpt-6-sol` with `high` reasoning. The
 fleet mapping in the authored external-tooling reference config and its
 projected documentation agree with the installer.
