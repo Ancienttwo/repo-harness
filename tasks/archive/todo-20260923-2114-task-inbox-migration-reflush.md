@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-23 21:14
+> **Related Plan**: plans/archive/plan-20260923-1153-task-inbox-migration-reflush.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260923-2114
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-23 11:53
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-23 21:14
+> **Related Plan**: plans/archive/plan-20260923-1153-task-inbox-migration-reflush.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260923-2114
+> **Archive Projection V1**: `plans/plan-20260923-1153-task-inbox-migration-reflush.md` => `plans/archive/plan-20260923-1153-task-inbox-migration-reflush.md`
+> **Archive Projection V1**: `tasks/notes/20260923-1153-task-inbox-migration-reflush.notes.md` => `tasks/archive/notes-20260923-2114-task-inbox-migration-reflush.md`
+> **Archive Projection V1**: `tasks/contracts/20260923-1153-task-inbox-migration-reflush.contract.md` => `tasks/archive/contract-20260923-2114-task-inbox-migration-reflush.md`
+> **Archive Projection V1**: `tasks/reviews/20260923-1153-task-inbox-migration-reflush.review.md` => `tasks/archive/review-20260923-2114-task-inbox-migration-reflush.md`
+
 # Task Review: task-inbox-migration-reflush
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260923-1153-task-inbox-migration-reflush.md
-> **Contract**: tasks/contracts/20260923-1153-task-inbox-migration-reflush.contract.md
-> **Notes File**: tasks/notes/20260923-1153-task-inbox-migration-reflush.notes.md
+> **Plan**: plans/archive/plan-20260923-1153-task-inbox-migration-reflush.md
+> **Contract**: tasks/archive/contract-20260923-2114-task-inbox-migration-reflush.md
+> **Notes File**: tasks/archive/notes-20260923-2114-task-inbox-migration-reflush.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-23 11:53
 > **Recommendation**: pass
