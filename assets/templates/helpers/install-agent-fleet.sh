@@ -146,8 +146,8 @@ const MODEL_EFFORT_MAP = {
 // Execution and diagnostic roles use Sol or Luna; the gatekeeper uses Astra.
 // Explorer and deep-reasoner follow the family default.
 const AGENT_TARGET_OVERRIDES = {
-  "fast-worker": { model: "gpt-6-luna", effort: "max", targetDescription: "GPT-6 Luna at max reasoning" },
-  "deep-worker": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
+  "fast-worker": { model: "gpt-6-sol", effort: "medium", targetDescription: "GPT-6 Sol at medium reasoning" },
+  "deep-worker": { model: "gpt-6-sol", effort: "xhigh", targetDescription: "GPT-6 Sol at xhigh reasoning" },
   gatekeeper: { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
   "root-cause-prover": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
   "harness-evaluator": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },

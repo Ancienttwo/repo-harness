@@ -643,8 +643,8 @@ mapping.
 
 Five per-agent target overrides are applied after tuple validation, on top of
 the family row above, and are the only model/effort remaps in the generator:
-`fast-worker` (`opus`/`medium`) targets `gpt-6-luna` at `max` reasoning;
-`deep-worker` (`opus`/`high`) targets `gpt-6-sol` at `high` reasoning;
+`fast-worker` (`opus`/`medium`) targets `gpt-6-sol` at `medium` reasoning;
+`deep-worker` (`opus`/`high`) targets `gpt-6-sol` at `xhigh` reasoning;
 `gatekeeper` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning;
 `root-cause-prover` and `harness-evaluator` (`opus`/`high`) target `gpt-6-sol`
 at `high` reasoning.
