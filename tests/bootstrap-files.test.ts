@@ -75,13 +75,13 @@ describe("Bootstrap Script Contracts", () => {
     const packageManifest = JSON.parse(read("package.json"));
     expect(packageManifest.files).toContain("agents/");
     const specs: Array<{ name: string; model: string; effort: string; sandboxMode?: string }> = [
-      { name: "explorer", model: "gpt-5.6-luna", effort: "high", sandboxMode: "read-only" },
-      { name: "deep-reasoner", model: "gpt-5.6-terra", effort: "xhigh", sandboxMode: "read-only" },
-      { name: "fast-worker", model: "gpt-6-astra", effort: "low", sandboxMode: "workspace-write" },
-      { name: "deep-worker", model: "gpt-6-astra", effort: "medium", sandboxMode: "workspace-write" },
+      { name: "explorer", model: "gpt-6-luna", effort: "high", sandboxMode: "read-only" },
+      { name: "deep-reasoner", model: "gpt-6-astra", effort: "xhigh", sandboxMode: "read-only" },
+      { name: "fast-worker", model: "gpt-6-sol", effort: "medium", sandboxMode: "workspace-write" },
+      { name: "deep-worker", model: "gpt-6-sol", effort: "xhigh", sandboxMode: "workspace-write" },
       { name: "gatekeeper", model: "gpt-6-astra", effort: "medium", sandboxMode: "read-only" },
-      { name: "root-cause-prover", model: "gpt-5.6-terra", effort: "high", sandboxMode: "workspace-write" },
-      { name: "harness-evaluator", model: "gpt-5.6-terra", effort: "high", sandboxMode: "workspace-write" },
+      { name: "root-cause-prover", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
+      { name: "harness-evaluator", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
     ];
 
     for (const spec of specs) {
