@@ -278,10 +278,12 @@ function git(cwd: string, args: readonly string[]): string {
   });
 }
 
+export const CANONICAL_POLICY_PATH = '.ai/harness/policy.json';
+
 export function canonicalSprintsDirectory(
   cwd: string, commit: string, readFile: typeof readCanonicalFileAtCommit = readCanonicalFileAtCommit,
 ): string {
-  const policyText = readFile(cwd, commit, '.ai/harness/policy.json');
+  const policyText = readFile(cwd, commit, CANONICAL_POLICY_PATH);
   if (policyText === null) return DEFAULT_SPRINTS_DIRECTORY;
   let policy: unknown;
   try {

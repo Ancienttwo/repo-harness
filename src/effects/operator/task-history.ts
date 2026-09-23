@@ -7,7 +7,7 @@ import { projectCanonicalTasks, type CanonicalTask } from '../../core/state/coor
 import { sprintBacklogSchema, SPRINT_BACKLOG_SCHEMA_V2 } from '../../core/state/sprint-backlog-rows';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { canonicalSprintsDirectory } from '../state/coordination-canonical-source';
+import { CANONICAL_POLICY_PATH, canonicalSprintsDirectory } from '../state/coordination-canonical-source';
 
 export class OperatorTaskHistoryError extends Error {
   constructor(readonly code: TaskHistoryFailure) { super(code); }
@@ -15,6 +15,8 @@ export class OperatorTaskHistoryError extends Error {
 const fail = (code: TaskHistoryFailure): never => { throw new OperatorTaskHistoryError(code); };
 const safePath = (path: string) => path.length > 0 && !path.startsWith('/') && !/[\\:\r\n\0]/u.test(path) && !path.split('/').some(p => !p || p === '.' || p === '..');
 interface Entry { mode: string; oid: string; path: string }
+type Resolution = { readonly missing: true } | { readonly missing: false; readonly line: string };
+const OID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
 
 /** Immutable canonical snapshots only. This reader never resolves execution rights. */
 export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { readonly env?: NodeJS.ProcessEnv }): OperatorTaskHistory {
@@ -27,13 +29,13 @@ export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { re
     if (!repo) return fail('history_unavailable');
     const root=realpathSync(repo.path);
     let bytesRead=0;
-    const git=(args: string[], maxBytes=TASK_HISTORY_MAX_BLOB_BYTES): string => {
+    const git=(args: string[], maxBytes=TASK_HISTORY_MAX_BLOB_BYTES, input?: string): string => {
       const remaining=TASK_HISTORY_DEADLINE_MS-(performance.now()-started);
       if (remaining <= 0) return fail('timeout');
       const room=Math.min(maxBytes,TASK_HISTORY_MAX_BYTES-bytesRead);
       if (room <= 0) return fail('too_large');
       try {
-        const bytes=execFileSync('git',['--no-pager','--no-replace-objects','-c','core.fsmonitor=false',...args],{cwd:root,timeout:Math.max(1,Math.ceil(remaining)),maxBuffer:room,stdio:['ignore','pipe','pipe'],env:{...process.env,GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0',GIT_NO_LAZY_FETCH:'1'}});
+        const bytes=execFileSync('git',['--no-pager','--no-replace-objects','-c','core.fsmonitor=false',...args],{cwd:root,timeout:Math.max(1,Math.ceil(remaining)),maxBuffer:room,...(input === undefined ? {stdio:['ignore','pipe','pipe'] as const} : {input,stdio:['pipe','pipe','pipe'] as const}),env:{...process.env,GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0',GIT_NO_LAZY_FETCH:'1'}});
         bytesRead+=bytes.length;
         if (performance.now()-started > TASK_HISTORY_DEADLINE_MS) return fail('timeout');
         return new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);
@@ -43,15 +45,45 @@ export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { re
         return fail(code === 'ETIMEDOUT' ? 'timeout' : code === 'ENOBUFS' ? 'too_large' : 'unavailable');
       }
     };
+    // One cat-file process resolves `<commit>:<path>` for every walked commit, and
+    // identical subtrees are listed once, so the walk costs a bounded number of
+    // Git processes instead of two per commit.
+    const resolutions=new Map<string,Resolution>();
+    const resolve=(specs:readonly string[]): void => {
+      const pending=[...new Set(specs)].filter(spec=>!resolutions.has(spec));
+      if (pending.length === 0) return;
+      const raw=git(['cat-file','--batch-check=%(objectmode) %(objecttype) %(objectname)'],TASK_HISTORY_MAX_BLOB_BYTES,pending.map(spec=>`${spec}\n`).join(''));
+      const lines=raw.split('\n');
+      if (lines.pop() !== '' || lines.length !== pending.length) return fail('unavailable');
+      lines.forEach((line,index)=>resolutions.set(pending[index]!,line === `${pending[index]!} missing` ? {missing:true} : {missing:false,line}));
+    };
+    const listings=new Map<string,readonly {mode:string;oid:string;relative:string}[]>();
+    const listTree=(tree:string) => {
+      const cached=listings.get(tree);
+      if (cached) return cached;
+      const raw=git(['ls-tree','-rz',tree]);
+      if (raw && !raw.endsWith('\0')) return fail('unavailable');
+      const records=raw ? raw.slice(0,-1).split('\0').map(record=>{
+        const match=/^(\d{6}) blob ([a-f0-9]{40}|[a-f0-9]{64})\t([\s\S]+)$/u.exec(record);
+        if (!match) return fail('unavailable');
+        return {mode:match[1]!,oid:match[2]!,relative:match[3]!};
+      }) : [];
+      listings.set(tree,records);
+      return records;
+    };
+    // Same records as `ls-tree -rz --full-tree <commit> -- <path>`.
     const entries=(commit:string,path:string): Entry[] => {
       if (!safePath(path)) return fail('unavailable');
-      const raw=git(['ls-tree','-rz','--full-tree',commit,'--',path]);
-      if (!raw) return [];
-      if (!raw.endsWith('\0')) return fail('unavailable');
-      return raw.slice(0,-1).split('\0').map(record=>{
-        const match=/^(\d{6}) blob ([a-f0-9]{40}|[a-f0-9]{64})\t([\s\S]+)$/u.exec(record);
-        if (!match || !safePath(match[3]!)) return fail('unavailable');
-        return {mode:match[1]!,oid:match[2]!,path:match[3]!};
+      const spec=`${commit}:${path}`;
+      resolve([spec]);
+      const resolution=resolutions.get(spec)!;
+      if (resolution.missing) return [];
+      const match=/^(\d{6}) (blob|tree) ([a-f0-9]{40}|[a-f0-9]{64})$/u.exec(resolution.line);
+      if (!match) return fail('unavailable');
+      if (match[2] === 'blob') return [{mode:match[1]!,oid:match[3]!,path}];
+      return listTree(match[3]!).map(record=>{
+        const full=`${path}/${record.relative}`;
+        return safePath(full) ? {mode:record.mode,oid:record.oid,path:full} : fail('unavailable');
       });
     };
     const blobs=new Map<string,string>();
@@ -68,11 +100,17 @@ export function readOperatorTaskHistory(input: OperatorTaskHistoryRequest & { re
     const target=readCanonicalTargetRef(root);
     const resolveTarget=()=>git(['rev-parse','--verify','--end-of-options',`${target}^{commit}`]).trim();
     const targetCommit=resolveTarget();
-    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(targetCommit)) return fail('unavailable');
+    if (!OID.test(targetCommit)) return fail('unavailable');
     const commits=git(['rev-list','--first-parent',`--max-count=${TASK_HISTORY_MAX_COMMITS}`,targetCommit]).trim().split('\n');
+    if (!commits.every(commit=>OID.test(commit))) return fail('unavailable');
+    resolve(commits.map(commit=>`${commit}:${CANONICAL_POLICY_PATH}`));
+    const prefetchedDirectories=new Set<string>();
     for (const [index,commit] of commits.entries()) {
-      if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(commit)) return fail('unavailable');
       const directory=canonicalSprintsDirectory(root,commit,readFile);
+      if (safePath(directory) && !prefetchedDirectories.has(directory)) {
+        prefetchedDirectories.add(directory);
+        resolve(commits.slice(index).map(later=>`${later}:${directory}`));
+      }
       const prefix=directory+'/';
       const carriers=entries(commit,directory).filter(e=>e.path.startsWith(prefix) && !e.path.slice(prefix.length).includes('/') && e.path.endsWith('.sprint.md'));
       if (carriers.length > TASK_HISTORY_MAX_CARRIERS) return fail('too_large');
