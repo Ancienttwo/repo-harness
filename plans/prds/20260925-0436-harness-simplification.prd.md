@@ -270,7 +270,7 @@
 - HS2 先于 HS4 / HS7 合入；每行风险都按最终 diff 和精确目标分支规则计算。不得预先宣布 HS2 是 Standard，或利用旧引擎对自身的漏判降低切换验收。
 - `Mode=contract` 明确接受既有 plan → contract → worktree 流程，不论最终 profile；轻任务只用已有 inline 语义并验真实行为。不新造模式、不承诺非 Strict contract 行自动免工件。
 - 保留原十个 task ID。核心顺序为 HS0 → HS1 → HS2 → HS4 → HS3 → HS5 → HS7 → HS8；HS6a 可旁线调查，HS6b 后置。机器队列顺序与此一致；HS8 是核心里程碑，不在后置行未完成时声称整个 Sprint Done。
-- SIGPIPE 前置小修只改变 `next_pending_row` 的管道消费，真实 status / next 覆盖长 backlog、无待办及上游错误传播；不需要额外 PRD 或测试报告。
+- SIGPIPE 前置小修调整 `next_pending_row` 与 `start-task` 的 `target_row` 选择器（`scripts/sprint-backlog.sh:1046`），输出首条匹配后读完上游输入。真实 status / next 覆盖长 backlog、无待办及上游错误传播，真实 start-task 覆盖长 backlog 中选择靠前行并正确生成计划；不需要额外 PRD 或测试报告。
 
 ## Developer Handoff / Review Follow-through
 

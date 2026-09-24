@@ -11,7 +11,7 @@
 > **Baseline**: `origin/main@2c00d4da5d0d769223791791c01ae6b501ab2c5f`
 > **Backlog Schema**: 2
 > **Goal Mode**: incremental
-> **Substantive Change SHA256**: `sha256:a3899503a5a02f04ee8afc5f6e3d8370e74cda85a93c9d2214b0bebb148c8b0c`
+> **Substantive Change SHA256**: `sha256:714c84dd04c8cfe56247b7a379cb0830cc895ade5254eec1e402f70137b59024`
 
 Program-level sprint container。每个 `contract` 行接受现有 plan → contract → worktree
 流程，不因最终 profile 为 Standard 而免工件；`inline` 行使用既有轻路径，不另造执行模式。
@@ -57,9 +57,10 @@ Program-level sprint container。每个 `contract` 行接受现有 plan → cont
 
 ### Execution Prerequisite
 
-`scripts/sprint-backlog.sh` 的 `next_pending_row` 改为只打印首个待办、但读完上游输入，
+`scripts/sprint-backlog.sh` 的 `next_pending_row` 与 `start-task` 的 `target_row` 选择器（:1046）
+改为只打印首个匹配项、但读完上游输入，
 同步 packaged helper；保留 `set -euo pipefail`，不加 `|| true`。已有测试补长 backlog、
-无待办（`next` 仍返回 3）、上游返回 17 的传播。该小修独立于 HS0–HS8，不另建 PRD。
+无待办（`next` 仍返回 3）、上游返回 17 的传播，以及真实 start-task 在长 backlog 中选择靠前行并正确生成计划。该小修独立于 HS0–HS8，不另建 PRD。
 
 ### Dependency Order
 
@@ -95,7 +96,7 @@ remain explicit pending work beyond that milestone.
 | 1 | f351872b6da2766af68f80dc536ed6d47cbbd69a42c0562b4421539bea8e694e | [ ] | HS0 — 基线与少量行为预算 | inline | 建立 `evals/harness/budgets.json` 与 ratchet 验证：初始记录当前可测行为，区分 max / allowed-set / forbidden-set；base 无文件仅首次初始化，新增 metric 须可测且达标，删除 / 重命名绕过 / direction 或口径变化拒绝；测量或 base 读取失败不能按零或无文件处理；初始行为包括完整解析计数、Stop refs、Lite 提醒；行数 / bundle / 时间仅报告，未来目标不提前写预算；在维护者 Mac 用既有 characterization 记录同输入、版本、环境、采样与 p50，保存到 `docs/researches/20260925-harness-simplification-baseline.md`；暂缺 Mac 数据不阻塞无关减法，不声称性能改善 | (pending) |
 | 2 | dd6c6a7b5b56db371f52094406170967e1caeec60d76b23019c47049c6206108 | [ ] | HS1 — 删除逐文件提醒与 Stop restamp | contract | 移除 Edit / Prompt 的逐文件 TDD/BDD 建议及专用死代码；真实入口证明 Lite 无提醒，Stop 前后 refs 与 reflog 不变，refactor 建议不阻断；restamp 只保留显式命令；修正 `docs/spec.md` 的 fail-open 误述和模板的旧 active-plan fallback 文案；达标同提交收紧 Stop refs / Lite 提醒预算，不数源码调用或注释；覆盖 Scenario 1、6 | (pending) |
 | 3 | 9cd20e320a6456a2e88e51fd6cd72fe9c6f87c7aa9b0821e9f7d092ac108eb93 | [ ] | HS2 — 确认式风险声明与完整门禁切换 | contract | 落实 PRD M1：删除路径 / capability 关键词猜测，保留 auth、payment、security、schema、migration、deploy、release、public-api、destructive 全部显式操作；确认式迁移预览不写有效配置，确认空集合与缺失不同，一次性 apply / validate，失败不留下部分生效配置；配置缺失 / 非法拒绝实现但允许明确诊断 / 修复；按授权、验证、receipt、安装 / 投影职责确认保护集合；真实 PreEdit 证明 policy / 策略 Markdown 的保护高于 workflow 豁免；可信 base 判定使先删声明再改敏感代码不能降权；普通名称 fixture 非 Strict、显式 override 不得降下限；init dry-run 与 fixture apply 共用 TS 操作模型；不预判此行 Standard；覆盖 Scenario 2、3、4、7 | (pending) |
-| 4 | 5be62bd66313239dca182767a1258ac19820f95be54aa4ee3812055f01ad0777 | [ ] | HS4 — 编辑授权视图替代完整解析 | contract | 冻结 HS2 后 PreEdit golden，包含已有敏感变更后编辑普通文件；保留 targetPaths 加当前 review subject 变更路径，使用低成本路径读取；列出真实授权源及共用决策，包含实际消费的 review / active-sprint，不机械复用旧哈希集合；清点 state_version / effective.json / workflow_profile / progress_token / authority_revision 消费者，区分实时授权与可滞后视图，证明没有把完整解析搬到每次 Prompt；PreEdit 不发布缓存 / state_version；无竞争初读加回读 ≤2 轮，竞争最多额外重试两次、最多 6 轮、超限 fail closed；完整 resolver 复用授权决策，golden 逐项等价；同提交收紧 full_state_resolves=0 与无竞争 authority_reads≤2，竞争单独测；Mac p50 目标只报告；覆盖 Scenario 9、7 | (pending) |
+| 4 | 5be62bd66313239dca182767a1258ac19820f95be54aa4ee3812055f01ad0777 | [ ] | HS4 — 编辑授权视图替代完整解析 | contract | 冻结 HS2 后 PreEdit golden，包含已有敏感变更后编辑普通文件；保留 targetPaths 加当前 review subject 变更路径，使用低成本路径读取；列出真实授权源及共用决策，包含实际消费的 review / active-sprint，不机械复用旧哈希集合；清点 state_version / effective.json / workflow_profile / progress_token / authority_revision 消费者，区分实时授权与可滞后视图，证明没有把完整解析搬到每次 Prompt；PreEdit 不发布缓存 / state_version；无竞争初读加回读 ≤2 轮，竞争最多额外重试两次、最多 6 轮、超限 fail closed；完整 resolver 复用授权决策，golden 逐项等价；同提交收紧 state_full_resolves=0 与无竞争 state_authority_reads≤2，竞争单独测；Mac p50 目标只报告；覆盖 Scenario 9、7 | (pending) |
 | 5 | d5650826a89a4bb0ec6de174dca14c7b6d7997cb36692b5ad075d06e4fd69825 | [ ] | HS3 — Stop 保存退出与交付检查覆盖 | contract | Stop 不执行架构 drain / cascade，保留 pending 可见性；架构交付检查由配置 / 工作包决定，Strict 不自动要求启用；minimal-change 由全部现有受管理交付入口消费同一结果，验证 Lite / 无 separate contract 的 Standard 也覆盖，不强建契约；新依赖仅按具体政策判断，保留历史 audit receipt 语义；PlanCompletenessGate 降提示；恢复语义与覆盖事件身份不变才不重写，生成时间不触发写入，不同事件身份仍保存；真实行为矩阵证明建议 / 可选维护失败不阻断，仅活动契约恢复持久化失败阻断；显式 architecture 配置升级映射可见；覆盖 Scenario 1、6、7 | (pending) |
 | 6 | a337d6e4ce5a656e9426f448b93912684229f00d318ea6e448fcbdbb9300688b | [ ] | HS5 — 真实验证、批准范围与重复实现收敛 | contract | 落实 PRD M4：verification_ref 绑定真实相关验证结果，kind 仍为 command / package_test，smoke 只是用途；无关 preflight / 缺失 / 失败 / 陈旧结果拒绝；unverified 不能替代任一 profile 的必需验收，豁免沿用现有授权；可选 pre-fix artifact 关联同一缺陷与对应检查，不再校验已删 regression_guard 路径；契约只生成适用区块，共享 TS 解析由 shell 和 runner 消费，不依赖委派 runner 作公共中心；目录 glob 由工作包批准，capability 仅建议，投影不扩权，扩展在同一包明确处理；实际 helper 去重并验行为，不数 re-port 注释；更新规则 / 模板，历史证据不改写，活动契约明确迁移；覆盖 Scenario 1、5、7、8 | (pending) |
 | 7 | 0e7776461412a130af8c73f8e7679e24408753093b989c4cb9ddd1920b0a767d | [ ] | HS7 — 上下文与本地检查归属 | contract | 不依赖 HS6a / HS6b；模块 Architecture Contract 只投影到模块本地，根上下文保留全局入口；Required Checks 指向现有 testing policy 中按改动面划分的归属表，命令及 CI / release gate 不变；移除测试须在 PR 逐项说明同一失败模式的保留覆盖，仅清理非协议文案、源码扫描或重复昂贵 setup 的冗余断言，不新增同类计数测试；上下文投影验行为，预算仅在达标同提交收紧 | (pending) |

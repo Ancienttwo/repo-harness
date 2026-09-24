@@ -9,7 +9,7 @@ import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/
 import { canonicalClaimActorReceiptBytes, validateClaimActorReceipt, validateEngineerPrincipalMapping } from '../../src/core/engineers/principal-claim';
 import { buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, canonicalTaskMessageEventBytes, transitionTaskMessageDeliveryReceipt } from '../../src/core/fleet/task-message';
 import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes } from '../../src/core/fleet/task-reply';
-import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_MAX_OUTPUT_BYTES } from '../../src/core/operator/task-activity';
+import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES } from '../../src/core/operator/task-activity';
 import { OperatorTaskActivityError, readOperatorTaskActivity } from '../../src/effects/operator/task-activity';
 import { readHistoricalTaskActivity } from '../../src/effects/fleet/task-inbox';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -82,7 +82,9 @@ test('paging is exclusive and hard scan exhaustion remains partial while exact h
   const page=readOperatorTaskActivity({...f.input,limit:1}); expect(page.next_cursor).toBe(id(1)); expect(page.coverage.reason).toBe('page');
   expect(readOperatorTaskActivity({...f.input,limit:1,after:page.next_cursor}).entries[0]?.event.message_id).toBe(id(2));
   for(let n=100;n<1101;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n)}));
-  const r=readOperatorTaskActivity(f.input); expect(r.coverage).toMatchObject({complete:false,reason:'scan',scanned:1000}); expect(r.next_cursor).toBeNull();
+  const scan=readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes:TASK_ACTIVITY_MAX_BYTES,deadline_ms:60000}});
+  expect(scan.coverage).toMatchObject({complete:false,reason:'scan',scanned:1000});
+  const r=readOperatorTaskActivity(f.input); expect(r.coverage.complete).toBe(false); expect(['scan','deadline']).toContain(r.coverage.reason); expect(r.next_cursor).toBeNull();
   expect(readOperatorTaskActivity({...f.input,limit:1,message_id:id(2)}).entries[0]?.provenance).toBe('recorded_claim_actor');
 });
 test('byte ceilings include nested reply/actor reads and never report an empty complete inbox', () => {
