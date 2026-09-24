@@ -55,7 +55,7 @@ Recovery repeats semantic apply, accepts another approval or changed snapshot, d
 ## Change Assessment
 
 ```json
-{"protocol": 1, "oracles": [{"id": "interrupted-acceptance", "kind": "deterministic_test", "paths": ["*"]}]}
+{"protocol": 1, "oracles": [{"id": "interrupted-acceptance", "kind": "deterministic_test", "paths": ["*"]}, {"id": "release-gate", "kind": "runtime_readback", "paths": ["*"]}]}
 ```
 
 ## Acceptance Policy
