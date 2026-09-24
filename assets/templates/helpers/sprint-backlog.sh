@@ -486,7 +486,7 @@ backlog_counts() {
 
 next_pending_row() {
   local file="$1"
-  backlog_rows "$file" | awk -F '\t' '$2 == "[ ]" { print; exit }'
+  backlog_rows "$file" | awk -F '\t' '!found && $2 == "[ ]" { print; found = 1 }'
 }
 
 # Mint one persisted task id: 32 random bytes rendered as lowercase hex. A task
@@ -1043,7 +1043,7 @@ cmd_start_task() {
     echo "sprint-backlog: task reference '$task_ref' is ambiguous (${match_count} backlog rows match); fix duplicate indices or task names first" >&2
     exit 1
   fi
-  target_row="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { print; exit }')"
+  target_row="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '!found && ($1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"]) { print; found = 1 }')"
 
   local target_index target_status target_task target_mode target_acceptance
   target_index="$(printf '%s' "$target_row" | cut -f1)"
