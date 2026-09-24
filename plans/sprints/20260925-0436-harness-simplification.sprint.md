@@ -11,7 +11,7 @@
 > **Baseline**: `origin/main@2c00d4da5d0d769223791791c01ae6b501ab2c5f`
 > **Backlog Schema**: 2
 > **Goal Mode**: incremental
-> **Substantive Change SHA256**: `sha256:714c84dd04c8cfe56247b7a379cb0830cc895ade5254eec1e402f70137b59024`
+> **Substantive Change SHA256**: `sha256:9b01286e90222fc714f6af58e1cf18a484983641567a320000951c7dba9ba7fb`
 
 Program-level sprint container。每个 `contract` 行接受现有 plan → contract → worktree
 流程，不因最终 profile 为 Standard 而免工件；`inline` 行使用既有轻路径，不另造执行模式。
