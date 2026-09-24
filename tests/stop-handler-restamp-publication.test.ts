@@ -271,7 +271,7 @@ describe('Stop-time restamp auto-publication', () => {
     expect(stop(root, drainResult()).exitCode).toBe(0);
     expect(status(root)).toBe('');
 
-    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.5.10', timeoutMs: 120_000 };
+    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.5.11', timeoutMs: 120_000 };
     const changedSet = computeArchitectureDriftChangedSet(root);
     expect(changedSet.paths).toEqual([ARCHITECTURE_PROJECTION_MANIFEST_PATH]);
     const event = architectureDriftSourceEvent(changedSet);

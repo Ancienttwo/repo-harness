@@ -48,7 +48,7 @@ test('global recommendation setup preserves explicit disabled and unrelated fiel
 test('observes while execution is off, bounds delivery and requests a user decision only once', () => {
   const f = fixture(); let now = Date.now(); let scans = 0;
   const settings = { env: f.env, consume: true, nowMs: () => now, discover: (_root: string, provider: any) => {
-    scans++; expect(provider.refactorPolicy.mode).toBe('off'); expect(provider.refactorPolicy.stages.scan.provider_version).toBe('0.5.10'); return discovery('complete', 4);
+    scans++; expect(provider.refactorPolicy.mode).toBe('off'); expect(provider.refactorPolicy.stages.scan.provider_version).toBe('0.5.11'); return discovery('complete', 4);
   } };
   const first = observeRefactorRecommendations(f.repo, settings);
   expect(first.status).toBe('recommended'); expect(first.totalCandidates).toBe(4); expect(first.candidates).toHaveLength(3);

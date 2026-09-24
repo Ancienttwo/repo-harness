@@ -33,13 +33,13 @@ beforeAll(async () => {
   // This exercises expiry without sleeping through the 110-second host slice.
   writeFileSync(parentClock, `import { existsSync } from 'node:fs'; const realNow = Date.now; Date.now = () => realNow() + (existsSync(process.env.CONTINUATION_TEST_YIELD_MARKER!) ? 200000 : 0);`);
   mkdirSync(join(provider, 'bin'), { recursive: true });
-  writeFileSync(join(provider, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.5.10', type: 'module', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/provider.mjs' } }));
+  writeFileSync(join(provider, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.5.11', type: 'module', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/provider.mjs' } }));
   writeFileSync(join(provider, 'bin/provider.mjs'), `
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
- console.log(JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.10' },
+ console.log(JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.11' },
  protocols: { projectionRequest: 'archcontext.projection-request/v1', projectionResult: 'archcontext.projection-result/v2', architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1' },
  renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
  features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2'] }));
