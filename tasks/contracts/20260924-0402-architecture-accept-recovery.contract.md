@@ -195,6 +195,19 @@ exit_criteria:
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "recovery-regression-guard",
+      "kind": "package_test",
+      "path": "tests/architecture-projection-provider.test.ts",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Bugfix Root Cause Evidence names this file as regression_guard; the bugfix gate requires it as its own package_test check.",
+      "inputs": {
+        "env": []
+      }
     }
   ]
 }
