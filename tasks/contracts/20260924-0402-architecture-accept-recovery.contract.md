@@ -79,6 +79,8 @@ allowed_paths:
   - .ai/harness/policy.json
   - assets/templates/helpers/ensure-task-workflow.sh
   - scripts/ensure-task-workflow.sh
+  - scripts/heartbeat-triage.sh
+  - assets/templates/helpers/heartbeat-triage.sh
   - scripts/lib/project-init-lib.sh
   - scripts/axr5-archctx-clean-room.ts
   - scripts/axr6-stop-host-cycle.ts
