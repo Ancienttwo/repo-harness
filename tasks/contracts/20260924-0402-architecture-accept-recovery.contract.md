@@ -81,6 +81,7 @@ allowed_paths:
   - scripts/ensure-task-workflow.sh
   - scripts/heartbeat-triage.sh
   - assets/templates/helpers/heartbeat-triage.sh
+  - tests/harness-benchmark-matrix.test.ts
   - scripts/lib/project-init-lib.sh
   - scripts/axr5-archctx-clean-room.ts
   - scripts/axr6-stop-host-cycle.ts
