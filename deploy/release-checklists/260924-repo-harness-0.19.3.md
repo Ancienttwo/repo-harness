@@ -1,6 +1,6 @@
 # repo-harness 0.19.3 Release Preparation
 
-- Integration base: `2c00d4da5d0d769223791791c01ae6b501ab2c5f`.
+- Integration base: `7afcbc46d0b623442e98a92ca42d093619576e64` (origin/main after PR #450; previously `2c00d4da5d0d769223791791c01ae6b501ab2c5f`).
 - Package / skill / template: `0.19.3`; previous published release: `0.19.2`.
 - Scope: committed mainline Task observation/reply and persistence work, exact
   interrupted architecture acceptance recovery, and archctx/archctx-contracts

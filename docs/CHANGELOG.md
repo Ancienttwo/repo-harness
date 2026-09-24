@@ -25,6 +25,9 @@ All notable changes to this skill are documented here.
   remains held until worker retirement. Publication readiness rejects stale
   acceptance authority. Architecture projection continues after a Stop budget
   yield while strict Stop stays blocked until the continuation completes.
+- `sprint-backlog status`, `next` and `start-task` drain their row selectors
+  instead of exiting early, so long backlogs no longer fail with SIGPIPE (141)
+  under `pipefail`; the heartbeat triage summary read has the same repair.
 
 ### Changed
 

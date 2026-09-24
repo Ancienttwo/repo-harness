@@ -165,6 +165,8 @@ On 2026-09-24 the user approved publication of new archctx/archctx-contracts pac
 
 The release integration worktree was fast-forwarded without conflicts to `origin/main` `2c00d4da5d0d769223791791c01ae6b501ab2c5f` before final verification. The two mainline fleet fixture commits have no overlapping changed files. Active policy producers, self-host policy and AXR fixtures track the same exact version as both consumers; helper assets are generated from scripts.
 
+On 2026-09-25 the release branch was rebased without conflicts onto `origin/main` `7afcbc46d0b623442e98a92ca42d093619576e64` (PR #450: harness simplification plan revision, sprint-backlog selector SIGPIPE repair and a Windows timing-independent task-activity test). The PR #450 files do not overlap this contract's changed files; the Verification Plan diff base moves to the new integration base.
+
 ### Approved repo-harness 0.19.3 publication
 
 The user additionally approved preparing and publishing repo-harness 0.19.3 after upstream integration. Include the product/skill/template version fields, README release stamps, changelog and release checklist in the same final canonical subject. Publish using the user-selected npm Web Auth session only. Run the existing full release gate once on the frozen candidate, require the final PR CI, and run the published-registry readback. Global installation, persistent shell configuration and the shared daemon remain separate operations.

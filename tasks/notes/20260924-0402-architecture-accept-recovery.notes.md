@@ -50,7 +50,7 @@ Local package integration uses unpublished source tarballs named 0.5.10 in an is
 
 The implementation worker reports the final three focused files at 59 pass / 0 fail and `bun run check:type` pass using the isolated unpublished provider/contracts packages. All nine root integrity commands pass; task-sync binds this final substantive diff below. The same source gate rechecked its finding and returned PASS after reading the focused test and typecheck logs. Real packaged CLI apply/readback composition succeeded in a disposable fixture with fault-injected consumer refresh actions. `integration-artifact-check.log` confirms one final acceptance receipt and one refresh receipt; `isolated-daemon-stop.log` confirms running:false, the former PID absent, and no connection/lock files. The evidence lives in `.ai/harness/runs/accept-recovery/`. No canonical AcceptanceReceipt or release is claimed.
 
-> **Substantive Change SHA256**: `sha256:6f4847116e9ed3510fb6ba8e7f9ab13f473386a1ba27e0808fb7a301ef6c759d`
+> **Substantive Change SHA256**: `sha256:97d0915b3748c4fcfb4d76e86f30babbe43bd9ad4e6d30a210953d385d6a7cbb`
 
 ## Remaining delivery boundary
 
@@ -72,3 +72,6 @@ On 2026-09-24 both archctx packages were published as 0.5.11 using npm Web Auth.
 
 The first frozen `release-full` run failed `tests/characterization/repair-campaign-authority-freeze.test.ts` on macOS, and the same file fails on the main-equivalent tree. `scripts/heartbeat-triage.sh` fed `printf '%s\n' "$output"` into `awk 'NF { print; exit }'` under `pipefail`; awk exiting after the first line leaves the writer with SIGPIPE, so the helper exits 141. Linux CI never hit it. The summary now reads through a here-string, which has no writer to kill. This is the single directly blocking out-of-scope fix admitted to this slice; the contract scope was widened for the helper and its projection. The other failure, `tests/harness-benchmark-matrix.test.ts` "packs exactly one external immutable runtime artifact", is also pre-existing: with `REPO_HARNESS_TEST_EXPENSIVE=1` it times out on the main-equivalent tree without load, because `prepareBenchmarkRuntimeArtifact` measured 34.4 s (bsdtar, 388 MB staged) against a 30 s test budget. Main CI never runs the release lane. With owner approval the budget for that single release-lane case is 120 s; this is the second admitted out-of-scope fix.
 
+## Rebased integration base
+
+On 2026-09-25 the branch was rebased cleanly onto `7afcbc46d0b623442e98a92ca42d093619576e64` (PR #450). The release gate diff base follows it. archctx bug-fix PRs merged upstream after 0.5.11 remain unpublished; no newer archctx registry version exists, so the exact 0.5.11 pins stay. Publishing a new archctx version is not part of this authorization.
