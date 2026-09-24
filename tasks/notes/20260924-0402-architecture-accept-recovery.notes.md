@@ -50,7 +50,7 @@ Local package integration uses unpublished source tarballs named 0.5.10 in an is
 
 The implementation worker reports the final three focused files at 59 pass / 0 fail and `bun run check:type` pass using the isolated unpublished provider/contracts packages. All nine root integrity commands pass; task-sync binds this final substantive diff below. The same source gate rechecked its finding and returned PASS after reading the focused test and typecheck logs. Real packaged CLI apply/readback composition succeeded in a disposable fixture with fault-injected consumer refresh actions. `integration-artifact-check.log` confirms one final acceptance receipt and one refresh receipt; `isolated-daemon-stop.log` confirms running:false, the former PID absent, and no connection/lock files. The evidence lives in `.ai/harness/runs/accept-recovery/`. No canonical AcceptanceReceipt or release is claimed.
 
-> **Substantive Change SHA256**: `sha256:9f8884e5b88664ddb992aeb1de1060da57336444ec4e48de327d62d827cbe36b`
+> **Substantive Change SHA256**: `sha256:d000c3c1212200ba8320281b901943590bd6e1e7193fcfe13b5675ffcee44788`
 
 ## Remaining delivery boundary
 
@@ -67,3 +67,8 @@ The 0.19.2 public tarball contains both architecture helper paths. The original 
 ## Published dependency integration
 
 On 2026-09-24 both archctx packages were published as 0.5.11 using npm Web Auth. Registry metadata reports latest 0.5.11; downloaded archives match the tested artifacts byte for byte. A fresh registry install exposes the readback capability and contract validators without creating runtime state. Bun installed both exact registry dependencies and generated the lock changes; no unrelated resolution changed. The full 0.19.3 release gate and canonical acceptance remain pending.
+
+## Release gate blocker outside the recovery scope
+
+The first frozen `release-full` run failed `tests/characterization/repair-campaign-authority-freeze.test.ts` on macOS, and the same file fails on the main-equivalent tree. `scripts/heartbeat-triage.sh` fed `printf '%s\n' "$output"` into `awk 'NF { print; exit }'` under `pipefail`; awk exiting after the first line leaves the writer with SIGPIPE, so the helper exits 141. Linux CI never hit it. The summary now reads through a here-string, which has no writer to kill. This is the single directly blocking out-of-scope fix admitted to this slice; the contract scope was widened for the helper and its projection. The other failure in that run, `tests/harness-benchmark-matrix.test.ts`, exceeded its 30 s budget under full-gate load and passes in isolation.
+
