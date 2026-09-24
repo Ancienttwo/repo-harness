@@ -137,6 +137,58 @@ function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
 }
 
 describe("sprint-backlog helper", () => {
+  for (const command of ["status", "next"]) {
+    for (const pending of [true, false]) {
+      test(`${command} consumes a long backlog with ${pending ? "pending" : "completed"} rows`, () => {
+        const cwd = tmpWorkspace("sprint-backlog-long");
+        try {
+          copySprintHelpers(cwd, ["sprint-backlog.sh"]);
+          const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+          writeActiveSprintFixture(cwd, sprintPath);
+          const sprint = readFileSync(join(cwd, sprintPath), "utf-8");
+          // Exceed the pipe buffer so an early-exiting selector cannot hide
+          // behind the producer finishing before the reader closes its end.
+          const rows = Array.from({ length: 4096 }, (_, index) =>
+            `| ${index + 1} | ${fixtureTaskId(`long-${index}`)} | ${pending && index > 0 ? "[ ]" : "[x]"} | task-${index + 1} | inline | ${"acceptance ".repeat(20)} | (pending) |`
+          ).join("\n");
+          writeFileSync(join(cwd, sprintPath), sprint.replace(/^\| 1 \|[\s\S]*?(?=\n## Execution Log)/m, `${rows}\n`));
+
+          const result = run("bash", ["scripts/sprint-backlog.sh", command], cwd);
+          expect(result.status).toBe(command === "next" && !pending ? 3 : 0);
+          expect(result.stderr).toBe("");
+          if (command === "status") {
+            expect(result.stdout).toContain("tasks_total: 4096");
+            expect(result.stdout).toContain(`tasks_done: ${pending ? 1 : 4096}\n`);
+            expect(result.stdout).toContain(`next_task: ${pending ? "task-2" : "(none)"}\n`);
+          } else if (pending) {
+            expect(result.stdout).toContain("index: 2\ntask: task-2\n");
+            expect(result.stdout.match(/^task:/gm)).toHaveLength(1);
+          } else {
+            expect(result.stdout).toBe("next_task: (none)\n");
+          }
+        } finally {
+          rmSync(cwd, { recursive: true, force: true });
+        }
+      });
+    }
+  }
+
+  test("next_pending_row preserves an upstream failure after a matching row", () => {
+    // The script dispatches on $1, so lift the live function as the grammar
+    // differential tests do; replace only the producer to inject its failure.
+    const source = readFileSync(join(ROOT, "scripts/sprint-backlog.sh"), "utf-8");
+    const definition = source.match(/^next_pending_row\(\) \{\n[\s\S]*?\n\}$/m)?.[0];
+    expect(definition).toBeDefined();
+    const result = spawnSync("bash", ["-c", [
+      "set -euo pipefail",
+      "backlog_rows() { printf '1\\t[ ]\\ttask-a\\n'; return 17; }",
+      definition!,
+      "next_pending_row unused",
+    ].join("\n")], { encoding: "utf-8" });
+    expect(result.status).toBe(17);
+    expect(result.stdout).toBe("1\t[ ]\ttask-a\n");
+  });
+
   test("rejects ambient target repo root that does not match the helper cwd", () => {
     const cwd = tmpWorkspace("sprint-env-cwd");
     const poisonRepo = tmpWorkspace("sprint-env-poison");
@@ -405,6 +457,33 @@ describe("sprint-backlog helper", () => {
       const activePlan = readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8").trim();
       const activePlanBody = readFileSync(join(cwd, activePlan), "utf-8");
       expect(activePlanBody).toContain("- [ ] Complete sprint row `task-b`: doc section updated");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("start-task selects an early row in a long backlog without SIGPIPE", () => {
+    const cwd = tmpWorkspace("sprint-backlog-start-long");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const tail = Array.from({ length: 4096 }, (_, index) =>
+        `| ${index + 3} | ${fixtureTaskId(`tail-${index}`)} | [ ] | tail-${index} | inline | ${"acceptance ".repeat(20)} | (pending) |`
+      ).join("\n");
+      const sprint = readFileSync(join(cwd, sprintPath), "utf-8")
+        .replace("## Execution Log", `${tail}\n\n## Execution Log`);
+      writeFileSync(join(cwd, sprintPath), sprint);
+      commitFixture(cwd);
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      expect(start.stdout).toContain("Claimed backlog task 'task-a'");
+      const planPath = start.stdout.match(/Captured plan: (plans\/plan-[^\s]+\.md)/)?.[1] ?? "";
+      expect(planPath).toMatch(/^plans\/plan-\d{8}-\d{4}-task-a\.md$/);
+      expect(readFileSync(join(cwd, planPath), "utf-8"))
+        .toContain(`> **Source Ref**: sprint:${sprintPath}#task-a`);
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toBe(sprint);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
