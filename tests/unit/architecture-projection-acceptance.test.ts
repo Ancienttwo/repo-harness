@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { projectionApplyLookupKey } from 'archctx-contracts';
 import {
   PROJECTION_REQUEST_VERSION,
   digestProjectionJson,
@@ -174,6 +175,19 @@ function acceptedResult(request: ProjectionRequestV1): ProjectionResultV1 {
   return { ...body, receiptDigest: projectionResultReceiptDigest(body) };
 }
 
+function absentReadback(request: ProjectionRequestV1) {
+  if (!request.acceptedChange) throw new Error('acceptedChange required');
+  const body = {
+    schemaVersion: 'archcontext.projection-apply-absence/v1' as const,
+    requestId: request.requestId,
+    requestDigest: digestProjectionJson(request),
+    lookupKey: projectionApplyLookupKey({ repositoryId: request.expected.repositoryId,
+      workspaceId: request.expected.workspaceId, acceptedChange: request.acceptedChange }),
+    current: request.expected,
+  };
+  return { ...body, absenceDigest: digestProjectionJson(body) };
+}
+
 describe('architecture projection acceptance', () => {
   test('preserves approval-reference identity and binds exact signal reasons and nodes', () => {
     const f = fixture();
@@ -226,6 +240,20 @@ describe('architecture projection acceptance', () => {
     });
     expect(receipt.request).toEqual(observed[0]!);
     expect(receipt.result.applyReceipt?.acceptedChange).toEqual(receipt.acceptedChange);
+    expect(acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-adoption-approval', {
+      adoptionPlanId: 'adopt-plan-0123456789abcdef', recover: true,
+    })).toEqual(receipt);
+  });
+
+  test('refuses adoption recovery without invoking provider apply', () => {
+    const f = fixture();
+    let providerCalls = 0;
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-adoption-recover', {
+      adoptionPlanId: 'adopt-plan-0123456789abcdef', recover: true,
+      captureSnapshot: () => f.expected,
+      runProjection: () => { providerCalls += 1; throw new Error('must not invoke provider'); },
+    })).toThrow('recovery does not support adoption');
+    expect(providerCalls).toBe(0);
   });
 
   test('refuses a stale refresh signal before invoking the provider', () => {
@@ -262,6 +290,83 @@ describe('architecture projection acceptance', () => {
     expect(providerCalls).toBe(1);
     expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.review-different', options))
       .toThrow('different approval reference');
+  });
+
+  test('journals intent before provider invocation and resumes a pending attempt only through readback', () => {
+    const f = fixture();
+    const pendingPath = join(f.repoRoot, '.ai/harness/architecture-projection/acceptance-pending', `${f.candidate.signalId.slice(7)}.json`);
+    let providerCalls = 0;
+    const approval = 'event.review-interrupted-provider';
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      captureSnapshot: () => f.expected,
+      runProjection: () => {
+        providerCalls += 1;
+        const pending = JSON.parse(readFileSync(pendingPath, 'utf8'));
+        expect(pending).toMatchObject({ candidateDigest: f.candidate.candidateDigest, approvalReference: approval,
+          request: { mode: 'apply', expected: f.expected, acceptedChange: { eventId: approval } } });
+        throw new Error('provider response lost');
+      },
+    })).toThrow('provider response lost');
+    expect(providerCalls).toBe(1);
+
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      captureSnapshot: () => f.expected,
+      runProjection: () => { providerCalls += 1; throw new Error('must not reapply'); },
+      runReadback: () => { throw new Error('committed provider receipt missing'); },
+    })).toThrow('committed provider receipt missing');
+    expect(providerCalls).toBe(1);
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, 'event.other-approval', {
+      captureSnapshot: () => f.expected,
+      runReadback: () => { throw new Error('must not readback'); },
+    })).toThrow('different approval reference');
+  });
+
+  test('explicit orphan recovery never applies and refuses a modified pending journal', () => {
+    const f = fixture();
+    const approval = 'event.review-orphan-recovery';
+    const pendingPath = join(f.repoRoot, '.ai/harness/architecture-projection/acceptance-pending', `${f.candidate.signalId.slice(7)}.json`);
+    let applyCalls = 0;
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      recover: true,
+      captureSnapshot: () => f.expected,
+      runProjection: () => { applyCalls += 1; throw new Error('must not apply'); },
+      runReadback: () => { throw new Error('provider receipt unavailable'); },
+    })).toThrow('provider receipt unavailable');
+    expect(applyCalls).toBe(0);
+    expect(existsSync(pendingPath)).toBe(false);
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      captureSnapshot: () => f.expected,
+      runProjection: () => { throw new Error('precommit provider unavailable'); },
+    })).toThrow('precommit provider unavailable');
+    const pending = JSON.parse(readFileSync(pendingPath, 'utf8'));
+    pending.request.changedPaths = ['src/tampered.ts'];
+    writeFileSync(pendingPath, `${JSON.stringify(pending)}\n`);
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      captureSnapshot: () => f.expected,
+      runReadback: () => { throw new Error('must not readback tampered intent'); },
+    })).toThrow('pending digest mismatch');
+  });
+
+  test('a provider absence cannot erase an already persisted accepted result', () => {
+    const f = fixture();
+    const approval = 'event.review-persisted-result';
+    const pendingPath = join(f.repoRoot, '.ai/harness/architecture-projection/acceptance-pending', `${f.candidate.signalId.slice(7)}.json`);
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      captureSnapshot: () => f.expected,
+      runProjection: () => { throw new Error('response lost'); },
+    })).toThrow('response lost');
+    const pending = JSON.parse(readFileSync(pendingPath, 'utf8'));
+    pending.result = acceptedResult(pending.request);
+    const { pendingDigest: _old, ...body } = pending;
+    pending.pendingDigest = digestProjectionJson(body);
+    writeFileSync(pendingPath, `${JSON.stringify(pending)}\n`);
+    let reapplies = 0;
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, f.candidate.signalId, approval, {
+      captureSnapshot: () => f.expected,
+      runProjection: () => { reapplies += 1; throw new Error('must not reapply'); },
+      runReadback: (request) => absentReadback(request),
+    })).toThrow('provider absence contradicts persisted result');
+    expect(reapplies).toBe(0);
   });
 
   test('projects accepted evidence into the durable job receipt and clears its dead letter', () => {

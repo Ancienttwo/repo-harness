@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
+import {
+  projectionApplyAbsenceInvariantIssues,
+  projectionApplyReadbackResultInvariantIssues,
+  type AcceptedArchitectureChangeReferenceV1,
+  type ProjectionApplyAbsenceV1,
+  type ProjectionApplyReadbackResultV1,
+} from 'archctx-contracts';
 import { canonicalize } from '../evidence/canonical-json';
 
 export const PROJECTION_REQUEST_VERSION = 'archcontext.projection-request/v1' as const;
@@ -449,6 +455,55 @@ export function assertProjectionResult(value: unknown, expectedRequestId?: strin
   const issues = projectionResultIssues(result);
   if (issues.length > 0) throw new Error(`projection result invariant failed: ${issues.join('; ')}`);
   return result;
+}
+
+/** Decode the public, repeatable provider readback before it can drive a refresh. */
+export function assertProjectionApplyReadbackResult(value: unknown, request: ProjectionRequestV1): ProjectionApplyReadbackResultV1 {
+  const input = record(value, 'projection readback');
+  if (input.schemaVersion !== 'archcontext.projection-apply-readback-result/v1') throw new Error('projection readback schemaVersion mismatch');
+  if (input.requestId !== request.requestId || input.requestDigest !== digestProjectionJson(request)) {
+    throw new Error('projection readback request identity mismatch');
+  }
+  const receipt = record(input.receipt, 'projection readback receipt');
+  const identity = record(receipt.identity, 'projection readback receipt.identity');
+  const result = assertProjectionResult(receipt.result, request.requestId);
+  if (digestProjectionJson(identity) !== digestProjectionJson(result.applyReceipt)) {
+    throw new Error('projection readback receipt/result apply identity mismatch');
+  }
+  record(receipt.recovery, 'projection readback receipt.recovery');
+  const current = record(input.current, 'projection readback current');
+  assertProjectionSnapshot(current.snapshot, 'projection readback current.snapshot');
+  if (!isDigest(current.ownedOutputDigest) || !isDigest(current.fixedPointDigest)) {
+    throw new Error('projection readback current output proof invalid');
+  }
+  assertDigestSet(current.resultingDigests, 'projection readback current.resultingDigests');
+  if (!isDigest(input.readbackDigest)) throw new Error('projection readback digest invalid');
+  const { readbackDigest: _digest, ...body } = input;
+  if (digestProjectionJson(body) !== input.readbackDigest) throw new Error('projection readback digest mismatch');
+  const issues = projectionApplyReadbackResultInvariantIssues(input as unknown as ProjectionApplyReadbackResultV1, request);
+  if (issues.length > 0) throw new Error(`projection readback invariant failed: ${issues.join('; ')}`);
+  return input as unknown as ProjectionApplyReadbackResultV1;
+}
+
+export function assertProjectionApplyAbsence(value: unknown, request: ProjectionRequestV1): ProjectionApplyAbsenceV1 {
+  const input = record(value, 'projection apply absence');
+  if (input.schemaVersion !== 'archcontext.projection-apply-absence/v1') throw new Error('projection apply absence schemaVersion mismatch');
+  if (input.requestId !== request.requestId || input.requestDigest !== digestProjectionJson(request)) {
+    throw new Error('projection apply absence request identity mismatch');
+  }
+  if (!isDigest(input.lookupKey) || !isDigest(input.absenceDigest)) {
+    throw new Error('projection apply absence digest invalid');
+  }
+  const current = record(input.current, 'projection apply absence current');
+  if (typeof current.repositoryId !== 'string' || typeof current.workspaceId !== 'string'
+    || typeof current.headSha !== 'string' || !HEAD.test(current.headSha) || !isDigest(current.worktreeDigest)) {
+    throw new Error('projection apply absence current snapshot invalid');
+  }
+  const { absenceDigest: _digest, ...body } = input;
+  if (digestProjectionJson(body) !== input.absenceDigest) throw new Error('projection apply absence digest mismatch');
+  const issues = projectionApplyAbsenceInvariantIssues(input as unknown as ProjectionApplyAbsenceV1, request);
+  if (issues.length > 0) throw new Error(`projection apply absence invariant failed: ${issues.join('; ')}`);
+  return input as unknown as ProjectionApplyAbsenceV1;
 }
 
 function assertProjectionPriorCommittedApply(value: unknown, label: string): void {

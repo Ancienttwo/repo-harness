@@ -1,8 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import type { ProjectionApplyReadbackV1 } from 'archctx-contracts';
 import {
   PROJECTION_REQUEST_VERSION,
+  assertProjectionApplyAbsence,
+  assertProjectionApplyReadbackResult,
+  assertProjectionResult,
   digestProjectionJson,
   projectionRequestIssues,
   projectionResultIssues,
@@ -14,7 +18,7 @@ import {
   type Sha256Digest,
 } from '../../core/architecture/projection';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { captureArchitectureProjectionSnapshot, runArchitectureProjection, type ArchctxProviderOptions } from './archctx-provider';
+import { captureArchitectureProjectionSnapshot, readArchitectureProjectionApply, runArchitectureProjection, type ArchctxProviderOptions } from './archctx-provider';
 import {
   ARCHITECTURE_PROJECTION_RUNTIME_ROOT,
   architectureProjectionJobState,
@@ -25,11 +29,13 @@ import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions }
 
 const CANDIDATE_VERSION = 'repo-harness.architecture-projection-acceptance-candidate/v1' as const;
 const RECEIPT_VERSION = 'repo-harness.architecture-projection-acceptance-receipt/v1' as const;
+const PENDING_VERSION = 'repo-harness.architecture-projection-acceptance-pending/v1' as const;
 const RECONCILIATION_RECEIPT_VERSION = 'repo-harness.architecture-projection-reconciliation-receipt/v1' as const;
 const STALE_RETIREMENT_RECEIPT_VERSION = 'repo-harness.architecture-projection-stale-retirement-receipt/v1' as const;
 const STATE_VERSION = 'repo-harness.architecture-projection-acceptance-state/v1' as const;
 const CANDIDATES = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/acceptance-candidates`;
 const RECEIPTS = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/acceptance-receipts`;
+const PENDING = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/acceptance-pending`;
 const RECONCILIATION_RECEIPTS = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/reconciliation-receipts`;
 const STALE_RETIREMENT_RECEIPTS = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/stale-retirement-receipts`;
 const LOCK_PATH = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/locks/acceptance`;
@@ -55,6 +61,16 @@ export interface ArchitectureProjectionAcceptanceReceiptV1 {
   readonly result: ProjectionResultV1;
   readonly refreshReceiptDigests: readonly Sha256Digest[];
   readonly receiptDigest: Sha256Digest;
+}
+
+interface ArchitectureProjectionAcceptancePendingV1 {
+  readonly schemaVersion: typeof PENDING_VERSION;
+  readonly signalId: Sha256Digest;
+  readonly approvalReference: string;
+  readonly candidateDigest: Sha256Digest;
+  readonly request: ProjectionRequestV1;
+  readonly result?: ProjectionResultV1;
+  readonly pendingDigest: Sha256Digest;
 }
 
 export interface ArchitectureProjectionReconciliationReceiptV1 {
@@ -89,8 +105,10 @@ export interface ArchitectureProjectionAcceptanceStateV1 {
 
 export interface ArchitectureProjectionAcceptanceOptions extends ArchctxProviderOptions {
   readonly adoptionPlanId?: string;
+  readonly recover?: boolean;
   readonly captureSnapshot?: (repoRoot: string) => ProjectionExpectedSnapshotV1;
   readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV1;
+  readonly runReadback?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionApplyReadbackV1;
   readonly runRefreshActions?: RunArchitectureRefreshActions;
   readonly now?: Date;
 }
@@ -139,6 +157,7 @@ export function acceptArchitectureProjectionCandidate(
     const existingPath = artifactPath(root, RECEIPTS, signalId);
     const reconciliationPath = artifactPath(root, RECONCILIATION_RECEIPTS, signalId);
     const retirementPath = artifactPath(root, STALE_RETIREMENT_RECEIPTS, signalId);
+    const pendingPath = artifactPath(root, PENDING, signalId);
     if (existsSync(reconciliationPath)) {
       readReconciliationReceiptFile(reconciliationPath, candidate);
       throw new Error(`architecture projection candidate is already resolved by reconciliation: ${signalId}`);
@@ -173,17 +192,75 @@ export function acceptArchitectureProjectionCandidate(
     };
     const issues = projectionRequestIssues(request);
     if (issues.length > 0) throw new Error(`architecture acceptance request invalid: ${issues.join('; ')}`);
-    const result = options.runProjection
-      ? options.runProjection(request, root)
-      : runArchitectureProjection(request, root, options);
-    if (result.status !== 'applied' && result.status !== 'noop') {
-      throw new Error(`architecture acceptance apply did not complete: ${result.status}`);
-    }
-    if (!result.applyReceipt || !sameAcceptedArchitectureChange(result.applyReceipt.acceptedChange, acceptedChange)) {
-      throw new Error('architecture acceptance apply receipt does not bind the accepted change');
-    }
-    if (result.refreshSignals.some((entry) => entry.mode === 'human-action-required')) {
-      throw new Error('architecture acceptance apply returned another unresolved major change');
+    const hadPending = existsSync(pendingPath);
+    let result: ProjectionResultV1;
+    if (request.mode === 'adopt') {
+      if (hadPending || options.recover) {
+        throw new Error('architecture acceptance recovery does not support adoption; a provider readback contract for adopt is required');
+      }
+      result = options.runProjection
+        ? options.runProjection(request, root)
+        : runArchitectureProjection(request, root, options);
+      assertAcceptedResult(result, request, acceptedChange);
+    } else {
+      let pending: ArchitectureProjectionAcceptancePendingV1 | undefined;
+      if (hadPending) {
+        pending = readPendingFile(pendingPath, candidate);
+        if (pending.approvalReference !== approvalReference) {
+          throw new Error(`architecture acceptance pending with a different approval reference: ${signalId}`);
+        }
+        if (digestProjectionJson(pending.request) !== digestProjectionJson(request)) {
+          throw new Error('architecture acceptance pending request differs from current candidate and snapshot');
+        }
+      } else if (!options.recover) {
+        pending = pendingFor(candidate, approvalReference, request);
+        atomicJson(pendingPath, pending);
+      }
+
+      if (hadPending || options.recover) {
+        const readback = options.runReadback
+          ? options.runReadback(request, root)
+          : readArchitectureProjectionApply(request, root, options);
+        const afterReadback = (options.captureSnapshot ?? captureArchitectureProjectionSnapshot)(root);
+        if (digestProjectionJson(afterReadback) !== digestProjectionJson(current)) {
+          throw new Error('architecture acceptance local snapshot changed during readback');
+        }
+        if (readback.schemaVersion === 'archcontext.projection-apply-absence/v1') {
+          assertProjectionApplyAbsence(readback, request);
+          if (!sameExpected(current, readback.current, readback.current.repositoryId)) {
+            throw new Error('architecture acceptance absence/current snapshot identity mismatch');
+          }
+          if (pending?.result) throw new Error('architecture acceptance provider absence contradicts persisted result');
+          if (options.recover) throw new Error('architecture acceptance explicit recovery found no committed provider apply');
+          result = options.runProjection
+            ? options.runProjection(request, root)
+            : runArchitectureProjection(request, root, options);
+          assertAcceptedResult(result, request, acceptedChange);
+          pending = pendingFor(candidate, approvalReference, request, result);
+          atomicJson(pendingPath, pending);
+        } else {
+          assertProjectionApplyReadbackResult(readback, request);
+          if (!sameExpected(current, readback.current.snapshot, readback.current.snapshot.repositoryId)) {
+            throw new Error('architecture acceptance readback/current snapshot identity mismatch');
+          }
+          result = assertProjectionResult(readback.receipt.result, request.requestId);
+          assertAcceptedResult(result, request, acceptedChange);
+          if (pending?.result && digestProjectionJson(pending.result) !== digestProjectionJson(result)) {
+            throw new Error('architecture acceptance pending result differs from committed provider receipt');
+          }
+          if (!pending?.result) {
+            pending = pendingFor(candidate, approvalReference, request, result);
+            atomicJson(pendingPath, pending);
+          }
+        }
+      } else {
+        result = options.runProjection
+          ? options.runProjection(request, root)
+          : runArchitectureProjection(request, root, options);
+        assertAcceptedResult(result, request, acceptedChange);
+        pending = pendingFor(candidate, approvalReference, request, result);
+        atomicJson(pendingPath, pending);
+      }
     }
     const refreshReceipts = consumeArchitectureRefreshSignals(root, result.refreshSignals, request.changedPaths, {
       env: options.env,
@@ -414,6 +491,62 @@ function readCandidate(root: string, signalId: string): ArchitectureProjectionAc
   const path = artifactPath(root, CANDIDATES, signalId);
   if (!existsSync(path)) throw new Error(`architecture acceptance candidate is missing: ${signalId}`);
   return readCandidateFile(path);
+}
+
+function pendingFor(
+  candidate: ArchitectureProjectionAcceptanceCandidateV1,
+  approvalReference: string,
+  request: ProjectionRequestV1,
+  result?: ProjectionResultV1,
+): ArchitectureProjectionAcceptancePendingV1 {
+  const body = {
+    schemaVersion: PENDING_VERSION,
+    signalId: candidate.signalId,
+    approvalReference,
+    candidateDigest: candidate.candidateDigest,
+    request,
+    ...(result ? { result } : {}),
+  };
+  return { ...body, pendingDigest: digestProjectionJson(body) };
+}
+
+function readPendingFile(path: string, candidate: ArchitectureProjectionAcceptanceCandidateV1): ArchitectureProjectionAcceptancePendingV1 {
+  const pending = JSON.parse(readFileSync(path, 'utf8')) as ArchitectureProjectionAcceptancePendingV1;
+  if (pending.schemaVersion !== PENDING_VERSION || pending.signalId !== candidate.signalId
+    || pending.candidateDigest !== candidate.candidateDigest || !APPROVAL_REFERENCE.test(pending.approvalReference)) {
+    throw new Error('architecture acceptance pending candidate/approval identity mismatch');
+  }
+  if (!pending.request || projectionRequestIssues(pending.request).length > 0 || !pending.request.acceptedChange
+    || !sameAcceptedArchitectureChange(pending.request.acceptedChange, acceptedChangeFor(candidateSignal(candidate), pending.approvalReference))) {
+    throw new Error('architecture acceptance pending request invalid');
+  }
+  const { pendingDigest: _digest, ...body } = pending;
+  if (digestProjectionJson(body) !== pending.pendingDigest) throw new Error('architecture acceptance pending digest mismatch');
+  if (pending.result) assertAcceptedResult(pending.result, pending.request, pending.request.acceptedChange);
+  return pending;
+}
+
+function assertAcceptedResult(
+  value: ProjectionResultV1,
+  request: ProjectionRequestV1,
+  acceptedChange: NonNullable<ProjectionRequestV1['acceptedChange']>,
+): void {
+  const result = assertProjectionResult(value, request.requestId);
+  if (result.status !== 'applied' && !(request.mode === 'adopt' && result.status === 'noop')) {
+    throw new Error(`architecture acceptance apply did not complete: ${result.status}`);
+  }
+  if (!result.applyReceipt || !sameAcceptedArchitectureChange(result.applyReceipt.acceptedChange, acceptedChange)
+    || result.applyReceipt.repositoryId !== request.expected.repositoryId
+    || result.applyReceipt.workspaceId !== request.expected.workspaceId) {
+    throw new Error('architecture acceptance apply receipt does not bind the accepted change and workspace');
+  }
+  if (!sameExpected(request.expected, result.inputSnapshot, result.inputSnapshot.repositoryId)
+    || !sameExpected(request.expected, result.outputSnapshot, result.outputSnapshot.repositoryId)) {
+    throw new Error('architecture acceptance apply result snapshot mismatch');
+  }
+  if (result.refreshSignals.some((entry) => entry.mode === 'human-action-required')) {
+    throw new Error('architecture acceptance apply returned another unresolved major change');
+  }
 }
 
 function readCandidateFile(path: string): ArchitectureProjectionAcceptanceCandidateV1 {

@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
+import type { ProjectionApplyReadbackV1 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
 import { capabilityRegistryFromArchcontextNodes, type ArchcontextNodeFile } from '../../core/capabilities/registry';
@@ -13,6 +14,8 @@ import {
   ARCHITECTURE_DOCS_LAYOUT_VERSION,
   ARCHITECTURE_DOCS_RENDERER_VERSION,
   assertArchctxCapabilities,
+  assertProjectionApplyAbsence,
+  assertProjectionApplyReadbackResult,
   assertProjectionResult,
   digestProjectionJson,
   projectionRequestIssues,
@@ -359,6 +362,54 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   remainingTimeout(options, policy.timeoutMs, 'post-projection validation');
   if (result.inputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.outputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.inputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION || result.outputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error('archctx projection renderer/layout mismatch');
   return result;
+}
+
+/** Read an existing committed apply; this operation never invokes projection run/apply. */
+export function readArchitectureProjectionApply(
+  request: ProjectionRequestV1,
+  repoRoot: string,
+  options: ArchctxProviderOptions = {},
+): ProjectionApplyReadbackV1 {
+  const requestIssues = projectionRequestIssues(request);
+  if (requestIssues.length > 0 || request.mode !== 'apply' || !request.acceptedChange) {
+    throw new Error(`invalid accepted projection readback request: ${requestIssues.join('; ')}`);
+  }
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
+  const { resolved, capabilities } = archctxCapabilities(repoRoot, { ...options, policy });
+  if (!capabilities.features.includes('projection-apply-readback-v1')) {
+    throw new Error('archctx projection-apply-readback-v1 capability is required for acceptance recovery');
+  }
+  const args = ['projection', 'readback', '--request-json', JSON.stringify(request)];
+  const before = captureProjectionSnapshotObservation(repoRoot);
+  assertExpectedSnapshot(request.expected, before.snapshot, 'before readback');
+  const processResult = runArchctxProcess(resolved, args, options, repoRoot, remainingTimeout(options, policy.timeoutMs, 'projection readback'));
+  const after = captureProjectionSnapshotObservation(repoRoot);
+  assertExpectedSnapshot(before.snapshot, after.snapshot, 'after readback');
+  if (processResult.status !== 0 || processResult.signal || processResult.error) {
+    throw new Error(`archctx projection readback failed: ${processFailure(processResult)}`);
+  }
+  const envelope = parseJson(processResult.stdout, 'archctx projection readback') as Record<string, unknown>;
+  if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) {
+    throw new Error(`archctx projection readback returned an invalid envelope: ${safeError(envelope)}`);
+  }
+  if (envelope.data.schemaVersion === 'archcontext.projection-apply-absence/v1') {
+    const absence = assertProjectionApplyAbsence(envelope.data, request);
+    assertExpectedSnapshot(after.snapshot, absence.current, 'in current absence proof');
+    remainingTimeout(options, policy.timeoutMs, 'post-absence validation');
+    return absence;
+  }
+  const readback = assertProjectionApplyReadbackResult(envelope.data, request);
+  const result = assertProjectionResult(readback.receipt.result, request.requestId);
+  assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in committed apply');
+  assertExpectedSnapshot(request.expected, result.outputSnapshot, 'after committed apply');
+  assertExpectedSnapshot(after.snapshot, readback.current.snapshot, 'in current readback proof');
+  assertProjectionResultAuthority(request, result, repoRoot, policy, false);
+  if (result.status !== 'applied' || !result.applyReceipt) {
+    throw new Error('projection readback requires an applied result with a committed apply receipt');
+  }
+  remainingTimeout(options, policy.timeoutMs, 'post-readback validation');
+  return readback;
 }
 
 function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'>, maximumMs: number, phase: string): number {
