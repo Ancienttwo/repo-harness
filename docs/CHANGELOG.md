@@ -33,10 +33,10 @@ All notable changes to this skill are documented here.
   source tree stays within its time budget on macOS; existing ownership markers
   still verify. The copy also skips `.codegraph/`, whose daemon socket macOS
   rsync cannot recreate.
-- `architecture-projection accept --adoption-plan-id` proceeds after an earlier
-  apply attempt returned adoption-required or failed before commit, once the
-  provider proves that exact apply absent; a committed or unprovable apply still
-  refuses the switch.
+- `architecture-projection accept --adoption-plan-id` no longer rejects outright
+  when an earlier apply attempt left an uncommitted intent: once the provider
+  proves that exact apply absent, the adoption request is sent. A committed or
+  unprovable apply still refuses the switch.
 
 ### Changed
 
@@ -57,6 +57,10 @@ All notable changes to this skill are documented here.
   repository inputs (for example the context map). Acceptance fails closed; commit
   the refresh output and retire the candidate with `architecture-projection
   retire-stale` before re-approval. A provider-side recovery proof is planned.
+- Adoption-mode acceptance still cannot complete: the provider adapter rejects an
+  apply receipt for non-apply requests while acceptance requires one. This
+  receipt-contract mismatch predates 0.19.3 and is scheduled with the
+  provider-side recovery work.
 
 ## [0.19.2] - 2026-09-13
 
