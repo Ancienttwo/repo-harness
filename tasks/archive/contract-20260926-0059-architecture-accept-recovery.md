@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-26 00:59
+> **Related Plan**: plans/archive/plan-20260924-0402-architecture-accept-recovery.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260926-0059
+> **Archive Projection V1**: `plans/plan-20260924-0402-architecture-accept-recovery.md` => `plans/archive/plan-20260924-0402-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/notes/20260924-0402-architecture-accept-recovery.notes.md` => `tasks/archive/notes-20260926-0059-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md` => `tasks/archive/contract-20260926-0059-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/reviews/20260924-0402-architecture-accept-recovery.review.md` => `tasks/archive/review-20260926-0059-architecture-accept-recovery.md`
+
 # Task Contract: architecture-accept-recovery
 
-> **Status**: Active
-> **Plan**: plans/plan-20260924-0402-architecture-accept-recovery.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260924-0402-architecture-accept-recovery.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-24 04:02
-> **Review File**: `tasks/reviews/20260924-0402-architecture-accept-recovery.review.md`
-> **Notes File**: `tasks/notes/20260924-0402-architecture-accept-recovery.notes.md`
+> **Review File**: `tasks/archive/review-20260926-0059-architecture-accept-recovery.md`
+> **Notes File**: `tasks/archive/notes-20260926-0059-architecture-accept-recovery.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -43,10 +53,10 @@ Recovery repeats semantic apply, accepts another approval or changed snapshot, d
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260924-0402-architecture-accept-recovery.md`
+- Source plan: `plans/archive/plan-20260924-0402-architecture-accept-recovery.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260924-0402-architecture-accept-recovery.review.md`
-- Notes file: `tasks/notes/20260924-0402-architecture-accept-recovery.notes.md`
+- Review file: `tasks/archive/review-20260926-0059-architecture-accept-recovery.md`
+- Notes file: `tasks/archive/notes-20260926-0059-architecture-accept-recovery.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -114,10 +124,10 @@ allowed_paths:
   - tests/architecture-projection-e2e.test.ts
   - docs/reference-configs/external-tooling.md
   - assets/reference-configs/external-tooling.md
-  - plans/plan-20260924-0402-architecture-accept-recovery.md
-  - tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md
-  - tasks/reviews/20260924-0402-architecture-accept-recovery.review.md
-  - tasks/notes/20260924-0402-architecture-accept-recovery.notes.md
+  - plans/archive/plan-20260924-0402-architecture-accept-recovery.md
+  - tasks/archive/contract-20260926-0059-architecture-accept-recovery.md
+  - tasks/archive/review-20260926-0059-architecture-accept-recovery.md
+  - tasks/archive/notes-20260926-0059-architecture-accept-recovery.md
   - .ai/harness/runs/accept-recovery/
 ```
 

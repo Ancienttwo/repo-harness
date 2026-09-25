@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-26 00:59
+> **Related Plan**: plans/archive/plan-20260924-0402-architecture-accept-recovery.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260926-0059
+> **Archive Projection V1**: `plans/plan-20260924-0402-architecture-accept-recovery.md` => `plans/archive/plan-20260924-0402-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/notes/20260924-0402-architecture-accept-recovery.notes.md` => `tasks/archive/notes-20260926-0059-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md` => `tasks/archive/contract-20260926-0059-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/reviews/20260924-0402-architecture-accept-recovery.review.md` => `tasks/archive/review-20260926-0059-architecture-accept-recovery.md`
+
 # Implementation Notes: architecture-accept-recovery
 
 > **Status**: Active
-> **Plan**: plans/plan-20260924-0402-architecture-accept-recovery.md
-> **Contract**: tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md
-> **Review**: tasks/reviews/20260924-0402-architecture-accept-recovery.review.md
+> **Plan**: plans/archive/plan-20260924-0402-architecture-accept-recovery.md
+> **Contract**: tasks/archive/contract-20260926-0059-architecture-accept-recovery.md
+> **Review**: tasks/archive/review-20260926-0059-architecture-accept-recovery.md
 > **Last Updated**: 2026-09-24
 > **Lifecycle**: notes
 

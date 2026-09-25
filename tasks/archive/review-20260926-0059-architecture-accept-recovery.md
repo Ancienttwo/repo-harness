@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-26 00:59
+> **Related Plan**: plans/archive/plan-20260924-0402-architecture-accept-recovery.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260926-0059
+> **Archive Projection V1**: `plans/plan-20260924-0402-architecture-accept-recovery.md` => `plans/archive/plan-20260924-0402-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/notes/20260924-0402-architecture-accept-recovery.notes.md` => `tasks/archive/notes-20260926-0059-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md` => `tasks/archive/contract-20260926-0059-architecture-accept-recovery.md`
+> **Archive Projection V1**: `tasks/reviews/20260924-0402-architecture-accept-recovery.review.md` => `tasks/archive/review-20260926-0059-architecture-accept-recovery.md`
+
 # Task Review: architecture-accept-recovery
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260924-0402-architecture-accept-recovery.md
-> **Contract**: tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md
-> **Notes File**: tasks/notes/20260924-0402-architecture-accept-recovery.notes.md
+> **Plan**: plans/archive/plan-20260924-0402-architecture-accept-recovery.md
+> **Contract**: tasks/archive/contract-20260926-0059-architecture-accept-recovery.md
+> **Notes File**: tasks/archive/notes-20260926-0059-architecture-accept-recovery.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-24 04:02
 > **Recommendation**: pass
