@@ -181,7 +181,7 @@ exit_criteria:
     {
       "id": "release-full",
       "kind": "command",
-      "command": "BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=2 BUN_TEST_MAX_CONCURRENCY=1 REPO_HARNESS_DIFF_BASE=7afcbc46d0b623442e98a92ca42d093619576e64 REPO_HARNESS_DIFF_MODE=merge-base bun run check:release",
+      "command": "BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=2 BUN_TEST_MAX_CONCURRENCY=1 REPO_HARNESS_DIFF_BASE=6a0977924c4b9d23f503fe9e67a734b77e1b8f77 REPO_HARNESS_DIFF_MODE=merge-base bun run check:release",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",

@@ -50,7 +50,7 @@ Local package integration uses unpublished source tarballs named 0.5.10 in an is
 
 The implementation worker reports the final three focused files at 59 pass / 0 fail and `bun run check:type` pass using the isolated unpublished provider/contracts packages. All nine root integrity commands pass; task-sync binds this final substantive diff below. The same source gate rechecked its finding and returned PASS after reading the focused test and typecheck logs. Real packaged CLI apply/readback composition succeeded in a disposable fixture with fault-injected consumer refresh actions. `integration-artifact-check.log` confirms one final acceptance receipt and one refresh receipt; `isolated-daemon-stop.log` confirms running:false, the former PID absent, and no connection/lock files. The evidence lives in `.ai/harness/runs/accept-recovery/`. No canonical AcceptanceReceipt or release is claimed.
 
-> **Substantive Change SHA256**: `sha256:7aecf51af853199de1bd4e3bb81962dc5fde4891b06becf0d06775cfbaae6f1c`
+> **Substantive Change SHA256**: `sha256:938e3f3ebdb2bd6d5f81de3b9357c4af0dc2aace89a2e7bdb3871dcb9546e302`
 
 ## Remaining delivery boundary
 
