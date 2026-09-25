@@ -33,6 +33,12 @@ All notable changes to this skill are documented here.
   source tree stays within its time budget on macOS; existing ownership markers
   still verify. The copy also skips `.codegraph/`, whose daemon socket macOS
   rsync cannot recreate.
+- Architecture acceptance retries resume a refresh that stopped after its own
+  checkpointed actions changed the worktree (such as a context-map update),
+  without another apply; any other change still fails closed. `accept
+  --adoption-plan-id` now proceeds after an earlier apply attempt returned
+  adoption-required or failed before commit, once the provider proves that exact
+  apply absent.
 
 ### Changed
 

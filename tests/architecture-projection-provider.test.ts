@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProjectionApplyIdentity, projectionApplyLookupKey } from 'archctx-contracts';
@@ -313,6 +313,69 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
   };
 }
 
+function refreshOwnedMutationFixture(config: { partialWriteOnFailure?: boolean } = {}) {
+  const f = fixture();
+  const initial = request(f.repoRoot);
+  const [candidate] = recordArchitectureProjectionAcceptanceCandidates(f.repoRoot, initial, unresolvedAcceptanceResult(initial));
+  if (!candidate) throw new Error('candidate fixture failed');
+  const failMarker = join(f.root, 'fail-capability-context');
+  writeFileSync(failMarker, '1\n');
+  const stubCli = join(f.root, 'stub-repo-harness-cli.ts');
+  const architectureEvent = join(import.meta.dir, '..', 'scripts', 'architecture-event.ts');
+  writeFileSync(stubCli, `import { spawnSync } from 'node:child_process';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+const [command, sub] = process.argv.slice(2);
+if (command === 'run' && sub === 'architecture-queue') process.exit(0);
+if (command === 'run' && sub === 'context-contract-sync') {
+  const sync = spawnSync(process.execPath, [${JSON.stringify(architectureEvent)}, 'sync-context-map',
+    '--context-map', '.ai/context/context-map.json', '--block', 'src/core', '--capability-id', 'capability.test.core',
+    '--contract-agents', 'src/core/AGENTS.md', '--contract-claude', 'src/core/CLAUDE.md',
+    '--architecture-domain', 'test', '--architecture-capability', 'core'], { stdio: 'inherit' });
+  process.exit(sync.status ?? 1);
+}
+if (command === 'capability-context') {
+  if (existsSync(${JSON.stringify(failMarker)})) {
+    rmSync(${JSON.stringify(failMarker)});
+    if (${JSON.stringify(config.partialWriteOnFailure === true)}) writeFileSync('.ai/context/partial-capability.json', '{}\\n');
+    process.stderr.write('capability helper unavailable');
+    process.exit(1);
+  }
+  process.exit(0);
+}
+process.exit(2);
+`);
+  let semanticApplies = 0;
+  let committedResult: ReturnType<typeof committedApplyEnvelope> | null = null;
+  const run: RunArchctxProcess = (_binary, args) => {
+    if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+    if (args[0] === 'projection' && args[1] === 'readback') throw new Error('refresh-owned resume must not need a fresh readback');
+    if (args[0] !== 'projection' || args[1] !== 'run') throw new Error(`unexpected provider command: ${args.join(' ')}`);
+    if (committedResult) {
+      return { status: 1, signal: null, stdout: '', stderr: 'AC_PRECONDITION_FAILED: committed projection receipt requires explicit projection recover' };
+    }
+    const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
+    semanticApplies += 1;
+    mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
+    writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'committed projection\n');
+    committedResult = committedApplyEnvelope(wireRequest);
+    return { status: 0, signal: null, stdout: JSON.stringify(committedResult), stderr: '' };
+  };
+  return {
+    repoRoot: f.repoRoot,
+    initial,
+    signalId: candidate.signalId,
+    approval: 'event.user-approval-refresh-owned-mutation',
+    options: {
+      consumerRoot: f.consumerRoot,
+      policy,
+      run,
+      env: { ...process.env, REPO_HARNESS_CLI: stubCli, REPO_HARNESS_BUN: process.execPath },
+    },
+    semanticApplies: () => semanticApplies,
+    committed: () => committedResult,
+  };
+}
+
 describe('package-local ArchContext projection provider', () => {
   test('recovers an accepted apply when refresh fails after the provider commit', () => {
     const f = fixture();
@@ -371,6 +434,56 @@ describe('package-local ArchContext projection provider', () => {
       .toThrow('different approval reference');
   });
 
+  test('resumes the refresh after its own context-map update when the following action fails', () => {
+    const m = refreshOwnedMutationFixture();
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
+      .toThrow('architecture refresh capability-context-request failed');
+    expect(m.semanticApplies()).toBe(1);
+    expect(existsSync(join(m.repoRoot, '.ai', 'context', 'context-map.json'))).toBe(true);
+    expect(captureArchitectureProjectionSnapshot(m.repoRoot).worktreeDigest).not.toBe(m.initial.expected.worktreeDigest);
+
+    const receipt = acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options);
+    expect(receipt.result).toEqual(m.committed()!.data);
+    expect(receipt.request.expected).toEqual(m.initial.expected);
+    expect(receipt.refreshReceiptDigests).toHaveLength(1);
+    expect(m.semanticApplies()).toBe(1);
+    expect(inspectArchitectureProjectionAcceptanceState(m.repoRoot).unresolvedCandidates).toBe(0);
+  });
+
+  test('refuses to resume over a partial write from the failed, uncheckpointed refresh action', () => {
+    const m = refreshOwnedMutationFixture({ partialWriteOnFailure: true });
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
+      .toThrow('architecture refresh capability-context-request failed');
+    expect(existsSync(join(m.repoRoot, '.ai', 'context', 'partial-capability.json'))).toBe(true);
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
+      .toThrow('snapshot changed outside the checkpointed refresh of this candidate');
+    expect(m.semanticApplies()).toBe(1);
+    expect(inspectArchitectureProjectionAcceptanceState(m.repoRoot).unresolvedCandidates).toBe(1);
+  });
+
+  test('refuses to resume over an unrelated edit or altered refresh evidence after the last checkpoint', () => {
+    const m = refreshOwnedMutationFixture();
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
+      .toThrow('architecture refresh capability-context-request failed');
+    const stray = join(m.repoRoot, 'src', 'core', 'stray.ts');
+    writeFileSync(stray, 'export const stray = 1;\n');
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
+      .toThrow('snapshot changed outside the checkpointed refresh of this candidate');
+    rmSync(stray);
+    const progressDir = join(m.repoRoot, '.ai/harness/architecture-projection/refresh-progress');
+    const [progressName] = readdirSync(progressDir);
+    const progressPath = join(progressDir, progressName!);
+    const progress = JSON.parse(readFileSync(progressPath, 'utf8'));
+    progress.actions.push({ actionKey: 'capability-context-request', action: 'capability-context-request', outputDigest: digest('1') });
+    writeFileSync(progressPath, `${JSON.stringify(progress, null, 2)}\n`);
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
+      .toThrow('snapshot changed outside the checkpointed refresh of this candidate');
+    expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, 'event.other-approval', m.options))
+      .toThrow('different approval reference');
+    expect(m.semanticApplies()).toBe(1);
+    expect(inspectArchitectureProjectionAcceptanceState(m.repoRoot).unresolvedCandidates).toBe(1);
+  });
+
   test('explicit readback closes a legacy orphan after provider commit but before its response', () => {
     const f = fixture();
     const initial = request(f.repoRoot);
@@ -415,6 +528,42 @@ describe('package-local ArchContext projection provider', () => {
     const repeated = acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, { ...options, recover: true });
     expect(repeated).toEqual(receipt);
     expect(readbacks).toBe(1);
+  });
+
+  test('refuses to switch a committed apply intent to adoption without a second semantic call', () => {
+    const f = fixture();
+    const initial = request(f.repoRoot);
+    const [candidate] = recordArchitectureProjectionAcceptanceCandidates(f.repoRoot, initial, unresolvedAcceptanceResult(initial));
+    if (!candidate) throw new Error('candidate fixture failed');
+    let committedResult: ReturnType<typeof committedApplyEnvelope> | null = null;
+    const semanticModes: string[] = [];
+    let readbacks = 0;
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+      const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
+      if (args[0] === 'projection' && args[1] === 'readback' && committedResult) {
+        readbacks += 1;
+        return { status: 0, signal: null, stdout: JSON.stringify(committedApplyReadback(wireRequest, committedResult.data)), stderr: '' };
+      }
+      if (args[0] !== 'projection' || args[1] !== 'run') throw new Error(`unexpected provider command: ${args.join(' ')}`);
+      semanticModes.push(wireRequest.mode);
+      committedResult = committedApplyEnvelope(wireRequest);
+      mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
+      writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'committed projection\n');
+      return { status: 1, signal: null, stdout: '', stderr: 'provider response lost after committed apply' };
+    };
+    const options = { consumerRoot: f.consumerRoot, policy, run,
+      runRefreshActions: () => { throw new Error('must not refresh'); },
+    };
+    const approval = 'event.user-approval-committed-then-adopt';
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, options))
+      .toThrow('provider response lost after committed apply');
+    expect(() => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, approval, {
+      ...options, adoptionPlanId: 'adopt-plan-0123456789abcdef',
+    })).toThrow('cannot switch to adoption after a committed apply');
+    expect(semanticModes).toEqual(['apply']);
+    expect(readbacks).toBe(1);
+    expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot).unresolvedCandidates).toBe(1);
   });
 
   test('validated absence permits one normal retry after a precommit provider failure', () => {

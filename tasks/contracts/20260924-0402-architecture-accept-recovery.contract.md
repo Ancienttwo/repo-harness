@@ -21,7 +21,7 @@ Provide explicit supported recovery of the exact interrupted acceptance, retaini
 
 ## Scope
 
-- In scope: exact-candidate recovery in acceptance/provider/CLI, focused regression guards and owning documentation; approved 0.5.11 dependency integration across both consumers, generated policy defaults and existing version-bound fixtures. The user also approved repo-harness 0.19.3 release metadata, package verification and npm publication using Web Auth. Owner-approved (2026-09-25) third release-gate repair: installed-copy tree hashing through the single TS authority and `.codegraph/` rsync exclusion.
+- In scope: exact-candidate recovery in acceptance/provider/CLI, focused regression guards and owning documentation; approved 0.5.11 dependency integration across both consumers, generated policy defaults and existing version-bound fixtures. The user also approved repo-harness 0.19.3 release metadata, package verification and npm publication using Web Auth. Owner-approved (2026-09-25) third release-gate repair: installed-copy tree hashing through the single TS authority and `.codegraph/` rsync exclusion. Codex acceptance review P1: checkpoint-bound refresh snapshot recording for recovery.
 - Out of scope: global runtime installation, provider internal journal edits, H0 admission, manual receipt creation, unrelated AKN-03c changes and new approval grants.
 
 ## Stop Conditions
@@ -108,6 +108,7 @@ allowed_paths:
   - src/core/architecture/projection.ts
   - src/effects/architecture/archctx-provider.ts
   - src/effects/architecture/projection-acceptance.ts
+  - src/effects/architecture/refresh-consumer.ts
   - src/cli/commands/architecture-projection.ts
   - tests/unit/architecture-projection-acceptance.test.ts
   - tests/architecture-projection-provider.test.ts

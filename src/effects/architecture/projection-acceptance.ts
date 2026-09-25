@@ -25,7 +25,7 @@ import {
   completeArchitectureProjectionDeadLetterAcceptance,
   completeArchitectureProjectionDeadLetterReconciliation,
 } from './projection-jobs';
-import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions } from './refresh-consumer';
+import { architectureRefreshEvidenceDigest, consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions } from './refresh-consumer';
 
 const CANDIDATE_VERSION = 'repo-harness.architecture-projection-acceptance-candidate/v1' as const;
 const RECEIPT_VERSION = 'repo-harness.architecture-projection-acceptance-receipt/v1' as const;
@@ -70,7 +70,14 @@ interface ArchitectureProjectionAcceptancePendingV1 {
   readonly candidateDigest: Sha256Digest;
   readonly request: ProjectionRequestV1;
   readonly result?: ProjectionResultV1;
+  /** Snapshot observed right after the latest durable refresh checkpoint of this result. */
+  readonly refreshCheckpoint?: ArchitectureProjectionRefreshCheckpointV1;
   readonly pendingDigest: Sha256Digest;
+}
+
+interface ArchitectureProjectionRefreshCheckpointV1 {
+  readonly snapshot: ProjectionExpectedSnapshotV1;
+  readonly evidenceDigest: Sha256Digest;
 }
 
 export interface ArchitectureProjectionReconciliationReceiptV1 {
@@ -176,27 +183,92 @@ export function acceptArchitectureProjectionCandidate(
     }
 
     const signal = candidateSignal(candidate);
-    const current = (options.captureSnapshot ?? captureArchitectureProjectionSnapshot)(root);
-    assertFreshSignal(signal, candidate.request.expected, current);
+    const capture = options.captureSnapshot ?? captureArchitectureProjectionSnapshot;
+    const current = capture(root);
     const acceptedChange = acceptedChangeFor(signal, approvalReference);
-    const request: ProjectionRequestV1 = {
+    const completeAcceptance = (request: ProjectionRequestV1, result: ProjectionResultV1): ArchitectureProjectionAcceptanceReceiptV1 => {
+      const refreshReceipts = consumeArchitectureRefreshSignals(root, result.refreshSignals, request.changedPaths, {
+        env: options.env,
+        run: options.runRefreshActions,
+        now: options.now,
+        deadlineMs: options.deadlineMs,
+        nowMs: options.nowMs,
+        onCheckpoint: request.mode === 'apply'
+          ? () => atomicJson(pendingPath, pendingFor(candidate, approvalReference, request, result, {
+              snapshot: capture(root),
+              evidenceDigest: architectureRefreshEvidenceDigest(root, result.refreshSignals),
+            }))
+          : undefined,
+      });
+      const body = {
+        schemaVersion: RECEIPT_VERSION,
+        signalId: signal.signalId,
+        approvalReference,
+        acceptedChange,
+        candidateDigest: candidate.candidateDigest,
+        request,
+        result,
+        refreshReceiptDigests: refreshReceipts.map((entry) => entry.receiptDigest).sort(),
+      };
+      const receipt: ArchitectureProjectionAcceptanceReceiptV1 = { ...body, receiptDigest: digestProjectionJson(body) };
+      assertReceipt(receipt, candidate);
+      atomicJson(existingPath, receipt);
+      projectAcceptedDeadLetter(root, candidate, receipt, options.now);
+      return receipt;
+    };
+    if (!options.adoptionPlanId && existsSync(pendingPath)) {
+      const resumed = refreshOwnedResume(root, readPendingFile(pendingPath, candidate), candidate, signal, approvalReference, current);
+      if (resumed) return completeAcceptance(resumed.request, resumed.result);
+    }
+    assertFreshSignal(signal, candidate.request.expected, current);
+    const acceptanceRequest = (adoptionPlanId?: string): ProjectionRequestV1 => ({
       schemaVersion: PROJECTION_REQUEST_VERSION,
       requestId: `repo-harness.accept.${signal.signalId.slice('sha256:'.length, 'sha256:'.length + 24)}`,
       profile: candidate.request.profile,
-      mode: options.adoptionPlanId ? 'adopt' : 'apply',
+      mode: adoptionPlanId ? 'adopt' : 'apply',
       targets: [...candidate.request.targets],
       changedPaths: [...candidate.request.changedPaths],
       expected: current,
       acceptedChange,
-      ...(options.adoptionPlanId ? { adoptionPlanId: options.adoptionPlanId } : {}),
-    };
+      ...(adoptionPlanId ? { adoptionPlanId } : {}),
+    });
+    const request = acceptanceRequest(options.adoptionPlanId);
     const issues = projectionRequestIssues(request);
     if (issues.length > 0) throw new Error(`architecture acceptance request invalid: ${issues.join('; ')}`);
     const hadPending = existsSync(pendingPath);
+    const readCommittedApply = (applyRequest: ProjectionRequestV1): ProjectionApplyReadbackV1 => {
+      const readback = options.runReadback
+        ? options.runReadback(applyRequest, root)
+        : readArchitectureProjectionApply(applyRequest, root, options);
+      const afterReadback = (options.captureSnapshot ?? captureArchitectureProjectionSnapshot)(root);
+      if (digestProjectionJson(afterReadback) !== digestProjectionJson(current)) {
+        throw new Error('architecture acceptance local snapshot changed during readback');
+      }
+      return readback;
+    };
     let result: ProjectionResultV1;
     if (request.mode === 'adopt') {
-      if (hadPending || options.recover) {
+      if (options.recover) {
         throw new Error('architecture acceptance recovery does not support adoption; a provider readback contract for adopt is required');
+      }
+      if (hadPending) {
+        // An apply intent without a recorded result may switch to an approved
+        // adoption only when the provider proves that exact apply never committed.
+        const pending = readPendingFile(pendingPath, candidate);
+        if (pending.approvalReference !== approvalReference) {
+          throw new Error(`architecture acceptance pending with a different approval reference: ${signalId}`);
+        }
+        const committedApply = 'architecture acceptance cannot switch to adoption after a committed apply; resume without an adoption plan';
+        if (pending.result) throw new Error(committedApply);
+        if (digestProjectionJson(pending.request) !== digestProjectionJson(acceptanceRequest())) {
+          throw new Error('architecture acceptance pending request differs from current candidate and snapshot');
+        }
+        const readback = readCommittedApply(pending.request);
+        if (readback.schemaVersion !== 'archcontext.projection-apply-absence/v1') throw new Error(committedApply);
+        assertProjectionApplyAbsence(readback, pending.request);
+        if (!sameExpected(current, readback.current, readback.current.repositoryId)) {
+          throw new Error('architecture acceptance absence/current snapshot identity mismatch');
+        }
       }
       result = options.runProjection
         ? options.runProjection(request, root)
@@ -218,13 +290,7 @@ export function acceptArchitectureProjectionCandidate(
       }
 
       if (hadPending || options.recover) {
-        const readback = options.runReadback
-          ? options.runReadback(request, root)
-          : readArchitectureProjectionApply(request, root, options);
-        const afterReadback = (options.captureSnapshot ?? captureArchitectureProjectionSnapshot)(root);
-        if (digestProjectionJson(afterReadback) !== digestProjectionJson(current)) {
-          throw new Error('architecture acceptance local snapshot changed during readback');
-        }
+        const readback = readCommittedApply(request);
         if (readback.schemaVersion === 'archcontext.projection-apply-absence/v1') {
           assertProjectionApplyAbsence(readback, request);
           if (!sameExpected(current, readback.current, readback.current.repositoryId)) {
@@ -262,29 +328,37 @@ export function acceptArchitectureProjectionCandidate(
         atomicJson(pendingPath, pending);
       }
     }
-    const refreshReceipts = consumeArchitectureRefreshSignals(root, result.refreshSignals, request.changedPaths, {
-      env: options.env,
-      run: options.runRefreshActions,
-      now: options.now,
-      deadlineMs: options.deadlineMs,
-      nowMs: options.nowMs,
-    });
-    const body = {
-      schemaVersion: RECEIPT_VERSION,
-      signalId: signal.signalId,
-      approvalReference,
-      acceptedChange,
-      candidateDigest: candidate.candidateDigest,
-      request,
-      result,
-      refreshReceiptDigests: refreshReceipts.map((entry) => entry.receiptDigest).sort(),
-    };
-    const receipt: ArchitectureProjectionAcceptanceReceiptV1 = { ...body, receiptDigest: digestProjectionJson(body) };
-    assertReceipt(receipt, candidate);
-    atomicJson(existingPath, receipt);
-    projectAcceptedDeadLetter(root, candidate, receipt, options.now);
-    return receipt;
+    return completeAcceptance(request, result);
   });
+}
+
+/**
+ * A committed apply whose refresh stopped after checkpointed actions changed the
+ * local snapshot resumes from its persisted provider result without readback,
+ * but only when the current snapshot and refresh evidence are exactly those
+ * recorded at the latest checkpoint. Any other change fails closed.
+ */
+function refreshOwnedResume(
+  root: string,
+  pending: ArchitectureProjectionAcceptancePendingV1,
+  candidate: ArchitectureProjectionAcceptanceCandidateV1,
+  signal: ArchitectureRefreshSignalV1,
+  approvalReference: string,
+  current: ProjectionExpectedSnapshotV1,
+): { request: ProjectionRequestV1; result: ProjectionResultV1 } | undefined {
+  if (!pending.result || !pending.refreshCheckpoint
+    || digestProjectionJson(current) === digestProjectionJson(pending.request.expected)) {
+    return undefined;
+  }
+  if (pending.approvalReference !== approvalReference) {
+    throw new Error(`architecture acceptance pending with a different approval reference: ${candidate.signalId}`);
+  }
+  assertFreshSignal(signal, candidate.request.expected, pending.request.expected);
+  if (digestProjectionJson(current) !== digestProjectionJson(pending.refreshCheckpoint.snapshot)
+    || architectureRefreshEvidenceDigest(root, pending.result.refreshSignals) !== pending.refreshCheckpoint.evidenceDigest) {
+    throw new Error('architecture acceptance snapshot changed outside the checkpointed refresh of this candidate');
+  }
+  return { request: pending.request, result: pending.result };
 }
 
 export function reconcileArchitectureProjectionCandidate(
@@ -498,6 +572,7 @@ function pendingFor(
   approvalReference: string,
   request: ProjectionRequestV1,
   result?: ProjectionResultV1,
+  refreshCheckpoint?: ArchitectureProjectionRefreshCheckpointV1,
 ): ArchitectureProjectionAcceptancePendingV1 {
   const body = {
     schemaVersion: PENDING_VERSION,
@@ -506,6 +581,7 @@ function pendingFor(
     candidateDigest: candidate.candidateDigest,
     request,
     ...(result ? { result } : {}),
+    ...(result && refreshCheckpoint ? { refreshCheckpoint } : {}),
   };
   return { ...body, pendingDigest: digestProjectionJson(body) };
 }
@@ -523,6 +599,16 @@ function readPendingFile(path: string, candidate: ArchitectureProjectionAcceptan
   const { pendingDigest: _digest, ...body } = pending;
   if (digestProjectionJson(body) !== pending.pendingDigest) throw new Error('architecture acceptance pending digest mismatch');
   if (pending.result) assertAcceptedResult(pending.result, pending.request, pending.request.acceptedChange);
+  if (pending.refreshCheckpoint !== undefined) {
+    const checkpoint = pending.refreshCheckpoint;
+    if (!pending.result || !checkpoint || !DIGEST.test(checkpoint.evidenceDigest) || !checkpoint.snapshot
+      || checkpoint.snapshot.repositoryId !== pending.request.expected.repositoryId
+      || checkpoint.snapshot.workspaceId !== pending.request.expected.workspaceId
+      || !/^[a-f0-9]{40}$/.test(checkpoint.snapshot.headSha) || !DIGEST.test(checkpoint.snapshot.worktreeDigest)
+      || Object.keys(checkpoint.snapshot).length !== 4 || Object.keys(checkpoint).length !== 2) {
+      throw new Error('architecture acceptance pending refresh checkpoint invalid');
+    }
+  }
   return pending;
 }
 

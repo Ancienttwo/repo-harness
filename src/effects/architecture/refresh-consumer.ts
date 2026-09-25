@@ -40,7 +40,15 @@ export function consumeArchitectureRefreshSignals(
   repoRoot: string,
   signals: readonly ArchitectureRefreshSignalV1[],
   changedPaths: readonly string[],
-  options: { env?: NodeJS.ProcessEnv; run?: RunArchitectureRefreshActions; now?: Date; deadlineMs?: number; nowMs?: () => number } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    run?: RunArchitectureRefreshActions;
+    now?: Date;
+    deadlineMs?: number;
+    nowMs?: () => number;
+    /** Runs after every durable progress checkpoint and final refresh receipt write. */
+    onCheckpoint?: () => void;
+  } = {},
 ): ArchitectureRefreshReceiptV1[] {
   const receipts: ArchitectureRefreshReceiptV1[] = [];
   for (const signal of [...signals].sort((a, b) => a.signalId.localeCompare(b.signalId))) {
@@ -60,6 +68,7 @@ export function consumeArchitectureRefreshSignals(
         outputDigest: digest(`${result.status}\0${result.stdout}\0${result.stderr}`),
       });
       atomicJson(progressPath, { schemaVersion: 'repo-harness.architecture-refresh-progress/v1', signalId: signal.signalId, actions });
+      options.onCheckpoint?.();
     };
     const results = signal.mode === 'human-action-required'
       ? []
@@ -87,9 +96,25 @@ export function consumeArchitectureRefreshSignals(
     const receipt: ArchitectureRefreshReceiptV1 = { ...body, receiptDigest: digest(JSON.stringify(body)) };
     atomicJson(path, receipt);
     try { unlinkSync(progressPath); } catch { /* receipt is authoritative */ }
+    options.onCheckpoint?.();
     receipts.push(receipt);
   }
   return receipts;
+}
+
+/**
+ * Digest the durable refresh evidence (final receipt, else checkpoint progress)
+ * for these signals, so a caller can bind a later observation to exactly the
+ * checkpoints that existed when it was recorded.
+ */
+export function architectureRefreshEvidenceDigest(repoRoot: string, signals: readonly ArchitectureRefreshSignalV1[]): Sha256Digest {
+  const evidence = [...signals].sort((a, b) => a.signalId.localeCompare(b.signalId)).map((signal) => {
+    const receipt = receiptPath(repoRoot, signal.signalId);
+    const progress = refreshProgressPath(repoRoot, signal.signalId);
+    const source = existsSync(receipt) ? { kind: 'receipt', path: receipt } : existsSync(progress) ? { kind: 'progress', path: progress } : null;
+    return `${signal.signalId}\0${source ? `${source.kind}\0${readFileSync(source.path, 'utf8')}` : 'none'}`;
+  });
+  return digest(evidence.join('\0\0'));
 }
 
 function runDefaultActions(
