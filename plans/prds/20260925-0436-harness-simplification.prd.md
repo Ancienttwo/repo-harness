@@ -245,7 +245,7 @@
 - 契约只生成适用区块；解析 / 规范化 / 元数据校验共用已有合适的 TS 模块，shell 与 runner 都消费它。只有观察到共同消费者与不变量才提取共享模块，不以委派 runner `contract-run.ts` 为公共依赖中心。
 - capability 仅供范围建议。工作包可批准目录 glob，无须逐文件枚举；投影结果必须是明确批准范围的子集。helper / 调用方需扩展时，在同一工作包内显式扩展，不自动扩大、不拆成微任务。
 - 去重针对真实 helper 实现与调用者，保持行为；删除 `re-port` 注释不是验收。历史证据不改写；活动契约通过明确升级或关闭迁移，不留新旧语义长期双读。
-- 外部审查只保留 Herdr 一条传输（HS5b，2026-09-25 用户批准）：Codex / Claude 作为审查者都经 Herdr 会话启动，复用 `claude-review-session` 已有的 Herdr 驱动；删除 codex-plugin provider、直调 `codex exec` 分支与宿主自动选路。AcceptanceReceipt `source` 收敛为审查者维度，活动契约一次性迁移，历史归档回执保持可验证且不双读。subject 钉定与 `stale_scope` 重算、结构化结果文件校验、严重级别映射、P1 即 FAIL 与两次尝试上限不变；缺 Herdr 时 fail-closed。
+- 外部审查只保留 Herdr 一条传输（HS5b，2026-09-25 用户批准）：Codex / Claude 作为审查者都经 Herdr 会话启动，复用 `claude-review-session` 已有的 Herdr 驱动；删除 codex-plugin provider、直调 `codex exec` 分支与宿主自动选路。AcceptanceReceipt `source` 收敛为审查者维度，只保留 gate 需要的结构化结论（verdict 与 findings 级别），审查过程记录对应 harness session 的 transcript path 以供追溯，不复制转录；活动契约一次性迁移，历史归档回执原样保留、按 path 追溯，新代码不再验证旧格式，因此无双读。subject 钉定与 `stale_scope` 重算、结构化结果文件校验、严重级别映射、P1 即 FAIL 与两次尝试上限不变；缺 Herdr 时 fail-closed。
 
 ### M5 可选能力（后置，不阻塞核心收口）
 
