@@ -33,12 +33,10 @@ All notable changes to this skill are documented here.
   source tree stays within its time budget on macOS; existing ownership markers
   still verify. The copy also skips `.codegraph/`, whose daemon socket macOS
   rsync cannot recreate.
-- Architecture acceptance retries resume a refresh that stopped after its own
-  checkpointed actions changed the worktree (such as a context-map update),
-  without another apply; any other change still fails closed. `accept
-  --adoption-plan-id` now proceeds after an earlier apply attempt returned
-  adoption-required or failed before commit, once the provider proves that exact
-  apply absent.
+- `architecture-projection accept --adoption-plan-id` proceeds after an earlier
+  apply attempt returned adoption-required or failed before commit, once the
+  provider proves that exact apply absent; a committed or unprovable apply still
+  refuses the switch.
 
 ### Changed
 
@@ -55,6 +53,10 @@ All notable changes to this skill are documented here.
 - Publication does not update an existing global installation or a persistent
   `REPO_HARNESS_SOURCE_ROOT` override. Recovery still requires the exact original
   candidate, approval reference and provider-owned fixed-point proof.
+- An interrupted refresh is not auto-resumed after a refresh action changed
+  repository inputs (for example the context map). Acceptance fails closed; commit
+  the refresh output and retire the candidate with `architecture-projection
+  retire-stale` before re-approval. A provider-side recovery proof is planned.
 
 ## [0.19.2] - 2026-09-13
 
