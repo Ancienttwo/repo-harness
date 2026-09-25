@@ -331,7 +331,9 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     } finally {
       rmSync(runRoot, { recursive: true, force: true });
     }
-  }, 30_000);
+    // Packing the self-contained runtime (package plus node_modules) measured
+    // 34 s on macOS bsdtar with no other load.
+  }, 120_000);
 
   releaseLaneOnly('reuses one packed artifact across isolated installs without mutating source authority', () => {
     const runRoot = mkdtempSync(join(tmpdir(), 'harness-runtime-install-'));

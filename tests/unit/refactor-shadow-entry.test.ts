@@ -28,7 +28,7 @@ function fixture(extraFiles: string[] = []) {
   const recommendation = { schemaVersion: 'archcontext.recommendation/v3', recommendationId: 'recommendation.1', runId: 'run.1', fingerprint: digest('a'), subject: 'node.a', status: 'open', confidence: 'high', enforcement: 'advisory', risk: 'low', uncertainty: 'low', evidenceBindingIds: [], explanation: [], authoredBy: { kind: 'daemon', id: 'archctxd', source: 'daemon' }, subjectSelectorId: 'node.a', relations: {}, createdAt: '2026-09-04T00:00:00.000Z', updatedAt: '2026-09-04T00:01:00.000Z', category: 'structural_observation', payload: { assessmentDigest: digest('b'), kind: 'cycle', affectedNodeIds: ['node.a'], baselineSnapshotDigest: digest('c'), derivedOutcomes: [] } };
   const provider = { consumerRoot: process.cwd(), run: (_binary: string, args: readonly string[]) => {
     let value: unknown;
-    if (args[0] === 'capabilities') value = { schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.10' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] };
+    if (args[0] === 'capabilities') value = { schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.11' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] };
     else if (args[0] === 'book') value = { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'book.recommendations', data: { schemaVersion: 'archcontext.architecture-book-recommendations/v1', recommendations: lifecycle ? [{ ...recommendation, status: lifecycle }] : [], freshness: { worktree: { headSha: head } } } };
     else {
       scans++;

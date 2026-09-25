@@ -179,7 +179,7 @@ run_workflow_check() {
   if [[ "$status" -eq 0 ]]; then
     add_entry "workflow-check" "pass" "check-task-workflow.sh --strict passed" "$output"
   else
-    summary="$(printf '%s\n' "$output" | first_line)"
+    summary="$(first_line <<<"$output")"
     add_entry "workflow-check" "fail" "${summary:-check-task-workflow.sh --strict failed}" "$output"
   fi
 }

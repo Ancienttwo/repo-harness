@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.19.2",
+  "version": "0.19.3",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -89,8 +89,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "archctx": "0.5.10",
-    "archctx-contracts": "0.5.10",
+    "archctx": "0.5.11",
+    "archctx-contracts": "0.5.11",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }

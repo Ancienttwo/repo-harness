@@ -39,7 +39,7 @@ describe('refactor discovery and proposal authoring', () => {
     let assessedRequest: Record<string, unknown> | undefined;
     try {
       assessRefactorProposal({ discovery, candidateAlias: 'C01', proposal }, process.cwd(), { consumerRoot: process.cwd(), run: (_binary, args) => {
-        if (args[0] === 'capabilities') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.10' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] }) };
+        if (args[0] === 'capabilities') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.11' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] }) };
         assessedRequest = JSON.parse(args[args.indexOf('--request-json') + 1]!);
         throw new Error('captured assessment request');
       } });

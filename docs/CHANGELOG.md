@@ -2,7 +2,65 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.19.3] - 2026-09-24
+
+### Added
+
+- The operator board reads canonical Task context, activity, history, placement,
+  repository snapshots, automation and supervision evidence. Planning, formal
+  Human Decisions and organization observations use bounded read paths; task
+  links retain historical context and completed observations refresh in view.
+- Task reply intent and commit integrity are persisted through the Engineer MCP
+  with protected reads and canonical reply-size limits.
+- Architecture acceptance supports `accept --recover` for an exact interrupted
+  approval. A durable intent and result preserve the original provider proof;
+  retries use non-consuming readback and resume the existing refresh checkpoints.
+
+### Fixed
+
+- Task Inbox migration uses portable storage paths, preserves record protocols
+  and file identities, and reflushes recovered files through fresh inodes before
+  publishing its receipt. Rollback permits a later fresh upgrade.
+- Task observation recovery is bound to its service epoch, and read capacity
+  remains held until worker retirement. Publication readiness rejects stale
+  acceptance authority. Architecture projection continues after a Stop budget
+  yield while strict Stop stays blocked until the continuation completes.
+- `sprint-backlog status`, `next` and `start-task` drain their row selectors
+  instead of exiting early, so long backlogs no longer fail with SIGPIPE (141)
+  under `pipefail`; the heartbeat triage summary read has the same repair.
+- Installed-copy sync hashes managed copies through the installer's TypeScript
+  tree hash instead of spawning a process per file, so copy-mode sync of a large
+  source tree stays within its time budget on macOS; existing ownership markers
+  still verify. The copy also skips `.codegraph/`, whose daemon socket macOS
+  rsync cannot recreate.
+- `architecture-projection accept --adoption-plan-id` no longer rejects outright
+  when an earlier apply attempt left an uncommitted intent: once the provider
+  proves that exact apply absent, the adoption request is sent. A committed or
+  unprovable apply still refuses the switch.
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to `0.5.11`, including architecture and
+  refactor admission, generated policy defaults and verification fixtures.
+- Route Codex agents by responsibility across GPT-6 Luna, Sol and Astra; worker
+  execution uses Sol at medium and xhigh reasoning for its two execution roles.
+
+### Limits
+
+- Native automatic execution remains subject to Host admission. These operator
+  observations and reply protocols do not establish an admitted Host or complete
+  the AKN automatic-delivery acceptance criteria.
+- Publication does not update an existing global installation or a persistent
+  `REPO_HARNESS_SOURCE_ROOT` override. Recovery still requires the exact original
+  candidate, approval reference and provider-owned fixed-point proof.
+- An interrupted refresh is not auto-resumed after a refresh action changed
+  repository inputs (for example the context map). Acceptance fails closed; commit
+  the refresh output and retire the candidate with `architecture-projection
+  retire-stale` before re-approval. A provider-side recovery proof is planned.
+- Adoption-mode acceptance still cannot complete: the provider adapter rejects an
+  apply receipt for non-apply requests while acceptance requires one. This
+  receipt-contract mismatch predates 0.19.3 and is scheduled with the
+  provider-side recovery work.
 
 ## [0.19.2] - 2026-09-13
 

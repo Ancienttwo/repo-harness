@@ -111,10 +111,12 @@ export function buildArchitectureProjectionCommand(): Command {
     .requiredOption('--signal-id <sha256>', 'Exact unresolved-major refresh signal id')
     .requiredOption('--approval-reference <event-id>', 'Exact external human approval event identity')
     .option('--adoption-plan-id <id>', 'Exact approved ArchContext adoption plan id when ownership adoption is required')
-    .action((options: { signalId: string; approvalReference: string; adoptionPlanId?: string }) => {
+    .option('--recover', 'Read back an already committed provider apply before resuming refresh; never invoke apply')
+    .action((options: { signalId: string; approvalReference: string; adoptionPlanId?: string; recover?: boolean }) => {
       try {
         write(acceptArchitectureProjectionCandidate(repositoryRoot(), options.signalId, options.approvalReference, {
           adoptionPlanId: options.adoptionPlanId,
+          recover: options.recover,
         }));
       } catch (error) { fail(error); }
     });

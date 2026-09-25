@@ -1016,8 +1016,8 @@ ARCHITECTURE_INDEX_EOF
     "provider": "archctx",
     "proposal_author": "local",
     "stages": {
-      "scan": { "provider_version": "0.5.10", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
-      "verify": { "provider_version": "0.5.10", "required_features": ["refactor-resolution-v1"] }
+      "scan": { "provider_version": "0.5.11", "required_features": ["module-statistics-v1", "refactor-assessment-v1", "recommendation-v3"] },
+      "verify": { "provider_version": "0.5.11", "required_features": ["refactor-resolution-v1"] }
     },
     "workflow_routing": {
       "module_refactor": "work_package",

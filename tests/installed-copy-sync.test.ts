@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
@@ -19,7 +19,9 @@ const BUN_BIN_DIR = dirname(process.execPath);
  * profile_facades() now resolves `$SOURCE_ROOT/scripts/skill-surface-select.ts`
  * eagerly (see scripts/sync-codex-installed-copies.sh), which imports
  * src/core/skill-surface/catalog.ts and reads
- * assets/skill-commands/manifest.json, all resolved relative to SOURCE_ROOT.
+ * assets/skill-commands/manifest.json, all resolved relative to SOURCE_ROOT;
+ * its managed-tree-hash subcommand also loads src/cli/installer, so the
+ * whole src/ tree is seeded.
  * Every fixture `source` tree in this file is a synthetic, sparse package
  * layout (by design, to exercise sync mechanics in isolation), so each one
  * needs a real copy of these three so the adapter can actually run. The real
@@ -30,7 +32,7 @@ const BUN_BIN_DIR = dirname(process.execPath);
 function seedSkillSurfaceRuntime(source: string): void {
   mkdirSync(join(source, "scripts"), { recursive: true });
   cpSync(join(ROOT, "scripts", "skill-surface-select.ts"), join(source, "scripts", "skill-surface-select.ts"));
-  cpSync(join(ROOT, "src", "core", "skill-surface"), join(source, "src", "core", "skill-surface"), { recursive: true });
+  cpSync(join(ROOT, "src"), join(source, "src"), { recursive: true });
   mkdirSync(join(source, "assets", "skill-commands"), { recursive: true });
   cpSync(join(ROOT, "assets", "skill-commands", "manifest.json"), join(source, "assets", "skill-commands", "manifest.json"));
 }
@@ -585,4 +587,45 @@ describe("Codex installed copy sync", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("managed-tree-hash matches the retired shell hash so existing owner markers still verify", () => {
+    const tmp = join(tmpdir(), `repo-harness-tree-hash-${Date.now()}`);
+    const tree = join(tmp, "tree");
+    try {
+      mkdirSync(join(tree, "nested", "deeper"), { recursive: true });
+      writeFileSync(join(tree, "SKILL.md"), "---\nname: parity\n---\n");
+      writeFileSync(join(tree, "nested", "blob.bin"), Buffer.from([0x00, 0xff, 0x0a, 0x00, 0x41, 0x80]));
+      writeFileSync(join(tree, "nested", "deeper", "a-b.txt"), "dash\n");
+      writeFileSync(join(tree, "nested", "deeper", ".repo-harness-owner.json"), "{}\n");
+      writeFileSync(join(tree, ".repo-harness-owner.json"), "{}\n");
+      symlinkSync("../SKILL.md", join(tree, "nested", "link.md"));
+
+      // Verbatim body of the pre-0.19.3 shell managed_tree_hash()/hash_stream().
+      const legacy = String.raw`
+root="$1"
+{
+  while IFS= read -r entry; do
+    rel="${"$"}{entry#"$root"/}"
+    if [[ -L "$entry" ]]; then
+      printf 'L\0%s\0%s\0' "$rel" "$(readlink "$entry")"
+    elif [[ -f "$entry" ]]; then
+      printf 'F\0%s\0' "$rel"
+      cat "$entry"
+      printf '\0'
+    fi
+  done < <(find "$root" \( -type f -o -type l \) ! -name '.repo-harness-owner.json' -print | LC_ALL=C sort)
+} | shasum -a 256 | awk '{print "sha256:" $1}'
+`;
+      const old = spawnSync("bash", ["-c", legacy, "legacy", tree], { encoding: "utf-8" });
+      expect(old.status).toBe(0);
+      const current = spawnSync("bun", [join(ROOT, "scripts", "skill-surface-select.ts"), "managed-tree-hash", tree], {
+        encoding: "utf-8",
+      });
+      expect(current.status).toBe(0);
+      expect(current.stdout.trim()).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(current.stdout.trim()).toBe(old.stdout.trim());
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
