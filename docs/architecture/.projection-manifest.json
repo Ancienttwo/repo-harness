@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:b859983f97115344cb2d922ace1e8499d648eeca197ec66cf58b3775378e135d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "c1bc2af464e1260a6b137f08780d9e96b6733a6a",
-    "worktreeDigest": "sha256:c3803427b40d9f4a1335a7d44b22f50d8a6cd689e70f8325f2c16f19d4778259",
-    "sourceTreeDigest": "sha256:5eba2f48f679ead80edf81c51a938d1f8641c08724a5ee97102eeec213e34c69",
+    "baseHeadSha": "2acd276da43f09d7ba38281d65acc97fae61e88b",
+    "worktreeDigest": "sha256:706a9fb02bc4950e81545b9acf4096b1b5c8b562dc0dea5cac73d9fdb90276da",
+    "sourceTreeDigest": "sha256:616c0a2f4de7ce0cba5950027c59bc7ba607dd0a8c0facf67e05e791a63b5e70",
     "modelDigest": "sha256:a11afbf16edf9e822bf02222d331beb8c050ef0b659ae605c23183193b10bbd5",
-    "codeGraphDigest": "sha256:45b4c03e19c59f7f3fb4924c24fd074a507086d2fa1cabc942cbfeb3246bda32",
-    "indexedWorktreeDigest": "sha256:2afbbeb5ba9942179dac374ddae3ed90f1927eabd0ffa9e992dc39493f25b828",
+    "codeGraphDigest": "sha256:ee9243fc266eb6db086b72a6ba8581fbab97c84794ed0f1737c6d5d4c9d55a93",
+    "indexedWorktreeDigest": "sha256:730e84ec8055220f983fa9082e62b814c1a39ba5c27eabdf5f9988e2370eb7bc",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:91da385888161a703497ac9e574311d8072f96f9ccb5a2e9325d052b65f61780"
+    "projectionInputDigest": "sha256:075c345a10c243415b9e57b4b6758ca44e8d93d31060eac1d07755537be7312d"
   },
-  "projectionDigest": "sha256:f04285c91b5fbef11c3273f7ff3e4f21b9abdab239d34fedcbc977f4ffd01dca",
+  "projectionDigest": "sha256:53c8fcb356c76ea1cf1a40c65a30d8e905af73c2e194221c3695ee6e1b25c549",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -709,12 +709,12 @@
     },
     "digests": {
       "modelDigest": "sha256:a11afbf16edf9e822bf02222d331beb8c050ef0b659ae605c23183193b10bbd5",
-      "sourceTreeDigest": "sha256:5eba2f48f679ead80edf81c51a938d1f8641c08724a5ee97102eeec213e34c69",
+      "sourceTreeDigest": "sha256:616c0a2f4de7ce0cba5950027c59bc7ba607dd0a8c0facf67e05e791a63b5e70",
       "flowProofDigest": "sha256:938dadfc988b732b6a67413ece104c062bb257ffd9f67caaf7db04dbc957b983",
-      "projectionDigest": "sha256:f04285c91b5fbef11c3273f7ff3e4f21b9abdab239d34fedcbc977f4ffd01dca"
+      "projectionDigest": "sha256:53c8fcb356c76ea1cf1a40c65a30d8e905af73c2e194221c3695ee6e1b25c549"
     }
   },
-  "receiptDigest": "sha256:de1a433a691bd430a72400119d4aa8c9b6652c4574b735b9f955a0f77156a1b4",
+  "receiptDigest": "sha256:dea765bce9280558774b85d91ddb16e138d47fde0c1ef3245abaf6f7ea635cca",
   "refreshSignalIds": [],
   "targetCount": 33,
   "fileCount": 33,
@@ -1028,8 +1028,8 @@
       "outputDigest": "sha256:b81a8870d378fb065ad73aef39b59bfcf3ba7ec57a741e1c22524cf6f9684194",
       "verifiedAgainst": {
         "branch": "codex/architecture-accept-recovery",
-        "commit": "46db97c39c44fae73606ca6aefcea1b7b1c6b759",
-        "committedAt": "2026-09-24T14:06:29+08:00"
+        "commit": "2acd276da43f09d7ba38281d65acc97fae61e88b",
+        "committedAt": "2026-09-25T16:52:35+08:00"
       }
     },
     {
@@ -1047,9 +1047,9 @@
       "sourceDigest": "sha256:132d8cab10d94dc2d5add313cea2a2cfa120b63b2d180ff084f4d9a0fae044bf",
       "outputDigest": "sha256:49427c6729ca7883ed1d9f6f3b23ac6c4ed307748a6344c0e24a4bed00b701ce",
       "verifiedAgainst": {
-        "branch": "codex/architecture-projection-continuation",
-        "commit": "228dddc533586499d4f03ca19fabd8e702cb87c5",
-        "committedAt": "2026-09-16T13:11:25+08:00"
+        "branch": "codex/architecture-accept-recovery",
+        "commit": "2acd276da43f09d7ba38281d65acc97fae61e88b",
+        "committedAt": "2026-09-25T16:52:35+08:00"
       }
     },
     {
@@ -1228,8 +1228,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/architecture-accept-recovery",
-        "commit": "c1bc2af464e1260a6b137f08780d9e96b6733a6a",
-        "committedAt": "2026-09-25T07:52:21+08:00"
+        "commit": "2acd276da43f09d7ba38281d65acc97fae61e88b",
+        "committedAt": "2026-09-25T16:52:35+08:00"
       }
     },
     {
