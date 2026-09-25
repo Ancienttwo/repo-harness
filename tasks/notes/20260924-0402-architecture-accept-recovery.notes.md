@@ -50,7 +50,7 @@ Local package integration uses unpublished source tarballs named 0.5.10 in an is
 
 The implementation worker reports the final three focused files at 59 pass / 0 fail and `bun run check:type` pass using the isolated unpublished provider/contracts packages. All nine root integrity commands pass; task-sync binds this final substantive diff below. The same source gate rechecked its finding and returned PASS after reading the focused test and typecheck logs. Real packaged CLI apply/readback composition succeeded in a disposable fixture with fault-injected consumer refresh actions. `integration-artifact-check.log` confirms one final acceptance receipt and one refresh receipt; `isolated-daemon-stop.log` confirms running:false, the former PID absent, and no connection/lock files. The evidence lives in `.ai/harness/runs/accept-recovery/`. No canonical AcceptanceReceipt or release is claimed.
 
-> **Substantive Change SHA256**: `sha256:97d0915b3748c4fcfb4d76e86f30babbe43bd9ad4e6d30a210953d385d6a7cbb`
+> **Substantive Change SHA256**: `sha256:810f9b7e81761355d2a70738dbffb4fdbbf52a58580cfd5c92b090432f9f1d12`
 
 ## Remaining delivery boundary
 
@@ -88,3 +88,6 @@ Update: with a clean empty `TMPDIR` for the gate run (no deletion of the machine
 
 Correction: `.codegraph/` is not the cause of the release-worktree timeout. With the index moved behind an out-of-tree symlink the case still stops at 60 s. The timeout comes from `write_owner_marker` in `scripts/sync-codex-installed-copies.sh`. It digests every copied file through a per-file shell loop (`printf` plus `cat`) for each of three installed copies of the roughly 5k-file source tree, `tasks/archive` included. At about 2.6 ms per process spawn on this machine, that exceeds the script's 60 s budget; hosted Linux CI stays under it. The missing `.codegraph/` exclude remains a separate defect: macOS openrsync fails on `.codegraph/daemon.sock` whenever a CodeGraph daemon runs in the source checkout. Both repairs are outside this contract's allowed paths.
 
+## Third release-gate repair: installed-copy hashing (2026-09-25)
+
+The owner approved both repairs for 0.19.3 on 2026-09-25 and the contract scope was widened for them. `managed_tree_hash()` in `scripts/sync-codex-installed-copies.sh` now calls `skill-surface-select.ts managed-tree-hash`, which prints the exported `hashManagedTree()` from `src/cli/installer/install-profile.ts`. That function already produced the identical stream for the TS installer, so owner-marker hashing now has one authority and one process per copy instead of one per file; a failed call exits non-zero with a clear message. The marker JSON format is unchanged. A parity test in `tests/installed-copy-sync.test.ts` runs the retired shell body against the new subcommand over a tree with binary/NUL bytes, nested directories, a symlink and nested owner markers, so markers written by existing installs still verify. `common_excludes` now also skips `.codegraph/`. The fixture seed copies all of `src/` because the subcommand loads the installer module lazily.

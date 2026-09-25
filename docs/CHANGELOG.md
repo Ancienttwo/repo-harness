@@ -28,6 +28,11 @@ All notable changes to this skill are documented here.
 - `sprint-backlog status`, `next` and `start-task` drain their row selectors
   instead of exiting early, so long backlogs no longer fail with SIGPIPE (141)
   under `pipefail`; the heartbeat triage summary read has the same repair.
+- Installed-copy sync hashes managed copies through the installer's TypeScript
+  tree hash instead of spawning a process per file, so copy-mode sync of a large
+  source tree stays within its time budget on macOS; existing ownership markers
+  still verify. The copy also skips `.codegraph/`, whose daemon socket macOS
+  rsync cannot recreate.
 
 ### Changed
 

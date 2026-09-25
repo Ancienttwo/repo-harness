@@ -21,7 +21,7 @@ Provide explicit supported recovery of the exact interrupted acceptance, retaini
 
 ## Scope
 
-- In scope: exact-candidate recovery in acceptance/provider/CLI, focused regression guards and owning documentation; approved 0.5.11 dependency integration across both consumers, generated policy defaults and existing version-bound fixtures. The user also approved repo-harness 0.19.3 release metadata, package verification and npm publication using Web Auth.
+- In scope: exact-candidate recovery in acceptance/provider/CLI, focused regression guards and owning documentation; approved 0.5.11 dependency integration across both consumers, generated policy defaults and existing version-bound fixtures. The user also approved repo-harness 0.19.3 release metadata, package verification and npm publication using Web Auth. Owner-approved (2026-09-25) third release-gate repair: installed-copy tree hashing through the single TS authority and `.codegraph/` rsync exclusion.
 - Out of scope: global runtime installation, provider internal journal edits, H0 admission, manual receipt creation, unrelated AKN-03c changes and new approval grants.
 
 ## Stop Conditions
@@ -68,6 +68,10 @@ Recovery repeats semantic apply, accepts another approval or changed snapshot, d
 
 ```yaml
 allowed_paths:
+  - scripts/sync-codex-installed-copies.sh
+  - scripts/skill-surface-select.ts
+  - src/cli/installer/install-profile.ts
+  - tests/installed-copy-sync.test.ts
   - assets/skill-version.json
   - README.md
   - README.zh-CN.md
