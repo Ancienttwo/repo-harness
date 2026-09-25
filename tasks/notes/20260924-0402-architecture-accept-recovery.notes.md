@@ -75,3 +75,5 @@ The first frozen `release-full` run failed `tests/characterization/repair-campai
 ## Rebased integration base
 
 On 2026-09-25 the branch was rebased cleanly onto `7afcbc46d0b623442e98a92ca42d093619576e64` (PR #450). The release gate diff base follows it. archctx bug-fix PRs merged upstream after 0.5.11 remain unpublished; no newer archctx registry version exists, so the exact 0.5.11 pins stay. Publishing a new archctx version is not part of this authorization.
+
+The ignored `.ai/harness/runs/accept-recovery/pre-fix.log` was lost with the removed original worktree. It was regenerated on 2026-09-25 by running the fix commit's regression case `recovers an accepted apply when refresh fails after the provider commit` against the rebased pre-fix parent `db2be365`; it fails with `AC_PRECONDITION_FAILED` from `projection-acceptance.ts:178`, matching the recorded root cause. The log header records the source tree, the single removed fix-only import and the exact command.
