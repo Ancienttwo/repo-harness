@@ -245,6 +245,7 @@
 - 契约只生成适用区块；解析 / 规范化 / 元数据校验共用已有合适的 TS 模块，shell 与 runner 都消费它。只有观察到共同消费者与不变量才提取共享模块，不以委派 runner `contract-run.ts` 为公共依赖中心。
 - capability 仅供范围建议。工作包可批准目录 glob，无须逐文件枚举；投影结果必须是明确批准范围的子集。helper / 调用方需扩展时，在同一工作包内显式扩展，不自动扩大、不拆成微任务。
 - 去重针对真实 helper 实现与调用者，保持行为；删除 `re-port` 注释不是验收。历史证据不改写；活动契约通过明确升级或关闭迁移，不留新旧语义长期双读。
+- 外部审查只保留 Herdr 一条传输（HS5b，2026-09-25 用户批准）：Codex / Claude 作为审查者都经 Herdr 会话启动，复用 `claude-review-session` 已有的 Herdr 驱动；删除 codex-plugin provider、直调 `codex exec` 分支与宿主自动选路。AcceptanceReceipt `source` 收敛为审查者维度，只保留 gate 需要的结构化结论（verdict 与 findings 级别），审查过程记录对应 harness session 的 transcript path 以供追溯，不复制转录；活动契约一次性迁移，历史归档回执原样保留、按 path 追溯，新代码不再验证旧格式，因此无双读。subject 钉定与 `stale_scope` 重算、结构化结果文件校验、严重级别映射、P1 即 FAIL 与两次尝试上限不变；缺 Herdr 时 fail-closed。
 
 ### M5 可选能力（后置，不阻塞核心收口）
 
@@ -269,7 +270,7 @@
 
 - HS2 先于 HS4 / HS7 合入；每行风险都按最终 diff 和精确目标分支规则计算。不得预先宣布 HS2 是 Standard，或利用旧引擎对自身的漏判降低切换验收。
 - `Mode=contract` 明确接受既有 plan → contract → worktree 流程，不论最终 profile；轻任务只用已有 inline 语义并验真实行为。不新造模式、不承诺非 Strict contract 行自动免工件。
-- 保留原十个 task ID。核心顺序为 HS0 → HS1 → HS2 → HS4 → HS3 → HS5 → HS7 → HS8；HS6a 可旁线调查，HS6b 后置。机器队列顺序与此一致；HS8 是核心里程碑，不在后置行未完成时声称整个 Sprint Done。
+- 保留原十个 task ID，并新增 HS5b（2026-09-25 用户批准）。核心顺序为 HS0 → HS1 → HS2 → HS4 → HS3 → HS5 → HS5b → HS7 → HS8；HS6a 可旁线调查，HS6b 后置。机器队列顺序与此一致；HS8 是核心里程碑，不在后置行未完成时声称整个 Sprint Done。
 - SIGPIPE 前置小修调整 `next_pending_row` 与 `start-task` 的 `target_row` 选择器（`scripts/sprint-backlog.sh:1046`），输出首条匹配后读完上游输入。真实 status / next 覆盖长 backlog、无待办及上游错误传播，真实 start-task 覆盖长 backlog 中选择靠前行并正确生成计划；不需要额外 PRD 或测试报告。
 
 ## Developer Handoff / Review Follow-through
