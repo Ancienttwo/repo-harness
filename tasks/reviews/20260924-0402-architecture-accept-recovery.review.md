@@ -1,16 +1,16 @@
 # Task Review: architecture-accept-recovery
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260924-0402-architecture-accept-recovery.md
 > **Contract**: tasks/contracts/20260924-0402-architecture-accept-recovery.contract.md
 > **Notes File**: tasks/notes/20260924-0402-architecture-accept-recovery.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-24 04:02
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:525cc3a0e700b11f0b8269aa6d30d27f338882727c29070eec4b3c6f16a60165
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 6a0977924c4b9d23f503fe9e67a734b77e1b8f77
 
 ## Human Review Card
 
@@ -54,18 +54,18 @@ screenshot/artifact path, or reviewer observation.
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:525cc3a0e700b11f0b8269aa6d30d27f338882727c29070eec4b3c6f16a60165
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 6a0977924c4b9d23f503fe9e67a734b77e1b8f77
+> **Verification Evidence SHA256**: sha256:a0e373f38f5a50c4af8a833825730be2b8e6994f7466d8b0ccf8b95f63c5bd37
+> **Issued At**: 2026-09-25T16:58:28.352Z
 
-- Summary: No AcceptanceReceipt has been recorded.
-- Findings: none
+- Summary: codex-plugin adversarial review round 3 of e7ad3ed1 (base 6a097792): needs-attention with one medium finding and no P1. Later commits change only CHANGELOG wording, the gate job count and notes. Full release gate Fulfilled on 7f8a437a.
+- Findings: P2: Adoption-mode acceptance reaches contradictory receipt requirements (archctx-provider rejects an apply receipt for non-apply requests while assertAcceptedResult requires one); pre-existing on main 6a097792, recorded under CHANGELOG Limits and deferred with the provider-side recovery proof.
 
 ## Behavior Diff Notes
 
