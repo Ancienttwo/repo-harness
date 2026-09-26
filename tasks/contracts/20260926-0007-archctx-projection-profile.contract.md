@@ -1,6 +1,6 @@
 # Task Contract: archctx-projection-profile
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260926-0007-archctx-projection-profile.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
