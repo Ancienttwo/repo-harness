@@ -14,12 +14,12 @@ No AcceptanceReceipt, installed runtime proof, release or merge. ArchContext exi
 > **Reviewer**: Codex
 > **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:2f6d50896d952d0e3ea48879fac7a0418c6cc0dcb0fe5bdc42279bcaf5fdd5de
+> **Reviewed Subject SHA256**: sha256:2c27484382e8a69f61d3c4a07e87a5039e752f0328bd6ab10c231a428ed27c27
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: fd6bec20a1db705e60cf8e61f129c121c6c19b0b
-> **Verification Evidence SHA256**: sha256:6815ddcd834ac1037a4a88cdd2fc69836c9288def768b03f4a406f7dd15af5ee
-> **Issued At**: 2026-09-26T04:38:00.910Z
+> **Verification Evidence SHA256**: sha256:f1771cb79b44186d6cab2930d9282c78d7971df0949656fad7ba6a2e9ea15d61
+> **Issued At**: 2026-09-26T05:06:14.653Z
 
-- Summary: The existing reviewed consumer boundary preserves explicit projection identity and canonical path validation without ownership translation. The current source is unchanged; reviewed daemon-generated manifest retains model and flow-proof identities. Frozen exact-target verification passes all 13 criteria, projection is a clean noop, and the proof-unavailable candidate was reconciled through its supported owner. No cloud or package release acceptance is inferred.
+- Summary: Reviewed the approved campaign fixture delta against the previously accepted projection consumer: automatic maintenance is disabled locally before fixture mutations, with a real Git trace positive control and executed red-green regression. Full closeout tests and all 14 frozen contract criteria pass. Daemon-generated manifest preserves model and flow-proof identities. No product closeout semantics, dependency versions or snapshot error handling changed. Hosted CI and release are separate gates.
 - Findings: none
 
