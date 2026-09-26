@@ -140,3 +140,12 @@ Pinned Bun 1.4.0 with task-scoped TMPDIR. Existing architecture-projection provi
 Local counterpart correction is verified: 72 provider/orchestration tests, 389 assertions, typecheck and all required integrity checks pass. Task-sync first requested its exact substantive digest, then passed after the canonical note was bound. The independent read-only consumer security review found no introduced/worsened issue. A real ArchContext fresh initialized model configured through daemon ChangeSet produces the same targets in producer and consumer while retaining nested globs/exclusions and omitting unrelated metadata.
 
 This is not installed-runtime or whole-plan acceptance. ArchContext live migration rolled back on its existing ADR write allowlist; its root AGENTS/CLAUDE write guard also conflicts with explicit profile targets. No dependency bump, release, global installation, remote publication or merge occurred. Preserve this isolated counterpart for the follow-up writer-contract slice and final paired acceptance.
+
+## Approved CI repair continuation
+
+Owner approved diagnosing and fixing the two campaign-closeout CI failures. P1: closeout tests materialize a cached historical campaign repository; the adoption builder owns Git initialization, while fixtureTemplate owns byte-for-byte snapshot and restore. P2: createAdoptionRepository -> historicalPlanningFixture commits/merge -> fixtureTemplate.capture cpSync -> Git removes objects/maintenance.lock while cpSync enumerates it (hosted ENOENT). P3 hypothesis: disable automatic Git maintenance in this disposable repository before its first commit, preserving all snapshot bytes and closeout semantics. Prove child-process admission with Git trace before applying the fix. At higher fixture concurrency an unquiesced background writer increases copy races. No copy retries, lock-file filtering, or product changes.
+
+- [x] Prove the automatic-maintenance writer with a failing regression and positive trace control.
+- [x] Configure the adoption fixture before Git mutations and run the full existing closeout test file.
+- [x] Record evidence and prepare the bounded CI repair for the existing PR.
+- [ ] Confirm hosted CI and refresh formal acceptance for the new subject.

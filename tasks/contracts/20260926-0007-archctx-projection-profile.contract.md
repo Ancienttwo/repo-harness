@@ -1,6 +1,6 @@
 # Task Contract: archctx-projection-profile
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260926-0007-archctx-projection-profile.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -23,6 +23,7 @@ Resolve explicit repo-harness/v1 projection targets independently of ownership m
 
 - In scope: projection provider target discovery, existing provider tests, paired ArchContext candidate validation and this work-package artifacts.
 - Owner-approved closeout: worktree-local CodeGraph indexing, supported daemon/runtime alignment, proof-only reconciliation, and the daemon-generated projection manifest required by normal acceptance. Publication and adoption are part of the requested ArchContext issue closeout; no package registry release is inferred.
+- Owner-approved CI repair (2026-09-26): diagnose and repair only the campaign-closeout fixture snapshot failure, including its shared adoption-repository builder and a deterministic regression in the existing closeout test. Other unrelated repairs remain excluded.
 - Out of scope: ownership registry behavior, dependency versions, global installation, release, merge and unrelated repairs.
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
@@ -74,6 +75,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - src/effects/architecture/archctx-provider.ts
   - tests/architecture-projection-provider.test.ts
+  - tests/helpers/campaign-adoption-repository.ts
+  - tests/effects/campaign-closeout.test.ts
   - docs/architecture/.projection-manifest.json
   - plans/plan-20260926-0007-archctx-projection-profile.md
   - tasks/contracts/20260926-0007-archctx-projection-profile.contract.md
@@ -142,6 +145,13 @@ exit_criteria:
 {
   "protocol": 1,
   "checks": [
+    {
+      "id": "campaign-closeout", "kind": "command", "cwd": ".",
+      "phase": "verification", "cost": "normal", "evidence_policy": "current_exact",
+      "necessity": "Owner-approved CI fixture race repair and existing closeout behavior",
+      "inputs": { "env": ["PATH", "TMPDIR"] },
+      "command": "bun test tests/effects/campaign-closeout.test.ts"
+    },
     {
       "id": "projection-provider",
       "kind": "command",

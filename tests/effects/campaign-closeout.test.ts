@@ -43,6 +43,21 @@ async function fixture(recoveryBudget = false) {
     ledger: () => readCampaignBudgetLedger(f.root, budget.automation_run_id, f.env) };
 }
 
+test('campaign fixture commits stay quiescent for repository snapshots', async () => {
+  const f = await fixture();
+  const trace = join(f.home, 'git-maintenance.trace');
+  const commitTrace = (config: string[]) => {
+    writeFileSync(trace, '');
+    execFileSync('git', [...config, 'commit', '--allow-empty', '-qm', 'snapshot maintenance probe'], {
+      cwd: f.root, env: { ...process.env, GIT_TRACE: trace }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return readFileSync(trace, 'utf8');
+  };
+  // Positive control proves this Git build exposes automatic maintenance in its trace.
+  expect(commitTrace(['-c', 'maintenance.auto=true', '-c', 'maintenance.autoDetach=false'])).toContain('maintenance run --auto');
+  expect(commitTrace([])).not.toContain('maintenance run --auto');
+}, 60_000);
+
 test('unknown mutation consumes only its pre-reserved readback and never sends again', async () => {
   const f = await fixture(); const before = f.ledger().provider_calls; const calls: string[] = [];
   const github_runner = (args: readonly string[]) => {
