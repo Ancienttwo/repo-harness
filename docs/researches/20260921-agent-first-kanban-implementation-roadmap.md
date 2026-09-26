@@ -2,7 +2,7 @@
 
 > **Status**: Draft
 > **Created**: 20260921-1755
-> **Updated**: 2026-09-21
+> **Updated**: 2026-09-24
 > **Revision**: 3 — Campaign入口、turn边界、Steer恢复与执行切片分离
 > **Spec**: `docs/spec.md`
 > **Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
@@ -406,7 +406,19 @@ Fleet placement修复和新browser schema分别升级实际protocol，当前基�
 
 AKN-00独立Draft：[AKN-00：固定原生执行路径准入与故障证据](../../plans/plan-20260921-1946-akn00-native-execution-admission.md)。
 
-AKN-00本轮交付：[固定路径准入结论](20260921-akn00-native-execution-admission.md)为`runtime_not_admitted`；当前0.154.0无匹配probe，Campaign native集成未评估。AKN-01—07仍未进入实施。
+### 2026-09-24 实施状态读回
+
+本表更新交付事实，不改变 Revision 3 的产品目标或权限边界。历史基线与原 canary 仅覆盖各自 subject。
+
+| 包 | 当前交付与剩余边界 |
+|---|---|
+| AKN-00 | 已交付固定路径拒绝报告；[0.156.1 只读能力复核](20260921-akn00-native-execution-admission.md)发现静态 sandbox 接口，但缺所选拓扑的认证 principal/epoch、动态撤销、完整停止与原 effect 查询证据。H0 未成立，不新增假 probe；0.154.0 旧 subject 不适用 |
+| AKN-01 / AKN-02 | 未开始；仍需 H0 与 §3.1 的真实 Campaign 前置链，policy off 不变 |
+| AKN-03 | reply 协议与受保护持久化已合入；03c exact notify receipt / bounded reconciliation 正在独立收口。真实 Host consume/同 turn steer 尚未证明 |
+| AKN-04 / AKN-05 / AKN-06 | 监察、三视图、刷新与历史层已合入（#439、#447）；不抵扣 AF/ST 真实执行验收 |
+| AKN-07 | 未开始；需要已准入 Host、同场景真实执行与安装包证据 |
+
+AF-01 的零人工机械操作和真实 steer 消费仍未证明。不得把监察层合入解释为“Agent 可自动推进”；本轮也未选择长期降级为仅监察或批准新准入拓扑。
 
 AKN-00产物必须包括明确admission裁决，不因没有可用Host就转而把UI发布成已完成自动化。AKN-01–03是P0纵向证明，最小文本/CLI观察即可验收；AKN-04–07完善人类监察。发布依赖按H0→native真实执行→纵向闭环→产品声明；开发许可则允许独立批准的只读修复、协议/恢复负例和blocked观察在H0之前进行。执行与steer未知时不能冻结假的“运行中/已采纳”UI。
 
@@ -468,7 +480,7 @@ bun run build:operator-web
 - 运行中回滚：先按领域停止/等待合法安全边界并证明inactive或保留reconciliation_required；不得用恢复旧包掩盖仍运行的新effect。
 - 本期不启guarded merge、不自动下一组，不将单任务canary等同BRC14/BRC15 acceptance。后者按`tasks/todos.md`原条目逐项补实际证据，由原验收机制决定是否收口。
 
-**下一刀为已展开的AKN-00：固定路径Host准入报告与故障证据。** 理由是当前候选CLI与现有probe版本不匹配，且没有native写执行的正向证据；入口为独立AKN-00计划和`scripts/me2b-runtime-admission-canary.ts`。这一刀只决定Host能力是否成立；AKN-01仍另需合法Campaign前置事实与native consumer集成验收。
+**下一刀为 AKN-03c 的 source-level 协议收口。** 入口为 `plans/plan-20260922-0301-akn03-notify-reconciliation.md` 对应工作分支的 source/projection/verification/acceptance；其 Host dispatch 仍不在此包内。H0 在 0.156.1 只读复核后继续阻塞真实自动推进；待 Host 提供缺失证据接口，或获批重新冻结准入拓扑后，再展开完整 probe。AKN-01 仍另需合法 Campaign 前置事实与 native consumer 集成验收。
 
 ## 13. 本轮文档验证记录
 
