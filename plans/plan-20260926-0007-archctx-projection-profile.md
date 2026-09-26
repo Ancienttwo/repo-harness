@@ -17,6 +17,9 @@
 > **Implementation Notes**: `tasks/notes/20260926-0007-archctx-projection-profile.notes.md`
 
 ## Agentic Routing
+
+Owner continuation (2026-09-26): create the CodeGraph index only in this worktree and complete normal acceptance for the consumer. Preserve architecture writer ownership; include only the resulting daemon-generated manifest in the scope. Resolve the previous proof-unavailable candidate through the supported proof-only reconciliation command. Do not fabricate semantic acceptance or weaken verification.
+
 - Selected route: planning
 - Routing reason: Captured from codex-plan planning output.
 - Source ref: (none)

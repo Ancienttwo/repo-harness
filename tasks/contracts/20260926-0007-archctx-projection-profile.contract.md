@@ -22,6 +22,7 @@ Resolve explicit repo-harness/v1 projection targets independently of ownership m
 ## Scope
 
 - In scope: projection provider target discovery, existing provider tests, paired ArchContext candidate validation and this work-package artifacts.
+- Owner-approved closeout: worktree-local CodeGraph indexing, supported daemon/runtime alignment, proof-only reconciliation, and the daemon-generated projection manifest required by normal acceptance. Publication and adoption are part of the requested ArchContext issue closeout; no package registry release is inferred.
 - Out of scope: ownership registry behavior, dependency versions, global installation, release, merge and unrelated repairs.
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
@@ -73,6 +74,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - src/effects/architecture/archctx-provider.ts
   - tests/architecture-projection-provider.test.ts
+  - docs/architecture/.projection-manifest.json
   - plans/plan-20260926-0007-archctx-projection-profile.md
   - tasks/contracts/20260926-0007-archctx-projection-profile.contract.md
   - tasks/notes/20260926-0007-archctx-projection-profile.notes.md
