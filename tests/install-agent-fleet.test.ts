@@ -660,6 +660,7 @@ describe("install-agent-fleet", () => {
           ...process.env,
           HOME: home,
           PATH: `${fakeBin}:/usr/bin:/bin`,
+          REPO_HARNESS_BUN_BIN: "",
         },
       });
       expect(res.status).not.toBe(0);
@@ -704,10 +705,63 @@ describe("install-agent-fleet", () => {
           ...process.env,
           HOME: home,
           PATH: `${fakeBin}:/usr/bin:/bin`,
+          REPO_HARNESS_BUN_BIN: "",
         },
       });
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: installed");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a handed-off Bun below the version floor fails closed instead of falling back to PATH discovery", () => {
+    const { root, home } = setupFakeHome("install-agent-fleet-handoff-below-floor");
+    const fakeBin = join(root, "bin");
+    const handoffBun = join(root, "handoff", "bun");
+    const homeBun = join(home, ".bun/bin/bun");
+    try {
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(dirname(handoffBun), { recursive: true });
+      mkdirSync(join(home, ".bun/bin"), { recursive: true });
+      // The handed-off Bun (what a caller like `global-runtime.ts` already
+      // validated) is below the version floor.
+      writeFileSync(
+        handoffBun,
+        ['#!/bin/sh', 'if [ "$1" = "--version" ]; then', "  echo 1.3.14", "  exit 0", "fi", "exit 99", ""].join("\n"),
+      );
+      // A supported Bun sits at the HOME fallback location the pre-fix
+      // discovery loop would have found. The fail-closed handoff must never
+      // reach it: a caller that already validated a Bun gets that Bun
+      // exclusively, not a silent substitute.
+      writeFileSync(
+        homeBun,
+        [
+          "#!/bin/sh",
+          'if [ "$1" = "--version" ]; then',
+          "  echo 1.4.0",
+          "  exit 0",
+          "fi",
+          `exec ${JSON.stringify(process.execPath)} "$@"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(handoffBun, 0o755);
+      chmodSync(homeBun, 0o755);
+      const res = spawnSync("bash", [SCRIPT], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:/usr/bin:/bin`,
+          REPO_HARNESS_BUN_BIN: handoffBun,
+        },
+      });
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain("requires Bun >= 1.4.0 (found: 1.3.14)");
+      expect(existsSync(join(home, ".claude"))).toBe(false);
+      expect(existsSync(join(home, ".codex"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
