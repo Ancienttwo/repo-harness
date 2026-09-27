@@ -671,6 +671,25 @@ describe("install-agent-fleet", () => {
     }
   }, 30_000);
 
+  test("an invalid explicit Bun fails closed despite a supported PATH Bun", () => {
+    const { root, home } = setupFakeHome("fleet-explicit-bun-invalid");
+    try {
+      const supportedBin = join(root, "supported-bin");
+      mkdirSync(supportedBin);
+      symlinkSync(process.execPath, join(supportedBin, "bun"));
+      const result = runInstaller(home, FLEET_SOURCE_DIR, [], {
+        REPO_HARNESS_BUN_EXECUTABLE: join(root, "missing-runtime"),
+        PATH: `${supportedBin}:${process.env.PATH}`,
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("requires bun");
+      expect(existsSync(join(home, ".claude"))).toBe(false);
+      expect(existsSync(join(home, ".codex"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("a supported HOME Bun wins when PATH resolves an unsupported Bun", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-home-bun-fallback");
     const fakeBin = join(root, "bin");

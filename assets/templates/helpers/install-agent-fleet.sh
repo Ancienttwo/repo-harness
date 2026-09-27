@@ -16,8 +16,13 @@ bun_version_is_supported() {
 
 RUNTIME_BIN=""
 BUN_VERSION=""
-PATH_BUN="$(command -v bun 2>/dev/null || true)"
-for candidate in "$PATH_BUN" "${HOME}/.bun/bin/bun"; do
+if [[ -n "${REPO_HARNESS_BUN_EXECUTABLE:-}" ]]; then
+  bun_candidates=("$REPO_HARNESS_BUN_EXECUTABLE")
+else
+  PATH_BUN="$(command -v bun 2>/dev/null || true)"
+  bun_candidates=("$PATH_BUN" "${HOME}/.bun/bin/bun")
+fi
+for candidate in "${bun_candidates[@]}"; do
   [[ -n "$candidate" && -x "$candidate" ]] || continue
   candidate_version="$("$candidate" --version 2>/dev/null || true)"
   [[ -n "$BUN_VERSION" ]] || BUN_VERSION="$candidate_version"

@@ -172,6 +172,7 @@ function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: st
   const activePath = env?.PATH ?? process.env.PATH ?? "";
   return {
     ...(env ?? process.env),
+    REPO_HARNESS_BUN_EXECUTABLE: bunExecutable,
     PATH: [dirname(bunExecutable), activePath].filter(Boolean).join(delimiter),
   };
 }
