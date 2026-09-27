@@ -394,6 +394,53 @@ describe('install command global runtime bootstrap', () => {
     }
   }, 30_000);
 
+  test('the agent fleet helper runs on the validated Bun when that executable is not named bun', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-fleet-bun-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    // npm-distributed Bun ships its executable as node_modules/bun/bin/bun.exe.
+    const validatedBun = join(tmp, 'npm', 'node_modules', 'bun', 'bin', 'bun.exe');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(join(validatedBun, '..'), { recursive: true });
+      symlinkSync(process.execPath, validatedBun);
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...sanitizedChildEnv(),
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:/usr/bin:/bin`,
+          REPO_HARNESS_BUN_EXECUTABLE: validatedBun,
+        },
+      });
+
+      expect(result.steps.find((step) => step.step === 'ensure Bun runtime')).toMatchObject({
+        status: 'skipped',
+        command: [validatedBun, '--version'],
+      });
+      const fleet = result.steps.find((step) => step.step === 'install agent fleet');
+      expect(fleet?.status, `${fleet?.stderr ?? ''}${fleet?.stdout ?? ''}`).toBe('ok');
+      expect(existsSync(join(home, '.codex', 'agents', 'fast-worker.toml'))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('installs CLI, hooks, Waza, brain root, and CodeGraph without setup-plugins.sh', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-'));
     const source = join(tmp, 'node_modules', 'repo-harness');
