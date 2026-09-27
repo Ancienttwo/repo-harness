@@ -20,6 +20,7 @@ import {
   archctxCapabilities,
   inspectArchitectureProjectionReadiness,
   captureArchitectureProjectionSnapshot,
+  architectureProjectionOwnedPaths,
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   readArchitectureProjectionApply,
@@ -38,6 +39,44 @@ const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as c
 const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+test('projection profile targets do not require ownership-registry metadata or prefix grammar', () => {
+  const { repoRoot } = fixture();
+  const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
+  const node = Bun.YAML.parse(readFileSync(path, 'utf8')) as Record<string, any>;
+  delete node.responsibilities;
+  delete node.extensions.lspProfile;
+  delete node.extensions.verification;
+  node.source = { include: ['packages/**/src/**'], exclude: ['packages/**/test/**'] };
+  writeFileSync(path, Bun.YAML.stringify(node));
+  expect(architectureProjectionOwnedPaths(repoRoot)).toEqual(['AGENTS.md', 'CLAUDE.md', 'docs/architecture']);
+  expect(captureArchitectureProjectionSnapshot(repoRoot).headSha).toMatch(/^[a-f0-9]{40}$/);
+});
+
+test('projection target discovery includes inactive capabilities rendered by the producer', () => {
+  const { repoRoot } = fixture();
+  const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('status: active', 'status: deprecated'));
+  expect(architectureProjectionOwnedPaths(repoRoot)).toEqual(['AGENTS.md', 'CLAUDE.md', 'docs/architecture']);
+});
+
+test('projection profile rejects invalid identity and unsafe or wrong contract targets', () => {
+  const { repoRoot } = fixture();
+  const path = join(repoRoot, '.archcontext/model/nodes/capability.test.core.yaml');
+  const original = readFileSync(path, 'utf8');
+  for (const invalid of ['../AGENTS.md', '/tmp/AGENTS.md', 'src/../AGENTS.md', 'src\\AGENTS.md', 'src/OTHER.md', 'src//AGENTS.md']) {
+    const node = Bun.YAML.parse(original) as Record<string, any>;
+    node.extensions.contractFiles.agents = invalid;
+    writeFileSync(path, Bun.YAML.stringify(node));
+    expect(() => architectureProjectionOwnedPaths(repoRoot)).toThrow();
+  }
+  writeFileSync(path, original.replace('id: capability.test.core', 'id: capability.core'));
+  expect(() => architectureProjectionOwnedPaths(repoRoot)).toThrow();
+  const node = Bun.YAML.parse(original) as Record<string, any>;
+  delete node.extensions.contractFiles;
+  writeFileSync(path, Bun.YAML.stringify(node));
+  expect(() => architectureProjectionOwnedPaths(repoRoot)).toThrow();
+});
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-archctx-provider-'));
