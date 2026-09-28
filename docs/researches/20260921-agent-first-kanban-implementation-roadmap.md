@@ -480,7 +480,7 @@ bun run build:operator-web
 - 运行中回滚：先按领域停止/等待合法安全边界并证明inactive或保留reconciliation_required；不得用恢复旧包掩盖仍运行的新effect。
 - 本期不启guarded merge、不自动下一组，不将单任务canary等同BRC14/BRC15 acceptance。后者按`tasks/todos.md`原条目逐项补实际证据，由原验收机制决定是否收口。
 
-**下一刀为 AKN-03c 的 source-level 协议收口。** 入口为 `plans/plan-20260922-0301-akn03-notify-reconciliation.md` 对应工作分支的 source/projection/verification/acceptance；其 Host dispatch 仍不在此包内。H0 在 0.156.1 只读复核后继续阻塞真实自动推进；待 Host 提供缺失证据接口，或获批重新冻结准入拓扑后，再展开完整 probe。AKN-01 仍另需合法 Campaign 前置事实与 native consumer 集成验收。
+**下一刀为 AKN-03c 的 source-level 协议收口。** 该 work-package 计划尚未提交入库；展开前须先以 `repo-harness run capture-plan --artifact-level work-package` 固化其 source/projection/verification/acceptance，已合入的 AKN-03 历史计划见 `plans/archive/plan-20260922-*-akn03*.md`；其 Host dispatch 仍不在此包内。H0 在 0.156.1 只读复核后继续阻塞真实自动推进；待 Host 提供缺失证据接口，或获批重新冻结准入拓扑后，再展开完整 probe。AKN-01 仍另需合法 Campaign 前置事实与 native consumer 集成验收。
 
 ## 13. 本轮文档验证记录
 
