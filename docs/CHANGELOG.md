@@ -2,6 +2,30 @@
 
 All notable changes to this skill are documented here.
 
+## [0.19.4] - 2026-09-28
+
+### Fixed
+
+- The agent fleet installer receives the runtime's already-validated Bun
+  executable through `REPO_HARNESS_BUN_BIN` instead of re-discovering `bun`
+  by name on `PATH`; a handed-off Bun below the version floor now fails the
+  whole helper closed instead of silently falling back to `PATH`/HOME
+  discovery.
+
+### Added
+
+- Isolated the two fleet Bun-handoff version tests from the invoking shell's
+  own `REPO_HARNESS_BUN_BIN`, and added a fail-closed regression test proving
+  a handed-off Bun below the version floor cannot fall back to `PATH`/HOME
+  discovery.
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to `0.5.13`, moving through `0.5.12`
+  since `0.19.3`. Capabilities are unchanged across `0.5.11` through `0.5.13`,
+  confirmed against each installed package, so `ARCHCTX_REQUIRED_FEATURES`
+  needs no companion change.
+
 ## [0.19.3] - 2026-09-24
 
 ### Added
