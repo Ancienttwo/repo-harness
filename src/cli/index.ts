@@ -331,9 +331,7 @@ export function runCandidateRuntimeReconciliation(
     : {};
   let ownershipManifestDigest: string | null = null;
   if (complete) {
-    const applied = applyInstallProfile(request.profile, env, new Date(), undefined, undefined, {
-      agentFleetVerified: agentFleetVerified(runtime),
-    });
+    const applied = applyInstallProfile(request.profile, env);
     const status = installedProfileStatus(applied.state, env);
     if (status.drift.status !== 'consistent') {
       throw new Error(`candidate reconciliation ownership ledger drift: ${status.drift.surface_drift.join(',') || '(unknown)'}`);

@@ -19,6 +19,7 @@ import {
   prepareInstallProfileSwitch,
   readLegacyInstalledProfileForMigration,
   readInstalledProfile,
+  recordVerifiedAgentFleetOwnership,
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
@@ -786,12 +787,20 @@ describe('install profiles', () => {
     const pristine = join(home, '.codex', 'agents', 'deep-worker.toml');
     const unverified = applyInstallProfile('full', env).state;
     expect(unverified.ownership_manifest.some(({ path }) => path === pristine)).toBe(false);
+
+    // Update paths record into the existing manifest without re-applying the profile.
+    recordVerifiedAgentFleetOwnership('full', env);
+    const recorded = readInstalledProfile(env)!;
+    const recordedPaths = recorded.ownership_manifest.map(({ path }) => path);
+    expect(recordedPaths).toContain(pristine);
+    expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'explorer.md'));
+    expect(recordedPaths).not.toContain(custom);
+    expect(installedProfileStatus(recorded, env).drift.status).toBe('consistent');
+
+    // Bootstrap has no prior manifest, so applyInstallProfile adopts directly.
+    rmSync(join(home, '.repo-harness', 'install-state.json'));
     const adopted = applyInstallProfile('full', env, new Date(), undefined, undefined, { agentFleetVerified: true }).state;
-    const adoptedPaths = adopted.ownership_manifest.map(({ path }) => path);
-    expect(adoptedPaths).toContain(pristine);
-    expect(adoptedPaths).toContain(join(home, '.claude', 'agents', 'explorer.md'));
-    expect(adoptedPaths).not.toContain(custom);
-    expect(installedProfileStatus(adopted, env).drift.status).toBe('consistent');
+    expect(adopted.ownership_manifest.map(({ path }) => path).sort()).toEqual(recordedPaths.sort());
 
     for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
       const source = join(packageRoot, 'agents', 'fleet', `${agent}.md`);

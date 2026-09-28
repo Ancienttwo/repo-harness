@@ -564,6 +564,28 @@ function verifiedAgentFleetSurfaces(
   });
 }
 
+/**
+ * Update paths run the fleet helper but may never reach applyInstallProfile
+ * (partial or in-process reconciliation), so the verified fleet surfaces are
+ * merged into the existing ownership manifest right after the helper succeeds.
+ * Without installed state there is no manifest to extend.
+ */
+export function recordVerifiedAgentFleetOwnership(
+  profile: InstallProfile,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const current = readInstalledProfile(env);
+  if (current === null || current.profile !== profile) return;
+  const ownershipManifest = [...new Map(
+    [...current.ownership_manifest, ...verifiedAgentFleetSurfaces(profile, env)].map((surface) => [
+      `${surface.path}\0${surface.managed_marker ?? surface.type}`,
+      surface,
+    ]),
+  ).values()].sort((left, right) => left.path.localeCompare(right.path));
+  if (JSON.stringify(ownershipManifest) === JSON.stringify(current.ownership_manifest)) return;
+  writeState({ ...current, ownership_manifest: ownershipManifest }, env);
+}
+
 export function assertInstallProfile(value: string): InstallProfile {
   if (!INSTALL_PROFILES.includes(value as InstallProfile)) {
     throw new Error(`invalid install profile ${value}; expected ${INSTALL_PROFILES.join('|')}`);
