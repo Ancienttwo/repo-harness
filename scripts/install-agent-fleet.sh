@@ -154,14 +154,16 @@ const MODEL_EFFORT_MAP = {
 };
 
 // Per-agent Codex target overrides — the only model/effort remaps in the fleet.
-// Execution and diagnostic roles use Sol or Luna; the gatekeeper uses Astra.
-// Explorer and deep-reasoner follow the family default.
+// Every role carries an explicit target so Codex model/effort never drift with
+// the Claude-side family default.
 const AGENT_TARGET_OVERRIDES = {
-  "fast-worker": { model: "gpt-6-sol", effort: "medium", targetDescription: "GPT-6 Sol at medium reasoning" },
+  explorer: { model: "gpt-6-luna", effort: "high", targetDescription: "GPT-6 Luna at high reasoning" },
+  "deep-reasoner": { model: "gpt-6-astra", effort: "high", targetDescription: "GPT-6 Astra at high reasoning" },
+  "fast-worker": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
   "deep-worker": { model: "gpt-6-sol", effort: "xhigh", targetDescription: "GPT-6 Sol at xhigh reasoning" },
   gatekeeper: { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
-  "root-cause-prover": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
-  "harness-evaluator": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
+  "root-cause-prover": { model: "gpt-6-astra", effort: "high", targetDescription: "GPT-6 Astra at high reasoning" },
+  "harness-evaluator": { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
 };
 
 function readSource(agent) {

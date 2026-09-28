@@ -641,21 +641,22 @@ mapping.
 | `sonnet`, `haiku` | `gpt-6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 | `fable` | `gpt-6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 
-Five per-agent target overrides are applied after tuple validation, on top of
+Seven per-agent target overrides are applied after tuple validation, on top of
 the family row above, and are the only model/effort remaps in the generator:
-`fast-worker` (`opus`/`medium`) targets `gpt-6-sol` at `medium` reasoning;
+`explorer` (`sonnet`/`medium`) targets `gpt-6-luna` at `high` reasoning;
+`deep-reasoner` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
+`fast-worker` (`sonnet`/`xhigh`) targets `gpt-6-sol` at `high` reasoning;
 `deep-worker` (`opus`/`high`) targets `gpt-6-sol` at `xhigh` reasoning;
 `gatekeeper` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning;
-`root-cause-prover` and `harness-evaluator` (`opus`/`high`) target `gpt-6-sol`
-at `high` reasoning.
-Every other agent's Codex model and effort follow the family row unchanged.
+`root-cause-prover` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
+`harness-evaluator` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning.
 
 `fast-worker`, `deep-worker`, `root-cause-prover`, and `harness-evaluator`
 receive `sandbox_mode = "workspace-write"`; every other role receives
 `sandbox_mode = "read-only"`. Current assignments are explorer
-(`sonnet/high`), deep-reasoner (`opus/xhigh`), fast-worker (`opus/medium`),
+(`sonnet/medium`), deep-reasoner (`opus/xhigh`), fast-worker (`sonnet/xhigh`),
 deep-worker (`opus/high`), gatekeeper (`opus/high`), root-cause-prover
-(`opus/high`), and harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
+(`opus/xhigh`), and harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
 writes to bugfix evidence inside the active contract's allowed paths;
 harness-evaluator runs existing skill/adoption surfaces only when both repo and
 HOME pass the runner's disposable boundary: skills uses `--require-disposable`,

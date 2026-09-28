@@ -21,21 +21,21 @@ const CODEX_EXPECTATIONS: Record<
     model: "gpt-6-luna",
     effort: "high",
     descriptionLabel: "GPT-6 Luna at high reasoning",
-    sourceDescription: "Sonnet at high effort",
+    sourceDescription: "Sonnet at medium effort",
     sandboxMode: "read-only",
   },
   "deep-reasoner": {
     model: "gpt-6-astra",
-    effort: "xhigh",
-    descriptionLabel: "GPT-6 Astra at xhigh reasoning",
+    effort: "high",
+    descriptionLabel: "GPT-6 Astra at high reasoning",
     sourceDescription: "Opus at xhigh effort",
     sandboxMode: "read-only",
   },
   "fast-worker": {
     model: "gpt-6-sol",
-    effort: "medium",
-    descriptionLabel: "GPT-6 Sol at medium reasoning",
-    sourceDescription: "Opus at medium effort",
+    effort: "high",
+    descriptionLabel: "GPT-6 Sol at high reasoning",
+    sourceDescription: "Sonnet at xhigh effort",
     sandboxMode: "workspace-write",
   },
   "deep-worker": {
@@ -53,16 +53,16 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "read-only",
   },
   "root-cause-prover": {
-    model: "gpt-6-sol",
+    model: "gpt-6-astra",
     effort: "high",
-    descriptionLabel: "GPT-6 Sol at high reasoning",
-    sourceDescription: "Opus at high effort",
+    descriptionLabel: "GPT-6 Astra at high reasoning",
+    sourceDescription: "Opus at xhigh effort",
     sandboxMode: "workspace-write",
   },
   "harness-evaluator": {
-    model: "gpt-6-sol",
-    effort: "high",
-    descriptionLabel: "GPT-6 Sol at high reasoning",
+    model: "gpt-6-astra",
+    effort: "medium",
+    descriptionLabel: "GPT-6 Astra at medium reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
@@ -351,7 +351,7 @@ describe("install-agent-fleet", () => {
       for (const agent of AGENTS) {
         cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
-      const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: medium", "effort: min");
+      const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: xhigh", "effort: min");
       writeFileSync(join(badSourceDir, "fast-worker.md"), corrupted);
 
       const res = runInstaller(home, badSourceDir);
@@ -505,7 +505,7 @@ describe("install-agent-fleet", () => {
         cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       const mismatched = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace(
-        "Opus at medium effort",
+        "Sonnet at xhigh effort",
         "an unspecified model",
       );
       writeFileSync(join(badSourceDir, "fast-worker.md"), mismatched);
