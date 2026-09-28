@@ -1862,7 +1862,15 @@ workflow_contract_allows_path() {
     esac
 
     if [[ "$section" == "allowed_paths" && "$trimmed" =~ ^-[[:space:]]*(.+)$ ]]; then
-      item="$(workflow_strip_quotes "${BASH_REMATCH[1]}")"
+      item="${BASH_REMATCH[1]}"
+      # Drop a YAML inline comment: `#` at the start or after whitespace, outside a leading quoted scalar.
+      case "$item" in
+        \"*\"*) item="\"$(printf '%s' "${item:1}" | cut -d'"' -f1)\"" ;;
+        \'*\'*) item="'$(printf '%s' "${item:1}" | cut -d"'" -f1)'" ;;
+        *) item="$(printf '%s' "$item" | sed -E 's/^#.*$//; s/[[:space:]]+#.*$//')" ;;
+      esac
+      item="$(workflow_strip_quotes "$item")"
+      [[ -n "$item" ]] || continue
       pattern="$item"
       if [[ "$pattern" == */ ]]; then
         [[ "$file_path" == "$pattern"* ]] && return 0

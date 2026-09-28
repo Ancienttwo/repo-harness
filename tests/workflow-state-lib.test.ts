@@ -432,6 +432,37 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
+  test("workflow_contract_allows_path drops YAML inline comments from allowed_paths items", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-allows-path-comment-")));
+    try {
+      writeFileSync(
+        join(cwd, "demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - AGENTS.md  # generated marker block only",
+          '  - "docs/a #b.md" # quoted hash stays',
+          "  - tasks/ # directory prefix",
+          "```",
+          "",
+        ].join("\n")
+      );
+      const allows = (path: string) => spawnSync(
+        "bash",
+        ["-lc", `source "$WORKFLOW_STATE"; workflow_contract_allows_path "$PWD/demo.contract.md" "${path}"`],
+        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } }
+      ).status;
+      expect(allows("AGENTS.md")).toBe(0);
+      expect(allows("docs/a #b.md")).toBe(0);
+      expect(allows("tasks/todo.md")).toBe(0);
+      expect(allows("src/outside.ts")).not.toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("workflow_contract_evidence_requirement fails closed when parser sentinels appear as yaml content", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-sentinel-")));
     try {
