@@ -76,12 +76,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(packageManifest.files).toContain("agents/");
     const specs: Array<{ name: string; model: string; effort: string; sandboxMode?: string }> = [
       { name: "explorer", model: "gpt-6-luna", effort: "high", sandboxMode: "read-only" },
-      { name: "deep-reasoner", model: "gpt-6-astra", effort: "xhigh", sandboxMode: "read-only" },
-      { name: "fast-worker", model: "gpt-6-sol", effort: "medium", sandboxMode: "workspace-write" },
+      { name: "deep-reasoner", model: "gpt-6-astra", effort: "high", sandboxMode: "read-only" },
+      { name: "fast-worker", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
       { name: "deep-worker", model: "gpt-6-sol", effort: "xhigh", sandboxMode: "workspace-write" },
       { name: "gatekeeper", model: "gpt-6-astra", effort: "medium", sandboxMode: "read-only" },
-      { name: "root-cause-prover", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
-      { name: "harness-evaluator", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
+      { name: "root-cause-prover", model: "gpt-6-astra", effort: "high", sandboxMode: "workspace-write" },
+      { name: "harness-evaluator", model: "gpt-6-astra", effort: "medium", sandboxMode: "workspace-write" },
     ];
 
     for (const spec of specs) {
