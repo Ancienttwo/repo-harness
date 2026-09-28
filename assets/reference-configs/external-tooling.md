@@ -1009,6 +1009,27 @@ letter into its terminal job receipt, and is byte-idempotent on the same signal
 and approval reference. `status --json` reports unresolved or invalid
 acceptance evidence, and the strict architecture gate fails closed on either;
 the command never chooses or infers an architecture decision.
+
+For accepted apply, acceptance records an exact request intent before invoking
+ArchContext and the original result before running refresh actions. A retry
+with this pending evidence uses the provider's `projection-apply-readback-v1`
+capability. Readback returns the immutable committed receipt, original refresh
+signals, and a freshly verified current fixed point without changing provider
+delivery state. The same candidate, approval reference, request, and snapshot
+must still match. If the provider proves the exact request has no committed
+receipt, only an intent without a recorded result may retry apply; the provider
+checks the receipt again within its writer lock before writing. Errors and
+missing capabilities never authorize another apply.
+
+To recover an older interrupted accept that has no local intent, run
+`repo-harness architecture-projection accept --recover --signal-id <sha256> --approval-reference <original-event-id> --json`.
+This explicit command only resumes a committed apply. It fails if the provider
+has no receipt, and never creates an apply or poisons a fresh candidate with an
+unrecoverable intent. Adoption recovery is unsupported and fails closed; it is
+not converted into apply. Pending evidence remains content-bound local runtime
+state after completion; the final acceptance receipt is the resolution authority.
+The readback capability must be present in both the packaged CLI and its daemon;
+installing a new CLI alone does not upgrade a running daemon.
 If a candidate's exact reason set is only `verified-flow-proof-changed`, use
 `repo-harness architecture-projection reconcile --signal-id <sha256> --json`
 after refreshing the configured CodeGraph index. Reconciliation runs the same

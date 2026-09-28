@@ -13,6 +13,12 @@
 
 ## Active Lessons
 
+- Date: 2026-09-25
+- Triggered by correction: `sprint-backlog status/next` and `start-task` returned 141 on a long backlog when the selected row appeared early.
+- Mistake pattern: an `awk` selector exits after its first match while its upstream producer is still writing; `pipefail` exposes the resulting SIGPIPE even though the selected row is valid.
+- Prevention rule: emit the first matching row once and drain the remaining input. Preserve `pipefail` and upstream errors; do not use `|| true`. Test the real entrypoint with more than a pipe buffer of rows, the no-pending exit contract, and an injected producer failure.
+- Where to apply next time: `scripts/sprint-backlog.sh#next_pending_row`, the `start-task` target-row selector, and their packaged helper projection; `tests/sprint-backlog.test.ts` covers both selectors through real entrypoints with long backlogs.
+
 - Date: 2026-09-13
 - Triggered by correction: a downstream legacy architecture drain repeatedly stopped on an unmapped workspace file despite adequate retry budgets.
 - Mistake pattern: treating architecture queue synthetic `root` ownership as a registered capability makes capability-context fail and pins the durable cascade offset.

@@ -5,14 +5,17 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
+import type { ProjectionApplyReadbackV1 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { runProcess } from '../process-runner';
-import { capabilityRegistryFromArchcontextNodes, type ArchcontextNodeFile } from '../../core/capabilities/registry';
+import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
   ARCHITECTURE_DOCS_LAYOUT_VERSION,
   ARCHITECTURE_DOCS_RENDERER_VERSION,
   assertArchctxCapabilities,
+  assertProjectionApplyAbsence,
+  assertProjectionApplyReadbackResult,
   assertProjectionResult,
   digestProjectionJson,
   projectionRequestIssues,
@@ -361,6 +364,54 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   return result;
 }
 
+/** Read an existing committed apply; this operation never invokes projection run/apply. */
+export function readArchitectureProjectionApply(
+  request: ProjectionRequestV1,
+  repoRoot: string,
+  options: ArchctxProviderOptions = {},
+): ProjectionApplyReadbackV1 {
+  const requestIssues = projectionRequestIssues(request);
+  if (requestIssues.length > 0 || request.mode !== 'apply' || !request.acceptedChange) {
+    throw new Error(`invalid accepted projection readback request: ${requestIssues.join('; ')}`);
+  }
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  if (policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
+  const { resolved, capabilities } = archctxCapabilities(repoRoot, { ...options, policy });
+  if (!capabilities.features.includes('projection-apply-readback-v1')) {
+    throw new Error('archctx projection-apply-readback-v1 capability is required for acceptance recovery');
+  }
+  const args = ['projection', 'readback', '--request-json', JSON.stringify(request)];
+  const before = captureProjectionSnapshotObservation(repoRoot);
+  assertExpectedSnapshot(request.expected, before.snapshot, 'before readback');
+  const processResult = runArchctxProcess(resolved, args, options, repoRoot, remainingTimeout(options, policy.timeoutMs, 'projection readback'));
+  const after = captureProjectionSnapshotObservation(repoRoot);
+  assertExpectedSnapshot(before.snapshot, after.snapshot, 'after readback');
+  if (processResult.status !== 0 || processResult.signal || processResult.error) {
+    throw new Error(`archctx projection readback failed: ${processFailure(processResult)}`);
+  }
+  const envelope = parseJson(processResult.stdout, 'archctx projection readback') as Record<string, unknown>;
+  if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) {
+    throw new Error(`archctx projection readback returned an invalid envelope: ${safeError(envelope)}`);
+  }
+  if (envelope.data.schemaVersion === 'archcontext.projection-apply-absence/v1') {
+    const absence = assertProjectionApplyAbsence(envelope.data, request);
+    assertExpectedSnapshot(after.snapshot, absence.current, 'in current absence proof');
+    remainingTimeout(options, policy.timeoutMs, 'post-absence validation');
+    return absence;
+  }
+  const readback = assertProjectionApplyReadbackResult(envelope.data, request);
+  const result = assertProjectionResult(readback.receipt.result, request.requestId);
+  assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in committed apply');
+  assertExpectedSnapshot(request.expected, result.outputSnapshot, 'after committed apply');
+  assertExpectedSnapshot(after.snapshot, readback.current.snapshot, 'in current readback proof');
+  assertProjectionResultAuthority(request, result, repoRoot, policy, false);
+  if (result.status !== 'applied' || !result.applyReceipt) {
+    throw new Error('projection readback requires an applied result with a committed apply receipt');
+  }
+  remainingTimeout(options, policy.timeoutMs, 'post-readback validation');
+  return readback;
+}
+
 function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'>, maximumMs: number, phase: string): number {
   if (options.deadlineMs === undefined) return maximumMs;
   const remaining = Math.floor(options.deadlineMs - (options.nowMs ?? Date.now)());
@@ -448,18 +499,36 @@ function architectureAgentContextTargets(root: string): string[] {
   if (!existsSync(nodesDir)) throw new Error('architecture projection requires .archcontext/model/nodes');
   const yaml = (globalThis as { Bun?: { YAML?: { parse(source: string): unknown } } }).Bun?.YAML;
   if (!yaml?.parse) throw new Error('Bun.YAML is required to resolve architecture projection targets');
-  const files: ArchcontextNodeFile[] = readdirSync(nodesDir)
+  const files = readdirSync(nodesDir)
     .filter((name) => name.endsWith('.yaml') || name.endsWith('.yml'))
     .sort()
     .map((name) => ({ path: `.archcontext/model/nodes/${name}`, value: yaml.parse(readFileSync(join(nodesDir, name), 'utf8')) }));
-  const resolution = capabilityRegistryFromArchcontextNodes(files, {
-    repoRoot: root,
-    isExistingDirectory: (path) => {
-      try { return statSync(resolve(root, path)).isDirectory(); } catch { return false; }
-    },
-  });
-  if (resolution.status !== 'valid') throw new Error(`architecture projection capability nodes are invalid: ${resolution.diagnostics.map((entry) => entry.message).join('; ')}`);
-  return [...new Set(resolution.registry.capabilities.flatMap((capability) => [capability.contract_files.agents, capability.contract_files.claude]))];
+  const targets = new Set<string>();
+  const ids = new Set<string>();
+  for (const { path, value: node } of files) {
+    if (!isRecord(node) || node.schemaVersion !== 'archcontext.node/v2' || typeof node.kind !== 'string') {
+      throw new Error(`architecture projection node is invalid: ${path}`);
+    }
+    if (node.kind !== 'capability') continue;
+    // repo-harness/v1 layout consumes identity and explicit output targets.
+    // Ownership metadata/prefix translation belongs only to the selected workflow
+    // registry. In particular, projection must preserve generic source globs and
+    // exclusions, and includes every capability rendered by the producer.
+    if (typeof node.id !== 'string' || !/^capability\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$/.test(node.id) || ids.has(node.id)) {
+      throw new Error(`architecture projection capability identity is invalid or duplicate: ${path}`);
+    }
+    ids.add(node.id);
+    const extensions = isRecord(node.extensions) ? node.extensions : null;
+    const contracts = extensions && isRecord(extensions.contractFiles) ? extensions.contractFiles : null;
+    for (const [key, basename] of [['agents', 'AGENTS.md'], ['claude', 'CLAUDE.md']] as const) {
+      const target = contracts?.[key];
+      if (typeof target !== 'string' || normalizeCapabilityPath(target) !== target || (target !== basename && !target.endsWith(`/${basename}`))) {
+        throw new Error(`architecture projection contract target is invalid: ${path}#extensions.contractFiles.${key}`);
+      }
+      targets.add(target);
+    }
+  }
+  return [...targets].sort();
 }
 
 function listProjectionInputFiles(root: string, ignored: Set<string>): string[] {

@@ -93,6 +93,7 @@ common_excludes=(
   --exclude='_ops/'
   --exclude='node_modules/'
   --exclude='.DS_Store'
+  --exclude='.codegraph/'
   --exclude='evals/benchmark.md'
   --exclude='.codex/'
   --exclude='.claude/settings.local.json'
@@ -139,34 +140,14 @@ create_symlink_or_explain() {
   exit 1
 }
 
-hash_stream() {
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 | awk '{print "sha256:" $1}'
-    return 0
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum | awk '{print "sha256:" $1}'
-    return 0
-  fi
-  echo "[sync-installed] SHA-256 capability is required to verify managed copies." >&2
-  return 1
-}
-
 managed_tree_hash() {
   local root="$1"
-  {
-    while IFS= read -r entry; do
-      local rel
-      rel="${entry#"$root"/}"
-      if [[ -L "$entry" ]]; then
-        printf 'L\0%s\0%s\0' "$rel" "$(readlink "$entry")"
-      elif [[ -f "$entry" ]]; then
-        printf 'F\0%s\0' "$rel"
-        cat "$entry"
-        printf '\0'
-      fi
-    done < <(find "$root" \( -type f -o -type l \) ! -name '.repo-harness-owner.json' -print | LC_ALL=C sort)
-  } | hash_stream
+  local digest
+  if ! digest="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" managed-tree-hash "$root")" || [[ -z "$digest" ]]; then
+    echo "[sync-installed] managed-tree-hash failed for $root" >&2
+    return 1
+  fi
+  printf '%s\n' "$digest"
 }
 
 json_escape() {

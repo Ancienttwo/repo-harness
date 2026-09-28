@@ -58,8 +58,17 @@ function loadCatalog(): SkillSurfaceCatalog {
   return resolution.catalog;
 }
 
-function main(argv: readonly string[]): void {
+async function main(argv: readonly string[]): Promise<void> {
   const [subcommand, ...rest] = argv;
+  if (subcommand === "managed-tree-hash") {
+    // Single authority for installed-copy ownership hashes: the shell sync
+    // script's owner markers and the TS installer must hash identically.
+    const [root] = rest;
+    if (!root || rest.length !== 1) fail("managed-tree-hash requires exactly one <root> argument");
+    const { hashManagedTree } = await import("../src/cli/installer/install-profile");
+    console.log(hashManagedTree(root));
+    return;
+  }
   const profileFlag = parseProfileFlag(rest);
   const catalog = loadCatalog();
 
@@ -109,7 +118,7 @@ function main(argv: readonly string[]): void {
     for (const name of placements.codex) console.log(`codex ${name}`);
     return;
   }
-  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|profile-projection|facade-sources|external-skills|host-placements`);
+  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|profile-projection|facade-sources|external-skills|host-placements|managed-tree-hash`);
 }
 
-main(process.argv.slice(2));
+await main(process.argv.slice(2));

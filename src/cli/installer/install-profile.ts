@@ -257,7 +257,7 @@ function adapterHasRequiredProjection(path: string, host: HookHost, profile: Ins
   }
 }
 
-function hashManagedTree(root: string): string {
+export function hashManagedTree(root: string): string {
   const entries: Array<{ path: string; type: 'file' | 'symlink' }> = [];
   const visit = (directory: string, prefix: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {

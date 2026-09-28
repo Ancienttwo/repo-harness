@@ -176,17 +176,17 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.5.10', 'archctx-contracts': '0.5.10' },
+    dependencies: { archctx: '0.5.13', 'archctx-contracts': '0.5.13' },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
-    version: '0.5.10',
+    version: '0.5.13',
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
     dependencies: { '@colbymchenry/codegraph': '1.5.0' },
   }));
   writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.5.10' }));
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.5.13' }));
   writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.5.0' }));
   const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
   writeExecutable(join(fakeBin, 'node'), [
@@ -194,7 +194,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
     'if [[ "${1:-}" == "--version" ]]; then echo v24.11.0; exit 0; fi',
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
-      package: { name: 'archctx', version: '0.5.10' },
+      package: { name: 'archctx', version: '0.5.13' },
       protocols: {
         projectionRequest: 'archcontext.projection-request/v1',
         projectionResult: 'archcontext.projection-result/v2',
@@ -389,6 +389,53 @@ describe('install command global runtime bootstrap', () => {
         command: [join(fakeBin, 'claude'), 'plugin', 'list', '--json'],
       });
       expect(existsSync(bunLog)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('the agent fleet helper runs on the validated Bun when that executable is not named bun', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-fleet-bun-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    // npm-distributed Bun ships its executable as node_modules/bun/bin/bun.exe.
+    const validatedBun = join(tmp, 'npm', 'node_modules', 'bun', 'bin', 'bun.exe');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(join(validatedBun, '..'), { recursive: true });
+      symlinkSync(process.execPath, validatedBun);
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...sanitizedChildEnv(),
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:/usr/bin:/bin`,
+          REPO_HARNESS_BUN_EXECUTABLE: validatedBun,
+        },
+      });
+
+      expect(result.steps.find((step) => step.step === 'ensure Bun runtime')).toMatchObject({
+        status: 'skipped',
+        command: [validatedBun, '--version'],
+      });
+      const fleet = result.steps.find((step) => step.step === 'install agent fleet');
+      expect(fleet?.status, `${fleet?.stderr ?? ''}${fleet?.stdout ?? ''}`).toBe('ok');
+      expect(existsSync(join(home, '.codex', 'agents', 'fast-worker.toml'))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -1,6 +1,6 @@
 # Codex fleet worker model mappings
 
-> **Substantive Change SHA256**: `sha256:8c96aed38e29908e5df0639dc8e6dbb7619c4b88615d2f7f0fcde8b183f33bae`
+> **Substantive Change SHA256**: `sha256:a204ec6bc5d3d8c79d150c914858e28e1734a42206f693c493f1dd762b737b14`
 
 The Codex installer override and packaged helper now select `gpt-6-sol` with
 `medium` reasoning for fast-worker. The tracked persona and existing installer
@@ -23,3 +23,9 @@ The installed global `repo-harness run capture-plan` entrypoint reported a
 missing regular helper file; the repository's own `scripts/capture-plan.sh`
 successfully captured the authorized plan. Global installation repair is
 outside scope.
+
+The push CI for the mapping (range `direct:0b0a9505..80fb3339`) failed because
+bootstrap-files, check-agent-tooling and subagent-handler fixtures still
+asserted the pre-GPT-6 persona models, so verified routing reported a mismatch.
+Those positive fixtures now follow the tracked Codex TOMLs; negative mismatch
+fixtures keep their deliberately stale models.

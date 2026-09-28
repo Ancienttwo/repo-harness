@@ -765,12 +765,15 @@ function reconcileWithInstalledCandidate(
   }
 }
 
-function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
   if (!existsSync(script)) {
     return { step: 'install agent fleet', status: 'failed', detail: `script not found: ${script}` };
   }
-  return withStepName(runProcess('bash', [script], sourceRoot, env), 'install agent fleet');
+  return withStepName(
+    runProcess('bash', [script], sourceRoot, { ...env, REPO_HARNESS_BUN_BIN: bunExecutable }),
+    'install agent fleet',
+  );
 }
 
 function externalSkillStepName(provider: string): string {
@@ -1437,7 +1440,7 @@ export function runGlobalRuntimeSetup(
   if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
 
-  if (profile === 'full') steps.push(installAgentFleet(sourceRoot, env));
+  if (profile === 'full') steps.push(installAgentFleet(sourceRoot, bunExecutable, env));
   else steps.push({ step: 'install agent fleet', status: 'skipped', detail: 'disabled by install profile' });
 
   const refreshExternalSkills = opts.externalSkills === true;

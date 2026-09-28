@@ -21,6 +21,8 @@ function git(root: string, args: string[]) { return execFileSync('git', args, { 
 export async function createAdoptionRepository(mode: 'shadow' | 'active' = 'active', rounds = 1, capability = CAP, metadata: Record<string, unknown> = {}, files: Record<string, string> = {}, limits: { github_deadline_ms?: number; verified_revision?: boolean; max_provider_failures?: number; max_agent_turns?: number; max_runner_invocations?: number; max_parallel_tasks?: 1 | 2 | 3; group_count?: 1 | 2 | 3; max_provider_calls?: number; max_successful_acquisitions?: number; liveness_policy?: LeaseLivenessPolicyV1 } = {}, temporaryRoot = tmpdir()) {
   const root = realpathSync(mkdtempSync(join(temporaryRoot, 'brc6-adoption-'))); const home = realpathSync(mkdtempSync(join(temporaryRoot, 'brc6-home-')));
   git(root, ['init', '-q', '-b', 'main']); git(root, ['config', 'user.name', 'Test']); git(root, ['config', 'user.email', 'test@example.invalid']);
+  // Snapshots copy this repository after commits; detached maintenance would race cpSync.
+  git(root, ['config', 'maintenance.auto', 'false']);
   for (const path of ['.ai/harness', '.archcontext/model/nodes', 'src', 'plans/sprints', 'plans/policies']) mkdirSync(join(root, path), { recursive: true });
   writeFileSync(join(root, '.ai/harness/campaign-protection.json'), JSON.stringify({protocol:1,capabilities:[],unmapped_surfaces:[],unmapped_closure:{roots:[],exempt_paths:[]}}));
   writeFileSync(join(root, 'src/index.ts'), 'export {};\n');
