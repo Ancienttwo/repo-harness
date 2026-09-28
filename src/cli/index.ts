@@ -53,6 +53,7 @@ import { buildExternalSourceCommand } from './commands/external-source';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   MIN_BUN_VERSION,
+  agentFleetVerified,
   bunVersionIsSupported,
   runGlobalRuntimeSetup,
   type GlobalRuntimeOptions,
@@ -219,6 +220,7 @@ function runTransactionalProfileProjection(
   commitState: (
     transaction: ReturnType<typeof beginInstallHostTransaction>,
     migrationSource: LegacyInstalledProfileState | null,
+    result: GlobalRuntimeResult,
   ) => InstalledProfileState,
   prepareProjection: () => LegacyInstalledProfileState | null = () => {
     prepareInstallProfileSwitch(profile, options.env);
@@ -242,7 +244,7 @@ function runTransactionalProfileProjection(
       return { result, state: null };
     }
     try {
-      const state = commitState(transaction, migrationSource);
+      const state = commitState(transaction, migrationSource, result);
       captureConfigurationRestores(transaction, transactionEnv);
       commitInstallHostTransaction(transaction);
       return { result, state };
@@ -329,7 +331,9 @@ export function runCandidateRuntimeReconciliation(
     : {};
   let ownershipManifestDigest: string | null = null;
   if (complete) {
-    const applied = applyInstallProfile(request.profile, env);
+    const applied = applyInstallProfile(request.profile, env, new Date(), undefined, undefined, {
+      agentFleetVerified: agentFleetVerified(runtime),
+    });
     const status = installedProfileStatus(applied.state, env);
     if (status.drift.status !== 'consistent') {
       throw new Error(`candidate reconciliation ownership ledger drift: ${status.drift.surface_drift.join(',') || '(unknown)'}`);
@@ -465,13 +469,14 @@ async function runGlobalRuntimeBootstrap(
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
-  }, (transaction, migrationSource) => (
+  }, (transaction, migrationSource, result) => (
     applyInstallProfile(
       profile,
       process.env,
       new Date(),
       transaction,
       migrationSource ?? undefined,
+      { agentFleetVerified: agentFleetVerified(result) },
     ).state
   ), migrationRequested
     ? () => prepareLegacyInstallProfileMigration(profile)
