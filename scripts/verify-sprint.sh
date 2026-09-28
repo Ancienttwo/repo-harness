@@ -193,8 +193,18 @@ contract_allowed_paths() {
     in_paths && /^[[:space:]]*-[[:space:]]*/ {
       line = $0
       sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      # Drop a YAML inline comment: `#` at the start or after whitespace, outside a leading quoted scalar.
+      q = substr(line, 1, 1)
+      close_at = (q == "\"" || q == "'\''") ? index(substr(line, 2), q) : 0
+      if (close_at > 0) {
+        line = substr(line, 1, close_at + 1)
+      } else {
+        sub(/^#.*$/, "", line)
+        sub(/[[:space:]]+#.*$/, "", line)
+      }
       gsub(/^["'\''`]+|["'\''`]+$/, "", line)
-      print trim(line)
+      line = trim(line)
+      if (line != "") print line
     }
   '
 }
