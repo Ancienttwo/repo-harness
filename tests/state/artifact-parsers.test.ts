@@ -13,6 +13,7 @@ import {
   planSlugFromPath,
   planStatusFromText,
   stripWrappingQuotes,
+  stripYamlInlineComment,
 } from '../../src/core/state/artifact-parsers';
 
 describe('Effective State artifact parsers', () => {
@@ -45,6 +46,23 @@ describe('Effective State artifact parsers', () => {
   test('parses only explicit allowed paths and strips wrapping quotes', () => {
     expect(parseAllowedPaths(contract)).toEqual(['src/', 'tests/state/']);
     expect(stripWrappingQuotes('"plans/plan-fixture.md"')).toBe('plans/plan-fixture.md');
+  });
+
+  test('drops YAML inline comments from allowed path items but keeps quoted and embedded hashes', () => {
+    const commented = [
+      '## Allowed Paths',
+      '',
+      '```yaml',
+      'allowed_paths:',
+      '  - AGENTS.md  # generated marker block only',
+      '  - "docs/a #b.md" # quoted hash stays',
+      '  - path#frag',
+      '  - # comment-only item',
+      '```',
+      '',
+    ].join('\n');
+    expect(parseAllowedPaths(commented)).toEqual(['AGENTS.md', 'docs/a #b.md', 'path#frag']);
+    expect(stripYamlInlineComment("'tasks/' # note")).toBe("'tasks/'");
   });
 
   test('parses valid timestamps and rejects missing or invalid values', () => {

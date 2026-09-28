@@ -111,11 +111,16 @@ const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker
 const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
-const USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
-const { readInstalledProfile, managedInstallSurfaceIsCurrent } = require(
+const {
+  readInstalledProfile,
+  managedInstallSurfaceIsCurrent,
+  agentFleetUserManagedReceiptPath,
+  readAgentFleetUserManagedReceipt,
+} = require(
   path.join(SOURCE_DIR, "../../src/cli/installer/install-profile.ts"),
 );
+const USER_MANAGED_RECEIPT_PATH = agentFleetUserManagedReceiptPath({ ...process.env, HOME });
 const installedProfile = readInstalledProfile();
 
 // A generated persona carries role identity only. The anti-extras execution
@@ -313,33 +318,6 @@ function validateUserManagedCodex(agent, content) {
   }
 }
 
-function loadUserManagedReceipt(allowedPaths) {
-  if (!fs.existsSync(USER_MANAGED_RECEIPT_PATH)) return { ok: true, hashes: new Map() };
-  try {
-    const parsed = JSON.parse(fs.readFileSync(USER_MANAGED_RECEIPT_PATH, "utf8"));
-    if (
-      parsed?.protocol !== 1
-      || parsed?.authority !== "user-managed-agent-fleet"
-      || !Array.isArray(parsed.files)
-    ) return { ok: false, hashes: new Map() };
-    const hashes = new Map();
-    for (const entry of parsed.files) {
-      if (
-        !entry
-        || typeof entry.path !== "string"
-        || !allowedPaths.has(entry.path)
-        || typeof entry.sha256 !== "string"
-        || !/^sha256:[a-f0-9]{64}$/.test(entry.sha256)
-        || hashes.has(entry.path)
-      ) return { ok: false, hashes: new Map() };
-      hashes.set(entry.path, entry.sha256);
-    }
-    return { ok: true, hashes };
-  } catch (_error) {
-    return { ok: false, hashes: new Map() };
-  }
-}
-
 function writeUserManagedReceipt(files) {
   fs.mkdirSync(path.dirname(USER_MANAGED_RECEIPT_PATH), { recursive: true });
   const receipt = {
@@ -434,8 +412,6 @@ const targets = prepared.flatMap(({ agent, source, parsed, mapped }) => {
     },
   ];
 });
-const allowedTargetPaths = new Set(targets.map((target) => target.path));
-
 if (acceptUserManaged) {
   const acceptedFiles = [];
   let invalid = false;
@@ -470,7 +446,7 @@ if (acceptUserManaged) {
 
 const receipt = force
   ? { ok: true, hashes: new Map() }
-  : loadUserManagedReceipt(allowedTargetPaths);
+  : readAgentFleetUserManagedReceipt({ ...process.env, HOME });
 if (!receipt.ok) {
   console.log("[fleet] user-managed receipt: invalid");
   process.exit(1);

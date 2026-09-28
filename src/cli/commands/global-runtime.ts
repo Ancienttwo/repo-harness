@@ -15,7 +15,13 @@ import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
-import { PROFILE_COMPONENTS, managedInstallSurfaceIsCurrent, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
+import {
+  PROFILE_COMPONENTS,
+  managedInstallSurfaceIsCurrent,
+  readInstalledProfile,
+  recordVerifiedAgentFleetOwnership,
+  type InstallProfile,
+} from "../installer/install-profile";
 import {
   parseSkillSurfaceCatalog,
   requiredExplicitExternalDependencyInstallGroups,
@@ -765,15 +771,32 @@ function reconcileWithInstalledCandidate(
   }
 }
 
+const AGENT_FLEET_STEP = 'install agent fleet';
+
 function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
   if (!existsSync(script)) {
-    return { step: 'install agent fleet', status: 'failed', detail: `script not found: ${script}` };
+    return { step: AGENT_FLEET_STEP, status: 'failed', detail: `script not found: ${script}` };
   }
   return withStepName(
     runProcess('bash', [script], sourceRoot, { ...env, REPO_HARNESS_BUN_BIN: bunExecutable }),
-    'install agent fleet',
+    AGENT_FLEET_STEP,
   );
+}
+
+/** True only when this run's fleet helper verified every agent target (see applyInstallProfile). */
+export function agentFleetVerified(result: Pick<GlobalRuntimeResult, 'steps'>): boolean {
+  return result.steps.some((step) => step.step === AGENT_FLEET_STEP && step.status === 'ok');
+}
+
+function recordAgentFleetOwnership(profile: InstallProfile, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const step = 'record agent fleet ownership';
+  try {
+    recordVerifiedAgentFleetOwnership(profile, env);
+    return { step, status: 'ok' };
+  } catch (error) {
+    return { step, status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function externalSkillStepName(provider: string): string {
@@ -1441,7 +1464,8 @@ export function runGlobalRuntimeSetup(
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
 
   if (profile === 'full') steps.push(installAgentFleet(sourceRoot, bunExecutable, env));
-  else steps.push({ step: 'install agent fleet', status: 'skipped', detail: 'disabled by install profile' });
+  else steps.push({ step: AGENT_FLEET_STEP, status: 'skipped', detail: 'disabled by install profile' });
+  if (updateMode && agentFleetVerified({ steps })) steps.push(recordAgentFleetOwnership(profile, env));
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {

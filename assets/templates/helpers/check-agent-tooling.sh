@@ -1071,7 +1071,7 @@ function readAgentFleetSource(agent) {
   return { status: "read", path: sourcePath, hash: source.hash };
 }
 
-// Read-only mirror of install-agent-fleet.sh's loadUserManagedReceipt(): this
+// Read-only mirror of install-profile.ts's readAgentFleetUserManagedReceipt(): this
 // checker never writes ~/.repo-harness/agent-fleet-user-managed.json, it only
 // consults it so an operator-accepted customized file is not misreported as
 // drift. Any malformation invalidates the whole receipt (fail-closed) rather

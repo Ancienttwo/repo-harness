@@ -1303,6 +1303,13 @@ describe("verify-contract helper integration", () => {
       const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
       expect(res.status).toBe(1);
       expect(res.stdout).toContain("ledger-closeout profile cannot allow runtime code or hook paths");
+
+      const contract = join(cwd, "task.contract.md");
+      writeFileSync(contract, readFileSync(contract, "utf-8").replace("  - src/\n", '  - "src/" # generated code only\n'));
+      const commented = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+      expect(commented.status).toBe(1);
+      expect(commented.stdout).toContain("ledger-closeout profile cannot allow runtime code or hook paths by default: src/");
+      expect(commented.stdout).not.toContain("generated code only");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

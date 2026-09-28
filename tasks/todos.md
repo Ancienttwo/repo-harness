@@ -91,3 +91,7 @@ Audit evidence and closure rationale: `docs/researches/20260907-deferred-goal-le
 ## Windows mutation-store durability outside protected Task replies
 
 - Deferred: audit the18 remaining directory-flush sites identified in `docs/researches/20260923-windows-task-persistence.md` before claiming native Windows support for their mutation workflows. They are outside the observed delivery/ACK/reply chain; changing them here would mix independent persistence and acceptance boundaries. Revisit when claim acquisition, Campaign, publication or another listed owner becomes an explicit native Windows delivery scope.
+
+## Update preflight for a corrupt Bun global manifest
+
+- Deferred: `repo-harness update` could detect a stray `"": "."` dependency in `~/.bun/install/global/package.json` before `bun add -g` fails with `refusing to install dependency with unsafe name`, and print repair guidance (reported with #457). Not fixed with the #457 fleet-ownership repair because it is a separate preflight with its own Bun-owned file boundary and no failing repo-harness behavior to reproduce. Revisit when the Bun global manifest shape is observed again in an update failure or an update preflight work-package opens.

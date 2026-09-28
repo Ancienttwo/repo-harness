@@ -18,6 +18,16 @@ export function stripWrappingQuotes(value: string): string {
   return value;
 }
 
+/** Drop a YAML inline comment (`#` at the start or after whitespace, outside a leading quoted scalar) from one list item value. */
+export function stripYamlInlineComment(value: string): string {
+  const quote = value[0];
+  if (quote === '"' || quote === "'") {
+    const close = value.indexOf(quote, 1);
+    if (close > 0) return value.slice(0, close + 1);
+  }
+  return value.replace(/(^|\s+)#.*$/, '').trim();
+}
+
 export function markdownHeader(content: string, label: string): string | null {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = content.match(new RegExp(`^> \\*\\*${escaped}\\*\\*:\\s*(.+?)\\s*$`, 'mi'));
@@ -68,8 +78,10 @@ export function parseAllowedPaths(contractText: string | null): string[] {
     }
     if (!inAllowedPaths) continue;
     const item = /^\s+-\s+(.+?)\s*$/.exec(line);
-    if (item) paths.push(stripWrappingQuotes(item[1]));
-    else if (line.trim() && !/^\s/.test(line)) break;
+    if (item) {
+      const value = stripWrappingQuotes(stripYamlInlineComment(item[1]));
+      if (value.length > 0) paths.push(value);
+    } else if (line.trim() && !/^\s/.test(line)) break;
   }
   return paths;
 }

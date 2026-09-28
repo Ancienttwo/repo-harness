@@ -38,6 +38,7 @@ import type {
 } from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
+import { stripYamlInlineComment } from "../../core/state/artifact-parsers";
 
 const PRODUCER_ID = "acceptance-receipt";
 const EVENT_TYPE = "acceptance_receipt.attested_import";
@@ -178,7 +179,7 @@ function parseContractAllowedPaths(contractText: string): readonly string[] {
       if (/^\S/.test(line)) break;
       const itemMatch = line.match(/^\s*-\s*(.+?)\s*$/);
       if (!itemMatch) continue;
-      const value = (itemMatch[1] ?? "").replace(/^["'`]+|["'`]+$/g, "");
+      const value = stripYamlInlineComment(itemMatch[1] ?? "").replace(/^["'`]+|["'`]+$/g, "");
       if (value.length > 0) paths.push(value);
     }
     return paths;

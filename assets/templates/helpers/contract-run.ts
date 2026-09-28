@@ -337,7 +337,14 @@ function parseList(block: string, key: string): string[] {
     if (!inList) continue;
     if (/^\S/.test(line) || /^\s+[a-zA-Z0-9_-]+:/.test(line)) break;
     const match = line.match(/^\s*-\s*(.+)$/);
-    if (match) values.push(match[1].trim().replace(/^["']|["']$/g, ""));
+    if (!match) continue;
+    let value = match[1].trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    // Drop a YAML inline comment: `#` at the start or after whitespace, outside a leading quoted scalar.
+    value = close > 0 ? value.slice(0, close + 1) : value.replace(/(^|\s+)#.*$/, "").trim();
+    value = value.replace(/^["']|["']$/g, "");
+    if (value.length > 0) values.push(value);
   }
   return values;
 }
