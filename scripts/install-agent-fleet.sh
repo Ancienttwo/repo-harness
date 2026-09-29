@@ -150,7 +150,7 @@ const MODEL_EFFORT_MAP = {
   opus: buildFamilyEffortMap("Opus", "gpt-6-astra", "GPT-6 Astra"),
   sonnet: buildFamilyEffortMap("Sonnet", "gpt-6-luna", "GPT-6 Luna"),
   haiku: buildFamilyEffortMap("Haiku", "gpt-6-luna", "GPT-6 Luna"),
-  fable: buildFamilyEffortMap("Fable", "gpt-6-sol", "GPT-6 Sol"),
+  fable: buildFamilyEffortMap("Fable", "gpt-6.1-sol", "GPT-6.1 Sol"),
 };
 
 // Per-agent Codex target overrides — the only model/effort remaps in the fleet.
@@ -159,8 +159,8 @@ const MODEL_EFFORT_MAP = {
 const AGENT_TARGET_OVERRIDES = {
   explorer: { model: "gpt-6-luna", effort: "high", targetDescription: "GPT-6 Luna at high reasoning" },
   "deep-reasoner": { model: "gpt-6-astra", effort: "high", targetDescription: "GPT-6 Astra at high reasoning" },
-  "fast-worker": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
-  "deep-worker": { model: "gpt-6-sol", effort: "xhigh", targetDescription: "GPT-6 Sol at xhigh reasoning" },
+  "fast-worker": { model: "gpt-6.1-sol", effort: "medium", targetDescription: "GPT-6.1 Sol at medium reasoning" },
+  "deep-worker": { model: "gpt-6.1-sol", effort: "high", targetDescription: "GPT-6.1 Sol at high reasoning" },
   gatekeeper: { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
   "root-cause-prover": { model: "gpt-6-astra", effort: "high", targetDescription: "GPT-6 Astra at high reasoning" },
   "harness-evaluator": { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },

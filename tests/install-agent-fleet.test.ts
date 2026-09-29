@@ -32,16 +32,16 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "read-only",
   },
   "fast-worker": {
-    model: "gpt-6-sol",
-    effort: "high",
-    descriptionLabel: "GPT-6 Sol at high reasoning",
-    sourceDescription: "Sonnet at xhigh effort",
+    model: "gpt-6.1-sol",
+    effort: "medium",
+    descriptionLabel: "GPT-6.1 Sol at medium reasoning",
+    sourceDescription: "Sonnet at high effort",
     sandboxMode: "workspace-write",
   },
   "deep-worker": {
-    model: "gpt-6-sol",
-    effort: "xhigh",
-    descriptionLabel: "GPT-6 Sol at xhigh reasoning",
+    model: "gpt-6.1-sol",
+    effort: "high",
+    descriptionLabel: "GPT-6.1 Sol at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
@@ -262,7 +262,7 @@ describe("install-agent-fleet", () => {
         .replaceAll("Opus at xhigh effort", "Opus at max effort")
         .replace("effort: xhigh", "effort: max");
       const customCodex = readFileSync(codexTarget, "utf-8")
-        .replace('model = "gpt-6-luna"', 'model = "gpt-6-sol"');
+        .replace('model = "gpt-6-luna"', 'model = "gpt-6.1-sol"');
       writeFileSync(claudeTarget, customClaude);
       writeFileSync(codexTarget, customCodex);
 
@@ -351,7 +351,7 @@ describe("install-agent-fleet", () => {
       for (const agent of AGENTS) {
         cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
-      const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: xhigh", "effort: min");
+      const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: high", "effort: min");
       writeFileSync(join(badSourceDir, "fast-worker.md"), corrupted);
 
       const res = runInstaller(home, badSourceDir);
@@ -505,7 +505,7 @@ describe("install-agent-fleet", () => {
         cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       const mismatched = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace(
-        "Sonnet at xhigh effort",
+        "Sonnet at high effort",
         "an unspecified model",
       );
       writeFileSync(join(badSourceDir, "fast-worker.md"), mismatched);
