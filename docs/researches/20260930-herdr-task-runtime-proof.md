@@ -1,0 +1,43 @@
+# Herdr task runtime: H0 feasibility and cutover inventory
+
+Observed 2026-09-30 against origin/main 43b7d72d and Herdr 0.9.1. This is H0 evidence, not a claim that H1–H6 have migrated production.
+
+## P1: existing authorities
+
+Git common-dir owns repository grouping; contract-worktree owns checkout/publication. Herdr owns live workspace/pane/agent addressing. Task contract, delegation admission, message/request artifacts and AcceptanceReceipt remain distinct business authorities. `src/effects/terminal/herdr.ts` is the existing CLI/environment boundary. `claude-review-session.ts` has durable provider lifecycle but is Claude-specific; cross-review/plugin, native-child, contract-run/campaign, MCP dev-runner and codex-app-thread remain separate launchers. Full file ownership and retirement inventory are in the approved plan.
+
+## P2: executable first proof point
+
+`tests/herdr-task-lifecycle.test.ts` creates fixture HOME and Git primary/linked checkouts. A unique `task-proof-*` Herdr server opens the already-created checkout beneath its primary workspace. The live workspace response proves equal `repo_key`, canonical `repo_root`, and primary/linked dispositions. Two deterministic peers under recognizable Codex/Claude executable names occupy separate task panes; a third sentinel occupies the primary workspace. They do not call a model.
+
+Owner 1 reads a precise task binding, sends req-1, and exits. Owner 2 separately reads the same binding and sends req-2. Provider PID and explicit fixture session ID remain identical; ordered requests retain the open finding and its resolution. Task panes close, both provider PIDs cease to exist, and Git removes the checkout. Sentinel process and pane remain alive. Only then is the owned disposable server stopped.
+
+Observed focused result: 2 tests, 19 assertions, 0 failures, about 4.6 seconds. Default/non-disposable session control is rejected before any Herdr CLI spawn. The test wraps all reads/mutations/cleanup in the same guard and fixture environment. No default session, mini profile, real agent or real HOME mutation occurs.
+
+## P3: decisions established by the trace
+
+- Register with `worktree open`; do not duplicate Git checkout creation with Herdr worktree create. Sidebar parenthood is common-dir metadata, not a filesystem child directory or a Git branch parent relationship.
+- Unix socket paths on macOS are bounded. A long system temp HOME plus UUID session caused both server/CLI to refuse startup with `local socket name length exceeds capacity of sun_path of sockaddr_un`. The fixture uses a short canonical /private/tmp directory and a unique 64-bit session suffix inside its private HOME; production H1 must validate its prospective endpoint path before side effects. Do not increase timeouts for this deterministic error.
+- Herdr canonicalizes /tmp to /private/tmp in workspace metadata; compare canonical checkout paths.
+- Some CLI mutations (pane run/report-agent/rename/close/server stop) return empty stdout with exit 0, while topology/get/prompt operations return JSON. Parse only an operation's official response shape, not a universal JSON wrapper; absence of a required JSON response still fails closed.
+- A result ACK/session ID is a fixture protocol fact, distinct from Herdr `working`/`idle` state. Herdr --wait is not per-request completion.
+- Default cleanup refusal is a test isolation invariant; the real user-created advisor-gatekeeper stays attached by authorization, never owned for deletion.
+
+## Four-harness capability observations
+
+All version/help commands ran with a disposable HOME and removed inherited HERDR_*; all exited 0.
+
+| Harness | Actual version | Official CLI exposes | Not established |
+|---|---|---|---|
+| Codex | 0.159.0 | resume; model; sandbox policy | Auth, actual model, read-only enforcement and session resume behavior |
+| Claude Code | 2.1.284 | resume; session-id; allowed/disallowed tools; permission-mode | Auth, actual model, durable resume and configured tool denial behavior |
+| OpenCode | 1.18.33 | session; session-id; export/import; provider/model | Auth, actual model, read-only enforcement and durable resume |
+| Pi | 0.87.1 | session/path/id; session-dir; continue/resume; no-tools; model | Auth, actual model, extension/tool containment and durable resume |
+
+Minimum **validated** Herdr version for this topology/transport proof is 0.9.1; 0.9.0 was not tested and no claim about its capability is made. H5 must update the pin and official release asset/hash coherently rather than changing only a string. CLI help cannot prove runtime permissions or authentication. H1 must expose unverified/unsupported capabilities without host substitution.
+
+Runtime version/help output: `.ai/harness/runs/herdr-task-h0/capabilities.json` and per-kind text files. Canonical command outcomes are produced by the contract JSON Verification Plan into `.ai/harness/runs/`; ignored evidence is not a release artifact.
+
+## Remaining gates and rollback
+
+H0 validates deterministic transport/lifetime/context wiring; actual four-harness agent start/readiness/auth/read-only/resume and generic production persistence are still H1/H6 work. mini points at the real remote default session and is not authorized for canary; no machine profile mutation is allowed. H0 makes no production runtime change. Revert its test/research/workflow commit to roll back; production cutover remains atomic after H1–H6 and designated gatekeeper acceptance.
