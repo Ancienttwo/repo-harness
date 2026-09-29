@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:466c2a7e0566e85f123ced2f7cb45b61e7f6a982aec514020ea29df51a90d23f`
+> **Substantive Change SHA256**: `sha256:6c1b3d17929afbfdf1157949fc4eee724f78d87687907ec0965418e4771acbb6`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -38,7 +38,7 @@
 - Shared owner is src/effects/terminal/task-session.ts: immutable/fsynced artifacts, OS PID/group/start/executable identity, created/attached fences, pane/terminal/name/shell proof, durable rounds, write-ahead start and request protocol. Claude review imports these primitives; no storage/identity/budget copy remains there. Its domain-specific structured protocol and AcceptanceReceipt remain until H4.
 - A completed start has a creation intent, pane receipt and provider receipt before binding commit. If owner dies after provider receipt, recovery verifies the same PID/identity against Herdr and commits the binding without another launch. If the provider may have launched but no receipt survived, recovery records reconciliation_required; it cannot adopt the live occupant by name or launch a replacement. Real process tests cover both windows and concurrent start contention.
 - Close/cancel refuse attached pane or provider. Created proof must agree with saved intent/pane/provider receipts; terminal ID, agent name and provider birth/group/executable changes refuse cleanup. Provider group receives identity-fenced SIGTERM, then only the still-owned shell pane can close. Lost/unknown children leave cleanup pending. The public CLI has no server-stop.
-- Generic prompts contain request/result refs; context bytes are sealed in a task artifact. Result request ID/context SHA must match. A missing result stays pending and cannot allocate another round or replay; misleading terminal PASS is ignored. Claude host also submits a request file ref, captures only validated structured provider output and saves via the shared result primitive.
+- Generic prompts contain request/result refs; context bytes are sealed in a task artifact. Result request ID/context SHA must match. A missing result stays pending and cannot allocate another round or replay; misleading terminal PASS is ignored. Claude host captures validated structured provider output and saves via the shared result primitive. REQ-3 B1 restores full request.prompt on stdin; generic send alone remains ref-only until a real large-packet Claude canary.
 - Herdr 0.9.1 creates API and client sockets (tagged upstream src/session.rs:155-170). The client path is seven bytes longer; validation must check both before state directories, locks, intent or layout changes. Test HOME/session names were shortened; no timeout increase.
 - Existing Claude session metadata now has protocol 3 plus generic process binding and isolated runtime HOME; protocol 2 is not read as a fallback. WIP is not installed globally. All 20 existing real-Herdr/deterministic-provider behavior cases pass (95 assertions, ~49s).
 - H1 shared/CLI focused cases pass; real harness capability remains unverified, fixture evidence alone may be verified. No actual model/auth/read-only/resume canary has run. Before H4 provider deletion, notify advisor-gatekeeper and do minimal real Codex/Claude proof in disposable sessions using authorized real HOME authentication.
@@ -50,3 +50,26 @@
 - First canonical attempt gave its two runtime criteria exit 0 but exhausted the whole 60s execution deadline before integrity commands. 120s whole-plan budget reused both exact passed records; it does not alter individual test deadlines.
 - The remaining task-sync failure required a source-diff-bound workflow artifact. The exact header above comes from the immutable task-sync log associated with the same unchanged substantive source/test diff.
 - Only notes and this contract's evidence declaration change after that baseline. Both expensive criteria explicitly retain their immutable passed execution records with current task-sync, task-workflow and type deltas; no baseline is relabelled as a fresh current-subject run.
+
+## [REQ-3] correction scope — not PASS
+
+- B1: pointer submission narrowed to the generic send path. Restore Claude provider stdin to full request.prompt; a one-line JSON artifact read by model tools is not proof of complete >1MB source. Keep shared start/result/round primitives. H4 pointer mode requires real Claude >1MB completeness canary first.
+- B2 root cause: the shared 10s spawn bound truncates an agent-start operation whose readiness wait can be longer; every current test bypassed its production launcher. Add an explicit 60s readiness bound (+5s transport margin), longer start lock wait, real Herdr agent-start fixture and forced timeout/no replay proof.
+- B3 root cause: close reads binding before inspecting start intent/receipts; a crash before binding cannot reach cleanup. Close a created pane only after receipt/terminal readback, record foreground PIDs first, then verify pane absence and observed PID exit; uncertain remnants report cleanup_pending without unproven signals.
+- B4 root causes: insertion-order JSON equality rejects semantically identical specs; public raw argv skips future role-profile admission. Use existing canonical JSON authority and reject nonempty public args until H3.
+- No amend of b4b48c00. H1 corrections get a new commit; H2 remains blocked until [REQ-3b] PASS.
+
+## Carried gates — do not implement in REQ-3b
+
+- H2: identity-proven SIGKILL escalation; canonical task state/repo identity across primary and linked worktrees; cancel vs close semantics.
+- H3: explicit required result contract (request_id/context_sha256/value + temp/rename), plain-text context files, incomplete result as pending, real foreground multi-process handling, consumer-specific duplicate-context policy.
+- H5: endpoint layout prediction bound to the pinned Herdr version; unknown version fails closed.
+
+## [REQ-3b] implementation / verification boundary
+
+- B1 fixed by restoring stdin request.prompt and the deterministic provider's inline identity parser; shared beginSessionRound/saveSessionRoundResult remain the owners. Pointer/large-packet model-tool reading is not claimed supported.
+- B2 now passes --timeout 60000, uses a 65000ms spawn bound, and allows a 70000ms start-lock wait (expiry reports start_in_progress). Timeout/nonzero/killed launch records launch-unknown and cannot replay. Tagged Herdr v0.9.1 additionally requires readiness >3000ms and <=300000ms.
+- Real production agent-start branch is covered without effects.start: private server PATH resolves the executable to a fixture, an external reporter holds working for 11s before idle, and a 4s readiness timeout leaves an unbound live provider. Direct focused proof passed in ~16.8s. No real model/auth invocation.
+- B3 closes starts without a binding from creation receipts. No pane receipt marks closed; otherwise terminal ID is checked, foreground PIDs saved before pane close, absence/exit confirmed. Remaining recorded PID returns cleanup_pending (CLI exit 1); no unproven PID receives a signal. Tests now restore pane count and provider exit after both crash windows, plus an observed survivor remains alive/pending until fixture teardown proves exit.
+- B4 uses existing canonical-json sorting recursively, preserving array order; reordered root/endpoint keys reuse the same binding. Public start rejects all nonempty argv before any task state; internal fixtures alone carry their own parameter seam until H3 role profiles.
+- This correction changes runtime/test behavior: canonical Verification Plan returns both runtime criteria to current_exact. Previous H1 baselines are historical only, not reused for B1–B4.

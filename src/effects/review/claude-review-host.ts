@@ -157,7 +157,7 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       outputBytes = 0;
       console.log(`ROUND ${next} submitted: ${request.context.subject_sha256}`);
       child.stdin.write(JSON.stringify({ type: 'user', session_id: session.session_id, parent_tool_use_id: null,
-        message: { role: 'user', content: `Read acceptance request ${JSON.stringify(path)}; follow its prompt and return the required structured result.` } }) + '\n');
+        message: { role: 'user', content: request.prompt } }) + '\n');
       timer = setTimeout(() => fail('claude_review_round_timeout; delivery is ambiguous'), request.timeout_ms);
     } catch (error) { fail(error); }
   }, 100);

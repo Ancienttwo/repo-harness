@@ -12,6 +12,7 @@ export function buildTaskAgentCommand(): Command {
       const spec = readSessionArtifact<TaskAgentSpec>(path);
       const expected = ['task', 'role', 'harness_kind', 'endpoint', 'parent_pane', 'args', 'max_requests'];
       if (Object.keys(spec).sort().join(',') !== expected.sort().join(',')) throw new Error('task_agent_input_invalid');
+      if (!Array.isArray(spec.args) || spec.args.length !== 0) throw new Error('task_agent_arguments_require_role_profile');
       process.stdout.write(JSON.stringify(await startTaskAgent(root, spec)) + '\n');
     });
   command.command('send').requiredOption('--task <id>').requiredOption('--role <name>').requiredOption('--context <path>')
@@ -32,8 +33,9 @@ export function buildTaskAgentCommand(): Command {
     });
   for (const action of ['close', 'cancel']) command.command(action).requiredOption('--task <id>').requiredOption('--role <name>')
     .option('--repo <path>', 'Repository root', process.cwd()).action(async opts => {
-      await closeTaskAgent(opts.repo, opts.task, opts.role);
-      process.stdout.write(JSON.stringify({ status: 'closed', task: opts.task, role: opts.role }) + '\n');
+      const result = await closeTaskAgent(opts.repo, opts.task, opts.role);
+      process.stdout.write(JSON.stringify({ ...result, task: opts.task, role: opts.role }) + '\n');
+      if (result.status !== 'closed') process.exitCode = 1;
     });
   return command;
 }

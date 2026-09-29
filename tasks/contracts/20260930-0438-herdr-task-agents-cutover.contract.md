@@ -17,7 +17,7 @@
 
 ## Goal
 
-当前切片 H1：共享 Herdr task-role 生命周期、write-ahead 与原子并发 start、文件 request/result 和 round budget、created/attached identity-safe cleanup。Claude review 必须调用提取后的共享实现，现有生命周期行为继续通过。H1 不调用真实模型；真实 harness capability 均为 unverified。
+当前切片 H1 / REQ-3b：修复 B1 stdin 完整输入、B2 显式 start deadline 与真实路径覆盖、B3 unbound receipt cleanup、B4 canonical spec 与公共 args 限制；共享 Herdr task-role 生命周期、write-ahead 与原子并发 start、文件 request/result 和 round budget、created/attached identity-safe cleanup。Claude review 必须调用提取后的共享实现，现有生命周期行为继续通过。H1 不调用真实模型；真实 harness capability 均为 unverified。
 
 ## Scope
 
@@ -28,7 +28,7 @@
 ## Stop Conditions
 
 - Stop before paths outside H1 scope.
-- H1 commit 完成后向 advisor-gatekeeper 发 [REQ-3] + SHA + canonical evidence；等 PASS 才进入 H2。
+- 修正以新 commit 保留 b4b48c00，完成后向 advisor-gatekeeper 发 [REQ-3b] + SHA + canonical evidence；等 PASS 才进入 H2。
 - 不在 default/mini 执行 cleanup 或测试，不动用户 pane/进程。真实 model canary 仅 H4 前通知 reviewer 后执行。
 - uncertain start/delivery 保留 intent，reconcile Herdr live state；不得重放或新建替代 agent。
 
@@ -142,20 +142,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
-      "evidence_policy": "baseline_with_delta",
-      "necessity": "Real Herdr concurrent process start, interruption/reconciliation, file delivery and created-only identity cleanup; no model/auth invocation.",
+      "evidence_policy": "current_exact",
+      "necessity": "Real Herdr concurrent process start, interruption/reconciliation, file delivery and created-only identity cleanup; no model/auth invocation. REQ-3b changes behavior, so prior H1 baselines do not satisfy this correction.",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-9bd488d73ec04014945f.json",
-        "execution_id": "vx-9bd488d73ec04014945f"
-      },
-      "delta_checks": [
-        "task-sync",
-        "task-workflow",
-        "h1-type"
-      ]
+      }
     },
     {
       "id": "h1-claude-behavior",
@@ -164,20 +155,11 @@ exit_criteria:
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
-      "evidence_policy": "baseline_with_delta",
-      "necessity": "Extraction changes existing real provider-host lifecycle. Preserve same-child rounds, startup/cancel/identity, findings, deadline and receipt behavior in disposable fixtures.",
+      "evidence_policy": "current_exact",
+      "necessity": "Extraction changes existing real provider-host lifecycle. Preserve same-child rounds, startup/cancel/identity, findings, deadline and receipt behavior in disposable fixtures. REQ-3b changes behavior, so prior H1 baselines do not satisfy this correction.",
       "inputs": {
         "env": []
-      },
-      "baseline": {
-        "run_file": ".ai/harness/runs/verification-vx-b07a74532d18456fbcae.json",
-        "execution_id": "vx-b07a74532d18456fbcae"
-      },
-      "delta_checks": [
-        "task-sync",
-        "task-workflow",
-        "h1-type"
-      ]
+      }
     },
     {
       "id": "hooks",
@@ -315,13 +297,11 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Extend H0 composition owner with real concurrent starts/crash observation, file-only response and identity/ownership fences. CLI test owns parsing/no-server-stop, no duplicate lifecycle fixture.
-- Existing tests/claude-review.test.ts is behavioral baseline; run real Herdr deterministic provider cases in private HOME/session with default hard refusal. No model API calls.
-- Runtime capability is verified/unverified/unsupported plus exact evidence ref. H1 real harness remains unverified; only fixture evidence can be verified.
-- Endpoint validation precedes directory/intent/layout creation. Round budget and request/result primitives move from Claude consumer to shared owner.
-- Real lifecycle cases justified by REQ-2, estimated runtime bounded at file 60s; full-suite omitted.
-- H0 canonical baseline remains immutable; H1 has its own runtime baselines. After the task-sync header/evidence declaration only, retain H1 runtime records with source-digest-bound task-sync and workflow/type deltas. No source/test byte changed; never relabel the baseline as newly executed.
-- mini remains unauthorized and actual provider auth/read-only/resume unverified.
+- REQ-3b changes runtime behavior in B1–B4; both focused runtime suites must execute current_exact. Existing H1 baselines cannot authorize this patch.
+- Extend existing composition coverage for production agent start (11s external readiness and 4s timeout), no binding cleanup and observed PID survivor, canonical key order, and public argv denial. No new test file or dependency.
+- Existing Claude suite is the behavior boundary for restored full stdin and shared result/round primitives; no real model calls.
+- Real Herdr needed for pane lifecycle/readiness/cleanup; all fixtures use private HOME/named sessions. Test file deadline 60s; whole canonical plan budget 120s.
+- H2/H3/H5 carried gates are in notes; do not implement them in this correction. mini still unauthorized, real harness auth/read-only/resume unverified.
 
 ## Rollback Point
 

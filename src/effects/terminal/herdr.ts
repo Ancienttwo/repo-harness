@@ -29,8 +29,9 @@ export const spawnHerdr: HerdrSpawn = (command, args, options) => spawnSync(comm
   ...options, killSignal: 'SIGKILL', shell: false, encoding: null, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
 });
 
-export function herdrCommand(endpoint: HerdrEndpoint, args: readonly string[], bin = 'herdr', spawn: HerdrSpawn = spawnHerdr) {
-  return spawn(bin, ['--session', endpoint.session, ...args], { timeout: HERDR_COMMAND_TIMEOUT_MS, env: herdrEnvironment(endpoint) });
+export function herdrCommand(endpoint: HerdrEndpoint, args: readonly string[], bin = 'herdr', spawn: HerdrSpawn = spawnHerdr, timeoutMs = HERDR_COMMAND_TIMEOUT_MS) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('herdr_invalid_command_timeout');
+  return spawn(bin, ['--session', endpoint.session, ...args], { timeout: timeoutMs, env: herdrEnvironment(endpoint) });
 }
 
 export function herdrResult(result: SpawnSyncReturns<Buffer>): Record<string, any> {
