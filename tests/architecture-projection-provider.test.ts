@@ -1121,7 +1121,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.5.7');
+    expect(readback.packages.contracts.version).toBe('0.6.0');
     expect(Object.keys(readback.packages.contracts).sort()).toEqual(['file', 'name', 'version']);
     expect(Object.keys(readback.packages.archctx).sort()).toEqual(['file', 'name', 'version']);
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');

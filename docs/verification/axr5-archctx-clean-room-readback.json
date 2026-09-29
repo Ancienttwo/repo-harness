@@ -3,20 +3,20 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "517cc5efe4f09e48e5dfb9ab6b2fad44fa547022",
+    "revision": "597a4161960c31685b3d3e360c9eb81314b582d7",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.5.7",
-      "file": "archctx-contracts-0.5.7.tgz"
+      "version": "0.6.0",
+      "file": "archctx-contracts-0.6.0.tgz"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.5.7",
-      "file": "archctx-0.5.7.tgz"
+      "version": "0.6.0",
+      "file": "archctx-0.6.0.tgz"
     }
   },
   "consumer": {
@@ -31,7 +31,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.5.7"
+        "version": "0.6.0"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -46,8 +46,10 @@
         "architecture-docs-renderer-v2",
         "architecture-refresh-signal-v1",
         "module-statistics-v1",
+        "projection-apply-readback-v1",
         "projection-apply-receipt-v1",
         "projection-apply-recovery-v1",
+        "projection-prior-committed-applies-v1",
         "projection-protocol-v2",
         "recommendation-v3",
         "refactor-assessment-v1",
