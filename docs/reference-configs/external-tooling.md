@@ -639,14 +639,14 @@ mapping.
 |---|---|---|---|
 | `opus` | `gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 | `sonnet`, `haiku` | `gpt-6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
-| `fable` | `gpt-6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
+| `fable` | `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 
 Seven per-agent target overrides are applied after tuple validation, on top of
 the family row above, and are the only model/effort remaps in the generator:
 `explorer` (`sonnet`/`medium`) targets `gpt-6-luna` at `high` reasoning;
 `deep-reasoner` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
-`fast-worker` (`sonnet`/`xhigh`) targets `gpt-6-sol` at `high` reasoning;
-`deep-worker` (`opus`/`high`) targets `gpt-6-sol` at `xhigh` reasoning;
+`fast-worker` (`sonnet`/`high`) targets `gpt-6.1-sol` at `medium` reasoning;
+`deep-worker` (`opus`/`high`) targets `gpt-6.1-sol` at `high` reasoning;
 `gatekeeper` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning;
 `root-cause-prover` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
 `harness-evaluator` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning.
@@ -654,7 +654,7 @@ the family row above, and are the only model/effort remaps in the generator:
 `fast-worker`, `deep-worker`, `root-cause-prover`, and `harness-evaluator`
 receive `sandbox_mode = "workspace-write"`; every other role receives
 `sandbox_mode = "read-only"`. Current assignments are explorer
-(`sonnet/medium`), deep-reasoner (`opus/xhigh`), fast-worker (`sonnet/xhigh`),
+(`sonnet/medium`), deep-reasoner (`opus/xhigh`), fast-worker (`sonnet/high`),
 deep-worker (`opus/high`), gatekeeper (`opus/high`), root-cause-prover
 (`opus/xhigh`), and harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
 writes to bugfix evidence inside the active contract's allowed paths;

@@ -780,7 +780,7 @@ describe('install profiles', () => {
     expect(runFleet().status).toBe(0);
 
     const custom = join(home, '.codex', 'agents', 'explorer.toml');
-    const customContent = readFileSync(custom, 'utf-8').replace('model = "gpt-6-luna"', 'model = "gpt-6-sol"');
+    const customContent = readFileSync(custom, 'utf-8').replace('model = "gpt-6-luna"', 'model = "gpt-6.1-sol"');
     writeFileSync(custom, customContent);
     expect(runFleet('--accept-user-managed').status).toBe(0);
 
