@@ -1,17 +1,18 @@
-import { constants, existsSync, closeSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync, chmodSync } from 'fs';
+import { existsSync, closeSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync, chmodSync } from 'fs';
 import { execFileSync, spawn, type ChildProcess } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { dirname, isAbsolute, join, relative, resolve } from 'path';
+import { isAbsolute, join, relative, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { herdrCommand, herdrEnvironment, herdrResult } from '../terminal/herdr';
+import { herdrCommand, herdrEnvironment, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
+import { assertCreated, assertTaskBinding, ensureSessionDirectory, nextSessionRound, processIdentity, processProofAlive, readSessionArtifact, signalCreatedProcess, waitSessionArtifact, writeSessionArtifact, type ObjectOwnership, type TaskPaneBinding } from '../terminal/task-session';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { CLAUDE_REVIEW_MAX_ROUNDS, CLAUDE_REVIEW_TIMEOUT_MS, reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewContext, type ClaudeReviewRequest } from '../../core/review/claude-review';
 import { acceptanceContext, authorityFingerprint, projectAcceptance, recordAcceptance, verifyAcceptance } from '../../../scripts/acceptance-receipt';
 
 export interface ReviewSession {
-  protocol: 2;
+  protocol: 3;
   startup_protocol?: 1;
   repo_root: string;
   contract_file: string;
@@ -22,6 +23,7 @@ export interface ReviewSession {
   herdr_bin: string;
   herdr_config: string;
   provider_bin: string;
+  runtime_home: string;
 }
 
 export interface ReviewProcesses {
@@ -30,6 +32,7 @@ export interface ReviewProcesses {
   child_pid: number;
   server: string;
   pane: string;
+  binding: TaskPaneBinding;
 }
 
 export interface ClaudeReviewOptions {
@@ -40,38 +43,8 @@ export interface ClaudeReviewOptions {
   /** Internal seams used by deterministic integration tests, never exposed by CLI. */
   providerCommand?: string;
   authorityHome?: string;
+  runtimeHome?: string;
   admitSession: () => void;
-}
-
-export function processIdentity(pid: number): string {
-  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('claude_review_invalid_process');
-  return execFileSync('ps', ['-p', String(pid), '-o', 'pid=,pgid=,lstart=,comm='], { encoding: 'utf8' }).trim();
-}
-
-export function readReviewJson<T>(path: string): T {
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try { return JSON.parse(readFileSync(fd, 'utf8')) as T; } finally { closeSync(fd); }
-}
-
-export function writeReviewJson(path: string, value: unknown, immutable = true): void {
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-  try { writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`); fsyncSync(fd); } finally { closeSync(fd); }
-  try { if (immutable) linkSync(temporary, path); else renameSync(temporary, path); }
-  finally { if (existsSync(temporary)) unlinkSync(temporary); }
-  const directory = openSync(dirname(path), constants.O_RDONLY);
-  try { fsyncSync(directory); } finally { closeSync(directory); }
-}
-
-function safeDirectory(root: string, path: string): void {
-  const parts = relative(root, path).split('/');
-  if (parts.includes('..') || isAbsolute(relative(root, path))) throw new Error('claude_review_unsafe_directory');
-  let current = root;
-  for (const part of parts) {
-    current = join(current, part);
-    try { mkdirSync(current, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-    if (!lstatSync(current).isDirectory() || lstatSync(current).isSymbolicLink()) throw new Error('claude_review_unsafe_directory');
-  }
 }
 
 export function reviewSessionLocation(repoRoot: string, contract: string): { root: string; dir: string; contract: string } {
@@ -82,25 +55,29 @@ export function reviewSessionLocation(repoRoot: string, contract: string): { roo
   }
   const key = createHash('sha256').update(canonical).digest('hex');
   const dir = join(root, '.ai/harness/runs/claude-review', key);
-  safeDirectory(root, dir);
+  ensureSessionDirectory(root, dir);
   return { root, dir, contract: canonical };
 }
 
-export function herdr(session: ReviewSession, args: string[]): Record<string, any> {
-  return herdrResult(herdrCommand({ session: session.herdr_session, configPath: session.herdr_config }, args, session.herdr_bin));
+export function reviewEndpoint(session: ReviewSession): HerdrEndpoint {
+  return { session: session.herdr_session, configPath: session.herdr_config, home: session.runtime_home };
 }
 
-interface ReviewServer { pid: number; identity: string }
+export function herdr(session: ReviewSession, args: string[]): Record<string, any> {
+  return herdrResult(herdrCommand(reviewEndpoint(session), args, session.herdr_bin));
+}
+
+interface ReviewServer { pid: number; identity: string; ownership: ObjectOwnership }
 
 function serverStartupUnresolved(session: ReviewSession, dir: string): boolean {
   if (!existsSync(join(dir, 'server-start-intent.json')) || existsSync(join(dir, 'server.json'))) return false;
   return !existsSync(join(dir, 'server-closed.json'))
-    || readReviewJson<{ session_id?: string }>(join(dir, 'server-closed.json')).session_id !== session.session_id;
+    || readSessionArtifact<{ session_id?: string }>(join(dir, 'server-closed.json')).session_id !== session.session_id;
 }
 
 export function reviewServerIdentity(session: ReviewSession): ReviewServer {
   const { dir } = reviewSessionLocation(session.repo_root, session.contract_file);
-  const server = readReviewJson<ReviewServer>(join(dir, 'server.json'));
+  const server = readSessionArtifact<ReviewServer>(join(dir, 'server.json'));
   if (processIdentity(server.pid) !== server.identity) throw new Error('claude_review_server_identity_lost');
   return server;
 }
@@ -116,12 +93,14 @@ export function reviewHostIdentity(session: ReviewSession, pane: string): { serv
 }
 
 export function assertReviewProcesses(session: ReviewSession, processes: ReviewProcesses): void {
+  assertTaskBinding(processes.binding);
   const identity = reviewHostIdentity(session, processes.pane);
   if (identity.server !== processes.server || identity.host !== processes.host
     || processIdentity(processes.child_pid) !== processes.child) throw new Error('claude_review_process_identity_lost');
 }
 
 export async function startReviewServer(session: ReviewSession, dir: string): Promise<void> {
+  validateHerdrEndpoint(reviewEndpoint(session));
   const startup = acquireExclusiveDirectoryLock(session.repo_root, relative(session.repo_root, join(dir, 'startup.lock')),
     { waitTimeoutMs: 1000, reclaimStaleOwner: true });
   try {
@@ -132,17 +111,17 @@ export async function startReviewServer(session: ReviewSession, dir: string): Pr
     writeFileSync(launcher, `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(host)} ${shellQuote(dir)}\n`, { flag: 'wx', mode: 0o700 });
     chmodSync(launcher, 0o700);
     writeFileSync(session.herdr_config, `onboarding = false\n[terminal]\ndefault_shell = ${JSON.stringify(launcher)}\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n`, { flag: 'wx', mode: 0o600 });
-    writeReviewJson(join(dir, 'server-start-intent.json'), { session_id: session.session_id });
+    writeSessionArtifact(join(dir, 'server-start-intent.json'), { session_id: session.session_id });
     const log = openSync(join(dir, 'herdr-server.log'), 'ax', 0o600);
     let server: ChildProcess | undefined;
     try {
       server = spawn(session.herdr_bin, ['--session', session.herdr_session, 'server'], {
-        cwd: session.repo_root, env: herdrEnvironment({ session: session.herdr_session, configPath: session.herdr_config }),
+        cwd: session.repo_root, env: herdrEnvironment(reviewEndpoint(session)),
         detached: true, stdio: ['ignore', log, log],
       });
       server.on('error', () => {});
       if (!server.pid) throw new Error('claude_review_server_spawn_failed');
-      writeReviewJson(join(dir, 'server.json'), { pid: server.pid, identity: processIdentity(server.pid) });
+      writeSessionArtifact(join(dir, 'server.json'), { pid: server.pid, identity: processIdentity(server.pid), ownership: { disposition: 'created', intent_id: session.session_id } });
       server.unref();
     } catch (error) {
       // No workspace has been created yet. Reap only this still-owned child;
@@ -153,7 +132,7 @@ export async function startReviewServer(session: ReviewSession, dir: string): Pr
         while (server.exitCode === null && server.signalCode === null && Date.now() < deadline) await Bun.sleep(10);
         if (server.exitCode === null && server.signalCode === null) throw new Error('claude_review_server_cleanup_incomplete');
       }
-      writeReviewJson(join(dir, 'server-closed.json'), { session_id: session.session_id });
+      writeSessionArtifact(join(dir, 'server-closed.json'), { session_id: session.session_id });
       throw error;
     } finally { closeSync(log); }
   } finally { startup.release(); }
@@ -167,17 +146,16 @@ export async function startReviewServer(session: ReviewSession, dir: string): Pr
   failure(dir);
   const result = herdr(session, ['workspace', 'create', '--cwd', session.repo_root, '--label', 'Claude acceptance reviewer', '--no-focus']);
   if (result.type !== 'workspace_created' || typeof result.root_pane?.pane_id !== 'string') throw new Error('claude_review_invalid_pane_response');
-  writeReviewJson(join(dir, 'pane.json'), { pane: result.root_pane.pane_id });
+  writeSessionArtifact(join(dir, 'pane.json'), { pane: result.root_pane.pane_id });
 }
 
 async function stopReviewServer(session: ReviewSession, dir: string): Promise<void> {
   if (serverStartupUnresolved(session, dir)) throw new Error('claude_review_server_startup_ownership_unknown; inspect the named herdr server');
   if (!existsSync(join(dir, 'server.json'))) return;
-  const server = readReviewJson<ReviewServer>(join(dir, 'server.json'));
+  const server = readSessionArtifact<ReviewServer>(join(dir, 'server.json'));
+  assertCreated(server.ownership);
   const alive = () => {
-    try { process.kill(server.pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
-    if (processIdentity(server.pid) !== server.identity) throw new Error('claude_review_server_identity_lost');
-    return true;
+    try { return processProofAlive(server); } catch { throw new Error('claude_review_server_identity_lost'); }
   };
   // Let the host exit and remove its pane before stopping the dedicated server.
   const deadline = Date.now() + 5000;
@@ -189,38 +167,29 @@ async function stopReviewServer(session: ReviewSession, dir: string): Promise<vo
     await Bun.sleep(100);
   }
   if (!alive()) {
-    if (!existsSync(join(dir, 'server-closed.json'))) writeReviewJson(join(dir, 'server-closed.json'), server);
+    if (!existsSync(join(dir, 'server-closed.json'))) writeSessionArtifact(join(dir, 'server-closed.json'), server);
     return;
   }
-  process.kill(server.pid, 'SIGTERM');
+  signalCreatedProcess(server, 'SIGTERM');
   const stoppedBy = Date.now() + 5000;
   while (alive() && Date.now() < stoppedBy) await Bun.sleep(100);
   if (alive()) throw new Error('claude_review_server_cleanup_incomplete');
-  if (!existsSync(join(dir, 'server-closed.json'))) writeReviewJson(join(dir, 'server-closed.json'), server);
+  if (!existsSync(join(dir, 'server-closed.json'))) writeSessionArtifact(join(dir, 'server-closed.json'), server);
 }
 
 function readSession(dir: string, root: string, contract: string): ReviewSession {
-  const session = readReviewJson<ReviewSession>(join(dir, 'session.json'));
-  if (session.protocol !== 2 || session.repo_root !== root || session.contract_file !== contract
-    || !/^[0-9a-f-]{36}$/.test(session.session_id) || session.herdr_session !== `review-${session.session_id}`
-    || !isAbsolute(session.herdr_bin) || session.herdr_config !== join(dir, 'herdr.toml') || !isAbsolute(session.provider_bin)) throw new Error('claude_review_session_identity_mismatch');
+  const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+  if (session.protocol !== 3 || session.repo_root !== root || session.contract_file !== contract
+    || !/^[0-9a-f-]{36}$/.test(session.session_id) || session.herdr_session !== `review-${session.session_id.replaceAll("-", "").slice(0, 20)}`
+    || !isAbsolute(session.runtime_home) || !isAbsolute(session.herdr_bin) || session.herdr_config !== join(dir, 'herdr.toml') || !isAbsolute(session.provider_bin)) throw new Error('claude_review_session_identity_mismatch');
   return session;
 }
 
 function shellQuote(value: string): string { return `'${value.replace(/'/g, `'\\''`)}'`; }
 
 function failure(dir: string): void {
-  if (existsSync(join(dir, 'failure.json'))) throw new Error(`claude_review_interrupted: ${readReviewJson<{ error: string }>(join(dir, 'failure.json')).error}`);
+  if (existsSync(join(dir, 'failure.json'))) throw new Error(`claude_review_interrupted: ${readSessionArtifact<{ error: string }>(join(dir, 'failure.json')).error}`);
   if (existsSync(join(dir, 'close.request.json'))) throw new Error('claude_review_session_closed');
-}
-
-async function waitFile(path: string, deadline: number, check: () => void): Promise<void> {
-  let nextCheck = 0;
-  while (!existsSync(path)) {
-    if (Date.now() >= nextCheck) { check(); nextCheck = Date.now() + 1000; }
-    if (Date.now() >= deadline) throw new Error('claude_review_wait_timeout; delivery may be ambiguous; inspect status and cancel');
-    await Bun.sleep(100);
-  }
 }
 
 function contextIdentity(context: Awaited<ReturnType<typeof acceptanceContext>>): ClaudeReviewContext {
@@ -251,6 +220,9 @@ function sourcePacket(root: string, paths: readonly string[], target: string): s
 }
 
 export async function runClaudeReviewRound(options: ClaudeReviewOptions) {
+  const startupId = randomUUID();
+  const runtimeHome = options.runtimeHome ?? process.env.HOME ?? userInfo().homedir;
+  validateHerdrEndpoint({ session: `review-${startupId.replaceAll("-", "").slice(0, 20)}`, home: runtimeHome });
   const { root, dir, contract } = reviewSessionLocation(options.repoRoot, options.contract);
   const lock = acquireExclusiveDirectoryLock(root, relative(root, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
   try {
@@ -270,28 +242,23 @@ export async function runClaudeReviewRound(options: ClaudeReviewOptions) {
       const match = /^herdr (\d+)\.(\d+)\.(\d+)$/.exec(version);
       if (!match || (Number(match[1]) === 0 && Number(match[2]) < 9)) throw new Error('claude_review_requires_herdr_0_9');
       options.admitSession();
-      const id = randomUUID();
-      session = { protocol: 2, startup_protocol: 1, repo_root: root, contract_file: contract, contract_sha256: identity.contract_sha256,
-        goal_sha256: identity.goal_sha256, session_id: id, herdr_session: `review-${id}`, herdr_bin: herdrBin, herdr_config: join(dir, 'herdr.toml'), provider_bin: providerBin };
-      writeReviewJson(join(dir, 'session.json'), session);
+      const id = startupId;
+      session = { protocol: 3, startup_protocol: 1, repo_root: root, contract_file: contract, contract_sha256: identity.contract_sha256,
+        goal_sha256: identity.goal_sha256, session_id: id, herdr_session: `review-${id.replaceAll("-", "").slice(0, 20)}`, herdr_bin: herdrBin, herdr_config: join(dir, 'herdr.toml'), provider_bin: providerBin, runtime_home: runtimeHome };
+      writeSessionArtifact(join(dir, 'session.json'), session);
       try {
         await startReviewServer(session, dir);
-        await waitFile(join(dir, 'processes.json'), Date.now() + 15_000, () => failure(dir));
+        await waitSessionArtifact(join(dir, 'processes.json'), Date.now() + 15_000, () => failure(dir));
       } catch (error) {
-        if (!existsSync(join(dir, 'failure.json'))) writeReviewJson(join(dir, 'failure.json'), { error: `startup: ${String(error)}` });
+        if (!existsSync(join(dir, 'failure.json'))) writeSessionArtifact(join(dir, 'failure.json'), { error: `startup: ${String(error)}` });
         throw error;
       }
     } else session = readSession(dir, root, contract);
     if (session.contract_sha256 !== identity.contract_sha256 || session.goal_sha256 !== identity.goal_sha256) throw new Error('claude_review_contract_or_goal_changed');
-    const processes = readReviewJson<ReviewProcesses>(join(dir, 'processes.json'));
+    const processes = readSessionArtifact<ReviewProcesses>(join(dir, 'processes.json'));
     assertReviewProcesses(session, processes);
-    let round = 1;
-    for (; round <= CLAUDE_REVIEW_MAX_ROUNDS && existsSync(join(dir, `request-${round}.json`)); round++) {
-      const previous = readReviewJson<ClaudeReviewRequest>(join(dir, `request-${round}.json`));
-      if (!existsSync(join(dir, `accepted-${round}.json`))) throw new Error('claude_review_ambiguous_round; pending or unrecorded result must not be replayed');
-      if (previous.context.subject_sha256 === identity.subject_sha256) throw new Error('claude_review_duplicate_subject');
-    }
-    if (round > CLAUDE_REVIEW_MAX_ROUNDS) throw new Error('claude_review_round_budget_exhausted');
+    const round = nextSessionRound<ClaudeReviewRequest>(dir, CLAUDE_REVIEW_MAX_ROUNDS, identity.subject_sha256,
+      previous => previous.context.subject_sha256);
     const request: ClaudeReviewRequest = { round, round_id: randomUUID(), session_id: session.session_id,
       context: identity, context_sha256: reviewContextDigest(identity), timeout_ms: timeout, prompt: '' };
     request.prompt = [
@@ -306,14 +273,14 @@ export async function runClaudeReviewRound(options: ClaudeReviewOptions) {
     const recheck = await acceptanceContext({ root, contract, verification });
     if (reviewContextDigest(contextIdentity(recheck)) !== request.context_sha256) throw new Error('claude_review_context_changed_before_submit');
     lock.assertOwned(); assertReviewProcesses(session, processes);
-    writeReviewJson(join(dir, `request-${round}.json`), request);
-    await waitFile(join(dir, `result-${round}.json`), Date.now() + timeout + 2000, () => { failure(dir); assertReviewProcesses(session, processes); });
+    writeSessionArtifact(join(dir, `request-${round}.json`), request);
+    await waitSessionArtifact(join(dir, `result-${round}.json`), Date.now() + timeout + 2000, () => { failure(dir); assertReviewProcesses(session, processes); });
     failure(dir); assertReviewProcesses(session, processes); lock.assertOwned();
-    const result = readReviewJson<unknown>(join(dir, `result-${round}.json`));
+    const result = readSessionArtifact<unknown>(join(dir, `result-${round}.json`));
     const output = validateClaudeReviewResult(result, request);
     if (round > 1) {
-      const previousRequest = readReviewJson<ClaudeReviewRequest>(join(dir, `request-${round - 1}.json`));
-      const previous = validateClaudeReviewResult(readReviewJson(join(dir, `result-${round - 1}.json`)), previousRequest);
+      const previousRequest = readSessionArtifact<ClaudeReviewRequest>(join(dir, `request-${round - 1}.json`));
+      const previous = validateClaudeReviewResult(readSessionArtifact(join(dir, `result-${round - 1}.json`)), previousRequest);
       for (const finding of previous.findings) {
         const current = output.findings.find(item => item.id === finding.id);
         if (!current || current.status === 'new') throw new Error('claude_review_previous_finding_unaddressed');
@@ -323,7 +290,7 @@ export async function runClaudeReviewRound(options: ClaudeReviewOptions) {
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer: 'Claude', source: 'claude-review', actor: null,
       summary: output.summary, findings: output.findings.filter(finding => finding.status !== 'resolved').map(({ severity, message }) => ({ severity, message })),
       expectedContext: request.context });
-    writeReviewJson(join(dir, `accepted-${round}.json`), { result_sha256: createHash('sha256').update(JSON.stringify(result)).digest('hex'), receipt });
+    writeSessionArtifact(join(dir, `accepted-${round}.json`), { result_sha256: createHash('sha256').update(JSON.stringify(result)).digest('hex'), receipt });
     const review = markdownHeader(context.contract.content, 'Review File');
     if (review) projectAcceptance(resolve(root, review), receipt);
     return { status: output.verdict === 'PASS' ? 'accepted' : 'rejected', round, session_id: session.session_id,
@@ -341,7 +308,7 @@ export function claudeReviewStatus(repoRoot: string, contractPath: string) {
   let error: string | null = null;
   let processes: ReviewProcesses | null = null;
   if (!closed) {
-    try { processes = readReviewJson<ReviewProcesses>(join(dir, 'processes.json')); assertReviewProcesses(session, processes); failure(dir); }
+    try { processes = readSessionArtifact<ReviewProcesses>(join(dir, 'processes.json')); assertReviewProcesses(session, processes); failure(dir); }
     catch (caught) { error = String(caught); }
   }
   const rounds = Array.from({ length: CLAUDE_REVIEW_MAX_ROUNDS }, (_, i) => i + 1).filter(i => existsSync(join(dir, `request-${i}.json`)))
@@ -353,32 +320,33 @@ export function claudeReviewStatus(repoRoot: string, contractPath: string) {
 export async function closeClaudeReview(options: Pick<ClaudeReviewOptions, 'repoRoot' | 'contract' | 'authorityHome'>, cancel = false) {
   const { root, dir, contract } = reviewSessionLocation(options.repoRoot, options.contract);
   const session = readSession(dir, root, contract);
-  if (existsSync(join(dir, 'closed.json'))) { await stopReviewServer(session, dir); return readReviewJson(join(dir, 'closed.json')); }
+  if (existsSync(join(dir, 'closed.json'))) { await stopReviewServer(session, dir); return readSessionArtifact(join(dir, 'closed.json')); }
   if (!existsSync(join(dir, 'processes.json'))) {
     if (!cancel) throw new Error('claude_review_startup_incomplete; use cancel');
     if (session.startup_protocol !== 1) throw new Error('claude_review_startup_ownership_unknown; startup serialization was not recorded');
     const startup = acquireExclusiveDirectoryLock(root, relative(root, join(dir, 'startup.lock')),
       { waitTimeoutMs: 1000, reclaimStaleOwner: true });
     try {
-      if (existsSync(join(dir, 'closed.json'))) { await stopReviewServer(session, dir); return readReviewJson(join(dir, 'closed.json')); }
+      if (existsSync(join(dir, 'closed.json'))) { await stopReviewServer(session, dir); return readSessionArtifact(join(dir, 'closed.json')); }
       // The host may have finished bootstrap while we acquired the lock.
       if (!existsSync(join(dir, 'processes.json'))) {
         if (serverStartupUnresolved(session, dir)) throw new Error('claude_review_server_startup_ownership_unknown; inspect the named herdr server');
         if (existsSync(join(dir, 'spawn-intent.json'))) {
           if (!existsSync(join(dir, 'startup-no-child.json'))
-            || readReviewJson<{ session_id: string }>(join(dir, 'startup-no-child.json')).session_id !== session.session_id) {
+            || readSessionArtifact<{ session_id: string }>(join(dir, 'startup-no-child.json')).session_id !== session.session_id) {
             throw new Error('claude_review_startup_ownership_unknown; inspect the owned herdr session; cleanup is not proven');
           }
         }
-        if (!existsSync(join(dir, 'close.request.json'))) writeReviewJson(join(dir, 'close.request.json'), { cancel: true, session_id: session.session_id });
-        writeReviewJson(join(dir, 'closed.json'), { session_id: session.session_id, cancelled: true, termination: 'startup-no-child' });
+        if (!existsSync(join(dir, 'close.request.json'))) writeSessionArtifact(join(dir, 'close.request.json'), { cancel: true, session_id: session.session_id });
+        writeSessionArtifact(join(dir, 'closed.json'), { session_id: session.session_id, cancelled: true, termination: 'startup-no-child' });
         await stopReviewServer(session, dir);
-        return readReviewJson(join(dir, 'closed.json'));
+        return readSessionArtifact(join(dir, 'closed.json'));
       }
     } finally { startup.release(); }
   }
-  const processes = readReviewJson<ReviewProcesses>(join(dir, 'processes.json'));
-  const server = readReviewJson<ReviewServer>(join(dir, 'server.json'));
+  const processes = readSessionArtifact<ReviewProcesses>(join(dir, 'processes.json'));
+  assertCreated(processes.binding.ownership); assertCreated(processes.binding.provider.ownership);
+  const server = readSessionArtifact<ReviewServer>(join(dir, 'server.json'));
   let serverAlive = true;
   try { process.kill(server.pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') serverAlive = false; else throw error; }
   if (serverAlive && processIdentity(server.pid) !== server.identity) throw new Error('claude_review_server_identity_lost');
@@ -388,36 +356,35 @@ export async function closeClaudeReview(options: Pick<ClaudeReviewOptions, 'repo
     const identity = reviewHostIdentity(session, processes.pane);
     hostAvailable = identity.server === processes.server && identity.host === processes.host;
   } catch { /* An exited host can leave its detached provider alive. Only explicit cancel handles that case. */ }
+  if (hostAvailable) assertTaskBinding(processes.binding, true);
   if (!hostAvailable) {
     if (!cancel) throw new Error('claude_review_cleanup_identity_lost');
     // A changed PPID after reparenting is not a new process; PID, group, start time and executable remain fenced.
     const alive = () => {
-      try { process.kill(processes.child_pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
-      if (processIdentity(processes.child_pid) !== processes.child) throw new Error('claude_review_cleanup_child_identity_lost');
-      return true;
+      try { return processProofAlive(processes.binding.provider); } catch { throw new Error('claude_review_cleanup_child_identity_lost'); }
     };
-    if (!existsSync(join(dir, 'close.request.json'))) writeReviewJson(join(dir, 'close.request.json'), { cancel: true, session_id: session.session_id });
+    if (!existsSync(join(dir, 'close.request.json'))) writeSessionArtifact(join(dir, 'close.request.json'), { cancel: true, session_id: session.session_id });
     for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
       if (!alive()) break;
-      process.kill(-processes.child_pid, signal);
+      signalCreatedProcess(processes.binding.provider, signal, true);
       const deadline = Date.now() + 4000;
       while (alive() && Date.now() < deadline) await Bun.sleep(100);
     }
     if (alive()) throw new Error('claude_review_cleanup_incomplete');
     // Never kill a pane after losing its host identity: it may now belong to the user.
-    writeReviewJson(join(dir, 'closed.json'), { session_id: session.session_id, cancelled: true, termination: 'orphan-owned-group', host_available: false });
+    writeSessionArtifact(join(dir, 'closed.json'), { session_id: session.session_id, cancelled: true, termination: 'orphan-owned-group', host_available: false });
     await stopReviewServer(session, dir);
-    return readReviewJson(join(dir, 'closed.json'));
+    return readSessionArtifact(join(dir, 'closed.json'));
   }
   if (!cancel) {
     const receipt = await verifyAcceptance({ root, authorityHome: options.authorityHome ?? userInfo().homedir, contract });
     const completed = Array.from({ length: CLAUDE_REVIEW_MAX_ROUNDS }, (_, i) => i + 1).filter(i => existsSync(join(dir, `accepted-${i}.json`)));
     if (!completed.length) throw new Error('claude_review_no_accepted_round');
-    const accepted = readReviewJson<{ receipt: unknown }>(join(dir, `accepted-${completed.at(-1)}.json`));
+    const accepted = readSessionArtifact<{ receipt: unknown }>(join(dir, `accepted-${completed.at(-1)}.json`));
     if (JSON.stringify(accepted.receipt) !== JSON.stringify(receipt)) throw new Error('claude_review_acceptance_mismatch');
   }
-  if (!existsSync(join(dir, 'close.request.json'))) writeReviewJson(join(dir, 'close.request.json'), { cancel, session_id: session.session_id });
-  await waitFile(join(dir, 'closed.json'), Date.now() + 15_000, () => {});
+  if (!existsSync(join(dir, 'close.request.json'))) writeSessionArtifact(join(dir, 'close.request.json'), { cancel, session_id: session.session_id });
+  await waitSessionArtifact(join(dir, 'closed.json'), Date.now() + 15_000, () => {});
   await stopReviewServer(session, dir);
-  return readReviewJson(join(dir, 'closed.json'));
+  return readSessionArtifact(join(dir, 'closed.json'));
 }

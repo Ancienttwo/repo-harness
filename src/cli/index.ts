@@ -26,6 +26,7 @@ import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } 
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { formatCrossReviewResult, runCrossReviewCommand } from './commands/cross-review';
 import { buildClaudeReviewCommand } from './commands/claude-review';
+import { buildTaskAgentCommand } from './commands/task-agent';
 import { CROSS_REVIEW_PROVIDER_MODES, type CrossReviewProviderMode } from '../core/review/cross-review';
 import { buildToolsCommand } from './commands/tools';
 import { buildBrainCommand } from './commands/brain';
@@ -829,6 +830,7 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand());
   program.addCommand(buildClaudeReviewCommand());
+  program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildSetupCommand());
 
   program

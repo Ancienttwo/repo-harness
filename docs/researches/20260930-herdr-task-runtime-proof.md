@@ -41,3 +41,13 @@ Runtime version/help output: `.ai/harness/runs/herdr-task-h0/capabilities.json` 
 ## Remaining gates and rollback
 
 H0 validates deterministic transport/lifetime/context wiring; actual four-harness agent start/readiness/auth/read-only/resume and generic production persistence are still H1/H6 work. mini points at the real remote default session and is not authorized for canary; no machine profile mutation is allowed. H0 makes no production runtime change. Revert its test/research/workflow commit to roll back; production cutover remains atomic after H1–H6 and designated gatekeeper acceptance.
+
+## H1 shared runtime boundary
+
+The shared task-session module now owns durable start/pane/provider receipts, binding, immutable context/request/result artifacts, round allocation and created-only shutdown proof. Existing Claude acceptance is its consumer rather than a separate copy of filesystem/identity/budget primitives. The public task-agent lifecycle has start/send/read/status/close/cancel, no server stop. This is not the final cutover of native/fleet/campaign/plugin/MCP callers.
+
+A launched agent without a durable provider creation receipt is an uncertain effect. Even if its name appears in Herdr, that does not prove the occupant is still the originally created process. Recovery therefore requires the original PID/start/group/executable proof; absent proof stays reconciliation_required and never relaunches. A provider receipt saved before an owner crash permits exact readback and binding publication. Real fixture tests use two owner processes and a contention barrier to prove only one start.
+
+The endpoint preflight checks both named-session socket paths. The [tagged Herdr 0.9.1 source](https://github.com/herdrdev/herdr/blob/v0.9.1/src/session.rs#L155-L170) defines the API and client sockets. In the failing fixture the paths measured 102 and 109 bytes respectively; only checking the API socket missed the client's macOS limit. The corrected guard rejects this before any task state/layout creation.
+
+Capabilities are verified/unverified/unsupported plus evidence ref. H1 exposes no verified real harness capability. Fixture transport/lifetime output does not establish authentication, sandbox enforcement, actual model selection or native session resume. Those remain explicit preconditions before H4 retires day-to-day cross-review providers.

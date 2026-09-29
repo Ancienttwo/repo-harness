@@ -17,20 +17,20 @@
 
 ## Goal
 
-当前切片 H0：在隔离 fixture HOME、repo 和唯一 named Herdr session 中，证明两个不同 harness 的 deterministic participants 在 owner 退出后仍存活，新 owner 能从明确绑定继续发送请求，cleanup 保留 sentinel。盘点实际四 harness 的官方 CLI 能力；不声称模型认证或真实权限已验证。
+当前切片 H1：共享 Herdr task-role 生命周期、write-ahead 与原子并发 start、文件 request/result 和 round budget、created/attached identity-safe cleanup。Claude review 必须调用提取后的共享实现，现有生命周期行为继续通过。H1 不调用真实模型；真实 harness capability 均为 unverified。
 
 ## Scope
 
-- In scope: Approved plan 修正、H0 composition proof、能力/退役 inventory、canonical 验证证据和 notes。
-- Out of scope: H1–H6 production edits、default session 的控制/清理、mini canary、全局 installer/adoption、其他用户 agent。
-- Taste constraints: 一个实际边界测试文件；无 production abstraction，无 compatibility；fixture control 在 CLI 调用前拒绝 default session。
+- In scope: 下列明确文件中的 shared task-session、task-agent CLI、Herdr transport、Claude review consumers 和对应 focused coverage。
+- Out of scope: H2 worktree orchestration、H3 fleet/campaign/MCP cutover、H4 old provider retirement、H5 installer/policy cutover、mini/真实模型 canary。
+- H1 public schema 不含 Codex/Claude 专属 authority；新 CLI 不暴露 server stop，attached objects 不可 close/cancel。
 
 ## Stop Conditions
 
-- 编辑超出当前 H0 allowed_paths 时停止并先更新 contract。
-- H0 commit 完成后提交 [REQ-2]、SHA 与验证 evidence，等 advisor-gatekeeper PASS。
-- runtime 当前身份/投递未知则报告并保留证据，不重放、不 signal 用户进程。
-- 后续 H1/H4/H5 同样设置明确 PASS 检查点；未认证 harness 与未授权 mini 保留未闭环。
+- Stop before paths outside H1 scope.
+- H1 commit 完成后向 advisor-gatekeeper 发 [REQ-3] + SHA + canonical evidence；等 PASS 才进入 H2。
+- 不在 default/mini 执行 cleanup 或测试，不动用户 pane/进程。真实 model canary 仅 H4 前通知 reviewer 后执行。
+- uncertain start/delivery 保留 intent，reconcile Herdr live state；不得重放或新建替代 agent。
 
 ## Falsifier
 
@@ -71,9 +71,16 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 allowed_paths:
   - plans/plan-20260930-0438-herdr-task-agents-cutover.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
-  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
+  - src/effects/terminal/herdr.ts
+  - src/effects/terminal/task-session.ts
+  - src/cli/commands/task-agent.ts
+  - src/cli/index.ts
+  - src/effects/review/claude-review-session.ts
+  - src/effects/review/claude-review-host.ts
   - tests/herdr-task-lifecycle.test.ts
+  - tests/claude-review.test.ts
+  - tests/cli/task-agent.test.ts
   - docs/researches/20260930-herdr-task-runtime-proof.md
 ```
 
@@ -116,8 +123,9 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - tests/herdr-task-lifecycle.test.ts
-    - docs/researches/20260930-herdr-task-runtime-proof.md
+    - src/effects/terminal/task-session.ts
+    - src/cli/commands/task-agent.ts
+    - tests/cli/task-agent.test.ts
   artifacts_exist: []
 ```
 
@@ -128,17 +136,48 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h0-herdr-composition",
+      "id": "h1-task-lifecycle",
       "kind": "command",
-      "command": "bun test tests/herdr-task-lifecycle.test.ts --timeout 60000",
+      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/task-agent.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
-      "evidence_policy": "current_exact",
-      "necessity": "\u771f\u5b9e PTY\u3001process \u4e0e\u6587\u4ef6\u6062\u590d\u8fb9\u754c\uff1bfake model \u4ec5\u7528\u4e8e\u786e\u5b9a\u6027 protocol\uff0cscope \u53ea\u9650 disposable fixture\u3002",
+      "evidence_policy": "baseline_with_delta",
+      "necessity": "Real Herdr concurrent process start, interruption/reconciliation, file delivery and created-only identity cleanup; no model/auth invocation.",
       "inputs": {
         "env": []
-      }
+      },
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-9bd488d73ec04014945f.json",
+        "execution_id": "vx-9bd488d73ec04014945f"
+      },
+      "delta_checks": [
+        "task-sync",
+        "task-workflow",
+        "h1-type"
+      ]
+    },
+    {
+      "id": "h1-claude-behavior",
+      "kind": "command",
+      "command": "REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts --timeout 60000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "expensive",
+      "evidence_policy": "baseline_with_delta",
+      "necessity": "Extraction changes existing real provider-host lifecycle. Preserve same-child rounds, startup/cancel/identity, findings, deadline and receipt behavior in disposable fixtures.",
+      "inputs": {
+        "env": []
+      },
+      "baseline": {
+        "run_file": ".ai/harness/runs/verification-vx-b07a74532d18456fbcae.json",
+        "execution_id": "vx-b07a74532d18456fbcae"
+      },
+      "delta_checks": [
+        "task-sync",
+        "task-workflow",
+        "h1-type"
+      ]
     },
     {
       "id": "hooks",
@@ -256,6 +295,19 @@ exit_criteria:
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "h1-type",
+      "kind": "command",
+      "command": "bun run check:type",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Exported shared runtime and CLI types cross review consumers; compiler checks this new cross-module boundary.",
+      "inputs": {
+        "env": []
+      }
     }
   ]
 }
@@ -263,11 +315,13 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Existing herdr-transport 与 Claude review tests 分别验证 transport/单 provider lifecycle；未覆盖 root-linked topology 与 owner 退出后跨角色恢复。新 composition file 只拥有这个跨模块边界。
-- 使用真实 Herdr + deterministic Codex/Claude named peers，不调用模型/登录；独立 fixture HOME。预算 60s，记录实际成本。
-- H0 生产代码未变，保留 required integrity，不加 full-suite 或 typecheck。
-- 实际 executable/help 不是认证、read-only 或 model proof。mini 未授权。
-- 执行 refs 在 .ai/harness/runs/；durable conclusions 在 research，非显而易见偏差在 notes。
+- Extend H0 composition owner with real concurrent starts/crash observation, file-only response and identity/ownership fences. CLI test owns parsing/no-server-stop, no duplicate lifecycle fixture.
+- Existing tests/claude-review.test.ts is behavioral baseline; run real Herdr deterministic provider cases in private HOME/session with default hard refusal. No model API calls.
+- Runtime capability is verified/unverified/unsupported plus exact evidence ref. H1 real harness remains unverified; only fixture evidence can be verified.
+- Endpoint validation precedes directory/intent/layout creation. Round budget and request/result primitives move from Claude consumer to shared owner.
+- Real lifecycle cases justified by REQ-2, estimated runtime bounded at file 60s; full-suite omitted.
+- H0 canonical baseline remains immutable; H1 has its own runtime baselines. After the task-sync header/evidence declaration only, retain H1 runtime records with source-digest-bound task-sync and workflow/type deltas. No source/test byte changed; never relabel the baseline as newly executed.
+- mini remains unauthorized and actual provider auth/read-only/resume unverified.
 
 ## Rollback Point
 

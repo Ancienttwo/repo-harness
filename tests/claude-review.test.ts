@@ -24,15 +24,16 @@ if (!process.env.REPO_HARNESS_TEST_EXPENSIVE) {
   console.log('[gate] REPO_HARNESS_TEST_EXPENSIVE unset: skipping the real herdr review session cases (release lane only, not a failure).');
 }
 const fixtures: { root: string; home: string }[] = [];
-const sentinels: {name:string; process:ChildProcess; root:string; configPath:string}[] = [];
+const sentinels: {name:string; process:ChildProcess; root:string; configPath:string;home:string}[] = [];
 async function sentinelServer() {
-  const root=mkdtempSync(join(tmpdir(),'rh-herdr-sentinel-'));
-  const name='sentinel-'+randomUUID();
+  const root=realpathSync(mkdtempSync('/tmp/cs-'));
+  const home=join(root,'h'); mkdirSync(home);
+  const name='sentinel-'+randomUUID().replaceAll('-','').slice(0,16);
   const configPath=join(root,'herdr.toml');
   writeFileSync(configPath,'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n');
-  const endpoint={session:name,configPath};
+  const endpoint={session:name,configPath,home};
   const child=spawn('herdr',['--session',name,'server'],{env:herdrEnvironment(endpoint),stdio:'ignore'});
-  sentinels.push({name,process:child,root,configPath});
+  sentinels.push({name,process:child,root,configPath,home});
   const call=(args:string[])=>herdrResult(herdrCommand(endpoint,args));
   for(let i=0;;i++) { try{call(['workspace','list']);break;}catch(e){if(i===50)throw e;await Bun.sleep(100);} }
   const pane=call(['workspace','create','--cwd',root,'--no-focus']).root_pane.pane_id;
@@ -46,7 +47,7 @@ afterEach(async () => {
     rmSync(fixture.root, { recursive: true, force: true });
     rmSync(fixture.home, { recursive: true, force: true });
   }
-  for (const item of sentinels.splice(0)) { herdrCommand({session:item.name,configPath:item.configPath},['server','stop']); await new Promise<void>(resolve => item.process.exitCode !== null ? resolve() : item.process.once('exit',()=>resolve())); rmSync(item.root,{recursive:true,force:true}); }
+  for (const item of sentinels.splice(0)) { herdrCommand({session:item.name,configPath:item.configPath,home:item.home},['server','stop']); await new Promise<void>(resolve => item.process.exitCode !== null ? resolve() : item.process.once('exit',()=>resolve())); rmSync(item.root,{recursive:true,force:true}); }
 });
 
 function git(root: string, ...args: string[]) { return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
@@ -72,12 +73,12 @@ function prepare(root: string) {
 }
 
 function fixture(mode = 'normal') {
-  const root = mkdtempSync(join(tmpdir(), 'rh-claude-session-'));
-  const home = mkdtempSync(join(tmpdir(), 'rh-claude-authority-'));
+  const root = realpathSync(mkdtempSync('/tmp/cr-'));
+  const home = join(root, 'h'); mkdirSync(home);
   fixtures.push({ root, home });
   git(root, 'init', '-b', 'main'); git(root, 'config', 'user.name', 'Review Test'); git(root, 'config', 'user.email', 'review@test.invalid');
   for (const dir of ['.ai/harness/checks', 'tasks/contracts', 'tasks/reviews', 'plans']) mkdirSync(join(root, dir), { recursive: true });
-  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\nprovider\n');
+  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\nprovider\nh/\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { review_base: 'main' }, merge_gate: { enabled: true, rule: 'fixture' } }));
   writeFileSync(join(root, 'source.ts'), 'export const value = 0;\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'base'); git(root, 'checkout', '-b', 'codex/review');
@@ -87,14 +88,14 @@ function fixture(mode = 'normal') {
   writeFileSync(join(root, 'tasks/reviews/review.review.md'), '# Review\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'candidate');
   const provider = join(root, 'provider');
-  writeFileSync(provider, `#!${process.execPath}\nimport {createInterface} from 'readline';\nimport {writeFileSync} from 'fs';\nlet count=0;\nconst mode=${JSON.stringify(mode)};\nconst reader=createInterface({input:process.stdin});\nreader.on('line',async line=>{\n const message=JSON.parse(line); count++;\n const identity=JSON.parse(message.message.content.match(/Echo this exact identity: (.+)/)[1]);\n if(mode==='hang') return;\n if(mode==='crash') process.exit(2);\n if(mode==='slow') await Bun.sleep(800);\n if(mode==='stale') writeFileSync('source.ts','export const value = 999;\\n');\n const pass=count>1;\n const output={...identity,verdict:pass?'PASS':'FAIL',summary:pass?'Corrected fixture':'Fixture requires repair',findings:[{id:'F1',severity:'P1',status:pass?'resolved':'new',message:'Concrete fixture evidence'}]};\n if(mode==='wrong-session') output.session_id='wrong';
+  writeFileSync(provider, `#!${process.execPath}\nimport {createInterface} from 'readline';\nimport {readFileSync,writeFileSync} from 'fs';\nlet count=0;\nconst mode=${JSON.stringify(mode)};\nconst reader=createInterface({input:process.stdin});\nreader.on('line',async line=>{\n const message=JSON.parse(line); count++;\n const requestPath=JSON.parse(message.message.content.match(/^Read acceptance request (.+); follow its prompt and return the required structured result\\.$/)[1]);\n const request=JSON.parse(readFileSync(requestPath,'utf8'));\n const identity=JSON.parse(request.prompt.match(/Echo this exact identity: (.+)/)[1]);\n if(mode==='hang') return;\n if(mode==='crash') process.exit(2);\n if(mode==='slow') await Bun.sleep(800);\n if(mode==='stale') writeFileSync('source.ts','export const value = 999;\\n');\n const pass=count>1;\n const output={...identity,verdict:pass?'PASS':'FAIL',summary:pass?'Corrected fixture':'Fixture requires repair',findings:[{id:'F1',severity:'P1',status:pass?'resolved':'new',message:'Concrete fixture evidence'}]};\n if(mode==='wrong-session') output.session_id='wrong';
  if(mode==='omit-finding' && pass) output.findings=[];
  if(mode==='wrong-subject') output.subject_sha256='sha256:wrong';
  if(mode==='conflicting-pass') output.verdict='PASS';\n console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,session_id:message.session_id,structured_output:output}));\n});\nreader.on('close',()=>process.exit(0));\n`);
   chmodSync(provider, 0o700);
   prepare(root);
   let admissions = 0;
-  return { root, home, options: { repoRoot: root, contract, authorityHome: home, providerCommand: provider,
+  return { root, home, options: { repoRoot: root, contract, authorityHome: home, runtimeHome: home, providerCommand: provider,
     timeoutMs: 5000, admitSession: () => { admissions++; } }, admissions: () => admissions };
 }
 
@@ -227,9 +228,9 @@ function unstartedSession() {
   const f = fixture();
   const location = reviewSessionLocation(f.root, contract);
   const id = randomUUID();
-  const session: ReviewSession = { protocol: 2, startup_protocol: 1, repo_root: location.root, contract_file: contract,
-    contract_sha256: 'contract', goal_sha256: 'goal', session_id: id, herdr_session: `review-${id}`,
-    herdr_bin: Bun.which('herdr')!, herdr_config: join(location.dir, 'herdr.toml'), provider_bin: realpathSync(f.options.providerCommand) };
+  const session: ReviewSession = { protocol: 3, startup_protocol: 1, repo_root: location.root, contract_file: contract,
+    contract_sha256: 'contract', goal_sha256: 'goal', session_id: id, herdr_session: `review-${id.replaceAll("-", "").slice(0, 20)}`,
+    herdr_bin: Bun.which('herdr')!, herdr_config: join(location.dir, 'herdr.toml'), provider_bin: realpathSync(f.options.providerCommand), runtime_home: f.home };
   writeFileSync(join(location.dir, 'session.json'), JSON.stringify(session));
   return { ...f, ...location, session };
 }
@@ -264,7 +265,7 @@ releaseLaneOnly('failed server metadata publication reaps its owned herdr child'
   await expect(startReviewServer(f.session, f.dir)).rejects.toThrow();
   expect(existsSync(join(f.dir, 'server-start-intent.json'))).toBe(true);
   expect(JSON.parse(readFileSync(join(f.dir, 'server-closed.json'), 'utf8')).session_id).toBe(f.session.session_id);
-  expect(herdrCommand({ session: f.session.herdr_session }, ['workspace', 'list']).status).not.toBe(0);
+  expect(herdrCommand({ session: f.session.herdr_session, home: f.home }, ['workspace', 'list']).status).not.toBe(0);
   await closeClaudeReview(f.options, true);
   expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
 });
