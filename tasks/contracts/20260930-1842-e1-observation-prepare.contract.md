@@ -407,5 +407,5 @@ baseline and named current delta checks; never infer it from paths or command te
 
 ## Rollback Point
 
-- Commit / checkpoint: main e97684f6
+- Commit / checkpoint: main 2dd9ae01 (merged S0; S1 rebased onto this boundary)
 - Revert strategy: revert S1 commit; observation records remain evidence, never claims.

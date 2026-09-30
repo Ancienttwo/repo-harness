@@ -19,7 +19,7 @@
 - Intended files changed: exact contract allowed_paths; no production collector/admission edits.
 - Actual files changed: three source files, seven existing tests and four workflow artifacts.
 - Check IDs and evidence disposition: canonical Verification Plan owns 17 checks; report `.ai/harness/checks/e1-s1-verification.latest.json`.
-- Residual risks: 30s host latency unmeasured; OS store owner trusted; no GC; no S2 ledger/admission integration. S0 is still a separate Draft and may need a test-file merge resolution.
+- Residual risks: 30s host latency unmeasured; OS store owner trusted; no GC; no S2 ledger/admission integration. S0 is merged in main (2dd9ae01); the rebased tree uses its shared offer(observedAt) fixture with one observeRetryEligibility import.
 - Reviewer action required: designer/acceptor reads exact Draft PR subject; formal acceptance remains Pending, no typed receipt fabricated.
 - Rollback: revert S1 commit; persisted observations are evidence only.
 
@@ -27,7 +27,7 @@
 
 - Selected route: owner-approved Packet 8 -> capture-plan Approved --execute -> narrowed contract preflight_pass -> canonical Verification Plan -> Draft PR, no finish.
 - P1/P2/P3 evidence: plan contains current collector/principal/store/transport ownership, explicit prepare trace and unchanged admission rationale.
-- Root cause or plan evidence: design PR #466 E1 缺口闭合设计 S1; S0 f068cded from Draft #467 executed byte-identical in temporary isolated overlay: 7 pass / 0 fail / 50 expects.
+- Root cause or plan evidence: design PR #466 E1 缺口闭合设计 S1; Historical S0 f068cded verification used a byte-identical temporary overlay (7 pass / 0 fail / 50 expects); current verification runs merged S0 plus S1 on the actual rebased tree.
 
 ## Verification Evidence
 
@@ -65,7 +65,7 @@ screenshot/artifact path, or reviewer observation.
 > **Issued At**: pending
 
 - Summary: No AcceptanceReceipt has been recorded.
-- Findings: gatekeeper FAIL on e783173d; requested type and refusal/store-nonmutation test fixes delivered for re-acceptance. Findings 2, 4 and 6 remain deferred by owner instruction.
+- Findings: gatekeeper FAIL on e783173d; requested type and refusal/store-nonmutation test fixes delivered for re-acceptance. Finding 2 is resolved by the owner-approved rebase/shared fixture; findings 4 and 6 remain deferred by owner instruction.
 
 ## Behavior Diff Notes
 
