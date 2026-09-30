@@ -543,6 +543,15 @@ describe('restricted Engineer MCP tools', () => {
     });
     expect(coordinationState(repoRoot).filter((path) => path.endsWith('.json'))).toEqual(before.filter((path) => path.endsWith('.json')));
 
+    const sealPath = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/acquire-next/cutover-v2.json');
+    const sealBytes = readFileSync(sealPath, 'utf8');
+    writeFileSync(sealPath, 'not JSON');
+    expect(await callMcpTool(context, 'engineer_acquire_next', { ...fences, idempotency_key: 'ledger-fault' })).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_acquisition_ledger_corrupt' } },
+    });
+    expect(coordinationState(repoRoot)).toEqual(before);
+    writeFileSync(sealPath, sealBytes);
+
     const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
     expect(staleOffer).toMatchObject({
@@ -553,12 +562,12 @@ describe('restricted Engineer MCP tools', () => {
     const policyPath = join(repoRoot, '.ai/harness/policy.json');
     writeFileSync(policyPath, 'not JSON');
     expect(await callMcpTool(context, 'engineer_prepare', {})).toMatchObject({
-      isError: true, structuredContent: { error: { code: 'engineer_observation_corrupt' } },
+      isError: true, structuredContent: { error: { code: 'engineer_observation_policy_corrupt' } },
     });
     unlinkSync(policyPath);
     const missingObservationAuthority = await callMcpTool(context, 'engineer_prepare', {});
     expect(missingObservationAuthority).toMatchObject({
-      isError: true, structuredContent: { error: { code: 'engineer_observation_missing' } },
+      isError: true, structuredContent: { error: { code: 'engineer_observation_policy_missing' } },
     });
     expect(JSON.stringify(missingObservationAuthority)).not.toContain('ENOENT');
 

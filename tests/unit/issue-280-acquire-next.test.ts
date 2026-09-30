@@ -11,7 +11,7 @@ import { observeRetryEligibility } from '../../src/core/engineers/automation-att
 import { withExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, inspectAcquisitionReceiptCutover, migrateAcquisitionReceipts, requireAcquisitionLedgerV2, EngineerObservationError, type AcquireSelectedEngineerTaskOptions, type AcquisitionPolicyR1 } from '../../src/effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, inspectAcquisitionReceiptCutover, migrateAcquisitionReceipts, requireAcquisitionLedgerV2, EngineerAcquisitionLedgerError, EngineerObservationError, type AcquireSelectedEngineerTaskOptions, type AcquisitionPolicyR1 } from '../../src/effects/engineers/scheduling-acquire-next';
 
 const D = (c: string) => `sha256:${c.repeat(64)}`;
 const principal = Object.freeze({
@@ -453,6 +453,35 @@ describe('S2 selected acquisition transaction', () => {
     const other = { ...principal, auth_subject: '33333333-3333-4333-8333-333333333333' };
     f.auth(other);
     expect(readCode(() => acquireSelectedEngineerTask({ ...f.input, principal: other }))).toBe('engineer_observation_identity_mismatch');
+    expect(f.effects()).toBe(0); expect(existsSync(f.record())).toBeFalse();
+  });
+
+  test.each(['broken-json', 'null', 'digest', 'unsafe-file'] as const)('receipt %s is a ledger fault, never observation failure or a new effect', fault => {
+    const f = selectedFixture();
+    expect(acquireSelectedEngineerTask(f.input).ok).toBeTrue();
+    const bytes = readFileSync(f.record(), 'utf8');
+    if (fault === 'unsafe-file') { unlinkSync(f.record()); symlinkSync(f.obsPath, f.record()); }
+    else writeFileSync(f.record(), fault === 'broken-json' ? '{' : fault === 'null' ? 'null' : bytes.replace('completed', 'pending'));
+    try { acquireSelectedEngineerTask(f.input); throw new Error('expected ledger refusal'); }
+    catch (error) {
+      expect(error).toBeInstanceOf(EngineerAcquisitionLedgerError);
+      expect((error as EngineerAcquisitionLedgerError).code).toBe(fault === 'unsafe-file' ? 'engineer_acquisition_ledger_unsafe_path' : 'engineer_acquisition_ledger_corrupt');
+    }
+    expect(f.effects()).toBe(1);
+  });
+
+  test.each(['broken-json', 'null', 'digest', 'unsafe-file'] as const)('seal %s has ledger-specific ownership before admission', fault => {
+    const f = selectedFixture();
+    requireAcquisitionLedgerV2(f.repo);
+    const path = join(f.record(), '..', 'cutover-v2.json');
+    const bytes = readFileSync(path, 'utf8');
+    if (fault === 'unsafe-file') { unlinkSync(path); symlinkSync(f.obsPath, path); }
+    else writeFileSync(path, fault === 'broken-json' ? '{' : fault === 'null' ? 'null' : bytes.replace('new-empty-store', 'modified'));
+    try { acquireSelectedEngineerTask(f.input); throw new Error('expected ledger refusal'); }
+    catch (error) {
+      expect(error).toBeInstanceOf(EngineerAcquisitionLedgerError);
+      expect((error as EngineerAcquisitionLedgerError).code).toBe(fault === 'unsafe-file' ? 'engineer_acquisition_ledger_unsafe_path' : 'engineer_acquisition_ledger_corrupt');
+    }
     expect(f.effects()).toBe(0); expect(existsSync(f.record())).toBeFalse();
   });
 

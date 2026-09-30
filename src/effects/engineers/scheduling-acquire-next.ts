@@ -18,6 +18,25 @@ import {
 } from './scheduling-acquire';
 import { collectEngineerOffers } from './scheduling';
 
+export type EngineerAcquisitionLedgerErrorCode = 'engineer_acquisition_ledger_missing'
+  | 'engineer_acquisition_ledger_corrupt' | 'engineer_acquisition_ledger_unsafe_path'
+  | 'engineer_acquisition_ledger_io';
+export class EngineerAcquisitionLedgerError extends Error {
+  constructor(message: string, readonly code: EngineerAcquisitionLedgerErrorCode) {
+    super(message); this.name = 'EngineerAcquisitionLedgerError';
+  }
+}
+function invalidLedger(message: string, code: EngineerAcquisitionLedgerErrorCode = 'engineer_acquisition_ledger_corrupt'): never {
+  throw new EngineerAcquisitionLedgerError(message, code);
+}
+function ledgerJson(bytes: string): any {
+  try {
+    const value = JSON.parse(bytes);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return invalidLedger('acquisition ledger record must be an object; requires reconciliation');
+    return value;
+  } catch { return invalidLedger('acquisition ledger JSON is corrupt; requires reconciliation'); }
+}
+
 export interface AcquireNextFiltersV1 {
   readonly capability_id?: string;
   readonly minimum_priority?: number;
@@ -163,7 +182,7 @@ function acquisitionDependencies(options: AcquireNextScheduledEngineerTaskOption
 function storedEntryExists(path: string): boolean {
   try { lstatSync(path); return true; } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw new Error('ledger metadata is unreadable; requires reconciliation');
+    return invalidLedger('ledger metadata is unreadable; requires reconciliation', 'engineer_acquisition_ledger_io');
   }
 }
 function receiptPath(repoRoot: string, key: string): string {
@@ -174,6 +193,9 @@ function writeReceipt(path: string, value: unknown): void {
   try {
     createFileExclusiveDurably(temporary, Buffer.from(`${canonicalEngineerJson(value)}\n`));
     renameSync(temporary, path); syncDirectoryDurably(dirname(path));
+  } catch (error) {
+    if (error instanceof EngineerAcquisitionLedgerError) throw error;
+    return invalidLedger('acquisition ledger could not be durably written; requires reconciliation', 'engineer_acquisition_ledger_io');
   } finally { if (existsSync(temporary)) unlinkSync(temporary); }
 }
 function buildReceipt(request: AcquisitionRequestV2 | null, state: AcquisitionReceiptV2['state'], result: AcquireNextScheduledEngineerTaskResult | null, legacyBytes: string | null = null): AcquisitionReceiptV2 {
@@ -183,25 +205,25 @@ function buildReceipt(request: AcquisitionRequestV2 | null, state: AcquisitionRe
   return Object.freeze({ ...basis, receipt_sha256: digest(basis) });
 }
 function readReceipt(path: string): AcquisitionReceiptV2 {
-  const raw = readObservationFile(path);
-  const value = JSON.parse(raw) as AcquisitionReceiptV2;
-  assertMessageExactKeys(value as unknown as Record<string, unknown>, ['protocol','kind','request','request_sha256','state','result','observation_ref','legacy_bytes','receipt_sha256'], 'acquisition receipt', message => { throw new Error(`${message}; requires reconciliation, never a new transaction`); });
+  const raw = readEvidenceFile(path, 'ledger');
+  const value = ledgerJson(raw) as AcquisitionReceiptV2;
+  assertMessageExactKeys(value as unknown as Record<string, unknown>, ['protocol','kind','request','request_sha256','state','result','observation_ref','legacy_bytes','receipt_sha256'], 'acquisition receipt', message => invalidLedger(`${message}; requires reconciliation, never a new transaction`));
   const { receipt_sha256, ...basis } = value;
   if (value.protocol !== 2 || value.kind !== 'repo-harness-engineer-acquisition-receipt' || receipt_sha256 !== digest(basis)
     || raw !== `${canonicalEngineerJson(value)}\n` || !['pending','completed','idle','fenced'].includes(value.state)
     || (value.state === 'fenced' ? value.request !== null || value.result !== null || typeof value.legacy_bytes !== 'string'
       : value.request === null || value.request_sha256 !== digest(value.request) || value.observation_ref !== value.request.observation_ref || value.legacy_bytes !== null)
     || (value.state === 'pending' ? value.result !== null : value.state !== 'fenced' && value.result === null)
-    || (value.state === 'idle' && (value.request?.operation !== 'auto' || value.result?.ok !== false || value.result.error !== 'engineer_no_eligible_offer'))) throw new Error('acquisition receipt is malformed or has been modified; requires reconciliation');
+    || (value.state === 'idle' && (value.request?.operation !== 'auto' || value.result?.ok !== false || value.result.error !== 'engineer_no_eligible_offer'))) return invalidLedger('acquisition receipt is malformed or has been modified; requires reconciliation');
   return value;
 }
 function sealPath(root: string): string { return join(resolveGitCommonDirectory(root), ACQUISITION_STORE, 'cutover-v2.json'); }
 function readSeal(root: string): CutoverSeal {
-  const value = JSON.parse(readObservationFile(sealPath(root))) as CutoverSeal;
-  assertMessageExactKeys(value as unknown as Record<string, unknown>, ['protocol','kind','inventory_sha256','migrated_keys','quiescence_evidence','seal_sha256'], 'acquisition cutover seal', message => { throw new Error(message); });
+  const value = ledgerJson(readEvidenceFile(sealPath(root), 'ledger')) as CutoverSeal;
+  assertMessageExactKeys(value as unknown as Record<string, unknown>, ['protocol','kind','inventory_sha256','migrated_keys','quiescence_evidence','seal_sha256'], 'acquisition cutover seal', message => invalidLedger(message));
   const { seal_sha256, ...basis } = value;
   if (value.protocol !== 2 || value.kind !== CUTOVER_KIND || seal_sha256 !== digest(basis) || !Array.isArray(value.migrated_keys)
-    || value.migrated_keys.some(key => !/^[a-f0-9]{64}$/.test(key)) || !/^sha256:[a-f0-9]{64}$/.test(value.inventory_sha256) || !value.quiescence_evidence) throw new Error('acquisition cutover seal requires reconciliation');
+    || value.migrated_keys.some(key => !/^[a-f0-9]{64}$/.test(key)) || !/^sha256:[a-f0-9]{64}$/.test(value.inventory_sha256) || !value.quiescence_evidence) return invalidLedger('acquisition cutover seal requires reconciliation');
   return value;
 }
 function cutoverLock<T>(root: string, run: () => T): T {
@@ -211,11 +233,11 @@ function cutoverLock<T>(root: string, run: () => T): T {
 /** Read-only operator inventory. This is never called by a normal v2 receipt reader. */
 export function inspectAcquisitionReceiptCutover(repoRoot: string) {
   const directory = join(resolveGitCommonDirectory(repoRoot), ACQUISITION_STORE);
-  if (existsSync(directory)) guardedSchedulingDirectory(resolveGitCommonDirectory(repoRoot), ACQUISITION_STORE, false);
+  if (existsSync(directory)) guardedSchedulingDirectory(resolveGitCommonDirectory(repoRoot), ACQUISITION_STORE, false, 'ledger');
   const entries = !existsSync(directory) ? [] : readdirSync(directory).sort().filter(name => name !== 'cutover-v2.json').map(name => {
     if (!/^[a-f0-9]{64}\.json$/.test(name)) throw new Error('acquisition cutover requires quiesced producers and reconciliation of unsettled files/locks');
-    const raw = readObservationFile(join(directory, name));
-    const value = JSON.parse(raw);
+    const raw = readEvidenceFile(join(directory, name), 'ledger');
+    const value = ledgerJson(raw);
     // Interrupted one-shot conversion retains the exact source bytes in the closed v2 fence.
     const bytes = value.protocol === 2 ? readReceipt(join(directory, name)).legacy_bytes : raw;
     if (typeof bytes !== 'string') throw new Error('cutover inventory contains a non-legacy transaction');
@@ -232,12 +254,12 @@ export function migrateAcquisitionReceipts(options: { repo_root: string; expecte
       if (seal.inventory_sha256 !== options.expected_inventory_sha256) throw new Error('cutover already sealed with another inventory');
       return seal;
     }
-    guardedSchedulingDirectory(resolveGitCommonDirectory(options.repo_root), ACQUISITION_STORE, true);
+    guardedSchedulingDirectory(resolveGitCommonDirectory(options.repo_root), ACQUISITION_STORE, true, 'ledger');
     const inventory = inspectAcquisitionReceiptCutover(options.repo_root);
     if (inventory.inventory_sha256 !== options.expected_inventory_sha256) throw new Error('cutover inventory changed');
     // This parser exists only on the explicit one-shot operation, never on normal acquisition/replay.
     for (const { bytes } of inventory.entries) {
-      const value = JSON.parse(bytes);
+      const value = ledgerJson(bytes);
       assertMessageExactKeys(value, ['protocol','kind','request_sha256','state','result','receipt_sha256'], 'legacy acquisition receipt', message => { throw new Error(message); });
       const basis = { protocol: value.protocol, kind: value.kind, request_sha256: value.request_sha256, state: value.state, result: value.result };
       const oldDigest = `sha256:${createHash('sha256').update(JSON.stringify(basis)).digest('hex')}`;
@@ -257,10 +279,10 @@ export function requireAcquisitionLedgerV2(repoRoot: string): void {
     const common = resolveGitCommonDirectory(repoRoot), directory = join(common, ACQUISITION_STORE);
     // Normal activation never parses legacy bytes. Non-empty/unsettled stores require the one-shot operator path.
     if (existsSync(directory)) {
-      guardedSchedulingDirectory(common, ACQUISITION_STORE, false);
+      guardedSchedulingDirectory(common, ACQUISITION_STORE, false, 'ledger');
       if (readdirSync(directory).length) throw new Error('explicit one-shot acquisition receipt cutover is required before any new effect');
     }
-    guardedSchedulingDirectory(common, ACQUISITION_STORE, true);
+    guardedSchedulingDirectory(common, ACQUISITION_STORE, true, 'ledger');
     const basis = { protocol: 2 as const, kind: CUTOVER_KIND, inventory_sha256: digest([]),
       migrated_keys: [] as string[], quiescence_evidence: 'new-empty-store' };
     writeReceipt(sealPath(repoRoot), { ...basis, seal_sha256: digest(basis) });
@@ -384,7 +406,8 @@ const OBSERVATION_PRODUCER = 'repo-harness-engineer-observation-v1';
 
 export type EngineerObservationErrorCode = 'engineer_observation_missing' | 'engineer_observation_corrupt'
   | 'engineer_observation_identity_mismatch' | 'engineer_observation_expired' | 'engineer_observation_future'
-  | 'engineer_observation_policy_changed' | 'engineer_observation_unsafe_path';
+  | 'engineer_observation_policy_changed' | 'engineer_observation_unsafe_path'
+  | 'engineer_observation_policy_missing' | 'engineer_observation_policy_corrupt' | 'engineer_observation_policy_unsafe_path';
 export class EngineerObservationError extends Error {
   constructor(message: string, readonly code: EngineerObservationErrorCode = 'engineer_observation_corrupt') {
     super(message); this.name = 'EngineerObservationError';
@@ -447,41 +470,49 @@ function observationPrincipal(options: EngineerObservationOptions): EngineerPrin
 function observationPolicy(repoRoot: string): string {
   // No default policy or compatibility projection: absent source authority refuses prepare/read.
   const path = join(repoRoot, '.ai/harness/policy.json');
-  const bytes = readObservationFile(path);
-  observationJson(bytes);
+  const bytes = readEvidenceFile(path, 'policy');
+  try { JSON.parse(bytes); } catch { invalidObservation('observation policy JSON is corrupt', 'engineer_observation_policy_corrupt'); }
   return engineerSha256(canonicalEngineerJson({ producer: OBSERVATION_PRODUCER,
     freshness_ms: ENGINEER_OBSERVATION_FRESHNESS_MS, policy_sha256: engineerSha256(bytes) }));
 }
 
-function readObservationFile(path: string): string {
+type SchedulingEvidenceDomain = 'observation' | 'ledger' | 'policy';
+function evidenceFailure(domain: SchedulingEvidenceDomain, fault: 'missing' | 'corrupt' | 'unsafe_path' | 'io'): never {
+  const message = `${domain === 'ledger' ? 'acquisition ledger' : domain === 'policy' ? 'observation policy' : 'observation record/store'} ${fault}; requires reconciliation`;
+  if (domain === 'ledger') return invalidLedger(message, `engineer_acquisition_ledger_${fault}`);
+  const mapped = fault === 'io' ? 'corrupt' : fault;
+  return invalidObservation(message, domain === 'policy' ? `engineer_observation_policy_${mapped}` : `engineer_observation_${mapped}`);
+}
+/** Shared file-safety mechanics, with the caller's authority domain preserved in errors. */
+function readEvidenceFile(path: string, domain: SchedulingEvidenceDomain): string {
   let fd: number | undefined;
   try {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.nlink !== 1) invalidObservation('observation source must be a regular non-linked file', 'engineer_observation_unsafe_path');
+    if (!stat.isFile() || stat.nlink !== 1) return evidenceFailure(domain, 'unsafe_path');
     return readFileSync(fd, 'utf8');
   } catch (error) {
-    if (error instanceof EngineerObservationError) throw error;
+    if (error instanceof EngineerObservationError || error instanceof EngineerAcquisitionLedgerError) throw error;
     const code = (error as NodeJS.ErrnoException).code;
-    return invalidObservation(code === 'ENOENT' ? 'observation authority or record is missing' : 'observation store cannot be safely read',
-      code === 'ENOENT' ? 'engineer_observation_missing' : code === 'ELOOP' ? 'engineer_observation_unsafe_path' : 'engineer_observation_corrupt');
+    return evidenceFailure(domain, code === 'ENOENT' ? 'missing' : code === 'ELOOP' ? 'unsafe_path' : 'io');
   } finally { if (fd !== undefined) closeSync(fd); }
 }
+function readObservationFile(path: string): string { return readEvidenceFile(path, 'observation'); }
 
 /** Check each descendant before opening/creating it; reject symlinked store ancestors. */
-function guardedSchedulingDirectory(common: string, relative: string, create: boolean): string {
+function guardedSchedulingDirectory(common: string, relative: string, create: boolean, domain: SchedulingEvidenceDomain = 'observation'): string {
   let path = common;
   for (const part of relative.split('/')) {
     path = join(path, part);
     if (create && !existsSync(path)) {
       try { mkdirSync(path, { mode: 0o700 }); syncDirectoryDurably(dirname(path)); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return evidenceFailure(domain, 'io'); }
     }
     let stat;
     try { stat = lstatSync(path); } catch (error) {
-      return invalidObservation('observation store directory is missing or unreadable', (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'engineer_observation_missing' : 'engineer_observation_corrupt');
+      return evidenceFailure(domain, (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'io');
     }
-    if (!stat.isDirectory() || stat.isSymbolicLink()) invalidObservation('observation store path is unsafe', 'engineer_observation_unsafe_path');
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return evidenceFailure(domain, 'unsafe_path');
   }
   return path;
 }

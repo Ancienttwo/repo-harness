@@ -81,3 +81,22 @@ Gatekeeper follow-up against 3cf3ea04:
 Updated full PR boundary against main 281e6555:
 
 > **Substantive Change SHA256**: `sha256:7c753962cf35c8fe3444a8934ebc1688d99e460dfe4c23887e20d0b51d3d1d11`
+
+## Owner-approved second feedback batch
+
+- Scope was widened in plan/contract before editing the operator CLI, three additional existing test files and docs-only durable runbook. No dependency, new test file or selected production entrypoint was added.
+- `docs/reference-configs/engineer-acquisition-cutover.md` is the durable operator/runbook and frozen-time audit reading entrypoint; it is not an assets/reference-configs projection. It records v1 parser removal conditions and the release prerequisite for every new campaign intent.
+- Campaign automatic seal was rejected after tracing full planning inventory → parent/step writes → acquisition. Filtering to acquisition-shaped records could silently drop unknown metadata, and locks do not certify retired producers. Existing explicit migrations are reused; unknown payload provenance and genuine producer retirement remain operator duties.
+- File-safety mechanics now have explicit ledger/observation/policy authority domains. This is shared by three real consumers, not a new store abstraction. Receipt/seal JSON/shape/integrity faults are ledger-specific; missing policy authority cannot use observation_missing. MCP and CLI preserve the codes. Lower admission, assertions and offer revision are unchanged.
+- Frozen-time guards use real retry/candidate/scheduled admission and Board projection/Fleet classification seams. Final ME-0B acquire and Board/plan readers are fixture ports: no end-to-end claim mutation/deployment proof is claimed. S0 characterization body remains byte-identical.
+- Review execution materials are populated, while Recommendation/verdict remain reviewer-owned and AcceptanceReceipt unavailable. No reviewer assessment/waiver is invented. Keep Draft; no finish, Ready, merge or S3.
+
+Second batch patch against 77f30c35:
+
+> **Substantive Change SHA256**: `sha256:a72a1a7d225cc0ab60aabe0465ae10db5f44fb538d9f5c6478fed5486d75e3c7`
+
+Second batch full PR boundary against origin/main:
+
+> **Substantive Change SHA256**: `sha256:a1f798de800509aeed711b959aa5b1e89d13ba0043dfb2de204950f47ffa9e25`
+
+Second-batch verification: all 19 canonical checks executed and passed (exact_passed=19; unmet=[]; snapshot_changed_during_execution=false), including check:type and three added existing fixture files. The existing bundled helper was called through runHelper with timeoutMs=600000 to accommodate the aggregate campaign/CLI fixtures; no gate or check bypass. Full per-command output and immutable run references are in `.ai/harness/checks/e1-s2-verification.latest.json`.

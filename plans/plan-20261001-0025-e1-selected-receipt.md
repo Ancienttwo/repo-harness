@@ -134,3 +134,7 @@ Stop immediately on an unsafe frozen-time consumer, workflow refusal, inability 
 - [x] Implement shared C core, selected facade, explicit one-shot inner/outer identity cutover, R1 and typed observation errors within existing owners.
 - [x] Extend existing tests for replay/conflict/crash/legacy fences, callback/outer budget ordering, observation errors and current-time authority; execute canonical Verification Plan including check:type.
 - [x] Commit exact allowed paths, push and open Draft PR; no finish/merge/Ready or later slice.
+
+## Owner-approved second batch (2026-10-01)
+
+Extend the contract before execution for an operator-only engineer cutover CLI, durable `docs/reference-configs/engineer-acquisition-cutover.md`, and existing CLI/Fleet/effective-state tests. Reuse current inspect/migrate exports. Do not auto-seal a campaign by filtering the shared planning inventory: neither an empty filtered inventory nor locks prove old-producer quiescence. Freeze ledger/policy error ownership, preserve admission/assertion/revision algorithms, and fill execution review materials without issuing an AcceptanceReceipt or reviewer verdict. Verification adds three existing test files (19 checks total including check:type); keep PR Draft with no merge, Ready or S3.

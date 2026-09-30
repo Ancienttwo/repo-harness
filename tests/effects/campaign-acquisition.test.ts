@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { readFileSync, rmSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { historicalPlanningFixture, installHistoricalBoundDispatch } from '../helpers/historical-campaign-lifecycle';
 import { runCampaignAcquisition, budgetedAcquisition, inspectCampaignAcquisitionCutover, migrateCampaignAcquisitionReceipts, type CampaignAcquisitionTransactionPorts } from '../../src/effects/automation/campaign-acquisition';
 import { withCampaignCapacity } from '../../src/effects/automation/campaign-capacity';
@@ -200,8 +200,21 @@ test.each(['completed','pending'] as const)('S2 legacy outer %s is fenced or sto
     if(state==='completed')persistPlanningRecord(f.root,f.intent,resultKey,{ok:true,offer:{},envelope:{},receipt:{}});
   });
   const original=readPlanningRecord(f.root,f.intent,admissionKey);
-  const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
-  const migrate=()=>migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:stopped'});
+  const operatorArgs = ['engineer', 'campaign-acquisition-cutover'];
+  const identityArgs = ['--campaign-id', f.intent.campaign_id, '--group-number', String(f.intent.group_number), '--intent-sha256', f.intent.intent_sha256, '--json'];
+  const operator = (action: string, extra: string[] = []) => Bun.spawnSync([process.execPath, resolve(import.meta.dir, '../../src/cli/index.ts'), ...operatorArgs, action, ...identityArgs, ...extra], { cwd: f.root, env: f.env, stdout: 'pipe', stderr: 'pipe' });
+  const inspected = operator('inspect');
+  expect(inspected.exitCode, inspected.stderr.toString()).toBe(0);
+  const inventory = JSON.parse(inspected.stdout.toString());
+  expect(inventory).toEqual(inspectCampaignAcquisitionCutover(f.root, f.intent));
+  const changed = operator('migrate', ['--expected-inventory-sha256', `sha256:${'0'.repeat(64)}`, '--quiescence-evidence', 'fixture:stopped']);
+  expect(changed.exitCode).toBe(1);
+  expect(JSON.parse(changed.stderr.toString())).toMatchObject({ error: 'human_attention_required', message: 'campaign cutover inventory changed' });
+  const migrate = () => {
+    const result = operator('migrate', ['--expected-inventory-sha256', inventory.inventory_sha256, '--quiescence-evidence', 'fixture:stopped']);
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    return JSON.parse(result.stdout.toString());
+  };
   if(state==='pending')expect(migrate).toThrow('unresolved');else {expect(migrate().fenced_admissions).toContain(admissionKey);expect(migrate().fenced_admissions).toContain(admissionKey);}
   expect(JSON.stringify(readPlanningRecord(f.root,f.intent,admissionKey))).toBe(JSON.stringify(original));
   let mutations=0;

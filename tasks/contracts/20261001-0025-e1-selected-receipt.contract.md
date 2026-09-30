@@ -21,7 +21,8 @@ After a safe frozen-time audit, add same-module shared C core and acquireSelecte
 
 ## Scope
 
-- In scope: preflight frozen-time audit, S2 row and GAP2 identity cutover only, existing callback semantics R1, observation errors.
+- In scope: preflight frozen-time audit, S2 row and GAP2 identity cutover only, existing callback semantics R1, observation errors; owner-approved second batch: operator cutover CLI/runbook, ledger-specific faults, frozen-time regression guards and execution review materials.
+- Scope extension rationale: engineer CLI exposes existing inspect/migrate exports without selected dispatch; existing CLI/Fleet/effective-state tests prove the operator and audited boundaries; the docs-only reference runbook preserves migration and audit authority outside task notes. Campaign auto-seal is not added: full planning inventory is normally nonempty before acquisition and producer quiescence cannot be inferred from missing acquisition-shaped records.
 - Out of scope: GAP3/4 strengthening (S3), S4 selected entrypoints, lower admission/13-field assertion/offer_revision changes, quota/GC, scheduler, primary checkout, release/merge/Ready.
 - Taste constraints: reuse existing modules/ports, locks, canonical primitives and stores; no permanent compatibility reader or invented metadata.
 
@@ -76,6 +77,11 @@ allowed_paths:
   - src/effects/engineers/scheduling-acquire-next.ts
   - src/effects/automation/campaign-acquisition.ts
   - src/cli/mcp/engineer-tools.ts
+  - src/cli/commands/engineer.ts
+  - tests/cli/engineer.test.ts
+  - tests/state/project-effective-state.test.ts
+  - tests/unit/fleet-acquire-effect.test.ts
+  - docs/reference-configs/engineer-acquisition-cutover.md
   - tests/unit/issue-280-acquire-next.test.ts
   - tests/effects/campaign-acquisition.test.ts
   - tests/unit/me1a-engineer-scheduling-acquire.test.ts
@@ -143,6 +149,11 @@ exit_criteria:
     - src/effects/engineers/scheduling-acquire-next.ts
     - src/effects/automation/campaign-acquisition.ts
     - src/cli/mcp/engineer-tools.ts
+  - src/cli/commands/engineer.ts
+  - tests/cli/engineer.test.ts
+  - tests/state/project-effective-state.test.ts
+  - tests/unit/fleet-acquire-effect.test.ts
+  - docs/reference-configs/engineer-acquisition-cutover.md
     - plans/plan-20261001-0025-e1-selected-receipt.md
     - tasks/contracts/20261001-0025-e1-selected-receipt.contract.md
     - tasks/reviews/20261001-0025-e1-selected-receipt.review.md
@@ -357,6 +368,45 @@ exit_criteria:
       "kind": "command",
       "command": "bun src/cli/index.ts init --repo . --dry-run",
       "necessity": "Owner-required typecheck / required repository-integrity gate",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "engineer.test",
+      "kind": "package_test",
+      "path": "tests/cli/engineer.test.ts",
+      "necessity": "Real operator inspect/migrate transport and argument refusal",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "project-effective-state.test",
+      "kind": "package_test",
+      "path": "tests/state/project-effective-state.test.ts",
+      "necessity": "Frozen-time snapshot freshness cannot change workflow blockers/readiness",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "fleet-acquire-effect.test",
+      "kind": "package_test",
+      "path": "tests/unit/fleet-acquire-effect.test.ts",
+      "necessity": "Board lease liveness is display metadata, while lease authority and snapshot consistency still gate eligibility",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
