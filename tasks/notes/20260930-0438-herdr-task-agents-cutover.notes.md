@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:a0e9c64048c88b693c55026b82fed331cbc4e84ae7ccabe2027725bfcbc79f9f`
+> **Substantive Change SHA256**: `sha256:dcf452ec8614f4c28099a745b8d4c1b8e4979a5726090436fcd9967603ad9f65`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -153,3 +153,11 @@
 - Frozen 1–3 in task-owned host-design.md: launch herdr_agent|structured_host and result authority host|provider are role/capability-derived; claims never feed acceptance; protected host provenance/event sealing required. Containment is no-stdin single request with immutable create argv, original deadline and exact container/daemon/image/journal identity; no client-kill success assumption. 4–5 require pre-fix protocol/lifecycle/forgery tests before [REQ-5].
 - Capability landing (notes only per item 6): canary-issued record must join exact harness executable/version + role profile hash + proof/evidence refs; unknown version unsupported. Use one evidence authority, not a second static support enum. Actual primary write-denial is a named H4 real-harness proof; chmod only proves CLI's filesystem submission boundary.
 - Role extraction moves the existing installer parser and fixed model/effort/writability vectors to one shared owner; no model changes, fallback mappings or second persona body. Native artifacts remain temporary projections until the H5 installed cutover; they do not become a second runtime source.
+
+
+## HELP step 1 — authority core
+
+- Applied advisor-reply-help.md: removed Ed25519; protected host journal is the source. Threat boundary defends checkout writers/readers; detects stale/cross-request/partial/home mismatch; does not defend same-UID writers of primary/control HOME, owner rewriting journal, ptrace/root. Real sandbox write denial remains H4 unverified.
+- Binding protocol 3 requires explicit launch/result_authority/host_result/containment, with provider-null iff containment-present. Previous unpublished fixtures get fields, no format compatibility. Host collection reads only derived repoHarnessHome/task-hosts key, host/ACK/event joins and raw digest; value is pure versioned event projection. Outbox+CLI publisher cannot mint host evidence; provider publications remain readable claims and cannot collect.
+- Current-code file and CLI forgery regressions both failed before fix. Current coverage also refuses missing host event despite outbox, wrong digest/ACK/journal home/adapter version, and invalid OCI max/deadline. Registered read-only roles with real unverified capability refuse before state/layout; no interactive degradation.
+- Structured startup/host lifecycle lands in HELP step 2; OCI activation is explicitly unsupported until step 4, not uncontained fallback. Existing review's protected host gets structural binding fields without changing its full stdin delivery or acceptance semantics before H4 retirement.

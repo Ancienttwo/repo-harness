@@ -11,6 +11,8 @@ export function buildTaskAgentCommand(): Command {
       if (isAbsolute(opts.input) || relative(root, path).split('/').includes('..')) throw new Error('task_agent_input_unsafe');
       const spec = readSessionArtifact<TaskAgentSpec>(path);
       const expected = ['task', 'role', 'harness_kind', 'endpoint', 'parent_pane', 'args', 'max_requests'];
+      if (Object.hasOwn(spec,'profile')) expected.push('profile');
+      if (Object.hasOwn(spec,'containment')) expected.push('containment');
       if (Object.keys(spec).sort().join(',') !== expected.sort().join(',')) throw new Error('task_agent_input_invalid');
       if (!Array.isArray(spec.args) || spec.args.length !== 0) throw new Error('task_agent_arguments_require_role_profile');
       process.stdout.write(JSON.stringify(await startTaskAgent(root, spec)) + '\n');

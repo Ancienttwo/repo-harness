@@ -56,8 +56,8 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
     const proof = captureTaskPane(endpoint, pane, name, { pid: child.pid, identity: processIdentity(child.pid) },
       { disposition: 'created', intent_id: session.session_id }, { pid: process.pid, identity: processIdentity(process.pid) });
     processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
-      server: identity.server, pane, binding: { protocol: 2, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
-        harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof } };
+      server: identity.server, pane, binding: { protocol: 3, launch: 'structured_host', result_authority: 'host', host_result: {journal_ref: dir}, containment: null, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
+        harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof, host: {pid:process.pid,identity:processIdentity(process.pid)} } };
     writeSessionArtifact(join(dir, 'processes.json'), processes);
   } finally { startup.release(); }
   console.log(`Claude reviewer | session=${session.session_id} pid=${child.pid} contract=${session.contract_file}`);

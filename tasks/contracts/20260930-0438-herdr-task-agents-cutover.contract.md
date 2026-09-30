@@ -17,19 +17,19 @@
 
 ## Goal
 
-H3 第四切片：将现有 fleet persona/parser/permission 与 model/effort 选择提到共享 task-role profile owner，installer 直接消费同一实现。保留所有已配置模型，移除重复的 installer-local role/parser/model authority，为下一 host/consumer binding 提供实际 profile source/hash。
+H3 host security 切片（REQ-5 DESIGN-2 1–3）：binding 的 launch/result_authority 由 admitted role/capabilities 决定；host 权威结果从 protected journal 校验 provenance/seal，拒绝 provider 文件/CLI 伪造。冻结 containment 单轮/deadline/no-stdin 类型约束与身份。随后实现 host 生命周期/ACK/native protocols 并迁移 consumers。
 
 ## Scope
 
-- In scope: 下列 exact profile module、installer source/projection 和原有 installer/peer tests、workflow artifacts。
-- Out of scope in this commit: 结果认证/containment/host 生命周期的下一切片，全部 consumer 改造，H4/H5，mini、真实模型、全局安装。
-- Role extraction 不是能力证明；真实 capability 仍 unverified，unknown harness/profile 返回 unsupported，不切换 harness/mode。
+- In scope: 下列 exact typed host result codec、task-session/CLI、既有 review binding consumer 与 fixture tests/notes。
+- Out of scope now: 真实模型/canary、mini、全局安装；consumer 路由后续切片继续，不声明 H3 完成。
+- 所有 source changes 都围绕 host-design.md 的 frozen direction；不能接受 host-sealed 以外的数据作为 acceptance/consult/collected evidence。
 
 ## Stop Conditions
 
-- model/effort 不得变；role instruction 单 author，native projection 只是派生。
-- installer smoke 只用 fixture HOME/repo；不改 ~/.codex ~/.claude，不触碰用户 pane 或 main dirty 文件。
-- H3 完成才 [REQ-5]，PASS 后进 H4；host-design.md 的 REQ-5 DESIGN-2 决策不降级。
+- launch/result authority 不接受 caller selector；real capability 未证明则 unsupported，不能换模式/harness。
+- contained 只允许 max_requests=1 + 原 deadline + create-time frozen argv + 无 stdin；不杀 docker client 来声称 workload exited。
+- 不碰主 checkout dirty 文件、w8:p1、mini、全局 ~/.codex ~/.claude；无真实模型。
 
 ## Falsifier
 
@@ -73,11 +73,15 @@ allowed_paths:
   - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
   - docs/researches/20260930-herdr-task-runtime-proof.md
+  - src/core/engineers/task-host-result.ts
+  - src/effects/terminal/task-session.ts
   - src/effects/terminal/task-role-profiles.ts
-  - scripts/install-agent-fleet.sh
-  - assets/templates/helpers/install-agent-fleet.sh
-  - tests/install-agent-fleet.test.ts
-  - tests/unit/herdr-peer-harness.test.ts
+  - src/cli/commands/task-agent.ts
+  - src/effects/review/claude-review-host.ts
+  - src/effects/review/claude-review-session.ts
+  - tests/cli/task-agent.test.ts
+  - tests/herdr-task-lifecycle.test.ts
+  - tests/claude-review.test.ts
 ```
 
 ## Evidence Requirements
@@ -119,7 +123,7 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/effects/terminal/task-role-profiles.ts
+    - src/core/engineers/task-host-result.ts
   artifacts_exist: []
 ```
 
@@ -130,14 +134,27 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-shared-roles",
+      "id": "h3-host-authority",
       "kind": "command",
-      "command": "bun test tests/install-agent-fleet.test.ts tests/unit/herdr-peer-harness.test.ts --timeout 60000",
+      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/task-agent.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Canonical role/parser/model owner must produce byte-identical existing fleet in fixture HOME, preserve fail-closed malformed/custom install boundaries, and provide hashed profiles without unsupported fallback.",
+      "necessity": "Current-code falsifiers for file/CLI gatekeeper forgery and typed host authority/launch/containment guards; private fixture lifecycle and owner cleanup.",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "h3-review-binding",
+      "kind": "command",
+      "command": "REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts --timeout 60000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "expensive",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing protected structured review host shares binding/identity types; preserve full stdin delivery and exact owned closeout before H4 retirement.",
       "inputs": {
         "env": []
       }
