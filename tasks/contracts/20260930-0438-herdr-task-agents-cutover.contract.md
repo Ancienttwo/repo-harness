@@ -17,13 +17,13 @@
 
 ## Goal
 
-step3：MCP run_agent_goal 只通过 task-agent 创建持久 Herdr peer、投递 goal、读 history、完成关闭或超时 cancel；移除 codex exec/claude -p。显式 herdr:{endpoint,parent_pane} 复用既有类型，缺省拒绝。返回 redacted/128KB 的协作 claim，不造 Receipt；补不同 agent 互读 history 证据。
+REQ-5 correction 1：删除无生产消费者的 TaskRoleProfile/loadTaskRoleProfile、专属字段和测试，保留 installer parser/model/writability 及既有输出。
 
 ## Scope
 
-- In scope: exact MCP tool/setup、task-session history accessor、既有 MCP/private Herdr tests、简短 pane/history guideline 和工作流 artifacts。
-- Out of scope: campaign/delegation（暂停），host/adapter/containment 扩展，真实模型/mini/global install。
-- 完成发 [REQ-5 CHECKPOINT]，带累计 +/- 与剩余新增项理由，等 advisor 回复。
+- In scope: shared role source、既有 installer fixture/golden tests、contract/notes。
+- Out of scope: MCP fence correction（下一个独立 commit），campaign/delegation/旧路径退役（待只读盘点），真实模型/mini/global install。
+- 净删除 commit 后进入 MCP correction；H3 不勾完成。
 
 ## Stop Conditions
 
@@ -68,21 +68,10 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - plans/plan-20260930-0438-herdr-task-agents-cutover.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
-  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - docs/researches/20260930-herdr-task-runtime-proof.md
-  - src/cli/mcp/tools.ts
-  - src/cli/mcp/setup.ts
-  - src/effects/terminal/task-session.ts
-  - src/cli/commands/task-agent.ts
-  - tests/cli/mcp-tools.test.ts
-  - tests/herdr-task-lifecycle.test.ts
-  - tests/unit/herdr-peer-harness.test.ts
-  - tests/cli/task-agent.test.ts
-  - docs/reference-configs/global-working-rules.md
-  - assets/reference-configs/global-working-rules.md
+  - src/effects/terminal/task-role-profiles.ts
+  - tests/install-agent-fleet.test.ts
 ```
 
 ## Evidence Requirements
@@ -135,14 +124,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-persistent-mcp-goal",
+      "id": "h3-profile-loader-prune",
       "kind": "command",
-      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-tools.test.ts tests/cli/task-agent.test.ts tests/unit/herdr-peer-harness.test.ts --timeout 60000",
+      "command": "bun test tests/install-agent-fleet.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
-      "cost": "expensive",
+      "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Persistent Herdr goal success/timeout cleanup, native binary shim parent proof, redaction/bounds/audit and actual cross-agent history, plus existing authorization guards.",
+      "necessity": "Installer production parser/model/golden behavior preserved after removing test-only profile API; all installer mutations use fixture HOME.",
       "inputs": {
         "env": []
       }

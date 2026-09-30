@@ -1,9 +1,3 @@
-import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
-import { fileURLToPath } from 'url';
-import { canonicalize } from '../../core/evidence/canonical-json';
-
 // Moved from the existing installer: one owner for logical persona parsing,
 // declared writability and the user's configured model/effort projections.
 export const MANAGED_AGENTS = ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'];
@@ -118,34 +112,4 @@ export function validateFrontmatter(parsed: ParsedRole | null, expectedAgent: st
     return { ok: false, reason: `description missing expected model label: ${mapped.sourceDescription}` };
   }
   return { ok: true, mapped };
-}
-
-
-export interface TaskRoleProfile {
-  protocol: 1;
-  logical_role: string;
-  harness_kind: string;
-  model: string;
-  effort: string;
-  permission: 'read_only' | 'workspace_write';
-  instructions: string;
-  source_sha256: string;
-  profile_sha256: string;
-}
-const fleetSource = resolve(dirname(fileURLToPath(import.meta.url)), '../../../agents/fleet');
-export function loadTaskRoleProfile(logicalRole: string, harnessKind: string, sourceDirectory = fleetSource): TaskRoleProfile {
-  if (!MANAGED_AGENTS.includes(logicalRole)) throw new Error('task_role_unsupported');
-  if (harnessKind !== 'codex' && harnessKind !== 'claude') throw new Error('task_role_harness_unconfigured');
-  const bytes = readFileSync(join(sourceDirectory, `${logicalRole}.md`));
-  const parsed = parseFrontmatter(bytes.toString('utf8'));
-  const validated = validateFrontmatter(parsed, logicalRole);
-  if (!validated.ok || !parsed) throw new Error(`task_role_invalid: ${validated.ok ? 'missing role' : validated.reason}`);
-  const target = AGENT_TARGET_OVERRIDES[logicalRole];
-  if (!target) throw new Error('task_role_target_missing');
-  const basis = { protocol: 1 as const, logical_role: logicalRole, harness_kind: harnessKind,
-    model: harnessKind === 'codex' ? target.model : parsed.model!,
-    effort: harnessKind === 'codex' ? target.effort : parsed.effort!,
-    permission: WRITABLE_AGENTS.has(logicalRole) ? 'workspace_write' as const : 'read_only' as const,
-    instructions: parsed.body, source_sha256: `sha256:${createHash('sha256').update(bytes).digest('hex')}` };
-  return { ...basis, profile_sha256: `sha256:${createHash('sha256').update(JSON.stringify(canonicalize(basis))).digest('hex')}` };
 }

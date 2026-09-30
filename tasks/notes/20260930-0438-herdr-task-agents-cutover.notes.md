@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:556a46cfe3be00abb861067975adfa141fd2a17f1acec43182df5e2d0b7e72b1`
+> **Substantive Change SHA256**: `sha256:6e4ac46eb820351ebcc7f51ba9bc581718138e91f8e1835ba9a6922d3153dd60`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -191,3 +191,8 @@
 - Added task-agent history accessor/CLI is shared by MCP and cooperating agents, identity-proves the binding before Herdr read. Agent-process-to-agent-process history read proved in the existing private linked fixture; explicit names and shared repository grouping retained. Source global-working-rules template projects the pane lifetime/history/created-only cleanup guidance without global installation.
 - Falsifier: the new missing-endpoint regression run against c9bbd605 tools.ts failed (exit 1; old direct runner returned output instead of HERDR_ENDPOINT_REQUIRED). Current missing endpoint never invokes the fake Codex binary. Private actual agent-start success (Codex fixture) and timeout (Claude fixture) recover pane count to baseline, terminate their exact PIDs, preserve attached parent, redact token output and keep audit addressing private.
 - Unverified: these deterministic fixtures prove transport/lifecycle, not real harness auth, sandbox visibility/write denial, readiness hooks, model task completion or read-only acceptance. No real model invocation; mini/global installation/default cleanup forbidden. H3 incomplete; campaign/delegation pause and H4 canary prerequisites unchanged.
+
+
+## REQ-5 checkpoint correction 1
+
+- Removed test-only TaskRoleProfile/loadTaskRoleProfile, its source/profile SHA fields and dedicated tests/imports. No actual H4 production dispatcher can be named under the simplified communication goal, so no speculative retention. Shared parser/model/writability remains consumed by install-agent-fleet; existing installer fixture/golden tests protect unchanged projections. This supersedes checkpoint's pending disposition.
