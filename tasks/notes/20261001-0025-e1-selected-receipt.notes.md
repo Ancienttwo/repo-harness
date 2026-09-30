@@ -108,3 +108,9 @@ Idle receipts are never persisted: remove the dead state/reader/validator allowa
 Local correction boundary against 1fbf02bc:
 
 > **Substantive Change SHA256**: `sha256:38df701eded1da1893dfc75991ae90d9493f10a66740f8f82ba493c3f273bf82`
+
+Rebased without conflicts onto origin/main 151ba8f946f450b549c721fc8decb7702b956d21. Upstream task-session exit identity changes do not overlap S2 allowed paths. Contract rollback checkpoint now names this actual base; the earlier baseline/digest entries are historical boundaries. Full 19-check Verification Plan must run on this rebased tree before push.
+
+Current complete PR boundary against main 151ba8f9:
+
+> **Substantive Change SHA256**: `sha256:b41c225f3c995309fc8691cec818c60c3292bdfc090bea4c9a16a71875597b32`
