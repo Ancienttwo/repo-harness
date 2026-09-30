@@ -390,5 +390,5 @@ baseline and named current delta checks; never infer it from paths or command te
 
 ## Rollback Point
 
-- Commit / checkpoint: origin/main dc77b3c6
+- Commit / checkpoint: origin/main 281e6555
 - Revert strategy: preserve ledger/evidence; never restore v1 execution or erase fenced old keys. Rollback needs explicit closeout/reconciliation, not automatic replay.

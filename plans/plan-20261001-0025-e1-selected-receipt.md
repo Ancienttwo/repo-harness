@@ -9,7 +9,7 @@
 > **Artifact Level**: work-package
 > **Promotion Reason**: risk_boundary
 > **Verification Boundary**: Frozen-time audit then exact replay/migration and callback/budget evidence
-> **Rollback Surface**: Before execution remove `plans/plan-20261001-0025-e1-selected-receipt.md`; after execution revert branch `codex/e1-selected-receipt` or the explicitly reviewed diff.
+> **Rollback Surface**: Before execution remove `plans/plan-20261001-0025-e1-selected-receipt.md`; after execution revert branch `feat/e1-selected-receipt` or the explicitly reviewed diff.
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/20261001-0025-e1-selected-receipt.contract.md`
@@ -81,7 +81,7 @@ See captured planning output.
 ## Promotion Gate
 
 - **Merge/PR unit**: Captured plan `plans/plan-20261001-0025-e1-selected-receipt.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
-- **Rollback surface**: Before execution remove `plans/plan-20261001-0025-e1-selected-receipt.md`; after execution revert branch `codex/e1-selected-receipt` or the explicitly reviewed diff.
+- **Rollback surface**: Before execution remove `plans/plan-20261001-0025-e1-selected-receipt.md`; after execution revert branch `feat/e1-selected-receipt` or the explicitly reviewed diff.
 - **Verification boundary**: Frozen-time audit then exact replay/migration and callback/budget evidence
 - **Review/acceptance boundary**: `tasks/reviews/20261001-0025-e1-selected-receipt.review.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
@@ -93,7 +93,7 @@ See captured planning output.
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
 - **Evaluator rubric**: `tasks/reviews/20261001-0025-e1-selected-receipt.review.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
-- **Rollback surface**: Before execution remove `plans/plan-20261001-0025-e1-selected-receipt.md`; after execution revert branch `codex/e1-selected-receipt` or the explicitly reviewed diff.
+- **Rollback surface**: Before execution remove `plans/plan-20261001-0025-e1-selected-receipt.md`; after execution revert branch `feat/e1-selected-receipt` or the explicitly reviewed diff.
 
 ## Captured Planning Output
 
@@ -123,8 +123,8 @@ Stop immediately on an unsafe frozen-time consumer, workflow refusal, inability 
 ## Task Breakdown
 - [x] Capture narrowed contract; publish exhaustive frozen-time audit before production edits.
 - [x] Implement shared C core, selected facade, explicit one-shot inner/outer identity cutover, R1 and typed observation errors within existing owners.
-- [ ] Extend existing tests for replay/conflict/crash/legacy fences, callback/outer budget ordering, observation errors and current-time authority; execute canonical Verification Plan including check:type.
-- [ ] Commit exact allowed paths, push and open Draft PR; no finish/merge/Ready or later slice.
+- [x] Extend existing tests for replay/conflict/crash/legacy fences, callback/outer budget ordering, observation errors and current-time authority; execute canonical Verification Plan including check:type.
+- [x] Commit exact allowed paths, push and open Draft PR; no finish/merge/Ready or later slice.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -132,5 +132,5 @@ Stop immediately on an unsafe frozen-time consumer, workflow refusal, inability 
 ## Task Breakdown
 - [x] Capture narrowed contract; publish exhaustive frozen-time audit before production edits.
 - [x] Implement shared C core, selected facade, explicit one-shot inner/outer identity cutover, R1 and typed observation errors within existing owners.
-- [ ] Extend existing tests for replay/conflict/crash/legacy fences, callback/outer budget ordering, observation errors and current-time authority; execute canonical Verification Plan including check:type.
-- [ ] Commit exact allowed paths, push and open Draft PR; no finish/merge/Ready or later slice.
+- [x] Extend existing tests for replay/conflict/crash/legacy fences, callback/outer budget ordering, observation errors and current-time authority; execute canonical Verification Plan including check:type.
+- [x] Commit exact allowed paths, push and open Draft PR; no finish/merge/Ready or later slice.

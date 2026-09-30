@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { existsSync, statSync, mkdtempSync, mkdirSync, cpSync, symlinkSync, readdirSync, readFileSync, writeFileSync, unlinkSync, appendFileSync } from 'fs';
+import { existsSync, statSync, utimesSync, mkdtempSync, mkdirSync, cpSync, symlinkSync, readdirSync, readFileSync, writeFileSync, unlinkSync, appendFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -8,6 +8,7 @@ import { buildEngineerOffersDocument, type EngineerOfferV1, type EngineerOffersV
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { observeRetryEligibility } from '../../src/core/engineers/automation-attempt';
+import { withExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, inspectAcquisitionReceiptCutover, migrateAcquisitionReceipts, requireAcquisitionLedgerV2, EngineerObservationError, type AcquireSelectedEngineerTaskOptions, type AcquisitionPolicyR1 } from '../../src/effects/engineers/scheduling-acquire-next';
@@ -340,6 +341,8 @@ describe('trusted observation prepare', () => {
   test('rejects symlink store ancestors and symlink receipt files', () => {
     const f = prepared();
     const other = root();
+    mkdirSync(join(other, '.ai/harness'), { recursive: true });
+    writeFileSync(join(other, '.ai/harness/policy.json'), '{"version":1}');
     symlinkSync(join(resolveGitCommonDirectory(f.input.repo_root), 'repo-harness'), join(resolveGitCommonDirectory(other), 'repo-harness'));
     expect(() => prepareEngineerObservation({ ...f.input, repo_root: other })).toThrow('unsafe');
     const linked = join(f.path, '..', `${D('0').slice(7)}.json`);
@@ -510,5 +513,60 @@ describe('S2 one-shot legacy receipt cutover', () => {
     expect(readFileSync(f.path,'utf8')).toBe(before);
     expect(()=>acquireNextScheduledEngineerTask({repo_root:f.repo,principal,idempotency_key:'new-key',dependencies:{resolvePrincipal:()=>principal}})).toThrow();
     expect(existsSync(join(f.path,'..','cutover-v2.json'))).toBeFalse();
+  });
+});
+
+
+describe('S2 gatekeeper auto acquisition regressions', () => {
+  const ledger = (repo: string) => join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquire-next');
+  test('sealed acquisitions and replay do not acquire the cutover lock', () => {
+    const repo = root(); requireAcquisitionLedgerV2(repo);
+    const input = { repo_root: repo, principal, idempotency_key: 'sealed', dependencies: {
+      resolvePrincipal: () => principal, collectOffers: () => document([offer('first',10)]), acquire: () => success(offer('first',10)),
+    } };
+    const first = acquireNextScheduledEngineerTask(input);
+    withExclusiveDirectoryLock(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquisition-cutover.lock', () => {
+      expect(() => requireAcquisitionLedgerV2(repo)).not.toThrow();
+      expect(acquireNextScheduledEngineerTask(input)).toEqual(first);
+    });
+  });
+  test('first initialization reclaims a stale empty cutover lock', () => {
+    const repo = root();
+    const path = join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquisition-cutover.lock');
+    mkdirSync(path, { recursive: true });
+    const old = new Date(Date.now() - 60_000); utimesSync(path,old,old);
+    expect(() => requireAcquisitionLedgerV2(repo)).not.toThrow();
+    expect(existsSync(path)).toBeFalse(); expect(existsSync(join(ledger(repo),'cutover-v2.json'))).toBeTrue();
+  });
+  test('five idle poll keys leave no receipt files; an idle key can change filters', () => {
+    const repo = root(); requireAcquisitionLedgerV2(repo);
+    const before = readdirSync(ledger(repo)).sort();
+    let effects = 0;
+    const deps = { resolvePrincipal: () => principal, collectOffers: () => document([]), acquire: () => { effects++; return success(offer('first',10)); } };
+    for (let index=0;index<5;index++) {
+      expect(acquireNextScheduledEngineerTask({repo_root:repo,principal,idempotency_key:`poll-${index}`,dependencies:deps})).toMatchObject({error:'engineer_no_eligible_offer'});
+    }
+    for (const minimum_priority of [10,90]) {
+      expect(acquireNextScheduledEngineerTask({repo_root:repo,principal,idempotency_key:'poll-0',filters:{minimum_priority},dependencies:deps})).toMatchObject({error:'engineer_no_eligible_offer'});
+    }
+    expect(readdirSync(ledger(repo)).sort()).toEqual(before); expect(effects).toBe(0);
+  });
+  test('stale then empty is determinate idle; the same key acquires when the world changes', () => {
+    const repo = root(); const selected=offer('first',10); let ready=false,reads=0,effects=0;
+    const input={repo_root:repo,principal,idempotency_key:'stale-empty',dependencies:{
+      resolvePrincipal:()=>principal,
+      collectOffers:()=>document(ready || reads++===0 ? [selected] : []),
+      acquire:()=>{effects++;return ready ? success(selected) : {ok:false as const,error:'engineer_offer_stale' as const,message:'changed'};},
+    }};
+    expect(acquireNextScheduledEngineerTask(input)).toMatchObject({error:'engineer_no_eligible_offer'});
+    expect(existsSync(join(ledger(repo),`${engineerSha256(input.idempotency_key).slice(7)}.json`))).toBeFalse();
+    ready=true; expect(acquireNextScheduledEngineerTask(input).ok).toBeTrue(); expect(effects).toBe(2);
+  });
+  test.each(['missing-policy','corrupt-policy','collector-refusal'] as const)('failed prepare %s creates no empty observations directory', failure => {
+    const repo=root(); mkdirSync(join(repo,'.ai/harness'),{recursive:true});
+    if(failure!=='missing-policy')writeFileSync(join(repo,'.ai/harness/policy.json'),failure==='corrupt-policy'?'not JSON':'{"version":1}');
+    expect(()=>prepareEngineerObservation({repo_root:repo,principal,dependencies:{resolvePrincipal:()=>principal,
+      collectOffers:()=>{throw Error('collector refusal');}}})).toThrow();
+    expect(existsSync(join(resolveGitCommonDirectory(repo),'repo-harness/engineer-scheduling/v1/observations'))).toBeFalse();
   });
 });

@@ -57,7 +57,7 @@ test('two OS callers cannot allocate campaign Claims under the frozen admission 
   const f = await historicalPlanningFixture(true); roots.push(f.root, f.home);
   const entry = join(import.meta.dir, '../../src/effects/automation/campaign-acquisition.ts');
   const children = [f.executeInput.authorization_id, f.secondAuthorization].map(authorization_id => Bun.spawn([process.execPath, '-e', `
-    import { runCampaignAcquisition, budgetedAcquisition, inspectCampaignAcquisitionCutover, migrateCampaignAcquisitionReceipts, type CampaignAcquisitionTransactionPorts } from ${JSON.stringify(entry)};
+    import { runCampaignAcquisition } from ${JSON.stringify(entry)};
     try { runCampaignAcquisition(${JSON.stringify({ ...f.executeInput, authorization_id })}); process.exit(2); }
     catch (error) { if (!String(error).includes('trusted exact revision readback')) throw error; }
   `], { cwd: f.root, env: f.env, stdout: 'pipe', stderr: 'pipe' }));

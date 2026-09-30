@@ -206,7 +206,7 @@ function readSeal(root: string): CutoverSeal {
 }
 function cutoverLock<T>(root: string, run: () => T): T {
   const common = resolveGitCommonDirectory(root);
-  return withExclusiveDirectoryLock(common, 'repo-harness/engineer-scheduling/v1/acquisition-cutover.lock', run);
+  return withExclusiveDirectoryLock(common, 'repo-harness/engineer-scheduling/v1/acquisition-cutover.lock', run, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 /** Read-only operator inventory. This is never called by a normal v2 receipt reader. */
 export function inspectAcquisitionReceiptCutover(repoRoot: string) {
@@ -251,6 +251,7 @@ export function migrateAcquisitionReceipts(options: { repo_root: string; expecte
 }
 /** Empty new stores may initialize v2. Any pre-existing key requires explicit offline cutover. */
 export function requireAcquisitionLedgerV2(repoRoot: string): void {
+  if (storedEntryExists(sealPath(repoRoot))) { readSeal(repoRoot); return; }
   cutoverLock(repoRoot, () => {
     if (storedEntryExists(sealPath(repoRoot))) { readSeal(repoRoot); return; }
     const common = resolveGitCommonDirectory(repoRoot), directory = join(common, ACQUISITION_STORE);
@@ -317,7 +318,13 @@ function runAcquisitionTransaction(options: AcquireNextScheduledEngineerTaskOpti
     let result = perform(observation);
     if (result.ok && options.accept_acquired) result = options.accept_acquired(result) ?? result;
     const idle = request.operation === 'auto' && !result.ok && result.error === 'engineer_no_eligible_offer';
-    writeReceipt(path, buildReceipt(request,idle ? 'idle' : 'completed',result)); return result;
+    if (idle) {
+      // A determinate no-effect poll remains uncached, under the key lock, as in the original auto path.
+      unlinkSync(path); syncDirectoryDurably(dirname(path));
+    } else {
+      writeReceipt(path, buildReceipt(request,'completed',result));
+    }
+    return result;
   });
 }
 function requestBasis(options: AcquireNextScheduledEngineerTaskOptions, operation: 'auto' | 'selected', filters: AcquireNextFiltersV1 | null, attempts: number | null, selected: ScheduledEngineerAcquireAssertionV1 | null, observationRef: string | null): AcquisitionRequestV2 {
@@ -349,7 +356,7 @@ export function acquireNextScheduledEngineerTask(options: AcquireNextScheduledEn
       const document = deps.collectOffers({ repo_root: options.repo_root, principal: options.principal, env: options.env, now_ms: observedAt });
       capacityScanLimit ??= document.offers.length;
       const selected = document.offers.find(offer => eligible(offer,filters) && !fullCandidates.has(offer.task_id));
-      if (!selected) return result;
+      if (!selected) return noEligible;
       result = deps.acquire({ repo_root: options.repo_root, principal: options.principal, assertion: assertion(selected), session_id: options.session_id, env: options.env, offer_options: { now_ms: observedAt } });
       if (campaignCapacityBlocked(result)) { fullCandidates.add(selected.task_id); result = noEligible; if (fullCandidates.size >= capacityScanLimit) return result; index -= 1; continue; }
       if (!selectionMayBeRetried(result)) break;
@@ -505,7 +512,6 @@ function decodeObservation(bytes: string, ref: string): EngineerObservationV1 {
 export function prepareEngineerObservation(options: EngineerObservationOptions): PreparedEngineerObservation {
   const principal = observationPrincipal(options);
   const common = resolveGitCommonDirectory(options.repo_root);
-  const directory = guardedSchedulingDirectory(common, OBSERVATION_STORE, true);
   const policyRevision = observationPolicy(options.repo_root);
   const observedAt = observationClock(options);
   const offers = validateEngineerOffersDocument((options.dependencies?.collectOffers ?? collectEngineerOffers)({
@@ -521,6 +527,7 @@ export function prepareEngineerObservation(options: EngineerObservationOptions):
   const bytes = canonicalEngineerJson(observation);
   const ref = engineerSha256(bytes);
   decodeObservation(bytes, ref);
+  const directory = guardedSchedulingDirectory(common, OBSERVATION_STORE, true);
   return withExclusiveDirectoryLock(common, `${OBSERVATION_STORE}/${ref.slice(7)}.lock`, () => {
     guardedSchedulingDirectory(common, OBSERVATION_STORE, false);
     const path = join(directory, `${ref.slice(7)}.json`);

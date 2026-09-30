@@ -7,6 +7,7 @@ import { join } from 'path';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { requireAcquisitionLedgerV2 } from '../../src/effects/engineers/scheduling-acquire-next';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { bindEngineer, readEngineerBindingStatus, retireEngineer } from '../../src/effects/engineers/binding-store';
 import { enrollEngineerPrincipal, revokeEngineerPrincipal } from '../../src/effects/engineers/principal-store';
@@ -526,6 +527,8 @@ describe('restricted Engineer MCP tools', () => {
       structuredContent: { error: { code: 'INVALID_ARGUMENT', message: 'dependency_revision is required' } },
     });
 
+    // Fixture cutover initialization is separate from the idle poll whose side effects are measured.
+    requireAcquisitionLedgerV2(repoRoot);
     const before = coordinationState(repoRoot);
     const noNextOffer = await callMcpTool(context, 'engineer_acquire_next', {
       ...fences,
@@ -538,12 +541,7 @@ describe('restricted Engineer MCP tools', () => {
       isError: true,
       structuredContent: { error: { code: 'engineer_no_eligible_offer' } },
     });
-    // S2 retains determinate auto-idle identity (no claim) instead of deleting its pending evidence.
-    const admissionFiles = (paths: string[]) => paths.filter(path => path.endsWith('.json') && !path.startsWith('engineer-scheduling/v1/acquire-next/'));
-    expect(admissionFiles(coordinationState(repoRoot))).toEqual(admissionFiles(before));
-    const idleRoot = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/acquire-next');
-    const idleRecord = JSON.parse(readFileSync(join(idleRoot, `${engineerSha256('no-next-offer').slice(7)}.json`), 'utf8'));
-    expect(idleRecord).toMatchObject({ protocol: 2, state: 'idle', result: { error: 'engineer_no_eligible_offer' } });
+    expect(coordinationState(repoRoot).filter((path) => path.endsWith('.json'))).toEqual(before.filter((path) => path.endsWith('.json')));
 
     const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
