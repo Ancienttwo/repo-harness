@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -538,7 +538,12 @@ describe('restricted Engineer MCP tools', () => {
       isError: true,
       structuredContent: { error: { code: 'engineer_no_eligible_offer' } },
     });
-    expect(coordinationState(repoRoot).filter((path) => path.endsWith('.json'))).toEqual(before.filter((path) => path.endsWith('.json')));
+    // S2 retains determinate auto-idle identity (no claim) instead of deleting its pending evidence.
+    const admissionFiles = (paths: string[]) => paths.filter(path => path.endsWith('.json') && !path.startsWith('engineer-scheduling/v1/acquire-next/'));
+    expect(admissionFiles(coordinationState(repoRoot))).toEqual(admissionFiles(before));
+    const idleRoot = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/acquire-next');
+    const idleRecord = JSON.parse(readFileSync(join(idleRoot, `${engineerSha256('no-next-offer').slice(7)}.json`), 'utf8'));
+    expect(idleRecord).toMatchObject({ protocol: 2, state: 'idle', result: { error: 'engineer_no_eligible_offer' } });
 
     const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
@@ -547,5 +552,17 @@ describe('restricted Engineer MCP tools', () => {
       structuredContent: { error: { code: 'engineer_offer_stale' } },
     });
     expect(coordinationState(repoRoot)).toEqual(beforeStale);
+    const policyPath = join(repoRoot, '.ai/harness/policy.json');
+    writeFileSync(policyPath, 'not JSON');
+    expect(await callMcpTool(context, 'engineer_prepare', {})).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_observation_corrupt' } },
+    });
+    unlinkSync(policyPath);
+    const missingObservationAuthority = await callMcpTool(context, 'engineer_prepare', {});
+    expect(missingObservationAuthority).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_observation_missing' } },
+    });
+    expect(JSON.stringify(missingObservationAuthority)).not.toContain('ENOENT');
+
   }, 30_000);
 });
