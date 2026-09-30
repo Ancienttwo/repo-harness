@@ -414,11 +414,7 @@ contract_acceptance_policy_json() {
     echo "[PlanToTodo] ambiguous host identity: both CODEX_SESSION_ID and CLAUDE_SESSION_ID are set" >&2
     return 1
   fi
-  if [[ "$codex_host" -eq 1 ]]; then
-    printf '%s' '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}'
-  else
-    printf '%s' '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}'
-  fi
+  printf '%s' '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}'
 }
 
 render_contract_file() {

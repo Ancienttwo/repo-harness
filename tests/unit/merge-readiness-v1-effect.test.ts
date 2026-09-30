@@ -356,7 +356,7 @@ function withLocalAcceptance(run: (f: { root: string; observe: () => ReturnType<
       goal_file:PLAN,goal_sha256:authorityFingerprint(readFileSync(join(f.cwd,PLAN),'utf8')),
       verification_file:'.ai/harness/checks/latest.json',verification_evidence_sha256:'sha256:'+'6'.repeat(64),benchmark_evidence_sha256:'sha256:'+'7'.repeat(64),
       subject_sha256:effective.review.recorded_subject_sha256!,subject_scope:'normalized-final-content',target_ref:'main',target_revision:base,
-      reviewed_paths:['src/feature.ts'],disposition:'external_pass',expected_reviewer:'Codex',reviewer:'Codex',source:'codex-plugin',actor:null,
+      reviewed_paths:['src/feature.ts'],disposition:'external_pass',expected_reviewer:'Codex',reviewer:'Codex',source:'codex-review',actor:null,
       summary:'Controlled acceptance observation fixture',findings:[],waiver_grant_sha256:null,issued_at:new Date(now).toISOString()};
     const receiptPath=acceptanceReceiptPath(f.cwd,authorityHome,true);
     writeFileSync(receiptPath,JSON.stringify(acceptance));

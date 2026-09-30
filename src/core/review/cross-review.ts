@@ -12,7 +12,7 @@
 // buildReviewSubject rather than adding a third Git scope parser. This file
 // only defines the shape that reused output is projected into.
 
-export const CROSS_REVIEW_PROVIDER_MODES = ["codex", "codex-plugin"] as const;
+export const CROSS_REVIEW_PROVIDER_MODES = ["codex"] as const;
 export type CrossReviewProviderMode = (typeof CROSS_REVIEW_PROVIDER_MODES)[number];
 
 // Closed error-code union (plan "Trace C" + SSD-04 acceptance): every

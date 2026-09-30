@@ -17,13 +17,13 @@
 
 ## Goal
 
-REQ-5 放行 C：删除 claude-plan 专用 skill/headless CLI/transcript fallback，catalog/init/install 文档与投影不再安装/指引它。持久 plan consult 用已有 task-agent。
+REQ-5 放行 D：删除 codex-plugin provider/companion/discovery/readiness/install 与对应旧 source/policy/projection；skill references 同切。direct Codex 和既有 Claude domain acceptance 保留，不泛化 provenance。
 
 ## Scope
 
-- In scope: named skill/catalog/init references、source/projected docs、既有 catalog/stub routing/bundled install tests。
-- Out of scope: D（下一独立 commit），现有 Claude acceptance、native-child/delegation/campaign，真实模型/mini/global install。
-- C 独立 commit/canonical，A–D 后 CHECKPOINT-3；H3/H4 尚未验收。
+- In scope: exact plugin provider 公共入口/安装/检查/文档、source enum/policy/projection及其 fixture tests/source模板。
+- Out of scope: direct codex exec、native-child/delegation/contract-run/campaign、Receipt provenance 泛化、真实模型/mini/global install/用户自装 plugin。
+- D 独立 commit/canonical 后 CHECKPOINT-3；H3/H4 尚未验收。
 
 ## Stop Conditions
 
@@ -70,16 +70,47 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - assets/skill-commands/manifest.json
-  - assets/skills/claude-plan/SKILL.md
+  - src/cli/index.ts
   - src/cli/commands/init.ts
-  - assets/reference-configs/global-working-rules.md
+  - src/cli/commands/cross-review.ts
+  - src/core/review/cross-review.ts
+  - src/effects/review/cross-review-runner.ts
+  - src/effects/review/codex-plugin-provider.ts
+  - src/effects/evidence/checks-materializer.ts
+  - scripts/acceptance-receipt.ts
+  - assets/templates/helpers/acceptance-receipt.ts
+  - scripts/plan-to-todo.sh
+  - assets/templates/helpers/plan-to-todo.sh
+  - scripts/harness-trace-grade.sh
+  - assets/templates/helpers/harness-trace-grade.sh
+  - scripts/check-agent-tooling.sh
+  - assets/templates/helpers/check-agent-tooling.sh
+  - assets/hooks/lib/workflow-state.sh
+  - .ai/hooks/.projection.json
+  - .ai/hooks/lib/workflow-state.sh
+  - assets/skills/repo-harness-cross-review/SKILL.md
+  - assets/skills/repo-harness-cross-review/references/codex-mode.md
+  - assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md
+  - assets/reference-configs/agentic-development-flow.md
+  - assets/reference-configs/sprint-contracts.md
   - assets/reference-configs/external-tooling.md
-  - docs/reference-configs/global-working-rules.md
+  - docs/reference-configs/agentic-development-flow.md
+  - docs/reference-configs/sprint-contracts.md
   - docs/reference-configs/external-tooling.md
-  - tests/skill-surface/catalog.test.ts
-  - tests/skill-routing-eval.test.ts
+  - tests/cli/cross-review.test.ts
   - tests/cli/init.test.ts
+  - tests/check-agent-tooling.test.ts
+  - tests/cli/global-runtime-init.test.ts
+  - tests/acceptance-receipt.test.ts
+  - tests/evidence-checks-materializer.test.ts
+  - tests/plan-to-todo.test.ts
+  - tests/bootstrap-files.test.ts
+  - tests/historical-plan-classifier.test.ts
+  - tests/archive-evidence-gates.test.ts
+  - tests/prompt-handler.test.ts
+  - tests/unit/me4c-integration-product-acceptance.test.ts
+  - tests/unit/merge-readiness-v1-effect.test.ts
+  - tests/skill-surface/cross-review-package.test.ts
 ```
 
 ## Evidence Requirements
@@ -132,27 +163,40 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-C-plan-skill-retirement",
+      "id": "h3-D-provider",
       "kind": "command",
-      "command": "bun test tests/skill-surface/catalog.test.ts tests/skill-routing-eval.test.ts --timeout 60000",
+      "command": "bun test tests/cli/cross-review.test.ts tests/skill-surface/cross-review-package.test.ts tests/acceptance-receipt.test.ts tests/evidence-checks-materializer.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Retired plan skill absent from closed catalog/discovery, stub-only routing/scoring unchanged; no model calls.",
+      "necessity": "Retired provider/receipt source rejects; direct Codex advisory and exact domain receipt checks remain, fixture-only.",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "h3-C-bundled-install",
+      "id": "h3-D-installed-readiness",
       "kind": "command",
-      "command": "bun test tests/cli/init.test.ts -t 'bundled host runtimes' --timeout 60000",
+      "command": "bun test tests/cli/init.test.ts tests/check-agent-tooling.test.ts tests/cli/global-runtime-init.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
-      "cost": "normal",
+      "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Bundled installation fixtures no longer install retired plan skill; private HOME only, plugin behavior unchanged until D.",
+      "necessity": "No plugin install/probe/readiness dependency; fixture HOME/protected ownership and actual install composition guards retained.",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "h3-D-policy-consumers",
+      "kind": "command",
+      "command": "bun test tests/plan-to-todo.test.ts tests/bootstrap-files.test.ts tests/historical-plan-classifier.test.ts tests/archive-evidence-gates.test.ts tests/prompt-handler.test.ts tests/unit/me4c-integration-product-acceptance.test.ts tests/unit/merge-readiness-v1-effect.test.ts --timeout 60000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "expensive",
+      "evidence_policy": "current_exact",
+      "necessity": "Codex plugin source removed from generated policy/JQ/trace/record readers; exact acceptance joins remain fixture-only.",
       "inputs": {
         "env": []
       }

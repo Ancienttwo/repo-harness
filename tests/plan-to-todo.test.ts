@@ -80,7 +80,7 @@ describe("plan-to-todo helper integration", () => {
       expect(contract).toContain("## Why");
       expect(contract).toContain("## Stop Conditions");
       expect(contract).toContain("## Falsifier");
-      expect(contract).toContain('{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}');
+      expect(contract).toContain('{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}');
       expect(existsSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"))).toBe(true);
       expect(readFileSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"), "utf-8")).toContain("## Design Decisions");
       expect(readFileSync(join(cwd, "tasks/reviews/20260304-1400-demo.review.md"), "utf-8")).toContain("tasks/notes/20260304-1400-demo.notes.md");

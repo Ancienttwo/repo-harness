@@ -854,7 +854,7 @@ export function buildProgram(): Command {
     .option('--json', 'Output JSON result')
     .action((rawOpts: { provider: string; repo?: string; base?: string; timeoutMs?: string; json?: boolean }) => {
       if (!(CROSS_REVIEW_PROVIDER_MODES as readonly string[]).includes(rawOpts.provider)) {
-        console.error(`cross-review: --provider must be one of ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`);
+        console.error(rawOpts.provider === "codex-plugin" ? "cross-review: codex-plugin is retired; use --provider codex. No plugin fallback is available." : `cross-review: --provider must be one of ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`);
         process.exit(2);
       }
       const result = runCrossReviewCommand({

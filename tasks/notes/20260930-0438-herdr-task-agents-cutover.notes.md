@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:708e2e3d2ea87477d91d38ba455292836630fb38282824aa97a3b23c6e123cbd`
+> **Substantive Change SHA256**: `sha256:bf0758308bc1bfd12b5bffddc7d9deb677f4a630f3cb17ea459f1f840b69818f`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -219,3 +219,10 @@
 
 - Removed bundled claude-plan source (including claude -p model fallback and transcript recovery); closed catalog/host placement no longer declares it. Init installs only catalog-projected skills, comments and managed consult/tooling docs now direct plan consultation to persistent task-agent. Fixture source deliberately may contain an extra legacy skill, and installation proves it is not selected.
 - Existing catalog/stub routing scoring and private-HOME bundled installation tests pass. No live install, user global skill deletion or alternate provider invoked. C maps plan:200 claude-plan dedicated execution skill retirement, narrowed by REQ-5 C. Existing acceptance Claude host stays unchanged; plugin removal belongs exclusively to D.
+
+## REQ-5 D — remove plugin authority
+
+- Deleted codex-plugin provider/companion discovery/invocation/schema and its dedicated skill reference; CLI rejects the old mode with upgrade message, core refuses unsupported mode before any launch. Direct Codex remains the same explicit read-only process with scope/admission/two-attempt protections; shared review-focus text moved from deleted plugin module into its existing direct consumer so deletion does not remove working review content.
+- Init no longer installs/enables/lists the plugin; tooling has no plugin readiness/report/strict dependency. Private-HOME fixture proves a seeded user plugin remains and its plugin command is not invoked. No global/user uninstall. Receipt source enum/policy/projection, JQ/operator readers, default plan policy and trace classifier no longer accept codex-plugin; no provenance/type/host generalization. Old source parser regression failed against prior script (D-retired-source-before-fix.txt), current policy and receipt read both reject it. Existing reviewer/source mismatch, exact subject/target/evidence, budget and waiver guards remain tested on codex-review/Claude domain paths.
+- Source/template/hook marker/reference docs projected together. Only plugin-specific tests removed; old business evidence tests retained with admitted source and explicit retired-source negatives. D maps plan:200 plugin discovery/install retirement and :202 old provider no alias; acceptance narrowing is the explicit REQ-5 CHECKPOINT-2 scope, not a new generic review framework.
+- A–D completed candidate still leaves native-child/direct Codex/delegation/contract-run/delegated-run v1/campaign intact by explicit pause. H3/H4 await designated gate and user's true-model quota/containment decisions; no real canary/mini/global WIP install run.

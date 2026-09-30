@@ -10,7 +10,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function acceptanceContract(source: 'codex-review' | 'codex-plugin' = 'codex-plugin', waiver: 'allowed' | 'forbidden' = 'allowed'): string {
+function acceptanceContract(source: 'codex-review' | 'codex-review' = 'codex-review', waiver: 'allowed' | 'forbidden' = 'allowed'): string {
   return [
     '# Contract',
     '',
@@ -25,7 +25,7 @@ function acceptanceContract(source: 'codex-review' | 'codex-plugin' = 'codex-plu
   ].join('\n');
 }
 
-function receiptReview(recommendation = 'pass', source = 'codex-plugin', reviewer = 'Codex', disposition = 'external_pass'): string {
+function receiptReview(recommendation = 'pass', source = 'codex-review', reviewer = 'Codex', disposition = 'external_pass'): string {
   return [
     '# Review',
     '',
@@ -49,7 +49,7 @@ function receiptReview(recommendation = 'pass', source = 'codex-plugin', reviewe
   ].join('\n');
 }
 
-function writeFamily(root: string, stem: string, contractStatus: string, reviewText: string, source: 'codex-review' | 'codex-plugin' = 'codex-plugin'): void {
+function writeFamily(root: string, stem: string, contractStatus: string, reviewText: string, source: 'codex-review' | 'codex-review' = 'codex-review'): void {
   const plan = `plans/plan-${stem}.md`;
   const contract = `tasks/contracts/${stem}.contract.md`;
   const review = `tasks/reviews/${stem}.review.md`;
@@ -95,20 +95,19 @@ describe('historical plan sealed-terminal classifier', () => {
     ]);
   });
 
-  test('binds external receipt identity to the frozen host policy', () => {
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin'), receiptReview())).toBe(true);
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview('pass', 'codex-review'))).toBe(true);
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin'), receiptReview('pass', 'codex-review'))).toBe(false);
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview())).toBe(false);
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin'), receiptReview('pass', 'claude-review'))).toBe(false);
+  test('binds external receipt identity to the frozen host policy and rejects retired source', () => {
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview())).toBe(true);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview('pass','codex-plugin'))).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review').replace('codex-review','codex-plugin'), receiptReview())).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview('pass','claude-review'))).toBe(false);
   });
 
   test('rejects placeholder, forbidden waiver, invalid policy, and legacy receipt prose', () => {
     const contract = acceptanceContract();
     expect(hasRecordedAcceptanceReceipt(contract, receiptReview().replace(/sha256:[a-f0-9]{64}/, 'pending'))).toBe(false);
     expect(hasRecordedAcceptanceReceipt(contract, receiptReview().replace('- Summary: accepted', '- Summary: pending'))).toBe(false);
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin', 'allowed'), receiptReview('pass', 'user-waiver', 'User', 'user_waiver'))).toBe(true);
-    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin', 'forbidden'), receiptReview('pass', 'user-waiver', 'User', 'user_waiver'))).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review', 'allowed'), receiptReview('pass', 'user-waiver', 'User', 'user_waiver'))).toBe(true);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review', 'forbidden'), receiptReview('pass', 'user-waiver', 'User', 'user_waiver'))).toBe(false);
     expect(hasRecordedAcceptanceReceipt('# Contract\n', receiptReview())).toBe(false);
     expect(hasRecordedAcceptanceReceipt(contract, '# Review\n\n> **Recommendation**: pass\n\n## External Acceptance Advice\n\n> **External Acceptance**: pass\n')).toBe(false);
   });
