@@ -2,6 +2,33 @@
 
 All notable changes to this skill are documented here.
 
+## [0.20.0] - 2026-10-01
+
+### Added
+
+- Persistent Herdr task-agent lifecycle and CLI commands for task-scoped execution,
+  protected result collection, and repository-scoped workspace cleanup.
+- Trusted engineer observation preparation and first-offer staleness checks.
+- Managed updates detect stale ArchContext daemons and request user authorization
+  for maintenance. Runtime verification rejects unhealthy connections; a pending
+  daemon replacement preserves the verified CLI and its dependency closure.
+
+### Changed
+
+- Replace the old Codex goal MCP names with task-goal commands.
+- Retire the Codex plugin review provider, App-thread execution backend, and
+  headless Claude planning surface. Codex review uses the explicit Codex provider;
+  Claude acceptance retains its persistent Herdr domain reviewer.
+
+- Publish host-invariant guidance through the reference-document reader.
+
+### Fixed
+
+- Sample the MCP working baseline after request delivery before accepting an idle
+  observation, and keep observation cancellation separate from result collection.
+- Reap owned review providers after post-spawn setup failures and preserve CLI
+  help section spacing.
+
 ## [0.19.5] - 2026-09-30
 
 ### Fixed

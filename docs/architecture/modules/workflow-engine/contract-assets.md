@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:6f1d8c7839dc83c16c80bee79ee8c6b3b3131e523928d2d0e957180fd0541c02" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:beaaa466d51cbd8f929fd6acd6645c6f5136cccf539f09b63a273e5ab38519fa" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:efb833f1b11f807945b2ce375c73b426d4da103891435aa8b3be169aed398036" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:e991463ef79b1c473835d9b4df4b6752feb15eb389e4a3e57639ac6abc65e34b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
@@ -34,7 +34,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`100–200` 個文件 / `50k–100k` 行
+- 規模量級:`200–500` 個文件 / `50k–100k` 行
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
