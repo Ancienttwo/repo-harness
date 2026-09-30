@@ -72,7 +72,7 @@ Current PR boundary against main 281e6555:
 - A valid existing seal is read and validated without the global cutover mutex. Only cold initialization takes that mutex and rechecks the seal inside it; stale empty/owner reclaim matches the per-key lock. Regression holds a live cutover lock while replay succeeds and covers stale empty initialization.
 - Restored delete-on-determinate-auto-idle under the per-key lock and unfiltered MCP JSON side-effect assertion. Fixture seal setup is explicitly outside the measured idle call. Five different polling keys leave the initialized directory unchanged; idle keys may change filters. Stale-then-empty returns idle, not a cached stale result; same key acquires after current offers change.
 - Prepare validates policy, collection, principal and snapshot before creating observations storage. Missing/corrupt policy and collector refusal create no empty observations directory. Child-eval import is only runCampaignAcquisition; plan rollback names the actual branch and completed Task Breakdown items are checked. Contract rollback base is 281e6555.
-- No operator/runbook surface, AcceptanceReceipt, ledger error-code ownership change, S3, or frozen-time audit test expansion was added; those items remain deferred by owner instruction.
+- As of 77f30c35: No operator/runbook surface, AcceptanceReceipt, ledger error-code ownership change, S3, or frozen-time audit test expansion was added; those items remain deferred by owner instruction.
 
 Gatekeeper follow-up against 3cf3ea04:
 
@@ -100,3 +100,11 @@ Second batch full PR boundary against origin/main:
 > **Substantive Change SHA256**: `sha256:a1f798de800509aeed711b959aa5b1e89d13ba0043dfb2de204950f47ffa9e25`
 
 Second-batch verification: all 19 canonical checks executed and passed (exact_passed=19; unmet=[]; snapshot_changed_during_execution=false), including check:type and three added existing fixture files. The existing bundled helper was called through runHelper with timeoutMs=600000 to accommodate the aggregate campaign/CLI fixtures; no gate or check bypass. Full per-command output and immutable run references are in `.ai/harness/checks/e1-s2-verification.latest.json`.
+
+## Owner-approved small corrections after second PASS
+
+Idle receipts are never persisted: remove the dead state/reader/validator allowances, preserve no-effect delete under the key lock, and refuse every existing non-fenced inner receipt before fresh outer budget reservation. Fix exit_criteria YAML indentation (Bun.YAML.parse: PASS, 12 files); date the first-batch-only note and document stale-then-empty → engineer_no_eligible_offer → campaign idle. No cutover-required error typing, AcceptanceReceipt or S3 changes.
+
+Local correction boundary against 1fbf02bc:
+
+> **Substantive Change SHA256**: `sha256:38df701eded1da1893dfc75991ae90d9493f10a66740f8f82ba493c3f273bf82`

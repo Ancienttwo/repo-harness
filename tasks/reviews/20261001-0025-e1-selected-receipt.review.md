@@ -69,6 +69,8 @@ screenshot/artifact path, or reviewer observation.
 
 ## Behavior Diff Notes
 
+- Relative to main, stale-then-empty returns `engineer_no_eligible_offer` and deletes its receipt under the key lock; campaign maps it to `action: idle`.
+
 - Inner/campaign operator inspect/migrate commands expose existing exports with explicit inventory digest, quiescence evidence and exact persisted intent. No selected production route is introduced.
 - Ledger file faults preserve ledger-specific error codes through CLI/MCP. Missing/corrupt policy authority uses policy codes, not missing observation.
 - Campaign auto-seal remains withheld: planning inventory is shared/nonempty and no old-producer retirement proof exists. The durable runbook names the explicit release prerequisite and legacy-parser removal trigger.

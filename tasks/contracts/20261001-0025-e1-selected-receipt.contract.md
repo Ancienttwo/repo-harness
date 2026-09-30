@@ -149,11 +149,11 @@ exit_criteria:
     - src/effects/engineers/scheduling-acquire-next.ts
     - src/effects/automation/campaign-acquisition.ts
     - src/cli/mcp/engineer-tools.ts
-  - src/cli/commands/engineer.ts
-  - tests/cli/engineer.test.ts
-  - tests/state/project-effective-state.test.ts
-  - tests/unit/fleet-acquire-effect.test.ts
-  - docs/reference-configs/engineer-acquisition-cutover.md
+    - src/cli/commands/engineer.ts
+    - tests/cli/engineer.test.ts
+    - tests/state/project-effective-state.test.ts
+    - tests/unit/fleet-acquire-effect.test.ts
+    - docs/reference-configs/engineer-acquisition-cutover.md
     - plans/plan-20261001-0025-e1-selected-receipt.md
     - tasks/contracts/20261001-0025-e1-selected-receipt.contract.md
     - tasks/reviews/20261001-0025-e1-selected-receipt.review.md

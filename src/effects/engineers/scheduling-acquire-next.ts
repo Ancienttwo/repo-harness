@@ -100,7 +100,7 @@ interface AcquisitionReceiptV2 {
   readonly kind: 'repo-harness-engineer-acquisition-receipt';
   readonly request: AcquisitionRequestV2 | null;
   readonly request_sha256: string | null;
-  readonly state: 'pending' | 'completed' | 'idle' | 'fenced';
+  readonly state: 'pending' | 'completed' | 'fenced';
   readonly result: AcquireNextScheduledEngineerTaskResult | null;
   readonly observation_ref: string | null;
   readonly legacy_bytes: string | null;
@@ -210,11 +210,10 @@ function readReceipt(path: string): AcquisitionReceiptV2 {
   assertMessageExactKeys(value as unknown as Record<string, unknown>, ['protocol','kind','request','request_sha256','state','result','observation_ref','legacy_bytes','receipt_sha256'], 'acquisition receipt', message => invalidLedger(`${message}; requires reconciliation, never a new transaction`));
   const { receipt_sha256, ...basis } = value;
   if (value.protocol !== 2 || value.kind !== 'repo-harness-engineer-acquisition-receipt' || receipt_sha256 !== digest(basis)
-    || raw !== `${canonicalEngineerJson(value)}\n` || !['pending','completed','idle','fenced'].includes(value.state)
+    || raw !== `${canonicalEngineerJson(value)}\n` || !['pending','completed','fenced'].includes(value.state)
     || (value.state === 'fenced' ? value.request !== null || value.result !== null || typeof value.legacy_bytes !== 'string'
       : value.request === null || value.request_sha256 !== digest(value.request) || value.observation_ref !== value.request.observation_ref || value.legacy_bytes !== null)
-    || (value.state === 'pending' ? value.result !== null : value.state !== 'fenced' && value.result === null)
-    || (value.state === 'idle' && (value.request?.operation !== 'auto' || value.result?.ok !== false || value.result.error !== 'engineer_no_eligible_offer'))) return invalidLedger('acquisition receipt is malformed or has been modified; requires reconciliation');
+    || (value.state === 'pending' ? value.result !== null : value.state !== 'fenced' && value.result === null)) return invalidLedger('acquisition receipt is malformed or has been modified; requires reconciliation');
   return value;
 }
 function sealPath(root: string): string { return join(resolveGitCommonDirectory(root), ACQUISITION_STORE, 'cutover-v2.json'); }
@@ -299,7 +298,7 @@ export function requireFreshAcquisitionBudgetAdmission(repoRoot: string, request
   }
   const receipt = readReceipt(path);
   if (receipt.state === 'fenced' || receipt.request_sha256 !== digest(request)) throw new Error('inner acquisition key conflict before budget reservation');
-  if (receipt.state !== 'idle') throw new Error('inner acquisition has no matching outer outcome; requires reconciliation before budget reservation');
+  throw new Error('inner acquisition has no matching outer outcome; requires reconciliation before budget reservation');
 }
 
 function eligible(offer: EngineerOfferV1, filters: AcquireNextFiltersV1): boolean {
@@ -327,7 +326,7 @@ function runAcquisitionTransaction(options: AcquireNextScheduledEngineerTaskOpti
       if (receipt.request_sha256 !== digest(request)) return acquisitionFailure('engineer_acquire_next_conflict','idempotency key names another authenticated acquisition request');
       if (receipt.state === 'pending') return acquisitionFailure('engineer_acquire_next_reconciliation_required','previous acquisition crossed an unresolved effect boundary');
       if (receipt.state === 'completed') return receipt.result!;
-      // Determinate auto idle may be retried without pretending an effect happened; identity stays bound.
+      // idle receipts are never persisted
     } else if (readSeal(options.repo_root).migrated_keys.includes(createHash('sha256').update(options.idempotency_key).digest('hex'))) {
       return acquisitionFailure('engineer_acquire_next_reconciliation_required','known legacy fence is missing; never treat it as a new request');
     }
