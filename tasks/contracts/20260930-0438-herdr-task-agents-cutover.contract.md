@@ -17,13 +17,13 @@
 
 ## Goal
 
-PR464 Test CI六个实际失败：helper registry已注册runtime，但run help分组漏项，publication/Goal最小fixture绕过权威共享helper拷贝。只接回现有registry/factory，相关全文件验证，最新main e97684f6重新计算PR摘要与证据；不盲改其他CI失败。
+GATE 第3轮PASS后MEDIUM修正：恢复Options/Helpers唯一空行，RUN_HELP_MAX_LINES85保留60-helper预算，既有test验证版式；修正文案与实际CI diff输入，独立commit/push等全部CI。
 
 ## Scope
 
-- In scope: CLI helper分组、共享fixture拷贝源、两个最小fixture接线、contract/notes。既有完整相关测试文件作为回归，无新测试文件。
-- Out of scope: 产品runtime语义、paused/H5/Claude/campaign/真实model/全局安装，E仍独立设计未GO。
-- 当前e97684f6已无冲突rebase；code fix独立commit，PR最新摘要绑定，exact lease更新feature branch，CI全绿前不宣布完成。
+- In scope: run help版式/预算、既有CLI test、contract/notes。仅已转finding，PR其余冻结。
+- Out of scope: 兄弟fixturecloseout-journal/archive-evidence-gates留后续notes；paused/E真实模型未GO不执行。
+- 最新origin/main作为REPO_HARNESS_DIFF_BASE+merge-base，删除脚本不消费的EVENT_NAME/PR_BASE_SHA；CI绿前不宣告完成。
 
 ## Stop Conditions
 
@@ -69,9 +69,7 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 ```yaml
 allowed_paths:
   - src/cli/commands/run.ts
-  - tests/helpers/helper-script-fixture.ts
-  - tests/contract-worktree-single-publication.test.ts
-  - tests/continuation-conformance.test.ts
+  - tests/cli/run.test.ts
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
 ```
@@ -126,14 +124,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "ci-helper-registry-and-closeout",
+      "id": "gate3-run-help-layout",
       "kind": "command",
-      "command": "bun test tests/cli/run.test.ts tests/workflow-contract.test.ts tests/unit/helper-projection-drift.test.ts tests/unit/windows-protected-helper-platform-contract.test.ts tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/contract-worktree.test.ts tests/contract-worktree-single-publication.test.ts tests/contract-worktree-closeout-journal.test.ts tests/contract-worktree-squash-cleanup.test.ts tests/unit/contract-worktree-projection-restore.test.ts tests/unit/contract-worktree-runtime-bootstrap.test.ts tests/continuation-conformance.test.ts --timeout 60000",
+      "command": "bun test tests/cli/run.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
-      "cost": "expensive",
+      "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "All existing helper/registry/projection/contract-worktree/host Goal files, not focused cases; fixture scope uses canonical shared inventory and no models.",
+      "necessity": "Full existing CLI registry/help/runtime tests plus separation regression; 60 helpers and explicit85-line budget.",
       "inputs": {
         "env": []
       }
@@ -206,7 +204,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "EVENT_NAME=pull_request PR_BASE_SHA=e97684f6 REPO_HARNESS_DIFF_BASE=e97684f6 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=e97684f6a881e0368f7258f425457ad32c04ca4f REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",

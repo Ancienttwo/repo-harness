@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { listHelperIds, listHelpers, runHelper } from '../../effects/runtime/helper-runner';
 
 export const RUN_HELP_MAX_HELPERS = 60;
-export const RUN_HELP_MAX_LINES = 84;
+export const RUN_HELP_MAX_LINES = 85;
 
 export const RUN_HELP_GROUPS = [
   {
@@ -129,7 +129,7 @@ function renderHelpersSection(): string {
 
   if (helpers.length === 0) return '';
 
-  return ['Helpers:', ...groupedHelperLines(helpers)].join('\n');
+  return ['', 'Helpers:', ...groupedHelperLines(helpers)].join('\n');
 }
 
 export function buildRunCommand(): Command {

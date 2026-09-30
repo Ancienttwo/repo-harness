@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:6641ec7ccd344dd6e5dbd3dc09a10a1ecbbb8477f8a970e711fee956d5a52cc2`
+> **Substantive Change SHA256**: `sha256:9c57a44cd0ae88de0d13caa91db03dc93a0564ddffbb7eb95d0cdfaa663af32f`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -263,6 +263,13 @@
 ## PR464 Test CI — shared helper inventory/fixture wiring
 
 - Read failed Test job109820107463 log; latest main e97684f6 rebase clean. Complete four reported files reproduced exactly 6 failures (29 pass/6 fail/420 expect/66.96s), not focused-case cherry-picking. P1 authority assets/workflow-contract.v1.json helpers.scripts/descriptions already includes contract-worktree-runtime; listHelperFiles/listHelpers are existing validated projections. RUN_HELP_GROUPS omitted it. P2 publication/conformance two minimal fixtures manually copied a subset, then finish invoked the missing sibling runtime; shared copyHelpers already knew the full package but these fixtures bypassed it.
-- P3 reuse listHelperFiles in the existing factory and replace both ad-hoc lists with that factory, rather than add runtime copies to individual fixtures or invent a registry. Full factory dependency symlink conflicted with archive scratch re-link, so the same factory has one private linkDependencies option disabled only by those minimal fixtures; default behavior preserved elsewhere. No production archive change. CLI adds the missing group entry; removes one redundant blank line to keep existing 60-helper/84-line budgets, not raise them.
+- P3 reuse listHelperFiles in the existing factory and replace both ad-hoc lists with that factory, rather than add runtime copies to individual fixtures or invent a registry. Full factory dependency symlink conflicted with archive scratch re-link, so the same factory has one private linkDependencies option disabled only by those minimal fixtures; default behavior preserved elsewhere. No production archive change. CLI adds the missing group entry. The initial fix removed the sole Options/Helpers separator to stay at84 lines; GATE3 correctly rejected that tradeoff. Follow-up restores the separator and explicitly raises only line budget to85; helper budget remains60.
 - Corrected four full files now35 pass/0 fail/601 expect/101.11s. Initial broader factory attempt's failures preserved in diagnostics; its owned dangling nested node_modules symlink identified by fixture path and removed from isolated dependency tree only. No main/global mutation or model calls. Canonical broadens to all12 existing helper/registry/projection/worktree/host Goal files per request; full CI Test still supplies final whole-suite readback. No new test file or scattered runtime copies.
 - Governance digest must be recalculated for entire updated PR/e97684f6 after this source fix, not reused4959...; record exact line below from same merge-base mode. Old MCP matrix(mac/ubuntu/windows) was green, old Test/Governance failed; don't claim final CI green before updated head completes.
+
+
+## GATE 第3轮 PASS / MEDIUM follow-up
+
+- Restore renderHelpersSection success-path leading blank line, matching error path; it is the only Options/Helpers separator, not redundant. 60 helper IDs remain bounded; RUN_HELP_MAX_LINES explicitly85 for the new helper row, test protects both separator and budget.
+- Canonical task-sync uses only actual REPO_HARNESS_DIFF_BASE/merge-base inputs at newest main. Recompute fullPR digest after this source change; no stale4959/6641 binding.
+- Gate-mentioned brother fixtures contract-worktree-closeout-journal/archive-evidence-gates need later dependency-copy review; outside currentPRfinding, no edits. PR CI was allgreen on39e4e5cc; this correction needs newCI, no merge or completion claim before readback.
