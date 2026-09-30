@@ -274,7 +274,7 @@ H0-H6 是同一原子 cutover work-package 的有序 checklist，不为每个 re
 ## Task Breakdown
 - [x] H0 — 封闭退役 inventory 与真实 proof point：四 harness 能力矩阵，root-linked worktree，两个持久角色，owner 退出/恢复和 identity-safe cleanup；锁定 Herdr 最小版本与官方 capabilities。
 - [x] H1 — 提取唯一 Herdr task-agent 生命周期与持久 role binding；start/send/read/status/close/cancel、context checkpoint、ACK、唯一 packet 注入；保留 scope/permission/budgetauthority。
-- [ ] H2 — 将 contract-worktree start/finish/cleanup 接入 root-linked Herdr topology 与 task-owned 清理；publication 与 cleanup 分别证明，retry 只重试未完成阶段。
+- [x] H2 — 将 contract-worktree start/finish/cleanup 接入 root-linked Herdr topology 与 task-owned 清理；publication 与 cleanup 分别证明，retry 只重试未完成阶段。
 - [ ] H3 — 迁移 advisor/worker/gatekeeper、delegation、campaign 与 MCP 到同一多 harness 协议；移除 native-child、codex_exec、codex-app-thread、raw agent command 旁路；跨 owner 恢复测试。
 - [ ] H4 — 迁移 outside review、acceptance、plan/PRDconsult 到 taskparticipants；泛化 reviewerprovenance，删除 plugin/Claude 专用 launchers 与旧 CLI/skill；验证相同 scope、reviewbudget、Receipt、merge-gate。
 - [ ] H5 — 原子切换 policy/schema/installer/templates/hooks/roleprojections 与 managedguidance；写 pane/context/cleanup 指引；one-shot drain 与 archive，拒绝所有旧 active 格式，证明无兼容/别名/fallback。

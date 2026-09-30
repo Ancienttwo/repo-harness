@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { execFileSync, spawn, type ChildProcess } from 'child_process';
@@ -12,6 +12,7 @@ import { claudeReviewStatus, closeClaudeReview, reviewSessionLocation, runClaude
 import { herdrCommand, herdrEnvironment, herdrResult } from '../src/effects/terminal/herdr';
 import { verifyAcceptance } from '../scripts/acceptance-receipt';
 import { emptyVerificationEvaluation, withEmptyVerificationPlan } from './helpers/verification-plan-fixture';
+import { processProofAlive, readSessionArtifact, signalCreatedProcess, type OwnedProcess } from '../src/effects/terminal/task-session';
 import { reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewRequest } from '../src/core/review/claude-review';
 
 // Every case in this file drives the real pinned `herdr` binary (sentinel
@@ -41,12 +42,35 @@ async function sentinelServer() {
   return {call,pane,identity,endpoint};
 }
 const contract = 'tasks/contracts/review.contract.md';
-afterEach(async () => {
-  for (const fixture of fixtures.splice(0)) {
-    try { await closeClaudeReview({ repoRoot: fixture.root, contract, authorityHome: fixture.home }, true); } catch { /* A session may never have started. */ }
-    rmSync(fixture.root, { recursive: true, force: true });
-    rmSync(fixture.home, { recursive: true, force: true });
+async function teardownReviewFixture(fixture: { root: string; home: string }, cancel = () => closeClaudeReview({ repoRoot: fixture.root, contract, authorityHome: fixture.home }, true)) {
+  const dir = reviewSessionLocation(fixture.root, contract).dir;
+  const proofs: OwnedProcess[] = [];
+  const serverPath = join(dir, 'server.json');
+  if (existsSync(serverPath) && lstatSync(serverPath).isFile()) proofs.push(readSessionArtifact<OwnedProcess>(serverPath));
+  const processPath = join(dir, 'processes.json');
+  if (existsSync(processPath)) {
+    const recorded = readSessionArtifact<{ binding: { provider: OwnedProcess; host: {pid:number;identity:string} | null; ownership: OwnedProcess['ownership'] } }>(processPath);
+    proofs.push(recorded.binding.provider);
+    if (recorded.binding.host) proofs.push({ ...recorded.binding.host, ownership: recorded.binding.ownership });
   }
+  try { await cancel(); } catch { /* Known creator proofs below fence fixture-only recovery. */ }
+  for (const proof of proofs) {
+    if (!processProofAlive(proof)) continue;
+    // The fixture is private. No name-only/default process lookup or killall.
+    signalCreatedProcess(proof, 'SIGTERM', true);
+    const end = Date.now() + 3000;
+    while (processProofAlive(proof) && Date.now() < end) await Bun.sleep(25);
+    if (processProofAlive(proof)) signalCreatedProcess(proof, 'SIGKILL', true);
+    const stoppedBy = Date.now() + 3000;
+    while (processProofAlive(proof) && Date.now() < stoppedBy) await Bun.sleep(25);
+    if (processProofAlive(proof)) throw new Error(`fixture cleanup incomplete; evidence retained at ${fixture.root}`);
+  }
+  // Never remove ledger/socket proof while a recorded disposable process lives.
+  rmSync(fixture.root, { recursive: true, force: true });
+  rmSync(fixture.home, { recursive: true, force: true });
+}
+afterEach(async () => {
+  for (const fixture of fixtures.splice(0)) await teardownReviewFixture(fixture);
   for (const item of sentinels.splice(0)) { herdrCommand({session:item.name,configPath:item.configPath,home:item.home},['server','stop']); await new Promise<void>(resolve => item.process.exitCode !== null ? resolve() : item.process.once('exit',()=>resolve())); rmSync(item.root,{recursive:true,force:true}); }
 });
 
@@ -329,3 +353,29 @@ releaseLaneOnly('old tmux session metadata is rejected without translation or cl
     expect(existsSync(join(f.dir, 'closed.json'))).toBe(false);
   } finally { writeFileSync(path, original); }
 });
+
+releaseLaneOnly('fixture teardown does not lose live disposable process proof when normal cancel fails', async () => {
+  const f = fixture();
+  await runClaudeReviewRound(f.options);
+  const dir = reviewSessionLocation(f.root, contract).dir;
+  const server = readSessionArtifact<OwnedProcess>(join(dir, 'server.json'));
+  const processes = readSessionArtifact<{ binding: { provider: OwnedProcess; host: {pid:number;identity:string}; ownership: OwnedProcess['ownership'] } }>(join(dir, 'processes.json'));
+  const proofs = [processes.binding.provider, { ...processes.binding.host, ownership: processes.binding.ownership }, server];
+  try {
+    await teardownReviewFixture(f, async () => { throw new Error('injected normal cancellation failure'); });
+    expect(processProofAlive(server)).toBe(false);
+    expect(proofs.every(proof => !processProofAlive(proof))).toBe(true);
+    expect(existsSync(f.root)).toBe(false);
+  } finally {
+    // Pre-fix reproduction cleanup uses original creator proofs retained above,
+    // even if the buggy teardown unlinked their files. No default lookup.
+    for (const proof of [server, ...proofs.filter(item => item.pid !== server.pid)]) {
+      if (!processProofAlive(proof)) continue;
+      signalCreatedProcess(proof, 'SIGTERM', true);
+      const end=Date.now()+3000;while(processProofAlive(proof)&&Date.now()<end)await Bun.sleep(25);
+      if(processProofAlive(proof))signalCreatedProcess(proof,'SIGKILL',true);
+    }
+    const index = fixtures.findIndex(item => item.root === f.root);
+    if (index >= 0) fixtures.splice(index, 1);
+  }
+}, 20_000);

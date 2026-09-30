@@ -60,7 +60,7 @@ worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json]
+  repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--gate-base <ref>] [--message <commit-message>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
   repo-harness run contract-worktree status
@@ -471,6 +471,14 @@ bootstrap_worktree_runtime() {
   return 0
 }
 
+run_contract_runtime() {
+  if [[ -n "$BUN_BIN" ]]; then
+    "$BUN_BIN" "$helper_dir/contract-worktree-runtime.ts" "$@"
+  else
+    command bun "$helper_dir/contract-worktree-runtime.ts" "$@"
+  fi
+}
+
 start_worktree() {
   local plan_file=""
   local worktree_path=""
@@ -478,6 +486,7 @@ start_worktree() {
   local run_plan_to_todo=1
   local require_fresh=0
   local output_json=0
+  local herdr_endpoint=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -494,6 +503,11 @@ start_worktree() {
       --branch)
         [[ -n "${2:-}" ]] || { echo "contract-worktree: --branch requires a value" >&2; exit 2; }
         branch_name="$2"
+        shift 2
+        ;;
+      --herdr-endpoint)
+        [[ -n "${2:-}" ]] || { echo "contract-worktree: --herdr-endpoint requires a file" >&2; exit 2; }
+        herdr_endpoint="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
         shift 2
         ;;
       --no-plan-to-todo)
@@ -595,6 +609,9 @@ start_worktree() {
   fi
 
   worktree_path="$(cd "$worktree_path" && pwd -P)"
+  if [[ -n "$herdr_endpoint" ]]; then
+    run_contract_runtime register --worktree "$worktree_path" --endpoint "$herdr_endpoint" >&2
+  fi
 
   bootstrap_worktree_runtime "$worktree_path"
   copy_plan_into_worktree "$plan_file" "$worktree_path"
@@ -2418,6 +2435,12 @@ cleanup_worktree() {
   fi
 
   if [[ -n "$worktree_path" ]]; then
+    # No runtime record means no managed agent was launched. Recorded runtime
+    # must close before Git deletion; unknown/attached objects block cleanup.
+    if ! run_contract_runtime cleanup --repo "$current_root" --worktree "$worktree_path"; then
+      echo "contract-worktree: runtime cleanup incomplete; preserve worktree and retry cleanup only" >&2
+      return 1
+    fi
     git worktree remove "$worktree_path"
     echo "[ContractWorktree] Removed worktree: $worktree_path"
   fi

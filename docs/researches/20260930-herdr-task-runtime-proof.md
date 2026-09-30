@@ -51,3 +51,15 @@ A launched agent without a durable provider creation receipt is an uncertain eff
 The endpoint preflight checks both named-session socket paths. The [tagged Herdr 0.9.1 source](https://github.com/herdrdev/herdr/blob/v0.9.1/src/session.rs#L155-L170) defines the API and client sockets. In the failing fixture the paths measured 102 and 109 bytes respectively; only checking the API socket missed the client's macOS limit. The corrected guard rejects this before any task state/layout creation.
 
 Capabilities are verified/unverified/unsupported plus evidence ref. H1 exposes no verified real harness capability. Fixture transport/lifetime output does not establish authentication, sandbox enforcement, actual model selection or native session resume. Those remain explicit preconditions before H4 retires day-to-day cross-review providers.
+
+## H2 repository and closeout boundary
+
+Task state is keyed by canonical Git common-dir identity plus task and role, stored under the uniquely proven primary checkout. Execution cwd remains the exact Git-reported checkout; primary and linked invocations read the same task binding. Public binding protocol 2 has repository_id/execution_root; old binding shape is refused.
+
+Herdr workspace registration is mandatory before managed agent launch, and can be explicitly requested during Git-only contract-worktree start. Git remains the sole creator/deleter of checkouts. Herdr worktree.open returns already_open: that fact distinguishes attached workspace from created workspace. Attached root and already-open user workspace never become cleanup ownership. Git cleanup invokes the shared runtime before directory deletion; pending requests, extra panes or attached/unknown workspace block deletion while publication remains committed.
+
+close and cancel are distinct: close requires completed request artifacts; cancel cleans interrupted delivery and records cancelled, not acceptance. Identity checks precede each SIGTERM/SIGKILL escalation. Real fixtures cover an ignored TERM, primary/linked restore, attached workspace preservation and Bash cleanup refusal/retry.
+
+Two creation gaps remain intentionally manual reconciliation: unknown split outcome without pane receipt, and absent pane after possible launch without provider/PID receipt. Both return cleanup_pending with reason and retain evidence; neither can synthesize closed or guess a PID. A durable provider receipt supports fenced orphan termination even after reparenting.
+
+The H1 test leak came from swallowing cancel failure then deleting fixture ledger/socket dirs. One recorded disposable server/host was attributable by exact named session, private HOME/config, worktree executable and OS parent/birth identities; its unlinked socket prevented CLI connection. Scoped identity-checked cleanup removed only those objects. A pre-fix failing guard and corrected teardown verify recorded process exit before fixture deletion.

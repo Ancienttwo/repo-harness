@@ -102,6 +102,7 @@
       "contract-run.ts",
       "cutover-closure.ts",
       "contract-worktree.sh",
+      "contract-worktree-runtime.ts",
       "acceptance-receipt.ts",
       "change-assessment.ts",
       "runtime-evidence-receipt.ts",
@@ -213,7 +214,8 @@
       "workstream-sync": "Ensure a durable capability workstream ledger exists for a plan slice",
       "prepare-codex-handoff": "Refresh the handoff snapshot, resume packet, and global Codex handoff pointer",
       "codex-handoff-resume": "Rebuild the repo's resume packet, optionally printing the resume prompt",
-      "recovery-view-cli": "Materialize the handoff/resume recovery views (and optionally the Codex-global packet) from the last-published checkpoint plus live workflow context"
+      "recovery-view-cli": "Materialize the handoff/resume recovery views (and optionally the Codex-global packet) from the last-published checkpoint plus live workflow context",
+      "contract-worktree-runtime": "Bind Git-owned task worktrees to Herdr and close recorded runtime before checkout cleanup"
     },
     "dir": "package:assets/templates/helpers",
     "runtimeSource": "package"

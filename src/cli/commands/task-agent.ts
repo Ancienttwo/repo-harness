@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { isAbsolute, relative, resolve } from 'path';
 import { realpathSync } from 'fs';
-import { closeTaskAgent, readSessionArtifact, readTaskAgent, readTaskRequestResult, sendTaskRequest, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
+import { cancelTaskAgent, closeTaskAgent, readSessionArtifact, readTaskAgent, readTaskRequestResult, sendTaskRequest, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
 
 export function buildTaskAgentCommand(): Command {
   const command = new Command('task-agent').description('Persistent task participants hosted only by Herdr');
@@ -33,7 +33,7 @@ export function buildTaskAgentCommand(): Command {
     });
   for (const action of ['close', 'cancel']) command.command(action).requiredOption('--task <id>').requiredOption('--role <name>')
     .option('--repo <path>', 'Repository root', process.cwd()).action(async opts => {
-      const result = await closeTaskAgent(opts.repo, opts.task, opts.role);
+      const result = await (action === 'cancel' ? cancelTaskAgent : closeTaskAgent)(opts.repo, opts.task, opts.role);
       process.stdout.write(JSON.stringify({ ...result, task: opts.task, role: opts.role }) + '\n');
       if (result.status !== 'closed') process.exitCode = 1;
     });

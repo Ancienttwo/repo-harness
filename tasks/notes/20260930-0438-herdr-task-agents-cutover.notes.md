@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:6c1b3d17929afbfdf1157949fc4eee724f78d87687907ec0965418e4771acbb6`
+> **Substantive Change SHA256**: `sha256:4b33704b62ce4f9bc8df45797ce75eaf71f8eb934c17e01f4d8429e6deee97ba`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -73,3 +73,23 @@
 - B3 closes starts without a binding from creation receipts. No pane receipt marks closed; otherwise terminal ID is checked, foreground PIDs saved before pane close, absence/exit confirmed. Remaining recorded PID returns cleanup_pending (CLI exit 1); no unproven PID receives a signal. Tests now restore pane count and provider exit after both crash windows, plus an observed survivor remains alive/pending until fixture teardown proves exit.
 - B4 uses existing canonical-json sorting recursively, preserving array order; reordered root/endpoint keys reuse the same binding. Public start rejects all nonempty argv before any task state; internal fixtures alone carry their own parameter seam until H3 role profiles.
 - This correction changes runtime/test behavior: canonical Verification Plan returns both runtime criteria to current_exact. Previous H1 baselines are historical only, not reused for B1–B4.
+
+## [REQ-3b] H1 PASS / H2 entry
+
+- Designated advisor-gatekeeper independently reviewed b4b48c00..c6b5a913, reran 8 tests / 103 assertions / 28.8s and typecheck exit 0; default w8 remained 3 panes and primary kept only its two original dirty files. H1 PASS authorizes H2; review.md is now written by Codex per explicit delegation.
+- H2 includes topology + cleanup + repo-scoped canonical task state across primary/linked + close/cancel semantics; checkpoint [REQ-4] PASS required before H3. No main dirty-file edit, w8:p1 operation or mini access.
+- Carry forward two unresolved windows: no pane-created receipt after split effect; pane absent without PID receipt may still leave a provider. Cover with identity-proven cleanup or explicitly preserve as unknown/residual, never synthetic closure.
+- Investigate leaked disposable PID 54218 / host 54223 in deleted /private/tmp/cr-BXYoEA. Current ps + filtered environment + Unix socket descriptors identify the exact review-7689e90eb1b44e0a849e and this worktree's Claude test host; no provider child remains. Original fixture artifacts/socket pathname were removed; normal CLI may be unreachable. Record exact identities before any scoped cleanup.
+
+## H2 implementation / decision record
+
+- P1: Git common-dir and Git worktree listing remain identity/topology authorities. task-worktree.ts selects exactly one primary whose reported Git dir equals the common-dir; no dirname/name/first-row inference. Shared task state lives in canonical primary .ai/harness/runs and its key includes repository_id/task/role. Execution cwd is separately recorded; binding protocol 2 refuses old shape rather than reading two authorities.
+- P2: Git creates a checkout → optional contract-worktree --herdr-endpoint registration / mandatory task-agent pre-start registration → Herdr worktree.open associates it with attached primary workspace → created role pane/provider → primary or linked caller reads the same binding → pending close refuses → explicit cancel records cancelled → contract-worktree cleanup passes existing Git merge/dirty/lock gates → runtime bridge closes proven created workspace → Git removes checkout/branch. One real composition exercises the Bash consumer, not only a module stub.
+- P3: Ordinary Git-only tools do not become another agent runner; no runtime record means no managed agent to close. Every managed agent must register first, and any recorded/unknown runtime blocks Git deletion. Primary/root and already-open execution workspaces are attached and never closed. Root checkout need not currently be branch main.
+- close requires completed request artifacts; cancel permits interrupted/pending delivery but never acceptance. Created provider SIGTERM → bounded wait → re-proven pane/OS identity → SIGKILL. Fixture ignored TERM and verified exit; absent identity never authorizes escalation.
+- Known residual windows are explicit cleanup_pending, not closed: split-intent without pane-created receipt (unknown split outcome), or pane absent after launch without provider/PID receipt (possible orphan). Real crash cases test both and retain original artifacts. With provider-created receipt, reparented/orphan cleanup can use exact original process proof. Automatic discovery/adoption of an unrecorded occupant is not implemented.
+- Canonical state/absolute request/result refs permit primary/linked restoration without resolving relative refs against the wrong cwd. H3 still owns plain-text context and result-contract work.
+- Leaked review-7689e90eb1b44e0a849e attributed to this worktree's private /tmp fixture via OS identity/env/parent/socket evidence; normal exact-session CLI stop failed because the old teardown had unlinked sockets. Identity-fenced scoped signals removed server 54218 and host 54223; no provider child remained, no default operation. Evidence: .ai/harness/runs/herdr-task-h2/orphan-cleanup.json.
+- Teardown root cause: catch-and-delete erased process/socket artifacts despite cancel failure. Regression failed before correction (PRE_FIX_EXIT=1); corrected helper retains known creator proofs, stops/reaps only those private fixture processes and verifies exit before deleting dirs. Current targeted guard passes; missing/mismatched process identity refuses cleanup.
+- New helper bridges existing Bash Git lifecycle to the same TS runtime; source/projection and manifest copies synchronized. Package/source paths follow existing helper layout pattern; no extra dependency. Added fixture SRC dependencies only for the existing squash-cleanup owner, preserving its Git assertions.
+- H2 awaits [REQ-4] PASS before H3. No mini or real model/auth/read-only/resume canary.

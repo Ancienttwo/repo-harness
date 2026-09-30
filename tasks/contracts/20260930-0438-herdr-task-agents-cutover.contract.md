@@ -17,20 +17,20 @@
 
 ## Goal
 
-当前切片 H1 / REQ-3b：修复 B1 stdin 完整输入、B2 显式 start deadline 与真实路径覆盖、B3 unbound receipt cleanup、B4 canonical spec 与公共 args 限制；共享 Herdr task-role 生命周期、write-ahead 与原子并发 start、文件 request/result 和 round budget、created/attached identity-safe cleanup。Claude review 必须调用提取后的共享实现，现有生命周期行为继续通过。H1 不调用真实模型；真实 harness capability 均为 unverified。
+H2：Git 保持 checkout/publication authority，agent 启动必须在主 repo 的 Herdr worktree group 中登记；contract-worktree cleanup 删除 Git 目录前封闭所有已登记 runtime。状态使用 Git common-dir 身份并位于 canonical primary root，primary/linked 调用共享同一 task-role。close/cancel 分离语义，identity-proven SIGKILL escalation；无法证明的未记录创建窗口保持 pending。修复 Claude fixture teardown 的吞错误删证据泄漏，记录 H1 PASS。
 
 ## Scope
 
-- In scope: 下列明确文件中的 shared task-session、task-agent CLI、Herdr transport、Claude review consumers 和对应 focused coverage。
-- Out of scope: H2 worktree orchestration、H3 fleet/campaign/MCP cutover、H4 old provider retirement、H5 installer/policy cutover、mini/真实模型 canary。
-- H1 public schema 不含 Codex/Claude 专属 authority；新 CLI 不暴露 server stop，attached objects 不可 close/cancel。
+- In scope: 下列显式 runtime/context/topology、contract-worktree cleanup consumer、Claude fixture teardown 与对应 focused tests/projections。
+- Out of scope: H3 role/admission/MCP/campaign、H4 provider retirement/真实模型 canary、H5 installer/global policy、H6 remote acceptance。
+- Git-only checkout 操作不是 agent runner：不创建 runtime 时没有 runtime 可关；所有受管 agent 启动必须经过 Herdr registration。不得运行替代 agent backend、关闭 attached/root/default 对象或 Git force-remove。
 
 ## Stop Conditions
 
-- Stop before paths outside H1 scope.
-- 修正以新 commit 保留 b4b48c00，完成后向 advisor-gatekeeper 发 [REQ-3b] + SHA + canonical evidence；等 PASS 才进入 H2。
-- 不在 default/mini 执行 cleanup 或测试，不动用户 pane/进程。真实 model canary 仅 H4 前通知 reviewer 后执行。
-- uncertain start/delivery 保留 intent，reconcile Herdr live state；不得重放或新建替代 agent。
+- 未在 H2 allowed_paths 的 source/projection/test 修改先更新 scope。
+- H2 commit 完成后 [REQ-4] + delta/canonical evidence，等 advisor-gatekeeper PASS 再进 H3。
+- 禁止修改主 checkout 两个 dirty 文件、操作 w8:p1 或 mini、全局 WIP install。
+- 无 identity proof 的存活对象与未知 split/pane-gone 窗口保持 pending，不删除原始证据或合成 closed。
 
 ## Falsifier
 
@@ -71,16 +71,24 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 allowed_paths:
   - plans/plan-20260930-0438-herdr-task-agents-cutover.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
+  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - src/effects/terminal/herdr.ts
   - src/effects/terminal/task-session.ts
+  - src/effects/terminal/task-worktree.ts
   - src/cli/commands/task-agent.ts
-  - src/cli/index.ts
-  - src/effects/review/claude-review-session.ts
   - src/effects/review/claude-review-host.ts
+  - scripts/contract-worktree.sh
+  - assets/templates/helpers/contract-worktree.sh
+  - scripts/contract-worktree-runtime.ts
+  - assets/templates/helpers/contract-worktree-runtime.ts
+  - assets/workflow-contract.v1.json
+  - .ai/harness/workflow-contract.json
   - tests/herdr-task-lifecycle.test.ts
   - tests/claude-review.test.ts
   - tests/cli/task-agent.test.ts
+  - tests/contract-worktree.test.ts
+  - tests/contract-worktree-closeout-journal.test.ts
+  - tests/contract-worktree-squash-cleanup.test.ts
   - docs/researches/20260930-herdr-task-runtime-proof.md
 ```
 
@@ -123,9 +131,8 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/effects/terminal/task-session.ts
-    - src/cli/commands/task-agent.ts
-    - tests/cli/task-agent.test.ts
+    - src/effects/terminal/task-worktree.ts
+    - scripts/contract-worktree-runtime.ts
   artifacts_exist: []
 ```
 
@@ -136,27 +143,40 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h1-task-lifecycle",
+      "id": "h2-task-lifecycle",
       "kind": "command",
       "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/task-agent.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Real Herdr concurrent process start, interruption/reconciliation, file delivery and created-only identity cleanup; no model/auth invocation. REQ-3b changes behavior, so prior H1 baselines do not satisfy this correction.",
+      "necessity": "Cross primary/linked state and Herdr grouping, close/cancel and identity escalation, unrecorded creation/pane-gone pending; private real Herdr.",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "h1-claude-behavior",
+      "id": "h2-claude-teardown",
       "kind": "command",
       "command": "REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Extraction changes existing real provider-host lifecycle. Preserve same-child rounds, startup/cancel/identity, findings, deadline and receipt behavior in disposable fixtures. REQ-3b changes behavior, so prior H1 baselines do not satisfy this correction.",
+      "necessity": "Teardown must never delete evidence while known disposable server/host/provider remains; include pre-fix failure and normal 20-case behavior.",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "h2-contract-worktree",
+      "kind": "command",
+      "command": "bun test tests/contract-worktree.test.ts tests/contract-worktree-closeout-journal.test.ts tests/contract-worktree-squash-cleanup.test.ts --timeout 60000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "expensive",
+      "evidence_policy": "current_exact",
+      "necessity": "Git deletion/publication consumers must invoke registered Herdr cleanup without weakening dirty/locked/merged safety. Existing named boundaries, no full suite.",
       "inputs": {
         "env": []
       }
@@ -279,7 +299,7 @@ exit_criteria:
       }
     },
     {
-      "id": "h1-type",
+      "id": "h2-type",
       "kind": "command",
       "command": "bun run check:type",
       "cwd": ".",
@@ -297,11 +317,12 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- REQ-3b changes runtime behavior in B1–B4; both focused runtime suites must execute current_exact. Existing H1 baselines cannot authorize this patch.
-- Extend existing composition coverage for production agent start (11s external readiness and 4s timeout), no binding cleanup and observed PID survivor, canonical key order, and public argv denial. No new test file or dependency.
-- Existing Claude suite is the behavior boundary for restored full stdin and shared result/round primitives; no real model calls.
-- Real Herdr needed for pane lifecycle/readiness/cleanup; all fixtures use private HOME/named sessions. Test file deadline 60s; whole canonical plan budget 120s.
-- H2/H3/H5 carried gates are in notes; do not implement them in this correction. mini still unauthorized, real harness auth/read-only/resume unverified.
+- H1 PASS [REQ-3b] recorded in review/notes. H2 changes behavior; focused runtime and consumer suites execute current_exact.
+- All real Herdr experiments use private HOME/unique named sessions and explicit IDs, no default-user inventory mutation or model/auth calls.
+- Claude teardown root cause: catch-and-delete destroyed ledger/socket despite cancel failure; regression must fail before fix and prove identity-fenced completion before fixture deletion.
+- Git authoritative common-dir/worktree readers reused, no filename-derived primary identity or fallback to caller root.
+- Consumer checks retain Git merge/dirty/locked gates; runtime uncertainty refuses deletion. Typical entire canonical budget 300s, individual test file max 60s. No new full suite.
+- mini and real model permissions/resume remain unverified; H3/H4/H5 carried gates stay in notes.
 
 ## Rollback Point
 

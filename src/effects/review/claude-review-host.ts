@@ -6,6 +6,7 @@ import { createInterface } from 'readline';
 import { CLAUDE_REVIEW_MAX_ROUNDS, CLAUDE_REVIEW_SCHEMA, CLAUDE_REVIEW_TIMEOUT_MS, reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewRequest } from '../../core/review/claude-review';
 import { reviewEndpoint, reviewSessionLocation, reviewHostIdentity, type ReviewProcesses, type ReviewSession } from './claude-review-session';
 import { beginSessionRound, captureTaskPane, harnessCapabilities, processIdentity, readSessionArtifact, saveSessionRoundResult, signalCreatedProcess, writeSessionArtifact } from '../terminal/task-session';
+import { taskRepository } from '../terminal/task-worktree';
 import { herdrCommand, herdrMutation } from '../terminal/herdr';
 
 /** One host owns one child. Requests/results are transport evidence, never task or acceptance authority. */
@@ -55,7 +56,7 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
     const proof = captureTaskPane(endpoint, pane, name, { pid: child.pid, identity: processIdentity(child.pid) },
       { disposition: 'created', intent_id: session.session_id }, { pid: process.pid, identity: processIdentity(process.pid) });
     processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
-      server: identity.server, pane, binding: { protocol: 1, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
+      server: identity.server, pane, binding: { protocol: 2, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
         harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof } };
     writeSessionArtifact(join(dir, 'processes.json'), processes);
   } finally { startup.release(); }
