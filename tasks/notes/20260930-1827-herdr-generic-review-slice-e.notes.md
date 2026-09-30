@@ -14,9 +14,9 @@
 
 ## Prepared artifact hashes (unrun)
 
-- canary.ts: sha256:5a47abe721279b3c2c4067fa39af0975a3efc23bf07aa9f7d311fa8dec8907e5
+- canary.ts: sha256:76843027017cd7bbd89e28e56dd61ae0b6c5ff42c1290277f2f4b6cad5da93c1
 - canary-budget.json: sha256:722872c4803afe364c06b2a71fbe55d7d9b3c02a5f4ca6c83786ea020d316040
-- expected-results.md: sha256:46c6e0a6b098af58a4ce300ba7232c57bd70852e1acac19b5e11a58d99fd98cc
+- expected-results.md: sha256:8fdf147a40f72a9a93e4f842fad79c6ecbc0986f7ec1dc786da1092c0360a954
 
 - 收尾等final B sentinel，不能A文件刚出现就杀provider而漏B/写probe。Current--verify仍0模型；真实能力unverified。
 
@@ -48,3 +48,14 @@
 - 独立新私有fixture做真实start/ready/cancel、无prompt：Claude --append-system-prompt-file被Herdr接受，server log检测到真实Claude pgid57149，但TUI trust阻塞、未ready；文件sha与fleet.body均c548be9f767746b6c281e4edf7c9ea9509dbf4e2326013f07b9c7488ba3b132b。Codex返回Herdr ready且PID56970活着，但实际TUI停在更新菜单；未选择更新/skip，未见native developer字段，正文原样解析仍unverified。两边cancel closed/server exit0，模型0。
 - 修正版ignored canary仅把Claude正文落私有role-prompt.txt、argv传文件路径，四处start共用现有小准备函数；不归一化正文，CodexJSON参数不变。--verify检查argv无LF/CR与fileflag/path。budget未变，expected追加上述实证边界；没有新GO，没有执行修正版或选择E设计。
 - herdrMutation stderr损失只建议：保留有界stderr与exit/signal供诊断、遵循现有脱敏规则，同时保留ambiguous_launch和不重放语义；本轮不改src。下个GO前应向用户呈现Claude trust与Codex更新菜单阻塞，不自动处理全局信任或工具升级。
+
+## 固定根下的新checkout仍有trust（0模型）
+
+- main检查时又进到dc77b3c6，E已第二次无冲突rebase；仍只差三份docs。用户授权advisor操作信任/版本dismiss，我未处理这两处；canary fixtureRoot改为固定 ~/.rhc-canary 下probe-*，文件正文方案不变。
+- 新0模型startup fixture ~/.rhc-canary/startup-cfOkzN：Claude linked cwd仍trust、未ready；Codex更新菜单不再出现，但Git root trust界面出现，Herdr却ready=true。这是现有Herdr ready不等于可发请求的具体反例；未见native developer正文，继续unverified。未应答，两个任务closed/server exit0，模型0；截图、JSON与retained_paths已送w8:p7。
+- fixed-root信任未证明对新Gitcheckout继承，后续方案交advisor/用户；本轮只交修正版hash/diff/--verify，不用旧GO或选择E设计。
+
+## 精确信任路径与S0屏幕gate（只准备，未执行）
+
+- advisor已按用户授权处理精确cwd/Git root信任；我的canary只固定root为 ~/.rhc-canary/run，已有root拒绝启动，不删除/复用。全部10组primary/linked在real-start前建立并校验，S0的workspace parent=primary、执行cwd=linked；case仍同样拓扑。
+- Codex trust界面仍Herdr ready的实证进expected与S0：readiness增加只读pane屏幕检查，Trust/Folder access/更新菜单即0模型失败且cancel；start异常也读intent pane留证。不改provider预算/模式/全局配置，不自动应答。所有真实进程已停止；本轮按要求仅--verify/规范检查，修正版没有live/S0执行。
