@@ -49,16 +49,29 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       writeSessionArtifact(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
       throw new Error('claude_review_spawn_failed');
     }
-    const endpoint = reviewEndpoint(session);
-    const name = `review-${session.session_id.replaceAll('-', '').slice(0, 20)}`;
-    herdrMutation(herdrCommand(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', 'claude', '--state', 'idle', '--seq', '1']));
-    herdrMutation(herdrCommand(endpoint, ['agent', 'rename', pane, name]));
-    const proof = captureTaskPane(endpoint, pane, name, { pid: child.pid, identity: processIdentity(child.pid) },
-      { disposition: 'created', intent_id: session.session_id }, { pid: process.pid, identity: processIdentity(process.pid) });
-    processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
-      server: identity.server, pane, binding: { protocol: 2, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
-        harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof } };
-    writeSessionArtifact(join(dir, 'processes.json'), processes);
+    const provider = { pid: child.pid, identity: processIdentity(child.pid),
+      ownership: { disposition: 'created' as const, intent_id: session.session_id } };
+    try {
+      const endpoint = reviewEndpoint(session);
+      const name = `review-${session.session_id.replaceAll('-', '').slice(0, 20)}`;
+      herdrMutation(herdrCommand(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', 'claude', '--state', 'idle', '--seq', '1']));
+      herdrMutation(herdrCommand(endpoint, ['agent', 'rename', pane, name]));
+      const proof = captureTaskPane(endpoint, pane, name, provider,
+        provider.ownership, { pid: process.pid, identity: processIdentity(process.pid) });
+      processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
+        server: identity.server, pane, binding: { protocol: 2, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
+          harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof } };
+      writeSessionArtifact(join(dir, 'processes.json'), processes);
+    } catch (error) {
+      // Setup may fail before a complete binding can be published. Keep the
+      // startup lock until this creator-proven detached group has exited.
+      signalCreatedProcess(provider, 'SIGKILL', true);
+      const deadline = Date.now() + 5000;
+      while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await Bun.sleep(10);
+      if (child.exitCode === null && child.signalCode === null) throw new Error('claude_review_startup_cleanup_incomplete');
+      writeSessionArtifact(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
+      throw error;
+    }
   } finally { startup.release(); }
   console.log(`Claude reviewer | session=${session.session_id} pid=${child.pid} contract=${session.contract_file}`);
   console.log('Waiting for a review round. This pane shows streamed activity and structured findings.');

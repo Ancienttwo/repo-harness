@@ -248,6 +248,62 @@ releaseLaneOnly('schema enums reject array coercion instead of accepting malform
   }
 });
 
+releaseLaneOnly.each(['report-agent', 'rename', 'capture', 'publication'])('post-spawn %s failure reaps the provider before cancellation', async stage => {
+  const f = unstartedSession();
+  const sentinel = await sentinelServer();
+  const before = sentinel.identity();
+  const bin = join(f.root, 'bin'); mkdirSync(bin);
+  const pidFile = join(f.root, 'provider.pid');
+  const proofFile = join(f.root, 'provider-proof.json');
+  const provider = f.options.providerCommand;
+  writeFileSync(provider, readFileSync(provider, 'utf8').replace("let count=0;", `writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nlet count=0;`).replace("reader.on('close',()=>process.exit(0));", "setInterval(()=>{}, 1000);"));
+  const sessionModule = fileURLToPath(new URL('../src/effects/terminal/task-session.ts', import.meta.url));
+  const wrapper = join(bin, 'herdr');
+  writeFileSync(wrapper, `#!${process.execPath}
+import {existsSync, readFileSync, writeFileSync} from 'fs';
+import {spawnSync} from 'child_process';
+import {processIdentity} from ${JSON.stringify(sessionModule)};
+const args=process.argv.slice(2), stage=${JSON.stringify(stage)};
+const fail=(stage==='report-agent' && args[3]==='report-agent') || (stage==='rename' && args[3]==='rename') || (stage==='capture' && args[2]==='pane' && args[3]==='get');
+if(fail || (stage==='publication' && args[3]==='report-agent')) {
+ const deadline=Date.now()+3000;
+ while(!existsSync(${JSON.stringify(pidFile)}) && Date.now()<deadline) await Bun.sleep(10);
+ const pid=Number(readFileSync(${JSON.stringify(pidFile)},'utf8'));
+ writeFileSync(${JSON.stringify(proofFile)}, JSON.stringify({pid,identity:processIdentity(pid),ownership:{disposition:'created',intent_id:${JSON.stringify(f.session.session_id)}}}));
+ if(fail) process.exit(42);
+}
+const result=spawnSync(${JSON.stringify(f.session.herdr_bin)}, args, {stdio:'inherit'});
+process.exit(result.status ?? 1);
+`); chmodSync(wrapper, 0o700);
+  if (stage === 'publication') symlinkSync(join(f.dir, 'absent-processes'), join(f.dir, 'processes.json'));
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}:${oldPath}`;
+    await startReviewServer(f.session, f.dir);
+  } finally { process.env.PATH = oldPath; }
+  let proof: OwnedProcess | undefined;
+  try {
+    const deadline = Date.now() + 10000;
+    while (!existsSync(join(f.dir, 'failure.json')) && Date.now() < deadline) await Bun.sleep(25);
+    expect(existsSync(join(f.dir, 'failure.json'))).toBe(true);
+    proof = readSessionArtifact<OwnedProcess>(proofFile);
+    expect(await fixtureProofAlive(proof)).toBe(false);
+    expect(readSessionArtifact<{session_id:string}>(join(f.dir, 'startup-no-child.json')).session_id).toBe(f.session.session_id);
+    const result = await closeClaudeReview(f.options, true) as {cancelled:boolean};
+    expect(result.cancelled).toBe(true);
+    expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
+    expect(existsSync(join(f.dir, 'accepted-1.json'))).toBe(false);
+    expect(sentinel.identity()).toEqual(before);
+  } finally {
+    // Keep creator proof available even when reproducing the pre-fix leak.
+    if (proof && await fixtureProofAlive(proof)) {
+      signalCreatedProcess(proof, 'SIGKILL', true);
+      const deadline=Date.now()+3000;
+      while(await fixtureProofAlive(proof) && Date.now()<deadline) await Bun.sleep(25);
+    }
+  }
+}, 20000);
+
 releaseLaneOnly('startup spawn failure can be cancelled without process metadata or acceptance', async () => {
   const f = fixture();
   chmodSync(f.options.providerCommand, 0o600);

@@ -17,13 +17,12 @@
 
 ## Goal
 
-GATE 第3轮PASS后MEDIUM修正：恢复Options/Helpers唯一空行，RUN_HELP_MAX_LINES85保留60-helper预算，既有test验证版式；修正文案与实际CI diff输入，独立commit/push等全部CI。
+修复 PR #464 reviewer post-spawn setup failure 的 provider 遗留：启动锁内回收本次创建且 identity-proven 的 provider，确认退出后发布 no-child 证据；保留 cancellation fail-closed 与 sentinel。
 
 ## Scope
 
-- In scope: run help版式/预算、既有CLI test、contract/notes。仅已转finding，PR其余冻结。
-- Out of scope: 兄弟fixturecloseout-journal/archive-evidence-gates留后续notes；paused/E真实模型未GO不执行。
-- 最新origin/main作为REPO_HARNESS_DIFF_BASE+merge-base，删除脚本不消费的EVENT_NAME/PR_BASE_SHA；CI绿前不宣告完成。
+- In scope: claude-review-host 启动失败清理、既有真实 Herdr regression tests、contract/notes/review。
+- Out of scope: MCP observed_idle、generic review cutover、真实模型 canary、其他分支。
 
 ## Stop Conditions
 
@@ -37,7 +36,10 @@ GATE 第3轮PASS后MEDIUM修正：恢复Options/Helpers唯一空行，RUN_HELP_M
 
 ## Root Cause Evidence
 
-Not applicable: 新运行边界的 feasibility proof，Task Profile 为 code-change。
+- root_cause: runClaudeReviewHost spawns a detached provider before report-agent/rename/capture/publication; setup exceptions leave no processes.json or no-child proof, so explicit cancel refuses ownership-unknown while the provider lives.
+- repro: REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts -t post-spawn --timeout 60000; all four cases fail with Expected false / Received true on the unfixed source (26.39s).
+- regression_guard: tests/claude-review.test.ts post-spawn parameterized cases; real private Herdr with deterministic provider that survives stdin EOF, failure injection at report/rename/capture/publication, creator-proof teardown, sentinel preservation.
+- pre_fix_failure_artifact: .ai/harness/runs/review-startup-fix/pre-fix.log (PRE_FIX_EXIT=1).
 
 ## Workflow Inventory
 
@@ -68,8 +70,9 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - src/cli/commands/run.ts
-  - tests/cli/run.test.ts
+  - src/effects/review/claude-review-host.ts
+  - tests/claude-review.test.ts
+  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
 ```
@@ -124,14 +127,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "gate3-run-help-layout",
+      "id": "review-startup-failure",
       "kind": "command",
-      "command": "bun test tests/cli/run.test.ts --timeout 60000",
+      "command": "REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Full existing CLI registry/help/runtime tests plus separation regression; 60 helpers and explicit85-line budget.",
+      "necessity": "Existing owning integration file exercises real private Herdr + deterministic provider. Four post-spawn failures cover report, rename, capture and immutable publication; confirm child absent, cancellation closed and sentinel unchanged. Expected 1-2 minutes; no real model.",
       "inputs": {
         "env": []
       }

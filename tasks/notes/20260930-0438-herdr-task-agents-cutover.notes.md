@@ -273,3 +273,14 @@
 - Restore renderHelpersSection success-path leading blank line, matching error path; it is the only Options/Helpers separator, not redundant. 60 helper IDs remain bounded; RUN_HELP_MAX_LINES explicitly85 for the new helper row, test protects both separator and budget.
 - Canonical task-sync uses only actual REPO_HARNESS_DIFF_BASE/merge-base inputs at newest main. Recompute fullPR digest after this source change; no stale4959/6641 binding.
 - Gate-mentioned brother fixtures contract-worktree-closeout-journal/archive-evidence-gates need later dependency-copy review; outside currentPRfinding, no edits. PR CI was allgreen on39e4e5cc; this correction needs newCI, no merge or completion claim before readback.
+
+## PR #464 post-spawn startup cleanup
+
+P1: reviewer host owns one detached provider; task-session owns process identity and group signaling; review-session cancel consumes complete binding or serialized no-child evidence. Herdr observation remains fallible and cannot authorize an unproven kill.
+P2: host spawn -> report-agent -> rename -> capture -> immutable processes publication -> setup exception -> failure.json -> cancel sees unresolved spawn intent. Real private Herdr reproduces four live-provider leaks, with pre-fix evidence in `.ai/harness/runs/review-startup-fix/pre-fix.log`.
+P3: preserve typed binding and fail-closed cancel. Reap only the creator-proven group while holding startup.lock; publish existing no-child evidence only after exit. No new dependency, file authority, protocol or fallback. Abrupt host death before publication still fails closed; recovering that independent crash window would need durable child proof. At 10x concurrency the lock remains per review directory, not global.
+Test admission: existing `tests/claude-review.test.ts` lacked failures after successful provider spawn. Four parameterized real-process cases cover Herdr mutations, capture and immutable publication; a fake provider survives EOF so host death cannot hide the leak. All use private sessions and an unchanged sentinel; about 26s for pre-fix cases and 1-2 minutes for the owning full file. MCP observed_idle and generic-review work are out of scope.
+
+> **Substantive Change SHA256**: `sha256:051ac556828eb2208d851cd748ed9527222498a8feb6b4dfca508b6f9b73f054`
+
+Startup fix validation: pre-fix 4 fail/0 pass (26.39s); post-fix 4 pass/0 fail/28 expect (20.92s). First canonical execution passed owning full reviewer integration file (70.443s), type and every integrity check except the expected changed diff digest. Digest updated above; final exact execution is required by the contract after this evidence binding. No model requests, global installs, primary checkout changes or new dependencies/files/abstractions. Sibling trace: startReviewServer already reaps its directly owned child on metadata errors; task-session bindStartedAgent uses durable launch/pane/provider reconciliation and is not a detached reviewer spawn.
