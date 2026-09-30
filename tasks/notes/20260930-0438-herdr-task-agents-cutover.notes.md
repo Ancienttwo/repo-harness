@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:37144f066b736b338e4ce8c39f5dc9046807fa1c3531e45ae7be0d95aa6b5c26`
+> **Substantive Change SHA256**: `sha256:7cc8705dbea50c4fa6ee075826eacb88c61f1f66c998000ea2a09e380e58e7cb`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -238,3 +238,9 @@
 - Removed retired goal/plan/plugin names from five READMEs on rebased 708c9675, install profile docs, paired agent packet guidance and contract-run comments/template; fixed general MCP docs to explicit Herdr addressing with Result/observation cleanup semantics. Deleted the tracked obsolete codex-goal artifact; no alias or replacement tracked runtime cache.
 - Ownership check: sync-reference-configs.ts:42–43 explicitly permits extra docs-only install-profile files; assets/reference-configs/install-profiles.md does not exist. Edit the sole docs-only authority, do not introduce a second mirror/generator. AGENTS and CLAUDE remain byte-identical; contract-run executable behavior untouched.
 - Exactly one README test/assertion added across all five languages, failing on pre-fix content (F2-before-fix.txt), now green. Existing workflow packet parity/release docs checks reused. policy.json, 24 historical contracts and prd.md headless path remain H5, not expanded into this correction.
+
+## GATE 第1轮 F3 — fixed policy, no host substitution
+
+- Removed contract_acceptance_policy_json, CODEX_SESSION_ID/CLAUDE_SESSION_ID selection/ambiguity error, acceptance_policy temporary variable and identical sed replacement. The existing canonical contract template already contains the fixed protocol2/Codex/codex-review/allowed JSON; render it once, without another authority or second write.
+- Existing first plan-to-todo fixture now sets both host session IDs and asserts the same fixed JSON. It failed on the old helper (F3-before-fix.txt), then passed with the deletion. Remaining generation/archive/contract fields and direct advisory review tests unchanged. Source/helper template remain matched.
+- Applied only the two explicitly permitted small items: duplicate codex-review unions collapsed, single unreachable provider throw removed; public CLI legacy rejection and direct review execution remain intact. No policy.json/old contracts/prd/paused/Claude domain expansion.

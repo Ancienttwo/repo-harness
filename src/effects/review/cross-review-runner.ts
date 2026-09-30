@@ -145,7 +145,6 @@ function invokeProvider(input: RunCrossReviewInput, scope: CrossReviewScope, tim
 }
 
 export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
-  if (input.provider !== 'codex') throw new Error('cross_review_provider_retired; use codex');
   const scopeCapture = captureCrossReviewScope(input.repoRoot, { baseRevision: input.baseRevision });
   if (scopeCapture.status === "degraded") {
     return {

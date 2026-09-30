@@ -50,7 +50,7 @@ describe("plan-to-todo helper integration", () => {
         "bash",
         ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1400-demo.md"],
         cwd,
-        { CODEX_SESSION_ID: "codex-host-fixture", CLAUDE_SESSION_ID: undefined },
+        { CODEX_SESSION_ID: "codex-host-fixture", CLAUDE_SESSION_ID: "claude-host-fixture" },
       );
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[BriefPreflight]");

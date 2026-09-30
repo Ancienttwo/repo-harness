@@ -17,13 +17,13 @@
 
 ## Goal
 
-GATE 第1轮 F2：清除列明 operator docs/README/agent packet 注释的已退役名称与旧直连 MCP runner；删除 tracked codex-goal 旧产物。README 已先无冲突 rebase 到 708c9675。
+GATE 第1轮 F3：plan-to-todo 不再检测与固定 policy 无关的 host session IDs，也不再做 no-op acceptance_policy/sed替换；模板固定 policy 是唯一输出来源。顺手清理指定重复 union 与不可达 throw。
 
 ## Scope
 
-- In scope: 指定 docs、paired AGENTS/CLAUDE、contract-run 注释与模板、五份 README、旧 handoff artifact；readme-dx 仅新增一条旧名 guard。
-- Out of scope: F3（下一 commit），policy.json/24份旧contracts/prd.md（H5），paused launch/Claude domain/真实模型/mini/global install。
-- F2 独立 commit/canonical，随后 F3 和 CHECKPOINT-4。
+- In scope: plan-to-todo/helper模板、既有生成契约 regression、historical classifier 重复类型、cross-review 单行 throw 和相应 focused tests。
+- Out of scope: policy.json/24份旧contracts/prd.md（H5）、paused launch/Claude domain/真实模型/mini/global install；不改 cross-review 的执行方式。
+- F3 独立 commit/canonical 后 CHECKPOINT-4，等待 gate 复核。
 
 ## Stop Conditions
 
@@ -68,19 +68,11 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - docs/reference-configs/install-profiles.md
-  - docs/reference-configs/general-repo-mcp.md
-  - AGENTS.md
-  - CLAUDE.md
-  - scripts/contract-run.ts
-  - assets/templates/helpers/contract-run.ts
-  - .ai/harness/handoff/codex-goal.md
-  - README.md
-  - README.zh-CN.md
-  - README.ja.md
-  - README.fr.md
-  - README.es.md
-  - tests/readme-dx.test.ts
+  - scripts/plan-to-todo.sh
+  - assets/templates/helpers/plan-to-todo.sh
+  - tests/plan-to-todo.test.ts
+  - tests/historical-plan-classifier.test.ts
+  - src/effects/review/cross-review-runner.ts
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
 ```
@@ -135,27 +127,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "gate1-F2-docs",
+      "id": "gate1-F3-policy",
       "kind": "command",
-      "command": "bun test tests/readme-dx.test.ts tests/workflow-contract.test.ts --timeout 60000",
+      "command": "bun test tests/plan-to-todo.test.ts tests/historical-plan-classifier.test.ts tests/cli/cross-review.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "One new README old-name guard plus existing multilingual version/docs and anti-extras ownership tests.",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "gate1-F2-agent-parity",
-      "kind": "command",
-      "command": "cmp AGENTS.md CLAUDE.md",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Paired root agent guidance stays byte-identical; only task-goal document naming changes.",
+      "necessity": "Fixed policy generation succeeds with both session IDs; template output/identity refusal and unchanged direct review behavior covered.",
       "inputs": {
         "env": []
       }

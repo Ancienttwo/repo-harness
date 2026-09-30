@@ -10,7 +10,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function acceptanceContract(source: 'codex-review' | 'codex-review' = 'codex-review', waiver: 'allowed' | 'forbidden' = 'allowed'): string {
+function acceptanceContract(source: 'codex-review' = 'codex-review', waiver: 'allowed' | 'forbidden' = 'allowed'): string {
   return [
     '# Contract',
     '',
@@ -49,7 +49,7 @@ function receiptReview(recommendation = 'pass', source = 'codex-review', reviewe
   ].join('\n');
 }
 
-function writeFamily(root: string, stem: string, contractStatus: string, reviewText: string, source: 'codex-review' | 'codex-review' = 'codex-review'): void {
+function writeFamily(root: string, stem: string, contractStatus: string, reviewText: string, source: 'codex-review' = 'codex-review'): void {
   const plan = `plans/plan-${stem}.md`;
   const contract = `tasks/contracts/${stem}.contract.md`;
   const review = `tasks/reviews/${stem}.review.md`;
