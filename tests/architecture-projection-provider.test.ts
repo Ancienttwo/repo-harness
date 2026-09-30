@@ -18,6 +18,7 @@ import {
 } from '../src/core/architecture/projection';
 import {
   archctxCapabilities,
+  verifyArchctxDaemonRuntime,
   inspectArchitectureProjectionReadiness,
   captureArchitectureProjectionSnapshot,
   architectureProjectionOwnedPaths,
@@ -1237,5 +1238,72 @@ describe('package-local ArchContext projection provider', () => {
       : { status: 1, signal: null, stdout: '', stderr: 'AC_PRECONDITION_FAILED: expected snapshot is stale' };
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) })).toThrow('expected snapshot is stale');
     expect(diagnostics).toEqual([]);
+  });
+});
+
+
+describe('ArchContext maintenance reminders', () => {
+  const incompatible = {
+    schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status',
+    data: { running: true, versionUnsupported: {
+      reason: 'product-version-mismatch', expected: ARCHCTX_REQUIRED_VERSION, received: '0.2.3',
+      action: 'upgrade-archctx-runtime', command: 'archctx daemon upgrade',
+    } },
+  };
+
+  test('daemon lifecycle mismatch requests authorization without running recovery', () => {
+    const f = fixture();
+    const calls: string[][] = [];
+    const run: RunArchctxProcess = (_binary, args) => {
+      calls.push([...args]);
+      return { status: 0, signal: null, stdout: JSON.stringify(incompatible), stderr: '' };
+    };
+    expect(() => verifyArchctxDaemonRuntime(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
+      .toThrow('received 0.2.3. User authorization required');
+    expect(calls).toEqual([['daemon', 'status', '--json']]);
+  });
+
+  test('healthy and stopped daemons need no maintenance; malformed status fails closed', () => {
+    const f = fixture();
+    const check = (data: unknown) => verifyArchctxDaemonRuntime(f.repoRoot, {
+      consumerRoot: f.consumerRoot, policy,
+      run: () => ({ status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, data }), stderr: '' }),
+    });
+    expect(() => check({ running: false })).not.toThrow();
+    expect(() => check({ running: true, rpcVersionCompatible: true, productVersionCompatible: true })).not.toThrow();
+    expect(() => check({ running: true })).toThrow('did not prove runtime compatibility');
+    expect(() => check({ running: 'true' })).toThrow('invalid envelope');
+    expect(() => check({ ...incompatible.data, versionUnsupported: { ...incompatible.data.versionUnsupported, action: 'unknown' } }))
+      .toThrow('invalid versionUnsupported diagnostic');
+  });
+
+  test('projection failure preserves typed maintenance guidance beyond diagnostic truncation', () => {
+    const f = fixture();
+    const calls: string[][] = [];
+    const run: RunArchctxProcess = (_binary, args) => {
+      calls.push([...args]);
+      return { status: args[0] === 'capabilities' ? 0 : 1, signal: null, stderr: 'short stderr', stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : {
+        schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'projection',
+        error: { code: 'AC_RUNTIME_VERSION_UNSUPPORTED', action: 'upgrade-archctx-runtime', message: 'x'.repeat(400) + ' daemon 0.2.3 requires replacement' },
+      }) };
+    };
+    let message = '';
+    try { runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); }
+    catch (error) { message = (error as Error).message; }
+    expect(message).toContain('daemon 0.2.3 requires replacement');
+    expect(message).toContain('User authorization required');
+    expect(message).toContain('only if it is missing or stale');
+    expect(calls.map((args) => args[0])).toEqual(['capabilities', 'projection']);
+  });
+
+  test('untyped stderr and wrong envelope schemas never produce a reset recommendation', () => {
+    const f = fixture();
+    for (const schemaVersion of ['unknown', 'archcontext.envelope/v1']) {
+      const run: RunArchctxProcess = (_binary, args) => ({ status: args[0] === 'capabilities' ? 0 : 1, signal: null,
+        stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : { schemaVersion, ok: false, error: { code: 'AC_RUNTIME_VERSION_UNSUPPORTED', action: 'unknown', message: 'not authority' } }),
+        stderr: 'AC_RUNTIME_VERSION_UNSUPPORTED' });
+      expect(() => runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
+        .toThrow('exit 1: AC_RUNTIME_VERSION_UNSUPPORTED');
+    }
   });
 });

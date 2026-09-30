@@ -5,7 +5,7 @@ import { basename, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
-import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
+import { runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 
@@ -192,6 +192,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeExecutable(join(fakeBin, 'node'), [
     '#!/bin/bash',
     'if [[ "${1:-}" == "--version" ]]; then echo v24.11.0; exit 0; fi',
+    `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" && "\${2:-}" == "daemon" ]]; then printf '%s\\n' '{"schemaVersion":"archcontext.envelope/v1","ok":true,"data":{"running":false}}'; exit 0; fi`,
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
       package: { name: 'archctx', version: '0.6.1' },
@@ -2171,4 +2172,29 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
 
     expect(result).toEqual({ externalSkills: false, codegraph: false });
   });
+});
+
+
+test('managed runtime readback reports stale shared daemon after a successful package handshake', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-daemon-readback-'));
+  try {
+    const home = join(tmp, 'home');
+    const fakeBin = join(tmp, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    setupManagedRuntimeReadback(home, fakeBin);
+    const source = join(tmp, 'source');
+    mkdirSync(source);
+    writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+    const nodePath = join(fakeBin, 'node.fixture-body');
+    const original = readFileSync(nodePath, 'utf8');
+    writeFileSync(nodePath, original.replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.1","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+    const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, env: {
+      ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+      PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath,
+    } });
+    expect(result.status).toBe('failed');
+    expect(result.detail).toContain('received 0.2.3');
+    expect(result.detail).toContain('User authorization required');
+    expect(readFileSync(nodePath, 'utf8')).toContain('"received":"0.2.3"');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 });

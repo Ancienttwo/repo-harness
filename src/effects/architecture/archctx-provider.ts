@@ -260,6 +260,28 @@ export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOp
   return { resolved, capabilities: assertArchctxCapabilities(value, policy.requiredVersion) };
 }
 
+const ARCHCTX_MAINTENANCE_REMINDER = 'User authorization required: ask before replacing the shared daemon with daemon upgrade; this interrupts other clients. Use the same managed package-local archctx and Node runtime, then verify daemon status. After replacement, check the configured CodeGraph index for this repository; request authorization to rebuild only if it is missing or stale. Do not delete shared state or automatically restart/reindex.';
+
+/** Lifecycle readback is separate from the CLI-only capabilities handshake. */
+export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}): void {
+  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
+  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['daemon', 'status', '--json'], options, Math.min(policy.timeoutMs, 10_000));
+  if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || value.ok !== true || !isRecord(value.data) || typeof value.data.running !== 'boolean') {
+    throw new Error('archctx daemon status returned an invalid envelope');
+  }
+  const data = value.data;
+  if (data.versionUnsupported !== undefined) {
+    const issue = data.versionUnsupported;
+    if (!isRecord(issue) || typeof issue.reason !== 'string' || typeof issue.expected !== 'string' || typeof issue.received !== 'string' || issue.action !== 'upgrade-archctx-runtime' || issue.command !== 'archctx daemon upgrade') {
+      throw new Error('archctx daemon status returned an invalid versionUnsupported diagnostic');
+    }
+    throw new Error(`AC_RUNTIME_VERSION_UNSUPPORTED: managed archctx@${resolved.version}; daemon ${issue.reason}: expected ${issue.expected}, received ${issue.received}. ${ARCHCTX_MAINTENANCE_REMINDER}`);
+  }
+  if (data.running && (data.rpcVersionCompatible !== true || data.productVersionCompatible !== true)) {
+    throw new Error('archctx daemon status did not prove runtime compatibility');
+  }
+}
+
 export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   const source = capabilitySource(repoRoot);
@@ -652,6 +674,23 @@ function capabilitySource(repoRoot: string): 'registry' | 'archcontext' {
 function parseJson(text: string, label: string): unknown {
   try { return JSON.parse(text); } catch { throw new Error(`${label} returned corrupt JSON`); }
 }
-function processFailure(result: ArchctxProcessResult): string { return result.error ?? (result.signal ? `signal ${result.signal}` : `exit ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}`); }
-function safeError(value: Record<string, unknown>): string { return isRecord(value.error) && typeof value.error.message === 'string' ? value.error.message : 'unknown error'; }
+function processFailure(result: ArchctxProcessResult): string {
+  if (result.error) return result.error;
+  if (result.signal) return `signal ${result.signal}`;
+  // The provider's typed action is authoritative; stderr prose cannot authorize recovery.
+  try {
+    const value: unknown = JSON.parse(result.stdout);
+    if (isRecord(value) && value.schemaVersion === 'archcontext.envelope/v1' && value.ok === false && isRecord(value.error) && value.error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && value.error.action === 'upgrade-archctx-runtime') {
+      return `exit ${result.status}: ${safeError(value)}`;
+    }
+  } catch { /* retain ordinary bounded process diagnostics */ }
+  return `exit ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}`;
+}
+function safeError(value: Record<string, unknown>): string {
+  if (!isRecord(value.error) || typeof value.error.message !== 'string') return 'unknown error';
+  if (value.schemaVersion === 'archcontext.envelope/v1' && value.ok === false && value.error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' && value.error.action === 'upgrade-archctx-runtime') {
+    return `AC_RUNTIME_VERSION_UNSUPPORTED: ${value.error.message.slice(0, 1000)} ${ARCHCTX_MAINTENANCE_REMINDER}`;
+  }
+  return value.error.message;
+}
 function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }

@@ -1,0 +1,9 @@
+# ArchContext maintenance authorization reminder
+
+P1: `src/cli/commands/global-runtime.ts` owns installation and managed runtime readback. `src/effects/architecture/archctx-provider.ts` owns package-local process invocation shared by projection and refactor. `archctx@0.6.1/bin/archctx.mjs` owns daemon compatibility/lifecycle and exposes `archcontext.envelope/v1` diagnostics; package-local CodeGraph owns index status. No local version inference or alternate lifecycle owner was added.
+
+P2: Previously `readManagedRuntime` validated manifests and static `capabilities --json` (upstream `runCli` returns `runCapabilitiesCommand` before runtime dispatch), then reported ready. Runtime-backed projection reached `archctxd`, returned `AC_RUNTIME_VERSION_UNSUPPORTED`, and `processFailure` limited stdout/stderr to 300 characters. A healthy CLI could mask a stale daemon and recovery instructions could disappear. The update path now also inspects authoritative `daemon status`; typed runtime failures keep an authorization reminder across projection and refactor.
+
+P3: Use upstream `versionUnsupported` and typed error action instead of parsing error prose or assuming that every upgrade invalidates an index. Checks never run upgrade/reindex. Replacement requires user authorization because the daemon is shared; inspect the configured repository index after replacement and rebuild only with evidence and authorization. At increased multi-client usage, interrupting another client's daemon is the first operational risk. This patch adds no dependency, persistent approval store, reset abstraction, or standalone test file; the research document records the reusable lifecycle boundary.
+
+Evidence: existing provider and managed-update suites cover incompatible, healthy/stopped, malformed diagnostics, long error envelopes, and dispatch count. Shared host daemon replacement and real index rebuild are deliberately outside this implementation's authorization scope.

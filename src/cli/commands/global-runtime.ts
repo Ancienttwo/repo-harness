@@ -28,7 +28,7 @@ import {
   requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
-import { archctxCapabilities } from "../../effects/architecture/archctx-provider";
+import { archctxCapabilities, verifyArchctxDaemonRuntime } from "../../effects/architecture/archctx-provider";
 import {
   discoverWindowsProtectedHelperContract,
   resolveProtectedHelperPlatform,
@@ -469,17 +469,19 @@ function readManagedRuntime(
   }
 
   try {
-    archctxCapabilities(cwd, {
+    const providerOptions = {
       consumerRoot: globalPackageRoot,
       env,
       policy: {
-        provider: "archctx",
-        applyMode: "manual",
-        failureGate: "advisory",
+        provider: "archctx" as const,
+        applyMode: "manual" as const,
+        failureGate: "advisory" as const,
         requiredVersion: String(dependencies.archctx),
         timeoutMs: 10_000,
       },
-    });
+    };
+    archctxCapabilities(cwd, providerOptions);
+    verifyArchctxDaemonRuntime(cwd, providerOptions);
   } catch (error) {
     return { status: "runtime-mismatch", detail: error instanceof Error ? error.message : String(error) };
   }
