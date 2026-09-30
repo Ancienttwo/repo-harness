@@ -14,9 +14,9 @@
 
 ## Prepared artifact hashes (unrun)
 
-- canary.ts: sha256:53d5877e39fa7dc40fdf6b168ba6abb48e5129c0086e93d6af8f4652d18bfd56
+- canary.ts: sha256:5a47abe721279b3c2c4067fa39af0975a3efc23bf07aa9f7d311fa8dec8907e5
 - canary-budget.json: sha256:722872c4803afe364c06b2a71fbe55d7d9b3c02a5f4ca6c83786ea020d316040
-- expected-results.md: sha256:d0844c618aa5681f01b78e98f9c8b89806ac5a43582c8dad49fd774b3aedb8ec
+- expected-results.md: sha256:46c6e0a6b098af58a4ce300ba7232c57bd70852e1acac19b5e11a58d99fd98cc
 
 - 收尾等final B sentinel，不能A文件刚出现就杀provider而漏B/写probe。Current--verify仍0模型；真实能力unverified。
 
@@ -41,3 +41,10 @@
 
 - 三处stop统一小函数stopServer，调用raw effect只看退出状态、不解析stdout，之后仍等待对应server子进程退出；失败才记录cleanup-pending。S0新fakeRoot立即加入retained_paths，成功/失败最终输出都可供用户清理。预算/expected保持722872c4/d0844c61，未执行live或S0。
 - 扫描全部0模型JSON.parse/cli：workspace list/create、agent get、pane list为JSON（既有真实私有fixture测试及research证明）；report-agent与server stop可能空stdout，前者本就raw status，后者本次修正。production lifecycle内部getter（workspace/pane/process-info/agent/worktree open/split）仍用JSON读取，run/start/close/report等mutation走herdrMutation允许空stdout。预算、pane-created与fake-ready是自有JSON文件，不是Herdr命令stdout。实际安装herdr0.9.1；本次格式审计依据已有证据/调用路径，没有新启server或模型。
+
+## 20261001 main rebase / prompt-file zero-model proof
+
+- E五个docs commits已无冲突rebase到origin/main1c2c9233（PR464已合入）；对main只差plan/contract/notes三份文档，src/tests无改动。旧fixture已清，不再引用旧as/ep/.rhc路径。新advisor在w8:p7，所有送审转此pane。
+- 独立新私有fixture做真实start/ready/cancel、无prompt：Claude --append-system-prompt-file被Herdr接受，server log检测到真实Claude pgid57149，但TUI trust阻塞、未ready；文件sha与fleet.body均c548be9f767746b6c281e4edf7c9ea9509dbf4e2326013f07b9c7488ba3b132b。Codex返回Herdr ready且PID56970活着，但实际TUI停在更新菜单；未选择更新/skip，未见native developer字段，正文原样解析仍unverified。两边cancel closed/server exit0，模型0。
+- 修正版ignored canary仅把Claude正文落私有role-prompt.txt、argv传文件路径，四处start共用现有小准备函数；不归一化正文，CodexJSON参数不变。--verify检查argv无LF/CR与fileflag/path。budget未变，expected追加上述实证边界；没有新GO，没有执行修正版或选择E设计。
+- herdrMutation stderr损失只建议：保留有界stderr与exit/signal供诊断、遵循现有脱敏规则，同时保留ambiguous_launch和不重放语义；本轮不改src。下个GO前应向用户呈现Claude trust与Codex更新菜单阻塞，不自动处理全局信任或工具升级。
