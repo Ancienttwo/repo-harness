@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 
+import { WRITABLE_AGENTS } from '../src/effects/terminal/task-role-profiles';
 import { installProfileHostMutationPaths } from "../src/cli/installer/install-profile";
 
 import { recordInstallOwnership } from "./helpers/install-ownership";
@@ -638,7 +639,8 @@ describe("install-agent-fleet", () => {
     expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
     expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");
     expect(source).not.toContain('spawnSync("curl"');
-    expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);');
+    expect(source).toContain('src/effects/terminal/task-role-profiles.ts');
+    expect([...WRITABLE_AGENTS]).toEqual(['fast-worker','deep-worker','root-cause-prover','harness-evaluator']);
     expect(source).toContain("if (WRITABLE_AGENTS.has(agent))");
   }, 30_000);
 

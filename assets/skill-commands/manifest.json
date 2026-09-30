@@ -248,24 +248,6 @@
       "retirementCandidate": null
     },
     {
-      "name": "claude-plan",
-      "kind": "provider-skill",
-      "source": "assets/skills/claude-plan",
-      "provider": null,
-      "hosts": [
-        "codex"
-      ],
-      "profiles": [
-        "full"
-      ],
-      "discoverability": "cross-model",
-      "component": "adaptive-workflow",
-      "requires": [],
-      "mutatesRepoByDefault": false,
-      "summary": "External-brain plan consult skill: headless Claude plan mode reviews a Codex plan/decision brief. Installed on the Codex host.",
-      "retirementCandidate": null
-    },
-    {
       "name": "think",
       "kind": "external",
       "source": null,
@@ -452,8 +434,7 @@
           "repo-harness-cross-review"
         ],
         "codex": [
-          "repo-harness-cross-review",
-          "claude-plan"
+          "repo-harness-cross-review"
         ]
       }
     }

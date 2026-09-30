@@ -35,7 +35,7 @@ function fixture(): { repoRoot: string; home: string } {
   mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } } })}\n`);
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
   writeFileSync(join(repoRoot, 'README.md'), 'fixture\n');
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
@@ -189,7 +189,7 @@ describe('restricted Engineer MCP tools', () => {
     const current = bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-1',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-1',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -234,7 +234,7 @@ describe('restricted Engineer MCP tools', () => {
       },
     });
     const capability = recordAgentRuntimeCapability(repoRoot, {
-      adapter_kind: 'codex-app-thread',
+      adapter_kind: 'herdr-cli-agent',
       host_id: 'local',
       operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
@@ -336,7 +336,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-read-only',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-read-only',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -362,7 +362,7 @@ describe('restricted Engineer MCP tools', () => {
     expect(agentRuntimeEffectState(repoRoot)).toEqual([]);
 
     const capability = recordAgentRuntimeCapability(repoRoot, {
-      adapter_kind: 'codex-app-thread',
+      adapter_kind: 'herdr-cli-agent',
       host_id: 'local',
       operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
@@ -400,7 +400,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: otherEngineerId,
       idempotency_key: 'bind-read-only-other',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-read-only-other',
       host_id: 'local',
       engineer_contract_revision: otherProfile.engineer_contract_revision,
@@ -436,7 +436,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-scheduling',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-scheduling',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,

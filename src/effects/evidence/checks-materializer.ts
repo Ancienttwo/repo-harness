@@ -86,7 +86,7 @@ export function parseAcceptancePolicySummary(contractText: string): AcceptancePo
     && Object.keys(record).sort().join(",") === "protocol,reviewer,user_waiver";
   const v2 = record.protocol === 2
     && record.reviewer === "Codex"
-    && (record.source === "codex-review" || record.source === "codex-plugin")
+    && record.source === "codex-review"
     && Object.keys(record).sort().join(",") === "protocol,reviewer,source,user_waiver";
   if (!v1 && !v2) return { present: false, userWaiverAllowed: false };
   if (record.user_waiver !== "allowed" && record.user_waiver !== "forbidden") {

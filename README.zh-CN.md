@@ -480,8 +480,8 @@ acquire 任务、不改 workflow state、不启动 agent，也不暴露仓库路
 
 作为可选 sidecar，`repo-harness mcp` 通过默认的 `planner` profile 把 workflow
 artifact 暴露给 MCP client。ChatGPT 读取真实仓库状态，把一个想法推进过 PRD、
-checklist Sprint 和 Codex goal handoff artifact——默认没有源码写入权限、没有任意
-shell 执行，也没有默认 runner。Codex 仍然是执行者。
+checklist Sprint 和 task goal handoff artifact——默认没有源码写入权限、没有任意
+shell 执行，也没有默认 runner。任务 owner 指挥明确寻址的 Herdr agent 执行 task goal。
 
 ```bash
 repo-harness mcp setup chatgpt --repo .
@@ -494,9 +494,9 @@ repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --
 1. ChatGPT 通过 MCP 读取 repo-harness 的 workflow 文件。
 2. ChatGPT 用 `write_prd_from_idea` 写一份 PRD。
 3. ChatGPT 用 `write_checklist_sprint` 写一份 checklist Sprint。
-4. ChatGPT 用 `prepare_codex_goal_from_sprint` 准备好
-   `.ai/harness/handoff/codex-goal.md`。
-5. Codex 运行 host-native 的 `/goal` prompt，逐个 stage 已完成的 Sprint phase。
+4. ChatGPT 用 `prepare_task_goal_from_sprint` 准备好
+   `.ai/harness/handoff/task-goal.md`。
+5. 任务 owner 将生成的执行 prompt 发送到明确寻址的 Herdr agent，并逐个 stage 已完成的 Sprint phase。
 
 通用的 repo reader/writer 工具、snapshot 与 index 一致性、server profile，以及
 opt-in 的 dev runner，见
@@ -552,8 +552,7 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | `repo-harness-check` | Workflow 和 release check，附带 deploy-readiness reference |
 | `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
 | `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
-| `repo-harness-cross-review` | 独立 outside review：Claude 环境直连 Codex；Codex 环境走 OpenAI 官方 `codex@openai-codex` plugin app-server runtime |
-| `claude-plan` | Codex 端 provider skill：面向设计分叉或高风险决策的独立 Claude plan mode consult；不是用户直呼入口 |
+| `repo-harness-cross-review` | 独立 Codex advisory review；Claude 验收保留持久 Herdr domain reviewer |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
 

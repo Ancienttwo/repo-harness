@@ -297,6 +297,7 @@ describe("run command", () => {
       env: packageRuntimeEnv(),
     });
     expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/Options:[\s\S]*\n\nHelpers:\n/);
     expect(res.stdout.trimEnd().split("\n").length).toBeLessThanOrEqual(RUN_HELP_MAX_LINES);
   }, 30_000);
 

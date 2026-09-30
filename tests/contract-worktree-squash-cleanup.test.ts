@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from "fs";
 import { join } from "path";
@@ -39,6 +40,9 @@ function copyHelpers(cwd: string) {
   mkdirSync(join(cwd, ".ai", "harness"), { recursive: true });
   mkdirSync(join(cwd, ".ai", "harness", "triage"), { recursive: true });
   mkdirSync(join(cwd, "docs", "architecture"), { recursive: true });
+  mkdirSync(join(cwd, "src"), { recursive: true });
+  symlinkSync(join(ROOT, "src/effects"), join(cwd, "src/effects"), "dir");
+  symlinkSync(join(ROOT, "src/core"), join(cwd, "src/core"), "dir");
 
   for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
     copyFileSync(join(HELPER_DIR, file), join(scriptsDir, file));

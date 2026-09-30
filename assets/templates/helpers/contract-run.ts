@@ -90,7 +90,7 @@ interface ChildResult {
 
 // Canonical anti-extras clause injected into every runner-reachable surface (worker
 // prompt here, the Codex delegation advisor hook, subagent start context, and the MCP
-// codex-goal path). Keep the first sentence byte-identical across all sources; a parity
+// task-goal path). Keep the first sentence byte-identical across all sources; a parity
 // test asserts they never drift apart.
 const EXECUTION_BOUNDARY = [
   "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.",

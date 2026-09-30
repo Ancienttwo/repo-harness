@@ -216,19 +216,23 @@ describe('AcceptanceReceipt', () => {
     expect(parseAcceptancePolicy(contract())).toEqual({ protocol: 1, reviewer: 'Claude', user_waiver: 'allowed' });
     expect(parseAcceptancePolicy(contract().replace(
       '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
-      '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
-    ))).toEqual({ protocol: 2, reviewer: 'Codex', source: 'codex-plugin', user_waiver: 'allowed' });
+      '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
+    ))).toEqual({ protocol: 2, reviewer: 'Codex', source: 'codex-review', user_waiver: 'allowed' });
     expect(() => parseAcceptancePolicy(contract().replace('"allowed"', '"maybe"'))).toThrow('user_waiver');
+    expect(() => parseAcceptancePolicy(contract().replace(
+      '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+      '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
+    ))).toThrow('source must be codex-review');
   });
 
-  test('protocol 2 truthfully binds Codex-host acceptance to source=codex-plugin', async () => {
+  test('protocol 2 truthfully binds Codex-host acceptance to source=codex-review', async () => {
     const { root, home } = makeFixture();
     const contractPath = join(root, 'tasks', 'contracts', 'demo.contract.md');
     writeFileSync(contractPath, contract().replace(
       '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
-      '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
+      '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
     ));
-    commit(root, 'freeze Codex plugin acceptance policy');
+    commit(root, 'freeze Codex acceptance policy');
     writePassingChecks(root);
 
     await expect(recordAcceptance({
@@ -238,7 +242,7 @@ describe('AcceptanceReceipt', () => {
       verification: '.ai/harness/checks/latest.json',
       disposition: 'external_pass',
       reviewer: 'Codex',
-      source: 'codex-review',
+      source: 'claude-review',
       actor: null,
       summary: 'wrong transport',
       findings: [],
@@ -251,13 +255,15 @@ describe('AcceptanceReceipt', () => {
       verification: '.ai/harness/checks/latest.json',
       disposition: 'external_pass',
       reviewer: 'Codex',
-      source: 'codex-plugin',
+      source: 'codex-review',
       actor: null,
-      summary: 'official plugin review passed',
+      summary: 'Codex review passed',
       findings: [],
     });
-    expect(receipt).toMatchObject({ reviewer: 'Codex', source: 'codex-plugin', expected_reviewer: 'Codex' });
-    expect((await verifyAcceptance({ root, authorityHome: home })).source).toBe('codex-plugin');
+    expect(receipt).toMatchObject({ reviewer: 'Codex', source: 'codex-review', expected_reviewer: 'Codex' });
+    expect((await verifyAcceptance({ root, authorityHome: home })).source).toBe('codex-review');
+    writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({...receipt,source:'codex-plugin'}));
+    await expect(verifyAcceptance({root,authorityHome:home})).rejects.toThrow('source is invalid');
   }, 30_000);
 
   test('review projection changes do not invalidate acceptance, semantic changes do', async () => {

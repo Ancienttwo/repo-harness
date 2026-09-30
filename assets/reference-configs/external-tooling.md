@@ -97,8 +97,7 @@ Codex/Claude hook adapters, Waza (`think`, `hunt`, `check`, `health`), brain
 root persistence, Mermaid, and CodeGraph CLI/MCP configuration.
 `repo-harness init` remains a compatibility alias for existing automation. The
 bootstrap path must not silently install unrelated toolchains or Claude
-marketplace plugins. The one explicit exception is OpenAI's official
-`codex@openai-codex` plugin for the Codex-host outside-review capability.
+marketplace plugins. User-managed plugins remain outside repo-harness installation.
 
 `repo-harness uninstall --dry-run` previews user-level cleanup without writing
 configuration, locks or receipts. `repo-harness uninstall` applies it; `--json`
@@ -148,24 +147,13 @@ Waza and Mermaid providers remain behind explicit `--with-external-skills`;
 Repo-local workflow refresh stays on `repo-harness init`; `setup check
 --check-updates` remains the read-only advisory surface.
 
-The cross-review skill is **harness-owned** — its routing source lives in
-`assets/skills/repo-harness-cross-review/`. Claude hosts wrap `codex exec` in a
-read-only sandbox. Codex hosts discover and invoke OpenAI's official
-`codex@openai-codex` plugin companion/app-server runtime; they never launch
-Claude as the reviewer and never fall back when the plugin is unavailable.
-Installing that single plugin is therefore a workflow-owned runtime concern,
-not an unrelated toolchain. `repo-harness-cross-review` installs
-host-aware during `repo-harness install`/`init` and explicit external-skill
-refreshes: it installs into **both** `~/.claude/skills` (a Claude session
-asking Codex for an independent review, via its Codex provider mode) and
-`~/.codex/skills` (a Codex session asking Codex through the official plugin,
-via its `codex-plugin` provider mode) for the full profile. Review Gate is not
-enabled. `claude-plan` installs only into
-`~/.codex/skills` (a Codex session using Claude's headless plan mode for a
-plan consult on a mid-execution design fork) and is unaffected by this
-package's host-aware installation. These harness skills ship with the full
-profile (the default for `init`) and provide the peer acceptance gate surface
-for the typed `AcceptanceReceipt`; the review section is projection only.
+The cross-review skill is **harness-owned**; its routing source lives in
+`assets/skills/repo-harness-cross-review/`. Explicit independent review uses
+Codex's read-only provider mode. The full profile installs this skill on both
+hosts; Claude acceptance retains its persistent Herdr domain Result/Receipt.
+Plugin install/discovery/readiness is not a repo-harness runtime dependency;
+user-managed plugins remain untouched. Plan consultation uses persistent
+task-agent collaborators in Herdr. Review Markdown remains projection only.
 
 Reverse Skill is registered from `zhaoxuya520/reverse-skill` as the recommended
 but explicit-only `reverse-skill-router`. It is not part of either install

@@ -41,6 +41,7 @@ import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { readLease } from '../src/effects/state/coordination-lease-store';
 import type { ContinuationEnvelopeV1 } from '../src/core/state/types';
 import { fixtureTaskId } from './helpers/sprint-fixture';
+import { copyHelpers } from './helpers/helper-script-fixture';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -251,17 +252,7 @@ function installFixture(container: string): Fixture {
   ]) {
     mkdirSync(join(primary, dir), { recursive: true });
   }
-  for (const helper of [
-    'sprint-backlog.sh',
-    'capture-plan.sh',
-    'plan-to-todo.sh',
-    'contract-worktree.sh',
-    'worktree-merge-lib.sh',
-    'archive-workflow.sh',
-  ]) {
-    copyFileSync(join(ROOT, 'scripts', helper), join(primary, 'scripts', helper));
-    chmodSync(join(primary, 'scripts', helper), 0o755);
-  }
+  copyHelpers(primary, { linkDependencies: false });
   copyFileSync(
     join(ROOT, '.claude/templates/contract.template.md'),
     join(primary, '.claude/templates/contract.template.md'),

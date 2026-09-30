@@ -208,7 +208,7 @@ function append(paths: EffectPaths, status: AgentRuntimeEffectStatus, observatio
   const current = buildAgentRuntimeEffectCurrent(observation); replace(paths.current, canonicalAgentRuntimeEffectCurrentBytes(current), 'effect current'); crash?.('after_current_fsync'); return Object.freeze({ intent: status.intent, current, observation });
 }
 function adapterForProvider(provider: string): AgentRuntimeAdapterKind {
-  if (provider !== 'codex-app-thread' && provider !== 'herdr-cli-agent') fail('agent_runtime_effect_binding_stale', 'Binding provider is not an R1 adapter'); return provider;
+  if (provider !== 'herdr-cli-agent') fail('agent_runtime_effect_binding_stale', 'Binding provider is not an R1 adapter'); return provider;
 }
 function endpointForBinding(binding: NonNullable<ReturnType<typeof readEngineerBindingStatus>['binding']>): RuntimeEndpointFenceV2 {
   return Object.freeze({ engineer_id: binding.engineer_id, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, adapter_kind: adapterForProvider(binding.provider), host_id: binding.host_id, endpoint_id: binding.provider_thread_id });

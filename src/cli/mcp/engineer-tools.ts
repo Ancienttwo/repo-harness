@@ -725,7 +725,7 @@ export function callEngineerTool(
     }
     if (name === 'engineer_runtime_effect_capability') {
       const binding = currentBindingForPrincipal(ctx, principal);
-      if (binding.provider !== 'codex-app-thread' && binding.provider !== 'herdr-cli-agent') {
+      if (binding.provider !== 'herdr-cli-agent') {
         throw new EngineerPrincipalError('engineer_principal_mismatch', 'current Binding does not name an Agent Runtime adapter');
       }
       const result = agentRuntimeCapabilityStatusFor(ctx.repoRoot, binding.host_id, binding.provider as AgentRuntimeAdapterKind);

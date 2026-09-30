@@ -35,7 +35,7 @@ repo-harness chatgpt browser-cleanup --repo <repo> --status dry_run --limit 20
 ## Research Promotion
 
 - Treat `.ai/harness/handoff/gptpro/*.md` (and equivalent
-  `.ai/harness/handoff/chatgpt-review-*.md` / `codex-goal-*.md` outputs) as raw
+  `.ai/harness/handoff/chatgpt-review-*.md` / `task-goal-*.md` outputs) as raw
   local evidence: timestamped and ignored so repeated reviews do not collide.
 - When a result contains durable repo knowledge, create or update
   `docs/researches/YYYYMMDD-<topic>.md` with a curated synthesis instead of

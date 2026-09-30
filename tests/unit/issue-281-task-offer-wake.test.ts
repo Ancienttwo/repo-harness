@@ -34,7 +34,6 @@ import {
   type WorkPackageDependencyObservationV1,
 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
-import { CODEX_APP_THREAD_OPERATIONS, executeCodexAppThreadAction } from '../../src/effects/engineers/agent-runtime-adapters/codex-app-thread';
 import { HERDR_CLI_AGENT_OPERATIONS, executeHerdrCliAgentAction } from '../../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
 import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { collectEngineeringBoard } from '../../src/effects/engineers/engineering-overlay';
@@ -123,7 +122,7 @@ function capability(
 /** A real repository plus a private registry home naming exactly it, so the
  * authorization revision fence reads a registry this test owns. */
 function fixture(
-  adapter: AgentRuntimeAdapterKind = 'codex-app-thread',
+  adapter: AgentRuntimeAdapterKind = 'herdr-cli-agent',
   wake: 'supported' | 'unsupported' | 'unavailable' | 'unverifiable' = 'supported',
 ): Fixture {
   const repoRoot = temporary('repo-harness-issue281-');
@@ -136,7 +135,7 @@ function fixture(
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({
-    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } },
+    agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   })}\n`);
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
@@ -346,7 +345,7 @@ describe('issue #281 durable task-offer wake protocol', () => {
       wake_ref: { repository_id: 'repo_0123456789abcdef', authorization_revision: 4, snapshot_revision: digest, wake_reason: 'dependency_unblocked' },
       endpoint_fence: {
         engineer_id: engineerId, binding_id: bindingOne, binding_generation: 3, engineer_contract_revision: digest,
-        adapter_kind: 'codex-app-thread', host_id: 'local', endpoint_id: 'thread-9',
+        adapter_kind: 'herdr-cli-agent', host_id: 'local', endpoint_id: 'thread-9',
       },
       capability_sha256: digest,
       created_at: '2026-09-03T10:00:00.000Z',
@@ -525,7 +524,7 @@ describe('issue #281 durable wake store', () => {
     const rotated = fixture();
     record(rotated, emptyOffers(rotated), '2026-09-03T10:03:00.000Z');
     const wake = record(rotated, offers(rotated), '2026-09-03T10:04:00.000Z');
-    bind(rotated.repoRoot, 'codex-app-thread', bindingTwo);
+    bind(rotated.repoRoot, 'herdr-cli-agent', bindingTwo);
     expect(() => startAgentRuntimeEffect({ repo_root: rotated.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:05:00.000Z', env: rotated.env }))
       .toThrow(AgentRuntimeEffectStoreError);
     expect(readAgentRuntimeEffectStatus(rotated.repoRoot, wake.status!.intent.effect_id).current.state).toBe('intent_persisted');
@@ -533,7 +532,7 @@ describe('issue #281 durable wake store', () => {
     const downgraded = fixture();
     record(downgraded, emptyOffers(downgraded), '2026-09-03T10:03:00.000Z');
     const second = record(downgraded, offers(downgraded), '2026-09-03T10:04:00.000Z');
-    capability(downgraded.repoRoot, 'codex-app-thread', 'unavailable');
+    capability(downgraded.repoRoot, 'herdr-cli-agent', 'unavailable');
     expect(() => startAgentRuntimeEffect({ repo_root: downgraded.repoRoot, effect_id: second.status!.intent.effect_id, started_at: '2026-09-03T10:05:00.000Z', env: downgraded.env }))
       .toThrow(AgentRuntimeEffectStoreError);
     expect(readAgentRuntimeEffectStatus(downgraded.repoRoot, second.status!.intent.effect_id).current.state).toBe('intent_persisted');
@@ -580,7 +579,7 @@ describe('issue #281 controller-step receipt is the only wake success evidence',
     const { wake } = started(fx);
     const observed = observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: 0, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: 0, process_signal: null },
       observed_at: '2026-09-03T10:05:00.000Z', receipt_wait_exhausted: true,
     });
     expect(observed.current.state).toBe('reconciliation_required');
@@ -605,7 +604,7 @@ describe('issue #281 controller-step receipt is the only wake success evidence',
     });
     const observed = observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
       observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
     });
     expect(observed.current.state).toBe('observed_success');
@@ -632,7 +631,7 @@ describe('issue #281 controller-step receipt is the only wake success evidence',
     });
     const observed = observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
       observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
     });
     expect(observed.current.state).toBe('observed_success');
@@ -672,14 +671,6 @@ describe('issue #281 adapters invoke exactly one bounded controller step', () =>
     return startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env }).action!;
   }
 
-  test('the Codex App thread adapter invokes one bounded step carrying only the wake control reference', () => {
-    const fx = fixture('codex-app-thread');
-    const action = wakeAction(fx);
-    const calls: unknown[] = [];
-    const observation = executeCodexAppThreadAction(action, (input) => { calls.push(input); return { accepted: true }; });
-    expect(observation).toMatchObject({ adapter_kind: 'codex-app-thread', outcome: 'accepted' });
-    expect(calls).toEqual([{ host_id: 'local', thread_id: 'endpoint-1111', operation: 'wake_for_offer', control_ref: action.control_ref }]);
-  });
 
   test('the herdr adapter sends exactly one bounded wake control reference and never a command', () => {
     const fx = fixture('herdr-cli-agent');
@@ -693,13 +684,11 @@ describe('issue #281 adapters invoke exactly one bounded controller step', () =>
     expect(calls).toEqual([['herdr', '--session', 'rh-test', 'agent', 'prompt', 'bound-agent', action.control_ref]]);
   });
 
-  test('both adapters declare the same operation contract and report unsupported for anything else', () => {
-    expect([...CODEX_APP_THREAD_OPERATIONS]).toEqual(['notify_inbox', 'wake_for_offer']);
+  test('Herdr declares the bounded operation contract and report unsupported for anything else', () => {
     expect([...HERDR_CLI_AGENT_OPERATIONS]).toEqual(['notify_inbox', 'wake_for_offer']);
-    const fx = fixture('codex-app-thread');
+    const fx = fixture('herdr-cli-agent');
     const action = wakeAction(fx);
     const foreign = { ...action, operation: 'stop_agent' } as unknown as typeof action;
-    expect(() => executeCodexAppThreadAction(foreign, () => { throw new Error('must not run'); })).toThrow();
     expect(() => executeHerdrCliAgentAction(foreign as never, () => ({ session: 'rh-test', agentName: 'bound-agent' }), () => { throw new Error('must not run'); })).toThrow();
   });
 });
@@ -711,7 +700,7 @@ describe('issue #281 end-to-end idle to wake to re-read', () => {
     const document = offers(fx);
     const wake = record(fx, document, '2026-09-03T10:04:00.000Z');
     const start = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env });
-    executeCodexAppThreadAction(start.action!, () => ({ accepted: true }));
+    executeHerdrCliAgentAction(start.action!, () => ({session:'rh-test',agentName:'bound-agent'}), () => ({pid:1,status:0,signal:null,stdout:Buffer.from(JSON.stringify({id:'fixture',result:{type:'agent_prompted',agent:{name:'bound-agent'}}})),stderr:Buffer.alloc(0),output:[]}));
 
     let acquisitions = 0;
     const current = document.offers[0]!;
@@ -741,7 +730,7 @@ describe('issue #281 end-to-end idle to wake to re-read', () => {
     });
     const observed = observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
       observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
     });
     expect(observed.current.state).toBe('observed_success');
@@ -783,7 +772,7 @@ describe('issue #281 end-to-end idle to wake to re-read', () => {
     });
     expect(observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
       observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
     }).current.state).toBe('observed_success');
   });
@@ -804,7 +793,7 @@ describe('issue #281 wake state is observational in the Engineering board', () =
     });
     observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
       observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
     });
     const delivered = collectEngineeringBoard({ repo_root: fx.repoRoot, env: fx.env });
@@ -834,7 +823,7 @@ describe('issue #281 the offers document is proved before anything is derived fr
     const fx = fixture();
     record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
     const collected = offers(fx);
-    bind(fx.repoRoot, 'codex-app-thread', bindingTwo);
+    bind(fx.repoRoot, 'herdr-cli-agent', bindingTwo);
     let failure: unknown;
     try { record(fx, collected, '2026-09-03T10:04:00.000Z'); } catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(AgentRuntimeEffectStoreError);
@@ -846,7 +835,7 @@ describe('issue #281 the offers document is proved before anything is derived fr
     const fx = fixture();
     record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
     const staleGeneration = fx.bindingGeneration;
-    bind(fx.repoRoot, 'codex-app-thread', bindingTwo);
+    bind(fx.repoRoot, 'herdr-cli-agent', bindingTwo);
     const rotated = { ...fx, bindingId: bindingTwo, bindingGeneration: staleGeneration + 1 } as Fixture;
 
     let failure: unknown;
@@ -1003,7 +992,7 @@ describe('issue #281 crash boundaries replay without stranding a wake', () => {
     expect(recordAgentRuntimeControllerStep(receiptInput).effect_id).toBe(wake.status!.intent.effect_id);
     expect(observeAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
-      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
       observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
     }).current.state).toBe('observed_success');
   });
@@ -1039,7 +1028,7 @@ describe('issue #281 fences that commit after the check still refuse the Host ac
         // Still fully supported, but a different observation: a conflict with
         // another writer, never a Host that dropped the operation.
         recordAgentRuntimeCapability(fx.repoRoot, {
-          adapter_kind: 'codex-app-thread', host_id: 'local',
+          adapter_kind: 'herdr-cli-agent', host_id: 'local',
           operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
           evidence_refs: [{ ref: 'second-canary', sha256: digest }], observed_at: '2026-09-03T10:04:11.000Z',
         });
@@ -1058,7 +1047,7 @@ describe('issue #281 fences that commit after the check still refuse the Host ac
     const started = startAgentRuntimeEffect({
       repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env,
       crash_hook: (boundary) => {
-        if (boundary === 'after_current_fsync' && !armed) { armed = true; bind(fx.repoRoot, 'codex-app-thread', bindingTwo); }
+        if (boundary === 'after_current_fsync' && !armed) { armed = true; bind(fx.repoRoot, 'herdr-cli-agent', bindingTwo); }
       },
     });
     expect(started.action).toBeNull();
@@ -1070,11 +1059,11 @@ describe('issue #281 pre-upgrade capability observations fail closed as unreadab
   test('a capability file without wake_for_offer reads as agent_runtime_effect_unreadable', () => {
     const fx = fixture();
     const legacy = {
-      protocol: 2, kind: 'repo-harness-agent-runtime-capability-observation', adapter_kind: 'codex-app-thread',
+      protocol: 2, kind: 'repo-harness-agent-runtime-capability-observation', adapter_kind: 'herdr-cli-agent',
       host_id: 'local', operations: { notify_inbox: 'supported' }, evidence_refs: [],
       observed_at: '2026-09-03T10:02:00.000Z', capability_sha256: `sha256:${'7'.repeat(64)}`,
     };
-    const key = createHash('sha256').update(`codex-app-thread\0local`).digest('hex');
+    const key = createHash('sha256').update(`herdr-cli-agent\0local`).digest('hex');
     const target = join(resolveGitCommonDirectory(fx.repoRoot), 'repo-harness/agent-runtime-effects/v2/capabilities', `${key}.json`);
     writeFileSync(target, JSON.stringify(legacy));
     let failure: unknown;
@@ -1085,7 +1074,7 @@ describe('issue #281 pre-upgrade capability observations fail closed as unreadab
 
   test('a re-recorded capability observation carries both operations and is canonical', () => {
     const fx = fixture();
-    const observed = capability(fx.repoRoot, 'codex-app-thread');
+    const observed = capability(fx.repoRoot, 'herdr-cli-agent');
     expect(observed.operations).toEqual({ notify_inbox: 'supported', wake_for_offer: 'supported' });
     expect(canonicalAgentRuntimeCapabilityBytes(observed)).toContain('wake_for_offer');
   });

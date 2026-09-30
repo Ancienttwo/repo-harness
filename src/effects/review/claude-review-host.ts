@@ -4,12 +4,15 @@ import { join, relative } from 'path';
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { createInterface } from 'readline';
 import { CLAUDE_REVIEW_MAX_ROUNDS, CLAUDE_REVIEW_SCHEMA, CLAUDE_REVIEW_TIMEOUT_MS, reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewRequest } from '../../core/review/claude-review';
-import { processIdentity, readReviewJson, reviewSessionLocation, reviewHostIdentity, writeReviewJson, type ReviewProcesses, type ReviewSession } from './claude-review-session';
+import { reviewEndpoint, reviewSessionLocation, reviewHostIdentity, type ReviewProcesses, type ReviewSession } from './claude-review-session';
+import { beginSessionRound, captureTaskPane, harnessCapabilities, processIdentity, readSessionArtifact, saveSessionRoundResult, signalCreatedProcess, writeSessionArtifact } from '../terminal/task-session';
+import { taskRepository } from '../terminal/task-worktree';
+import { herdrCommand, herdrMutation } from '../terminal/herdr';
 
 /** One host owns one child. Requests/results are transport evidence, never task or acceptance authority. */
 export async function runClaudeReviewHost(directory: string): Promise<void> {
   const dir = realpathSync(directory);
-  const session = readReviewJson<ReviewSession>(join(dir, 'session.json'));
+  const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
   if (reviewSessionLocation(session.repo_root, session.contract_file).dir !== dir || existsSync(join(dir, 'processes.json'))) {
     throw new Error('claude_review_host_identity_mismatch');
   }
@@ -22,14 +25,14 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
   try {
     if (existsSync(join(dir, 'close.request.json')) || existsSync(join(dir, 'closed.json'))) return;
     if (existsSync(join(dir, 'spawn-intent.json'))) throw new Error('claude_review_startup_already_attempted');
-    if (session.protocol !== 2) throw new Error('claude_review_session_identity_mismatch');
+    if (session.protocol !== 3) throw new Error('claude_review_session_identity_mismatch');
     const pane = process.env.HERDR_PANE_ID;
     if (!pane || process.env.HERDR_ENV !== '1') throw new Error('claude_review_host_requires_herdr');
     const identity = reviewHostIdentity(session, pane);
     if (identity.host !== processIdentity(process.pid)) throw new Error('claude_review_host_pane_mismatch');
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    writeReviewJson(join(dir, 'spawn-intent.json'), { session_id: session.session_id });
+    writeSessionArtifact(join(dir, 'spawn-intent.json'), { session_id: session.session_id });
     try { child = spawn(session.provider_bin, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--session-id', session.session_id, '--no-session-persistence', '--model', 'fable',
       '--tools', 'Read,Grep,Glob', '--allowedTools', 'Read,Grep,Glob', '--permission-mode', 'dontAsk',
@@ -37,18 +40,38 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       '--settings', '{"disableAllHooks":true}', '--disable-slash-commands', '--no-chrome', '--json-schema', JSON.stringify(CLAUDE_REVIEW_SCHEMA)],
     { cwd: session.repo_root, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (error) {
-      writeReviewJson(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
+      writeSessionArtifact(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
       throw error;
     }
     if (!child.pid) {
       // Failed spawn emits error asynchronously even though no process was created.
       child.once('error', () => {});
-      writeReviewJson(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
+      writeSessionArtifact(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
       throw new Error('claude_review_spawn_failed');
     }
-    processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
-      server: identity.server, pane };
-    writeReviewJson(join(dir, 'processes.json'), processes);
+    const provider = { pid: child.pid, identity: processIdentity(child.pid),
+      ownership: { disposition: 'created' as const, intent_id: session.session_id } };
+    try {
+      const endpoint = reviewEndpoint(session);
+      const name = `review-${session.session_id.replaceAll('-', '').slice(0, 20)}`;
+      herdrMutation(herdrCommand(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', 'claude', '--state', 'idle', '--seq', '1']));
+      herdrMutation(herdrCommand(endpoint, ['agent', 'rename', pane, name]));
+      const proof = captureTaskPane(endpoint, pane, name, provider,
+        provider.ownership, { pid: process.pid, identity: processIdentity(process.pid) });
+      processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
+        server: identity.server, pane, binding: { protocol: 2, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
+          harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof } };
+      writeSessionArtifact(join(dir, 'processes.json'), processes);
+    } catch (error) {
+      // Setup may fail before a complete binding can be published. Keep the
+      // startup lock until this creator-proven detached group has exited.
+      signalCreatedProcess(provider, 'SIGKILL', true);
+      const deadline = Date.now() + 5000;
+      while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await Bun.sleep(10);
+      if (child.exitCode === null && child.signalCode === null) throw new Error('claude_review_startup_cleanup_incomplete');
+      writeSessionArtifact(join(dir, 'startup-no-child.json'), { session_id: session.session_id });
+      throw error;
+    }
   } finally { startup.release(); }
   console.log(`Claude reviewer | session=${session.session_id} pid=${child.pid} contract=${session.contract_file}`);
   console.log('Waiting for a review round. This pane shows streamed activity and structured findings.');
@@ -58,10 +81,13 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
   let closing = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let outputBytes = 0;
+  let lifecycleSequence = 1;
+  const report = (state: 'working' | 'idle' | 'blocked') => herdrMutation(herdrCommand(reviewEndpoint(session), ['pane','report-agent',processes.pane,'--source','repo-harness','--agent','claude','--state',state,'--seq',String(++lifecycleSequence)]));
   const fail = (error: unknown) => {
     interrupted = true;
     clearTimeout(timer);
-    if (!existsSync(join(dir, 'failure.json'))) writeReviewJson(join(dir, 'failure.json'), { error: String(error), round: active?.round ?? null });
+    if (!existsSync(join(dir, 'failure.json'))) writeSessionArtifact(join(dir, 'failure.json'), { error: String(error), round: active?.round ?? null });
+    try { report('blocked'); } catch { /* Preserve interrupted evidence if observation is unavailable. */ }
     console.error(`INTERRUPTED: ${String(error)}. Result not accepted; use status/cancel.`);
   };
   const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
@@ -92,10 +118,11 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       if (!active) throw new Error('claude_review_unexpected_result');
       if (processIdentity(child.pid!) !== processes.child) throw new Error('claude_review_child_identity_lost');
       const output = validateClaudeReviewResult(event, active);
-      writeReviewJson(join(dir, `result-${active.round}.json`), event);
+      saveSessionRoundResult(dir, active.round, event);
       clearTimeout(timer);
       completed = active.round;
       active = null;
+      report('idle');
       console.log(`ROUND ${completed} ${output.verdict}: ${output.summary}`);
       for (const finding of output.findings) console.log(`[${finding.severity}/${finding.status}] ${finding.id}: ${finding.message}`);
       console.log('Round saved. Waiting for host acceptance and the next repair round or explicit close.');
@@ -108,17 +135,17 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
     let termination = 'stdin-eof';
     if (await Promise.race([exitPromise.then(() => true), Bun.sleep(4000).then(() => false)]) === false) {
       if (processIdentity(child.pid!) !== processes.child) throw new Error('claude_review_cleanup_child_identity_lost');
-      process.kill(-child.pid!, 'SIGTERM');
+      signalCreatedProcess(processes.binding.provider, 'SIGTERM', true);
       termination = 'owned-group-sigterm';
     }
     if (await Promise.race([exitPromise.then(() => true), Bun.sleep(4000).then(() => false)]) === false) {
       if (processIdentity(child.pid!) !== processes.child) throw new Error('claude_review_cleanup_child_identity_lost');
-      process.kill(-child.pid!, 'SIGKILL');
+      signalCreatedProcess(processes.binding.provider, 'SIGKILL', true);
       termination = 'owned-group-sigkill';
     }
     const exit = await exitPromise;
-    writeReviewJson(join(dir, 'closed.json'), { session_id: session.session_id, completed_rounds: completed,
-      termination, exit, cancelled: readReviewJson<{ cancel: boolean }>(join(dir, 'close.request.json')).cancel });
+    writeSessionArtifact(join(dir, 'closed.json'), { session_id: session.session_id, completed_rounds: completed,
+      termination, exit, cancelled: readSessionArtifact<{ cancel: boolean }>(join(dir, 'close.request.json')).cancel });
     console.log('Owned provider exited. Closing this host/pane.');
     process.exit(0);
   }
@@ -126,7 +153,7 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
     if (closing) return;
     try {
       if (existsSync(join(dir, 'close.request.json'))) {
-        const request = readReviewJson<{ session_id: string; cancel: boolean }>(join(dir, 'close.request.json'));
+        const request = readSessionArtifact<{ session_id: string; cancel: boolean }>(join(dir, 'close.request.json'));
         if (request.session_id !== session.session_id || typeof request.cancel !== 'boolean') throw new Error('claude_review_invalid_close_request');
         void shutdown().catch(fail);
         return;
@@ -135,7 +162,7 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       const next = completed + 1;
       const path = join(dir, `request-${next}.json`);
       if (!existsSync(path)) return;
-      const request = readReviewJson<ClaudeReviewRequest>(path);
+      const request = readSessionArtifact<ClaudeReviewRequest>(path);
       if (request.round !== next || request.session_id !== session.session_id || typeof request.prompt !== 'string'
         || request.context_sha256 !== reviewContextDigest(request.context) || request.context.contract_file !== session.contract_file
         || request.context.contract_sha256 !== session.contract_sha256 || request.context.goal_sha256 !== session.goal_sha256
@@ -143,8 +170,9 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
         throw new Error('claude_review_invalid_request');
       }
       // Publishing started before writing stdin makes interrupted delivery observable and non-replayable.
-      writeReviewJson(join(dir, `started-${next}.json`), { round_id: request.round_id, session_id: session.session_id, child: processes.child });
+      beginSessionRound(dir, next, { round_id: request.round_id, session_id: session.session_id, child: processes.child });
       active = request;
+      report('working');
       outputBytes = 0;
       console.log(`ROUND ${next} submitted: ${request.context.subject_sha256}`);
       child.stdin.write(JSON.stringify({ type: 'user', session_id: session.session_id, parent_tool_use_id: null,
@@ -159,7 +187,7 @@ if (import.meta.main) {
   if (!dir) throw new Error('claude_review_host_requires_state_directory');
   runClaudeReviewHost(dir).catch(error => {
     console.error(error);
-    if (!existsSync(join(dir, 'failure.json'))) writeReviewJson(join(dir, 'failure.json'), { error: String(error) });
+    if (!existsSync(join(dir, 'failure.json'))) writeSessionArtifact(join(dir, 'failure.json'), { error: String(error) });
     process.exit(1);
   });
 }

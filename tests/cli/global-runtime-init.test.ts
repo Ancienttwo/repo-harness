@@ -383,11 +383,7 @@ describe('install command global runtime bootstrap', () => {
       expect(runtimeStep.status).toBe('skipped');
       expect(runtimeStep.command?.[0]).toBe(process.execPath);
       expect(steps.find((step) => step.step === 'install repo-harness CLI')?.status).toBe('skipped');
-      expect(steps.find((step) => step.step === 'official Codex plugin')).toMatchObject({
-        status: 'ok',
-        detail: 'enabled codex@openai-codex version=1.0.6',
-        command: [join(fakeBin, 'claude'), 'plugin', 'list', '--json'],
-      });
+      expect(steps.find((step) => step.step === 'official Codex plugin')).toBeUndefined();
       expect(existsSync(bunLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

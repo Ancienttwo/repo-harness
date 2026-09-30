@@ -179,16 +179,16 @@ describe('typed UserPromptSubmit.default handler', () => {
     }
   }, 30_000);
 
-  test('protocol 2 Codex-host guidance records source=codex-plugin', () => {
+  test('protocol 2 Codex-host guidance records source=codex-review', () => {
     const repo = fixture({
       contract: true,
-      acceptancePolicy: '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
+      acceptancePolicy: '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
     });
     try {
       const { result } = invoke(repo.root, '/check', { env: { HOOK_HOST: 'codex' } });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Peer reviewer: Codex via repo-harness-cross-review');
-      expect(result.stdout).toContain('--reviewer "Codex" --source "codex-plugin"');
+      expect(result.stdout).toContain('--reviewer "Codex" --source "codex-review"');
     } finally {
       repo.cleanup();
     }

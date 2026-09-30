@@ -445,7 +445,7 @@ export function buildEngineerCommand(): Command {
     .description('Journal provider-neutral Agent Runtime effects; Host actions remain closed and receipt-proven');
   runtimeEffect
     .command('capability')
-    .requiredOption('--adapter-kind <kind>', 'codex-app-thread or herdr-cli-agent')
+    .requiredOption('--adapter-kind <kind>', 'herdr-cli-agent')
     .requiredOption('--host-id <id>', 'Exact host ID')
     .requiredOption('--operations-json <json>', 'Exact capability status per runtime operation')
     .requiredOption('--evidence-refs-json <json>', 'Bounded capability evidence references')
