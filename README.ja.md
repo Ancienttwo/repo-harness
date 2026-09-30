@@ -548,8 +548,8 @@ human workflow は次のとおりです。
 1. ChatGPT が MCP 経由で repo-harness の workflow ファイルを読みます。
 2. ChatGPT が `write_prd_from_idea` で PRD を書きます。
 3. ChatGPT が `write_checklist_sprint` で checklist Sprint を書きます。
-4. ChatGPT が `prepare_codex_goal_from_sprint` で `.ai/harness/handoff/codex-goal.md` を準備します。
-5. Codex が host-native な `/goal` prompt を実行し、完了した Sprint phase を順に stage します。
+4. ChatGPT が `prepare_task_goal_from_sprint` で `.ai/harness/handoff/task-goal.md` を準備します。
+5. タスク owner が生成された実行 prompt を明示的に指定した Herdr agent に送り、完了した Sprint phase を stage します。
 
 汎用的な repo reader/writer tools、snapshot と index の整合性、server
 profile、opt-in の dev runner については
@@ -611,8 +611,7 @@ Canonical な rule-owner package は `assets/skills/` と
 | `repo-harness-check` | workflow と release の checks、および deploy-readiness reference |
 | `repo-harness-ship` | 完了した worktree を検証し、branch を push し、PR を開きます |
 | `repo-harness-architecture` | harness 全体の refresh を伴わない architecture docs、drift request、diagram |
-| `repo-harness-cross-review` | 独立した外部 review。Claude host は直接 Codex を使い、Codex host は OpenAI 公式の `codex@openai-codex` plugin app-server runtime を使います |
-| `claude-plan` | Codex 側の provider skill：設計上の分岐点や高リスクな意思決定のための、独立した Claude plan mode consult。ユーザーが直接呼び出す entrypoint ではない |
+| `repo-harness-cross-review` | 独立した Codex advisory review；Claude acceptance は持続する Herdr domain reviewer を使用 |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup、bridge handoff。explicit setup 限定 |
 | `merge-gate`(external) | exact-candidate な final gate。repo-harness は merge-gate Skill を同梱しません — [external tooling](docs/reference-configs/external-tooling.md) を参照 |
 

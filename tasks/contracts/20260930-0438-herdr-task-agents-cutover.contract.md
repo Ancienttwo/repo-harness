@@ -17,13 +17,13 @@
 
 ## Goal
 
-GATE 第1轮 F1：把手工 Uninstall local MCP setup 纳入 chatgptGuideMarkdown 唯一生成器，然后 print-chatgpt-guide --write 重新生成 tracked 文档；保留卸载段落的全部语义。
+GATE 第1轮 F2：清除列明 operator docs/README/agent packet 注释的已退役名称与旧直连 MCP runner；删除 tracked codex-goal 旧产物。README 已先无冲突 rebase 到 708c9675。
 
 ## Scope
 
-- In scope: setup generator、generated guide、contract/review/notes。源码定位和 before/after 字节比较作为证据，复用既有 MCP CLI tests。
-- Out of scope: F2/F3（后续独立 commit），paused 路径、Claude domain、真实模型/mini/global install。
-- 已按要求无冲突 rebase 到 origin/main 708c9675；每个 F 独立 commit/canonical，随后 CHECKPOINT-4。
+- In scope: 指定 docs、paired AGENTS/CLAUDE、contract-run 注释与模板、五份 README、旧 handoff artifact；readme-dx 仅新增一条旧名 guard。
+- Out of scope: F3（下一 commit），policy.json/24份旧contracts/prd.md（H5），paused launch/Claude domain/真实模型/mini/global install。
+- F2 独立 commit/canonical，随后 F3 和 CHECKPOINT-4。
 
 ## Stop Conditions
 
@@ -68,11 +68,21 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - src/cli/mcp/setup.ts
-  - docs/repo-harness-chatgpt-mcp-setup.md
+  - docs/reference-configs/install-profiles.md
+  - docs/reference-configs/general-repo-mcp.md
+  - AGENTS.md
+  - CLAUDE.md
+  - scripts/contract-run.ts
+  - assets/templates/helpers/contract-run.ts
+  - .ai/harness/handoff/codex-goal.md
+  - README.md
+  - README.zh-CN.md
+  - README.ja.md
+  - README.fr.md
+  - README.es.md
+  - tests/readme-dx.test.ts
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
 ```
 
 ## Evidence Requirements
@@ -125,27 +135,27 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "gate1-F1-guide-parity",
+      "id": "gate1-F2-docs",
       "kind": "command",
-      "command": "bun -e 'import {readFileSync} from \"fs\"; import {chatgptGuideMarkdown} from \"./src/cli/mcp/setup\"; const g=chatgptGuideMarkdown(); if(readFileSync(\"docs/repo-harness-chatgpt-mcp-setup.md\",\"utf8\")!==g || !g.includes(\"## Uninstall local MCP setup\") || !g.includes(\"--services-stopped\")) throw new Error(\"guide projection or uninstall contract drift\");' ",
+      "command": "bun test tests/readme-dx.test.ts tests/workflow-contract.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Generated guide must byte-match single authoring source and preserve explicitly requested uninstall instructions.",
+      "necessity": "One new README old-name guard plus existing multilingual version/docs and anti-extras ownership tests.",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "gate1-F1-mcp-cli",
+      "id": "gate1-F2-agent-parity",
       "kind": "command",
-      "command": "bun test tests/cli/mcp.test.ts --timeout 60000",
+      "command": "cmp AGENTS.md CLAUDE.md",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Reuse existing CLI authoring/help/guarded goal coverage, no new test file or global mutation.",
+      "necessity": "Paired root agent guidance stays byte-identical; only task-goal document naming changes.",
       "inputs": {
         "env": []
       }

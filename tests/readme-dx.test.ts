@@ -252,3 +252,9 @@ describe("README DX contract", () => {
     expect(hits).toEqual([]);
   });
 });
+
+
+test("README languages do not advertise retired goal, plan skill or plugin names", () => {
+  const readmes=["README.md",...LOCALIZED_READMES].map(file=>readFileSync(join(ROOT,file),"utf8")).join("\n");
+  expect(readmes).not.toMatch(/prepare_codex_goal_from_sprint|write_codex_goal|codex-goal\.md|codex@openai-codex|claude-plan/);
+});

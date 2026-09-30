@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:c8f88860be390e9722285f621ce1564c3a0ca54e0568e0a9f4569b9f6e8e9730`
+> **Substantive Change SHA256**: `sha256:37144f066b736b338e4ce8c39f5dc9046807fa1c3531e45ae7be0d95aa6b5c26`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -232,3 +232,9 @@
 - Fetch/rebase onto origin/main 708c9675 completed without conflicts in the isolated cutover worktree. Pre-rebase ecffa685 is retained in codex/herdr-cutover-pre-708c9675 for evidence mapping. Primary checkout dirty/untracked surfaces untouched. Local physical node_modules refreshed with frozen lockfile and lifecycle scripts disabled; no user/global agent installation.
 - P1/P2: print-chatgpt-guide --write projects chatgptGuideMarkdown; tracked guide had diverged and carried a manual uninstall section from 1f1dad97 absent from the generator. P3: move that exact section into the existing generator, then regenerate through CLI. No second formatter or manual post-generation patch.
 - Uninstall section preserved byte-for-byte, SHA256 56bb988099befaeca065221bf4b77e555bb39b3626e2d8df3fab2ba6ad823a66. Generated guide now uses task tools/artifact and explicit Herdr runner. Canonical adds source/output byte parity plus uninstall contract checks, reuses existing MCP CLI coverage; no new test file. Review records GATE FAIL, not PASS.
+
+## GATE 第1轮 F2 — remaining human surfaces
+
+- Removed retired goal/plan/plugin names from five READMEs on rebased 708c9675, install profile docs, paired agent packet guidance and contract-run comments/template; fixed general MCP docs to explicit Herdr addressing with Result/observation cleanup semantics. Deleted the tracked obsolete codex-goal artifact; no alias or replacement tracked runtime cache.
+- Ownership check: sync-reference-configs.ts:42–43 explicitly permits extra docs-only install-profile files; assets/reference-configs/install-profiles.md does not exist. Edit the sole docs-only authority, do not introduce a second mirror/generator. AGENTS and CLAUDE remain byte-identical; contract-run executable behavior untouched.
+- Exactly one README test/assertion added across all five languages, failing on pre-fix content (F2-before-fix.txt), now green. Existing workflow packet parity/release docs checks reused. policy.json, 24 historical contracts and prd.md headless path remain H5, not expanded into this correction.
