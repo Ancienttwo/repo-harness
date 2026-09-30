@@ -168,7 +168,7 @@ export function publishCoordinationSignal(
   // the destination when it is a candidate area.
   const searchPaths = input.destination.kind === 'public' ? [publicPaths] : [publicPaths, paths];
 
-  const build = (createdAt: string): CoordinationSignalV1 => buildCoordinationSignal({
+  const fields = (createdAt: string) => ({
     signal_id: signalId,
     repository_id: repositoryId,
     actor,
@@ -190,7 +190,7 @@ export function publishCoordinationSignal(
    * otherwise identical republish is idempotent instead of a false conflict.
    */
   const reconcile = (existing: CoordinationSignalV1): PublishCoordinationSignalResult => {
-    const candidate = build(existing.created_at);
+    const candidate = buildCoordinationSignal(fields(existing.created_at));
     if (canonicalCoordinationSignalBytes(candidate) !== canonicalCoordinationSignalBytes(existing)) {
       throw new CollaborationError(
         'collaboration_conflict',
@@ -224,7 +224,7 @@ export function publishCoordinationSignal(
       const createdAt = input.recorded_time.kind === 'persisted_observation'
         ? input.recorded_time.observed_at
         : (input.now ?? (() => new Date().toISOString()))();
-      const signal = build(createdAt);
+      const signal = buildCoordinationSignal(fields(createdAt));
       const bytes = canonicalCoordinationSignalBytes(signal);
       const file = collaborationRecordPath(paths, signalId, 'signal_id');
       try {

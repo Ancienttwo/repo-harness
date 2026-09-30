@@ -71,7 +71,7 @@
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh"
   },
   "devDependencies": {
-    "@colbymchenry/codegraph": "1.5.0",
+    "@colbymchenry/codegraph": "1.6.1",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
@@ -89,8 +89,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "archctx": "0.6.0",
-    "archctx-contracts": "0.6.0",
+    "archctx": "0.6.1",
+    "archctx-contracts": "0.6.1",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }

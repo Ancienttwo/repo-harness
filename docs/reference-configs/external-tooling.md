@@ -517,7 +517,7 @@ Minimal manifest shape:
   "run_id": "20260629T023507Z-aibridge-screenshot",
   "provider": {
     "name": "aibridge",
-    "version": "1.5.0"
+    "version": "1.6.1"
   },
   "subject": {
     "task_type": "unity.ui",
@@ -609,7 +609,7 @@ diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ### CodeGraph
 
 ```bash
-bun add -g @colbymchenry/codegraph@1.5.0 && codegraph sync . && codegraph status .
+bun add -g @colbymchenry/codegraph@1.6.1 && codegraph sync . && codegraph status .
 ```
 
 ## Agent Fleet
