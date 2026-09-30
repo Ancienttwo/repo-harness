@@ -1019,6 +1019,30 @@ not converted into apply. Pending evidence remains content-bound local runtime
 state after completion; the final acceptance receipt is the resolution authority.
 The readback capability must be present in both the packaged CLI and its daemon;
 installing a new CLI alone does not upgrade a running daemon.
+
+Managed install/update also verifies `daemon status --json` through the same
+exact package-local CLI and compatible Node runtime after static capabilities.
+A running daemon must prove RPC and product-version compatibility; upstream
+`versionUnsupported` diagnostics (including a replaced entrypoint) fail the
+strict installed-runtime verifier with an explicit user-authorization reminder.
+Install/update reports daemon readiness as pending (`skipped`) separately from
+verified package installation, retaining the candidate so a daemon mismatch
+cannot trigger package rollback and strand newer hoisted dependencies.
+An upstream `staleConnection:true` response is unhealthy, not cleanly stopped. A stopped daemon needs no
+replacement and this check never starts it. Upstream status may recover stale
+control files; the check never upgrades the daemon or creates/clears indexes.
+
+Runtime failures with the typed `AC_RUNTIME_VERSION_UNSUPPORTED` code and
+`upgrade-archctx-runtime` action preserve the reminder beyond the ordinary
+300-character process-error preview, including projection/refactor callers.
+The Agent presents the reported discrepancy and asks for user authorization
+before running `daemon upgrade` through the same managed CLI and Node runtime.
+Explain that replacing a shared daemon interrupts other clients. After authorized
+replacement, verify daemon compatibility and inspect this repository's configured
+CodeGraph index. Request authorization to rebuild only when its authoritative
+status reports it missing or stale; verify readiness before retrying the blocked
+operation. CLI upgrade alone does not prove that an index needs rebuilding.
+Never delete the shared database or all repository indexes as recovery.
 If a candidate's exact reason set is only `verified-flow-proof-changed`, use
 `repo-harness architecture-projection reconcile --signal-id <sha256> --json`
 after refreshing the configured CodeGraph index. Reconciliation runs the same
