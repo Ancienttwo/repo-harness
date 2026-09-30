@@ -26,7 +26,7 @@ function fixture(): string {
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
-    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } },
+    agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   execFileSync('git', ['add', '.archcontext', 'agents/engineers'], { cwd: root });
   return root;
@@ -96,7 +96,7 @@ function graphFixture(): string {
   writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
     worktree_strategy: { merge_back: { target: 'main' } },
-    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } },
+    agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');
   execFileSync('git', ['add', '.'], { cwd: root });
@@ -193,7 +193,7 @@ describe('repo-harness engineer CLI', () => {
     const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
     const bindArgs = [
       'engineer', 'binding', 'bind', '--engineer-id', engineerId,
-      '--idempotency-key', 'cli-bind-1', '--provider', 'codex-app-thread',
+      '--idempotency-key', 'cli-bind-1', '--provider', 'herdr-cli-agent',
       '--provider-thread-id', 'thread-cli', '--host-id', 'local',
       '--expected-current-digest', 'null', '--expected-binding-generation', '0',
       '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision,
@@ -244,7 +244,7 @@ describe('repo-harness engineer CLI', () => {
 
     const observedCapability = run(root, [
       'engineer', 'runtime-effect', 'capability',
-      '--adapter-kind', 'codex-app-thread',
+      '--adapter-kind', 'herdr-cli-agent',
       '--host-id', 'local',
       '--operations-json', JSON.stringify({ notify_inbox: 'supported', wake_for_offer: 'supported' }),
       '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),

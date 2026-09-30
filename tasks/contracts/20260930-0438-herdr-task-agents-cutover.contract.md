@@ -17,19 +17,19 @@
 
 ## Goal
 
-H3 第二切片：MCP managed-workspace cleanup 在现有 dirty/merged/target fence 后、Git deletion 前复用唯一 Herdr task-worktree cleanup。异步等待 runtime 关闭，不提前删除 checkout/branch/state；保留 public error diagnostics 和现有 exact-ref deletion fence。H3 roles/delegation/campaign/task-goal consumers 后续继续。
+H3 第三切片：只保留 Herdr Agent Runtime endpoint adapter，删除 codex-app-thread backend/enum/config authority；通知/wake 的 business receipt、Binding/claim/capability/admission/budget fence 不变。新 reader 拒绝 retired backend，不保留 alias 或双 authority。
 
 ## Scope
 
-- In scope: 显式 MCP workspace cleanup、CLI consumer、既有 MCP/真实 Herdr composition coverage 与 workflow artifacts。
-- Out of scope in this commit: 后续 role/admission/launch 路由、H4/H5、mini、全局安装和真实模型。
-- 同工作包有序 commit，不声称 H3 已完成；H3 完成才发 [REQ-5]，PASS 后进入 H4。
+- In scope: 下列 exact runtime schema/feature/principal/adoption default/UI/MCP CLI contract 和对应既有 tests。
+- Out of scope in this commit: 后续 logical roles/delegation/campaign/task-goal launch；H4/H5/mini/真实模型。
+- 同一 cutover work-package 的内部有序 commit；H3 完成后 [REQ-5]，PASS 后才 H4。
 
 ## Stop Conditions
 
-- runtime pending 必须保留 Git checkout/branch/MCP state；不允许 attached 清理或 force-remove。
-- 不碰主 checkout 脏文件、w8:p1、mini；不做真实模型调用。
-- 扩展 source scope 前更新 allowed_paths 和 Verification Plan。
+- 不保留 retired backend 的执行/reader/parser；历史 archive 与负例不是产品兼容路径。
+- 不改用户 main 脏文件、w8:p1、mini，不做真实模型或全局安装。
+- 新旧 runtime config 非混读：旧 config 明确拒绝，source/default/local projection 同时单向修改。
 
 ## Falsifier
 
@@ -72,11 +72,27 @@ allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - src/cli/mcp/coding-workspaces.ts
-  - src/cli/commands/mcp.ts
-  - tests/herdr-task-lifecycle.test.ts
-  - tests/cli/mcp-coding-tools.test.ts
   - docs/researches/20260930-herdr-task-runtime-proof.md
+  - .ai/harness/policy.json
+  - src/core/engineers/agent-runtime-effect.ts
+  - src/core/engineers/principal-claim.ts
+  - src/core/adoption/standard-plan.ts
+  - src/effects/engineers/principal.ts
+  - src/effects/engineers/agent-runtime-effect-store.ts
+  - src/effects/engineers/agent-runtime-feature.ts
+  - src/effects/engineers/agent-runtime-adapters/codex-app-thread.ts
+  - src/cli/commands/engineer.ts
+  - src/cli/mcp/engineer-tools.ts
+  - src/operator-web/types.ts
+  - tests/unit/r1-agent-runtime-adapters.test.ts
+  - tests/unit/r1-provider-neutral-agent-runtime.test.ts
+  - tests/unit/issue-281-task-offer-wake.test.ts
+  - tests/effects/task-reply.test.ts
+  - tests/subagent-handler.test.ts
+  - tests/cli/mcp-engineer-tools.test.ts
+  - tests/cli/adoption-plan.test.ts
+  - tests/cli/mcp-http.test.ts
+  - tests/cli/engineer.test.ts
 ```
 
 ## Evidence Requirements
@@ -130,14 +146,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-mcp-cleanup",
+      "id": "h3-herdr-runtime-only",
       "kind": "command",
-      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-coding-tools.test.ts --timeout 60000",
+      "command": "bun test tests/unit/r1-agent-runtime-adapters.test.ts tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/issue-281-task-offer-wake.test.ts tests/effects/task-reply.test.ts tests/subagent-handler.test.ts tests/cli/mcp-engineer-tools.test.ts tests/cli/adoption-plan.test.ts tests/cli/mcp-http.test.ts tests/cli/engineer.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Actual MCP Git cleanup must wait for created runtime and reject attached workspace without deleting checkout/branch/state; retain target, dirty and squash safety.",
+      "necessity": "Retired backend rejection and preserved business fences across principal/runtime/CLI/MCP/adoption/hooks; named existing boundaries, no full suite.",
       "inputs": {
         "env": []
       }

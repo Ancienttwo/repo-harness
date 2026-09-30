@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:49f531b1f9a7b60d4f8889a6871a95dc5676d6876d379b1d043bc6fa7209f120`
+> **Substantive Change SHA256**: `sha256:8125ea23562224726920bcfd5e89139c6a2851c69c24a1e7e03e03185368c098`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -139,3 +139,10 @@
 - H3 roles, delegation, campaign, native backend and MCP task-goal routing remain active-plan work; this consumer slice does not mark H3 complete.
 
 - New async boundary also requires fresh MCP metadata: re-read the current registry, prove the same workspace identity, preserve concurrent new workspace rows. Existing squash cleanup case reproduced losing the added row before correction; no second registry implementation or authority.
+
+
+## H3 Herdr-only runtime endpoint
+
+- P1: Agent Runtime effect store remains the business owner for notify_inbox/wake_for_offer, exact Binding/claim/capability/control-ref receipt joins and monotonic observation state. Herdr is its only endpoint transport; provider-specific model protocols inside a Herdr task host are not an alternative endpoint backend.
+- P2/P3: closed adapter schema/feature policy/principal/CLI/MCP/UI/default projection now accept only herdr-cli-agent; codex-app-thread source removed. Legacy backend config/evidence is rejected without translation. Former business tests run on Herdr; tests dedicated solely to the retired transport were deleted, not kept as empty compatibility coverage.
+- This source-only candidate changes neither user's installed runtime nor user-owned pane/process. H5 still owns full installed policy/schema/template drain/projection cutover. H3 logical roles/delegation/campaign/task-goal work remains open.

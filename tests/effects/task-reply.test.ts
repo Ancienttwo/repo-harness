@@ -56,7 +56,7 @@ function fixture(parentBody = 'Inspect existing work before answering.', deep = 
   git(root, 'add', '.'); git(root, 'commit', '-qm', 'fixture');
   setRepoHarnessAccessMode(root, 'read_write', { env });
   const profile = loadEngineerProfile(root, ENGINEER);
-  bindEngineer(root, { engineer_id: ENGINEER, idempotency_key: 'bind', provider: 'codex-app-thread', provider_thread_id: 'test-thread', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision, binding_id: () => id(1), now: () => AT });
+  bindEngineer(root, { engineer_id: ENGINEER, idempotency_key: 'bind', provider: 'herdr-cli-agent', provider_thread_id: 'test-thread', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision, binding_id: () => id(1), now: () => AT });
   const binding = readEngineerBindingStatus(root, ENGINEER, profile.engineer_contract_revision).binding!;
   enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(root), authorization_id: id(2), binding, env, created_at: AT });
   const proof = readCanonicalTaskPlanProof(root, { sprintPath: SPRINT, taskCell: TASK });

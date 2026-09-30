@@ -236,7 +236,7 @@ describe('typed subagent hook handlers', () => {
         delegation: {
           max_agents: 4,
           max_depth: 2,
-          preferred_runners: ['codex-app-thread', 'codex-exec', 'main-thread'],
+          preferred_runners: ['herdr-cli-agent', 'codex-exec', 'main-thread'],
           fallback_runner: 'main-thread',
         },
       }));

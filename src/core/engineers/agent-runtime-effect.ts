@@ -26,7 +26,7 @@ const TASK_DIGEST = /^[0-9a-f]{64}$/u;
 const REPOSITORY_ID = /^repo_[0-9a-f]{16}$/u;
 const WORK_PACKAGE_ID = /^[a-z0-9][a-z0-9-]{0,127}$/u;
 
-export type AgentRuntimeAdapterKind = 'codex-app-thread' | 'herdr-cli-agent';
+export type AgentRuntimeAdapterKind = 'herdr-cli-agent';
 export type AgentRuntimeOperation = 'notify_inbox' | 'wake_for_offer';
 export const AGENT_RUNTIME_OPERATIONS: readonly AgentRuntimeOperation[] = Object.freeze(['notify_inbox', 'wake_for_offer']);
 /** Closed wake causes. `retry_due` belongs to the attempt-receipt authority and
@@ -242,7 +242,7 @@ function taskDigest(value: unknown, field: string): string { const text = messag
 function uuid(value: unknown, field: string): string { const text = messageRequiredString(value, field, invalid); assertMessageUuid(text, field, invalid); return text; }
 function integer(value: unknown, field: string, minimum = 1): number { assertMessageInteger(value, field, minimum, invalid); return value as number; }
 function adapterKind(value: unknown): AgentRuntimeAdapterKind {
-  if (value !== 'codex-app-thread' && value !== 'herdr-cli-agent') invalid('adapter_kind is invalid'); return value;
+  if (value !== 'herdr-cli-agent') invalid('adapter_kind is invalid'); return value;
 }
 function capabilityStatus(value: unknown): AgentRuntimeCapabilityStatus {
   if (value !== 'supported' && value !== 'unsupported' && value !== 'unavailable' && value !== 'unverifiable') invalid('capability status is invalid'); return value;
