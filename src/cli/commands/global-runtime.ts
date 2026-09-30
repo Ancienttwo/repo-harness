@@ -481,7 +481,6 @@ function readManagedRuntime(
       },
     };
     archctxCapabilities(cwd, providerOptions);
-    verifyArchctxDaemonRuntime(cwd, providerOptions);
   } catch (error) {
     return { status: "runtime-mismatch", detail: error instanceof Error ? error.message : String(error) };
   }
@@ -529,6 +528,22 @@ function reconcileManagedRuntime(
   };
 }
 
+function inspectManagedDaemonRuntime(cwd: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  try {
+    const consumerRoot = bunGlobalPackageRoot(env);
+    if (!consumerRoot) throw new Error('unable to resolve Bun global package root');
+    const requiredVersion = recordValue(readPackageManifest(consumerRoot).dependencies).archctx;
+    if (typeof requiredVersion !== 'string') throw new Error('managed archctx dependency version is unavailable');
+    verifyArchctxDaemonRuntime(cwd, {
+      consumerRoot, env,
+      policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion, timeoutMs: 10_000 },
+    });
+    return { step: 'check shared ArchContext daemon', status: 'ok', detail: 'daemon is compatible or cleanly stopped' };
+  } catch (error) {
+    return { step: 'check shared ArchContext daemon', status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function verifyInstalledManagedRuntime(
   opts: Pick<GlobalRuntimeOptions, 'sourceRoot' | 'cwd' | 'env'> = {},
 ): GlobalRuntimeStep {
@@ -540,7 +555,10 @@ export function verifyInstalledManagedRuntime(
   const cwd = opts.cwd ?? process.cwd();
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
-  return reconcileManagedRuntime(cwd, bunExecutable, env, `repo-harness@${version}`);
+  const packages = reconcileManagedRuntime(cwd, bunExecutable, env, `repo-harness@${version}`);
+  if (packages.status !== 'ok') return packages;
+  const daemon = inspectManagedDaemonRuntime(cwd, env);
+  return daemon.status === 'failed' ? { ...packages, status: 'failed', detail: daemon.detail } : packages;
 }
 
 function isBunGlobalPackageSource(sourceRoot: string, env?: NodeJS.ProcessEnv): boolean {
@@ -1442,6 +1460,16 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
     if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
+  }
+
+  if (updateMode && opts.installSpec) {
+    const daemon = inspectManagedDaemonRuntime(cwd, env);
+    // Package installation succeeded. Shared-daemon maintenance must not roll
+    // that candidate back and strand hoisted dependencies at a newer version.
+    // The strict installed-runtime verifier above still fails on this state.
+    steps.push(daemon.status === 'failed'
+      ? { ...daemon, status: 'skipped', detail: `Daemon readiness pending; verified packages retained. ${daemon.detail}` }
+      : daemon);
   }
 
   // The updater that installed the package has already loaded predecessor

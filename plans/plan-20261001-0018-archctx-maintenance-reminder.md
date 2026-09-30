@@ -130,3 +130,5 @@ Final evidence is frozen through verify-sprint preparation, followed by typed
 acceptance and contract-worktree finish into main.
 
 > **Substantive Change SHA256**: `sha256:9ce4ef36aefc46d8904c1aa83042a01ca32cc3b7cd904cb0fb582a36b53405f3`
+
+> **Substantive Change SHA256**: `sha256:0ab123a469c0a3a66a9440a7dbe9f1cdc96e3bc087a251c97da4fd5c89814ef6`

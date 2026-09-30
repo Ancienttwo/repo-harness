@@ -270,6 +270,9 @@ export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxPro
     throw new Error('archctx daemon status returned an invalid envelope');
   }
   const data = value.data;
+  if (data.staleConnection === true) {
+    throw new Error('archctx daemon status reports an unhealthy connection; runtime compatibility is unverified. Ask the user before daemon repair; do not automatically restart or clear shared state.');
+  }
   if (data.versionUnsupported !== undefined) {
     const issue = data.versionUnsupported;
     if (!isRecord(issue) || typeof issue.reason !== 'string' || typeof issue.expected !== 'string' || typeof issue.received !== 'string' || issue.action !== 'upgrade-archctx-runtime' || issue.command !== 'archctx daemon upgrade') {

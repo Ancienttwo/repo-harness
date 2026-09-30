@@ -64,7 +64,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Acceptance Policy
 
 ```json
-{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}
+{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}
 ```
 
 ## Allowed Paths
@@ -79,6 +79,7 @@ allowed_paths:
   - assets/reference-configs/external-tooling.md
   - docs/researches/20261001-archctx-maintenance-reminder.md
   - docs/architecture/.projection-manifest.json
+  - docs/architecture/modules/runtime-harness/agent-runtime-effects.md
   - plans/
   - tasks/
 ```
@@ -312,5 +313,5 @@ baseline and named current delta checks; never infer it from paths or command te
 
 ## Rollback Point
 
-- Commit / checkpoint: base e97684f6.
+- Commit / checkpoint: base dc77b3c6.
 - Revert strategy: revert only this bounded change.

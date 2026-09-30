@@ -1273,6 +1273,7 @@ describe('ArchContext maintenance reminders', () => {
     expect(() => check({ running: true, rpcVersionCompatible: true, productVersionCompatible: true })).not.toThrow();
     expect(() => check({ running: true })).toThrow('did not prove runtime compatibility');
     expect(() => check({ running: 'true' })).toThrow('invalid envelope');
+    expect(() => check({ running: false, staleConnection: true })).toThrow('unhealthy connection');
     expect(() => check({ ...incompatible.data, versionUnsupported: { ...incompatible.data.versionUnsupported, action: 'unknown' } }))
       .toThrow('invalid versionUnsupported diagnostic');
   });

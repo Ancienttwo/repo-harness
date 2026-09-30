@@ -2198,3 +2198,40 @@ test('managed runtime readback reports stale shared daemon after a successful pa
     expect(readFileSync(nodePath, 'utf8')).toContain('"received":"0.2.3"');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
+
+
+test('daemon maintenance preserves the verified candidate and hoisted dependencies in an update transaction', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-daemon-maintenance-transaction-'));
+  try {
+    const home = join(tmp, 'home');
+    const fakeBin = join(tmp, 'bin');
+    const source = join(tmp, 'source');
+    mkdirSync(fakeBin, { recursive: true });
+    mkdirSync(source);
+    writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+    setupManagedRuntimeReadback(home, fakeBin, '1.0.0');
+    const globalModules = join(home, '.bun/install/global/node_modules');
+    const harnessManifest = join(globalModules, 'repo-harness/package.json');
+    writeFileSync(harnessManifest, JSON.stringify({ name: 'repo-harness', version: '1.0.0', dependencies: { archctx: '0.2.3', 'archctx-contracts': '0.2.3' } }));
+    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, profile: 'minimal' as const,
+      installCli: false, installSpec: 'repo-harness@9.9.9', updateMode: true,
+      syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+      env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath } };
+    const result = runTransactionalRuntimeRefresh(options, (transactionOptions) => {
+      setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
+      const body = join(fakeBin, 'node.fixture-body');
+      writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.1","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+      return runGlobalRuntimeSetup(transactionOptions);
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.status).toBe('ok');
+    expect(result.steps.find((step) => step.step === 'check shared ArchContext daemon')).toMatchObject({ status: 'skipped', detail: expect.stringContaining('User authorization required') });
+    expect(JSON.parse(readFileSync(harnessManifest, 'utf8')).version).toBe('9.9.9');
+    for (const packageName of ['archctx', 'archctx-contracts']) {
+      expect(JSON.parse(readFileSync(join(globalModules, packageName, 'package.json'), 'utf8')).version)
+        .toBe(JSON.parse(readFileSync(harnessManifest, 'utf8')).dependencies[packageName]);
+    }
+    expect(verifyInstalledManagedRuntime(options).status).toBe('failed');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});

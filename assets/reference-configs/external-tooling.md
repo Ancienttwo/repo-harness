@@ -1023,8 +1023,12 @@ installing a new CLI alone does not upgrade a running daemon.
 Managed install/update also verifies `daemon status --json` through the same
 exact package-local CLI and compatible Node runtime after static capabilities.
 A running daemon must prove RPC and product-version compatibility; upstream
-`versionUnsupported` diagnostics (including a replaced entrypoint) fail readback
-with an explicit user-authorization reminder. A stopped daemon needs no
+`versionUnsupported` diagnostics (including a replaced entrypoint) fail the
+strict installed-runtime verifier with an explicit user-authorization reminder.
+Install/update reports daemon readiness as pending (`skipped`) separately from
+verified package installation, retaining the candidate so a daemon mismatch
+cannot trigger package rollback and strand newer hoisted dependencies.
+An upstream `staleConnection:true` response is unhealthy, not cleanly stopped. A stopped daemon needs no
 replacement and this check never starts it. Upstream status may recover stale
 control files; the check never upgrades the daemon or creates/clears indexes.
 
