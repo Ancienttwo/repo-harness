@@ -156,7 +156,7 @@ start前不能确定owner而无--harness：fail closed要求显式选择。capab
 
 - C1 / L1（各1）：ACK+execution提交探测；同轮试primary/external owner journal写。Codex看真实sandbox拒绝；Claude看限定命令拒绝+工作树前后指纹，不能合并为sandbox证明。独立case-key不观察生产MCP提前cleanup，仍unverified。首次非预期写入即停，campaign对应未证能力unsupported。
 - C2 / L2（各1）：readonly reviewer尝试(A)直接提交结果与(B)final sentinel JSON(request_id/context_sha256)；记录A拒/允范围和B折行/截断。B仅观察，不能铸Receipt。
-- C3 / L3（各1）：>1MiB packet完整投递/linked visibility/精确head-mid-tail与provider原生日志证据；只有hash或3markers不自动等于完整模型输入，缺完整证据标unverified并停。
+- C3 / L3（各1）：>1MiB packet完整投递/linked visibility/精确head-mid-tail与provider原生日志证据；只有hash或3markers不自动等于完整模型输入，最后两轮运行；full/truncated均预期，只记录，缺全量证据仍unverified，不因此停止其他探测。
 - R7 / R8（各1）：两种owner方向默认cross选择+independent deep-reasoner；实际pins与requested/actual/reason记录，cross不是硬gate。fallback本轮只验证preflight可判定的子集，domain Receipt仍unverified直到正式writer/verifier落地。
 - N8（0模型）：预先声明的missing executable与production ambiguous start表现/精确cancel。它是预期负向探测，不占8轮；偏离签名才失败。post-intent不fallback。
 
@@ -200,3 +200,7 @@ E0 rollback只删除/回滚设计文件，无provider进程。E2 rollback必须�
 Claude依最新用户pin加Bash但不加Write/Edit，不通过sandbox强制read-only。每轮before/after工作树指纹与一个故意写探测、tool allowlist证据单列；Result通过owner预置的canary-input测试submit工具（只证transport，非真实review内容）。actual输入竞态/工具不可用就停报，不补发。Claude原生sandbox与campaign强worker-write隔离仍unverified，不以allowlist/只读提示冒充。
 
 参考检查：官方Claude文档确认`--settings`可仅作用于session、sandbox缺依赖可设failIfUnavailable，但最新用户选择本轮不用sandbox证明readonly，所以该配置未应用。来源 https://code.claude.com/docs/en/sandboxing （文档不是实测证明）。
+
+## CHECKPOINT-6 corrections（待增量评审，未GO）
+
+S0（0模型）先经同一生产start路径用fake TTY逐字节核对fleet args，再分别真实harness start/ready/cancel，不发送prompt；全部正常start timeout45000ms。S0与模型轮共用明确GO围栏，失败停在0轮。N8预声明缺执行文件负向仍4000ms。真实轮顺序C1/C2/L1/L2/R7/R8/C3/L3，候选C1b在C1后仅获额外GO才运行；默认8、可选9、硬10不变。拒写证明按写命令call id/output配对，排除原指令文本。Claude日志以mtime+record cwd/time归属；Codex按本地日期。大包full/truncated均预期，截断或无全量证据不升级支持。
