@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:fccf2d1ad8c0a205147b8a39adb86497538c47b2dcdd83b2af85657563fa202e`
+> **Substantive Change SHA256**: `sha256:4959b1a34b9a4c54fbda9f9c6b1f055fb9237da77d674f351599d8542301365e`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -252,3 +252,10 @@
 - Updated user decisions for post-PR E: retire claude-review as generic review with existing fleet deep-reasoner; default reviewer harness opposite of owner inferred only from existing binding/parent pane; explicit harness wins. Sole authorized fallback is real opposite-harness start-stage failure to owner's harness, visible reason/actual selection and request/actual/reason receipt; never after send, never explicit override, independent reviewer pane and same three-round budget. No generic host/adapter/registry.
 - Campaign user chose A: remove containers later, ordinary task-agent + dedicated linked worktree, owner journal outside writable checkout, business budget/lease/claim retained. Must prove primary and external owner record denied; otherwise campaign unsupported/fail closed. Code remains paused; record probe in E plan/CHECKPOINT-6.
 - Canary envelope approved: target8/hard10 model rounds, Codex3 + Claude3 + cross two directions1 each, low/medium and tiny instructions, first failure stops/no retries/no resends, private sessions/exact cleanup/no mini/global/default. Still require reviewed probe script/expected results/budget and user's GO before any actual call. Current PR contains no such calls or E implementation.
+
+
+## PR464 CI Governance digest correction
+
+- Read actual failed job109820020160 log via GitHub API; workflow maps EVENT_NAME=pull_request + PR_BASE_SHA into REPO_HARNESS_DIFF_BASE/merge-base. Plain PR_BASE_SHA is not consumed directly by helper. Initial local-only command would check no commit diff; corrected reproduction uses the actual exported parameters.
+- Fetch origin/main55bafc00, rebase all22 prior patches clean, refresh only isolated physical dependencies/frozen lock/no lifecycle scripts. Post-rebase helper reproduces exactly CI digest sha256:4959b1a34b9a4c54fbda9f9c6b1f055fb9237da77d674f351599d8542301365e; add canonical note line rather than waiver. Product code unchanged.
+- This metadata-only correction makes canonical task-sync use CI full PR diff. Stage history reports remain historical candidates with their hashes/trees; fresh publication checks bind newest base. Feature rebase push will use exact remote-head lease db5fa7ba; user/default/main checkout/other docs untouched. Test and MCP mac/windows results still require CI readback; do not claim green prematurely.

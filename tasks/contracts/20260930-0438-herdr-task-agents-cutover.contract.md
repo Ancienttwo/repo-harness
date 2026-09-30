@@ -17,13 +17,13 @@
 
 ## Goal
 
-GATE 第2轮 PASS 后 safe_auto：五语言 README task-goal/Herdr executor 语义、既有旧名 guard归 describe/read风格、guide正确定义有Result close/无Result cancel；单一独立 commit + canonical，然后 push/PR。
+PR464 Governance task-sync：按 pull_request 的最新 merge-base 55bafc00 重现摘要，补同一 canonical notes 的全PR Substantive Change SHA256；独立ledger commit/canonical/push，等待Test与MCP matrix，失败只读日志报告。
 
 ## Scope
 
-- In scope: 五README、既有readme-dx guard、MCP guide generator/projection、contract/notes/review；不新增测试文件。
-- Out of scope: paused/H4真实模型/H5/claude-review/campaign。本PR只含A–D和已完成H3累计；E已决定后续退役，当前不包含。
-- Canonical通过后push feature branch开main PR，不merge/发版/推main。PR后新E worktree只设计/无模型，R6与额度前置仍有效。
+- In scope: 当前 contract/notes 的publication证据绑定，不用waiver，不改产品代码。
+- Out of scope: PR已有受验收stage代码/paused/H5/Claude/campaign；E另worktree设计/no-model，仍无真实模型GO。
+- origin/main55bafc00无冲突rebase；用相同CI diff参数复算，不复用旧708c9675摘要。
 
 ## Stop Conditions
 
@@ -68,17 +68,8 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - README.md
-  - README.zh-CN.md
-  - README.ja.md
-  - README.fr.md
-  - README.es.md
-  - tests/readme-dx.test.ts
-  - src/cli/mcp/setup.ts
-  - docs/repo-harness-chatgpt-mcp-setup.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
 ```
 
 ## Evidence Requirements
@@ -130,32 +121,6 @@ exit_criteria:
 {
   "protocol": 1,
   "checks": [
-    {
-      "id": "gate2-safe-auto-docs",
-      "kind": "command",
-      "command": "bun test tests/readme-dx.test.ts tests/cli/mcp.test.ts --timeout 60000",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Existing multilingual/native Goal boundaries and single retired-name guard; CLI guide/goal behavior unchanged.",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "gate2-safe-auto-guide-parity",
-      "kind": "command",
-      "command": "bun -e 'import {readFileSync} from \"fs\"; import {chatgptGuideMarkdown} from \"./src/cli/mcp/setup\"; const g=chatgptGuideMarkdown(); if(readFileSync(\"docs/repo-harness-chatgpt-mcp-setup.md\",\"utf8\")!==g || !g.includes(\"## Uninstall local MCP setup\") || !g.includes(\"cancel (no Result: timeout, observed_idle, failure)\")) throw new Error(\"guide projection or cleanup contract drift\");' ",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "CLI-generated guide byte equality, correct observation cleanup and original uninstall preservation.",
-      "inputs": {
-        "env": []
-      }
-    },
     {
       "id": "hooks",
       "kind": "command",
@@ -224,12 +189,12 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "bash scripts/check-task-sync.sh",
+      "command": "EVENT_NAME=pull_request PR_BASE_SHA=55bafc000ad0d4051bb443845ca9a51c4a2bf5dc REPO_HARNESS_DIFF_BASE=55bafc000ad0d4051bb443845ca9a51c4a2bf5dc REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Root AGENTS.md required repository integrity; no apply or global install.",
+      "necessity": "Exact CI pull_request merge-base digest admission for full PR, not local staged-only delta.",
       "inputs": {
         "env": []
       }
