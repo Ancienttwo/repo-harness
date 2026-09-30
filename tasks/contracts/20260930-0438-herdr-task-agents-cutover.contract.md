@@ -17,19 +17,19 @@
 
 ## Goal
 
-H3 第三切片：只保留 Herdr Agent Runtime endpoint adapter，删除 codex-app-thread backend/enum/config authority；通知/wake 的 business receipt、Binding/claim/capability/admission/budget fence 不变。新 reader 拒绝 retired backend，不保留 alias 或双 authority。
+H3 第四切片：将现有 fleet persona/parser/permission 与 model/effort 选择提到共享 task-role profile owner，installer 直接消费同一实现。保留所有已配置模型，移除重复的 installer-local role/parser/model authority，为下一 host/consumer binding 提供实际 profile source/hash。
 
 ## Scope
 
-- In scope: 下列 exact runtime schema/feature/principal/adoption default/UI/MCP CLI contract 和对应既有 tests。
-- Out of scope in this commit: 后续 logical roles/delegation/campaign/task-goal launch；H4/H5/mini/真实模型。
-- 同一 cutover work-package 的内部有序 commit；H3 完成后 [REQ-5]，PASS 后才 H4。
+- In scope: 下列 exact profile module、installer source/projection 和原有 installer/peer tests、workflow artifacts。
+- Out of scope in this commit: 结果认证/containment/host 生命周期的下一切片，全部 consumer 改造，H4/H5，mini、真实模型、全局安装。
+- Role extraction 不是能力证明；真实 capability 仍 unverified，unknown harness/profile 返回 unsupported，不切换 harness/mode。
 
 ## Stop Conditions
 
-- 不保留 retired backend 的执行/reader/parser；历史 archive 与负例不是产品兼容路径。
-- 不改用户 main 脏文件、w8:p1、mini，不做真实模型或全局安装。
-- 新旧 runtime config 非混读：旧 config 明确拒绝，source/default/local projection 同时单向修改。
+- model/effort 不得变；role instruction 单 author，native projection 只是派生。
+- installer smoke 只用 fixture HOME/repo；不改 ~/.codex ~/.claude，不触碰用户 pane 或 main dirty 文件。
+- H3 完成才 [REQ-5]，PASS 后进 H4；host-design.md 的 REQ-5 DESIGN-2 决策不降级。
 
 ## Falsifier
 
@@ -73,26 +73,11 @@ allowed_paths:
   - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
   - docs/researches/20260930-herdr-task-runtime-proof.md
-  - .ai/harness/policy.json
-  - src/core/engineers/agent-runtime-effect.ts
-  - src/core/engineers/principal-claim.ts
-  - src/core/adoption/standard-plan.ts
-  - src/effects/engineers/principal.ts
-  - src/effects/engineers/agent-runtime-effect-store.ts
-  - src/effects/engineers/agent-runtime-feature.ts
-  - src/effects/engineers/agent-runtime-adapters/codex-app-thread.ts
-  - src/cli/commands/engineer.ts
-  - src/cli/mcp/engineer-tools.ts
-  - src/operator-web/types.ts
-  - tests/unit/r1-agent-runtime-adapters.test.ts
-  - tests/unit/r1-provider-neutral-agent-runtime.test.ts
-  - tests/unit/issue-281-task-offer-wake.test.ts
-  - tests/effects/task-reply.test.ts
-  - tests/subagent-handler.test.ts
-  - tests/cli/mcp-engineer-tools.test.ts
-  - tests/cli/adoption-plan.test.ts
-  - tests/cli/mcp-http.test.ts
-  - tests/cli/engineer.test.ts
+  - src/effects/terminal/task-role-profiles.ts
+  - scripts/install-agent-fleet.sh
+  - assets/templates/helpers/install-agent-fleet.sh
+  - tests/install-agent-fleet.test.ts
+  - tests/unit/herdr-peer-harness.test.ts
 ```
 
 ## Evidence Requirements
@@ -134,8 +119,7 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/effects/terminal/task-session.ts
-    - src/cli/commands/task-agent.ts
+    - src/effects/terminal/task-role-profiles.ts
   artifacts_exist: []
 ```
 
@@ -146,14 +130,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-herdr-runtime-only",
+      "id": "h3-shared-roles",
       "kind": "command",
-      "command": "bun test tests/unit/r1-agent-runtime-adapters.test.ts tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/issue-281-task-offer-wake.test.ts tests/effects/task-reply.test.ts tests/subagent-handler.test.ts tests/cli/mcp-engineer-tools.test.ts tests/cli/adoption-plan.test.ts tests/cli/mcp-http.test.ts tests/cli/engineer.test.ts --timeout 60000",
+      "command": "bun test tests/install-agent-fleet.test.ts tests/unit/herdr-peer-harness.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Retired backend rejection and preserved business fences across principal/runtime/CLI/MCP/adoption/hooks; named existing boundaries, no full suite.",
+      "necessity": "Canonical role/parser/model owner must produce byte-identical existing fleet in fixture HOME, preserve fail-closed malformed/custom install boundaries, and provide hashed profiles without unsupported fallback.",
       "inputs": {
         "env": []
       }

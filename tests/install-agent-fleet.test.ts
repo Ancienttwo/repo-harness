@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 
+import { loadTaskRoleProfile, WRITABLE_AGENTS } from '../src/effects/terminal/task-role-profiles';
 import { installProfileHostMutationPaths } from "../src/cli/installer/install-profile";
 
 import { recordInstallOwnership } from "./helpers/install-ownership";
@@ -171,6 +172,15 @@ describe("install-agent-fleet", () => {
         const golden = readFileSync(join(GOLDEN_CODEX_DIR, `${agent}.toml`), "utf-8");
         const expected = CODEX_EXPECTATIONS[agent];
         expect(installedCodex).toBe(golden);
+        const profile = loadTaskRoleProfile(agent,'codex');
+        const parsed = Bun.TOML.parse(installedCodex);
+        expect(parsed).toHaveProperty('model',profile.model);
+        expect(parsed).toHaveProperty('model_reasoning_effort',profile.effort);
+        expect(parsed).toHaveProperty('developer_instructions',profile.instructions);
+        expect(profile.permission).toBe(expected.sandboxMode==='read-only'?'read_only':'workspace_write');
+        const claudeProfile=loadTaskRoleProfile(agent,'claude');
+        expect(claudeProfile.instructions).toBe(profile.instructions);
+        expect(claudeProfile.profile_sha256).not.toBe(profile.profile_sha256);
         expect(installedCodex).toContain(`model = "${expected.model}"`);
         expect(installedCodex).toContain(`model_reasoning_effort = "${expected.effort}"`);
         expect(installedCodex).toContain(expected.descriptionLabel);
@@ -629,6 +639,11 @@ describe("install-agent-fleet", () => {
     }
   }, 30_000);
 
+  test('logical profiles refuse unconfigured harnesses and unknown roles without changing models', () => {
+    for (const kind of ['pi','opencode','unknown']) expect(()=>loadTaskRoleProfile('gatekeeper',kind)).toThrow('harness_unconfigured');
+    expect(()=>loadTaskRoleProfile('unknown-role','codex')).toThrow('role_unsupported');
+  });
+
   test("the installer declares Bun as its only semantic parser runtime", () => {
     const source = readFileSync(SCRIPT, "utf-8");
     expect(source).toContain("install-agent-fleet.sh requires bun");
@@ -638,7 +653,8 @@ describe("install-agent-fleet", () => {
     expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
     expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");
     expect(source).not.toContain('spawnSync("curl"');
-    expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);');
+    expect(source).toContain('src/effects/terminal/task-role-profiles.ts');
+    expect([...WRITABLE_AGENTS]).toEqual(['fast-worker','deep-worker','root-cause-prover','harness-evaluator']);
     expect(source).toContain("if (WRITABLE_AGENTS.has(agent))");
   }, 30_000);
 

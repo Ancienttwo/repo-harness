@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:8125ea23562224726920bcfd5e89139c6a2851c69c24a1e7e03e03185368c098`
+> **Substantive Change SHA256**: `sha256:a0e9c64048c88b693c55026b82fed331cbc4e84ae7ccabe2027725bfcbc79f9f`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -146,3 +146,10 @@
 - P1: Agent Runtime effect store remains the business owner for notify_inbox/wake_for_offer, exact Binding/claim/capability/control-ref receipt joins and monotonic observation state. Herdr is its only endpoint transport; provider-specific model protocols inside a Herdr task host are not an alternative endpoint backend.
 - P2/P3: closed adapter schema/feature policy/principal/CLI/MCP/UI/default projection now accept only herdr-cli-agent; codex-app-thread source removed. Legacy backend config/evidence is rejected without translation. Former business tests run on Herdr; tests dedicated solely to the retired transport were deleted, not kept as empty compatibility coverage.
 - This source-only candidate changes neither user's installed runtime nor user-owned pane/process. H5 still owns full installed policy/schema/template drain/projection cutover. H3 logical roles/delegation/campaign/task-goal work remains open.
+
+
+## REQ-5 DESIGN-2 binding decisions and capability follow-up
+
+- Frozen 1–3 in task-owned host-design.md: launch herdr_agent|structured_host and result authority host|provider are role/capability-derived; claims never feed acceptance; protected host provenance/event sealing required. Containment is no-stdin single request with immutable create argv, original deadline and exact container/daemon/image/journal identity; no client-kill success assumption. 4–5 require pre-fix protocol/lifecycle/forgery tests before [REQ-5].
+- Capability landing (notes only per item 6): canary-issued record must join exact harness executable/version + role profile hash + proof/evidence refs; unknown version unsupported. Use one evidence authority, not a second static support enum. Actual primary write-denial is a named H4 real-harness proof; chmod only proves CLI's filesystem submission boundary.
+- Role extraction moves the existing installer parser and fixed model/effort/writability vectors to one shared owner; no model changes, fallback mappings or second persona body. Native artifacts remain temporary projections until the H5 installed cutover; they do not become a second runtime source.

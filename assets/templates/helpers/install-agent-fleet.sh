@@ -107,8 +107,6 @@ if (force && acceptUserManaged) {
 }
 
 const HOME = os.homedir();
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
-const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
@@ -124,47 +122,16 @@ const USER_MANAGED_RECEIPT_PATH = agentFleetUserManagedReceiptPath({ ...process.
 const installedProfile = readInstalledProfile();
 
 // A generated persona carries role identity only. The anti-extras execution
-// boundary belongs to the runtime task packet (SubagentStart context in
-// src/cli/hook/subagent-handler.ts), which is the only surface that knows
+// boundary belongs to the final runtime task packet, which is the only surface that knows
 // whether the child is contract-bound and writable; a read-only persona must
 // never be told to implement anything.
 
 // Provider-native source tuples project deterministically to Codex-native labels.
 // Validation remains fail-closed; reasoning effort is carried through unchanged.
-const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
-
-function buildFamilyEffortMap(sourceLabel, targetModel, targetLabel) {
-  const map = {};
-  for (const effort of EFFORT_LEVELS) {
-    map[effort] = {
-      model: targetModel,
-      effort,
-      sourceDescription: `${sourceLabel} at ${effort} effort`,
-      targetDescription: `${targetLabel} at ${effort} reasoning`,
-    };
-  }
-  return map;
-}
-
-const MODEL_EFFORT_MAP = {
-  opus: buildFamilyEffortMap("Opus", "gpt-6-astra", "GPT-6 Astra"),
-  sonnet: buildFamilyEffortMap("Sonnet", "gpt-6-luna", "GPT-6 Luna"),
-  haiku: buildFamilyEffortMap("Haiku", "gpt-6-luna", "GPT-6 Luna"),
-  fable: buildFamilyEffortMap("Fable", "gpt-6.1-sol", "GPT-6.1 Sol"),
-};
-
-// Per-agent Codex target overrides — the only model/effort remaps in the fleet.
-// Every role carries an explicit target so Codex model/effort never drift with
-// the Claude-side family default.
-const AGENT_TARGET_OVERRIDES = {
-  explorer: { model: "gpt-6-luna", effort: "high", targetDescription: "GPT-6 Luna at high reasoning" },
-  "deep-reasoner": { model: "gpt-6-astra", effort: "high", targetDescription: "GPT-6 Astra at high reasoning" },
-  "fast-worker": { model: "gpt-6.1-sol", effort: "medium", targetDescription: "GPT-6.1 Sol at medium reasoning" },
-  "deep-worker": { model: "gpt-6.1-sol", effort: "high", targetDescription: "GPT-6.1 Sol at high reasoning" },
-  gatekeeper: { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
-  "root-cause-prover": { model: "gpt-6-astra", effort: "high", targetDescription: "GPT-6 Astra at high reasoning" },
-  "harness-evaluator": { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
-};
+const { MANAGED_AGENTS, WRITABLE_AGENTS, EFFORT_LEVELS, MODEL_EFFORT_MAP, AGENT_TARGET_OVERRIDES,
+  parseRoleNameScalar, parseFrontmatter, validateFrontmatter } = require(
+  path.join(SOURCE_DIR, "../../src/effects/terminal/task-role-profiles.ts"),
+);
 
 function readSource(agent) {
   try {
@@ -176,79 +143,6 @@ function readSource(agent) {
   }
 }
 
-function parseRoleNameScalar(rawValue) {
-  if (typeof rawValue !== "string") return undefined;
-  const match = rawValue.trim().match(/^(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|([A-Za-z0-9_-]+))(?:\s+#.*)?$/);
-  return match?.[1] || match?.[2] || match?.[3];
-}
-
-function parseFrontmatter(raw) {
-  const lines = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
-  if (lines[0] !== "---") return null;
-
-  let closeIndex = -1;
-  for (let index = 1; index < lines.length; index += 1) {
-    if (lines[index] === "---") {
-      closeIndex = index;
-      break;
-    }
-  }
-  if (closeIndex === -1) return null;
-
-  const frontmatterLines = lines.slice(1, closeIndex);
-  const bodyLines = lines.slice(closeIndex + 1);
-  while (bodyLines.length > 0 && bodyLines[0].trim() === "") bodyLines.shift();
-  while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
-
-  const fieldLines = frontmatterLines.filter((line) => line.trim() && !line.trimStart().startsWith("#"));
-  const firstField = fieldLines[0]?.match(/^( *)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-  if (!firstField) return null;
-  const rootIndent = firstField[1].length;
-  const fields = {};
-  for (const line of fieldLines) {
-    const match = line.match(/^( *)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-    if (!match || match[1].length !== rootIndent) return null;
-    if (Object.hasOwn(fields, match[2])) return null;
-    fields[match[2]] = match[3];
-  }
-
-  return {
-    name: parseRoleNameScalar(fields.name),
-    description: fields.description,
-    model: fields.model,
-    effort: fields.effort,
-    hasTools: Object.hasOwn(fields, "tools"),
-    body: bodyLines.join("\n"),
-  };
-}
-
-function validateFrontmatter(parsed, expectedAgent) {
-  if (!parsed) {
-    return { ok: false, kind: "identity-invalid", reason: "missing or malformed frontmatter delimiters" };
-  }
-  if (parsed.name && parsed.name !== expectedAgent) {
-    return {
-      ok: false,
-      kind: "identity-mismatch",
-      reason: `frontmatter name does not match source role: ${parsed.name}/${expectedAgent}`,
-    };
-  }
-  if (!parsed.name) {
-    return { ok: false, kind: "identity-invalid", reason: "missing or malformed frontmatter name" };
-  }
-  if (!parsed.description || !parsed.model || !parsed.effort) {
-    return { ok: false, reason: "missing required frontmatter field (name/description/model/effort)" };
-  }
-  const modelMap = MODEL_EFFORT_MAP[parsed.model];
-  const mapped = modelMap ? modelMap[parsed.effort] : undefined;
-  if (!mapped) {
-    return { ok: false, reason: `unmapped model/effort combination: ${parsed.model}/${parsed.effort}` };
-  }
-  if (!parsed.description.includes(mapped.sourceDescription)) {
-    return { ok: false, reason: `description missing expected model label: ${mapped.sourceDescription}` };
-  }
-  return { ok: true, mapped };
-}
 
 function tomlBasicString(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -385,7 +279,12 @@ for (const agent of MANAGED_AGENTS) {
     continue;
   }
 
-  const mapped = { ...validation.mapped, ...(AGENT_TARGET_OVERRIDES[agent] ?? {}) };
+  const target = AGENT_TARGET_OVERRIDES[agent];
+  if (!target) {
+    results.push({ host: "codex", file: `${agent}.toml`, status: "invalid-target" });
+    continue;
+  }
+  const mapped = { ...validation.mapped, ...target };
   prepared.push({ agent, source: source.text, parsed, mapped });
 }
 
