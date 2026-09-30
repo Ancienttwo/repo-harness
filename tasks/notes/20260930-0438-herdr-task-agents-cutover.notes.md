@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:6e4ac46eb820351ebcc7f51ba9bc581718138e91f8e1835ba9a6922d3153dd60`
+> **Substantive Change SHA256**: `sha256:fcae2e5f2f4621e16fb095c48adf9949eedf58d03ab52343f7836e6c2e38b16c`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -196,3 +196,10 @@
 ## REQ-5 checkpoint correction 1
 
 - Removed test-only TaskRoleProfile/loadTaskRoleProfile, its source/profile SHA fields and dedicated tests/imports. No actual H4 production dispatcher can be named under the simplified communication goal, so no speculative retention. Shared parser/model/writability remains consumed by install-agent-fleet; existing installer fixture/golden tests protect unchanged projections. This supersedes checkpoint's pending disposition.
+
+
+## REQ-5 checkpoint correction 2
+
+- Advisor approved smaller alternative to a/b: shared close fence unchanged; removed history→submitTaskResult. One local result snapshot selects close + completed only for actual Result; idle-only uses explicit cancel + observed_idle, timeout/error also cancel. closed.json is the sole disposition source; no new MCP field. observed_idle with disposition cancelled is intentional: no Result arrived, not a claim that the goal failed. This supersedes earlier compensation write.
+- Redaction then UTF-8-safe 128KB truncation occurs once before return for success/timeout. Existing fixture covers idle-only no result/no collected/cancelled, atomic actual-result/completed, timeout/cancelled and exact pane/PID/parent/audit protections, within its 60s budget.
+- Carry-forward (advisor code inference, unverified): real harness may emit idle before handling the new request despite seq growth; H4 canary must falsify premature cleanup. This correction does not reinterpret idle as ACK or Receipt.

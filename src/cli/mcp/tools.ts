@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSyn
 import { homedir } from 'os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
-import { cancelTaskAgent, closeTaskAgent, readTaskAgentHistory, readTaskRequestResult, sendTaskRequest, startTaskAgent, submitTaskResult, taskSessionDirectory, type TaskAgentSpec } from '../../effects/terminal/task-session';
+import { cancelTaskAgent, closeTaskAgent, readTaskAgentHistory, readTaskRequestResult, sendTaskRequest, startTaskAgent, taskSessionDirectory, type TaskAgentSpec } from '../../effects/terminal/task-session';
 import { herdrCommand, herdrResult } from '../../effects/terminal/herdr';
 import { runHelper } from '../../effects/runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
@@ -545,8 +545,8 @@ async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>):
   const contextPath = join(goalDir, 'context.md');
   const written = guardedWriteFile(contextPath, relative(ctx.repoRoot, contextPath), prompt, undefined);
   if (!written.ok) return errorResult(written.code, written.message, written.details);
-  let started = false, completed = false, timedOut = false, stdout = '', failure = '';
-  const outputRedactions = [...redactedGoal.redactions];
+  let started = false, finished = false, timedOut = false, stdout = '', failure = '';
+  let taskResult: ReturnType<typeof readTaskRequestResult> = null;
   try {
     const binding = await startTaskAgent(ctx.repoRoot, spec, { startTimeoutMs: Math.min(timeoutMs - 1000, 60000) });
     started = true;
@@ -556,35 +556,29 @@ async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>):
     const dir = taskSessionDirectory(ctx.repoRoot, task, role);
     while (Date.now() < deadline) {
       const state = get();
-      if (readTaskRequestResult(ctx.repoRoot, dir, request)
+      taskResult = readTaskRequestResult(ctx.repoRoot, dir, request);
+      if (taskResult
         || (['idle', 'done'].includes(state.agent_status) && state.state_change_seq > before.state_change_seq)) {
         stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000);
-        const redacted = redactMcpText(stdout);
-        outputRedactions.push(...redacted.redactions);
-        stdout = new TextDecoder().decode(Buffer.from(redacted.text).subarray(0, 128 * 1024), { stream: true });
-        // This terminal observation is only a collaboration claim, never Receipt.
-        if (!readTaskRequestResult(ctx.repoRoot, dir, request)) await submitTaskResult(ctx.repoRoot, task, role, request.round,
-          { request_id: request.request_id, context_sha256: request.context_sha256, value: stdout });
-        completed = true; break;
+        finished = true; break;
       }
       if (state.agent_status === 'blocked') throw new Error('HERDR_AGENT_BLOCKED');
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    if (!completed) { timedOut = true; stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000); }
+    if (!finished) { timedOut = true; stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000); }
   } catch (error) { failure = String(error); }
   finally {
     try {
       // An ambiguous start may have created a pane even without a binding.
-      const cleanup = completed ? await closeTaskAgent(ctx.repoRoot, task, role) : await cancelTaskAgent(ctx.repoRoot, task, role);
+      const cleanup = taskResult ? await closeTaskAgent(ctx.repoRoot, task, role) : await cancelTaskAgent(ctx.repoRoot, task, role);
       if (cleanup.status !== 'closed') failure = 'HERDR_CLEANUP_PENDING';
     } catch (error) { if (started || existsSync(join(taskSessionDirectory(ctx.repoRoot, task, role), 'intent.json'))) failure = `HERDR_CLEANUP_PENDING: ${String(error)}`; }
   }
   const redacted = redactMcpText(stdout);
-  outputRedactions.push(...redacted.redactions);
   stdout = new TextDecoder().decode(Buffer.from(redacted.text).subarray(0, 128 * 1024), { stream: true });
-  audit(ctx, 'run_agent_goal', completed && !failure ? 'ok' : 'failed', args, decision.relativePath, failure ? 'HERDR_GOAL_FAILED' : undefined);
-  return textResult({ agent, goalPath: decision.relativePath, task, role, status: failure ? 'failed' : completed ? 'observed_idle' : 'timeout', timedOut,
-    stdout, stderr: redactMcpText(failure).text, redactions: outputRedactions });
+  audit(ctx, 'run_agent_goal', finished && !failure ? 'ok' : 'failed', args, decision.relativePath, failure ? 'HERDR_GOAL_FAILED' : undefined);
+  return textResult({ agent, goalPath: decision.relativePath, task, role, status: failure ? 'failed' : taskResult ? 'completed' : finished ? 'observed_idle' : 'timeout', timedOut,
+    stdout, stderr: redactMcpText(failure).text, redactions: redactedGoal.redactions.concat(redacted.redactions) });
 
 }
 

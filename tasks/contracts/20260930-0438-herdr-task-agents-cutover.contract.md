@@ -17,13 +17,13 @@
 
 ## Goal
 
-REQ-5 correction 1：删除无生产消费者的 TaskRoleProfile/loadTaskRoleProfile、专属字段和测试，保留 installer parser/model/writability 及既有输出。
+REQ-5 correction 2：MCP 不把 history 回写为 Result；只有真实 Result 才 close，idle-only/timeout/error 显式 cancel。状态与清理使用同一个已读结果；redact 后截断只做一次。
 
 ## Scope
 
-- In scope: shared role source、既有 installer fixture/golden tests、contract/notes。
-- Out of scope: MCP fence correction（下一个独立 commit），campaign/delegation/旧路径退役（待只读盘点），真实模型/mini/global install。
-- 净删除 commit 后进入 MCP correction；H3 不勾完成。
+- In scope: MCP tool 和既有 private Herdr composition test、contract/notes。
+- Out of scope: shared close fence/新增 schema，campaign/delegation/旧路径退役（待只读盘点），真实模型/mini/global install。
+- 提交并重跑 canonical 后发 CHECKPOINT-2，再发只读盘点；H3/H4 不勾完成。
 
 ## Stop Conditions
 
@@ -70,8 +70,8 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - src/effects/terminal/task-role-profiles.ts
-  - tests/install-agent-fleet.test.ts
+  - src/cli/mcp/tools.ts
+  - tests/herdr-task-lifecycle.test.ts
 ```
 
 ## Evidence Requirements
@@ -124,14 +124,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-profile-loader-prune",
+      "id": "h3-mcp-observation-cancel",
       "kind": "command",
-      "command": "bun test tests/install-agent-fleet.test.ts --timeout 60000",
+      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-tools.test.ts tests/cli/task-agent.test.ts tests/unit/herdr-peer-harness.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
-      "cost": "normal",
+      "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Installer production parser/model/golden behavior preserved after removing test-only profile API; all installer mutations use fixture HOME.",
+      "necessity": "MCP idle-only creates no Result/collection, explicit cancel disposition; real fixture Result closes normally; lifecycle/audit/redaction/no-fallback guards preserved.",
       "inputs": {
         "env": []
       }
