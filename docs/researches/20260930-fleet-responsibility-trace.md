@@ -363,3 +363,178 @@ fleet_offer_revision, authorization_revision
 现成MCP selected-acquire证明“host选、repo-harness admit”已有一条实现路径；其余入口要先闭合上述GAP再讨论移交。仅将host想选的Task放进内部 `filters.task_ids: [id]` 仍会让E1重新采集并生成当前assertion，也未保留host所选快照的13字段；这不等价于caller-fenced选择，且CLI/MCP acquire_next目前未暴露该filter。
 
 **[unverified]**：外部host最终picker实现、四入口协议改造后的可用性/回归行为、动态/仓库外调用，以及并发/性能实测。本次只追加文档，没有执行acquire/claim、改API、写代码、删除函数或决定删除。
+
+## E1 缺口闭合设计
+
+### 结论与范围
+
+建议以**服务端 observation receipt → host 显式选择 → 唯一 acquire 事务 → 既有 assertion admission**闭合五项缺口。复用现有 `offer_options.now_ms`、concurrency/Binding/Task locks、pending/completed、`accept_acquired` 和 `budgetedAcquisition`；不改 `acquireScheduledEngineerTask` 的 admission 算法、13字段 assertion、offer revision、Fleet claim/capacity/lease 或 closeout。
+
+这是候选设计，不是实现授权或删除决定。现有 auto acquire-next 可继续作为独立操作；selected 请求不得退回 auto PICK。这里不决定取消 auto/Fleet unspecified-task API，也不实现 host picker、scheduler、FleetRuntimeAdapter。所有 transport 都必须收完整 caller assertion，不能只收 task_id 再替 host 生成一个新 assertion。
+
+设计基线是分支 `docs/pi-harness-host-invariants` 的 `4be6d2b6`。本节只追加文档；旧章节保持原样。历史结论“已有 selected MCP 路径”表示 admission 接口已存在，**不证明当前跨请求首次 offer 的时间身份一定可用**，下面的 GAP5 源码反例收窄了这一点。
+
+### 统一路径与唯一权威
+
+1. **Producer** 在认证 principal 下读取当前 offers，同时在服务端选定 `observed_at_ms`，持久化闭合的 observation record和原始 canonical snapshot。host收到 snapshot 与不透明 `observation_ref`。
+2. **Host PICK** 从该 snapshot 选择一个 offer；回传 `idempotency_key + observation_ref + 完整13字段 assertion`。不回传一个能改写服务器时钟的任意 timestamp。
+3. **Selected façade** 在现有 scheduling-acquire-next 模块内先认证并规范化闭合请求形状，再读唯一 key ledger；pending返回reconciliation，completed按身份/当前授权读取原结果，只有新事务才读取可信observation并检查freshness、匹配snapshot中的指定offer和scope constraints。它只做 MATCH，不重新排序、补 revision或挑替代Task。
+4. **A** 原样调用 `acquireScheduledEngineerTask`，通过已有 `offer_options.now_ms` 传 observation中的可信时间（`src/effects/engineers/scheduling-acquire.ts:69`、`src/effects/engineers/scheduling-acquire.ts:124`）。仍两次读取当前 authority，第二次在 concurrency lock内；当前 Binding/attempt/Task变化仍使assertion stale。
+5. **C** 服务端写pending后才进入effect；新鲜成功执行可信入口的handoff callback/own-claim补偿，再写completed。completed replay只是原结果重放，不产生新claim、重跑callback或重新付budget。
+
+snapshot是**观察证据**，不是 claim/admission许可；workflow authority仍是当前Task/Plan/Binding/registry。observation失效不能被当作“旧effect未发生”。
+
+### GAP1：三入口的 transport / wiring
+
+| 最小选项 | 好处 | 问题 |
+|---|---|---|
+| A. 在 acquire-next 的 options加可选 assertion，四入口继续调用同名函数。 | 代码入口少；重用现有ports。 | 同一wrapper包含“缺assertion就PICK”，容易把 malformed selected 请求变成auto；receipt identity也必须区分两种操作，不能把现有filter集合偷偷当成host选择。 |
+| **B. 推荐：同模块新增窄 selected façade，复用GAP2的事务核心；四入口明确接线。** | selected路径与auto清楚区分，底层A原样；不建通用runner注册表。 | CLI是新增路径，现有MCP selected schema和controller/campaign输入接线是显式行为变化；依赖GAP2/5先就绪。 |
+
+**推荐 B。** 拟议 façade `acquireSelectedEngineerTask` 放在现有 `src/effects/engineers/scheduling-acquire-next.ts`，其public输入使用现有 `ScheduledEngineerAcquireAssertionV1`，不复制一份offer真相；canonical parse/normalization可在同模块复用现有字段投影与消息校验primitive。新增共享函数仅用于保护已存在多入口的C不变量，不建立第二套admission。
+
+拟改位置与接线：
+
+- `src/effects/engineers/scheduling-acquire-next.ts:22`（options/ports）、`src/effects/engineers/scheduling-acquire-next.ts:76`（assertion投影）、`src/effects/engineers/scheduling-acquire-next.ts:137`（auto wrapper）：增加明确selected façade与shared C core；selected缺任何必填字段直接拒绝。
+- `src/cli/commands/engineer.ts:312`（offers producer）、`src/cli/commands/engineer.ts:329`（命令插入点）：增加明确 `engineer acquire`，输入authorization、key、observation_ref与assertion JSON文件；认证principal/root由CLI解析，不接受assertion改主体。
+- `src/cli/mcp/engineer-tools.ts:79`（参数闭合集）、`src/cli/mcp/engineer-tools.ts:222`（schema）、`src/cli/mcp/engineer-tools.ts:530`（`acquireAsEngineer`）：将现有selected `engineer_acquire` 接至事务 façade，新增key/ref为**必填**；不要“有key走事务、没key走旧raw路径”的永久fallback。这是schema行为变化，需要同一次切换更新调用者与测试。
+- `src/effects/automation/controller-run.ts:27`（step输入）、`src/effects/automation/controller-run.ts:47`（ports）、`src/effects/automation/controller-run.ts:202`（acquire调用）及 `src/cli/commands/automation.ts:237`：增加显式selected request分支，连接同一 façade；原auto操作保留独立入口/分支，不作为selected失败后的重选。reservation、controller events、lease/liveness和attempt逻辑留在原owner。
+- `src/effects/automation/campaign-acquisition.ts:23`（输入）、`src/effects/automation/campaign-acquisition.ts:97`（acquire调用）和 `src/cli/commands/campaign.ts:223`：从host接choice/ref并连接selected façade；不能绕开本地授权parent、manifest与budget wrapper。
+
+**保留的不变量：** 认证主体和13字段assertion不变，selected永不暗换Task，下层A仍两次MATCH/复核，旧auto功能的保留不授予selected fallback权限。
+
+**证明测试（扩展现有文件）：** `tests/cli/engineer.test.ts` 加“指定第二个offer就只admit第二个”“缺ref/不完整assertion不得走auto”；`tests/cli/mcp-engineer-tools.test.ts` 加closed key/schema及当前principal约束；`tests/unit/issue-279-automation-controller-run.test.ts` 加selector port零调用、selected façade单调用与controller event绑定。**风险：** MCP schema切换与controller输入消费者迁移；四入口全部接通前不能宣称交付闭环。
+
+### GAP2：幂等回执、key conflict 与 reconciliation
+
+| 最小选项 | 好处 | 问题 |
+|---|---|---|
+| A. host直接调用A，并在host缓存key/result。 | repo改动最少。 | 服务端无法证明pending是否跨过effect；campaign外层budget与host cache不共享事务，未知结果可能重复claim。不能保持现有C语义。 |
+| B. 给selected路径复制E1的receipt逻辑和新目录。 | 各路径简单。 | 两份authority易漂移；仅换目录还会让旧pending“消失”，同key重新执行。 |
+| **C. 推荐：抽取同文件的最小receipt事务核心，auto与selected共用。** | lock/identity/pending/completed/callback次序一个owner，复用既有ports。 | request schema要升级；必须显式处理旧receipt及外层budget身份，不能当纯添加。 |
+
+**推荐 C。** 最小私有函数（暂名 `runAcquisitionTransaction`）只负责C，不接host工具或调度策略；auto提供现有选取/重试body，selected提供对指定assertion的一次bounded admission。两个实际wrapper和四个业务入口足以证明复用必要性。selected stale/capacity-full返回给host，不能进入auto候选扫描。
+
+拟改：`src/effects/engineers/scheduling-acquire-next.ts:41`（receipt shape）、`src/effects/engineers/scheduling-acquire-next.ts:88`（path）、`src/effects/engineers/scheduling-acquire-next.ts:93`（writer）、`src/effects/engineers/scheduling-acquire-next.ts:105`（reader）、`src/effects/engineers/scheduling-acquire-next.ts:145`（request identity）及 `src/effects/engineers/scheduling-acquire-next.ts:185`（completion次序）。
+
+新的规范化request basis至少绑定：
+
+- 明确operation `auto` 或 `selected`；
+- 当前认证principal/Binding身份、session身份；
+- selected完整assertion与observation_ref；auto规范化filters和原attempt bound；
+- 来自可信入口的**admission-policy ID/revision及scope basis**。campaign应绑定intent、group、manifest revision、授权parent/session等原owner事实；不能由transport选择较弱policy，也不能序列化closure当身份。
+
+这不是另一份Task模型，只是幂等请求身份。字段使用现有canonical消息primitive，拒绝未知/缺失值，不补猜revision。
+
+**外层同样要改。** `budgetedAcquisition` 的 `request` 目前仅有principal/session/authorization（`src/effects/automation/campaign-acquisition.ts:37`），先查旧result后才可能invoke（`src/effects/automation/campaign-acquisition.ts:43`）。必须绑定与内层相同的choice/observation/policy basis，并在任何budget/replay前检查同key冲突；否则外层先返回旧结果，内层加强的key规则根本未执行。controller的acquisition key也必须绑定所选request（`src/effects/automation/controller-run.ts:199`、`src/effects/automation/controller-run.ts:202`）。
+
+**一次性receipt切换，禁止常驻v1 fallback：**
+
+1. 暂停所有旧producer，盘点共享key namespace及campaign关联budget记录；pending/损坏/未知effect先显式reconcile，无法证明结果就停止激活。没有自动重执行。
+2. v1仅存旧digest/result，缺session/policy/choice metadata（`src/effects/engineers/scheduling-acquire-next.ts:41`）。不能补造v2身份。无法证明新请求身份的旧completed保留原证据，迁成**同一逻辑key的terminal conflict/reconciliation fence**；新调用使用新key，不能重用旧key再产生effect。
+3. 如果物理目录升级，所有已知key的fence必须一起迁入目标ledger，再seal迁移完成；新reader只能读新闭合schema，旧producer与reader在同一work-package退役。严禁“v2为空就当第一次调用”忽略旧pending。
+4. campaign外层旧admission/result若缺choice身份也不能透明重放为新selected事务：保留/隔离为对应key的reconciliation fence；outer与inner一起quiesce/切换。raw MCP旧调用没有key，正在进行的无key请求是否已完成属于 **[unverified]**，不能由迁移器猜测。
+5. 只复用既有refusal/result语义，不引入另一个兼容parser；completed历史key不能透明replay是明确升级行为，需在release/cutover验收写清。本设计不决定发布。
+
+**保留的不变量：** pending在effect前，unknown不自动重试；同key换主体/session/assertion/ref/policy冲突；同request只一份result；completed replay不重新admit或改变原时间。
+
+**证明测试：** `tests/unit/issue-280-acquire-next.test.ts` 扩展同selected并发key单effect、换assertion/session/ref/policy冲突、effect后抛错保留pending、callback异常不completed、旧pending/旧completed-key在迁移后仍不能再执行；保留现有auto replay/tamper测试。扩展 `tests/effects/campaign-acquisition.test.ts` 验证outer同key换choice在reserve/invoke前拒绝、outer replay不重复budget/callback。**风险：** 最高风险是持久化身份升级和跨outer/inner cutover；不能以“代码复用”掩盖数据语义变化。
+
+### GAP3：本次 campaign manifest 的任务集合
+
+| 最小选项 | 好处 | 问题 |
+|---|---|---|
+| A. host将选定Task放进 `filters.task_ids:[id]`，继续调用E1。 | 原filter检查可复用。 | 服务器会重新选取/生成assertion，未保留host的快照；普通A/capacity也不证明此Task属于本次intent manifest。 |
+| B. 在全局Fleet admission中加入campaign/group参数。 | 在claim位置可机械检查。 | 改动底层A与所有caller，不满足admission unchanged；重复 campaign owner 的authority。 |
+| **C. 推荐：campaign owner在调用A前验证指定Task的membership。** | 复用现有 `requireCampaignPlanningAuthority` / manifest，A不变；不新增全局scope registry。 | 必须绑定scope revision、补post-effect handoff检查并保留补偿；不能只做一次不带fence的includes。 |
+
+**推荐 C。** `runCampaignAcquisition` 从当前已验证的authority.manifest取得task集合，先检查caller assertion.task_id属于此intent/group，再允许进入选定事务及A；host自报allowed_task_ids无权扩大集合。selected façade可保留现有 `eligible` 逻辑作为**指定offer的MATCH约束**，但manifest scope basis由campaign入口决定，而非transport。对一般capability/min-priority filters只验证指定offer符合caller约束，不挑另一项。
+
+拟改：`src/effects/automation/campaign-acquisition.ts:76`（加载authority）、`src/effects/automation/campaign-acquisition.ts:86`（validateHandoff）、`src/effects/automation/campaign-acquisition.ts:100`（从选择filter改为owner membership约束）；`src/effects/engineers/scheduling-acquire-next.ts:116`（复用predicate，不用find换Task）。scope basis进入GAP2的outer/inner身份，effect前再取当前authority，handoff后再次验证当前manifest revision/membership。post-effect不一致走GAP4已有own-claim补偿；要断言“membership在claim瞬间不会变”还须核对existing campaign locks的完整writer覆盖，此项 **[unverified]**，不能宣称一个includes或快照hash就提供该强度。
+
+**保留的不变量：** 普通Task合法不等于本次campaign合法；owner事实决定授权集合；集合变化拒绝旧assertion，不替host换Task。
+
+**证明测试：** `tests/effects/campaign-acquisition.test.ts` 加“另一个group/campaign的合法ready Task也被本次manifest拒绝，claim次数为0”、effect前manifest revision变化拒绝、effect后变化只补偿自己的精确claim，保留未知owner时rollback_failed；`tests/unit/issue-280-acquire-next.test.ts` 保留规范化membership/空集合/未知字段基线并证明selected不自动重排或换候选。**风险：** scope切换与并发authority writer；必要性已证明，完整锁强度仍需实现切片取证。
+
+### GAP4：callback-before-completion、补偿和预算次序
+
+| 最小选项 | 好处 | 问题 |
+|---|---|---|
+| A. admission成功后交给host验证handoff/撤销claim。 | façade简单。 | host可能在验证前退出；服务端已写success/付budget，事后取消可能释放已经在运行的owner。 |
+| B. 将所有campaign检查复制进shared acquire core。 | 一个body完成所有步骤。 | 污染普通Engineer路径，形成第二份campaign authority/补偿owner。 |
+| **C. 推荐：保留campaign的可信callback与budget wrapper，让shared C core维持次序。** | 复用现有accept_acquired / budgetedAcquisition，没有generic lifecycle framework。 | request必须绑定callback policy/context，outer replay和fresh/replay区别不能丢。 |
+
+**推荐 C。** `accept_acquired` 仍是可信内部port，不作为JSON函数或由host提供callback名称。plain entry映射plain policy，campaign entry映射其当前intent/policy revision和closure；两个policy不可共享一个没有scope身份的completed key。
+
+拟改位置：`src/effects/engineers/scheduling-acquire-next.ts:30`、`src/effects/engineers/scheduling-acquire-next.ts:185`（共享事务的success gate）；`src/effects/automation/campaign-acquisition.ts:28`（budgetedAcquisition）、`src/effects/automation/campaign-acquisition.ts:86`（validateHandoff）、`src/effects/automation/campaign-acquisition.ts:101`（callback/own-claim补偿）、`src/effects/automation/campaign-acquisition.ts:127`（unbudgeted inner replay拒绝）、`src/effects/automation/campaign-acquisition.ts:137`（outer replay后的handoff再验证）。
+
+必须保留的执行次序：
+
+```text
+认证/本次scope与request冲突检查
+→ outer reserve + durable budget admission
+→ inner durable pending
+→ unchanged scheduled admission/claim
+→ fresh accept_acquired：验证principal、ClaimActor、envelope、manifest/policy
+→ 若失败：仅精确own claim补偿；unknown不抢/不删，报告rollback_failed
+→ inner completed（成功或确定的补偿失败结果）
+→ outer durable result
+→ eligible outcome settlement / usage
+→ worker handoff
+```
+
+effect、callback或outer result之间crash留下unknown/pending，先reconcile；不重跑callback当作“检查是否成功”，更不把expired observation当作可清除pending。成功outer replay不再reserve或调用inner；仍用现有handoff校验确认原envelope可消费，失效只报告，不释放可能已在运行的claim。原 `acceptedFresh` / unbudgeted replay保护保留；不要给host一个可伪造的“fresh”标志。outer/inner相同choice/policy身份来自GAP2，避免普通selected成功被跨campaign重放。
+
+**证明测试：** `tests/effects/campaign-acquisition.test.ts` 加callback前后crash、compensation失败、lease已换owner、budget admission有而result缺失、inner已completed但outer unresolved拒绝再次effect、outer completed replay不重复usage/回调；`tests/unit/issue-280-acquire-next.test.ts` 验证callback发生在completion落盘前。controller `tests/unit/issue-279-automation-controller-run.test.ts` 保留reserve/event/lease-liveness路径，不能将完整事务搬进host。
+
+**风险：** 多store之间没有全局原子commit；原协议用durable边界和unknown refusal控制，不应借此次选择迁移新增自动恢复调度器。
+
+### GAP5：可信冻结观察时间
+
+源码反例：
+
+- 没有attempt current时 `eligible_since = observed_at`（`src/core/engineers/automation-attempt.ts:70`）。
+- 该字段进入offer basis并被hash（`src/core/engineers/scheduling.ts:660`、`src/core/engineers/scheduling.ts:669`）。
+- admission精确比较offer_revision（`src/effects/engineers/scheduling-acquire.ts:108`）；E1目前一次observedAt贯穿collect/acquire（`src/effects/engineers/scheduling-acquire-next.ts:158`、`src/effects/engineers/scheduling-acquire-next.ts:171`）。
+
+因此首次offer在T1读出、admission在T2重采，即使Task没变也可能必然stale。GAP5不能仅靠“进admission时Date.now一次”闭合。
+
+| 最小选项 | 好处 | 问题 |
+|---|---|---|
+| A. host传任意observed_at，wrapper填offer_options.now_ms。 | 最小字段改动。 | 时间无可信来源；未来时间可绕过backoff投影（`src/core/engineers/automation-attempt.ts:76`），陈旧时间冻结attention。拒绝。 |
+| B. admission用服务端当前时间；同时改变eligible_since/revision或替host重建assertion。 | 不需observation store。 | 单用当前时间仍无法处理上述首次offer；后两项改变identity/完整caller assertion语义，不满足本次A与revision不变。可在另一个方向评估，但不推荐此任务采用。 |
+| **C. 推荐：offer读取由服务端出具短时有效observation receipt，host只回传引用。** | producer与两次admission重采共享可信时点，保持13字段/revision/A算法；future/foreign/过期引用可拒绝。 | 增加窄观察证据及expiry行为，需保护存储来源、明确expiry和GC；不是纯字段透传。 |
+
+**推荐 C。** 先在现有 `scheduling-acquire-next.ts` 内增加窄producer/reader，复用Git common定位、exclusive lock与仓库的durable-write primitive；不建token服务、签名平台或新的snapshot数据库。现有 `src/effects/evidence/atomic-append.ts:56` 有durable文件writer可作为机械复用候选，但最终路径/symlink/exclusive-create适配仍 **[unverified]**，实现切片必须核对，不照搬collaboration的feature/policy authority。
+
+闭合record至少绑定repository、认证principal/Binding、canonical offer snapshot digest、producer observed_at_ms、expires_at_ms及producer/policy revision；producer保存原snapshot bytes，ref内容地址化。host选择必须MATCH该snapshot中实际存在的offer，并提交原13字段；不得仅凭“一个hash格式像ref”承认host自报时间。新事务的缺失/损坏/foreign principal/未来观察/clock rollback/过期引用均拒绝，不重新mint或补猜。该freshness检查发生在key ledger查明这是新事务之后；不能在ledger查询前用expiry拒绝pending或completed replay。
+
+拟改位置：
+
+- `src/effects/engineers/scheduling.ts:314` 的collector仍提供fact读取，不改offer语义；producer在 `src/effects/engineers/scheduling-acquire-next.ts:137` 附近新增函数，选一次服务端时间再调用collector并durable保存。
+- CLI offers的认证位置 `src/cli/commands/engineer.ts:317` 和 MCP offers surface对应入口增加**显式prepare**能力；不要默默把纯read的offers变成写store。具体新增MCP prepare工具/schema/annotation在 `src/cli/mcp/engineer-tools.ts:150` 的封闭inventory与tool definitions一起注册，fixture验证；新增窄producer不会获得claim权。
+- selected façade验证record后通过已存在 `offer_options.now_ms` 调unchanged A（`src/effects/engineers/scheduling-acquire.ts:76`）；两次重采仍读取当前Binding/attempt等authority，时间只固定retry/attention投影。
+- GAP2 request包含ref；每次新effect用该ref，completed replay不重算时间或claim。expired ref不妨碍纯completed-result读取，但不能把读取结果当新的admission；current授权仍须检查。pending永远不能因expiry被当未发生。
+- observation record若被pending/completed receipt引用，保留到显式证据retention规则允许清理；本切片不加自动GC。原始snapshot/record消失应fail closed。
+- **expiry建议：新事务进入admission前的引用新鲜度先冻结为30秒设计上限**，边界测试使用注入clock。30秒不是实测SLO；实际host往返/人工选择时延和部署clock行为 **[unverified]**，首次canary不满足就重新裁定该常量，不能运行时偷偷放宽。host若需要更久选择，重新prepare并用新key提交最新assertion。producer时间与expiry进record，transport不能覆盖它。30秒检查点是获得request key锁后、进入新事务admission前；下层A的concurrency/Binding/capacity锁等待可能跨过expiry。此设计**不保证实际claim mutation发生时快照年龄仍小于30秒**，只固定可信观察语义并继续重读当前authority。要求mutation-time TTL将需要下层lock/admission port改动，超出本次admission unchanged推荐，须另行裁定。
+
+**保留的不变量：** 一个选择快照与其admission重采用同一可信时点；新attempt/Binding/Task改变仍stale；time receipt不替代scope或授权，不改变retry policy，不让host传未来时间。
+
+**证明测试：** 扩展 `tests/unit/me1a-engineer-scheduling-acquire.test.ts`，使用真实 `current=null`，T1 prepare/T2 admission可通过、改用T2重采产生stale；`tests/unit/issue-287-automation-attempt.test.ts` 扩展backoff/attention阈值与attempt revision改变；`tests/unit/issue-280-acquire-next.test.ts` 加foreign、tampered、future、expiry两侧、clock rollback、同key换ref与completed replay不读新时间；`tests/effects/campaign-acquisition.test.ts` 证明outer key不能用新ref吞掉旧selected结果。新增expiry/producer本身是显式行为，不宣称端到端“零行为变化”。
+
+### 有序切片与独立验证边界
+
+每片实施时再由设计者冻结contract/Verification Plan；这里没有新建plan/tasks或启动实现。按现有Testing Policy扩展既有tests，不新增平行benchmark或测试文档。
+
+| 顺序 | 有界切片 | 改动性质 | 独立完成条件 |
+|---|---|---|---|
+| S0 | 取证反例、冻结observation schema/30秒上限与migration key语义。 | 先做测试/契约设计；无运行行为切换。 | 真实首次offer跨T1/T2 stale被现有test fixture复现；明确scope/policy/callback身份与legacy key处理，不能只用stub offer。 |
+| S1 | GAP5窄prepare producer/reader与可信时间验证；暴露显式prepare表面。 | **纯新增能力**，但prepare明确写观察证据；原纯read offers不变。 | 当前null-attempt、foreign/tamper/future/expiry/clock rollback测试通过；无任何claim；原始snapshot与record可读回。source authority unchanged。 |
+| S2 | GAP2同模块shared C core和selected façade；同时一次性receipt及campaign外层身份切换。 | **行为变化**：持久化schema/legacy-key replay升级；auto选择策略暂不变。 | old pending不能被新namespace绕开；同key身份冲突、并发单effect、callback前后crash及outer/inner不一致fail closed；迁移没有永久v1 reader。S2先绑定现有callback语义的policy revision R1；尚不接新production selected入口。 |
+| S3 | GAP3/4 campaign membership owner guard、policy/context identity、callback/compensation/budget次序。 | **行为变化/不变量强化**；原authorized auto选择仍在manifest内，普通A不变。 | 其他group合法Task zero claim拒绝；新增membership/post-effect语义升级policy revision为R2，同key的R1 completed须冲突，不能冒充R2验证通过。scope schema在S0已冻结，不再新增第二次兼容schema迁移。manifest变化及own-claim补偿、unknown/pending/outer replay链被tests覆盖。完整锁覆盖若未证明，明确限制其强度，不能跳过该未知。 |
+| S4 | GAP1 CLI selected输入、MCP direct acquire schema切换、controller/campaign selected接线。 | CLI selected是**新增能力**；MCP必填字段与controller/campaign selected协议是**行为变化**。 | 四入口同一choice/ref通过同一C core到原A；缺字段不fallback，plain/campaign不串policy；CLI/MCP inventories和原自动路径验证通过。schema消费者同步迁移，未迁移客户端明确拒绝。 |
+| S5 | host prepare→只读选择→selected admit的fixture/受控canary，核对原admission和closeout。 | **验收验证**，不新增调度器/删除代码。 | 四入口的stale/rotation/capacity/claim race/current-null/time、key replay与handoff证据均成立；host实测延迟验证30秒上限；用精确subject验收，不能用readyz或exit0代替。 |
+
+S2的私有共享抽取不能独立绕过持久化切换；它保护唯一receipt owner。若实施者为了review先单独做byte-identical提取，该提取是refactor验证子项，不得先上线一个忽略旧key的selected新目录。S4不能先于S1–S3开放到host。
+
+**下一实际瓶颈是 S0 的首次offer跨请求时间反例与可信快照契约**：它决定selected API能否工作，且能用现有fixture明确验证。之后才是receipt迁移；不是立即搬走 `find` 或修改lower admission。以上只给推荐次序，没有决定删除E1/Fleet fallback，也没有提交、推送或发布。

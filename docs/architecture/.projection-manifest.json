@@ -1251,9 +1251,9 @@
       "sourceDigest": "sha256:6f1d8c7839dc83c16c80bee79ee8c6b3b3131e523928d2d0e957180fd0541c02",
       "outputDigest": "sha256:beaaa466d51cbd8f929fd6acd6645c6f5136cccf539f09b63a273e5ab38519fa",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "6af754adbf56a0a1c8f296d499d49ac573007297",
-        "committedAt": "2026-09-30T03:15:33+08:00"
+        "branch": "docs/pi-harness-host-invariants",
+        "commit": "4be6d2b654ae16fa18737b228c20154320ce73f4",
+        "committedAt": "2026-09-30T17:07:34+08:00"
       }
     },
     {
