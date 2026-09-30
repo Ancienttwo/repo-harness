@@ -14,7 +14,7 @@
 
 ## Prepared artifact hashes (unrun)
 
-- canary.ts: sha256:b521c1f28dfa78b84c80303972a8c0c09d73894cc831a75478f7bc78e59e4816
+- canary.ts: sha256:53d5877e39fa7dc40fdf6b168ba6abb48e5129c0086e93d6af8f4652d18bfd56
 - canary-budget.json: sha256:722872c4803afe364c06b2a71fbe55d7d9b3c02a5f4ca6c83786ea020d316040
 - expected-results.md: sha256:d0844c618aa5681f01b78e98f9c8b89806ac5a43582c8dad49fd774b3aedb8ec
 
@@ -36,3 +36,8 @@
 - 仅S0 fake改/tmp/as-*→realpath /private/tmp/as-*/h；复用validateHerdrEndpoint检查API/client并加API<100断言（--verify计划路径+live实际路径），API86/client93。N8与两个真实session未传home，当前HOME下API74/client81；长configPath本身不改变socket位置。
 - cleanup-pending-task-proof-60fb6d5fb1ee4860与62d2f06143434cbf均为stop返回空stdout后JSON.parse Unexpected EOF：两server已通过workspace list ready，属于已启动server，非“未起server的stop”。effect只在status0才返回供JSON.parse；之后原run等待两server进程退出。精确session进程与socket均未见残留。第三fake session f8b7f86e79e24eaa从未ready，亦无进程残留。未修stop解析（本次范围仅路径）。
 - ~/.rhc-jTHSNm、/private/var/folders/nz/1kt960ns5kq331c5qw2sh6sc0000gn/T/ep-2G0wZJ、live-b6deb759证据完整保留；PR464未动。预算/expected字节保持原值，canary新hash待advisor审与用户重新GO。
+
+## S0 stop stdout correction（新GO仍待批）
+
+- 三处stop统一小函数stopServer，调用raw effect只看退出状态、不解析stdout，之后仍等待对应server子进程退出；失败才记录cleanup-pending。S0新fakeRoot立即加入retained_paths，成功/失败最终输出都可供用户清理。预算/expected保持722872c4/d0844c61，未执行live或S0。
+- 扫描全部0模型JSON.parse/cli：workspace list/create、agent get、pane list为JSON（既有真实私有fixture测试及research证明）；report-agent与server stop可能空stdout，前者本就raw status，后者本次修正。production lifecycle内部getter（workspace/pane/process-info/agent/worktree open/split）仍用JSON读取，run/start/close/report等mutation走herdrMutation允许空stdout。预算、pane-created与fake-ready是自有JSON文件，不是Herdr命令stdout。实际安装herdr0.9.1；本次格式审计依据已有证据/调用路径，没有新启server或模型。
