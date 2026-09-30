@@ -56,8 +56,8 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
     const proof = captureTaskPane(endpoint, pane, name, { pid: child.pid, identity: processIdentity(child.pid) },
       { disposition: 'created', intent_id: session.session_id }, { pid: process.pid, identity: processIdentity(process.pid) });
     processes = { host: processIdentity(process.pid), child: processIdentity(child.pid), child_pid: child.pid,
-      server: identity.server, pane, binding: { protocol: 3, launch: 'structured_host', result_authority: 'host', host_result: {journal_ref: dir}, containment: null, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
-        harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof, host: {pid:process.pid,identity:processIdentity(process.pid)} } };
+      server: identity.server, pane, binding: { protocol: 2, repository_id: taskRepository(session.repo_root).repository_id, execution_root: session.repo_root, runtime: 'herdr', task: session.contract_file, role: 'gatekeeper',
+        harness_kind: 'claude', endpoint, max_requests: CLAUDE_REVIEW_MAX_ROUNDS, capabilities: harnessCapabilities('claude'), ...proof } };
     writeSessionArtifact(join(dir, 'processes.json'), processes);
   } finally { startup.release(); }
   console.log(`Claude reviewer | session=${session.session_id} pid=${child.pid} contract=${session.contract_file}`);
@@ -68,10 +68,13 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
   let closing = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let outputBytes = 0;
+  let lifecycleSequence = 1;
+  const report = (state: 'working' | 'idle' | 'blocked') => herdrMutation(herdrCommand(reviewEndpoint(session), ['pane','report-agent',processes.pane,'--source','repo-harness','--agent','claude','--state',state,'--seq',String(++lifecycleSequence)]));
   const fail = (error: unknown) => {
     interrupted = true;
     clearTimeout(timer);
     if (!existsSync(join(dir, 'failure.json'))) writeSessionArtifact(join(dir, 'failure.json'), { error: String(error), round: active?.round ?? null });
+    try { report('blocked'); } catch { /* Preserve interrupted evidence if observation is unavailable. */ }
     console.error(`INTERRUPTED: ${String(error)}. Result not accepted; use status/cancel.`);
   };
   const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
@@ -106,6 +109,7 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       clearTimeout(timer);
       completed = active.round;
       active = null;
+      report('idle');
       console.log(`ROUND ${completed} ${output.verdict}: ${output.summary}`);
       for (const finding of output.findings) console.log(`[${finding.severity}/${finding.status}] ${finding.id}: ${finding.message}`);
       console.log('Round saved. Waiting for host acceptance and the next repair round or explicit close.');
@@ -155,6 +159,7 @@ export async function runClaudeReviewHost(directory: string): Promise<void> {
       // Publishing started before writing stdin makes interrupted delivery observable and non-replayable.
       beginSessionRound(dir, next, { round_id: request.round_id, session_id: session.session_id, child: processes.child });
       active = request;
+      report('working');
       outputBytes = 0;
       console.log(`ROUND ${next} submitted: ${request.context.subject_sha256}`);
       child.stdin.write(JSON.stringify({ type: 'user', session_id: session.session_id, parent_tool_use_id: null,

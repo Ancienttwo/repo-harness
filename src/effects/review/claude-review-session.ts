@@ -6,7 +6,7 @@ import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { herdrCommand, herdrEnvironment, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
-import { assertCreated, assertTaskBinding, ensureSessionDirectory, nextSessionRound, processIdentity, processProofAlive, readSessionArtifact, signalCreatedProcess, waitSessionArtifact, writeSessionArtifact, type ObjectOwnership, type OwnedProcess, type ProcessProof, type TaskPaneBinding } from '../terminal/task-session';
+import { assertCreated, assertTaskBinding, ensureSessionDirectory, nextSessionRound, processIdentity, processProofAlive, readSessionArtifact, signalCreatedProcess, waitSessionArtifact, writeSessionArtifact, type ObjectOwnership, type TaskPaneBinding } from '../terminal/task-session';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { CLAUDE_REVIEW_MAX_ROUNDS, CLAUDE_REVIEW_TIMEOUT_MS, reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewContext, type ClaudeReviewRequest } from '../../core/review/claude-review';
 import { acceptanceContext, authorityFingerprint, projectAcceptance, recordAcceptance, verifyAcceptance } from '../../../scripts/acceptance-receipt';
@@ -32,7 +32,7 @@ export interface ReviewProcesses {
   child_pid: number;
   server: string;
   pane: string;
-  binding: TaskPaneBinding & {provider: OwnedProcess;host: ProcessProof;containment: null};
+  binding: TaskPaneBinding;
 }
 
 export interface ClaudeReviewOptions {

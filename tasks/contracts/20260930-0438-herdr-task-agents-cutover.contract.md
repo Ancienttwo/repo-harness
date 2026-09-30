@@ -17,19 +17,19 @@
 
 ## Goal
 
-H3 host security 切片（REQ-5 DESIGN-2 1–3）：binding 的 launch/result_authority 由 admitted role/capabilities 决定；host 权威结果从 protected journal 校验 provenance/seal，拒绝 provider 文件/CLI 伪造。冻结 containment 单轮/deadline/no-stdin 类型约束与身份。随后实现 host 生命周期/ACK/native protocols 并迁移 consumers。
+REQ-5 SIMPLIFY：净删除过度 host journal/schema/adapter/containment 设计，binding 回 protocol2。协作 provider 的 result/collect 原样可用；host 角色的 CLI result 拒绝，read/collect 不读 outbox，其 domain consumer 原路径不变。只保留现有 Claude host 的单调 working/idle/blocked 状态上报。
 
 ## Scope
 
-- In scope: 下列 exact typed host result codec、task-session/CLI、既有 review binding consumer 与 fixture tests/notes。
-- Out of scope now: 真实模型/canary、mini、全局安装；consumer 路由后续切片继续，不声明 H3 完成。
-- 所有 source changes 都围绕 host-design.md 的 frozen direction；不能接受 host-sealed 以外的数据作为 acceptance/consult/collected evidence。
+- In scope: explicit shared task-session、原 Claude host/session、CLI 和原有 tests，移除 task-host-result.ts。
+- Out of scope: campaign/containment/delegation（暂停），新的 host/adapter，真实模型/mini/global install。
+- 净删除 commit canonical 后迁 MCP goal 至持久 Herdr，然后 [REQ-5 CHECKPOINT] 等回复。
 
 ## Stop Conditions
 
-- launch/result authority 不接受 caller selector；real capability 未证明则 unsupported，不能换模式/harness。
-- contained 只允许 max_requests=1 + 原 deadline + create-time frozen argv + 无 stdin；不杀 docker client 来声称 workload exited。
-- 不碰主 checkout dirty 文件、w8:p1、mini、全局 ~/.codex ~/.claude；无真实模型。
+- 新增类型/字段/文件必须指向验收标准或既有保护；不能为未知将来实现预留。
+- 不改 main dirty、w8:p1、mini、真实 ~/.codex ~/.claude；无真实模型调用。
+- host domain consumer 不经 provider claim 出 Receipt；普通协作 claim 仍可读/collect。
 
 ## Falsifier
 
@@ -123,7 +123,7 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/core/engineers/task-host-result.ts
+    - src/effects/terminal/task-session.ts
   artifacts_exist: []
 ```
 
@@ -141,7 +141,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Current-code falsifiers for file/CLI gatekeeper forgery and typed host authority/launch/containment guards; private fixture lifecycle and owner cleanup.",
+      "necessity": "Host ownership startup/recovery plus existing private lifecycle and protected authority falsifiers.",
       "inputs": {
         "env": []
       }
@@ -154,7 +154,7 @@ exit_criteria:
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Existing protected structured review host shares binding/identity types; preserve full stdin delivery and exact owned closeout before H4 retirement.",
+      "necessity": "Existing 21-case review behavior plus pre-fix Herdr status/ACK/unknown/free-text host seam falsifiers; no real model calls.",
       "inputs": {
         "env": []
       }

@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:dcf452ec8614f4c28099a745b8d4c1b8e4979a5726090436fcd9967603ad9f65`
+> **Substantive Change SHA256**: `sha256:3c32aa2b694c089bd1524064821f4f665f195691e5a153a7cc3490d1d92de31d`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -161,3 +161,25 @@
 - Binding protocol 3 requires explicit launch/result_authority/host_result/containment, with provider-null iff containment-present. Previous unpublished fixtures get fields, no format compatibility. Host collection reads only derived repoHarnessHome/task-hosts key, host/ACK/event joins and raw digest; value is pure versioned event projection. Outbox+CLI publisher cannot mint host evidence; provider publications remain readable claims and cannot collect.
 - Current-code file and CLI forgery regressions both failed before fix. Current coverage also refuses missing host event despite outbox, wrong digest/ACK/journal home/adapter version, and invalid OCI max/deadline. Registered read-only roles with real unverified capability refuse before state/layout; no interactive degradation.
 - Structured startup/host lifecycle lands in HELP step 2; OCI activation is explicitly unsupported until step 4, not uncontained fallback. Existing review's protected host gets structural binding fields without changing its full stdin delivery or acceptance semantics before H4 retirement.
+
+
+## FOLLOWUP direction correction
+
+- User's persistent Herdr processes / mutual history reading statements are requirements. No new one-shot Codex host, app-server/Pi/OpenCode host or universal host module. The uncommitted generic host extraction is withdrawn; step2 only adds protected journal/ACK/event + lifecycle to the existing persistent Claude host.
+- step3 migrates MCP goal from codex exec/claude -p to persistent herdr_agent start/send/read/close, provider claim with redaction/128KB limit; include cross-agent history proof. Then [REQ-5 CHECKPOINT] and wait.
+- campaign/containment step4 and delegation step5 paused pending advisor/user direction; no campaign sources changed. Existing inert containment fields remain visible for final speculative-field review, not expanded.
+
+
+## Persistent Claude journal slice
+
+- Actual private-Herdr probe: agent prompt to the structured host is refused agent_not_ready because the Claude child is not pane foreground. This is an observation-layer restriction, not request delivery. Host request delivery stays file→ACK→provider stdin, free text never enters provider; tests accept either successful ignored pane text or explicit not-ready refusal and prove stdin unchanged.
+- Host journal path is created/derived by owner and stored explicitly in session before Herdr server startup; server HOME does not select it. host.json before spawn, ACK before full request.prompt stdin, native event/digest after validated reply. Working→idle seq is monotonic, unknown/approval-shaped events interrupted without reply, console mirror bounded with truncation marker.
+- No generic host file/extraction retained. Existing Claude stream child remains persistent and 21-case domain semantics are unchanged. Cipher/signature code stays removed; framework permissions proof remains H4 unverified.
+
+
+## REQ-5 SIMPLIFY supersedes host architecture
+
+- User: Herdr-dependent agent communication protocol for advisory/planning/collaboration, avoid complexity. Withdraw journal/ACK/event/extract/adapter/containment/three-shape design; remove speculative fields/files and unconditional unsupported branches. Protocol2 and existing provider result/collect restored.
+- The only host channel protections retained: CLI result refuses when binding.host is non-null; generic read/collect never use its outbox, existing domain result/Receipt path stays authoritative. Two current-code forgery regressions remain as these exact boundary assertions, no new authentication mechanism.
+- Existing custom Claude host reports working/idle/blocked with increasing seq because Herdr cannot infer its status. No generic host module, new unknown-event schema, mirror limit, stdin handling or journal.
+- task-role-profiles remains a real installer consumer with one parser/model/writability source; no new role dispatcher consumes it yet. List this accurately in CHECKPOINT. Campaign/delegation remain paused; MCP persistent goal and mutual history reading next.
