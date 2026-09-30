@@ -17,7 +17,7 @@
 
 ## Goal
 
-修复 PR #464 MCP run_agent_goal 的提前 observed_idle：匹配 request 的 Result 可直接完成；仅投递后观察到 working 且之后有更晚 idle/done 才结束观察。idle-only 必须等待 timeout，保持 Result/observations 与 close/cancel 的边界。
+修复 PR #464 MCP run_agent_goal 的提前 observed_idle：匹配 request 的 Result 可直接完成；baseline 必须在投递返回后采集，仅其后观察到更新 working 且之后有更晚 idle/done 才结束观察。idle-only 必须等待 timeout，保持 Result/observations 与 close/cancel 的边界。
 
 ## Scope
 
@@ -36,9 +36,9 @@
 
 ## Root Cause Evidence
 
-- root_cause: runAgentGoal treats any newer idle/done state than pre-send baseline as terminal, then cancels without a Result. An unknown-to-idle telemetry transition before working therefore kills a pending provider.
+- root_cause: runAgentGoal treats any newer idle/done state than pre-send baseline as terminal, then cancels without a Result. An unknown-to-idle telemetry transition before working therefore kills a pending provider. A pre-send baseline also admits unrelated startup working during delivery; the baseline must be collected after send returns.
 - repro: bun test tests/herdr-task-lifecycle.test.ts -t 'MCP goals use visible' --timeout 60000; unfixed latest main returns observed_idle instead of completed for EARLY_IDLE WRITE_RESULT (5.29s).
-- regression_guard: tests/herdr-task-lifecycle.test.ts owning MCP goal integration covers early idle then matching Result, idle-only timeout, working-idle observation, normal Result and working timeout, real private Herdr/deterministic providers and parent preservation.
+- regression_guard: tests/herdr-task-lifecycle.test.ts owning MCP goal integration covers startup working during delivery then idle before request work, early idle then matching Result, idle-only timeout, working-idle observation, normal Result and working timeout, real private Herdr/deterministic providers and parent preservation.
 - pre_fix_failure_artifact: .ai/harness/runs/mcp-goal-idle-fix/pre-fix.log (PRE_FIX_EXIT=1).
 
 ## Workflow Inventory

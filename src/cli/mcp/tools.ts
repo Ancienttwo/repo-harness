@@ -552,9 +552,9 @@ async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>):
     const binding = await startTaskAgent(ctx.repoRoot, spec, { startTimeoutMs: Math.min(timeoutMs - 1000, 60000) });
     started = true;
     const get = () => herdrResult(herdrCommand(binding.endpoint, ['agent', 'get', binding.agent_name])).agent;
+    const request = await sendTaskRequest(ctx.repoRoot, task, role, contextPath.slice(ctx.repoRoot.length + 1));
     const before = get();
     let workingSequence: number | null = null;
-    const request = await sendTaskRequest(ctx.repoRoot, task, role, contextPath.slice(ctx.repoRoot.length + 1));
     const dir = taskSessionDirectory(ctx.repoRoot, task, role);
     while (Date.now() < deadline) {
       const state = get();
