@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
 
@@ -209,8 +209,8 @@ let buffer=''; process.stdin.on('data',chunk=>{
   const match=/^Read task request (.+); write its result only to (.+)\\.$/.exec(text);
   if(!match)continue;
   const request=JSON.parse(readFileSync(match[1],'utf8'));
-  const content=JSON.parse(readFileSync(request.context_ref,'utf8')).content;
-  if(content==='hold-result'){process.stdout.write('PASS is not a result artifact\\n');continue;}
+  const content=readFileSync(request.context_ref,'utf8');
+  if(content==='hold-result'||content==='via-cli'){process.stdout.write('PASS is not a result artifact\\n');continue;}
   writeSessionArtifact(request.result_ref,{request_id:request.request_id,context_sha256:request.context_sha256,value:'artifact-result'});
   process.stdout.write('PASS misleading terminal text is not the result artifact\\n');
  }
@@ -276,12 +276,12 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const { dir } = api.readTaskAgent(fixture, spec.task, spec.role);
     writeFileSync(join(fixture, 'context.md'), 'owned context');
     const request = await api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md');
-    await until(() => existsSync(join(dir, 'result-1.json')));
+    await until(() => existsSync(request.result_ref));
     expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
-    const result = api.readSessionArtifact<Record<string, unknown>>(join(dir, 'result-1.json'));
-    api.writeSessionArtifact(join(dir, 'result-1.json'), { ...result, request_id: 'another-request' }, false);
+    const result = api.readSessionArtifact<Record<string, unknown>>(request.result_ref);
+    api.writeSessionArtifact(request.result_ref, { ...result, request_id: 'another-request' }, false);
     expect(() => api.readTaskRequestResult(fixture, dir, request)).toThrow('result_identity_mismatch');
-    api.writeSessionArtifact(join(dir, 'result-1.json'), result, false);
+    api.writeSessionArtifact(request.result_ref, result, false);
     writeFileSync(join(fixture, 'context.md'), 'changed context');
     await expect(api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md')).rejects.toThrow('round_budget_exhausted');
     const bindingPath = join(dir, 'binding.json');
@@ -330,9 +330,11 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
 
     // One Git clone owns one task state, regardless of which checkout invokes.
     run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'base'], fixture, env);
+    // Installed repos ignore runtime evidence; apply the same Git boundary to this minimal fixture.
+    writeFileSync(join(fixture,'.git/info/exclude'), '.ai/harness/runs/\n');
     const checkout = join(fixture, 'linked-checkout');
     run('git', ['worktree', 'add', '-qb', 'codex/linked-test', checkout], fixture, env);
-    const linkedSpec = { ...spec, role: 'linked-role', max_requests: 2 };
+    const linkedSpec = { ...spec, role: 'linked-role', max_requests: 3 };
     const linkedPath = join(fixture, 'linked-spec.json'); writeFileSync(linkedPath, JSON.stringify(linkedSpec));
     const shim = join(fixture, 'shim'); mkdirSync(shim);
     const failed = join(fixture, 'open-failed');
@@ -357,10 +359,35 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const primarySpace = spaces.find((item: any) => item.workspace_id === root.workspace.workspace_id);
     expect(linkedSpace.worktree.repo_key).toBe(primarySpace.worktree.repo_key);
     expect(linkedSpace.worktree.repo_root).toBe(fixture);
-    writeFileSync(join(fixture, 'context.md'), 'cross-checkout context');
+    writeFileSync(join(fixture, 'context.md'), 'via-cli');
     const linkedRequest = await api.sendTaskRequest(fixture, spec.task, linkedSpec.role, 'context.md');
-    await until(() => existsSync(linkedRequest.result_ref));
+    expect(linkedRequest.protocol).toBe(2);
+    expect(linkedRequest.result_ref.startsWith(checkout + '/')).toBe(true);
+    expect(readFileSync(linkedRequest.context_ref, 'utf8')).toBe('via-cli');
+    writeFileSync(linkedRequest.result_ref, '{"request_id":');
+    expect(api.readTaskRequestResult(fixture, fromPrimary.dir, linkedRequest)).toBeNull();
+    const resultValue = {request_id:linkedRequest.request_id,context_sha256:linkedRequest.context_sha256,value:'artifact-result'};
+    await expect(api.submitTaskResult(fixture,spec.task,linkedSpec.role,1,resultValue)).rejects.toThrow('submission_checkout_mismatch');
+    writeFileSync(join(checkout,'result-input.json'),JSON.stringify(resultValue));
+    const cliPath = new URL('../src/cli/index.ts', import.meta.url).pathname;
+    // CLI submission has no write permission to canonical role state or its lock parent.
+    chmodSync(fromPrimary.dir,0o500);chmodSync(dirname(fromPrimary.dir),0o500);
+    try {
+      const submit = spawnSync(process.execPath,[cliPath,'task-agent','result','--repo',checkout,'--task',spec.task,'--role',linkedSpec.role,'--round','1','--input','result-input.json'],{cwd:checkout,env,encoding:'utf8',timeout:10000});
+      if(submit.status!==0)throw new Error(submit.stderr+submit.stdout);
+    } finally { chmodSync(dirname(fromPrimary.dir),0o700);chmodSync(fromPrimary.dir,0o700); }
+    expect(existsSync(join(fromPrimary.dir,'result-1.json'))).toBe(false);
+    expect(existsSync(join(fromPrimary.dir,'collected-1.json'))).toBe(false);
+    const collected=spawnSync(process.execPath,[cliPath,'task-agent','collect','--repo',fixture,'--task',spec.task,'--role',linkedSpec.role,'--round','1'],{cwd:fixture,env,encoding:'utf8',timeout:10000});
+    if(collected.status!==0)throw new Error(collected.stderr+collected.stdout);
+    expect(api.readSessionArtifact<typeof resultValue>(join(fromPrimary.dir,'collected-1.json'))).toEqual(resultValue);
+    expect(await api.submitTaskResult(checkout,spec.task,linkedSpec.role,1,resultValue)).toEqual(resultValue);
+    await expect(api.submitTaskResult(checkout,spec.task,linkedSpec.role,1,{...resultValue,value:'conflict'})).rejects.toThrow('result_conflict');
+    rmSync(join(checkout,'result-input.json'));
     expect(api.readTaskRequestResult(checkout, fromLinked.dir, linkedRequest)?.value).toBe('artifact-result');
+    await expect(api.sendTaskRequest(fixture,spec.task,linkedSpec.role,'context.md','changed_only')).rejects.toThrow('duplicate_subject');
+    const repeated=await api.sendTaskRequest(fixture,spec.task,linkedSpec.role,'context.md');
+    await api.submitTaskResult(checkout,spec.task,linkedSpec.role,repeated.round,{request_id:repeated.request_id,context_sha256:repeated.context_sha256,value:'artifact-result'});
     writeFileSync(join(fixture, 'context.md'), 'hold-result');
     await api.sendTaskRequest(fixture, spec.task, linkedSpec.role, 'context.md');
     copyHelpers(fixture);
@@ -565,6 +592,8 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     const root=call(['workspace','create','--cwd',fixture,'--no-focus']); const parent=root.root_pane.pane_id;
     const baseline=call(['workspace','list']).workspaces.length;
     const checkout=join(fixture,'recover'); run('git',['worktree','add','-qb','codex/recover',checkout],fixture,env);
+    await expect(api.registerTaskWorktree(checkout,endpoint,'w99:p99')).rejects.toThrow();
+    expect(await api.cleanupTaskWorktree(fixture,checkout)).toEqual({status:'not_registered',pids:[]});
     const first=await api.registerTaskWorktree(checkout,endpoint,parent);
     expect((await api.registerTaskWorktree(checkout,endpoint,parent)).workspace_id).toBe(first.workspace_id);
     call(['workspace','close',first.workspace_id]);

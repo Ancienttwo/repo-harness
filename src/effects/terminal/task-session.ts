@@ -44,7 +44,8 @@ export interface TaskAgentSpec {
 interface StartIntent { protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec }
 interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
 export interface TaskRequest {
-  protocol: 1;
+  protocol: 2;
+  result_contract: { required_fields: string[]; atomic_write: 'temp_rename'; submission: { command: string; repo: string; task: string; role: string; round: number } };
   task: string;
   role: string;
   round: number;
@@ -67,9 +68,12 @@ export function readSessionArtifact<T>(path: string): T {
   try { return JSON.parse(readFileSync(fd, 'utf8')) as T; } finally { closeSync(fd); }
 }
 export function writeSessionArtifact(path: string, value: unknown, immutable = true): void {
+  writeSessionBytes(path, `${JSON.stringify(value, null, 2)}\n`, immutable);
+}
+function writeSessionBytes(path: string, bytes: string, immutable = true): void {
   const temporary = `${path}.${randomUUID()}.tmp`;
   const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-  try { writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`); fsyncSync(fd); } finally { closeSync(fd); }
+  try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
   try { if (immutable) linkSync(temporary, path); else renameSync(temporary, path); }
   finally { if (existsSync(temporary)) unlinkSync(temporary); }
   const directory = openSync(dirname(path), constants.O_RDONLY);
@@ -472,17 +476,78 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
   }
   return { dir, binding };
 }
-export function readTaskRequestResult(root: string, dir: string, request: TaskRequest): TaskResult | null {
-  const path = join(dir, `result-${request.round}.json`);
-  if (request.protocol !== 1 || request.result_ref !== path) throw new Error('task_agent_result_ref_mismatch');
-  if (!existsSync(path)) return null;
-  const result = readSessionArtifact<TaskResult>(path);
-  if (result.request_id !== request.request_id || result.context_sha256 !== request.context_sha256 || !Object.hasOwn(result, 'value')) throw new Error('task_agent_result_identity_mismatch');
+function requestOutbox(binding: TaskPaneBinding, dir: string): string {
+  return join(binding.execution_root, '.ai/harness/runs/task-agent-outbox', dir.split('/').pop()!);
+}
+function assertTaskRequest(root: string, dir: string, request: TaskRequest): { binding: TaskPaneBinding; outbox: string } {
+  const { binding, dir: expectedDir } = readTaskAgent(root, request.task, request.role);
+  const outbox = requestOutbox(binding, dir);
+  if (request.protocol !== 2 || dir !== expectedDir || !Number.isSafeInteger(request.round) || request.round < 1
+    || !sameSessionData(readSessionArtifact<TaskRequest>(join(dir, `request-${request.round}.json`)), request)
+    || request.result_ref !== join(outbox, `result-${request.round}.json`)
+    || request.context_ref !== join(outbox, `context-${request.round}.txt`)) throw new Error('task_agent_result_ref_mismatch');
+  assertSessionDirectory(binding.execution_root, outbox);
+  return { binding, outbox };
+}
+function validateTaskResult(request: TaskRequest, value: unknown): TaskResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('task_agent_result_identity_mismatch');
+  const result = value as TaskResult;
+  if (Object.keys(result).sort().join(',') !== 'context_sha256,request_id,value'
+    || result.request_id !== request.request_id || result.context_sha256 !== request.context_sha256) throw new Error('task_agent_result_identity_mismatch');
   return result;
 }
-export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string): Promise<TaskRequest> {
+export function readTaskRequestResult(root: string, dir: string, request: TaskRequest): TaskResult | null {
+  assertTaskRequest(root, dir, request);
+  if (!existsSync(request.result_ref)) return null;
+  let value: unknown;
+  try { value = readSessionArtifact(request.result_ref); }
+  catch (error) { if (error instanceof SyntaxError) return null; throw error; }
+  return validateTaskResult(request, value);
+}
+/** The owner validates the transport result before immutable primary ingestion. */
+export async function collectTaskResult(repoRoot: string, task: string, role: string, round: number): Promise<TaskResult | null> {
+  const repository = taskRepository(repoRoot);
+  const { dir } = readTaskAgent(repoRoot, task, role);
+  if (!Number.isSafeInteger(round) || round < 1) throw new Error('task_agent_round_invalid');
+  return locked(repository.primary_root, dir, async () => {
+    const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
+    const result = readTaskRequestResult(repoRoot, dir, request);
+    if (!result) return null;
+    const path = join(dir, `collected-${round}.json`);
+    if (existsSync(path)) {
+      const previous = validateTaskResult(request, readSessionArtifact(path));
+      if (!sameSessionData(previous, result)) throw new Error('task_agent_result_conflict');
+      return previous;
+    }
+    writeSessionArtifact(path, result);
+    return result;
+  });
+}
+/** Provider submission writes only its execution checkout, never primary state. */
+export async function submitTaskResult(repoRoot: string, task: string, role: string, round: number, value: unknown): Promise<TaskResult> {
+  const repository = taskRepository(repoRoot);
+  const { dir, binding } = readTaskAgent(repoRoot, task, role);
+  if (repository.execution_root !== binding.execution_root) throw new Error('task_agent_result_submission_checkout_mismatch');
+  if (!Number.isSafeInteger(round) || round < 1) throw new Error('task_agent_round_invalid');
+  const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
+  const { outbox } = assertTaskRequest(repoRoot, dir, request);
+  const result = validateTaskResult(request, value);
+  return locked(binding.execution_root, outbox, async () => {
+    if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
+    const previous = readTaskRequestResult(repoRoot, dir, request);
+    if (previous) {
+      if (!sameSessionData(previous, result)) throw new Error('task_agent_result_conflict');
+      return previous;
+    }
+    // A partial result is pending; publish completed bytes atomically.
+    writeSessionArtifact(request.result_ref, result, false);
+    return result;
+  });
+}
+export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable'): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
   return locked(root, dir, async () => {
+    if (!['repeatable', 'changed_only'].includes(contextPolicy)) throw new Error('task_agent_context_policy_invalid');
     assertTaskBinding(binding);
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
     const contextPath = realpathSync(join(repository.execution_root, contextRef));
@@ -491,12 +556,20 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     if (bytes.length > 10 * 1024 * 1024) throw new Error('task_agent_context_too_large');
     const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-    const round = nextSessionRound<TaskRequest>(dir, binding.max_requests, digest, prior => { if (!readTaskRequestResult(root, dir, prior)) throw new Error('task_agent_ambiguous_round'); return prior.context_sha256; }, 'result');
-    const request: TaskRequest = { protocol: 1, task, role, round, request_id: randomUUID(), context_ref: join(dir, `context-${round}.json`), source_ref: contextPath,
-      context_sha256: digest, result_ref: join(dir, `result-${round}.json`) };
+    const round = nextSessionRound<TaskRequest>(dir, binding.max_requests, digest, prior => {
+      if (!readTaskRequestResult(root, dir, prior)) throw new Error('task_agent_ambiguous_round');
+      return contextPolicy === 'changed_only' ? prior.context_sha256 : '';
+    }, 'started');
+    const outbox = requestOutbox(binding, dir);
+    ensureSessionDirectory(binding.execution_root, outbox);
+    const request: TaskRequest = { protocol: 2, task, role, round, request_id: randomUUID(),
+      context_ref: join(outbox, `context-${round}.txt`), source_ref: contextPath,
+      context_sha256: digest, result_ref: join(outbox, `result-${round}.json`),
+      result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename',
+        submission: { command: 'repo-harness task-agent result', repo: binding.execution_root, task, role, round } } };
     const requestPath = join(dir, `request-${round}.json`);
     writeSessionArtifact(requestPath, request);
-    writeSessionArtifact(join(dir, `context-${round}.json`), { content });
+    writeSessionBytes(request.context_ref, content);
     beginSessionRound(dir, round, { request_id: request.request_id, provider: binding.provider });
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.
     // Inspect the same request/result files. Never replay it or allocate a fresh one.
@@ -681,7 +754,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
   return locked(repository.primary_root, dir, async () => {
     if (existsSync(join(dir, 'closed.json'))) return { status: 'closed', pids: [] };
     if (!existsSync(join(dir, 'binding.json'))) {
-      if (!existsSync(join(dir, 'open-intent.json'))) return { status: 'cleanup_pending', pids: [], reason: 'no_binding' };
+      if (!existsSync(join(dir, 'open-intent.json'))) return { status: 'not_registered', pids: [] };
       const intent = readSessionArtifact<{repository: TaskRepository; endpoint: HerdrEndpoint}>(join(dir, 'open-intent.json'));
       if (!sameSessionData(intent.repository, expected)) throw new Error('task_agent_workspace_identity_lost');
       const spaces = workspaceReadback(intent.endpoint);

@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:c61dc359623502c4c44c4fc387a28151119c4d9fbf4669e8732fd1085a408487`
+> **Substantive Change SHA256**: `sha256:a8cef4c0fbc1ce93fc634a56cb3bdaac1ecff3d31dc2548be54cfd36cf4a264d`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -115,3 +115,17 @@
 - Operator recovery for pane_absent_pid_unobserved: preserve launch/pane receipts, inspect exact private session and OS process provenance; without birth/executable ownership proof leave pending and request operator reconciliation; never signal guessed PID.
 
 - Frozen REQ-4b canonical caught existing fixture exit/readback race: identity mismatch during final cleanup poll after process exit (all review server/host absent on OS readback). Test-only fixtureProofAlive waits for PID absence on mismatch, never signals a mismatched identity; persistent replacement keeps evidence and throws. Failed immutable record retained; final canonical reruns the corrected candidate.
+
+
+## H3 entry / REQ-4b PASS
+
+- H2 designated PASS recorded in review.md. H3 first closes empty registry and communication contract, then consumer migration; [REQ-5] covers complete H3, not this first slice.
+- P1: canonical role/budget/identity ledger stays under primary root; provider execution root is distinct. Provider output must not require write access to primary.
+- P2/P3: execution-checkout-local immutable context and atomic result outbox; task-agent result submits sealed request_id/context_sha256/value into only that execution outbox. It reads canonical request/binding but acquires/writes no primary-root lock/artifact. Owner reads outbox using sealed request refs. Actual provider sandbox support remains unverified until notified H4 canary; no legacy path retirement before that gate.
+- Empty registry with none of binding/open-intent/closed is not registered; history does not imply a live incarnation. Cleanup must permit Git closeout after pre-intent registration failure.
+
+- H3 request protocol 2 has plaintext context plus required result fields and execution-checkout result submission. Partial JSON is pending; complete malformed identity fails. CLI result acquires only execution-outbox lock, supports identical idempotent submit and refuses conflicting overwrite. Deterministic linked fixture denies write permission on primary role/lock directories while invoking actual CLI. This proves filesystem submission boundary, not real harness sandbox/model support.
+- Generic send allows repeated context; consumers can explicitly require changed_only. Existing monotonic max_requests and ambiguous-round fences remain shared.
+- Minimal Git fixture must mirror installed runtime ignores for its execution outbox; test uses .git/info/exclude, without weakening production dirty-worktree gates.
+
+- REQ-5 DESIGN constraints accepted: containment is declarative task-agent capability; the sole future launcher/validator is task-agent, while campaign keeps its claim/budget fence and cannot own a second launcher. CLI result writes execution outbox only; owner collect validates sealed request identity and exact result fields before immutable primary ingestion. chmod proof is only filesystem boundary; real sandbox support remains unverified until notified H4 canary.

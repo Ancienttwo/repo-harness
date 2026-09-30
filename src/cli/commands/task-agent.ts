@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { isAbsolute, relative, resolve } from 'path';
 import { realpathSync } from 'fs';
-import { cancelTaskAgent, closeTaskAgent, readSessionArtifact, readTaskAgent, readTaskRequestResult, sendTaskRequest, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
+import { cancelTaskAgent, closeTaskAgent, collectTaskResult, readSessionArtifact, readTaskAgent, readTaskRequestResult, sendTaskRequest, submitTaskResult, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
 
 export function buildTaskAgentCommand(): Command {
   const command = new Command('task-agent').description('Persistent task participants hosted only by Herdr');
@@ -16,8 +16,21 @@ export function buildTaskAgentCommand(): Command {
       process.stdout.write(JSON.stringify(await startTaskAgent(root, spec)) + '\n');
     });
   command.command('send').requiredOption('--task <id>').requiredOption('--role <name>').requiredOption('--context <path>')
+    .option('--context-policy <policy>', 'repeatable or changed_only', 'repeatable')
     .option('--repo <path>', 'Repository root', process.cwd()).action(async opts => {
-      process.stdout.write(JSON.stringify(await sendTaskRequest(opts.repo, opts.task, opts.role, opts.context)) + '\n');
+      process.stdout.write(JSON.stringify(await sendTaskRequest(opts.repo, opts.task, opts.role, opts.context, opts.contextPolicy)) + '\n');
+    });
+  command.command('result').requiredOption('--task <id>').requiredOption('--role <name>').requiredOption('--round <number>')
+    .requiredOption('--input <path>', 'Execution-checkout-relative JSON with request_id, context_sha256, value')
+    .option('--repo <path>', 'Execution checkout', process.cwd()).action(async opts => {
+      const root = realpathSync(opts.repo); const path = realpathSync(resolve(root, opts.input));
+      if (isAbsolute(opts.input) || relative(root, path).split('/').includes('..')) throw new Error('task_agent_input_unsafe');
+      const value = readSessionArtifact(path);
+      process.stdout.write(JSON.stringify(await submitTaskResult(root, opts.task, opts.role, Number(opts.round), value)) + '\n');
+    });
+  command.command('collect').requiredOption('--task <id>').requiredOption('--role <name>').requiredOption('--round <number>')
+    .option('--repo <path>', 'Owner repository checkout', process.cwd()).action(async opts => {
+      process.stdout.write(JSON.stringify(await collectTaskResult(opts.repo, opts.task, opts.role, Number(opts.round))) + '\n');
     });
   command.command('status').requiredOption('--task <id>').requiredOption('--role <name>')
     .option('--repo <path>', 'Repository root', process.cwd()).action(opts => {
