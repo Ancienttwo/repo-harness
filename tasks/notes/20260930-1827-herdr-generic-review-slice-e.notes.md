@@ -14,7 +14,7 @@
 
 ## Prepared artifact hashes (unrun)
 
-- canary.ts: sha256:700ad5d67baef772ccca9af62e83f16dd16744afe33287412c255273e82a4798
+- canary.ts: sha256:b521c1f28dfa78b84c80303972a8c0c09d73894cc831a75478f7bc78e59e4816
 - canary-budget.json: sha256:722872c4803afe364c06b2a71fbe55d7d9b3c02a5f4ca6c83786ea020d316040
 - expected-results.md: sha256:d0844c618aa5681f01b78e98f9c8b89806ac5a43582c8dad49fd774b3aedb8ec
 
@@ -29,3 +29,10 @@
 
 - C1b首轮Result为null时只记skipped:no_actual_first_result，不send/计轮/抛错；fence只在哨兵改动时硬停，拒绝未分类或未配对分别记attempt_paired_unclassified/no_paired_attempt并保留原始输出，能力仍unverified。补shell.command数组与拒绝文案，Claude is_error仅辅助信号。
 - fake S0按测试working seq1→idle seq2；真实trust提示即S0失败、0模型停止报告，不自动应答、不改全局信任配置或加bypass，是否预信任由用户决定。C2 Codex指纹/write-negative仅记录、未断言。PR464不动；所有live包括S0仍未运行。
+
+## GO run stopped at S0 / bounded path fix (new GO required)
+
+- 用户GO绑定700ad5d6/722872c4/d0844c61；实际S0 fake server socket超过macOS容量（API138/client145 bytes），rounds=0、model calls=0，未到真实harness startup、N8或模型send。首败停止，不沿用旧GO重跑。证据live-b6deb759-e8d0-4de8-afd7-1cd0db59912b与GO-execution.log保留。
+- 仅S0 fake改/tmp/as-*→realpath /private/tmp/as-*/h；复用validateHerdrEndpoint检查API/client并加API<100断言（--verify计划路径+live实际路径），API86/client93。N8与两个真实session未传home，当前HOME下API74/client81；长configPath本身不改变socket位置。
+- cleanup-pending-task-proof-60fb6d5fb1ee4860与62d2f06143434cbf均为stop返回空stdout后JSON.parse Unexpected EOF：两server已通过workspace list ready，属于已启动server，非“未起server的stop”。effect只在status0才返回供JSON.parse；之后原run等待两server进程退出。精确session进程与socket均未见残留。第三fake session f8b7f86e79e24eaa从未ready，亦无进程残留。未修stop解析（本次范围仅路径）。
+- ~/.rhc-jTHSNm、/private/var/folders/nz/1kt960ns5kq331c5qw2sh6sc0000gn/T/ep-2G0wZJ、live-b6deb759证据完整保留；PR464未动。预算/expected字节保持原值，canary新hash待advisor审与用户重新GO。
