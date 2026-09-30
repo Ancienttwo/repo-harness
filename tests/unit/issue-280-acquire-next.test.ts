@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, cpSync, symlinkSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import type { EngineerOfferV1, EngineerOffersV1 } from '../../src/core/engineers/scheduling';
+import { buildEngineerOffersDocument, type EngineerOfferV1, type EngineerOffersV1 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
-import { acquireNextScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire-next';
+import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { acquireNextScheduledEngineerTask, prepareEngineerObservation, readEngineerObservation } from '../../src/effects/engineers/scheduling-acquire-next';
 
 const D = (c: string) => `sha256:${c.repeat(64)}`;
 const principal = Object.freeze({
@@ -170,5 +172,108 @@ describe('campaign exact Task selection', () => {
     }
     expect(() => acquireNextScheduledEngineerTask({ ...input, filters: { task_id: 'a'.repeat(64) } as any })).toThrow('unknown field');
     expect(reads).toBe(1);
+  });
+});
+
+// S1 evidence is deliberately independent of the acquire-next key ledger.
+describe('trusted observation prepare', () => {
+  const who = { ...principal, engineer_id: 'engineer:capability.demo.worker' } as EngineerPrincipalV1;
+  const t1 = Date.parse('2026-09-30T10:00:00.000Z');
+  function prepared() {
+    const repo = root();
+    mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+    writeFileSync(join(repo, '.ai/harness/policy.json'), '{"version":1}');
+    let now = t1;
+    let reads = 0;
+    const input = { repo_root: repo, principal: who, dependencies: {
+      now: () => now, resolvePrincipal: () => who,
+      collectOffers: (options: any) => {
+        reads += 1; expect(options.now_ms).toBe(t1);
+        return buildEngineerOffersDocument({ repository_id: who.repository_id, engineer_id: who.engineer_id,
+          lane: 'unclassified', work_graph_revision: null, candidates: [] });
+      },
+    } };
+    const result = prepareEngineerObservation(input);
+    const path = join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/observations', `${result.observation_ref.slice(7)}.json`);
+    return { input, result, path, setNow: (value: number) => { now = value; }, reads: () => reads };
+  }
+
+  test('publishes exact immutable snapshot bytes; identical prepare does not replace evidence', () => {
+    const f = prepared();
+    const bytes = readFileSync(f.path, 'utf8');
+    expect(prepareEngineerObservation(f.input).observation_ref).toBe(f.result.observation_ref);
+    expect(readFileSync(f.path, 'utf8')).toBe(bytes);
+    f.setNow(t1 + 1);
+    expect(readEngineerObservation({ ...f.input, observation_ref: f.result.observation_ref })).toEqual(f.result);
+    expect(f.reads()).toBe(2); // reader never recollects, never acquires.
+    expect(f.result.observation.expires_at_ms).toBe(t1 + 30_000);
+    expect(JSON.parse(f.result.observation.snapshot_bytes)).toEqual(f.result.offers);
+  });
+
+  test('fresh at expiry minus one; exact expiry, future and clock rollback refuse', () => {
+    const f = prepared();
+    const read = () => readEngineerObservation({ ...f.input, observation_ref: f.result.observation_ref });
+    f.setNow(t1 + 29_999); expect(read().observation.observed_at_ms).toBe(t1);
+    f.setNow(t1 + 30_000); expect(read).toThrow('expired');
+    f.setNow(t1 + 30_001); expect(read).toThrow('expired');
+    f.setNow(t1 - 1); expect(read).toThrow('future');
+    f.setNow(t1); expect(read().observation.observed_at_ms).toBe(t1);
+    f.setNow(t1 - 10); expect(read).toThrow('clock rolled back');
+  });
+
+  test('refuses another principal, Binding or repository even when copied into its store', () => {
+    const f = prepared();
+    for (const changed of [{ auth_subject: '33333333-3333-4333-8333-333333333333' }, { binding_generation: 2 }]) {
+      const foreign = { ...who, ...changed };
+      expect(() => readEngineerObservation({ ...f.input, principal: foreign,
+        dependencies: { ...f.input.dependencies, resolvePrincipal: () => foreign }, observation_ref: f.result.observation_ref })).toThrow('another repository or principal');
+    }
+    const g = prepared(); cpSync(f.path, g.path);
+    expect(() => readEngineerObservation({ ...g.input, observation_ref: g.result.observation_ref })).toThrow('modified');
+    const foreignPath = join(resolveGitCommonDirectory(g.input.repo_root), 'repo-harness/engineer-scheduling/v1/observations', `${f.result.observation_ref.slice(7)}.json`);
+    cpSync(f.path, foreignPath);
+    expect(() => readEngineerObservation({ ...g.input, observation_ref: f.result.observation_ref })).toThrow('another repository');
+  });
+
+  test('refuses tampered, missing, malformed and policy-revised records without minting replacements', () => {
+    const f = prepared();
+    const read = () => readEngineerObservation({ ...f.input, observation_ref: f.result.observation_ref });
+    writeFileSync(join(f.input.repo_root, '.ai/harness/policy.json'), '{"version":2}');
+    expect(read).toThrow('policy revision changed');
+    writeFileSync(join(f.input.repo_root, '.ai/harness/policy.json'), '{"version":1}');
+    writeFileSync(f.path, readFileSync(f.path, 'utf8').replace(String(t1), String(t1 + 1)));
+    expect(read).toThrow('modified');
+    expect(() => prepareEngineerObservation(f.input)).toThrow('conflicts');
+    expect(() => readEngineerObservation({ ...f.input, observation_ref: D('0') })).toThrow();
+    expect(() => readEngineerObservation({ ...f.input, observation_ref: '../escape' })).toThrow('ref is invalid');
+  });
+
+  test('rejects self-consistent content hashes with invalid schema, snapshot or time bounds', () => {
+    const f = prepared();
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ unknown_field: true }, 'fields are invalid'],
+      [{ producer: 'foreign-producer' }, 'schema'],
+      [{ snapshot_sha256: D('0') }, 'snapshot digest'],
+      [{ expires_at_ms: t1 + 30_001 }, 'time bounds'],
+      [{ observed_at_ms: t1 + 1, expires_at_ms: t1 + 30_001 }, 'future'],
+      [{ observed_at_ms: t1 - 30_000, expires_at_ms: t1 }, 'expired'],
+    ];
+    for (const [change, refusal] of cases) {
+      const bytes = canonicalEngineerJson({ ...f.result.observation, ...change });
+      const ref = engineerSha256(bytes);
+      writeFileSync(join(f.path, '..', `${ref.slice(7)}.json`), bytes);
+      expect(() => readEngineerObservation({ ...f.input, observation_ref: ref })).toThrow(refusal);
+    }
+    expect(f.reads()).toBe(1); // no re-mint or collector fallback, even with a self-consistent hash.
+  });
+
+  test('rejects symlink store ancestors and symlink receipt files', () => {
+    const f = prepared();
+    const other = root();
+    symlinkSync(join(resolveGitCommonDirectory(f.input.repo_root), 'repo-harness'), join(resolveGitCommonDirectory(other), 'repo-harness'));
+    expect(() => prepareEngineerObservation({ ...f.input, repo_root: other })).toThrow('unsafe');
+    const linked = join(f.path, '..', `${D('0').slice(7)}.json`);
+    symlinkSync(f.path, linked);
+    expect(() => readEngineerObservation({ ...f.input, observation_ref: D('0') })).toThrow();
   });
 });

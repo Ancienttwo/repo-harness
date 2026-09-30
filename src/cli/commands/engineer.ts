@@ -41,7 +41,7 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
-import { acquireNextScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, prepareEngineerObservation } from '../../effects/engineers/scheduling-acquire-next';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
   EngineeringOverlayProjectionError,
@@ -324,6 +324,18 @@ export function buildEngineerCommand(): Command {
       emit(offers, options.json, offers.offers.length === 0
         ? `${offers.lane}: no eligible Work Packages`
         : offers.offers.map((offer) => `${offer.work_package_id} ${offer.offer_revision}`).join('\n'));
+    }));
+
+  engineer
+    .command('prepare')
+    .description('Persist a trusted 30-second offers observation as evidence')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .option('--json', 'Output JSON')
+    .action((options: { authorizationId: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = prepareEngineerObservation({ repo_root: repoRoot, principal });
+      emit(result, options.json, `${result.observation_ref} expires ${result.observation.expires_at_ms}`);
     }));
 
   engineer

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
@@ -21,6 +21,9 @@ import {
   type ScheduledEngineerAcquireAssertionV1,
   type ScheduledEngineerAcquireResult,
 } from '../../src/effects/engineers/scheduling-acquire';
+import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { observeRetryEligibility } from '../../src/core/engineers/automation-attempt';
+import { prepareEngineerObservation, readEngineerObservation } from '../../src/effects/engineers/scheduling-acquire-next';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
@@ -433,4 +436,42 @@ describe('ME-1A scheduled Engineer acquire', () => {
     });
     expect(result).toEqual({ ok: false, error: 'engineer_concurrency_unavailable', message: 'busy' });
   });
+});
+
+
+test('S1 receipt preserves the real first-offer T1 identity at T2 without admission wiring', () => {
+  const root = gitFixture();
+  mkdirSync(join(root, '.ai/harness'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/policy.json'), '{"version":1}');
+  const t1 = Date.parse('2026-09-30T10:00:00.000Z');
+  let now = t1;
+  const firstOffer = (at: number) => {
+    const { offer_revision: _revision, ...basis } = offer();
+    const retry = observeRetryEligibility({ policy: basis.retry_policy, current: null,
+      work_package_revision: basis.work_package_revision, observed_at: new Date(at).toISOString() });
+    const first = { ...basis, eligible_since: retry.eligible_since };
+    return { ...first, offer_revision: engineerSha256(canonicalEngineerJson(first)) };
+  };
+  const input = { repo_root: root, principal: principal(), dependencies: {
+    now: () => now, resolvePrincipal: () => principal(), collectOffers: (input: any) => document(firstOffer(input.now_ms)),
+  } };
+  const prepared = prepareEngineerObservation(input);
+  now += 1;
+  const trusted = readEngineerObservation({ ...input, observation_ref: prepared.observation_ref });
+  const selected = trusted.offers.offers[0]!;
+  expect(firstOffer(now).offer_revision).not.toBe(selected.offer_revision);
+  let claims = 0;
+  const acquire = (at: number) => acquireScheduledEngineerTask({ repo_root: root, principal: principal(),
+    assertion: assertion(selected), offer_options: { now_ms: at }, dependencies: {
+      collectOffers: (options) => document(firstOffer(options.now_ms!)),
+      withConcurrencyLock: (_root, _key, run) => run(),
+      acquire: () => { claims += 1; return { ok: true, envelope: {} as any, receipt: {} as any }; },
+    },
+  });
+  expect(acquire(now)).toMatchObject({ ok: false, error: 'engineer_offer_stale' });
+  expect(claims).toBe(0);
+  expect(acquire(trusted.observation.observed_at_ms).ok).toBe(true);
+  expect(claims).toBe(1);
+  // Composition only: S1 transports do not call admission. TTL is admission-start freshness,
+  // not an assertion that a claim mutation occurs within 30 seconds after prepare.
 });

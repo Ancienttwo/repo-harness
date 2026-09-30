@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+import { prepareEngineerObservation, readEngineerObservation } from '../../src/effects/engineers/scheduling-acquire-next';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import { projectCanonicalTasks } from '../../src/core/state/coordination-identity';
@@ -280,4 +282,37 @@ describe('ME-1A Engineer offer effects', () => {
     expect(result.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
       .toContain('dependency_authority_unavailable');
   });
+});
+
+
+test('prepare and reader preserve null-attempt identity through the real offers collector', () => {
+  const subject = fixture();
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: subject.root });
+    mkdirSync(join(subject.root, '.ai/harness'), { recursive: true });
+    writeFileSync(join(subject.root, '.ai/harness/policy.json'), '{"version":1}');
+    const t1 = Date.parse('2026-09-30T10:00:00.000Z');
+    let now = t1;
+    let bindingGeneration = 1;
+    const readBinding = subject.deps.readBinding!;
+    const deps = { ...subject.deps, readBinding: (...args: Parameters<typeof readBinding>) => {
+      const result = readBinding(...args);
+      return { ...result, current: { ...result.current, binding_generation: bindingGeneration } };
+    } };
+    const collect = (at: number) => collectEngineerOffers({ repo_root: subject.root, principal: principal(),
+      registry_snapshot: subject.registry, dependencies: deps, now_ms: at });
+    const input = { repo_root: subject.root, principal: principal(), dependencies: {
+      now: () => now, resolvePrincipal: () => principal(), collectOffers: (options: any) => collect(options.now_ms),
+    } };
+    const prepared = prepareEngineerObservation(input);
+    expect(prepared.offers.offers).toHaveLength(1);
+    expect(prepared.offers.offers[0]!.eligible_since).toBe(new Date(t1).toISOString());
+    now += 1;
+    const trusted = readEngineerObservation({ ...input, observation_ref: prepared.observation_ref });
+    expect(collect(now).offers[0]!.offer_revision).not.toBe(prepared.offers.offers[0]!.offer_revision);
+    expect(collect(trusted.observation.observed_at_ms)).toEqual(prepared.offers);
+    bindingGeneration += 1;
+    expect(() => collect(trusted.observation.observed_at_ms)).toThrow('current Binding');
+    // Only fact-reader ports are injected; collector, graph/retry projection and receipt persistence are real.
+  } finally { rmSync(subject.root, { recursive: true, force: true }); }
 });

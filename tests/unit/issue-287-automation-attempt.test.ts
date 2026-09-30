@@ -155,3 +155,19 @@ test('Engineer exclusions preserve the closed terminal outcome vocabulary', () =
   const unknown = { ...basis, exclusions: [{ ...document.exclusions[0], last_outcome: 'unexpected_outcome' }] };
   expect(() => validateEngineerOffersDocument({ ...unknown, snapshot_revision: engineerSha256(canonicalEngineerJson(unknown)) })).toThrow('last_outcome');
 });
+
+
+test('frozen observation keeps backoff/attention time-indexed but never hides new attempt authority', () => {
+ const repo=root();try {
+  const input=startInput(repo);
+  const first=recordTaskAutomationAttemptStart(input);
+  const completed=recordTaskAutomationAttemptOutcome(outcomeInput(repo,'transient_failure'));
+  const observe=(at:string,current=completed.current)=>observeRetryEligibility({policy,current,work_package_revision:D('c'),observed_at:at});
+  expect(observe('2026-09-04T00:00:10.999Z').state).toBe('retry_backoff');
+  expect(observe('2026-09-04T00:00:11.000Z').state).toBe('eligible');
+  expect(observe('2026-09-04T00:00:40.999Z').starvation_attention).toBeFalse();
+  expect(observe('2026-09-04T00:00:41.000Z').starvation_attention).toBeTrue();
+  expect(observe('2026-09-04T00:00:11.000Z',first.current)).toMatchObject({state:'reconciliation_required'});
+  expect(observe('2026-09-04T00:00:11.000Z',first.current).authority_revision).not.toBe(observe('2026-09-04T00:00:11.000Z').authority_revision);
+ }finally {rmSync(repo,{recursive:true,force:true});}
+});
