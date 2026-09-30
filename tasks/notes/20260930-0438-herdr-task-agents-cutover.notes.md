@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:bf0758308bc1bfd12b5bffddc7d9deb677f4a630f3cb17ea459f1f840b69818f`
+> **Substantive Change SHA256**: `sha256:c8f88860be390e9722285f621ce1564c3a0ca54e0568e0a9f4569b9f6e8e9730`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -226,3 +226,9 @@
 - Init no longer installs/enables/lists the plugin; tooling has no plugin readiness/report/strict dependency. Private-HOME fixture proves a seeded user plugin remains and its plugin command is not invoked. No global/user uninstall. Receipt source enum/policy/projection, JQ/operator readers, default plan policy and trace classifier no longer accept codex-plugin; no provenance/type/host generalization. Old source parser regression failed against prior script (D-retired-source-before-fix.txt), current policy and receipt read both reject it. Existing reviewer/source mismatch, exact subject/target/evidence, budget and waiver guards remain tested on codex-review/Claude domain paths.
 - Source/template/hook marker/reference docs projected together. Only plugin-specific tests removed; old business evidence tests retained with admitted source and explicit retired-source negatives. D maps plan:200 plugin discovery/install retirement and :202 old provider no alias; acceptance narrowing is the explicit REQ-5 CHECKPOINT-2 scope, not a new generic review framework.
 - A–D completed candidate still leaves native-child/direct Codex/delegation/contract-run/delegated-run v1/campaign intact by explicit pause. H3/H4 await designated gate and user's true-model quota/containment decisions; no real canary/mini/global WIP install run.
+
+## GATE 第1轮 F1 — source-owned guide projection
+
+- Fetch/rebase onto origin/main 708c9675 completed without conflicts in the isolated cutover worktree. Pre-rebase ecffa685 is retained in codex/herdr-cutover-pre-708c9675 for evidence mapping. Primary checkout dirty/untracked surfaces untouched. Local physical node_modules refreshed with frozen lockfile and lifecycle scripts disabled; no user/global agent installation.
+- P1/P2: print-chatgpt-guide --write projects chatgptGuideMarkdown; tracked guide had diverged and carried a manual uninstall section from 1f1dad97 absent from the generator. P3: move that exact section into the existing generator, then regenerate through CLI. No second formatter or manual post-generation patch.
+- Uninstall section preserved byte-for-byte, SHA256 56bb988099befaeca065221bf4b77e555bb39b3626e2d8df3fab2ba6ad823a66. Generated guide now uses task tools/artifact and explicit Herdr runner. Canonical adds source/output byte parity plus uninstall contract checks, reuses existing MCP CLI coverage; no new test file. Review records GATE FAIL, not PASS.

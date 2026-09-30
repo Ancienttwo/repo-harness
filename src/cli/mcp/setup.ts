@@ -628,6 +628,25 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated task goal 
 - The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed task goal handoff. It is not arbitrary shell.
 - Keep \`_ref/\` read-only when used as a comparison source.
 - Do not put tunnel tokens, OAuth tokens, passphrases, or ChatGPT/Codex credentials in git.
+
+## Uninstall local MCP setup
+
+Stop every \`repo-harness mcp serve --transport http\` process before deleting local credentials: a running OAuth server caches grants and can write its token store back on shutdown. The CLI does not manage service lifetimes or verify shutdown.
+
+\`\`\`bash
+repo-harness mcp uninstall --repo . --dry-run --json
+repo-harness mcp uninstall --repo . --services-stopped
+# Only remove this project's Codex registration:
+repo-harness mcp uninstall --repo . --target codex
+\`\`\`
+
+\`--target chatgpt\` cleans account-level \`mcp.local.json\`, \`mcp.tokens.json\`, \`mcp.oauth.json\` and \`mcp.oauth-tokens.json\` under \`REPO_HARNESS_HOME\` (default \`~/.repo-harness\`). The shared repository registry is restored only for setup changes with a restoration record. Other registrations and user changes are preserved; unresolved ownership yields \`partial\` and exit 1. Credentials are deleted without making secret backups.
+
+\`--target codex\` restores the project \`.codex/config.toml\` MCP fragment recorded by setup. Unrelated TOML settings remain. Existing registrations without a receipt are preserved and reported, including old \`.bak\` files which are not treated as restoration authority. An interrupted setup can be previewed and recovered with \`--recover-interrupted --dry-run\`, then \`--recover-interrupted\`.
+
+Setup records bounded configuration preimages and registry changes before publishing them. Successful cleanup retires their ownership so repeated uninstall cannot reacquire user configuration. Repositories, managed workspaces/worktrees, task state, archives, generated guides and bridge skill files remain. Repository unadoption and package-manager removal are separate operations.
+
+Completion means **local configuration cleanup**. Remove the remote ChatGPT Connector, tunnel and externally supplied credential environment variables separately. \`--services-stopped\` is the operator's assertion that every HTTP service was stopped; it is not proof of live or remote revocation. All mutation verification uses disposable storage.
 `;
 }
 

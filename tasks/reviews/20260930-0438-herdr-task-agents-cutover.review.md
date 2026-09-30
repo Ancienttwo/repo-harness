@@ -107,3 +107,11 @@ screenshot/artifact path, or reviewer observation.
 - [REQ-4] H2 FAIL / bounded corrections: designated reviewer reproduced non-convergent vanished/closed/open-intent workspace states, role intent before registration, and missing Bash start coverage. No H2 PASS; 441acd15 is the correction baseline.
 
 - [REQ-4b] H2 PASS: designated reviewer inspected 441acd15..dc8316bf; lifecycle+CLI 9 pass/152 expect, Claude review 21 pass/98 expect, contract-worktree 46 pass/990 expect, type exit 0; default unchanged, no residual processes, primary dirty files preserved, helpers identical. H3 authorized; final receipt still pending.
+
+
+## GATE 第1轮 — FAIL / corrections pending
+
+- Reviewer forwarded F1 HIGH: guide projection drift and generator missing hand-added uninstall block.
+- F2 HIGH: residual old tool/goal/skill/plugin names across operator docs/README/global packet comments; rebase required.
+- F3 MEDIUM: now-irrelevant host detection/policy substitution remains.
+- No PASS or AcceptanceReceipt issued. Correct in three separate commits, canonical then CHECKPOINT-4. Paused paths and existing Claude domain stay intact.

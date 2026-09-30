@@ -173,8 +173,8 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 4. For registered repo writes, first check `get_repo_capabilities.write_tools`; mutation tools execute only for a repo registered with `accessMode: "read_write"`.
 5. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
 6. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
-7. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
-8. Open Codex locally and run the generated `/goal` prompt.
+7. Ask ChatGPT to prepare a Task Goal with `prepare_task_goal_from_sprint`.
+8. Send the generated task prompt to an explicitly addressed task-owned Herdr agent.
 9. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
 10. To regenerate an artifact that already exists, read it first: call `read_workflow_file` on the target path and pass the `sha256` it returns as `expected_sha256` on the write call. Omit `expected_sha256` only when creating a new artifact.
 
@@ -231,11 +231,11 @@ Environment override:
 REPO_HARNESS_MCP_DEV_RUNNER=1 REPO_HARNESS_MCP_DEV_RUNNER_AGENTS=codex,claude repo-harness mcp serve --repo . --transport http --profile orchestrator
 ```
 
-When enabled, the server exposes `run_agent_goal`. The tool reads only `.ai/harness/handoff/codex-goal.md` and runs that fixed handoff through the allowed local CLI:
+When enabled, the server exposes `run_agent_goal`. The tool reads only `.ai/harness/handoff/task-goal.md` and runs that fixed handoff in a persistent Herdr agent (explicit addressing is required):
 
 ```text
-codex exec --json --cd <repo> <goal>
-claude -p <goal>
+run_agent_goal { agent, herdr: { endpoint: {session}, parent_pane } }
+start -> send -> read history -> close; timeout -> cancel
 ```
 
 Keep this behind local Developer Mode and per-call confirmations. Do not expose an orchestrator tunnel to untrusted users.
@@ -252,7 +252,7 @@ Use it in Codex when continuing a ChatGPT-generated handoff:
 
 ```text
 Use repo-harness-chatgpt-bridge.
-Execute .ai/harness/handoff/codex-goal.md.
+Execute .ai/harness/handoff/task-goal.md.
 ```
 
 The Skill tells Codex to read the PRD and checklist Sprint, preserve stage gates, run focused checks, and stage each completed phase. It does not authorize ChatGPT to edit source code or run shell commands through MCP.
@@ -265,11 +265,11 @@ Expected planning chain:
 idea
   -> write_prd_from_idea
   -> write_checklist_sprint
-  -> prepare_codex_goal_from_sprint
-  -> local Codex /goal execution
+  -> prepare_task_goal_from_sprint
+  -> task-owned Herdr agent execution
 ```
 
-`write_plan`, `prepare_codex_goal_from_sprint`, and `write_codex_goal` write
+`write_plan`, `prepare_task_goal_from_sprint`, and `write_task_goal` write
 fixed paths, so every regeneration after the first targets an existing file.
 Read before writing:
 
@@ -377,10 +377,10 @@ Use repo-harness discover_harness_repos first, pass query/name/repo_path when th
 Use repo-harness to read the target repo PRD by repo_path. Convert it into an ordered checklist Sprint with write_checklist_sprint using the same repo_path. Every task card must include a stage gate that requires Codex to stage the completed phase before continuing.
 ```
 
-## Codex Goal Prompt
+## Task Goal Prompt
 
 ```text
-Use repo-harness prepare_codex_goal_from_sprint with repo_path, the PRD path, and the checklist Sprint path. The goal is written to the fixed path .ai/harness/handoff/codex-goal.md, so if it already exists, first call read_workflow_file on that path and pass its sha256 as expected_sha256. Return the host-native /goal prompt. Do not run Codex remotely.
+Use repo-harness prepare_task_goal_from_sprint with repo_path, the PRD path, and the checklist Sprint path. The goal is written to the fixed path .ai/harness/handoff/task-goal.md, so if it already exists, first call read_workflow_file on that path and pass its sha256 as expected_sha256. Return the task execution prompt. Do not run Codex remotely.
 ```
 
 Equivalent local CLI:
@@ -392,7 +392,7 @@ repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprin
 ## Codex Executor Prompt
 
 ```text
-Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal from .ai/harness/handoff/codex-goal.md.
+Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated task goal from .ai/harness/handoff/task-goal.md.
 ```
 
 ## Troubleshooting
@@ -419,8 +419,8 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - Legacy workspace reader mode keeps deny globs for `.env`, private keys, SSH keys, credentials, secrets, `.git`, and dependency/build output. The general repo API uses `.ignore` as the content filter and relies on repo registration plus path guards.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
 - Coding profile is fail-closed without explicit `read_write` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
-- MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution unless the user explicitly enables the local orchestrator dev runner.
-- The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed Codex goal handoff. It is not arbitrary shell.
+- MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/task-goal.md`; the task owner directs its explicitly addressed Herdr agent unless the user explicitly enables the local orchestrator dev runner.
+- The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed task goal handoff. It is not arbitrary shell.
 - Keep `_ref/` read-only when used as a comparison source.
 - Do not put tunnel tokens, OAuth tokens, passphrases, or ChatGPT/Codex credentials in git.
 
