@@ -17,19 +17,19 @@
 
 ## Goal
 
-H3 第一切片：关闭空 workspace registry 残留，建立 execution-checkout-local context/result outbox 与 task-agent result 子命令；冻结 request/result contract，partial result 为 pending，duplicate context 按 consumer 配置。随后依 plan 迁移 roles、delegation、campaign、MCP 的生产消费者。
+H3 第二切片：MCP managed-workspace cleanup 在现有 dirty/merged/target fence 后、Git deletion 前复用唯一 Herdr task-worktree cleanup。异步等待 runtime 关闭，不提前删除 checkout/branch/state；保留 public error diagnostics 和现有 exact-ref deletion fence。H3 roles/delegation/campaign/task-goal consumers 后续继续。
 
 ## Scope
 
-- In scope: 下列显式 shared runtime、CLI、既有 real Herdr composition/CLI tests 与工作流 artifacts。
-- Out of scope in this commit: H3 后续 consumer 替换；H4 review retirement/真实 canary；H5 policy/installer；mini。
-- H3 仍在执行，first slice commit 不等于 H3 PASS；全部 H3 完成后发 [REQ-5]，等 PASS 再进 H4。
+- In scope: 显式 MCP workspace cleanup、CLI consumer、既有 MCP/真实 Herdr composition coverage 与 workflow artifacts。
+- Out of scope in this commit: 后续 role/admission/launch 路由、H4/H5、mini、全局安装和真实模型。
+- 同工作包有序 commit，不声称 H3 已完成；H3 完成才发 [REQ-5]，PASS 后进入 H4。
 
 ## Stop Conditions
 
-- 只修改 allowed_paths；后续 H3 consumers 修改前更新 scope 和 JSON Verification Plan。
-- 不碰 main 原有 dirty 文件、w8:p1、mini，不运行真实模型或全局安装。
-- 附属 workspace 永不关闭；未知创建窗口保留 pending 和原始证据。
+- runtime pending 必须保留 Git checkout/branch/MCP state；不允许 attached 清理或 force-remove。
+- 不碰主 checkout 脏文件、w8:p1、mini；不做真实模型调用。
+- 扩展 source scope 前更新 allowed_paths 和 Verification Plan。
 
 ## Falsifier
 
@@ -72,10 +72,10 @@ allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - src/effects/terminal/task-session.ts
-  - src/cli/commands/task-agent.ts
+  - src/cli/mcp/coding-workspaces.ts
+  - src/cli/commands/mcp.ts
   - tests/herdr-task-lifecycle.test.ts
-  - tests/cli/task-agent.test.ts
+  - tests/cli/mcp-coding-tools.test.ts
   - docs/researches/20260930-herdr-task-runtime-proof.md
 ```
 
@@ -130,14 +130,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-task-lifecycle",
+      "id": "h3-mcp-cleanup",
       "kind": "command",
-      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/task-agent.test.ts --timeout 60000",
+      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-coding-tools.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Execution-local protocol and CLI result submission, empty registry failure recovery and owner/identity lifecycle; private real Herdr fixture, no model calls.",
+      "necessity": "Actual MCP Git cleanup must wait for created runtime and reject attached workspace without deleting checkout/branch/state; retain target, dirty and squash safety.",
       "inputs": {
         "env": []
       }

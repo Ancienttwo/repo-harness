@@ -242,8 +242,8 @@ export function buildMcpCommand(): Command {
     .option('--target <ref>', 'Explicit integration target for a legacy workspace that has no bound target')
     .option('--json', 'Output JSON')
     .action((rawOpts: { workspaceId: string; target?: string; json?: boolean }) => {
-      void runMcpAction(() => {
-        const result = cleanupManagedCodingWorkspace(rawOpts.workspaceId, process.env, { targetRef: rawOpts.target });
+      void runMcpAction(async () => {
+        const result = await cleanupManagedCodingWorkspace(rawOpts.workspaceId, process.env, { targetRef: rawOpts.target });
         console.log(rawOpts.json ? JSON.stringify(result, null, 2) : `[repo-harness mcp] Removed ${result.workspace_id} (${result.branch})`);
       });
     });

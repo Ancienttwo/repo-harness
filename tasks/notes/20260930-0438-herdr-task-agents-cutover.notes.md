@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:a8cef4c0fbc1ce93fc634a56cb3bdaac1ecff3d31dc2548be54cfd36cf4a264d`
+> **Substantive Change SHA256**: `sha256:49f531b1f9a7b60d4f8889a6871a95dc5676d6876d379b1d043bc6fa7209f120`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -129,3 +129,13 @@
 - Minimal Git fixture must mirror installed runtime ignores for its execution outbox; test uses .git/info/exclude, without weakening production dirty-worktree gates.
 
 - REQ-5 DESIGN constraints accepted: containment is declarative task-agent capability; the sole future launcher/validator is task-agent, while campaign keeps its claim/budget fence and cannot own a second launcher. CLI result writes execution outbox only; owner collect validates sealed request identity and exact result fields before immutable primary ingestion. chmod proof is only filesystem boundary; real sandbox support remains unverified until notified H4 canary.
+
+
+## H3 MCP Git cleanup consumer
+
+- P1: MCP coding workspace state owns operator workspace metadata; Git still owns merge/dirty/target/ref safety. Herdr runtime cleanup remains solely task-session's workspace/role ownership fence.
+- P2: existing Git fences → await shared cleanupTaskWorktree → re-read branch/target revision after async shutdown → ordinary non-force Git worktree remove → existing exact-ref branch delete → MCP state removal. Pending retains checkout/branch/state.
+- P3: no MCP-specific launcher/cleanup authority or name guessing. Real composition reuses its private server: attached workspace refuses actual MCP cleanup, created workspace closes before Git deletion and preserves root sentinel. Existing MCP consumer tests retain dirty/unmerged/squash/explicit-target cases under the asynchronous API.
+- H3 roles, delegation, campaign, native backend and MCP task-goal routing remain active-plan work; this consumer slice does not mark H3 complete.
+
+- New async boundary also requires fresh MCP metadata: re-read the current registry, prove the same workspace identity, preserve concurrent new workspace rows. Existing squash cleanup case reproduced losing the added row before correction; no second registry implementation or authority.

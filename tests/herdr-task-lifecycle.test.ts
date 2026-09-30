@@ -413,6 +413,14 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     if (attachedOwner.child.exitCode !== 0) throw new Error(attachedOwner.errors());
     await api.closeTaskAgent(fixture, spec.task, attachedSpec.role);
     expect(await api.cleanupTaskWorktree(fixture, attachedCheckout)).toEqual({ status: 'cleanup_pending', pids: [], reason: 'workspace_attached' });
+    const mcp = await import('../src/cli/mcp/coding-workspaces');
+    const mcpEnv = {...env,REPO_HARNESS_HOME:join(home,'mcp-registry')};mkdirSync(mcpEnv.REPO_HARNESS_HOME);
+    const mcpState = mcp.codingWorkspaceStatePath(mcpEnv);
+    writeFileSync(mcpState,JSON.stringify({version:1,workspaces:[{id:'attached',repoId:'fixture',displayName:'attached',root:attachedCheckout,sourceRoot:fixture,mode:'worktree',branch:'codex/attached',baseRef:'main',baseSha:run('git',['rev-parse','HEAD'],fixture,env),integrationTargetRef:'refs/heads/main',dirtySource:false,openedAt:new Date().toISOString(),managed:true}]}));
+    await expect(Promise.resolve().then(()=>mcp.cleanupManagedCodingWorkspace('attached',mcpEnv))).rejects.toThrow('runtime cleanup incomplete');
+    expect(existsSync(attachedCheckout)).toBe(true);
+    expect(mcp.listManagedCodingWorkspaces(mcpEnv)).toHaveLength(1);
+
     expect(call(['workspace', 'get', attachedView.workspace.workspace_id]).workspace.workspace_id).toBe(attachedView.workspace.workspace_id);
     // Test owns this simulated user workspace; production never closes attached.
     execute(['workspace', 'close', attachedView.workspace.workspace_id]);
@@ -644,6 +652,17 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     expect((await api.cleanupTaskWorktree(fixture,target)).status).toBe('closed');
     expect(call(['workspace','list']).workspaces.length).toBe(baseline);
     expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
+    const mcp = await import('../src/cli/mcp/coding-workspaces');
+    const mcpCheckout=join(fixture,'mcp-checkout');run('git',['worktree','add','-qb','codex/mcp-proof',mcpCheckout],fixture,env);
+    const mcpBinding=await api.registerTaskWorktree(mcpCheckout,endpoint,parent);
+    const mcpEnv={...env,REPO_HARNESS_HOME:join(home,'mcp-registry')};mkdirSync(mcpEnv.REPO_HARNESS_HOME);
+    writeFileSync(mcp.codingWorkspaceStatePath(mcpEnv),JSON.stringify({version:1,workspaces:[{id:'created',repoId:'fixture',displayName:'created',root:mcpCheckout,sourceRoot:fixture,mode:'worktree',branch:'codex/mcp-proof',baseRef:'main',baseSha:run('git',['rev-parse','HEAD'],fixture,env),integrationTargetRef:'refs/heads/main',dirtySource:false,openedAt:new Date().toISOString(),managed:true}]}));
+    expect(await mcp.cleanupManagedCodingWorkspace('created',mcpEnv)).toMatchObject({workspace_id:'created',removed:true});
+    expect(existsSync(mcpCheckout)).toBe(false);
+    expect(call(['workspace','list']).workspaces.some((item:any)=>item.workspace_id===mcpBinding.workspace_id)).toBe(false);
+    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
+    expect(mcp.listManagedCodingWorkspaces(mcpEnv)).toHaveLength(0);
+
   } finally {
     process.env.PATH=savedPath;
     try { requireFixtureSession(session);run(herdr,['--session',session,'server','stop'],fixture,env); } catch { server.kill('SIGTERM'); }
