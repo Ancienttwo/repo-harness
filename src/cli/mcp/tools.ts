@@ -553,13 +553,18 @@ async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>):
     started = true;
     const get = () => herdrResult(herdrCommand(binding.endpoint, ['agent', 'get', binding.agent_name])).agent;
     const before = get();
+    let workingSequence: number | null = null;
     const request = await sendTaskRequest(ctx.repoRoot, task, role, contextPath.slice(ctx.repoRoot.length + 1));
     const dir = taskSessionDirectory(ctx.repoRoot, task, role);
     while (Date.now() < deadline) {
       const state = get();
       taskResult = readTaskRequestResult(ctx.repoRoot, dir, request);
+      // An idle heartbeat can arrive before this request is consumed. Only a
+      // post-delivery working -> idle transition ends observation; Result is
+      // still the sole request-bound completion authority.
+      if (state.agent_status === 'working' && state.state_change_seq > before.state_change_seq) workingSequence = state.state_change_seq;
       if (taskResult
-        || (['idle', 'done'].includes(state.agent_status) && state.state_change_seq > before.state_change_seq)) {
+        || (workingSequence !== null && ['idle', 'done'].includes(state.agent_status) && state.state_change_seq > workingSequence)) {
         stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000);
         finished = true; break;
       }

@@ -710,9 +710,11 @@ process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(inpu
  const lines=input.split(/[\\r\\n]+/);input=lines.pop()??'';
  for(const line of lines){const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');if(!text.trim())continue;
  const ref=/^Read task request (.*); write its result only to /.exec(text)?.[1];if(!ref)throw new Error('unexpected prompt');
- const request=JSON.parse(readFileSync(ref,'utf8'));const context=readFileSync(request.context_ref,'utf8');report('working');
+ const request=JSON.parse(readFileSync(ref,'utf8'));const context=readFileSync(request.context_ref,'utf8');
+ const executeGoal=()=>{report('working');
  process.stdout.write('GOAL VISIBLE '+${JSON.stringify(kind)}+' Authorization: Bearer fixture-secret-token\\n');
- if(!context.includes('WAIT_FOREVER'))setTimeout(()=>{if(context.includes('WRITE_RESULT')){writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'fixture result'}));renameSync(request.result_ref+'.tmp',request.result_ref);}process.stdout.write('GOAL COMPLETE\\n');report('idle');},200);
+ if(!context.includes('WAIT_FOREVER'))setTimeout(()=>{if(context.includes('WRITE_RESULT')){writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'fixture result'}));renameSync(request.result_ref+'.tmp',request.result_ref);}process.stdout.write('GOAL COMPLETE\\n');report('idle');},200);};
+ if(context.includes('EARLY_IDLE')){report('unknown');report('idle');if(!context.includes('IDLE_ONLY'))setTimeout(executeGoal,1000);}else executeGoal();
  }});
 `);
     chmodSync(fake,0o700);
@@ -728,15 +730,15 @@ process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(inpu
     const root=call(['workspace','create','--cwd',fixture,'--no-focus']);
     const parent=root.root_pane.pane_id;
     const ctx={repoRoot:fixture,policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex','claude'],runnerTimeoutMs:10000})};
-    for(const [kind,mode] of [['codex','idle'],['codex','result'],['claude','timeout']] as const){
-      const hang=mode==='timeout';
-      writeFileSync(goalPath,hang?'WAIT_FOREVER':mode==='result'?'WRITE_RESULT':'Finish fixture goal');
+    for(const [kind,mode] of [['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','result'],['claude','timeout']] as const){
+      const hang=mode==='timeout'||mode==='idle-only', hasResult=mode==='result'||mode==='early-idle-result';
+      writeFileSync(goalPath,mode==='early-idle-result'?'EARLY_IDLE WRITE_RESULT':mode==='idle-only'?'EARLY_IDLE IDLE_ONLY':hang?'WAIT_FOREVER':hasResult?'WRITE_RESULT':'Finish fixture goal');
       const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:hang?5000:10000});
       const value=JSON.parse((result.content[0] as {text:string}).text);
       expect(value.stderr).toBe('');
-      expect(value.status).toBe(hang?'timeout':mode==='result'?'completed':'observed_idle');
+      expect(value.status).toBe(hang?'timeout':hasResult?'completed':'observed_idle');
       expect(value.timedOut).toBe(hang);
-      expect(value.stdout).toContain('GOAL VISIBLE');
+      if(mode!=='idle-only')expect(value.stdout).toContain('GOAL VISIBLE');
       expect(value.stdout).not.toContain('fixture-secret-token');
       expect(Buffer.byteLength(value.stdout)).toBeLessThanOrEqual(128*1024);
       const binding=api.readTaskAgent(fixture,value.task,value.role).binding;
@@ -745,9 +747,9 @@ process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(inpu
       expect(api.taskAgentStatus(fixture,value.task,value.role).status).toBe('closed');
       const dir=api.taskSessionDirectory(fixture,value.task,value.role);
       const request=api.readSessionArtifact<import('../src/effects/terminal/task-session').TaskRequest>(join(dir,'request-1.json'));
-      expect(existsSync(request.result_ref)).toBe(mode==='result');
+      expect(existsSync(request.result_ref)).toBe(hasResult);
       expect(existsSync(join(dir,'collected-1.json'))).toBe(false);
-      expect(api.readSessionArtifact<{disposition:string}>(join(dir,'closed.json')).disposition).toBe(mode==='result'?'completed':'cancelled');
+      expect(api.readSessionArtifact<{disposition:string}>(join(dir,'closed.json')).disposition).toBe(hasResult?'completed':'cancelled');
       expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
       expect(call(['pane','get',parent]).pane.pane_id).toBe(parent);
     }

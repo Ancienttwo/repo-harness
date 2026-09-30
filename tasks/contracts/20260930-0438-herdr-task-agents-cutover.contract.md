@@ -17,12 +17,12 @@
 
 ## Goal
 
-修复 PR #464 reviewer post-spawn setup failure 的 provider 遗留：启动锁内回收本次创建且 identity-proven 的 provider，确认退出后发布 no-child 证据；保留 cancellation fail-closed 与 sentinel。
+修复 PR #464 MCP run_agent_goal 的提前 observed_idle：匹配 request 的 Result 可直接完成；仅投递后观察到 working 且之后有更晚 idle/done 才结束观察。idle-only 必须等待 timeout，保持 Result/observations 与 close/cancel 的边界。
 
 ## Scope
 
-- In scope: claude-review-host 启动失败清理、既有真实 Herdr regression tests、contract/notes/review。
-- Out of scope: MCP observed_idle、generic review cutover、真实模型 canary、其他分支。
+- In scope: src/cli/mcp/tools.ts、既有 Herdr MCP goal fixture、contract/notes。
+- Out of scope: generic review、模型 canary、其他分支、provider Result 格式。
 
 ## Stop Conditions
 
@@ -36,10 +36,10 @@
 
 ## Root Cause Evidence
 
-- root_cause: runClaudeReviewHost spawns a detached provider before report-agent/rename/capture/publication; setup exceptions leave no processes.json or no-child proof, so explicit cancel refuses ownership-unknown while the provider lives.
-- repro: REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts -t post-spawn --timeout 60000; all four cases fail with Expected false / Received true on the unfixed source (26.39s).
-- regression_guard: tests/claude-review.test.ts post-spawn parameterized cases; real private Herdr with deterministic provider that survives stdin EOF, failure injection at report/rename/capture/publication, creator-proof teardown, sentinel preservation.
-- pre_fix_failure_artifact: .ai/harness/runs/review-startup-fix/pre-fix.log (PRE_FIX_EXIT=1).
+- root_cause: runAgentGoal treats any newer idle/done state than pre-send baseline as terminal, then cancels without a Result. An unknown-to-idle telemetry transition before working therefore kills a pending provider.
+- repro: bun test tests/herdr-task-lifecycle.test.ts -t 'MCP goals use visible' --timeout 60000; unfixed latest main returns observed_idle instead of completed for EARLY_IDLE WRITE_RESULT (5.29s).
+- regression_guard: tests/herdr-task-lifecycle.test.ts owning MCP goal integration covers early idle then matching Result, idle-only timeout, working-idle observation, normal Result and working timeout, real private Herdr/deterministic providers and parent preservation.
+- pre_fix_failure_artifact: .ai/harness/runs/mcp-goal-idle-fix/pre-fix.log (PRE_FIX_EXIT=1).
 
 ## Workflow Inventory
 
@@ -70,8 +70,8 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - src/effects/review/claude-review-host.ts
-  - tests/claude-review.test.ts
+  - src/cli/mcp/tools.ts
+  - tests/herdr-task-lifecycle.test.ts
   - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
@@ -127,14 +127,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "review-startup-failure",
+      "id": "mcp-goal-lifecycle",
       "kind": "command",
-      "command": "REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts --timeout 60000",
+      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-tools.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Existing owning integration file exercises real private Herdr + deterministic provider. Four post-spawn failures cover report, rename, capture and immutable publication; confirm child absent, cancellation closed and sentinel unchanged. Expected 1-2 minutes; no real model.",
+      "necessity": "Existing real private Herdr integration and MCP handler file cover the changed request lifecycle: early idle before working, idle-only timeout, working-idle observations, request-bound Result, timeout cleanup, parent preservation and history redaction. Expected 1-2 minutes; no model requests.",
       "inputs": {
         "env": []
       }
@@ -207,7 +207,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "REPO_HARNESS_DIFF_BASE=e97684f6a881e0368f7258f425457ad32c04ca4f REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "REPO_HARNESS_DIFF_BASE=dc77b3c6405894f8ad3b1a7477beba740072d064 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
