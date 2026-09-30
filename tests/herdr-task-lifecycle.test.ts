@@ -72,9 +72,9 @@ test('linked task peers survive owner exit, restore explicit context, and clean 
   const peer = join(fixture, 'peer.ts');
   writeFileSync(peer, `
 import {readFileSync, writeFileSync, renameSync} from 'fs';
-import {randomUUID} from 'crypto';
+import {randomUUID} from 'crypto';import {spawnSync} from 'child_process';
 const role = process.argv[2]; const statePath = process.argv[3];
-const state = { role, pid: process.pid, provider_session: randomUUID(), requests: [] as {id:string,context:string}[] };
+const state = { role, pid: process.pid, provider_session: randomUUID(), peer_history: '', requests: [] as {id:string,context:string}[] };
 function save() { writeFileSync(statePath+'.tmp', JSON.stringify(state)); renameSync(statePath+'.tmp',statePath); }
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h'); save();
 let input=''; process.stdin.on('data', chunk => {
@@ -84,7 +84,14 @@ let input=''; process.stdin.on('data', chunk => {
   for (const line of lines) {
     const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');
     if (!text.trim()) continue;
-    const request=JSON.parse(text); state.requests.push(request); save();
+    const request=JSON.parse(text);
+    if(request.read_peer){
+      const session=${JSON.stringify(session)};
+      if(!/^task-proof-[0-9a-f]{16}$/.test(session))throw new Error('fixture only');
+      const r=spawnSync(${JSON.stringify(herdr)},['--session',session,'agent','read',request.read_peer,'--source','recent-unwrapped','--lines','100','--format','text'],{env:process.env,encoding:'utf8'});
+      if(r.status!==0)throw new Error(r.stderr);state.peer_history=r.stdout;save();continue;
+    }
+    state.requests.push(request); save();
     process.stdout.write('ACK '+request.id+' '+state.provider_session+'\\n');
   }
 });
@@ -143,6 +150,11 @@ for (const participant of binding.participants) {
     // A different owner process resumes the existing binding; it cannot spawn
     // a new peer. Provider/session identity and preceding context must survive.
     run(process.execPath, [owner, binding, 'req-2', 'resolve finding: scope'], repo, env);
+    for (const participant of participants.slice(0, 2)) await until(() => JSON.parse(readFileSync(participant.state, 'utf8')).requests.length === 2);
+    // The advisor process itself reads the gatekeeper history via Herdr.
+    execute(['agent', 'prompt', 'advisor', JSON.stringify({read_peer:'gatekeeper'})]);
+    await until(() => JSON.parse(readFileSync(participants[0].state, 'utf8')).peer_history.includes('ACK req-2'));
+    expect(JSON.parse(readFileSync(participants[0].state,'utf8')).peer_history).toContain(initial[1].provider_session);
     for (const [index, participant] of participants.slice(0, 2).entries()) {
       await until(() => JSON.parse(readFileSync(participant.state, 'utf8')).requests.length === 2);
       const state = JSON.parse(readFileSync(participant.state, 'utf8'));
@@ -666,6 +678,78 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
   } finally {
     process.env.PATH=savedPath;
     try { requireFixtureSession(session);run(herdr,['--session',session,'server','stop'],fixture,env); } catch { server.kill('SIGTERM'); }
+    await exited(server);rmSync(fixture,{recursive:true,force:true});
+  }
+},60000);
+
+test('MCP goals use visible persistent Herdr peers, redact history and clean success and timeout panes', async () => {
+  const fixture = realpathSync(mkdtempSync('/tmp/mg-'));
+  const home = join(fixture, 'h'), bin = join(fixture, 'bin'); mkdirSync(home); mkdirSync(bin);
+  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  const configPath = join(fixture, 'herdr.toml'), endpoint = { session, configPath, home };
+  requireFixtureSession(session);
+  const env = { ...herdrEnvironment(endpoint), PATH: `${bin}:${process.env.PATH}`, ENV: '', BASH_ENV: '' };
+  const herdr = Bun.which('herdr')!;
+  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
+  run('git', ['init', '-q', '-b', 'main'], fixture, env);
+  run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], fixture, env);
+  mkdirSync(join(fixture, '.ai/harness/handoff'), {recursive:true});
+  const goalPath = join(fixture, '.ai/harness/handoff/codex-goal.md');
+  // Both kinds resolve only to this deterministic persistent TTY process.
+  for (const kind of ['codex', 'claude']) {
+    const fake = join(bin, kind);
+    writeFileSync(fake, `#!${process.execPath}
+import {readFileSync,writeFileSync} from 'fs';import {spawnSync} from 'child_process';
+const session=${JSON.stringify(session)};if(!/^task-proof-[0-9a-f]{16}$/.test(session))throw new Error('fixture only');
+const pane=process.env.HERDR_PANE_ID;let seq=0;
+const report=state=>{const r=spawnSync(${JSON.stringify(herdr)},['--session',session,'pane','report-agent',pane,'--source','fixture','--agent',${JSON.stringify(kind)},'--state',state,'--seq',String(++seq)],{env:process.env,encoding:'utf8'});if(r.status!==0)throw new Error(r.stderr);};
+process.stdin.setRawMode(true);process.stdout.write('\\x1b[?2004h');
+writeFileSync(${JSON.stringify(join(fixture, kind + '.pid'))},String(process.pid));
+setTimeout(()=>report('idle'),100);let input='';
+process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(input))return;
+ const lines=input.split(/[\\r\\n]+/);input=lines.pop()??'';
+ for(const line of lines){const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');if(!text.trim())continue;
+ const ref=/^Read task request (.*); write its result only to /.exec(text)?.[1];if(!ref)throw new Error('unexpected prompt');
+ const request=JSON.parse(readFileSync(ref,'utf8'));const context=readFileSync(request.context_ref,'utf8');report('working');
+ process.stdout.write('GOAL VISIBLE '+${JSON.stringify(kind)}+' Authorization: Bearer fixture-secret-token\\n');
+ if(!context.includes('WAIT_FOREVER'))setTimeout(()=>{process.stdout.write('GOAL COMPLETE\\n');report('idle');},200);
+ }});
+`);
+    chmodSync(fake,0o700);
+  }
+  const execute = (args:string[]) => { requireFixtureSession(session); return run(herdr,['--session',session,...args],fixture,env); };
+  const call = (args:string[]) => JSON.parse(execute(args)).result;
+  const server=spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});
+  const {callMcpTool}=await import('../src/cli/mcp/tools');
+  const {getMcpPolicy}=await import('../src/cli/mcp/policy');
+  const api=await import('../src/effects/terminal/task-session');
+  try {
+    await until(()=>{try{call(['workspace','list']);return true;}catch{return false;}});
+    const root=call(['workspace','create','--cwd',fixture,'--no-focus']);
+    const parent=root.root_pane.pane_id;
+    const ctx={repoRoot:fixture,policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex','claude'],runnerTimeoutMs:10000})};
+    for(const [kind,hang] of [['codex',false],['claude',true]] as const){
+      writeFileSync(goalPath,hang?'WAIT_FOREVER':'Finish fixture goal');
+      const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:hang?5000:10000});
+      const value=JSON.parse((result.content[0] as {text:string}).text);
+      expect(value.stderr).toBe('');
+      expect(value.status).toBe(hang?'timeout':'observed_idle');
+      expect(value.timedOut).toBe(hang);
+      expect(value.stdout).toContain('GOAL VISIBLE');
+      expect(value.stdout).not.toContain('fixture-secret-token');
+      expect(Buffer.byteLength(value.stdout)).toBeLessThanOrEqual(128*1024);
+      const binding=api.readTaskAgent(fixture,value.task,value.role).binding;
+      expect(binding.provider.pid).toBe(Number(readFileSync(join(fixture,kind+'.pid'),'utf8')));
+      expect(live(binding.provider.pid)).toBe(false);
+      expect(api.taskAgentStatus(fixture,value.task,value.role).status).toBe('closed');
+      expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
+      expect(call(['pane','get',parent]).pane.pane_id).toBe(parent);
+    }
+    const audit=readFileSync(join(fixture,'.ai/harness/mcp/audit.log'),'utf8');
+    expect(audit).not.toContain(configPath);expect(audit).not.toContain(home);expect(audit).not.toContain(session);
+  }finally{
+    requireFixtureSession(session);
+    try{execute(['server','stop']);}catch{if(server.exitCode===null&&server.signalCode===null)server.kill('SIGTERM');}
     await exited(server);rmSync(fixture,{recursive:true,force:true});
   }
 },60000);

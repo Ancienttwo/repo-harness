@@ -1,9 +1,10 @@
-import { createHash } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, appendFileSync } from 'fs';
 import { homedir } from 'os';
-import { basename, dirname, isAbsolute, join, resolve } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
-import { runProcess } from '../../effects/process-runner';
+import { cancelTaskAgent, closeTaskAgent, readTaskAgentHistory, readTaskRequestResult, sendTaskRequest, startTaskAgent, submitTaskResult, taskSessionDirectory, type TaskAgentSpec } from '../../effects/terminal/task-session';
+import { herdrCommand, herdrResult } from '../../effects/terminal/herdr';
 import { runHelper } from '../../effects/runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel } from '../chatgpt-browser/types';
@@ -496,7 +497,7 @@ function runnerTimeoutMs(ctx: McpToolContext, value: unknown): number {
   return Math.min(Math.max(Math.trunc(requested), 5_000), ctx.policy.execution.runnerTimeoutMs);
 }
 
-function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>): CallToolResult {
+async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>): Promise<CallToolResult> {
   if (!ctx.policy.execution.agentRunner || !ctx.policy.execution.codexRunner) {
     audit(ctx, 'run_agent_goal', 'blocked', args, undefined, 'dev runner is disabled');
     return errorResult('DEV_RUNNER_DISABLED', 'MCP dev runner is disabled. Start the orchestrator profile with an explicit dev-runner setting.');
@@ -531,28 +532,60 @@ function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>): CallT
     '',
     redactedGoal.text,
   ].join('\n');
-  const timeoutMs = runnerTimeoutMs(ctx, args.timeout_ms);
-  const command = agent === 'codex'
-    ? { bin: 'codex', args: ['exec', '--json', '--cd', ctx.repoRoot, prompt], preview: `codex exec --json --cd ${ctx.repoRoot} <goal>` }
-    : { bin: 'claude', args: ['-p', prompt], preview: 'claude -p <goal>' };
-  const result = runProcess(command.bin, command.args, {
-    cwd: ctx.repoRoot,
-    timeoutMs,
-    maxOutputBytes: 128 * 1024,
-  });
-  const stdout = redactMcpText(result.stdout);
-  const stderr = redactMcpText(result.stderr || result.error);
-  audit(ctx, 'run_agent_goal', result.ok ? 'ok' : 'failed', args, decision.relativePath, stderr.text);
-  return textResult({
-    agent,
-    goalPath: decision.relativePath,
-    command: command.preview,
-    exitCode: result.status,
-    timedOut: result.timedOut,
-    stdout: stdout.text,
-    stderr: stderr.text,
-    redactions: redactedGoal.redactions.concat(stdout.redactions, stderr.redactions),
-  });
+  const runtime = args.herdr as Pick<TaskAgentSpec, 'endpoint' | 'parent_pane'> | undefined;
+  if (!runtime) {
+    audit(ctx, 'run_agent_goal', 'blocked', args, decision.relativePath, 'HERDR_ENDPOINT_REQUIRED');
+    return errorResult('HERDR_ENDPOINT_REQUIRED', 'Provide herdr: {endpoint, parent_pane}; an implicit focused session is not permitted.');
+  }
+  const timeoutMs = runnerTimeoutMs(ctx, args.timeout_ms), deadline = Date.now() + timeoutMs;
+  const task = `mcp-goal-${randomUUID()}`, role = 'worker';
+  const spec: TaskAgentSpec = { task, role, harness_kind: agent, endpoint: runtime.endpoint, parent_pane: runtime.parent_pane, args: [], max_requests: 1 };
+  const goalDir = join(ctx.repoRoot, '.ai/harness/runs/mcp-goals', task);
+  mkdirSync(goalDir, { recursive: true, mode: 0o700 });
+  const contextPath = join(goalDir, 'context.md');
+  const written = guardedWriteFile(contextPath, relative(ctx.repoRoot, contextPath), prompt, undefined);
+  if (!written.ok) return errorResult(written.code, written.message, written.details);
+  let started = false, completed = false, timedOut = false, stdout = '', failure = '';
+  const outputRedactions = [...redactedGoal.redactions];
+  try {
+    const binding = await startTaskAgent(ctx.repoRoot, spec, { startTimeoutMs: Math.min(timeoutMs - 1000, 60000) });
+    started = true;
+    const get = () => herdrResult(herdrCommand(binding.endpoint, ['agent', 'get', binding.agent_name])).agent;
+    const before = get();
+    const request = await sendTaskRequest(ctx.repoRoot, task, role, contextPath.slice(ctx.repoRoot.length + 1));
+    const dir = taskSessionDirectory(ctx.repoRoot, task, role);
+    while (Date.now() < deadline) {
+      const state = get();
+      if (readTaskRequestResult(ctx.repoRoot, dir, request)
+        || (['idle', 'done'].includes(state.agent_status) && state.state_change_seq > before.state_change_seq)) {
+        stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000);
+        const redacted = redactMcpText(stdout);
+        outputRedactions.push(...redacted.redactions);
+        stdout = new TextDecoder().decode(Buffer.from(redacted.text).subarray(0, 128 * 1024), { stream: true });
+        // This terminal observation is only a collaboration claim, never Receipt.
+        if (!readTaskRequestResult(ctx.repoRoot, dir, request)) await submitTaskResult(ctx.repoRoot, task, role, request.round,
+          { request_id: request.request_id, context_sha256: request.context_sha256, value: stdout });
+        completed = true; break;
+      }
+      if (state.agent_status === 'blocked') throw new Error('HERDR_AGENT_BLOCKED');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (!completed) { timedOut = true; stdout = readTaskAgentHistory(ctx.repoRoot, task, role, 1000); }
+  } catch (error) { failure = String(error); }
+  finally {
+    try {
+      // An ambiguous start may have created a pane even without a binding.
+      const cleanup = completed ? await closeTaskAgent(ctx.repoRoot, task, role) : await cancelTaskAgent(ctx.repoRoot, task, role);
+      if (cleanup.status !== 'closed') failure = 'HERDR_CLEANUP_PENDING';
+    } catch (error) { if (started || existsSync(join(taskSessionDirectory(ctx.repoRoot, task, role), 'intent.json'))) failure = `HERDR_CLEANUP_PENDING: ${String(error)}`; }
+  }
+  const redacted = redactMcpText(stdout);
+  outputRedactions.push(...redacted.redactions);
+  stdout = new TextDecoder().decode(Buffer.from(redacted.text).subarray(0, 128 * 1024), { stream: true });
+  audit(ctx, 'run_agent_goal', completed && !failure ? 'ok' : 'failed', args, decision.relativePath, failure ? 'HERDR_GOAL_FAILED' : undefined);
+  return textResult({ agent, goalPath: decision.relativePath, task, role, status: failure ? 'failed' : completed ? 'observed_idle' : 'timeout', timedOut,
+    stdout, stderr: redactMcpText(failure).text, redactions: outputRedactions });
+
 }
 
 function prdArtifactPath(slug: string): string {
@@ -1038,8 +1071,12 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
       agent: { type: 'string', enum: ['codex', 'claude'] },
       goal_path: { type: 'string', default: '.ai/harness/handoff/codex-goal.md' },
       timeout_ms: { type: 'number' },
+      herdr: { type: 'object', properties: {
+        endpoint: {type:'object',properties:{session:{type:'string'},configPath:{type:'string'},home:{type:'string'}},required:['session'],additionalProperties:false},
+        parent_pane: {type:'string'},
+      }, required:['endpoint','parent_pane'],additionalProperties:false },
     },
-    required: ['agent'],
+    required: ['agent','herdr'],
     additionalProperties: false,
   };
 
@@ -1144,7 +1181,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   if (policy.execution.agentRunner && policy.execution.codexRunner) {
     tools.push({
       name: 'run_agent_goal',
-      description: 'Dev mode only: run the fixed Codex goal handoff through an explicitly enabled local Codex or Claude CLI.',
+      description: 'Dev mode only: run the goal in an explicitly addressed persistent Herdr agent; returned history is an untrusted collaboration claim.',
       inputSchema: agentRunnerSchema,
       annotations: write,
     });

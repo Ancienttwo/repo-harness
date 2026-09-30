@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { isAbsolute, relative, resolve } from 'path';
 import { realpathSync } from 'fs';
-import { cancelTaskAgent, closeTaskAgent, collectTaskResult, readSessionArtifact, readTaskAgent, readTaskRequestResult, sendTaskRequest, submitTaskResult, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
+import { cancelTaskAgent, closeTaskAgent, collectTaskResult, readSessionArtifact, readTaskAgent, readTaskAgentHistory, readTaskRequestResult, sendTaskRequest, submitTaskResult, startTaskAgent, taskAgentStatus, type TaskAgentSpec, type TaskRequest } from '../../effects/terminal/task-session';
 
 export function buildTaskAgentCommand(): Command {
   const command = new Command('task-agent').description('Persistent task participants hosted only by Herdr');
@@ -35,6 +35,11 @@ export function buildTaskAgentCommand(): Command {
   command.command('status').requiredOption('--task <id>').requiredOption('--role <name>')
     .option('--repo <path>', 'Repository root', process.cwd()).action(opts => {
       process.stdout.write(JSON.stringify(taskAgentStatus(opts.repo, opts.task, opts.role)) + '\n');
+    });
+  command.command('history').requiredOption('--task <id>').requiredOption('--role <name>')
+    .option('--lines <number>', 'Recent unwrapped history lines', '200')
+    .option('--repo <path>', 'Repository root', process.cwd()).action(opts => {
+      process.stdout.write(readTaskAgentHistory(opts.repo, opts.task, opts.role, Number(opts.lines)) + '\n');
     });
   command.command('read').requiredOption('--task <id>').requiredOption('--role <name>').requiredOption('--round <number>')
     .option('--repo <path>', 'Repository root', process.cwd()).action(opts => {

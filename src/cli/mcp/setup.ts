@@ -436,11 +436,11 @@ Environment override:
 REPO_HARNESS_MCP_DEV_RUNNER=1 REPO_HARNESS_MCP_DEV_RUNNER_AGENTS=codex,claude repo-harness mcp serve --repo . --transport http --profile orchestrator
 \`\`\`
 
-When enabled, the server exposes \`run_agent_goal\`. The tool reads only \`.ai/harness/handoff/codex-goal.md\` and runs that fixed handoff through the allowed local CLI:
+When enabled, the server exposes \`run_agent_goal\`. The tool reads only \`.ai/harness/handoff/codex-goal.md\` and runs that fixed handoff in a persistent Herdr agent (explicit addressing is required):
 
 \`\`\`text
-codex exec --json --cd <repo> <goal>
-claude -p <goal>
+run_agent_goal { agent, herdr: { endpoint: {session}, parent_pane } }
+start -> send -> read history -> close; timeout -> cancel
 \`\`\`
 
 Keep this behind local Developer Mode and per-call confirmations. Do not expose an orchestrator tunnel to untrusted users.

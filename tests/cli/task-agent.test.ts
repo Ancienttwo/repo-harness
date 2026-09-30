@@ -8,7 +8,7 @@ import { assertCreated, collectTaskResult, harnessCapabilities, processIdentity,
 import { validateHerdrEndpoint } from '../../src/effects/terminal/herdr';
 
 test('public task-agent command has only task participant operations, never server stop', () => {
-  expect(buildTaskAgentCommand().commands.map(command => command.name())).toEqual(['start', 'send', 'result', 'collect', 'status', 'read', 'close', 'cancel']);
+  expect(buildTaskAgentCommand().commands.map(command => command.name())).toEqual(['start', 'send', 'result', 'collect', 'status', 'history', 'read', 'close', 'cancel']);
   expect(buildTaskAgentCommand().commands.some(command => command.name().includes('server'))).toBe(false);
 });
 test('attached ownership cannot be signalled and real harness evidence stays unverified', () => {

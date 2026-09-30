@@ -734,7 +734,7 @@ describe('mcp tools', () => {
     });
   });
 
-  test('runs fixed Codex goal only when orchestrator dev runner is enabled', async () => {
+  test('requires an explicit Herdr endpoint without falling back to a direct harness', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-'));
     const binRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-bin-'));
     const originalPath = process.env.PATH;
@@ -743,7 +743,7 @@ describe('mcp tools', () => {
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
       writeFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n\n## Required workflow\n\nRun fake codex.\n');
       const fakeCodex = join(binRoot, 'codex');
-      writeShellExecutableFixture(fakeCodex, '#!/bin/bash\necho "fake-codex:$1:$2:$3"\n');
+      writeShellExecutableFixture(fakeCodex, `#!/bin/bash\ntouch '${join(binRoot, 'invoked')}'\necho "fake-codex:$1:$2:$3"\n`);
       process.env.PATH = `${binRoot}:${originalPath ?? ''}`;
 
       const disabledCtx = { repoRoot, policy: getMcpPolicy('orchestrator') };
@@ -755,11 +755,8 @@ describe('mcp tools', () => {
         policy: getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 }),
       };
       const result = await jsonTool(enabledCtx, 'run_agent_goal', { agent: 'codex', timeout_ms: 5000 });
-      expect(result.agent).toBe('codex');
-      expect(result.goalPath).toBe('.ai/harness/handoff/codex-goal.md');
-      expect(result.command).toContain('codex exec --json --cd');
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('fake-codex:exec:--json:--cd');
+      expect(result.error.code).toBe('HERDR_ENDPOINT_REQUIRED');
+      expect(existsSync(join(binRoot, 'invoked'))).toBe(false);
 
       const denied = await jsonTool(enabledCtx, 'run_agent_goal', { agent: 'claude' });
       expect(denied.error.code).toBe('AGENT_DENIED');

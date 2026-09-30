@@ -724,6 +724,15 @@ export function cancelTaskAgent(repoRoot: string, task: string, role: string): P
   return cleanupTaskAgent(repoRoot, task, role, 'cancel');
 }
 
+/** History is observation only, never a task ACK or acceptance receipt. */
+export function readTaskAgentHistory(repoRoot: string, task: string, role: string, lines = 200): string {
+  if (!Number.isSafeInteger(lines) || lines < 1 || lines > 1000) throw new Error('task_agent_history_lines_invalid');
+  const { binding } = readTaskAgent(repoRoot, task, role);
+  assertTaskBinding(binding);
+  const result = herdrCommand(binding.endpoint, ['agent', 'read', binding.agent_name, '--source', 'recent-unwrapped', '--lines', String(lines), '--format', 'text']);
+  if (result.error || result.status !== 0 || result.signal) throw new Error('task_agent_history_unavailable');
+  return result.stdout.toString('utf8');
+}
 export function taskAgentStatus(repoRoot: string, task: string, role: string) {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);
   try { assertSessionDirectory(root, dir); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent', task, role }; throw error; }

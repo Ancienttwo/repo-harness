@@ -17,19 +17,19 @@
 
 ## Goal
 
-REQ-5 SIMPLIFY：净删除过度 host journal/schema/adapter/containment 设计，binding 回 protocol2。协作 provider 的 result/collect 原样可用；host 角色的 CLI result 拒绝，read/collect 不读 outbox，其 domain consumer 原路径不变。只保留现有 Claude host 的单调 working/idle/blocked 状态上报。
+step3：MCP run_agent_goal 只通过 task-agent 创建持久 Herdr peer、投递 goal、读 history、完成关闭或超时 cancel；移除 codex exec/claude -p。显式 herdr:{endpoint,parent_pane} 复用既有类型，缺省拒绝。返回 redacted/128KB 的协作 claim，不造 Receipt；补不同 agent 互读 history 证据。
 
 ## Scope
 
-- In scope: explicit shared task-session、原 Claude host/session、CLI 和原有 tests，移除 task-host-result.ts。
-- Out of scope: campaign/containment/delegation（暂停），新的 host/adapter，真实模型/mini/global install。
-- 净删除 commit canonical 后迁 MCP goal 至持久 Herdr，然后 [REQ-5 CHECKPOINT] 等回复。
+- In scope: exact MCP tool/setup、task-session history accessor、既有 MCP/private Herdr tests、简短 pane/history guideline 和工作流 artifacts。
+- Out of scope: campaign/delegation（暂停），host/adapter/containment 扩展，真实模型/mini/global install。
+- 完成发 [REQ-5 CHECKPOINT]，带累计 +/- 与剩余新增项理由，等 advisor 回复。
 
 ## Stop Conditions
 
-- 新增类型/字段/文件必须指向验收标准或既有保护；不能为未知将来实现预留。
-- 不改 main dirty、w8:p1、mini、真实 ~/.codex ~/.claude；无真实模型调用。
-- host domain consumer 不经 provider claim 出 Receipt；普通协作 claim 仍可读/collect。
+- 无默认 focus/session 或 direct CLI fallback；现有 enabled/agent/path/timeout/redaction 保护保持。
+- 结束后只关闭 created peer，attached parent/server 保留；timeout 必须 cancel，unknown 不重放。
+- audit 无 endpoint/home/config 明文；每新增项对齐验收或既有保护，不做预留设计。
 
 ## Falsifier
 
@@ -73,15 +73,16 @@ allowed_paths:
   - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
   - docs/researches/20260930-herdr-task-runtime-proof.md
-  - src/core/engineers/task-host-result.ts
+  - src/cli/mcp/tools.ts
+  - src/cli/mcp/setup.ts
   - src/effects/terminal/task-session.ts
-  - src/effects/terminal/task-role-profiles.ts
   - src/cli/commands/task-agent.ts
-  - src/effects/review/claude-review-host.ts
-  - src/effects/review/claude-review-session.ts
-  - tests/cli/task-agent.test.ts
+  - tests/cli/mcp-tools.test.ts
   - tests/herdr-task-lifecycle.test.ts
-  - tests/claude-review.test.ts
+  - tests/unit/herdr-peer-harness.test.ts
+  - tests/cli/task-agent.test.ts
+  - docs/reference-configs/global-working-rules.md
+  - assets/reference-configs/global-working-rules.md
 ```
 
 ## Evidence Requirements
@@ -134,27 +135,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-host-authority",
+      "id": "h3-persistent-mcp-goal",
       "kind": "command",
-      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/task-agent.test.ts --timeout 60000",
+      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-tools.test.ts tests/cli/task-agent.test.ts tests/unit/herdr-peer-harness.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Host ownership startup/recovery plus existing private lifecycle and protected authority falsifiers.",
-      "inputs": {
-        "env": []
-      }
-    },
-    {
-      "id": "h3-review-binding",
-      "kind": "command",
-      "command": "REPO_HARNESS_TEST_EXPENSIVE=1 bun test tests/claude-review.test.ts --timeout 60000",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "expensive",
-      "evidence_policy": "current_exact",
-      "necessity": "Existing 21-case review behavior plus pre-fix Herdr status/ACK/unknown/free-text host seam falsifiers; no real model calls.",
+      "necessity": "Persistent Herdr goal success/timeout cleanup, native binary shim parent proof, redaction/bounds/audit and actual cross-agent history, plus existing authorization guards.",
       "inputs": {
         "env": []
       }

@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:3c32aa2b694c089bd1524064821f4f665f195691e5a153a7cc3490d1d92de31d`
+> **Substantive Change SHA256**: `sha256:556a46cfe3be00abb861067975adfa141fd2a17f1acec43182df5e2d0b7e72b1`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -183,3 +183,11 @@
 - The only host channel protections retained: CLI result refuses when binding.host is non-null; generic read/collect never use its outbox, existing domain result/Receipt path stays authoritative. Two current-code forgery regressions remain as these exact boundary assertions, no new authentication mechanism.
 - Existing custom Claude host reports working/idle/blocked with increasing seq because Herdr cannot infer its status. No generic host module, new unknown-event schema, mirror limit, stdin handling or journal.
 - task-role-profiles remains a real installer consumer with one parser/model/writability source; no new role dispatcher consumes it yet. List this accurately in CHECKPOINT. Campaign/delegation remain paused; MCP persistent goal and mutual history reading next.
+
+## MCP persistent goal checkpoint
+
+- P1/P2: MCP enabled/allowed-agent/fixed-goal/path/timeout guards remain; run_agent_goal now builds the existing TaskAgentSpec with herdr.endpoint + parent_pane unchanged, starts a visible Herdr peer, sends one file request, reads bounded history, closes on observed idle or cancels on timeout/failure. Missing Herdr input rejects with HERDR_ENDPOINT_REQUIRED; direct codex exec/claude -p removed. Audit stores only hashMcpInput(args), with static error codes, no endpoint/config/home plaintext.
+- P3: history and idle are collaboration observations, not semantic ACK or Receipt. On observed idle the owner records a redacted/bounded provider claim through the existing result primitive so completed-request close can prove its fence. Returned status observed_idle/timeout/failed replaces per-process exitCode/command; timedOut/stdout/stderr remain. No new provider adapter or binding field.
+- Added task-agent history accessor/CLI is shared by MCP and cooperating agents, identity-proves the binding before Herdr read. Agent-process-to-agent-process history read proved in the existing private linked fixture; explicit names and shared repository grouping retained. Source global-working-rules template projects the pane lifetime/history/created-only cleanup guidance without global installation.
+- Falsifier: the new missing-endpoint regression run against c9bbd605 tools.ts failed (exit 1; old direct runner returned output instead of HERDR_ENDPOINT_REQUIRED). Current missing endpoint never invokes the fake Codex binary. Private actual agent-start success (Codex fixture) and timeout (Claude fixture) recover pane count to baseline, terminate their exact PIDs, preserve attached parent, redact token output and keep audit addressing private.
+- Unverified: these deterministic fixtures prove transport/lifecycle, not real harness auth, sandbox visibility/write denial, readiness hooks, model task completion or read-only acceptance. No real model invocation; mini/global installation/default cleanup forbidden. H3 incomplete; campaign/delegation pause and H4 canary prerequisites unchanged.
