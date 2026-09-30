@@ -81,7 +81,7 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 
 ## Review Trigger Discipline
 
-- Cross-model consult skills (such as `repo-harness-cross-review` and `claude-plan`) run only on explicit invocation by name or an unambiguous review request. Casual phrasing about checking or improving code is not a dispatch authorization.
+- Cross-model consult skills (such as `repo-harness-cross-review`) and task-agent plan consultations run only on explicit invocation by name or an unambiguous review request. Casual phrasing about checking or improving code is not a dispatch authorization.
 - One review per boundary: a diff that already passed a gate gets no second pass unless explicitly requested.
 - Follow the active workflow profile's artifact boundary: lite work uses brief -> edit -> targeted verification without plan/contract files; work-package planning uses the repo's file-backed plan flow. A mid-run plan consult is for genuine design forks only.
 ```

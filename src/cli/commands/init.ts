@@ -89,7 +89,7 @@ export interface GlobalContextOptions {
 
 /**
  * Host-scoped skills bundled under `assets/skills/<skill>`. The cross-review
- * skill is host-aware; claude-plan remains a Codex-host external-brain consult.
+ * skill is host-aware; task-agent owns persistent plan consultation.
  */
 type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
 type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
@@ -119,7 +119,7 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
  * The unconditional (no installed-profile concept in this init flow)
  * cross-review/external-brain bundle: repo-harness-cross-review on both
  * claude and codex (host-aware provider mode selection lives inside the
- * package), plus claude-plan on codex only. Step-name prefix mirrors the
+ * package). Step-name prefix mirrors the
  * catalog's cross-model-acceptance vs. adaptive-workflow component split
  * (the same split that separates "cross-review skill" from "external-brain
  * skill" naming below).

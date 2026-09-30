@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:d74b4bedf203aa9b3651e2da885d1021bfc4a60e4642d0d2e68693ff1c931904`
+> **Substantive Change SHA256**: `sha256:708e2e3d2ea87477d91d38ba455292836630fb38282824aa97a3b23c6e123cbd`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -214,3 +214,8 @@
 
 - Initializer + ensure fallback seed delegation preferred_runners/task brief rules now select task-agent with explicit Herdr addressing and persistent binding, not native spawn_agent. Sidecar research prefers task-agent; main-thread trace remains local read-only research, never another harness fallback. Existing delegation budget/depth/authorization state is unchanged; native handler/launch retirement stays paused.
 - Both recovery producers (shared materializer and standalone helper/template) carry the same task-agent instruction; a resume fixture caught leaving the shared producer stale before correction. Existing initializer/ensure/recovery fixtures verify generated policy and prompt, never install into actual user HOME. This maps plan:200 native/standalone managed guidance retirement and :202 generic task-agent semantics, narrowed by REQ-5 B.
+
+## REQ-5 C — retire headless plan skill
+
+- Removed bundled claude-plan source (including claude -p model fallback and transcript recovery); closed catalog/host placement no longer declares it. Init installs only catalog-projected skills, comments and managed consult/tooling docs now direct plan consultation to persistent task-agent. Fixture source deliberately may contain an extra legacy skill, and installation proves it is not selected.
+- Existing catalog/stub routing scoring and private-HOME bundled installation tests pass. No live install, user global skill deletion or alternate provider invoked. C maps plan:200 claude-plan dedicated execution skill retirement, narrowed by REQ-5 C. Existing acceptance Claude host stays unchanged; plugin removal belongs exclusively to D.

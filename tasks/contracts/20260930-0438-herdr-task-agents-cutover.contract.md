@@ -17,13 +17,13 @@
 
 ## Goal
 
-REQ-5 放行 B：生成 policy 和恢复文案推荐 task-agent 持久协作；不再默认 native spawn_agent / sidecar codex exec，缺少 Herdr 不选另一个 agent runner。
+REQ-5 放行 C：删除 claude-plan 专用 skill/headless CLI/transcript fallback，catalog/init/install 文档与投影不再安装/指引它。持久 plan consult 用已有 task-agent。
 
 ## Scope
 
-- In scope: recovery-view/ensure-task-workflow/project-init-lib 及其对应模板、既有 initializer/recovery tests。
-- Out of scope: SubagentStart handler与旧 launch（暂停），C–D（后续独立 commit），真实模型/mini/global install。
-- B 独立 commit/canonical，A–D 后 CHECKPOINT-3；H3/H4 尚未验收。
+- In scope: named skill/catalog/init references、source/projected docs、既有 catalog/stub routing/bundled install tests。
+- Out of scope: D（下一独立 commit），现有 Claude acceptance、native-child/delegation/campaign，真实模型/mini/global install。
+- C 独立 commit/canonical，A–D 后 CHECKPOINT-3；H3/H4 尚未验收。
 
 ## Stop Conditions
 
@@ -70,15 +70,16 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - src/effects/evidence/recovery-materializer.ts
-  - scripts/recovery-view-cli.ts
-  - scripts/ensure-task-workflow.sh
-  - scripts/lib/project-init-lib.sh
-  - assets/templates/helpers/recovery-view-cli.ts
-  - assets/templates/helpers/ensure-task-workflow.sh
-  - tests/create-project-dirs.runtime.test.ts
-  - tests/ensure-task-workflow.test.ts
-  - tests/evidence-recovery-materializer.test.ts
+  - assets/skill-commands/manifest.json
+  - assets/skills/claude-plan/SKILL.md
+  - src/cli/commands/init.ts
+  - assets/reference-configs/global-working-rules.md
+  - assets/reference-configs/external-tooling.md
+  - docs/reference-configs/global-working-rules.md
+  - docs/reference-configs/external-tooling.md
+  - tests/skill-surface/catalog.test.ts
+  - tests/skill-routing-eval.test.ts
+  - tests/cli/init.test.ts
 ```
 
 ## Evidence Requirements
@@ -131,14 +132,27 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-B-persistent-policy",
+      "id": "h3-C-plan-skill-retirement",
       "kind": "command",
-      "command": "bun test tests/create-project-dirs.runtime.test.ts tests/ensure-task-workflow.test.ts tests/evidence-recovery-materializer.test.ts --timeout 60000",
+      "command": "bun test tests/skill-surface/catalog.test.ts tests/skill-routing-eval.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
-      "cost": "expensive",
+      "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Generated policy parity and recovery views must recommend persistent task-agent without native/exec authority; mutations limited to fixture repositories/HOME.",
+      "necessity": "Retired plan skill absent from closed catalog/discovery, stub-only routing/scoring unchanged; no model calls.",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "h3-C-bundled-install",
+      "kind": "command",
+      "command": "bun test tests/cli/init.test.ts -t 'bundled host runtimes' --timeout 60000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Bundled installation fixtures no longer install retired plan skill; private HOME only, plugin behavior unchanged until D.",
       "inputs": {
         "env": []
       }

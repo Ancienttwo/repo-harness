@@ -160,10 +160,7 @@ refreshes: it installs into **both** `~/.claude/skills` (a Claude session
 asking Codex for an independent review, via its Codex provider mode) and
 `~/.codex/skills` (a Codex session asking Codex through the official plugin,
 via its `codex-plugin` provider mode) for the full profile. Review Gate is not
-enabled. `claude-plan` installs only into
-`~/.codex/skills` (a Codex session using Claude's headless plan mode for a
-plan consult on a mid-execution design fork) and is unaffected by this
-package's host-aware installation. These harness skills ship with the full
+enabled. Plan consultation uses persistent task-agent collaborators in Herdr. These harness skills ship with the full
 profile (the default for `init`) and provide the peer acceptance gate surface
 for the typed `AcceptanceReceipt`; the review section is projection only.
 
