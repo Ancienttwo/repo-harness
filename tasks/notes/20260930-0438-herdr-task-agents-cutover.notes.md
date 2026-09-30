@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:fcae2e5f2f4621e16fb095c48adf9949eedf58d03ab52343f7836e6c2e38b16c`
+> **Substantive Change SHA256**: `sha256:63ea5de0bb7d4d53d3c38dd66bc447e728b33cb6b886721bcd7cdc35fe2ad4f3`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -203,3 +203,9 @@
 - Advisor approved smaller alternative to a/b: shared close fence unchanged; removed history→submitTaskResult. One local result snapshot selects close + completed only for actual Result; idle-only uses explicit cancel + observed_idle, timeout/error also cancel. closed.json is the sole disposition source; no new MCP field. observed_idle with disposition cancelled is intentional: no Result arrived, not a claim that the goal failed. This supersedes earlier compensation write.
 - Redaction then UTF-8-safe 128KB truncation occurs once before return for success/timeout. Existing fixture covers idle-only no result/no collected/cancelled, atomic actual-result/completed, timeout/cancelled and exact pane/PID/parent/audit protections, within its 60s budget.
 - Carry-forward (advisor code inference, unverified): real harness may emit idle before handling the new request despite seq growth; H4 canary must falsify premature cleanup. This correction does not reinterpret idle as ACK or Receipt.
+
+## REQ-5 A — task goal naming
+
+- Frozen MCP artifact/tool/schema/policy/setup/CLI/bridge/read handoff paths use task-goal.md, prepare_task_goal_from_sprint and write_task_goal. Goal role/prompt no longer claims a Codex-only executor or injects host-native /goal. Legacy tool names and runner codex-goal path return explicit upgrade errors; no alias or shadow read/execute fallback. Existing guarded revision/size/path and EXECUTION_BOUNDARY packet protections retained.
+- Pre-fix legacy-name guard fails against prior tools.ts (A-before-fix.txt); named MCP/packet tests green after rename. Real transport composition fixture uses the renamed fixed artifact, not real model. A maps plan:200/202 MCP Codex-specific goal retirement and generic task-goal semantics; current REQ-5 A authorization governs.
+- Plan:200/202/211 actually requires claude-review name retirement; advisor acknowledged the anchor. Latest SIMPLIFY/REQ-5 direction wins: keep current Claude domain CLI/Receipt, no provenance/generic-host changes pending user decision. B–D and broader blocked runtimes remain separate slices.

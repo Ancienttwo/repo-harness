@@ -17,13 +17,13 @@
 
 ## Goal
 
-REQ-5 correction 2：MCP 不把 history 回写为 Result；只有真实 Result 才 close，idle-only/timeout/error 显式 cancel。状态与清理使用同一个已读结果；redact 后截断只做一次。
+REQ-5 放行 A：MCP goal 的文件/tool名与执行文档泛化为 task-goal；旧名明确升级错误，不 alias。保留 authoring revision/path/size、EXECUTION_BOUNDARY 唯一注入及真实结果/观察 cleanup。
 
 ## Scope
 
-- In scope: MCP tool 和既有 private Herdr composition test、contract/notes。
-- Out of scope: shared close fence/新增 schema，campaign/delegation/旧路径退役（待只读盘点），真实模型/mini/global install。
-- 提交并重跑 canonical 后发 CHECKPOINT-2，再发只读盘点；H3/H4 不勾完成。
+- In scope: exact MCP goal runtime、policy/setup/skill docs、既有 MCP/composition/packet tests 和合同 notes。
+- Out of scope: B–D（后续独立 commit），native-child/delegation/campaign/receipt 泛化，真实模型/mini/global install。
+- A–D 每项独立 commit/canonical 后 CHECKPOINT-3；H3/H4 尚未验收。
 
 ## Stop Conditions
 
@@ -71,7 +71,18 @@ allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
   - src/cli/mcp/tools.ts
+  - src/cli/mcp/setup.ts
+  - src/cli/mcp/policy.ts
+  - src/cli/mcp/instructions.ts
+  - src/cli/commands/mcp.ts
+  - tests/cli/mcp-tools.test.ts
+  - tests/cli/mcp-policy.test.ts
+  - tests/cli/mcp.test.ts
   - tests/herdr-task-lifecycle.test.ts
+  - tests/workflow-contract.test.ts
+  - assets/skills/repo-harness-chatgpt/references/bridge.md
+  - assets/skills/repo-harness-chatgpt/references/continue.md
+  - docs/reference-configs/general-repo-mcp.md
 ```
 
 ## Evidence Requirements
@@ -124,14 +135,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-mcp-observation-cancel",
+      "id": "h3-A-task-goal",
       "kind": "command",
-      "command": "bun test tests/herdr-task-lifecycle.test.ts tests/cli/mcp-tools.test.ts tests/cli/task-agent.test.ts tests/unit/herdr-peer-harness.test.ts --timeout 60000",
+      "command": "bun test tests/cli/mcp-tools.test.ts tests/cli/mcp-policy.test.ts tests/cli/mcp.test.ts tests/herdr-task-lifecycle.test.ts tests/workflow-contract.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "MCP idle-only creates no Result/collection, explicit cancel disposition; real fixture Result closes normally; lifecycle/audit/redaction/no-fallback guards preserved.",
+      "necessity": "Task-goal renamed authoring/read/write/run paths, legacy tool/path rejection, generated setup and anti-extras packet parity, actual fixture goal lifecycle.",
       "inputs": {
         "env": []
       }

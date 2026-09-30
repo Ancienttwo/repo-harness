@@ -488,7 +488,7 @@ function parseRunnerAgent(value: unknown): McpAgentRunnerName | null {
 }
 
 function runnerGoalPath(args: Record<string, unknown>): string {
-  return String(args.goal_path ?? '.ai/harness/handoff/codex-goal.md').trim();
+  return String(args.goal_path ?? '.ai/harness/handoff/task-goal.md').trim();
 }
 
 function runnerTimeoutMs(ctx: McpToolContext, value: unknown): number {
@@ -514,6 +514,7 @@ async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>):
   }
 
   const goalPath = runnerGoalPath(args);
+  if (goalPath === '.ai/harness/handoff/codex-goal.md') return errorResult('GOAL_RETIRED', 'Upgrade the goal artifact to .ai/harness/handoff/task-goal.md; the retired Codex goal is not executed.');
   const decision = resolveMcpPath(ctx.repoRoot, goalPath, ctx.policy, 'read');
   if (!decision.ok || !decision.absolutePath || !decision.relativePath) {
     audit(ctx, 'run_agent_goal', 'blocked', args, goalPath, decision.reason);
@@ -622,8 +623,8 @@ const GUARDED_WRITE_TOOLS: readonly string[] = [
   'write_sprint',
   'write_checklist_sprint',
   'write_plan',
-  'prepare_codex_goal_from_sprint',
-  'write_codex_goal',
+  'prepare_task_goal_from_sprint',
+  'write_task_goal',
 ];
 
 /**
@@ -702,7 +703,7 @@ function writeMarkdownArtifact(
 }
 
 // Canonical anti-extras clause injected into every runner-reachable surface (this
-// codex-goal path, the contract-run.ts worker prompt, the Codex delegation advisor hook,
+// task-goal path, the contract-run.ts worker prompt, the Codex delegation advisor hook,
 // and subagent start context). Keep the first sentence byte-identical across all
 // sources; a parity test asserts they never drift apart.
 const EXECUTION_BOUNDARY = [
@@ -717,7 +718,7 @@ const EXECUTION_BOUNDARY = [
 
 function validateGoal(body: string): string[] {
   return [
-    '# Codex Goal',
+    '# Task Goal',
     '## Source of truth',
     '## Role',
     '## Scope',
@@ -844,7 +845,7 @@ function renderChecklistSprintBody(args: Record<string, unknown>): string {
   ].join('\n').trimEnd() + '\n';
 }
 
-function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: string; prompt: string } {
+function renderTaskGoalFromSprint(args: Record<string, unknown>): { body: string; prompt: string } {
   const prdPath = String(args.prd_path ?? '').trim();
   const sprintPath = String(args.sprint_path ?? '').trim();
   const goalPrdPath = String(args.goal_prd_path ?? prdPath).trim() || prdPath;
@@ -852,7 +853,6 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
   const referenceRepo = String(args.reference_repo ?? '').trim();
   const extraInstructions = String(args.extra_instructions ?? '').trim();
   const prompt = [
-    '/goal',
     `Read: ${goalPrdPath}`,
     `Open or use a worktree and complete: ${goalSprintPath}`,
     'After each completed phase, stage the result before continuing.',
@@ -860,7 +860,7 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
     referenceRepo ? `Reference repo: ${referenceRepo}` : '',
   ].filter(Boolean).join('\n');
   const body = [
-    '# Codex Goal',
+    '# Task Goal',
     '',
     '## Source of truth',
     '',
@@ -870,7 +870,7 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
     '',
     '## Role',
     '',
-    'Codex is the executor. ChatGPT/repo-harness may prepare planning artifacts, but implementation ownership stays in the local Codex session.',
+    'The task-owned Herdr agent is the executor. Planning artifacts do not widen its task scope or authority.',
     '',
     '## Scope',
     '',
@@ -906,7 +906,7 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
     '- Checks pass or failures are documented with exact blocker evidence.',
     '- No commit is created unless the user explicitly asks for commit.',
     '',
-    '## Host-native /goal prompt',
+    '## Task execution prompt',
     '',
     '```text',
     prompt,
@@ -1063,7 +1063,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     type: 'object',
     properties: {
       agent: { type: 'string', enum: ['codex', 'claude'] },
-      goal_path: { type: 'string', default: '.ai/harness/handoff/codex-goal.md' },
+      goal_path: { type: 'string', default: '.ai/harness/handoff/task-goal.md' },
       timeout_ms: { type: 'number' },
       herdr: { type: 'object', properties: {
         endpoint: {type:'object',properties:{session:{type:'string'},configPath:{type:'string'},home:{type:'string'}},required:['session'],additionalProperties:false},
@@ -1091,10 +1091,10 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'write_sprint', description: 'Write a sprint under plans/sprints/*.sprint.md.', inputSchema: markdownWriterSchema, annotations: write },
     { name: 'write_checklist_sprint', description: 'Turn a PRD into an ordered checklist Sprint with per-phase staging gates.', inputSchema: checklistSprintSchema, annotations: write },
     { name: 'write_plan', description: 'Write an implementation plan under plans/plan-*.md.', inputSchema: markdownWriterSchema, annotations: write },
-    { name: 'prepare_codex_goal_from_sprint', description: 'Prepare .ai/harness/handoff/codex-goal.md and a host-native /goal prompt from PRD + checklist Sprint.', inputSchema: goalFromSprintSchema, annotations: write },
+    { name: 'prepare_task_goal_from_sprint', description: 'Prepare .ai/harness/handoff/task-goal.md and a task execution prompt from PRD + checklist Sprint.', inputSchema: goalFromSprintSchema, annotations: write },
     {
-      name: 'write_codex_goal',
-      description: 'Write .ai/harness/handoff/codex-goal.md after required section validation.',
+      name: 'write_task_goal',
+      description: 'Write .ai/harness/handoff/task-goal.md after required section validation.',
       inputSchema: {
         type: 'object',
         properties: { repo_path: { type: 'string' }, body: { type: 'string' }, expected_sha256: { type: 'string' } },
@@ -1185,6 +1185,9 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
+    if (name === 'prepare_codex_goal_from_sprint' || name === 'write_codex_goal') {
+      return errorResult('TOOL_RETIRED', `Upgrade to ${name === 'write_codex_goal' ? 'write_task_goal' : 'prepare_task_goal_from_sprint'}; the retired tool has no alias.`);
+    }
     if (ctx.policy.profile === 'engineer') {
       if (isCollaborationTool(name)) {
         return callCollaborationTool({ repoRoot: ctx.repoRoot, authorizationId: ctx.engineerAuthorizationId }, name, args);
@@ -1310,7 +1313,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       case 'latest_handoff': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
-        const paths = ['.ai/harness/handoff/resume.md', '.ai/harness/handoff/codex-goal.md', '.ai/harness/handoff/chatgpt-plan.md'];
+        const paths = ['.ai/harness/handoff/resume.md', '.ai/harness/handoff/task-goal.md', '.ai/harness/handoff/chatgpt-plan.md'];
         const handoff = paths.map((path) => {
           const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'read');
           if (!decision.ok || !decision.absolutePath || !existsSync(decision.absolutePath)) return { path, exists: false };
@@ -1386,7 +1389,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const slug = slugify(String(args.slug ?? title));
         return writeMarkdownArtifact(ctx, target.repoRoot, name, `plans/plan-${slug}.md`, title, 'plan', String(args.body ?? ''), expectedSha256Arg(args), args);
       }
-      case 'prepare_codex_goal_from_sprint': {
+      case 'prepare_task_goal_from_sprint': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
         const prdPath = String(args.prd_path ?? '').trim();
@@ -1402,26 +1405,26 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           audit(ctx, name, 'blocked', args, missingInputs[0]?.path, `${missingInputs.map((entry) => entry.label).join(', ')} path does not exist or is not readable`);
           return errorResult('SOURCE_NOT_READABLE', 'PRD or Sprint path does not exist or is not policy-readable.', { missing: missingInputs });
         }
-        const goal = renderCodexGoalFromSprint(args);
+        const goal = renderTaskGoalFromSprint(args);
         const missing = validateGoal(goal.body);
         if (missing.length > 0) {
-          audit(ctx, name, 'blocked', args, '.ai/harness/handoff/codex-goal.md', `missing required goal sections: ${missing.join(', ')}`);
-          return errorResult('INVALID_GOAL', 'Generated Codex goal is missing required sections.', { missing });
+          audit(ctx, name, 'blocked', args, '.ai/harness/handoff/task-goal.md', `missing required goal sections: ${missing.join(', ')}`);
+          return errorResult('INVALID_GOAL', 'Generated task goal is missing required sections.', { missing });
         }
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/codex-goal.md', 'Codex Goal', 'codex-goal', goal.body, expectedSha256Arg(args), args, {
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/task-goal.md', 'Task Goal', 'task-goal', goal.body, expectedSha256Arg(args), args, {
           prompt: goal.prompt,
         });
       }
-      case 'write_codex_goal': {
+      case 'write_task_goal': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
         const body = String(args.body ?? '');
         const missing = validateGoal(body);
         if (body.trim().length < 120 || missing.length > 0) {
-          audit(ctx, name, 'blocked', args, '.ai/harness/handoff/codex-goal.md', `missing required goal sections: ${missing.join(', ')}`);
-          return errorResult('INVALID_GOAL', 'Codex goal is missing required sections or is too small.', { missing });
+          audit(ctx, name, 'blocked', args, '.ai/harness/handoff/task-goal.md', `missing required goal sections: ${missing.join(', ')}`);
+          return errorResult('INVALID_GOAL', 'task goal is missing required sections or is too small.', { missing });
         }
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/codex-goal.md', 'Codex Goal', 'codex-goal', body, expectedSha256Arg(args), args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/task-goal.md', 'Task Goal', 'task-goal', body, expectedSha256Arg(args), args);
       }
       case 'append_handoff_note': {
         const target = targetRepoRoot(ctx, args);

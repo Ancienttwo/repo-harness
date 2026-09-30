@@ -694,7 +694,7 @@ test('MCP goals use visible persistent Herdr peers, redact history and clean suc
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], fixture, env);
   mkdirSync(join(fixture, '.ai/harness/handoff'), {recursive:true});
-  const goalPath = join(fixture, '.ai/harness/handoff/codex-goal.md');
+  const goalPath = join(fixture, '.ai/harness/handoff/task-goal.md');
   // Both kinds resolve only to this deterministic persistent TTY process.
   for (const kind of ['codex', 'claude']) {
     const fake = join(bin, kind);

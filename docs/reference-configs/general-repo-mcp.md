@@ -283,7 +283,7 @@ access, arbitrary shell execution, or agent runner. Codex remains the executor.
 Dev Mode can opt into local agent execution through MCP. This is off by default.
 When the operator enables the `orchestrator` profile with the dev runner
 setting, ChatGPT can call `run_agent_goal`, which reads only
-`.ai/harness/handoff/codex-goal.md` and runs that fixed handoff through an
+`.ai/harness/handoff/task-goal.md` and runs that fixed handoff through an
 allowed local CLI such as `codex exec` or `claude -p`:
 
 ```bash

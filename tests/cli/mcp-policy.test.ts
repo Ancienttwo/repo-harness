@@ -112,7 +112,7 @@ describe('mcp policy and paths', () => {
       expect(resolveMcpPath(tmp, '.env', policy, 'read')).toMatchObject({ ok: false });
       const tools = buildMcpToolDefinitions(policy).map((tool) => tool.name);
       expect(tools).toContain('write_prd');
-      expect(tools).toContain('prepare_codex_goal_from_sprint');
+      expect(tools).toContain('prepare_task_goal_from_sprint');
       expect(tools).toContain('reader_status');
       expect(tools).toContain('list_allowed_roots');
       expect(tools).toContain('open_workspace');
@@ -150,19 +150,19 @@ describe('mcp policy and paths', () => {
     try {
       mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
       mkdirSync(join(tmp, 'src'), { recursive: true });
-      writeFileSync(join(tmp, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n');
+      writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
       writeFileSync(join(tmp, 'src/index.ts'), 'export const value = 1;\n');
 
       const disabled = getMcpPolicy('orchestrator');
       expect(disabled.execution.agentRunner).toBe(false);
       expect(buildMcpToolDefinitions(disabled).some((tool) => tool.name === 'run_agent_goal')).toBe(false);
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/codex-goal.md', disabled, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', disabled, 'read')).toMatchObject({ ok: false });
 
       const enabled = getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 });
       expect(enabled.execution.agentRunner).toBe(true);
       expect(enabled.execution.allowedAgents).toEqual(['codex']);
       expect(buildMcpToolDefinitions(enabled).some((tool) => tool.name === 'run_agent_goal')).toBe(true);
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/codex-goal.md', enabled, 'read')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', enabled, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'src/index.ts', enabled, 'read')).toMatchObject({ ok: false });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -176,7 +176,7 @@ describe('mcp policy and paths', () => {
       mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
       mkdirSync(join(tmp, '.ai/harness/checks'), { recursive: true });
       writeFileSync(join(tmp, 'plans/prds/existing.prd.md'), '# Existing\n');
-      writeFileSync(join(tmp, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n');
+      writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
 
       const executor = getMcpPolicy('executor');
       const executorTools = buildMcpToolDefinitions(executor).map((tool) => tool.name);
@@ -221,7 +221,7 @@ describe('mcp policy and paths', () => {
       const orchestratorDevTools = buildMcpToolDefinitions(orchestratorDev).map((tool) => tool.name);
       expect(orchestratorDevTools).toContain('run_agent_goal');
       expect(orchestratorDevTools).not.toContain('reader_status');
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/codex-goal.md', orchestratorDev, 'read')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestratorDev, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'plans/prds/existing.prd.md', orchestratorDev, 'read')).toMatchObject({ ok: false });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -241,7 +241,7 @@ describe('mcp policy and paths', () => {
     expect(definitions).toHaveLength(29);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');
-    expect(definitions.map((tool) => tool.name)).toContain('prepare_codex_goal_from_sprint');
+    expect(definitions.map((tool) => tool.name)).toContain('prepare_task_goal_from_sprint');
     expect(definitions.map((tool) => tool.name)).toEqual(expect.arrayContaining([
       'fleet_offers',
       'fleet_acquire',

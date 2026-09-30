@@ -207,7 +207,7 @@ describe('mcp tools', () => {
 
       const toolNames = buildMcpToolDefinitions(ctx.policy).map((tool) => tool.name);
       expect(toolNames).toContain('write_prd');
-      expect(toolNames).toContain('prepare_codex_goal_from_sprint');
+      expect(toolNames).toContain('prepare_task_goal_from_sprint');
       expect(toolNames).toContain('reader_status');
       expect(toolNames).toContain('list_allowed_roots');
       expect(toolNames).toContain('open_workspace');
@@ -522,8 +522,8 @@ describe('mcp tools', () => {
         'write_prd_from_idea',
         'write_sprint',
         'write_checklist_sprint',
-        'prepare_codex_goal_from_sprint',
-        'write_codex_goal',
+        'prepare_task_goal_from_sprint',
+        'write_task_goal',
       ]) {
         const rejected = await jsonTool(ctx, tool, { overwrite: false });
         expect(rejected.error.code).toBe('RETIRED_PARAMETER');
@@ -539,8 +539,8 @@ describe('mcp tools', () => {
         'write_sprint',
         'write_checklist_sprint',
         'write_plan',
-        'prepare_codex_goal_from_sprint',
-        'write_codex_goal',
+        'prepare_task_goal_from_sprint',
+        'write_task_goal',
       ];
       const definitions = buildMcpToolDefinitions(ctx.policy);
       for (const name of guarded) {
@@ -584,13 +584,13 @@ describe('mcp tools', () => {
     });
   });
 
-  test('validates fixed Codex goal path and required sections', async () => {
+  test('validates fixed task goal path and required sections', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      const invalid = await jsonTool(ctx, 'write_codex_goal', { body: '# Codex Goal\nshort' });
+      const invalid = await jsonTool(ctx, 'write_task_goal', { body: '# Task Goal\nshort' });
       expect(invalid.error.code).toBe('INVALID_GOAL');
 
       const missingExecutionBoundary = [
-        '# Codex Goal',
+        '# Task Goal',
         '## Source of truth',
         'plans/prds/example.prd.md',
         '## Role',
@@ -604,12 +604,12 @@ describe('mcp tools', () => {
         '## Done when',
         'Checks pass and handoff is updated.',
       ].join('\n\n');
-      const missingBoundary = await jsonTool(ctx, 'write_codex_goal', { body: missingExecutionBoundary });
+      const missingBoundary = await jsonTool(ctx, 'write_task_goal', { body: missingExecutionBoundary });
       expect(missingBoundary.error.code).toBe('INVALID_GOAL');
       expect(missingBoundary.error.details.missing).toContain('## Execution boundary');
 
       const validBody = [
-        '# Codex Goal',
+        '# Task Goal',
         '## Source of truth',
         'plans/prds/example.prd.md',
         '## Role',
@@ -625,18 +625,18 @@ describe('mcp tools', () => {
         '## Done when',
         'Checks pass and handoff is updated.',
       ].join('\n\n');
-      const written = await jsonTool(ctx, 'write_codex_goal', { body: validBody });
+      const written = await jsonTool(ctx, 'write_task_goal', { body: validBody });
       expect(written.status).toBe('written');
-      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), 'utf-8')).toContain('# Codex Goal');
+      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), 'utf-8')).toContain('# Task Goal');
     });
   });
 
-  test('supports idea to PRD to checklist Sprint to Codex goal handoff', async () => {
+  test('supports idea to PRD to checklist Sprint to task goal handoff', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const prd = await jsonTool(ctx, 'write_prd_from_idea', {
         title: 'Goal Chain',
         slug: 'goal-chain',
-        idea: 'Convert idea to PRD, checklist Sprint, and host-native Codex /goal handoff.',
+        idea: 'Convert idea to PRD, checklist Sprint, and task-owned Herdr handoff.',
         users: ['ChatGPT planner', 'Codex executor'],
         goals: ['Generate reviewable workflow artifacts'],
         success_criteria: ['Codex receives a staged checklist Sprint execution prompt'],
@@ -665,22 +665,22 @@ describe('mcp tools', () => {
       expect(sprintContent).toContain('### Task Card 1: Implement chain surface');
       expect(sprintContent).toContain('- [ ] Stage gate: Stage MCP tool changes before continuing.');
 
-      const goal = await jsonTool(ctx, 'prepare_codex_goal_from_sprint', {
+      const goal = await jsonTool(ctx, 'prepare_task_goal_from_sprint', {
         prd_path: prd.path,
         sprint_path: sprint.path,
         reference_repo: '/tmp/reference-repo',
       });
       expect(goal.status).toBe('written');
-      expect(goal.path).toBe('.ai/harness/handoff/codex-goal.md');
-      expect(goal.prompt).toContain('/goal');
+      expect(goal.path).toBe('.ai/harness/handoff/task-goal.md');
+      expect(goal.prompt).not.toContain('/goal');
       expect(goal.prompt).toContain(`Read: ${prd.path}`);
       expect(goal.prompt).toContain(`Open or use a worktree and complete: ${sprint.path}`);
       expect(goal.prompt).toContain('After each completed phase, stage the result before continuing.');
       expect(goal.prompt).toContain("Use the user's language for status reports unless repo-local instructions require otherwise.");
       expect(goal.prompt).not.toContain('阅读：');
       expect(goal.prompt).not.toContain('开worktree完整执行');
-      const goalContent = readFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), 'utf-8');
-      expect(goalContent).toContain('## Host-native /goal prompt');
+      const goalContent = readFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), 'utf-8');
+      expect(goalContent).toContain('## Task execution prompt');
       expect(goalContent).toContain('No commit is created unless the user explicitly asks for commit.');
       expect(goalContent).toContain('## Execution boundary');
       expect(goalContent).toContain(
@@ -689,10 +689,10 @@ describe('mcp tools', () => {
     });
   });
 
-  test('exposes a written Codex goal through the handoff read path', async () => {
+  test('exposes a written task goal through the handoff read path', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const validBody = [
-        '# Codex Goal',
+        '# Task Goal',
         '## Source of truth',
         'plans/prds/example.prd.md',
         '## Role',
@@ -709,16 +709,16 @@ describe('mcp tools', () => {
         'Checks pass and handoff is updated.',
       ].join('\n\n');
 
-      await jsonTool(ctx, 'write_codex_goal', { body: validBody });
+      await jsonTool(ctx, 'write_task_goal', { body: validBody });
 
       const handoff = await jsonTool(ctx, 'latest_handoff');
-      const goal = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/codex-goal.md');
+      const goal = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/task-goal.md');
       expect(goal).toMatchObject({ exists: true });
-      expect(goal.preview).toContain('# Codex Goal');
+      expect(goal.preview).toContain('# Task Goal');
 
-      const readGoal = await jsonTool(ctx, 'read_workflow_file', { path: '.ai/harness/handoff/codex-goal.md' });
+      const readGoal = await jsonTool(ctx, 'read_workflow_file', { path: '.ai/harness/handoff/task-goal.md' });
       expect(readGoal.content).toContain('## Required checks');
-      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), 'utf-8')).toContain('source: "repo-harness-mcp"');
+      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), 'utf-8')).toContain('source: "repo-harness-mcp"');
     });
   });
 
@@ -734,6 +734,19 @@ describe('mcp tools', () => {
     });
   });
 
+  test('retired Codex goal tools and path return upgrade errors without aliases', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      for (const name of ['write_codex_goal', 'prepare_codex_goal_from_sprint']) {
+        const result = await jsonTool(ctx, name, {});
+        expect(result.error.code).toBe('TOOL_RETIRED');
+      }
+      const enabled = {repoRoot, policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex']})};
+      const result = await jsonTool(enabled,'run_agent_goal',{agent:'codex',goal_path:'.ai/harness/handoff/codex-goal.md'});
+      expect(result.error.code).toBe('GOAL_RETIRED');
+      expect(existsSync(join(repoRoot,'.ai/harness/handoff/task-goal.md'))).toBe(false);
+    });
+  });
+
   test('requires an explicit Herdr endpoint without falling back to a direct harness', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-'));
     const binRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-bin-'));
@@ -741,7 +754,7 @@ describe('mcp tools', () => {
     try {
       mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
-      writeFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n\n## Required workflow\n\nRun fake codex.\n');
+      writeFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n\n## Required workflow\n\nRun fake codex.\n');
       const fakeCodex = join(binRoot, 'codex');
       writeShellExecutableFixture(fakeCodex, `#!/bin/bash\ntouch '${join(binRoot, 'invoked')}'\necho "fake-codex:$1:$2:$3"\n`);
       process.env.PATH = `${binRoot}:${originalPath ?? ''}`;
