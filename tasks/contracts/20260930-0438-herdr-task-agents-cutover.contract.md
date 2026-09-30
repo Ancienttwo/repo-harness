@@ -17,13 +17,13 @@
 
 ## Goal
 
-GATE 第1轮 F3：plan-to-todo 不再检测与固定 policy 无关的 host session IDs，也不再做 no-op acceptance_policy/sed替换；模板固定 policy 是唯一输出来源。顺手清理指定重复 union 与不可达 throw。
+GATE 第2轮 PASS 后 safe_auto：五语言 README task-goal/Herdr executor 语义、既有旧名 guard归 describe/read风格、guide正确定义有Result close/无Result cancel；单一独立 commit + canonical，然后 push/PR。
 
 ## Scope
 
-- In scope: plan-to-todo/helper模板、既有生成契约 regression、historical classifier 重复类型、cross-review 单行 throw 和相应 focused tests。
-- Out of scope: policy.json/24份旧contracts/prd.md（H5）、paused launch/Claude domain/真实模型/mini/global install；不改 cross-review 的执行方式。
-- F3 独立 commit/canonical 后 CHECKPOINT-4，等待 gate 复核。
+- In scope: 五README、既有readme-dx guard、MCP guide generator/projection、contract/notes/review；不新增测试文件。
+- Out of scope: paused/H4真实模型/H5/claude-review/campaign。本PR只含A–D和已完成H3累计；E已决定后续退役，当前不包含。
+- Canonical通过后push feature branch开main PR，不merge/发版/推main。PR后新E worktree只设计/无模型，R6与额度前置仍有效。
 
 ## Stop Conditions
 
@@ -68,13 +68,17 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
-  - scripts/plan-to-todo.sh
-  - assets/templates/helpers/plan-to-todo.sh
-  - tests/plan-to-todo.test.ts
-  - tests/historical-plan-classifier.test.ts
-  - src/effects/review/cross-review-runner.ts
+  - README.md
+  - README.zh-CN.md
+  - README.ja.md
+  - README.fr.md
+  - README.es.md
+  - tests/readme-dx.test.ts
+  - src/cli/mcp/setup.ts
+  - docs/repo-harness-chatgpt-mcp-setup.md
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
+  - tasks/reviews/20260930-0438-herdr-task-agents-cutover.review.md
 ```
 
 ## Evidence Requirements
@@ -127,14 +131,27 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "gate1-F3-policy",
+      "id": "gate2-safe-auto-docs",
       "kind": "command",
-      "command": "bun test tests/plan-to-todo.test.ts tests/historical-plan-classifier.test.ts tests/cli/cross-review.test.ts --timeout 60000",
+      "command": "bun test tests/readme-dx.test.ts tests/cli/mcp.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Fixed policy generation succeeds with both session IDs; template output/identity refusal and unchanged direct review behavior covered.",
+      "necessity": "Existing multilingual/native Goal boundaries and single retired-name guard; CLI guide/goal behavior unchanged.",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "gate2-safe-auto-guide-parity",
+      "kind": "command",
+      "command": "bun -e 'import {readFileSync} from \"fs\"; import {chatgptGuideMarkdown} from \"./src/cli/mcp/setup\"; const g=chatgptGuideMarkdown(); if(readFileSync(\"docs/repo-harness-chatgpt-mcp-setup.md\",\"utf8\")!==g || !g.includes(\"## Uninstall local MCP setup\") || !g.includes(\"cancel (no Result: timeout, observed_idle, failure)\")) throw new Error(\"guide projection or cleanup contract drift\");' ",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "CLI-generated guide byte equality, correct observation cleanup and original uninstall preservation.",
       "inputs": {
         "env": []
       }

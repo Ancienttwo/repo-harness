@@ -440,7 +440,7 @@ When enabled, the server exposes \`run_agent_goal\`. The tool reads only \`.ai/h
 
 \`\`\`text
 run_agent_goal { agent, herdr: { endpoint: {session}, parent_pane } }
-start -> send -> read history -> close; timeout -> cancel
+start -> send -> read history -> close (Result received) / cancel (no Result: timeout, observed_idle, failure)
 \`\`\`
 
 Keep this behind local Developer Mode and per-call confirmations. Do not expose an orchestrator tunnel to untrusted users.

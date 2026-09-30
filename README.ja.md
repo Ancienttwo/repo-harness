@@ -533,9 +533,9 @@ path を露出することもありません。
 
 オプションの sidecar として、`repo-harness mcp` は既定の `planner` profile
 を通じて workflow artifacts を MCP クライアントへ公開します。ChatGPT は実際の
-リポジトリ状態を読み、アイデアを PRD、checklist Sprint、Codex goal handoff の
+リポジトリ状態を読み、アイデアを PRD、checklist Sprint、task goal handoff の
 artifacts へと進めます — 既定では source-code への書き込み権限、任意の shell
-実行、既定の runner はありません。実行者は引き続き Codex です。
+実行、既定の runner はありません。タスク owner が明示的に指定した Herdr agent に task goal の実行を指示します。
 
 ```bash
 repo-harness mcp setup chatgpt --repo .

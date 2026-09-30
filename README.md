@@ -512,9 +512,9 @@ paths.
 
 As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP
 clients through the default `planner` profile. ChatGPT reads real repo state and
-moves an idea through PRD, checklist Sprint, and Codex goal handoff artifacts —
+moves an idea through PRD, checklist Sprint, and task goal handoff artifacts —
 with no default source-code write access, arbitrary shell execution, or default
-runner. Codex remains the executor.
+runner. The task owner directs an explicitly addressed Herdr agent to execute the task goal.
 
 ```bash
 repo-harness mcp setup chatgpt --repo .

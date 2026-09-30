@@ -115,3 +115,10 @@ screenshot/artifact path, or reviewer observation.
 - F2 HIGH: residual old tool/goal/skill/plugin names across operator docs/README/global packet comments; rebase required.
 - F3 MEDIUM: now-irrelevant host detection/policy substitution remains.
 - No PASS or AcceptanceReceipt issued. Correct in three separate commits, canonical then CHECKPOINT-4. Paused paths and existing Claude domain stay intact.
+
+
+## GATE 第2轮 — stage PASS / publication authorized
+
+- User relayed gatekeeper PASS for current A–D/H3 cumulative PR stage after F1–F3. Safe_auto is the sole remaining change before push/PR; no extra semantic reviewer invoked.
+- This stage PASS does not mint final full-cutover AcceptanceReceipt or certify real model/sandbox behavior. Paused/H4/H5/campaign excluded.
+- User has decided claude-review retirement; generic review design/atomic cutover is subsequent E, outside this PR. E uses existing fleet deep-reasoner role, cross-preferred owner-aware harness selection, explicit override; cross is not acceptance gate. R6/quota/canary remain required before deletion.

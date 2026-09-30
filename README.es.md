@@ -543,9 +543,9 @@ estado del workflow, ni lanza agentes, ni expone rutas del repositorio.
 Como sidecar opcional, `repo-harness mcp` expone artefactos de workflow a
 clientes MCP a través del profile `planner` por defecto. ChatGPT lee el
 estado real del repositorio y mueve una idea a través de artefactos de PRD,
-checklist Sprint y Codex goal handoff — sin acceso de escritura al código
+checklist Sprint y task goal handoff — sin acceso de escritura al código
 fuente por defecto, sin ejecución arbitraria de shell, ni runner por
-defecto. Codex sigue siendo el ejecutor.
+defecto. El owner de la tarea dirige un Herdr agent explícitamente identificado para ejecutar el task goal.
 
 ```bash
 repo-harness mcp setup chatgpt --repo .

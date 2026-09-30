@@ -480,8 +480,8 @@ acquire 任务、不改 workflow state、不启动 agent，也不暴露仓库路
 
 作为可选 sidecar，`repo-harness mcp` 通过默认的 `planner` profile 把 workflow
 artifact 暴露给 MCP client。ChatGPT 读取真实仓库状态，把一个想法推进过 PRD、
-checklist Sprint 和 Codex goal handoff artifact——默认没有源码写入权限、没有任意
-shell 执行，也没有默认 runner。Codex 仍然是执行者。
+checklist Sprint 和 task goal handoff artifact——默认没有源码写入权限、没有任意
+shell 执行，也没有默认 runner。任务 owner 指挥明确寻址的 Herdr agent 执行 task goal。
 
 ```bash
 repo-harness mcp setup chatgpt --repo .
