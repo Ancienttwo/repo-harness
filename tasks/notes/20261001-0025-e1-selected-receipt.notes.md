@@ -52,3 +52,9 @@ Limits: Board liveness is not included in Board revision (collect-board-inputs.t
 
 - Canonical execution: `.ai/harness/checks/e1-s2-verification.latest.json`
 - Runtime provenance: `.ai/harness/runs/`
+
+## CI Merge-Candidate Evidence Boundary
+
+The PR CI base advanced to cebb590e after S2 started from dc77b3c6. Task-sync includes its effective base in the digest. Reproduced GitHub candidate d8a4c465 in a disposable clone using REPO_HARNESS_DIFF_BASE=cebb590e and merge-base mode; it required the hash below. This separate boundary is not a waiver, production code change or live cutover.
+
+> **Substantive Change SHA256**: `sha256:1cc8d920ef9e79b1a01ddedcf85d51a5e7c35ad6e86d5e3be5ed32acc0e24114`
