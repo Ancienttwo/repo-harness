@@ -39,7 +39,7 @@ const SNAPSHOT: ProjectionResultV1['inputSnapshot'] = {
   layoutVersion: 'archcontext.docs-layout/v1',
   generatedFrom: {
     codeGraphPackage: '@colbymchenry/codegraph',
-    codeGraphVersion: '1.5.0',
+    codeGraphVersion: '1.6.1',
     codeGraphBinaryDigest: digest('4'),
     codeGraphStatus: 'ready',
   },

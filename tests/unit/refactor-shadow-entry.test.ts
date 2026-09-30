@@ -28,7 +28,7 @@ function fixture(extraFiles: string[] = []) {
   const recommendation = { schemaVersion: 'archcontext.recommendation/v3', recommendationId: 'recommendation.1', runId: 'run.1', fingerprint: digest('a'), subject: 'node.a', status: 'open', confidence: 'high', enforcement: 'advisory', risk: 'low', uncertainty: 'low', evidenceBindingIds: [], explanation: [], authoredBy: { kind: 'daemon', id: 'archctxd', source: 'daemon' }, subjectSelectorId: 'node.a', relations: {}, createdAt: '2026-09-04T00:00:00.000Z', updatedAt: '2026-09-04T00:01:00.000Z', category: 'structural_observation', payload: { assessmentDigest: digest('b'), kind: 'cycle', affectedNodeIds: ['node.a'], baselineSnapshotDigest: digest('c'), derivedOutcomes: [] } };
   const provider = { consumerRoot: process.cwd(), run: (_binary: string, args: readonly string[]) => {
     let value: unknown;
-    if (args[0] === 'capabilities') value = { schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.6.0' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] };
+    if (args[0] === 'capabilities') value = { schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.6.1' }, features: ['module-statistics-v1', 'refactor-assessment-v1', 'recommendation-v3'] };
     else if (args[0] === 'book') value = { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'book.recommendations', data: { schemaVersion: 'archcontext.architecture-book-recommendations/v1', recommendations: lifecycle ? [{ ...recommendation, status: lifecycle }] : [], freshness: { worktree: { headSha: head } } } };
     else {
       scans++;
@@ -38,7 +38,7 @@ function fixture(extraFiles: string[] = []) {
       const snapshotDraft: ModuleStatisticsSnapshotV1 = {
         schemaVersion: 'archcontext.module-statistics/v1', repository: { repositoryId: proposed && change === 'repository' ? 'repo.changed' : 'repo.test', storageRepositoryId: 'storage.repo.test' },
         worktree: { workspaceId: proposed && change === 'workspace' ? 'workspace.changed' : 'workspace.test', storageWorkspaceId: 'storage.workspace.test', branch: 'main', headSha: proposed && stale ? 'c'.repeat(40) : head, worktreeDigest: digest('b') }, modelDigest: proposed && change === 'model' ? digest('f') : digest('c'),
-        codeFacts: { provider: 'codegraph', version: '1.5.0', binaryDigest: digest('d'), indexedWorktreeDigest: coverage === 'unknown' ? null : digest('b'), coverage, truncated: coverage !== 'complete', edgeLimit: 5000, reasonCodes: [] }, modules: [],
+        codeFacts: { provider: 'codegraph', version: '1.6.1', binaryDigest: digest('d'), indexedWorktreeDigest: coverage === 'unknown' ? null : digest('b'), coverage, truncated: coverage !== 'complete', edgeLimit: 5000, reasonCodes: [] }, modules: [],
         repositorySummary: { moduleCount: 0, undeclaredFootprintNodeCount: 0, ownedFileCount: 0, unownedFileCount: 0, multiplyOwnedFileCount: ambiguous ? 1 : 0, crossModuleEdgeCount: 0, crossModuleCycleCount: 0, stronglyConnectedComponentCount: 0, unresolvedImportCount: 0, dynamicInvocationRiskCount: 0 }, createdAt: '2026-09-04T00:00:00.000Z', snapshotDigest: digest('0'),
       };
       const snapshot = { ...snapshotDraft, snapshotDigest: moduleStatisticsSnapshotDigest(snapshotDraft) };

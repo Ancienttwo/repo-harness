@@ -176,25 +176,25 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.6.0', 'archctx-contracts': '0.6.0' },
+    dependencies: { archctx: '0.6.1', 'archctx-contracts': '0.6.1' },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
-    version: '0.6.0',
+    version: '0.6.1',
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
-    dependencies: { '@colbymchenry/codegraph': '1.5.0' },
+    dependencies: { '@colbymchenry/codegraph': '1.6.1' },
   }));
   writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.6.0' }));
-  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.5.0' }));
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.6.1' }));
+  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.6.1' }));
   const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
   writeExecutable(join(fakeBin, 'node'), [
     '#!/bin/bash',
     'if [[ "${1:-}" == "--version" ]]; then echo v24.11.0; exit 0; fi',
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
-      package: { name: 'archctx', version: '0.6.0' },
+      package: { name: 'archctx', version: '0.6.1' },
       protocols: {
         projectionRequest: 'archcontext.projection-request/v1',
         projectionResult: 'archcontext.projection-result/v2',
@@ -692,8 +692,8 @@ exit 0
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
-      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.5.0');
-      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe('updated=1.5.0');
+      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.6.1');
+      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe('updated=1.6.1');
       expect(readFileSync(join(home, '.codex', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
