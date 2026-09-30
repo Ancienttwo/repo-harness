@@ -1,3 +1,13 @@
+> **Archived**: 2026-10-01 01:13
+> **Related Plan**: plans/archive/plan-20261001-0018-archctx-maintenance-reminder.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20261001-0113
+> **Archive Projection V1**: `plans/plan-20261001-0018-archctx-maintenance-reminder.md` => `plans/archive/plan-20261001-0018-archctx-maintenance-reminder.md`
+> **Archive Projection V1**: `tasks/notes/20261001-0018-archctx-maintenance-reminder.notes.md` => `tasks/archive/notes-20261001-0113-archctx-maintenance-reminder.md`
+> **Archive Projection V1**: `tasks/contracts/20261001-0018-archctx-maintenance-reminder.contract.md` => `tasks/archive/contract-20261001-0113-archctx-maintenance-reminder.md`
+> **Archive Projection V1**: `tasks/reviews/20261001-0018-archctx-maintenance-reminder.review.md` => `tasks/archive/review-20261001-0113-archctx-maintenance-reminder.md`
+
 # Maintenance reminder slice decisions
 
 Static CLI capabilities and daemon lifecycle status have distinct authority.
