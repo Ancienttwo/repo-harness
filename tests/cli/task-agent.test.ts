@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildTaskAgentCommand } from '../../src/cli/commands/task-agent';
-import { assertCreated, collectTaskResult, harnessCapabilities, processIdentity, startTaskAgent, taskSessionDirectory } from '../../src/effects/terminal/task-session';
+import { assertCreated, collectTaskResult, harnessCapabilities, processIdentity, processProofAlive, startTaskAgent, taskSessionDirectory } from '../../src/effects/terminal/task-session';
 import { validateHerdrEndpoint } from '../../src/effects/terminal/herdr';
 
 test('public task-agent command has only task participant operations, never server stop', () => {
@@ -73,4 +73,71 @@ test.each(['file','cli'])('workspace writer cannot publish a host gatekeeper res
     expect(await collectTaskResult(root,task,role,1)).toBeNull();
     expect(existsSync(join(dir,'collected-1.json'))).toBe(false);
   } finally {rmSync(root,{recursive:true,force:true});}
+});
+
+// A real parent retains its dead child until the caller explicitly asks it to reap.
+// No Herdr/provider/model is involved; Python's Popen only waits after stdin.
+test.skipIf(process.platform === 'win32' || !Bun.which('python3'))('unreaped owned child is exited while forged PID and birth identities still fail closed', async () => {
+  const parent = spawn(Bun.which('python3')!, ['-u', '-c', `
+import json, subprocess, sys
+child = subprocess.Popen([sys.argv[1], '60'], start_new_session=True)
+print(json.dumps({'pid':child.pid}), flush=True)
+try:
+    sys.stdin.readline()
+finally:
+    if child.poll() is None:
+        child.kill()
+    child.wait(timeout=10)
+`, Bun.which('sleep')!], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let output = '';
+  try {
+    const pid = await new Promise<number>((resolve, reject) => {
+      parent.once('error', reject);
+      parent.stdout!.on('data', chunk => { output += chunk; if (output.includes('\n')) resolve(JSON.parse(output.split('\n')[0]!).pid); });
+    });
+    const proof = { pid, identity: processIdentity(pid) };
+    expect(processProofAlive(proof)).toBe(true);
+    expect(() => processProofAlive({ ...proof, identity: proof.identity + '-changed' })).toThrow('identity_lost');
+    process.kill(pid, 'SIGTERM');
+    const deadline = Date.now() + 5000;
+    let stat = '';
+    while (Date.now() < deadline) {
+      stat = execFileSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' }).trim();
+      if (stat.startsWith('Z')) break;
+      await Bun.sleep(10);
+    }
+    expect(stat.startsWith('Z')).toBe(true);
+    expect(() => process.kill(pid, 0)).not.toThrow(); // Not yet reaped, independent OS oracle.
+    expect(processProofAlive(proof)).toBe(false);
+    const pieces = proof.identity.split(/\s+/);
+    const differentBirth = [...pieces]; differentBirth[6] = '1900';
+    expect(() => processProofAlive({ pid, identity: differentBirth.join(' ') })).toThrow('identity_lost');
+    expect(() => processProofAlive({ pid: process.pid, identity: proof.identity })).toThrow('identity_lost');
+  } finally {
+    parent.stdin!.end('reap\n');
+    await new Promise<void>(resolve => { if (parent.exitCode !== null || parent.signalCode !== null) resolve(); else parent.once('exit', () => resolve()); });
+  }
+}, 15_000);
+
+test.skipIf(process.platform === 'win32')('process proof rejects birth changes between identity and live-state snapshots', () => {
+  const proof = { pid: process.pid, identity: processIdentity(process.pid) };
+  const root = mkdtempSync('/tmp/ps-'); const savedPath = process.env.PATH;
+  try {
+    const columns = proof.identity.split(/\s+/).slice(0, 7); columns[6] = '1900';
+    const altered = columns.join(' ') + ' S';
+    const reply = (identity: string, state: string) => {
+      writeFileSync(join(root, 'ps'), `#!${process.execPath}\nprocess.stdout.write(process.argv.at(-1).endsWith('stat=') ? ${JSON.stringify(state + '\n')} : ${JSON.stringify(identity + '\n')});\n`);
+      chmodSync(join(root, 'ps'), 0o700);
+    };
+    reply(proof.identity, altered); process.env.PATH = root + ':' + savedPath;
+    expect(() => processProofAlive(proof)).toThrow('identity_lost');
+    if (process.platform === 'darwin') {
+      const prefix = proof.identity.split(/\s+/).slice(0, 7).join(' ');
+      const codexProof = { pid: proof.pid, identity: prefix + ' codex' };
+      reply(prefix + ' (codex)', prefix + ' ?E+');
+      expect(processProofAlive(codexProof)).toBe(false);
+      reply(prefix + ' (codex)', prefix + ' S+');
+      expect(() => processProofAlive(codexProof)).toThrow('identity_lost');
+    }
+  } finally { process.env.PATH = savedPath; rmSync(root, { recursive: true, force: true }); }
 });

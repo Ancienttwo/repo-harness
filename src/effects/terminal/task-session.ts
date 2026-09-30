@@ -109,8 +109,24 @@ export function assertProcessProof(proof: ProcessProof): void {
 }
 export function processProofAlive(proof: ProcessProof): boolean {
   try { process.kill(proof.pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
-  try { assertProcessProof(proof); }
-  catch (error) {
+  try {
+    let identityError: unknown;
+    try { assertProcessProof(proof); } catch (error) { identityError = error; }
+    // Read exit state after identity: macOS can discard argv before the parent
+    // reaps, while Linux zombies may keep comm unchanged. Never relax a live proof.
+    let snapshot: string[];
+    try {
+      snapshot = execFileSync('ps', ['-p', String(proof.pid), '-o', 'pid=,pgid=,lstart=,stat='], { encoding: 'utf8' }).trim().split(/\s+/);
+    } catch (error) { throw identityError ?? error; }
+    const recorded = proof.identity.split(/\s+/);
+    const stat = snapshot[7] ?? '';
+    if (snapshot.length < 8 || snapshot[0] !== String(proof.pid) || snapshot.slice(0, 7).join(' ') !== recorded.slice(0, 7).join(' ')) {
+      throw new Error('task_agent_process_identity_lost');
+    }
+    // Darwin E was observed as ?E+ during real Codex shutdown (before Z).
+    if (stat.startsWith('Z') || (process.platform === 'darwin' && stat.includes('E'))) return false;
+    if (identityError) throw identityError;
+  } catch (error) {
     // Exit can occur between kill(0) and ps. Confirm absence; an extant reused
     // PID or a permission/inspection failure remains a hard identity refusal.
     try { process.kill(proof.pid, 0); } catch (gone) { if ((gone as NodeJS.ErrnoException).code === 'ESRCH') return false; throw gone; }
