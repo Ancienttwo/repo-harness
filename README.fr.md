@@ -539,9 +539,9 @@ workflow, ne lance pas d'agents, et n'expose pas les chemins du dépôt.
 En tant que sidecar optionnel, `repo-harness mcp` expose les workflow
 artifacts aux clients MCP via le profile `planner` par défaut. ChatGPT lit
 l'état réel du dépôt et fait avancer une idée à travers les artifacts PRD,
-checklist Sprint et Codex goal handoff — sans accès en écriture au
+checklist Sprint et task goal handoff — sans accès en écriture au
 source-code par défaut, sans exécution shell arbitraire, ni runner par
-défaut. Codex reste l'exécuteur.
+défaut. Le task owner dirige un Herdr agent explicitement adressé pour exécuter le task goal.
 
 ```bash
 repo-harness mcp setup chatgpt --repo .
@@ -554,8 +554,8 @@ human workflow devient :
 1. ChatGPT lit les fichiers de workflow de repo-harness via MCP.
 2. ChatGPT écrit un PRD avec `write_prd_from_idea`.
 3. ChatGPT écrit un checklist Sprint avec `write_checklist_sprint`.
-4. ChatGPT prépare `.ai/harness/handoff/codex-goal.md` avec `prepare_codex_goal_from_sprint`.
-5. Codex exécute le prompt host-native `/goal` et stage chaque Sprint phase terminée.
+4. ChatGPT prépare `.ai/harness/handoff/task-goal.md` avec `prepare_task_goal_from_sprint`.
+5. Le task owner envoie le prompt au Herdr agent explicitement adressé et stage chaque Sprint phase terminée.
 
 Outils génériques de lecture/écriture du dépôt, cohérence du snapshot et de
 l'index, server profiles, et le dev runner opt-in :
@@ -614,8 +614,7 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 | `repo-harness-check` | Checks workflow et release, plus une référence deploy-readiness |
 | `repo-harness-ship` | Valide les worktrees terminés, push les branches et ouvre les PRs |
 | `repo-harness-architecture` | Docs d'architecture, drift requests et diagrammes sans rafraîchissement complet du harness |
-| `repo-harness-cross-review` | Review externe indépendante : les hosts Claude utilisent Codex en direct ; les hosts Codex utilisent le runtime app-server du plugin officiel OpenAI `codex@openai-codex` |
-| `claude-plan` | Provider skill côté Codex : consult indépendant en Claude plan mode pour un design fork ou une décision à enjeux élevés ; pas un point d'entrée utilisateur direct |
+| `repo-harness-cross-review` | Review indépendante via Codex ; acceptance Claude conserve son domain reviewer persistant dans Herdr |
 | `repo-harness-chatgpt` | Consults Oracle browser/GPT Pro, setup du Connecteur MCP et bridge handoff ; setup explicite uniquement |
 | `merge-gate` (externe) | Gate final exact-candidate ; repo-harness ne fournit aucun Skill merge-gate — voir [external tooling](docs/reference-configs/external-tooling.md) |
 
@@ -697,8 +696,8 @@ adopte la même policy.
 
 ## Release actuelle
 
-- Package npm : `repo-harness@0.19.4`
-- Generated workflow stamp : `repo-harness@0.19.4+template@0.19.4`
+- Package npm : `repo-harness@0.19.5`
+- Generated workflow stamp : `repo-harness@0.19.5+template@0.19.5`
 - Dépôt GitHub : `Ancienttwo/repo-harness`
 - Notes et historique de release : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

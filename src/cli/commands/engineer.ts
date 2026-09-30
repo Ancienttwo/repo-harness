@@ -41,7 +41,7 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
-import { acquireNextScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, prepareEngineerObservation } from '../../effects/engineers/scheduling-acquire-next';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
   EngineeringOverlayProjectionError,
@@ -327,6 +327,18 @@ export function buildEngineerCommand(): Command {
     }));
 
   engineer
+    .command('prepare')
+    .description('Persist a trusted 30-second offers observation as evidence')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .option('--json', 'Output JSON')
+    .action((options: { authorizationId: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = prepareEngineerObservation({ repo_root: repoRoot, principal });
+      emit(result, options.json, `${result.observation_ref} expires ${result.observation.expires_at_ms}`);
+    }));
+
+  engineer
     .command('acquire-next')
     .description('Select and acquire the first canonical current Engineer offer')
     .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
@@ -445,7 +457,7 @@ export function buildEngineerCommand(): Command {
     .description('Journal provider-neutral Agent Runtime effects; Host actions remain closed and receipt-proven');
   runtimeEffect
     .command('capability')
-    .requiredOption('--adapter-kind <kind>', 'codex-app-thread or herdr-cli-agent')
+    .requiredOption('--adapter-kind <kind>', 'herdr-cli-agent')
     .requiredOption('--host-id <id>', 'Exact host ID')
     .requiredOption('--operations-json <json>', 'Exact capability status per runtime operation')
     .requiredOption('--evidence-refs-json <json>', 'Bounded capability evidence references')

@@ -52,7 +52,7 @@ describe("canonical adoption plan", () => {
         throw new Error("expected a writeFile operation for .ai/harness/policy.json");
       }
       const generatedPolicy = JSON.parse(policyOperation.content);
-      expect(generatedPolicy.agent_runtime).toEqual({ mode: 'off', adapters: { 'codex-app-thread': { enabled: false }, 'herdr-cli-agent': { enabled: false } } });
+      expect(generatedPolicy.agent_runtime).toEqual({ mode: 'off', adapters: { 'herdr-cli-agent': { enabled: false } } });
       expect(generatedPolicy.agentic_development.routing.design_options_choice).toBe("convention:design-options");
       expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
@@ -96,7 +96,7 @@ describe("canonical adoption plan", () => {
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
 
       expect(apply.ok).toBe(true);
-      expect(JSON.parse(readFileSync(join(repo, '.ai/harness/policy.json'), 'utf8')).agent_runtime.adapters).toEqual({ 'codex-app-thread': {enabled:false}, 'herdr-cli-agent': {enabled:false} });
+      expect(JSON.parse(readFileSync(join(repo, '.ai/harness/policy.json'), 'utf8')).agent_runtime.adapters).toEqual({ 'herdr-cli-agent': {enabled:false} });
       expect(apply.transactionManifestPath).toBeDefined();
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai", "harness", "policy.json"))).toBe(true);

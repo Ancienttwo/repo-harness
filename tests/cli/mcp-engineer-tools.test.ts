@@ -35,7 +35,7 @@ function fixture(): { repoRoot: string; home: string } {
   mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } } })}\n`);
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
   writeFileSync(join(repoRoot, 'README.md'), 'fixture\n');
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
@@ -157,6 +157,7 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_task_reply',
       'engineer_status',
       'engineer_offers',
+      'engineer_prepare',
       'engineer_acquire',
       'engineer_acquire_next',
       'engineer_messages',
@@ -189,7 +190,7 @@ describe('restricted Engineer MCP tools', () => {
     const current = bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-1',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-1',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -234,7 +235,7 @@ describe('restricted Engineer MCP tools', () => {
       },
     });
     const capability = recordAgentRuntimeCapability(repoRoot, {
-      adapter_kind: 'codex-app-thread',
+      adapter_kind: 'herdr-cli-agent',
       host_id: 'local',
       operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
@@ -336,7 +337,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-read-only',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-read-only',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -362,7 +363,7 @@ describe('restricted Engineer MCP tools', () => {
     expect(agentRuntimeEffectState(repoRoot)).toEqual([]);
 
     const capability = recordAgentRuntimeCapability(repoRoot, {
-      adapter_kind: 'codex-app-thread',
+      adapter_kind: 'herdr-cli-agent',
       host_id: 'local',
       operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
@@ -400,7 +401,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: otherEngineerId,
       idempotency_key: 'bind-read-only-other',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-read-only-other',
       host_id: 'local',
       engineer_contract_revision: otherProfile.engineer_contract_revision,
@@ -436,7 +437,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-scheduling',
-      provider: 'codex-app-thread',
+      provider: 'herdr-cli-agent',
       provider_thread_id: 'thread-scheduling',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -471,6 +472,24 @@ describe('restricted Engineer MCP tools', () => {
     expect(document.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
       .toContain('profile_capability_mismatch');
     expect(document.offers.some((item) => item.work_package_id === 'wp-b')).toBeFalse();
+
+    const observationStore = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/observations');
+    expect(existsSync(observationStore)).toBeFalse(); // existing offers remains a pure read.
+    const prepareDefinition = buildMcpToolDefinitions(getMcpPolicy('engineer')).find(tool => tool.name === 'engineer_prepare')!;
+    expect(prepareDefinition.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    const rejectedTime = await callMcpTool(context, 'engineer_prepare', { observed_at_ms: Date.now() + 999999 });
+    expect(rejectedTime.isError).toBeTrue();
+    expect(existsSync(observationStore)).toBeFalse();
+    const prepared = await callMcpTool(context, 'engineer_prepare', {});
+    expect(prepared.isError).toBeUndefined();
+    const evidence = prepared.structuredContent as { observation_ref: string; observation: { observed_at_ms: number; expires_at_ms: number; snapshot_bytes: string }; offers: unknown };
+    expect(evidence.observation_ref).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(evidence.observation.expires_at_ms - evidence.observation.observed_at_ms).toBe(30_000);
+    expect(JSON.parse(evidence.observation.snapshot_bytes)).toEqual(evidence.offers);
+    expect(readdirSync(observationStore).filter(name => name.endsWith('.json'))).toHaveLength(1);
+    const foreign = await callMcpTool(context, 'engineer_prepare', { binding_generation: binding.binding_generation + 1 });
+    expect(foreign.isError).toBeTrue();
+    expect(readdirSync(observationStore).filter(name => name.endsWith('.json'))).toHaveLength(1);
 
     const fences = {
       repo_id: repositoryId,

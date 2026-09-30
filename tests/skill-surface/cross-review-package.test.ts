@@ -26,7 +26,7 @@ const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
 const PACKAGE_DIR = "repo-harness-cross-review";
 const ROUTER_BODY_BYTE_LIMIT = 2048;
-const REFERENCES = ["codex-plugin-mode.md", "codex-mode.md", "claude-mode.md"] as const;
+const REFERENCES = ["codex-mode.md", "claude-mode.md"] as const;
 
 function readSkill(): string {
   return readFileSync(join(SKILLS_ROOT, PACKAGE_DIR, "SKILL.md"), "utf-8");
@@ -103,6 +103,8 @@ describe("repo-harness-cross-review package: no imported stale/retired guidance"
     "compatibility shim",
     "compatibility-shim",
     "delegate_to",
+    "codex-plugin",
+    "codex-companion",
   ];
 
   test("no package file contains any excluded stale pattern", () => {

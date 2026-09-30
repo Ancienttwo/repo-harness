@@ -324,24 +324,13 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
     expect(resolution.diagnostics).toEqual([]);
   });
 
-  // SSD-06 migration: the pre-cutover manifest had 30 packages (25 repo-owned
-  // + 5 external). The atomic public cutover deletes 15 retired facades plus
-  // codex-review/claude-review (replaced by one repo-harness-cross-review),
-  // leaving 11 repo-owned canonical/provider/judge/router entries (repo-harness,
-  // repo-harness-setup, repo-harness-plan, repo-harness-check, repo-harness-product,
-  // repo-harness-ship, repo-harness-architecture, repo-harness-cross-review,
-  // merge-gate, repo-harness-chatgpt, claude-plan) + 5 unaffected external
-  // skills = 16 total. Reverse Skill is the first post-cutover catalog
-  // addition, bringing the live surface to 11 repo-owned + 6 external.
-  // obsidian-memory is the second repo-owned addition (a facade projected to
-  // both hosts by every profile), bringing it to 12 repo-owned + 6 external.
-  // repo-harness-test is the third: a full-profile facade owning the testing
-  // routing surface, sourced from assets/skills/repo-harness-test.
-  test("covers all 14 repo-owned sources plus the 8 external skills (22 packages)", () => {
+  // Current closed catalog excludes the retired headless plan skill.
+  test("covers all 13 repo-owned sources plus the 8 external skills (21 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(22);
+    expect(resolution.catalog.packages.length).toBe(21);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(14);
+    expect(repoOwned.length).toBe(13);
+    expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
       "check", "health", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "reverse-skill-router", "think",
@@ -441,17 +430,17 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     }
   });
 
-  test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and claude-plan on codex only", () => {
+  test("hostSkillPlacements: full places repo-harness-cross-review on both hosts without retired plan skill", () => {
     expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review"],
-      codex: ["repo-harness-cross-review", "claude-plan"],
+      codex: ["repo-harness-cross-review"],
     });
   });
 
   test("hostSkillPlacements without a profile (init.ts's init flow) is the unconditional full-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
-    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review", "claude-plan"] });
+    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review"] });
   });
 
   test("explicit ChatGPT setup is never implied by either install profile", () => {

@@ -163,7 +163,7 @@ export function publishWorkStateHandoff(
   const authorized = authorizeCollaborationDestination(actor, input.destination);
   const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_HANDOFFS_SHARD, authorized);
 
-  const build = (createdAt: string): WorkStateHandoffV1 => buildWorkStateHandoff({
+  const fields = (createdAt: string) => ({
     handoff_id: handoffId,
     repository_id: repositoryId,
     actor,
@@ -189,7 +189,7 @@ export function publishWorkStateHandoff(
    * otherwise identical republish is idempotent instead of a false conflict.
    */
   const reconcile = (existing: WorkStateHandoffV1): PublishWorkStateHandoffResult => {
-    const candidate = build(existing.created_at);
+    const candidate = buildWorkStateHandoff(fields(existing.created_at));
     if (canonicalWorkStateHandoffBytes(candidate) !== canonicalWorkStateHandoffBytes(existing)) {
       throw new CollaborationError(
         'collaboration_conflict',
@@ -243,7 +243,7 @@ export function publishWorkStateHandoff(
       const createdAt = input.recorded_time.kind === 'persisted_observation'
         ? input.recorded_time.observed_at
         : (input.now ?? (() => new Date().toISOString()))();
-      const handoff = build(createdAt);
+      const handoff = buildWorkStateHandoff(fields(createdAt));
       const bytes = canonicalWorkStateHandoffBytes(handoff);
       const file = collaborationRecordPath(paths, handoffId, 'handoff_id');
       try {

@@ -50,7 +50,7 @@ describe("plan-to-todo helper integration", () => {
         "bash",
         ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1400-demo.md"],
         cwd,
-        { CODEX_SESSION_ID: "codex-host-fixture", CLAUDE_SESSION_ID: undefined },
+        { CODEX_SESSION_ID: "codex-host-fixture", CLAUDE_SESSION_ID: "claude-host-fixture" },
       );
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[BriefPreflight]");
@@ -80,7 +80,7 @@ describe("plan-to-todo helper integration", () => {
       expect(contract).toContain("## Why");
       expect(contract).toContain("## Stop Conditions");
       expect(contract).toContain("## Falsifier");
-      expect(contract).toContain('{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}');
+      expect(contract).toContain('{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}');
       expect(existsSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"))).toBe(true);
       expect(readFileSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"), "utf-8")).toContain("## Design Decisions");
       expect(readFileSync(join(cwd, "tasks/reviews/20260304-1400-demo.review.md"), "utf-8")).toContain("tasks/notes/20260304-1400-demo.notes.md");

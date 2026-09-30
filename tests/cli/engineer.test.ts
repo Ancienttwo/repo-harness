@@ -26,7 +26,7 @@ function fixture(): string {
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
-    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } },
+    agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   execFileSync('git', ['add', '.archcontext', 'agents/engineers'], { cwd: root });
   return root;
@@ -96,7 +96,7 @@ function graphFixture(): string {
   writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
     worktree_strategy: { merge_back: { target: 'main' } },
-    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } },
+    agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');
   execFileSync('git', ['add', '.'], { cwd: root });
@@ -193,7 +193,7 @@ describe('repo-harness engineer CLI', () => {
     const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
     const bindArgs = [
       'engineer', 'binding', 'bind', '--engineer-id', engineerId,
-      '--idempotency-key', 'cli-bind-1', '--provider', 'codex-app-thread',
+      '--idempotency-key', 'cli-bind-1', '--provider', 'herdr-cli-agent',
       '--provider-thread-id', 'thread-cli', '--host-id', 'local',
       '--expected-current-digest', 'null', '--expected-binding-generation', '0',
       '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision,
@@ -244,7 +244,7 @@ describe('repo-harness engineer CLI', () => {
 
     const observedCapability = run(root, [
       'engineer', 'runtime-effect', 'capability',
-      '--adapter-kind', 'codex-app-thread',
+      '--adapter-kind', 'herdr-cli-agent',
       '--host-id', 'local',
       '--operations-json', JSON.stringify({ notify_inbox: 'supported', wake_for_offer: 'supported' }),
       '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),
@@ -323,6 +323,11 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).not.toContain('session-bind');
     expect(help.stdout).toContain('principal');
     expect(help.stdout).toContain('offers');
+    expect(help.stdout).toContain('prepare');
+    const prepareHelp = run(root, ['engineer', 'prepare', '--help']);
+    expect(prepareHelp.exitCode).toBe(0);
+    expect(prepareHelp.stdout).toContain('--authorization-id');
+    expect(prepareHelp.stdout).not.toContain('--observed-at');
     expect(help.stdout).toContain('message');
     expect(help.stdout).toContain('runtime-effect');
     expect(help.stdout).not.toContain('claim');
@@ -378,6 +383,14 @@ describe('repo-harness engineer CLI', () => {
       '--expected-binding-generation', String(current.binding_generation),
       '--expected-engineer-contract-revision', revision, '--json',
     ]).exitCode).toBe(0);
+
+    const prepared = run(root, ['engineer', 'prepare', '--authorization-id', authorizationId, '--json']);
+    expect(prepared.exitCode).toBe(0);
+    const observation = JSON.parse(prepared.stdout);
+    expect(observation.observation_ref).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(observation.observation.expires_at_ms - observation.observation.observed_at_ms).toBe(30_000);
+    expect(JSON.parse(observation.observation.snapshot_bytes)).toEqual(observation.offers);
+    expect(run(root, ['engineer', 'prepare', '--authorization-id', authorizationId, '--observed-at-ms', '9999999999999']).exitCode).toBe(1);
 
     // The committed work graph stays readable, so the lane gates pass and the
     // failure lands inside collectFleetOffers: a regular file where the lease

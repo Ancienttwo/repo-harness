@@ -98,7 +98,7 @@ async function prepareCodexGoalFromSprint(rawOpts: McpPrepareGoalOptions): Promi
   const ctx = createMcpToolContext({ repo: rawOpts.repo ?? '.', profile: 'planner' });
   const prdPath = toRepoRelativeInput(ctx.repoRoot, rawOpts.prd);
   const sprintPath = toRepoRelativeInput(ctx.repoRoot, rawOpts.sprint);
-  const result = await callMcpTool(ctx, 'prepare_codex_goal_from_sprint', {
+  const result = await callMcpTool(ctx, 'prepare_task_goal_from_sprint', {
     prd_path: prdPath,
     sprint_path: sprintPath,
     goal_prd_path: rawOpts.prd,
@@ -114,8 +114,8 @@ async function prepareCodexGoalFromSprint(rawOpts: McpPrepareGoalOptions): Promi
     throw new Error(`${payload.error.code}: ${payload.error.message}`);
   }
   return [
-    `[repo-harness mcp] Codex goal: ${payload.path}`,
-    '[repo-harness mcp] Host-native /goal prompt:',
+    `[repo-harness mcp] task goal: ${payload.path}`,
+    '[repo-harness mcp] Task execution prompt:',
     '',
     String(payload.prompt ?? '').trimEnd(),
   ];
@@ -242,8 +242,8 @@ export function buildMcpCommand(): Command {
     .option('--target <ref>', 'Explicit integration target for a legacy workspace that has no bound target')
     .option('--json', 'Output JSON')
     .action((rawOpts: { workspaceId: string; target?: string; json?: boolean }) => {
-      void runMcpAction(() => {
-        const result = cleanupManagedCodingWorkspace(rawOpts.workspaceId, process.env, { targetRef: rawOpts.target });
+      void runMcpAction(async () => {
+        const result = await cleanupManagedCodingWorkspace(rawOpts.workspaceId, process.env, { targetRef: rawOpts.target });
         console.log(rawOpts.json ? JSON.stringify(result, null, 2) : `[repo-harness mcp] Removed ${result.workspace_id} (${result.branch})`);
       });
     });
@@ -322,13 +322,13 @@ export function buildMcpCommand(): Command {
 
   mcp
     .command('prepare-goal')
-    .description('Prepare .ai/harness/handoff/codex-goal.md and print a host-native /goal prompt from a PRD and checklist Sprint')
+    .description('Prepare .ai/harness/handoff/task-goal.md and print a task execution prompt from a PRD and checklist Sprint')
     .option('--repo <path>', 'Repository root to configure', '.')
     .requiredOption('--prd <path>', 'PRD path to read')
     .requiredOption('--sprint <path>', 'Checklist Sprint path to execute')
     .option('--reference-repo <path>', 'Read-only reference repo path to include in the Goal')
     .option('--extra-instructions <text>', 'Additional bounded execution instruction for Codex')
-    .option('--expected-sha256 <hex>', 'Current sha256 of .ai/harness/handoff/codex-goal.md; required to regenerate an existing goal, omit to create')
+    .option('--expected-sha256 <hex>', 'Current sha256 of .ai/harness/handoff/task-goal.md; required to regenerate an existing goal, omit to create')
     .action((rawOpts: McpPrepareGoalOptions) => {
       void runMcpAction(async () => {
         const lines = await prepareCodexGoalFromSprint(rawOpts);

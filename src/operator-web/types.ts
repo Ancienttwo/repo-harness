@@ -535,7 +535,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const deliveryEvidence = evidence === null ? null : Object.freeze({
     candidate_count: candidateCount,
     latest: latest === null ? null : Object.freeze({
-      adapter_kind: requireOneOf(latest.adapter_kind, ['codex-app-thread', 'herdr-cli-agent'] as const),
+      adapter_kind: requireOneOf(latest.adapter_kind, ['herdr-cli-agent'] as const),
       effect_state: requireOneOf(latest.effect_state, ['intent_persisted', 'effect_started', 'observed_success', 'observed_failure', 'reconciliation_required', 'stopped', 'superseded'] as const),
       receipt_kind: latest.receipt_kind === null ? null : requireOneOf(latest.receipt_kind, ['task_message_delivery_receipt', 'module_message_delivery_receipt', 'controller_step_receipt'] as const),
       observed_at: requireNotificationInstant(latest.observed_at),

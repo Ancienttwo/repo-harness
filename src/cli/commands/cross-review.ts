@@ -27,10 +27,8 @@ export interface CrossReviewCommandOptions {
   readonly baseRevision?: string;
   readonly timeoutMs?: number;
   readonly json?: boolean;
-  /** Test/config seam: direct Codex executable, or Node executable for codex-plugin. */
+  /** Test/config seam: direct Codex executable. */
   readonly providerCommand?: string;
-  /** Test/config seam for Claude Code's public plugin inventory command. */
-  readonly claudeCommand?: string;
   readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -120,7 +118,6 @@ export function runCrossReviewCommand(opts: CrossReviewCommandOptions): CrossRev
     baseRevision: opts.baseRevision,
     timeoutMs: opts.timeoutMs,
     providerCommand: opts.providerCommand,
-    claudeCommand: opts.claudeCommand,
     env: opts.env,
     admitProviderInvocation: () => {
       if (authority.status === "standalone") return { allowed: true };

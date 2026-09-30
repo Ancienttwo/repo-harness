@@ -86,7 +86,7 @@ export const PLANNER_WRITE_GLOBS = [
   'plans/prds/**',
   'plans/sprints/**',
   'plans/plan-*.md',
-  '.ai/harness/handoff/codex-goal.md',
+  '.ai/harness/handoff/task-goal.md',
   '.ai/harness/handoff/chatgpt-plan.md',
 ];
 
@@ -179,7 +179,7 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       allowedRoots: opts.allowedRoots,
       discoveryRoots: opts.discoveryRoots,
       capabilities: capabilities({ agentRunner: devRunner }),
-      readGlobs: devRunner ? withWorkspacePrefixGlobs(['.ai/harness/handoff/codex-goal.md']) : [],
+      readGlobs: devRunner ? withWorkspacePrefixGlobs(['.ai/harness/handoff/task-goal.md']) : [],
       writeGlobs: [],
       denyGlobs: devRunner ? COMMON_DENY_GLOBS : ['**'],
       maxFileBytes: devRunner ? 512 * 1024 : 0,

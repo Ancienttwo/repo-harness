@@ -29,7 +29,7 @@ export type AcceptancePolicyV1 = {
 export type AcceptancePolicyV2 = {
   protocol: 2;
   reviewer: 'Codex';
-  source: 'codex-review' | 'codex-plugin';
+  source: 'codex-review';
   user_waiver: 'allowed' | 'forbidden';
 };
 
@@ -59,7 +59,7 @@ export type AcceptanceReceipt = {
   disposition: AcceptanceDisposition;
   expected_reviewer: 'Claude' | 'Codex';
   reviewer: 'Claude' | 'Codex' | 'User';
-  source: 'claude-review' | 'codex-review' | 'codex-plugin' | 'user-waiver';
+  source: 'claude-review' | 'codex-review' | 'user-waiver';
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
@@ -366,8 +366,8 @@ export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
     return value as AcceptancePolicyV1;
   }
   if (value.reviewer !== 'Codex') fail('acceptance policy protocol 2 reviewer must be Codex');
-  if (value.source !== 'codex-review' && value.source !== 'codex-plugin') {
-    fail('acceptance policy protocol 2 source must be codex-review or codex-plugin');
+  if (value.source !== 'codex-review') {
+    fail('acceptance policy protocol 2 source must be codex-review');
   }
   if (JSON.stringify(keys) !== JSON.stringify(['protocol', 'reviewer', 'source', 'user_waiver'])) {
     fail('acceptance policy protocol 2 contains unknown fields');
@@ -375,7 +375,7 @@ export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
   return value as AcceptancePolicyV2;
 }
 
-export function acceptancePolicySource(policy: AcceptancePolicy): 'claude-review' | 'codex-review' | 'codex-plugin' {
+export function acceptancePolicySource(policy: AcceptancePolicy): 'claude-review' | 'codex-review' {
   if (policy.protocol === 2) return policy.source;
   return policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review';
 }
@@ -1051,7 +1051,7 @@ function readReceipt(path: string): AcceptanceReceipt {
   if (!['external_pass', 'user_waiver', 'reject'].includes(String(value.disposition))) fail('AcceptanceReceipt disposition is invalid');
   if (!['Claude', 'Codex'].includes(String(value.expected_reviewer))) fail('AcceptanceReceipt expected_reviewer is invalid');
   if (!['Claude', 'Codex', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
-  if (!['claude-review', 'codex-review', 'codex-plugin', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
+  if (!['claude-review', 'codex-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
   if (value.actor !== null && (typeof value.actor !== 'string' || value.actor.trim() === '')) fail('AcceptanceReceipt actor is invalid');
   if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {
     fail('AcceptanceReceipt waiver_grant_sha256 is invalid');

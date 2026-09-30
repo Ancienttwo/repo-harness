@@ -2,6 +2,29 @@
 
 All notable changes to this skill are documented here.
 
+## [0.19.5] - 2026-09-30
+
+### Fixed
+
+- Fleet install now records verified ownership on every update path and adopts
+  verified pristine agent fleet files into the ownership manifest.
+- `allowed_paths` items in contracts drop YAML inline comments in every reader.
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to `0.6.1` and
+  `@colbymchenry/codegraph` to `1.6.1`. The projection request, refresh signal
+  and capabilities protocol ids are unchanged; the only schema change is
+  `accepted-committed-change` v2, which repo-harness does not use.
+- `publishCoordinationSignal` and `publishWorkStateHandoff` call their builders
+  directly so archctx can prove the collaboration flow.
+- Refresh dev dependencies: `@modelcontextprotocol/sdk` 1.31.0, `vite` 8.3.1,
+  `react` 19.3.0, `happy-dom` 20.14.5, `@types/*`.
+- Remap agent fleet model/effort tiers and move the Sol workers to
+  `gpt-6.1-sol` with retuned effort.
+- Refresh the AXR5 clean-room readback (stale since `0.5.7`) against `arch-context`
+  tag `v0.6.1`, and update the test that pinned its contracts version.
+
 ## [0.19.4] - 2026-09-28
 
 ### Fixed

@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
 import { spawnSync } from "child_process";
 import {
   chmodSync,
@@ -45,11 +46,11 @@ export function installSqlCheck(cwd: string): void {
   makeShellScriptsExecutable(join(cwd, "scripts"));
 }
 
-export function copyHelpers(cwd: string) {
+export function copyHelpers(cwd: string, { linkDependencies = true } = {}) {
   // Source CLI imports this package-owned template during readiness checks.
   mkdirSync(join(cwd, "assets/templates"), { recursive: true });
   copyFileSync(join(TEMPLATE_DIR, "runtime.gitignore"), join(cwd, "assets/templates/runtime.gitignore"));
-  if (!existsSync(join(cwd, "node_modules"))) {
+  if (linkDependencies && !existsSync(join(cwd, "node_modules"))) {
     symlinkSync(join(ROOT, "node_modules"), join(cwd, "node_modules"), "dir");
   }
   const scriptsDir = join(cwd, "scripts");
@@ -67,7 +68,7 @@ export function copyHelpers(cwd: string) {
     symlinkSync(join(ROOT, "src", "core"), join(cwd, "src", "core"), "dir");
   }
 
-  for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
+  for (const file of listHelperFiles({ REPO_HARNESS_SOURCE_ROOT: ROOT })) {
     copyFileSync(join(HELPER_DIR, file), join(scriptsDir, file));
     copyFileSync(join(HELPER_DIR, file), join(harnessScriptsDir, file));
   }
