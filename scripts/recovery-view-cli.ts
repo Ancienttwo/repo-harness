@@ -641,7 +641,7 @@ function renderResume(context: WorkflowContext, evidence: Evidence, contractPath
     "",
     "Execution rules:",
     "- Treat filesystem artifacts as the source of truth.",
-    "- Decide in the main agent whether to use subagents, parallel sidecars, sidecar `codex exec --json`, or a bounded main-thread trace for broad research/log scans based on context impact and callable tools; do not ask the user for spawn confirmation.",
+    "- For delegated research, use persistent task-agent collaborators in an explicitly addressed Herdr session/parent pane and reuse their task bindings. Otherwise perform a bounded read-only main-thread trace; missing Herdr never selects native children or direct harness exec. Keep history as observation and clean only identity-proven created resources at task completion.",
     `- Keep deep research conclusions in \`${context.paths.researchDir}/\`, not only in chat.`,
     "- Do not run `/compact` as the primary recovery path.",
     "- Preserve the current dirty worktree and do not touch unrelated untracked files.",

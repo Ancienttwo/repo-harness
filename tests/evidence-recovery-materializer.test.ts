@@ -90,6 +90,9 @@ describe("recovery-materializer: determinism", () => {
 
       expect(handoffA).toBe(handoffB);
       expect(resumeA).toBe(resumeB);
+      expect(resumeA).toContain('persistent task-agent collaborators');
+      expect(resumeA).not.toContain('sidecar `codex exec');
+      expect(resumeA).not.toContain('whether to use subagents');
     });
   });
 

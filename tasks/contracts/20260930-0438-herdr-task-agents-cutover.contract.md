@@ -17,13 +17,13 @@
 
 ## Goal
 
-REQ-5 放行 A：MCP goal 的文件/tool名与执行文档泛化为 task-goal；旧名明确升级错误，不 alias。保留 authoring revision/path/size、EXECUTION_BOUNDARY 唯一注入及真实结果/观察 cleanup。
+REQ-5 放行 B：生成 policy 和恢复文案推荐 task-agent 持久协作；不再默认 native spawn_agent / sidecar codex exec，缺少 Herdr 不选另一个 agent runner。
 
 ## Scope
 
-- In scope: exact MCP goal runtime、policy/setup/skill docs、既有 MCP/composition/packet tests 和合同 notes。
-- Out of scope: B–D（后续独立 commit），native-child/delegation/campaign/receipt 泛化，真实模型/mini/global install。
-- A–D 每项独立 commit/canonical 后 CHECKPOINT-3；H3/H4 尚未验收。
+- In scope: recovery-view/ensure-task-workflow/project-init-lib 及其对应模板、既有 initializer/recovery tests。
+- Out of scope: SubagentStart handler与旧 launch（暂停），C–D（后续独立 commit），真实模型/mini/global install。
+- B 独立 commit/canonical，A–D 后 CHECKPOINT-3；H3/H4 尚未验收。
 
 ## Stop Conditions
 
@@ -70,19 +70,15 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 allowed_paths:
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
-  - src/cli/mcp/tools.ts
-  - src/cli/mcp/setup.ts
-  - src/cli/mcp/policy.ts
-  - src/cli/mcp/instructions.ts
-  - src/cli/commands/mcp.ts
-  - tests/cli/mcp-tools.test.ts
-  - tests/cli/mcp-policy.test.ts
-  - tests/cli/mcp.test.ts
-  - tests/herdr-task-lifecycle.test.ts
-  - tests/workflow-contract.test.ts
-  - assets/skills/repo-harness-chatgpt/references/bridge.md
-  - assets/skills/repo-harness-chatgpt/references/continue.md
-  - docs/reference-configs/general-repo-mcp.md
+  - src/effects/evidence/recovery-materializer.ts
+  - scripts/recovery-view-cli.ts
+  - scripts/ensure-task-workflow.sh
+  - scripts/lib/project-init-lib.sh
+  - assets/templates/helpers/recovery-view-cli.ts
+  - assets/templates/helpers/ensure-task-workflow.sh
+  - tests/create-project-dirs.runtime.test.ts
+  - tests/ensure-task-workflow.test.ts
+  - tests/evidence-recovery-materializer.test.ts
 ```
 
 ## Evidence Requirements
@@ -135,14 +131,14 @@ exit_criteria:
   "protocol": 1,
   "checks": [
     {
-      "id": "h3-A-task-goal",
+      "id": "h3-B-persistent-policy",
       "kind": "command",
-      "command": "bun test tests/cli/mcp-tools.test.ts tests/cli/mcp-policy.test.ts tests/cli/mcp.test.ts tests/herdr-task-lifecycle.test.ts tests/workflow-contract.test.ts --timeout 60000",
+      "command": "bun test tests/create-project-dirs.runtime.test.ts tests/ensure-task-workflow.test.ts tests/evidence-recovery-materializer.test.ts --timeout 60000",
       "cwd": ".",
       "phase": "verification",
       "cost": "expensive",
       "evidence_policy": "current_exact",
-      "necessity": "Task-goal renamed authoring/read/write/run paths, legacy tool/path rejection, generated setup and anti-extras packet parity, actual fixture goal lifecycle.",
+      "necessity": "Generated policy parity and recovery views must recommend persistent task-agent without native/exec authority; mutations limited to fixture repositories/HOME.",
       "inputs": {
         "env": []
       }

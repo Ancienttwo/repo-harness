@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:63ea5de0bb7d4d53d3c38dd66bc447e728b33cb6b886721bcd7cdc35fe2ad4f3`
+> **Substantive Change SHA256**: `sha256:d74b4bedf203aa9b3651e2da885d1021bfc4a60e4642d0d2e68693ff1c931904`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -209,3 +209,8 @@
 - Frozen MCP artifact/tool/schema/policy/setup/CLI/bridge/read handoff paths use task-goal.md, prepare_task_goal_from_sprint and write_task_goal. Goal role/prompt no longer claims a Codex-only executor or injects host-native /goal. Legacy tool names and runner codex-goal path return explicit upgrade errors; no alias or shadow read/execute fallback. Existing guarded revision/size/path and EXECUTION_BOUNDARY packet protections retained.
 - Pre-fix legacy-name guard fails against prior tools.ts (A-before-fix.txt); named MCP/packet tests green after rename. Real transport composition fixture uses the renamed fixed artifact, not real model. A maps plan:200/202 MCP Codex-specific goal retirement and generic task-goal semantics; current REQ-5 A authorization governs.
 - Plan:200/202/211 actually requires claude-review name retirement; advisor acknowledged the anchor. Latest SIMPLIFY/REQ-5 direction wins: keep current Claude domain CLI/Receipt, no provenance/generic-host changes pending user decision. B–D and broader blocked runtimes remain separate slices.
+
+## REQ-5 B — persistent collaboration policy
+
+- Initializer + ensure fallback seed delegation preferred_runners/task brief rules now select task-agent with explicit Herdr addressing and persistent binding, not native spawn_agent. Sidecar research prefers task-agent; main-thread trace remains local read-only research, never another harness fallback. Existing delegation budget/depth/authorization state is unchanged; native handler/launch retirement stays paused.
+- Both recovery producers (shared materializer and standalone helper/template) carry the same task-agent instruction; a resume fixture caught leaving the shared producer stale before correction. Existing initializer/ensure/recovery fixtures verify generated policy and prompt, never install into actual user HOME. This maps plan:200 native/standalone managed guidance retirement and :202 generic task-agent semantics, narrowed by REQ-5 B.
