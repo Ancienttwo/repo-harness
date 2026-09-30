@@ -17,7 +17,7 @@
 
 ## Goal
 
-H2：Git 保持 checkout/publication authority，agent 启动必须在主 repo 的 Herdr worktree group 中登记；contract-worktree cleanup 删除 Git 目录前封闭所有已登记 runtime。状态使用 Git common-dir 身份并位于 canonical primary root，primary/linked 调用共享同一 task-role。close/cancel 分离语义，identity-proven SIGKILL escalation；无法证明的未记录创建窗口保持 pending。修复 Claude fixture teardown 的吞错误删证据泄漏，记录 H1 PASS。
+H2 / REQ-4b：bounded corrections 恢复 workspace incarnation 五态收敛、registration 先于 role intent、真实 Bash start 重试覆盖；Git 保持 checkout/publication authority，agent 启动必须在主 repo 的 Herdr worktree group 中登记；contract-worktree cleanup 删除 Git 目录前封闭所有已登记 runtime。状态使用 Git common-dir 身份并位于 canonical primary root，primary/linked 调用共享同一 task-role。close/cancel 分离语义，identity-proven SIGKILL escalation；无法证明的未记录创建窗口保持 pending。修复 Claude fixture teardown 的吞错误删证据泄漏，记录 H1 PASS。
 
 ## Scope
 

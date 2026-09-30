@@ -1,7 +1,7 @@
 # Implementation Notes: Herdr task agents cutover
 
 > **Status**: Active
-> **Substantive Change SHA256**: `sha256:4b33704b62ce4f9bc8df45797ce75eaf71f8eb934c17e01f4d8429e6deee97ba`
+> **Substantive Change SHA256**: `sha256:c61dc359623502c4c44c4fc387a28151119c4d9fbf4669e8732fd1085a408487`
 > **Plan**: plans/plan-20260930-0438-herdr-task-agents-cutover.md
 > **Contract**: tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
 
@@ -93,3 +93,25 @@
 - Teardown root cause: catch-and-delete erased process/socket artifacts despite cancel failure. Regression failed before correction (PRE_FIX_EXIT=1); corrected helper retains known creator proofs, stops/reaps only those private fixture processes and verifies exit before deleting dirs. Current targeted guard passes; missing/mismatched process identity refuses cleanup.
 - New helper bridges existing Bash Git lifecycle to the same TS runtime; source/projection and manifest copies synchronized. Package/source paths follow existing helper layout pattern; no extra dependency. Added fixture SRC dependencies only for the existing squash-cleanup owner, preserving its Git assertions.
 - H2 awaits [REQ-4] PASS before H3. No mini or real model/auth/read-only/resume canary.
+
+
+## [REQ-4] FAIL / bounded corrections
+
+- P1: workspace registry is a checkout-scoped series of incarnations, not a permanent closed tombstone. Git owns checkout identity, Herdr checkout readback owns presence. Role creation is separate from workspace registration.
+- P2: previous register wrote open-intent, then transient open failure left no binding; retry rejected intent and Bash exited after Git add before metadata. Start wrote role intent before this failure, permanently consuming task/role. Regression observes vanished workspace failure before correction; separate role failure asserts no intent survives pre-launch register error.
+- P3: archive ended/abandoned incarnation records with reason and fsync, then allow retry. A surviving readback without original creation proof is attached, never cleanup-owned. Successful unchanged binding remains idempotent. Clean absent intent cleanup records closed; later registration archives it and creates a new incarnation. Role registration precedes role intent, under the role lock.
+- Bash public start regression uses private real Herdr + one-shot PATH shim, checks failed first start preserves checkout then second start completes metadata/group registration. usage states endpoint file shape. Failure reports a retry-same-start instruction; no force deletion or unknown-object cleanup.
+- cleanup_pending carries a reason: no_binding, workspace_attached, extra_panes, pane_identity, foreground_unproven, readback_failed; active-role dry-run reports active_roles. info() preserves ENOENT when stderr is null.
+
+## Carry-forward from [REQ-4] — outside this correction
+
+- H3/H4 absolute primary-root request/result refs require real sandbox write proof from linked checkout or result submission via CLI; old path retirement prohibited before canary. H1 TaskRequest protocol 1 was never published; H3 must freeze/bump final ref semantics.
+- Bash cleanup dry-run currently returns before consulting runtime; wire it or remove unreachable dryRun parameter in its later consumer slice.
+- H5/H6 must verify workspace identity by checkout after Herdr restart rather than assume stable workspace_id. Registration now reads checkout identity for incarnation recovery; full cleanup/restart certification remains pending.
+- First discovery may create an attached primary workspace; it has no cleanup-owned creation record and is not reclaimed. Known retained root-view residual.
+- H5 replace opt-in --herdr-endpoint with policy-driven authority. H3 inventory includes direct git worktree remove in src/cli/mcp/coding-workspaces.ts:671; ship-worktrees already delegates to contract-worktree cleanup.
+- taskRepository repeatedly spawns Git; optimize/cache only with operation-level measurements.
+- Operator recovery for split_outcome_unrecorded: read retained split-intent and exact endpoint/pane inventory; independently prove the created pane identity or leave pending for explicit operator action; never guess/adopt by name.
+- Operator recovery for pane_absent_pid_unobserved: preserve launch/pane receipts, inspect exact private session and OS process provenance; without birth/executable ownership proof leave pending and request operator reconciliation; never signal guessed PID.
+
+- Frozen REQ-4b canonical caught existing fixture exit/readback race: identity mismatch during final cleanup poll after process exit (all review server/host absent on OS readback). Test-only fixtureProofAlive waits for PID absence on mismatch, never signals a mismatched identity; persistent replacement keeps evidence and throws. Failed immutable record retained; final canonical reruns the corrected candidate.

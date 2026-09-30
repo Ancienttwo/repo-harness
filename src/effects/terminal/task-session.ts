@@ -158,7 +158,13 @@ export function saveSessionRoundResult(dir: string, round: number, result: unkno
   writeSessionArtifact(join(dir, `result-${round}.json`), result);
 }
 
-function info(endpoint: HerdrEndpoint, args: string[]): Record<string, any> { const r=herdrCommand(endpoint,args); try{return herdrResult(r);}catch(error){throw new Error(`${error}; ${args.slice(0,2).join(' ')}: ${r.stderr.toString()}`);} }
+function info(endpoint: HerdrEndpoint, args: string[]): Record<string, any> {
+  const result = herdrCommand(endpoint, args);
+  try { return herdrResult(result); }
+  catch (error) {
+    throw new Error(`${error}; ${args.slice(0, 2).join(' ')}: ${result.stderr?.toString() ?? result.error?.message ?? ''}`);
+  }
+}
 function mutate(endpoint: HerdrEndpoint, args: string[]): void { herdrMutation(herdrCommand(endpoint, args)); }
 export function captureTaskPane(endpoint: HerdrEndpoint, pane: string, name: string, provider: ProcessProof,
   ownership: ObjectOwnership, host: ProcessProof | null = null): Pick<TaskPaneBinding, 'pane_id' | 'terminal_id' | 'workspace_id' | 'shell' | 'agent_name' | 'provider' | 'host' | 'ownership'> {
@@ -221,23 +227,82 @@ function assertWorkspace(binding: TaskWorkspaceBinding): void {
   if (value?.workspace_id !== binding.workspace_id || value.worktree?.repo_key !== binding.repository.repository_id
     || value.worktree.checkout_path !== binding.repository.execution_root || value.worktree.repo_root !== binding.repository.primary_root) throw new Error('task_agent_workspace_identity_lost');
 }
+function workspaceReadback(endpoint: HerdrEndpoint): Record<string, any>[] {
+  const spaces = info(endpoint, ['workspace', 'list']).workspaces;
+  if (!Array.isArray(spaces)) throw new Error('task_agent_workspace_response_invalid');
+  return spaces;
+}
+function checkoutWorkspace(spaces: Record<string, any>[], repository: TaskRepository) {
+  const matches = spaces.filter(item => item.worktree?.repo_key === repository.repository_id
+    && item.worktree?.checkout_path === repository.execution_root && item.worktree?.repo_root === repository.primary_root);
+  if (matches.length > 1) throw new Error('task_agent_workspace_identity_ambiguous');
+  return matches[0];
+}
+function archiveWorkspaceIncarnation(dir: string, reason: string): void {
+  const history = join(dir, 'history', randomUUID());
+  ensureSessionDirectory(dir, history);
+  writeSessionArtifact(join(history, 'archived.json'), { reason });
+  for (const name of ['open-intent.json', 'binding.json', 'closed.json']) {
+    const path = join(dir, name);
+    if (existsSync(path)) renameSync(path, join(history, name));
+  }
+  for (const path of [history, dir]) {
+    const fd = openSync(path, constants.O_RDONLY);
+    try { fsyncSync(fd); } finally { closeSync(fd); }
+  }
+}
+function workspaceBinding(repository: TaskRepository, endpoint: HerdrEndpoint, rootId: string,
+  workspaceId: string, paneId: string, ownership: ObjectOwnership): TaskWorkspaceBinding {
+  const pane = info(endpoint, ['pane', 'get', paneId]).pane;
+  const shellPid = info(endpoint, ['pane', 'process-info', '--pane', paneId]).process_info.shell_pid;
+  const binding: TaskWorkspaceBinding = { protocol: 1, repository, endpoint, root_workspace_id: rootId,
+    workspace_id: workspaceId, ownership,
+    root_pane: { pane_id: pane.pane_id, terminal_id: pane.terminal_id,
+      shell: { pid: shellPid, identity: processIdentity(shellPid) }, ownership } };
+  assertWorkspace(binding);
+  return binding;
+}
+function attachWorkspace(repository: TaskRepository, endpoint: HerdrEndpoint, space: Record<string, any>, spaces: Record<string, any>[]): TaskWorkspaceBinding {
+  const primary = spaces.find(item => item.worktree?.checkout_path === repository.primary_root
+    && item.worktree?.repo_key === repository.repository_id);
+  const panes = info(endpoint, ['pane', 'list', '--workspace', space.workspace_id]).panes;
+  if (!primary || !Array.isArray(panes) || !panes[0]?.pane_id) throw new Error('task_agent_workspace_response_invalid');
+  return workspaceBinding(repository, endpoint, primary.workspace_id, space.workspace_id, panes[0].pane_id, { disposition: 'attached' });
+}
 export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrEndpoint, parentPane: string): Promise<TaskWorkspaceBinding> {
   validateHerdrEndpoint(endpoint);
   const repository = taskRepository(repoRoot); const dir = workspaceDirectory(repository);
   ensureSessionDirectory(repository.primary_root, dir);
   return locked(repository.primary_root, dir, async () => {
     const path = join(dir, 'binding.json');
-    if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_workspace_closed');
+    const spaces = workspaceReadback(endpoint);
+    const existing = checkoutWorkspace(spaces, repository);
+    const closed = existsSync(join(dir, 'closed.json'));
     if (existsSync(path)) {
       const binding = readSessionArtifact<TaskWorkspaceBinding>(path);
       if (!sameSessionData(binding.endpoint, endpoint)) throw new Error('task_agent_workspace_endpoint_changed');
-      assertWorkspace(binding); return binding;
+      if (!closed && existing?.workspace_id === binding.workspace_id) {
+        assertWorkspace(binding); return binding;
+      }
+      archiveWorkspaceIncarnation(dir, closed ? 'closed_incarnation' : 'workspace_disappeared_or_replaced');
+      if (existing) {
+        const attached = attachWorkspace(repository, endpoint, existing, spaces);
+        writeSessionArtifact(path, attached); return attached;
+      }
+    } else if (existsSync(join(dir, 'open-intent.json')) || closed) {
+      if (existsSync(join(dir, 'open-intent.json'))) {
+        const intent = readSessionArtifact<{endpoint: HerdrEndpoint}>(join(dir, 'open-intent.json'));
+        if (!sameSessionData(intent.endpoint, endpoint)) throw new Error('task_agent_workspace_endpoint_changed');
+      }
+      archiveWorkspaceIncarnation(dir, existing ? 'open_outcome_attached' : 'open_outcome_absent');
+      if (existing) {
+        const attached = attachWorkspace(repository, endpoint, existing, spaces);
+        writeSessionArtifact(path, attached); return attached;
+      }
     }
-    if (existsSync(join(dir, 'open-intent.json'))) throw new Error('task_agent_workspace_reconciliation_required');
     const parent = info(endpoint, ['pane', 'get', parentPane]).pane;
     if (typeof parent?.cwd !== 'string' || taskRepository(parent.cwd).repository_id !== repository.repository_id) throw new Error('task_agent_parent_repo_mismatch');
-    let roots = info(endpoint, ['workspace', 'list']).workspaces;
-    if (!Array.isArray(roots)) throw new Error('task_agent_workspace_response_invalid');
+    const roots = spaces;
     let root = roots.find(item => item.worktree?.checkout_path === repository.primary_root && item.worktree?.repo_key === repository.repository_id);
     const intentId = randomUUID();
     writeSessionArtifact(join(dir, 'open-intent.json'), { intent_id: intentId, repository, endpoint, parent_pane: parentPane });
@@ -256,12 +321,8 @@ export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrEndp
           '--path', repository.execution_root, '--no-focus']);
     if (typeof opened.already_open !== 'boolean' || typeof opened.root_pane?.pane_id !== 'string') throw new Error('task_agent_workspace_response_invalid');
     const ownership: ObjectOwnership = opened.already_open ? { disposition: 'attached' } : { disposition: 'created', intent_id: intentId };
-    const pane = info(endpoint, ['pane', 'get', opened.root_pane.pane_id]).pane;
-    const shellPid = info(endpoint, ['pane', 'process-info', '--pane', pane.pane_id]).process_info.shell_pid;
-    const binding: TaskWorkspaceBinding = { protocol: 1, repository, endpoint, root_workspace_id: root.workspace_id,
-      workspace_id: opened.workspace.workspace_id, ownership,
-      root_pane: { pane_id: pane.pane_id, terminal_id: pane.terminal_id, shell: { pid: shellPid, identity: processIdentity(shellPid) }, ownership } };
-    assertWorkspace(binding); writeSessionArtifact(path, binding); return binding;
+    const binding = workspaceBinding(repository, endpoint, root.workspace_id, opened.workspace.workspace_id, opened.root_pane.pane_id, ownership);
+    writeSessionArtifact(path, binding); return binding;
   });
 }
 function validateSpec(spec: TaskAgentSpec): void {
@@ -357,10 +418,10 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
       if (!sameSessionData(intent.spec, spec)) throw new Error('task_agent_spec_changed');
       return reconcile(dir, intent);
     }
+    const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane);
     const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec };
     writeSessionArtifact(join(dir, 'intent.json'), intent);
     await effects.boundary?.('intent');
-    const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane);
     writeSessionArtifact(join(dir, 'split-intent.json'), { intent_id: intent.intent_id, workspace_id: workspace.workspace_id });
     const result = info(spec.endpoint, ['pane', 'split', '--pane', workspace.root_pane.pane_id, '--direction', 'right', '--cwd', repository.execution_root, '--no-focus']);
     if (typeof result.pane?.pane_id !== 'string' || typeof result.pane.terminal_id !== 'string') throw new Error('task_agent_split_response_invalid');
@@ -619,7 +680,19 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
   assertSessionDirectory(repository.primary_root, dir);
   return locked(repository.primary_root, dir, async () => {
     if (existsSync(join(dir, 'closed.json'))) return { status: 'closed', pids: [] };
-    if (!existsSync(join(dir, 'binding.json'))) return { status: 'cleanup_pending', pids: [] };
+    if (!existsSync(join(dir, 'binding.json'))) {
+      if (!existsSync(join(dir, 'open-intent.json'))) return { status: 'cleanup_pending', pids: [], reason: 'no_binding' };
+      const intent = readSessionArtifact<{repository: TaskRepository; endpoint: HerdrEndpoint}>(join(dir, 'open-intent.json'));
+      if (!sameSessionData(intent.repository, expected)) throw new Error('task_agent_workspace_identity_lost');
+      const spaces = workspaceReadback(intent.endpoint);
+      const existing = checkoutWorkspace(spaces, expected);
+      if (!existing) {
+        if (!dryRun) writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+        return { status: 'closed', pids: [] };
+      }
+      if (dryRun) return { status: 'cleanup_pending', pids: [], reason: 'workspace_attached' };
+      writeSessionArtifact(join(dir, 'binding.json'), attachWorkspace(expected, intent.endpoint, existing, spaces));
+    }
     const workspace = readSessionArtifact<TaskWorkspaceBinding>(join(dir, 'binding.json'));
     if (workspace.repository.repository_id !== repository.repository_id || workspace.repository.execution_root !== checkoutPath) throw new Error('task_agent_workspace_identity_lost');
     const rolesRoot = join(repository.primary_root, '.ai/harness/runs/task-agents');
@@ -632,9 +705,9 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
         const intent = readSessionArtifact<StartIntent>(join(roleDir, 'intent.json'));
         if (intent.repository.repository_id !== repository.repository_id || intent.repository.execution_root !== checkoutPath) continue;
         if (existsSync(join(roleDir, 'closed.json'))) continue;
-        if (dryRun) return { status: 'cleanup_pending', pids: existsSync(join(roleDir, 'binding.json')) ? [readSessionArtifact<TaskPaneBinding>(join(roleDir, 'binding.json')).provider.pid] : [] };
+        if (dryRun) return { status: 'cleanup_pending', reason: 'active_roles', pids: existsSync(join(roleDir, 'binding.json')) ? [readSessionArtifact<TaskPaneBinding>(join(roleDir, 'binding.json')).provider.pid] : [] };
         const result = await closeTaskAgent(repository.primary_root, intent.spec.task, intent.spec.role);
-        if (result.status !== 'closed') return result;
+        if (result.status !== 'closed') return { ...result, reason: result.reason ?? 'foreground_unproven' };
       }
     }
     const spaces = info(workspace.endpoint, ['workspace', 'list']).workspaces;
@@ -644,22 +717,23 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
       return { status: 'closed', pids: [] };
     }
     assertWorkspace(workspace);
-    if (workspace.ownership.disposition !== 'created') return { status: 'cleanup_pending', pids: [] };
+    if (workspace.ownership.disposition !== 'created') return { status: 'cleanup_pending', pids: [], reason: 'workspace_attached' };
     const panes = info(workspace.endpoint, ['pane', 'list', '--workspace', workspace.workspace_id]).panes;
     if (!Array.isArray(panes)) throw new Error('task_agent_workspace_response_invalid');
-    if (panes.some(pane => pane.pane_id !== workspace.root_pane.pane_id)) return { status: 'cleanup_pending', pids: [] };
+    if (panes.some(pane => pane.pane_id !== workspace.root_pane.pane_id)) return { status: 'cleanup_pending', pids: [], reason: 'extra_panes' };
     if (panes.length) {
       const pane = panes[0];
-      if (pane.terminal_id !== workspace.root_pane.terminal_id || pane.agent) return { status: 'cleanup_pending', pids: [] };
-      assertProcessProof(workspace.root_pane.shell);
+      if (pane.terminal_id !== workspace.root_pane.terminal_id || pane.agent) return { status: 'cleanup_pending', pids: [], reason: 'pane_identity' };
+      try { assertProcessProof(workspace.root_pane.shell); }
+      catch { return { status: 'cleanup_pending', pids: [], reason: 'pane_identity' }; }
       const foreground = info(workspace.endpoint, ['pane', 'process-info', '--pane', pane.pane_id]).process_info.foreground_processes;
-      if (!Array.isArray(foreground) || foreground.some(item => item.pid !== workspace.root_pane.shell.pid)) return { status: 'cleanup_pending', pids: [] };
+      if (!Array.isArray(foreground) || foreground.some(item => item.pid !== workspace.root_pane.shell.pid)) return { status: 'cleanup_pending', pids: [], reason: 'foreground_unproven' };
     }
     if (!dryRun) {
       // Closing a workspace never removes Git checkouts. Never worktree remove.
       mutate(workspace.endpoint, ['workspace', 'close', workspace.workspace_id]);
       const readback = info(workspace.endpoint, ['workspace', 'list']).workspaces;
-      if (!Array.isArray(readback) || readback.some(item => item.workspace_id === workspace.workspace_id)) return { status: 'cleanup_pending', pids: [] };
+      if (!Array.isArray(readback) || readback.some(item => item.workspace_id === workspace.workspace_id)) return { status: 'cleanup_pending', pids: [], reason: 'readback_failed' };
       writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
     }
     return { status: 'closed', pids: [] };

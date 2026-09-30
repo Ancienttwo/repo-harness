@@ -42,6 +42,21 @@ async function sentinelServer() {
   return {call,pane,identity,endpoint};
 }
 const contract = 'tasks/contracts/review.contract.md';
+// Exit can race ps identity readback (for example comm changes while reaping).
+// A mismatch never permits a signal. Wait only for PID absence; a live
+// replacement still fails closed and keeps the fixture evidence.
+async function fixtureProofAlive(proof: OwnedProcess): Promise<boolean> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try { return processProofAlive(proof); }
+    catch (error) {
+      if (Date.now() >= deadline) throw error;
+      try { process.kill(proof.pid, 0); }
+      catch (absent) { if ((absent as NodeJS.ErrnoException).code === 'ESRCH') return false; throw absent; }
+      await Bun.sleep(25);
+    }
+  }
+}
 async function teardownReviewFixture(fixture: { root: string; home: string }, cancel = () => closeClaudeReview({ repoRoot: fixture.root, contract, authorityHome: fixture.home }, true)) {
   const dir = reviewSessionLocation(fixture.root, contract).dir;
   const proofs: OwnedProcess[] = [];
@@ -55,15 +70,15 @@ async function teardownReviewFixture(fixture: { root: string; home: string }, ca
   }
   try { await cancel(); } catch { /* Known creator proofs below fence fixture-only recovery. */ }
   for (const proof of proofs) {
-    if (!processProofAlive(proof)) continue;
+    if (!await fixtureProofAlive(proof)) continue;
     // The fixture is private. No name-only/default process lookup or killall.
     signalCreatedProcess(proof, 'SIGTERM', true);
     const end = Date.now() + 3000;
-    while (processProofAlive(proof) && Date.now() < end) await Bun.sleep(25);
-    if (processProofAlive(proof)) signalCreatedProcess(proof, 'SIGKILL', true);
+    while (await fixtureProofAlive(proof) && Date.now() < end) await Bun.sleep(25);
+    if (await fixtureProofAlive(proof)) signalCreatedProcess(proof, 'SIGKILL', true);
     const stoppedBy = Date.now() + 3000;
-    while (processProofAlive(proof) && Date.now() < stoppedBy) await Bun.sleep(25);
-    if (processProofAlive(proof)) throw new Error(`fixture cleanup incomplete; evidence retained at ${fixture.root}`);
+    while (await fixtureProofAlive(proof) && Date.now() < stoppedBy) await Bun.sleep(25);
+    if (await fixtureProofAlive(proof)) throw new Error(`fixture cleanup incomplete; evidence retained at ${fixture.root}`);
   }
   // Never remove ledger/socket proof while a recorded disposable process lives.
   rmSync(fixture.root, { recursive: true, force: true });
@@ -363,17 +378,17 @@ releaseLaneOnly('fixture teardown does not lose live disposable process proof wh
   const proofs = [processes.binding.provider, { ...processes.binding.host, ownership: processes.binding.ownership }, server];
   try {
     await teardownReviewFixture(f, async () => { throw new Error('injected normal cancellation failure'); });
-    expect(processProofAlive(server)).toBe(false);
-    expect(proofs.every(proof => !processProofAlive(proof))).toBe(true);
+    expect(await fixtureProofAlive(server)).toBe(false);
+    expect((await Promise.all(proofs.map(proof => fixtureProofAlive(proof)))).every(alive => !alive)).toBe(true);
     expect(existsSync(f.root)).toBe(false);
   } finally {
     // Pre-fix reproduction cleanup uses original creator proofs retained above,
     // even if the buggy teardown unlinked their files. No default lookup.
     for (const proof of [server, ...proofs.filter(item => item.pid !== server.pid)]) {
-      if (!processProofAlive(proof)) continue;
+      if (!await fixtureProofAlive(proof)) continue;
       signalCreatedProcess(proof, 'SIGTERM', true);
-      const end=Date.now()+3000;while(processProofAlive(proof)&&Date.now()<end)await Bun.sleep(25);
-      if(processProofAlive(proof))signalCreatedProcess(proof,'SIGKILL',true);
+      const end=Date.now()+3000;while(await fixtureProofAlive(proof)&&Date.now()<end)await Bun.sleep(25);
+      if(await fixtureProofAlive(proof))signalCreatedProcess(proof,'SIGKILL',true);
     }
     const index = fixtures.findIndex(item => item.root === f.root);
     if (index >= 0) fixtures.splice(index, 1);

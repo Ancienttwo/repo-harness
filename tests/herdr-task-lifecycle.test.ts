@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
@@ -334,6 +334,16 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     run('git', ['worktree', 'add', '-qb', 'codex/linked-test', checkout], fixture, env);
     const linkedSpec = { ...spec, role: 'linked-role', max_requests: 2 };
     const linkedPath = join(fixture, 'linked-spec.json'); writeFileSync(linkedPath, JSON.stringify(linkedSpec));
+    const shim = join(fixture, 'shim'); mkdirSync(shim);
+    const failed = join(fixture, 'open-failed');
+    writeFileSync(join(shim, 'herdr'), `#!/bin/sh\ncase "$*" in *"worktree open"*linked-checkout*) if [ ! -f ${quote(failed)} ]; then touch ${quote(failed)}; echo injected-register-failure >&2; exit 1; fi ;; esac\nexec ${quote(herdr)} "$@"\n`);
+    chmodSync(join(shim, 'herdr'), 0o755);
+    const savedPath = process.env.PATH;
+    try {
+      process.env.PATH = shim + ':' + savedPath;
+      await expect(api.startTaskAgent(checkout, linkedSpec)).rejects.toThrow('injected-register-failure');
+      expect(existsSync(join(api.taskSessionDirectory(checkout, spec.task, linkedSpec.role), 'intent.json'))).toBe(false);
+    } finally { process.env.PATH = savedPath; }
     const linkedOwner = owner('linked', linkedPath, checkout); await exited(linkedOwner.child);
     if (linkedOwner.child.exitCode !== 0) throw new Error(linkedOwner.errors());
     const fromPrimary = api.readTaskAgent(fixture, spec.task, linkedSpec.role);
@@ -375,7 +385,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const attachedOwner = owner('normal', attachedPath, attachedCheckout); await exited(attachedOwner.child);
     if (attachedOwner.child.exitCode !== 0) throw new Error(attachedOwner.errors());
     await api.closeTaskAgent(fixture, spec.task, attachedSpec.role);
-    expect(await api.cleanupTaskWorktree(fixture, attachedCheckout)).toEqual({ status: 'cleanup_pending', pids: [] });
+    expect(await api.cleanupTaskWorktree(fixture, attachedCheckout)).toEqual({ status: 'cleanup_pending', pids: [], reason: 'workspace_attached' });
     expect(call(['workspace', 'get', attachedView.workspace.workspace_id]).workspace.workspace_id).toBe(attachedView.workspace.workspace_id);
     // Test owns this simulated user workspace; production never closes attached.
     execute(['workspace', 'close', attachedView.workspace.workspace_id]);
@@ -533,3 +543,81 @@ test('production agent-start waits beyond ten seconds and treats a readiness tim
     rmSync(fixture, { recursive: true, force: true });
   }
 }, 60_000);
+
+
+test('workspace registration recovers vanished, closed and failed-open incarnations through the Bash consumer', async () => {
+  const fixture = realpathSync(mkdtempSync('/tmp/tr-'));
+  const home = join(fixture, 'h'); mkdirSync(home);
+  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  requireFixtureSession(session);
+  const configPath = join(fixture, 'herdr.toml');
+  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
+  const endpoint = {session, home, configPath}; const env = herdrEnvironment(endpoint);
+  const herdr = Bun.which('herdr')!;
+  const call = (args: string[]) => { requireFixtureSession(session); return JSON.parse(run(herdr, ['--session',session,...args],fixture,env)).result; };
+  const api = await import('../src/effects/terminal/task-session');
+  const server = spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});
+  const savedPath = process.env.PATH;
+  try {
+    run('git',['init','-q','-b','main'],fixture,env);
+    run('git',['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','base'],fixture,env);
+    await until(()=>{try{call(['workspace','list']);return true;}catch{return false;}});
+    const root=call(['workspace','create','--cwd',fixture,'--no-focus']); const parent=root.root_pane.pane_id;
+    const baseline=call(['workspace','list']).workspaces.length;
+    const checkout=join(fixture,'recover'); run('git',['worktree','add','-qb','codex/recover',checkout],fixture,env);
+    const first=await api.registerTaskWorktree(checkout,endpoint,parent);
+    expect((await api.registerTaskWorktree(checkout,endpoint,parent)).workspace_id).toBe(first.workspace_id);
+    call(['workspace','close',first.workspace_id]);
+    const restored=await api.registerTaskWorktree(checkout,endpoint,parent);
+    expect(restored.workspace_id).not.toBe(first.workspace_id);
+    expect((await api.cleanupTaskWorktree(fixture,checkout)).status).toBe('closed');
+    const reopened=await api.registerTaskWorktree(checkout,endpoint,parent);
+    expect(reopened.ownership.disposition).toBe('created');
+    expect((await api.cleanupTaskWorktree(fixture,checkout)).status).toBe('closed');
+    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
+    const shim=join(fixture,'shim');mkdirSync(shim);
+    const marker=join(fixture,'fail-next');
+    writeFileSync(join(shim,'herdr'),`#!/bin/sh\ncase "$*" in *"worktree open"*) if [ -f ${quote(marker)} ]; then rm ${quote(marker)}; echo injected-register-failure >&2; exit 1; fi ;; esac\nexec ${quote(herdr)} "$@"\n`);chmodSync(join(shim,'herdr'),0o755);
+    process.env.PATH=shim+':'+savedPath;
+    writeFileSync(marker,'fail');
+    await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
+    expect((await api.cleanupTaskWorktree(fixture,checkout)).status).toBe('closed');
+    writeFileSync(marker,'fail');
+    await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
+    expect((await api.registerTaskWorktree(checkout,endpoint,parent)).ownership.disposition).toBe('created');
+    await api.cleanupTaskWorktree(fixture,checkout);
+    // An ambiguous open that actually created a view is attached on readback.
+    writeFileSync(marker,'fail');
+    await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
+    const unknown=call(['worktree','open','--workspace',root.workspace.workspace_id,'--path',checkout,'--no-focus']);
+    expect((await api.registerTaskWorktree(checkout,endpoint,parent)).ownership.disposition).toBe('attached');
+    expect(await api.cleanupTaskWorktree(fixture,checkout)).toEqual({status:'cleanup_pending',pids:[],reason:'workspace_attached'});
+    call(['workspace','close',unknown.workspace.workspace_id]);
+    await api.cleanupTaskWorktree(fixture,checkout);
+    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
+    const history=join(fixture,'.ai/harness/runs/task-workspaces');
+    expect(readdirSync(history).some(key=>existsSync(join(history,key,'history')))).toBe(true);
+    copyHelpers(fixture); mkdirSync(join(fixture,'plans'));
+    const plan=join(fixture,'plans/plan-20260930-0000-recover-bash.md');
+    writeFileSync(plan,'# Recover fixture\n> **Status**: Approved\n');
+    const endpointFile=join(fixture,'endpoint.json');writeFileSync(endpointFile,JSON.stringify({endpoint,parent_pane:parent}));
+    const target=join(fixture,'bash-checkout');
+    const helperEnv={...env,PATH:shim+':'+env.PATH,REPO_HARNESS_TARGET_REPO_ROOT:fixture};
+    const args=[join(fixture,'scripts/contract-worktree.sh'),'start','--plan',plan,'--path',target,'--no-plan-to-todo','--herdr-endpoint',endpointFile];
+    writeFileSync(marker,'fail');
+    const failed=spawnSync('bash',args,{cwd:fixture,env:helperEnv,encoding:'utf8',timeout:15000});
+    expect(failed.status).toBe(1);expect(existsSync(target)).toBe(true);
+    const retried=spawnSync('bash',args,{cwd:fixture,env:helperEnv,encoding:'utf8',timeout:20000});
+    if(retried.status!==0)throw new Error(retried.stderr+retried.stdout);
+    const space=call(['workspace','list']).workspaces.find((item:any)=>item.worktree?.checkout_path===target);
+    expect(space.worktree.repo_key).toBe(realpathSync(join(fixture,'.git')));
+    expect(existsSync(join(target,'.ai/harness/worktrees/recover-bash.json'))).toBe(true);
+    expect((await api.cleanupTaskWorktree(fixture,target)).status).toBe('closed');
+    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
+    expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
+  } finally {
+    process.env.PATH=savedPath;
+    try { requireFixtureSession(session);run(herdr,['--session',session,'server','stop'],fixture,env); } catch { server.kill('SIGTERM'); }
+    await exited(server);rmSync(fixture,{recursive:true,force:true});
+  }
+},60000);

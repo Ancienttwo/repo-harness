@@ -103,3 +103,5 @@ screenshot/artifact path, or reviewer observation.
 - [REQ-3] H1 withheld pending B1–B4; corrections committed separately at c6b5a913.
 - [REQ-3b] H1 PASS: reviewer independently inspected b4b48c00..c6b5a913, reran tests/herdr-task-lifecycle.test.ts + tests/cli/task-agent.test.ts (8 pass / 103 expect / 28.8s), check:type exit 0; default workspace/pane counts unchanged (w8=3), primary original two dirty files preserved, commit has no AI attribution.
 - Final review and typed receipt remain pending until H2–H6. This checkpoint is not a final merge/ship recommendation.
+
+- [REQ-4] H2 FAIL / bounded corrections: designated reviewer reproduced non-convergent vanished/closed/open-intent workspace states, role intent before registration, and missing Bash start coverage. No H2 PASS; 441acd15 is the correction baseline.

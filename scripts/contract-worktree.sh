@@ -65,6 +65,8 @@ Usage:
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
   repo-harness run contract-worktree status
   repo-harness run contract-worktree recover <inspect|abort|reconcile> [--key <transaction-key>]
+
+  --herdr-endpoint JSON: {"endpoint":{"session":"<name>","home":"<path>","configPath":"<path>"},"parent_pane":"<pane-id>"}
 USAGE_EOF
 }
 
@@ -610,7 +612,10 @@ start_worktree() {
 
   worktree_path="$(cd "$worktree_path" && pwd -P)"
   if [[ -n "$herdr_endpoint" ]]; then
-    run_contract_runtime register --worktree "$worktree_path" --endpoint "$herdr_endpoint" >&2
+    if ! run_contract_runtime register --worktree "$worktree_path" --endpoint "$herdr_endpoint" >&2; then
+      echo "contract-worktree: Herdr registration incomplete; checkout preserved, retry the same start command" >&2
+      return 1
+    fi
   fi
 
   bootstrap_worktree_runtime "$worktree_path"
