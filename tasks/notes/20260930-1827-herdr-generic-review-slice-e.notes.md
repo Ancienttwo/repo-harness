@@ -14,9 +14,9 @@
 
 ## Prepared artifact hashes (unrun)
 
-- canary.ts: sha256:e40fd7dd367445d7abd5ae37e9222846967c4c0a55e52ea053e119c56cfd5ffa
-- canary-budget.json: sha256:aa614b4627f067ed5448984a2474d9c882ec48f21f8696f844ab780cc48deb36
-- expected-results.md: sha256:f823da1ca564443d0652d731ba308996a42cbaca387261398d10d5a73f6bd634
+- canary.ts: sha256:700ad5d67baef772ccca9af62e83f16dd16744afe33287412c255273e82a4798
+- canary-budget.json: sha256:722872c4803afe364c06b2a71fbe55d7d9b3c02a5f4ca6c83786ea020d316040
+- expected-results.md: sha256:d0844c618aa5681f01b78e98f9c8b89806ac5a43582c8dad49fd774b3aedb8ec
 
 - 收尾等final B sentinel，不能A文件刚出现就杀provider而漏B/写probe。Current--verify仍0模型；真实能力unverified。
 
@@ -24,3 +24,8 @@
 
 - 当前审查为暂不GO，PR464 535c9821保持冻结；仅ignored脚本与E设计证据更新。A按call id对写命令和拒绝output配对，排除instruction原文；B先mtime再record cwd/time，Codex本地日期；C大包最后、full/truncated都预期；D S0字节argv+真实start/ready/cancel不发prompt，正常start45000ms。N8 intentional negative保留4000ms。
 - S0 fake和真实startup都尚未执行，放在同一reviewed GO围栏内；本次只运行pure --verify与canonical，真实model_call_count仍0。重复一致sentinel接受，冲突拒绝。private fixture最终列路径、保留不递归删除。
+
+## CHECKPOINT-6 followup corrections（仍不GO）
+
+- C1b首轮Result为null时只记skipped:no_actual_first_result，不send/计轮/抛错；fence只在哨兵改动时硬停，拒绝未分类或未配对分别记attempt_paired_unclassified/no_paired_attempt并保留原始输出，能力仍unverified。补shell.command数组与拒绝文案，Claude is_error仅辅助信号。
+- fake S0按测试working seq1→idle seq2；真实trust提示即S0失败、0模型停止报告，不自动应答、不改全局信任配置或加bypass，是否预信任由用户决定。C2 Codex指纹/write-negative仅记录、未断言。PR464不动；所有live包括S0仍未运行。
