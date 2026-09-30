@@ -323,6 +323,11 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).not.toContain('session-bind');
     expect(help.stdout).toContain('principal');
     expect(help.stdout).toContain('offers');
+    expect(help.stdout).toContain('prepare');
+    const prepareHelp = run(root, ['engineer', 'prepare', '--help']);
+    expect(prepareHelp.exitCode).toBe(0);
+    expect(prepareHelp.stdout).toContain('--authorization-id');
+    expect(prepareHelp.stdout).not.toContain('--observed-at');
     expect(help.stdout).toContain('message');
     expect(help.stdout).toContain('runtime-effect');
     expect(help.stdout).not.toContain('claim');
@@ -378,6 +383,14 @@ describe('repo-harness engineer CLI', () => {
       '--expected-binding-generation', String(current.binding_generation),
       '--expected-engineer-contract-revision', revision, '--json',
     ]).exitCode).toBe(0);
+
+    const prepared = run(root, ['engineer', 'prepare', '--authorization-id', authorizationId, '--json']);
+    expect(prepared.exitCode).toBe(0);
+    const observation = JSON.parse(prepared.stdout);
+    expect(observation.observation_ref).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(observation.observation.expires_at_ms - observation.observation.observed_at_ms).toBe(30_000);
+    expect(JSON.parse(observation.observation.snapshot_bytes)).toEqual(observation.offers);
+    expect(run(root, ['engineer', 'prepare', '--authorization-id', authorizationId, '--observed-at-ms', '9999999999999']).exitCode).toBe(1);
 
     // The committed work graph stays readable, so the lane gates pass and the
     // failure lands inside collectFleetOffers: a regular file where the lease

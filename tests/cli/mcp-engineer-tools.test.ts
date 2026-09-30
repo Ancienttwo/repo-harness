@@ -157,6 +157,7 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_task_reply',
       'engineer_status',
       'engineer_offers',
+      'engineer_prepare',
       'engineer_acquire',
       'engineer_acquire_next',
       'engineer_messages',
@@ -471,6 +472,24 @@ describe('restricted Engineer MCP tools', () => {
     expect(document.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
       .toContain('profile_capability_mismatch');
     expect(document.offers.some((item) => item.work_package_id === 'wp-b')).toBeFalse();
+
+    const observationStore = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/observations');
+    expect(existsSync(observationStore)).toBeFalse(); // existing offers remains a pure read.
+    const prepareDefinition = buildMcpToolDefinitions(getMcpPolicy('engineer')).find(tool => tool.name === 'engineer_prepare')!;
+    expect(prepareDefinition.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    const rejectedTime = await callMcpTool(context, 'engineer_prepare', { observed_at_ms: Date.now() + 999999 });
+    expect(rejectedTime.isError).toBeTrue();
+    expect(existsSync(observationStore)).toBeFalse();
+    const prepared = await callMcpTool(context, 'engineer_prepare', {});
+    expect(prepared.isError).toBeUndefined();
+    const evidence = prepared.structuredContent as { observation_ref: string; observation: { observed_at_ms: number; expires_at_ms: number; snapshot_bytes: string }; offers: unknown };
+    expect(evidence.observation_ref).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(evidence.observation.expires_at_ms - evidence.observation.observed_at_ms).toBe(30_000);
+    expect(JSON.parse(evidence.observation.snapshot_bytes)).toEqual(evidence.offers);
+    expect(readdirSync(observationStore).filter(name => name.endsWith('.json'))).toHaveLength(1);
+    const foreign = await callMcpTool(context, 'engineer_prepare', { binding_generation: binding.binding_generation + 1 });
+    expect(foreign.isError).toBeTrue();
+    expect(readdirSync(observationStore).filter(name => name.endsWith('.json'))).toHaveLength(1);
 
     const fences = {
       repo_id: repositoryId,
