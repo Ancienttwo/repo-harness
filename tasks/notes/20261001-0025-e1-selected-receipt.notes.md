@@ -58,3 +58,11 @@ Limits: Board liveness is not included in Board revision (collect-board-inputs.t
 The PR CI base advanced to cebb590e after S2 started from dc77b3c6. Task-sync includes its effective base in the digest. Reproduced GitHub candidate d8a4c465 in a disposable clone using REPO_HARNESS_DIFF_BASE=cebb590e and merge-base mode; it required the hash below. This separate boundary is not a waiver, production code change or live cutover.
 
 > **Substantive Change SHA256**: `sha256:1cc8d920ef9e79b1a01ddedcf85d51a5e7c35ad6e86d5e3be5ed32acc0e24114`
+
+## CI Base Alignment
+
+Main advanced again to 281e6555 (release preparation). The earlier CI event retained base cebb590e while checkout included those upstream release files, so it counted unrelated paths. Rebased this S2 branch onto 281e6555 rather than binding evidence for unrelated release changes. All nine audited clock/admission source files are byte-identical to dc77b3c6; S2 scope and source semantics are unchanged.
+
+Current PR boundary against main 281e6555:
+
+> **Substantive Change SHA256**: `sha256:4c884efbf1e5ba78312603ab8be0f4423bcc6a2b4b8eac9b791054acbe365e19`
