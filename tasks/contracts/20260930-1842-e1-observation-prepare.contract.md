@@ -368,6 +368,19 @@ exit_criteria:
       "inputs": {
         "env": []
       }
+    },
+    {
+      "id": "type",
+      "kind": "command",
+      "command": "bun run check:type",
+      "necessity": "Gatekeeper found TS2345 in the null-attempt fixture; verify the complete TypeScript boundary before updating Draft PR #468",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "inputs": {
+        "env": []
+      }
     }
   ]
 }

@@ -1,12 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, mkdirSync, cpSync, symlinkSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, statSync, mkdtempSync, mkdirSync, cpSync, symlinkSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { buildEngineerOffersDocument, type EngineerOfferV1, type EngineerOffersV1 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { acquireNextScheduledEngineerTask, prepareEngineerObservation, readEngineerObservation } from '../../src/effects/engineers/scheduling-acquire-next';
 
@@ -179,10 +180,46 @@ describe('campaign exact Task selection', () => {
 describe('trusted observation prepare', () => {
   const who = { ...principal, engineer_id: 'engineer:capability.demo.worker' } as EngineerPrincipalV1;
   const t1 = Date.parse('2026-09-30T10:00:00.000Z');
-  function prepared() {
+  const authorityGuards: Array<() => void> = [];
+  afterEach(() => {
+    while (authorityGuards.length > 0) authorityGuards.pop()!();
+  });
+
+  function authorityPaths(repo: string): string[] {
+    const common = resolveGitCommonDirectory(repo);
+    return [coordinationRoot(repo), join(common, 'repo-harness/engineers/v1/claim-actors'),
+      join(common, 'repo-harness/engineer-scheduling/v1/acquire-next')];
+  }
+
+  function authoritySnapshot(repo: string) {
+    const walk = (path: string): unknown[] => {
+      const stat = statSync(path);
+      return [path, stat.ino, stat.mode, stat.mtimeMs, stat.ctimeMs, stat.isDirectory()
+        ? readdirSync(path).sort().map(name => walk(join(path, name)))
+        : readFileSync(path).toString('hex')];
+    };
+    return authorityPaths(repo).map(path => existsSync(path) ? walk(path) : [path, 'absent']);
+  }
+
+  function prepared(seedAuthorities = false) {
     const repo = root();
     mkdirSync(join(repo, '.ai/harness'), { recursive: true });
     writeFileSync(join(repo, '.ai/harness/policy.json'), '{"version":1}');
+    if (seedAuthorities) {
+      const [coordination, claimActors, acquireNext] = authorityPaths(repo);
+      const taskId = 'd'.repeat(64);
+      const files = [join(coordination!, 'leases', taskId, 'owner.json'),
+        join(coordination!, 'locks/tasks', `${taskId}.lock`, 'owner.json'),
+        join(claimActors!, taskId, '11111111-1111-4111-8111-111111111111.json'),
+        join(acquireNext!, `${'a'.repeat(64)}.json`)];
+      for (const path of files) {
+        mkdirSync(join(path, '..'), { recursive: true });
+        writeFileSync(path, 'existing opaque authority evidence\n');
+      }
+    }
+    const before = authoritySnapshot(repo);
+    const assertAuthorityUntouched = () => expect(authoritySnapshot(repo)).toEqual(before);
+    authorityGuards.push(assertAuthorityUntouched);
     let now = t1;
     let reads = 0;
     const input = { repo_root: repo, principal: who, dependencies: {
@@ -194,9 +231,41 @@ describe('trusted observation prepare', () => {
       },
     } };
     const result = prepareEngineerObservation(input);
+    assertAuthorityUntouched();
     const path = join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/observations', `${result.observation_ref.slice(7)}.json`);
     return { input, result, path, setNow: (value: number) => { now = value; }, reads: () => reads };
   }
+
+  test.each(['absent', 'seeded'] as const)('snapshot ownership refusal preserves %s claim/lease/acquire-next stores', state => {
+    const f = prepared(state === 'seeded');
+    const beforeRecords = readdirSync(join(f.path, '..')).sort();
+    const foreignOffers = buildEngineerOffersDocument({ repository_id: who.repository_id,
+      engineer_id: 'engineer:capability.demo.other', lane: 'unclassified', work_graph_revision: null, candidates: [] });
+    expect(() => prepareEngineerObservation({ ...f.input, dependencies: {
+      ...f.input.dependencies, collectOffers: () => foreignOffers,
+    } })).toThrow('observation snapshot ownership is invalid');
+    expect(readdirSync(join(f.path, '..')).sort()).toEqual(beforeRecords);
+    // Also reach decode's ownership guard with a self-consistent record and snapshot hash.
+    const snapshotBytes = canonicalEngineerJson(foreignOffers);
+    const bytes = canonicalEngineerJson({ ...f.result.observation, snapshot_bytes: snapshotBytes,
+      snapshot_sha256: engineerSha256(snapshotBytes) });
+    const ref = engineerSha256(bytes);
+    writeFileSync(join(f.path, '..', `${ref.slice(7)}.json`), bytes);
+    expect(() => readEngineerObservation({ ...f.input, observation_ref: ref })).toThrow('observation snapshot ownership is invalid');
+  });
+
+  test.each(['absent', 'seeded'] as const)('mid-prepare policy rotation preserves %s claim/lease/acquire-next stores', state => {
+    const f = prepared(state === 'seeded');
+    const beforeRecords = readdirSync(join(f.path, '..')).sort();
+    expect(() => prepareEngineerObservation({ ...f.input, dependencies: {
+      ...f.input.dependencies, collectOffers: options => {
+        const offers = f.input.dependencies.collectOffers(options);
+        writeFileSync(join(f.input.repo_root, '.ai/harness/policy.json'), '{"version":2}');
+        return offers;
+      },
+    } })).toThrow('observation policy changed during prepare');
+    expect(readdirSync(join(f.path, '..')).sort()).toEqual(beforeRecords);
+  });
 
   test('publishes exact immutable snapshot bytes; identical prepare does not replace evidence', () => {
     const f = prepared();

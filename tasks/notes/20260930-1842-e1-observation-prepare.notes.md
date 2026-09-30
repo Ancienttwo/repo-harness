@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260930-1842-e1-observation-prepare.review.md
 > **Last Updated**: 2026-09-30 18:42
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:e9b4ef97e0ae33421fab329492d092ae25133b1b335ba965d4c369f12efe0ca8`
+> **Substantive Change SHA256**: `sha256:2a5de9c29ffc7f041da2d2a979097ee22fbe4b3f887b716a94ebf5ed0b789b49`
 
 ## Design Decisions
 
@@ -31,6 +31,16 @@
 - 30-second freshness is a design limit, not measured host latency/SLO or mutation-time TTL.
 - Store assumes a trusted repository OS owner; hashes/path checks detect modified known refs, not hostile privileged writers. No GC or ledger/admission integration in S1.
 - Crash between hardlink publication and unlink/fsync can leave unavailable evidence; reader refuses multiple links rather than admitting partial evidence. Prepare has no claim side effect.
+
+## Gatekeeper Follow-up
+
+- Gatekeeper found two TS2345 errors because the general retry-observation type permits a null eligible_since; this fixture deliberately uses current=null, whose value is non-null. Apply the requested non-null assertion without changing production behavior.
+- Existing issue-280 cases now assert authority paths/names, file bytes and metadata remain unchanged after successful prepare and refusal. New absent/seeded-store cases reach snapshot ownership refusal (producer and reader with self-consistent digest) and policy rotation between collection and publication. No claim/lease/acquire-next evidence is created, rewritten or removed.
+- Verification Plan adds check:type to the original 16 checks; formal re-acceptance remains pending. Findings 2, 4 and 6 are deferred by owner direction.
+
+Working-tree follow-up against e783173d:
+
+> **Substantive Change SHA256**: `sha256:0898a78f47957cc21c119ceae7255f3f500416e9519bb643e8653e543c72382d`
 
 ## Evidence Links
 

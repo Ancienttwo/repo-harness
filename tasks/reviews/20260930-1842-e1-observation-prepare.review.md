@@ -18,7 +18,7 @@
 - Change type: code-change; additive prepare producer/reader and explicit CLI/MCP surface only.
 - Intended files changed: exact contract allowed_paths; no production collector/admission edits.
 - Actual files changed: three source files, seven existing tests and four workflow artifacts.
-- Check IDs and evidence disposition: canonical Verification Plan owns 16 checks; report `.ai/harness/checks/e1-s1-verification.latest.json`.
+- Check IDs and evidence disposition: canonical Verification Plan owns 17 checks; report `.ai/harness/checks/e1-s1-verification.latest.json`.
 - Residual risks: 30s host latency unmeasured; OS store owner trusted; no GC; no S2 ledger/admission integration. S0 is still a separate Draft and may need a test-file merge resolution.
 - Reviewer action required: designer/acceptor reads exact Draft PR subject; formal acceptance remains Pending, no typed receipt fabricated.
 - Rollback: revert S1 commit; persisted observations are evidence only.
@@ -65,7 +65,7 @@ screenshot/artifact path, or reviewer observation.
 > **Issued At**: pending
 
 - Summary: No AcceptanceReceipt has been recorded.
-- Findings: none
+- Findings: gatekeeper FAIL on e783173d; requested type and refusal/store-nonmutation test fixes delivered for re-acceptance. Findings 2, 4 and 6 remain deferred by owner instruction.
 
 ## Behavior Diff Notes
 

@@ -449,7 +449,7 @@ test('S1 receipt preserves the real first-offer T1 identity at T2 without admiss
     const { offer_revision: _revision, ...basis } = offer();
     const retry = observeRetryEligibility({ policy: basis.retry_policy, current: null,
       work_package_revision: basis.work_package_revision, observed_at: new Date(at).toISOString() });
-    const first = { ...basis, eligible_since: retry.eligible_since };
+    const first = { ...basis, eligible_since: retry.eligible_since! };
     return { ...first, offer_revision: engineerSha256(canonicalEngineerJson(first)) };
   };
   const input = { repo_root: root, principal: principal(), dependencies: {
