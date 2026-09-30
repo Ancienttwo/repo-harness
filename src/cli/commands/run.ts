@@ -16,6 +16,7 @@ export const RUN_HELP_GROUPS = [
       'contract-run',
       'cutover-closure',
       'contract-worktree',
+      'contract-worktree-runtime',
       'sprint-backlog',
       'switch-plan',
       'ensure-task-workflow',
@@ -128,7 +129,7 @@ function renderHelpersSection(): string {
 
   if (helpers.length === 0) return '';
 
-  return ['', 'Helpers:', ...groupedHelperLines(helpers)].join('\n');
+  return ['Helpers:', ...groupedHelperLines(helpers)].join('\n');
 }
 
 export function buildRunCommand(): Command {

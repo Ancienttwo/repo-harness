@@ -17,13 +17,13 @@
 
 ## Goal
 
-PR464 Governance task-sync：按 pull_request 的最新 merge-base 55bafc00 重现摘要，补同一 canonical notes 的全PR Substantive Change SHA256；独立ledger commit/canonical/push，等待Test与MCP matrix，失败只读日志报告。
+PR464 Test CI六个实际失败：helper registry已注册runtime，但run help分组漏项，publication/Goal最小fixture绕过权威共享helper拷贝。只接回现有registry/factory，相关全文件验证，最新main e97684f6重新计算PR摘要与证据；不盲改其他CI失败。
 
 ## Scope
 
-- In scope: 当前 contract/notes 的publication证据绑定，不用waiver，不改产品代码。
-- Out of scope: PR已有受验收stage代码/paused/H5/Claude/campaign；E另worktree设计/no-model，仍无真实模型GO。
-- origin/main55bafc00无冲突rebase；用相同CI diff参数复算，不复用旧708c9675摘要。
+- In scope: CLI helper分组、共享fixture拷贝源、两个最小fixture接线、contract/notes。既有完整相关测试文件作为回归，无新测试文件。
+- Out of scope: 产品runtime语义、paused/H5/Claude/campaign/真实model/全局安装，E仍独立设计未GO。
+- 当前e97684f6已无冲突rebase；code fix独立commit，PR最新摘要绑定，exact lease更新feature branch，CI全绿前不宣布完成。
 
 ## Stop Conditions
 
@@ -68,6 +68,10 @@ Current advisor-gatekeeper 的阶段性 PASS 是 H0 检查点，不伪造最终 
 
 ```yaml
 allowed_paths:
+  - src/cli/commands/run.ts
+  - tests/helpers/helper-script-fixture.ts
+  - tests/contract-worktree-single-publication.test.ts
+  - tests/continuation-conformance.test.ts
   - tasks/contracts/20260930-0438-herdr-task-agents-cutover.contract.md
   - tasks/notes/20260930-0438-herdr-task-agents-cutover.notes.md
 ```
@@ -121,6 +125,19 @@ exit_criteria:
 {
   "protocol": 1,
   "checks": [
+    {
+      "id": "ci-helper-registry-and-closeout",
+      "kind": "command",
+      "command": "bun test tests/cli/run.test.ts tests/workflow-contract.test.ts tests/unit/helper-projection-drift.test.ts tests/unit/windows-protected-helper-platform-contract.test.ts tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/contract-worktree.test.ts tests/contract-worktree-single-publication.test.ts tests/contract-worktree-closeout-journal.test.ts tests/contract-worktree-squash-cleanup.test.ts tests/unit/contract-worktree-projection-restore.test.ts tests/unit/contract-worktree-runtime-bootstrap.test.ts tests/continuation-conformance.test.ts --timeout 60000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "expensive",
+      "evidence_policy": "current_exact",
+      "necessity": "All existing helper/registry/projection/contract-worktree/host Goal files, not focused cases; fixture scope uses canonical shared inventory and no models.",
+      "inputs": {
+        "env": []
+      }
+    },
     {
       "id": "hooks",
       "kind": "command",
@@ -189,7 +206,7 @@ exit_criteria:
     {
       "id": "task-sync",
       "kind": "command",
-      "command": "EVENT_NAME=pull_request PR_BASE_SHA=55bafc000ad0d4051bb443845ca9a51c4a2bf5dc REPO_HARNESS_DIFF_BASE=55bafc000ad0d4051bb443845ca9a51c4a2bf5dc REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
+      "command": "EVENT_NAME=pull_request PR_BASE_SHA=e97684f6 REPO_HARNESS_DIFF_BASE=e97684f6 REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
