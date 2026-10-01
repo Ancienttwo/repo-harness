@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { requireAcquisitionLedgerV2 } from '../../src/effects/engineers/scheduling-acquire-next';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { bindEngineer, readEngineerBindingStatus, retireEngineer } from '../../src/effects/engineers/binding-store';
 import { enrollEngineerPrincipal, revokeEngineerPrincipal } from '../../src/effects/engineers/principal-store';
@@ -526,6 +527,8 @@ describe('restricted Engineer MCP tools', () => {
       structuredContent: { error: { code: 'INVALID_ARGUMENT', message: 'dependency_revision is required' } },
     });
 
+    // Fixture cutover initialization is separate from the idle poll whose side effects are measured.
+    requireAcquisitionLedgerV2(repoRoot);
     const before = coordinationState(repoRoot);
     const noNextOffer = await callMcpTool(context, 'engineer_acquire_next', {
       ...fences,
@@ -540,6 +543,15 @@ describe('restricted Engineer MCP tools', () => {
     });
     expect(coordinationState(repoRoot).filter((path) => path.endsWith('.json'))).toEqual(before.filter((path) => path.endsWith('.json')));
 
+    const sealPath = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/acquire-next/cutover-v2.json');
+    const sealBytes = readFileSync(sealPath, 'utf8');
+    writeFileSync(sealPath, 'not JSON');
+    expect(await callMcpTool(context, 'engineer_acquire_next', { ...fences, idempotency_key: 'ledger-fault' })).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_acquisition_ledger_corrupt' } },
+    });
+    expect(coordinationState(repoRoot)).toEqual(before);
+    writeFileSync(sealPath, sealBytes);
+
     const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
     expect(staleOffer).toMatchObject({
@@ -547,5 +559,17 @@ describe('restricted Engineer MCP tools', () => {
       structuredContent: { error: { code: 'engineer_offer_stale' } },
     });
     expect(coordinationState(repoRoot)).toEqual(beforeStale);
+    const policyPath = join(repoRoot, '.ai/harness/policy.json');
+    writeFileSync(policyPath, 'not JSON');
+    expect(await callMcpTool(context, 'engineer_prepare', {})).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_observation_policy_corrupt' } },
+    });
+    unlinkSync(policyPath);
+    const missingObservationAuthority = await callMcpTool(context, 'engineer_prepare', {});
+    expect(missingObservationAuthority).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_observation_policy_missing' } },
+    });
+    expect(JSON.stringify(missingObservationAuthority)).not.toContain('ENOENT');
+
   }, 30_000);
 });

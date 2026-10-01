@@ -91,6 +91,24 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
 }
 
 describe('pure Effective State projection', () => {
+  test('snapshot age changes freshness without changing workflow admission authority', () => {
+    const snapshot = `> **Updated At**: 2026-07-15T12:00:00Z\n- Active Plan: ${PLAN}\n`;
+    const before = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW + 24 * 60 * 60 * 1000 }));
+    const after = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW + 24 * 60 * 60 * 1000 + 1 }));
+    expect(before.current_snapshot.freshness).toBe('fresh');
+    expect(after.current_snapshot.freshness).toBe('stale');
+    expect(before.stale_sources).not.toContain('current_snapshot');
+    expect(after.stale_sources).toContain('current_snapshot');
+    expect(after.blockers).toEqual(before.blockers);
+    expect(after.readiness).toEqual(before.readiness);
+    expect(after.progress_token).toBe(before.progress_token);
+    expect(after.phase).toBe(before.phase);
+    expect(before.readiness?.ok && before.readiness.allowedToEdit.decision).toBe('allow');
+    const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityRegistryInvalid: true }));
+    expect(invalidAuthority.blockers).toContain('capability_registry:invalid');
+    expect(invalidAuthority.readiness?.ok && invalidAuthority.readiness.allowedToEdit.decision).toBe('block');
+  });
+
   test('approved work can be edited before tasks finish, but cannot ship', () => {
     for (const planStatus of ['approved', 'executing'] as const) {
       const state = projectEffectiveState(input({ planStatus }));

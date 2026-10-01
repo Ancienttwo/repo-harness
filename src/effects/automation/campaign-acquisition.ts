@@ -1,16 +1,16 @@
 import { requireCampaignActiveAdmission } from './campaign-revision-admission';
 import { createCampaignWorkerHandoff } from './campaign-worker';
-import { canonicalMessageBytes, canonicalMessageDigest } from '../../core/messages/mechanics';
+import { assertMessageExactKeys, canonicalMessageBytes, canonicalMessageDigest } from '../../core/messages/mechanics';
 import { CampaignPlanningError } from '../../core/automation/campaign-planning';
 import { resolveEngineerPrincipal } from '../engineers/principal';
-import { acquireNextScheduledEngineerTask, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquisitionRequestV2, type AcquisitionPolicyR1, type AcquireNextScheduledEngineerTaskOptions, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
 import { readClaimActorReceipt, validateClaimActorReceiptLive } from '../engineers/claim-actor-store';
 import { validateFleetWorkEnvelope } from '../fleet/acquire';
 import { readLease } from '../state/coordination-lease-store';
 import { processSprintDependencies, releaseSprintCommand } from '../state/coordination-sprint';
 import type { ScheduledEngineerAcquireResult } from '../engineers/scheduling-acquire';
 import { readIssueBatchIntent } from './issue-batch-store';
-import { readPlanningRecord, persistPlanningRecord, withCampaignPlanningLock } from './campaign-planning-store';
+import { readPlanningRecord, persistPlanningRecord, withCampaignPlanningLock, listPlanningRecords } from './campaign-planning-store';
 import { requireCampaignPlanningAuthority } from './campaign-planning-proof';
 import type { CampaignPlanningStepInput } from './campaign-planning';
 import type { IssueBatchIntentV1 } from '../../core/automation/issue-batch';
@@ -24,39 +24,121 @@ export interface CampaignAcquisitionInput extends Omit<CampaignPlanningStepInput
   readonly authorization_id: string;
 }
 
+export interface CampaignAcquisitionTransactionPorts {
+  readonly withCampaignLock: typeof withDevelopmentCampaignLock;
+  readonly withPlanningLock: typeof withCampaignPlanningLock;
+  readonly readAuthority: typeof requireCampaignPlanningAuthority;
+  readonly ensureBudget: typeof ensureCampaignAuthoringBudget;
+  readonly reserveBudget: typeof reserveAutomationBudget;
+  readonly appendUsage: typeof appendAutomationUsage;
+  readonly readRecord: typeof readPlanningRecord;
+  readonly persistRecord: typeof persistPlanningRecord;
+  readonly requireInnerAdmission: typeof requireFreshAcquisitionBudgetAdmission;
+}
+export function campaignAcquisitionPolicyR1(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, authority: ReturnType<typeof requireCampaignPlanningAuthority>): AcquisitionPolicyR1 {
+  return Object.freeze({ policy_id: 'engineer/campaign', policy_revision: 'R1', scope: Object.freeze({
+    campaign_id: intent.campaign_id, group_number: intent.group_number, intent_sha256: intent.intent_sha256,
+    manifest_sha256: canonicalMessageDigest({ ...authority.manifest }), authorization_revision: authority.grant.authorization_sha256,
+    parent_host: input.host, parent_session: input.session_id!,
+  }) });
+}
+interface CampaignAcquisitionFenceV2 { protocol: 2; kind: 'repo-harness-campaign-acquisition-legacy-fence'; admission_key: string; result_key: string; source_sha256: string }
+interface CampaignAcquisitionSealV2 { protocol: 2; kind: 'repo-harness-campaign-acquisition-cutover'; inventory_sha256: string; fenced_admissions: readonly string[]; quiescence_evidence: string }
+function campaignSealKey(intent: IssueBatchIntentV1): string { return canonicalMessageDigest({ operation: 'campaign-acquisition-cutover-v2', intent_sha256: intent.intent_sha256 }).slice(7); }
+function campaignFenceKey(intent: IssueBatchIntentV1, admission: string): string { return canonicalMessageDigest({ operation: 'campaign-acquisition-legacy-fence-v2', intent_sha256: intent.intent_sha256, admission }).slice(7); }
+/** Operator-only inventory/migration, never a normal-path v1 reader. Generic planning evidence remains immutable. */
+export function inspectCampaignAcquisitionCutover(root: string, intent: IssueBatchIntentV1) {
+  const records = listPlanningRecords(root,intent).filter(entry => {
+    const record = entry.record as Record<string, unknown> | null;
+    return entry.key !== campaignSealKey(intent) && record?.kind !== 'repo-harness-campaign-acquisition-legacy-fence';
+  });
+  return { inventory_sha256: canonicalMessageDigest({ records }), records };
+}
+export function migrateCampaignAcquisitionReceipts(options: { repo_root: string; intent: IssueBatchIntentV1; expected_inventory_sha256: string; quiescence_evidence: string }) {
+  if (!options.quiescence_evidence.trim()) throw new CampaignPlanningError('human_attention_required','old campaign/inner producers must be explicitly quiesced');
+  const root=options.repo_root, intent=options.intent;
+  return withDevelopmentCampaignLock(root,intent.campaign_id,() => withCampaignPlanningLock(root,intent,() => {
+    const existing = readPlanningRecord<CampaignAcquisitionSealV2>(root,intent,campaignSealKey(intent));
+    if (existing) {
+      if (existing.protocol !== 2 || existing.kind !== 'repo-harness-campaign-acquisition-cutover' || existing.inventory_sha256 !== options.expected_inventory_sha256) throw new CampaignPlanningError('human_attention_required','campaign cutover seal differs');
+      return existing;
+    }
+    const inventory=inspectCampaignAcquisitionCutover(root,intent);
+    if (inventory.inventory_sha256 !== options.expected_inventory_sha256) throw new CampaignPlanningError('human_attention_required','campaign cutover inventory changed');
+    const fences: CampaignAcquisitionFenceV2[]=[];
+    const matchedResults=new Set<string>();
+    for (const entry of inventory.records) {
+      const record=entry.record as { request?: unknown; reservation?: GenericAutomationBudgetReservationV1 };
+      if (!record?.reservation || record.reservation.operation !== 'acquisition') continue;
+      assertMessageExactKeys(record as unknown as Record<string,unknown>,['request','reservation'],'legacy campaign admission',message=>{throw new CampaignPlanningError('human_attention_required',message);});
+      const cursor=record.reservation.idempotency_key;
+      if (!/^sha256:[a-f0-9]{64}$/.test(cursor) || canonicalMessageDigest({cursor,part:'admission'}).slice(7)!==entry.key) throw new CampaignPlanningError('human_attention_required','unknown campaign acquisition identity');
+      const resultKey=canonicalMessageDigest({cursor,part:'result'}).slice(7);
+      const result=inventory.records.find(item=>item.key===resultKey)?.record as AcquireNextScheduledEngineerTaskResult | undefined;
+      if (!result || typeof result.ok!=='boolean') throw new CampaignPlanningError('human_attention_required','legacy campaign unresolved admission must be reconciled before cutover');
+      matchedResults.add(resultKey);
+      fences.push({protocol:2,kind:'repo-harness-campaign-acquisition-legacy-fence',admission_key:entry.key,result_key:resultKey,source_sha256:canonicalMessageDigest({admission:record,result})});
+    }
+    for (const entry of inventory.records) {
+      const record=entry.record as Record<string,unknown> | null;
+      if (record && typeof record.ok==='boolean' && !matchedResults.has(entry.key)) throw new CampaignPlanningError('human_attention_required','orphan/unknown campaign outcome must be reconciled before cutover');
+    }
+    for (const fence of fences) persistPlanningRecord(root,intent,campaignFenceKey(intent,fence.admission_key),fence);
+    const seal: CampaignAcquisitionSealV2={protocol:2,kind:'repo-harness-campaign-acquisition-cutover',inventory_sha256:inventory.inventory_sha256,fenced_admissions:fences.map(f=>f.admission_key),quiescence_evidence:options.quiescence_evidence};
+    persistPlanningRecord(root,intent,campaignSealKey(intent),seal); return seal;
+  }));
+}
+
 /** Serialize acquisition transactions, not worker execution. Budget owns all arithmetic. */
-function budgetedAcquisition(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, principal: EngineerPrincipalV1, invoke: () => AcquireNextScheduledEngineerTaskResult): AcquireNextScheduledEngineerTaskResult | { readonly admission_busy: true } {
+export function budgetedAcquisition(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, request: AcquisitionRequestV2, invoke: () => AcquireNextScheduledEngineerTaskResult, ports: Partial<CampaignAcquisitionTransactionPorts> = {}): AcquireNextScheduledEngineerTaskResult | { readonly admission_busy: true } {
+  const deps: CampaignAcquisitionTransactionPorts = {
+    withCampaignLock: withDevelopmentCampaignLock, readAuthority: requireCampaignPlanningAuthority,
+    ensureBudget: ensureCampaignAuthoringBudget, reserveBudget: reserveAutomationBudget, appendUsage: appendAutomationUsage,
+    readRecord: readPlanningRecord, persistRecord: persistPlanningRecord, withPlanningLock: withCampaignPlanningLock,
+    requireInnerAdmission: requireFreshAcquisitionBudgetAdmission, ...ports,
+  };
   let entered = false;
   try {
-    return withDevelopmentCampaignLock(input.repo_root, intent.campaign_id, () => {
+    return deps.withCampaignLock(input.repo_root, intent.campaign_id, () => {
     entered = true;
     const root = input.repo_root;
-    const authority = requireCampaignPlanningAuthority(root, intent, input.env);
+    const authority = deps.readAuthority(root, intent, input.env);
     if (authority.policy.mode !== 'active') throw new CampaignPlanningError('human_attention_required', 'campaign acquisition is no longer active');
-    const budget = ensureCampaignAuthoringBudget({ repo_root: root, authorization: authority.grant, env: input.env }).budget;
-    const request = { principal, session_id: input.session_id, authorization_id: input.authorization_id };
+    const seal = deps.readRecord<CampaignAcquisitionSealV2>(root, intent, campaignSealKey(intent));
+    if (!seal || seal.protocol !== 2 || seal.kind !== 'repo-harness-campaign-acquisition-cutover' || !seal.quiescence_evidence) throw new CampaignPlanningError('human_attention_required', 'explicit campaign acquisition identity cutover is required');
+    assertMessageExactKeys(seal as unknown as Record<string,unknown>, ['protocol','kind','inventory_sha256','fenced_admissions','quiescence_evidence'], 'campaign acquisition seal', message => { throw new CampaignPlanningError('human_attention_required',message); });
+    if (!Array.isArray(seal.fenced_admissions) || seal.fenced_admissions.some(key => !/^[a-f0-9]{64}$/.test(key)) || !/^sha256:[a-f0-9]{64}$/.test(seal.inventory_sha256)) throw new CampaignPlanningError('human_attention_required','campaign seal metadata requires reconciliation');
     let cursor = canonicalMessageDigest({ operation: 'campaign-acquisition-budget', intent_sha256: intent.intent_sha256, key: input.idempotency_key });
-    const persist = (key: string, value: unknown) => withCampaignPlanningLock(root, intent, () => persistPlanningRecord(root, intent, key, value));
+    const persist = (key: string, value: unknown) => deps.withPlanningLock(root, intent, () => deps.persistRecord(root, intent, key, value));
     for (;;) {
       const admissionKey = canonicalMessageDigest({ cursor, part: 'admission' }).slice(7);
       const resultKey = canonicalMessageDigest({ cursor, part: 'result' }).slice(7);
-      const admission = readPlanningRecord<{ request: typeof request; reservation: GenericAutomationBudgetReservationV1 }>(root, intent, admissionKey);
-      if (admission && canonicalMessageBytes(admission.request) !== canonicalMessageBytes(request)) throw new CampaignPlanningError('human_attention_required', 'acquisition key names a different authenticated request');
-      let result = readPlanningRecord<AcquireNextScheduledEngineerTaskResult>(root, intent, resultKey);
+      const fence = deps.readRecord<CampaignAcquisitionFenceV2>(root, intent, campaignFenceKey(intent, admissionKey));
+      if (fence || seal.fenced_admissions.includes(admissionKey)) throw new CampaignPlanningError('human_attention_required', 'legacy campaign acquisition key is fenced; no transparent replay or new budget');
+      const admission = deps.readRecord<{ protocol: 2; kind: string; request: AcquisitionRequestV2; reservation: GenericAutomationBudgetReservationV1 }>(root, intent, admissionKey);
+      if (admission) assertMessageExactKeys(admission as unknown as Record<string,unknown>, ['protocol','kind','request','reservation'], 'campaign admission', message => { throw new CampaignPlanningError('human_attention_required',message); });
+      if (admission && (admission.protocol !== 2 || admission.kind !== 'repo-harness-campaign-acquisition-admission')) throw new CampaignPlanningError('human_attention_required', 'campaign admission metadata requires reconciliation');
+      if (admission && canonicalMessageBytes({ ...admission.request }) !== canonicalMessageBytes({ ...request })) throw new CampaignPlanningError('human_attention_required', 'acquisition key names a different authenticated request');
+      const stored = deps.readRecord<{ protocol: 2; kind: string; request_sha256: string; result: AcquireNextScheduledEngineerTaskResult }>(root, intent, resultKey);
+      if (stored) assertMessageExactKeys(stored as unknown as Record<string,unknown>, ['protocol','kind','request_sha256','result'], 'campaign result', message => { throw new CampaignPlanningError('human_attention_required',message); });
+      if (stored && (stored.protocol !== 2 || stored.kind !== 'repo-harness-campaign-acquisition-result' || stored.request_sha256 !== canonicalMessageDigest({ ...request }))) throw new CampaignPlanningError('human_attention_required', 'campaign result metadata requires reconciliation');
+      let result = stored?.result ?? null;
       const replay = result !== null;
       if (admission && !result) throw new CampaignPlanningError('human_attention_required', 'campaign acquisition requires reconciliation before another effect');
       if (!admission && result) throw new CampaignPlanningError('human_attention_required', 'campaign acquisition result has no admission');
-      const reservation = admission?.reservation ?? reserveAutomationBudget({ repo_root: root, automation_run_id: budget.automation_run_id,
+      if (!result) deps.requireInnerAdmission(root, request);
+      const budget = deps.ensureBudget({ repo_root: root, authorization: authority.grant, env: input.env }).budget;
+      const reservation = admission?.reservation ?? deps.reserveBudget({ repo_root: root, automation_run_id: budget.automation_run_id,
         expected_budget_sha256: budget.budget_sha256, idempotency_key: cursor, operation: 'acquisition', unit_kind: 'execute',
         unit_id: `${intent.campaign_id}:group:${intent.group_number}`, attempt: 1, provider: null, env: input.env });
       if (!result) {
-        persist(admissionKey, { request, reservation });
+        persist(admissionKey, { protocol: 2, kind: 'repo-harness-campaign-acquisition-admission', request, reservation });
         // Exceptions leave the durable admission unresolved. A missing return is not a failed acquisition proof.
         result = invoke();
-        persist(resultKey, result);
+        persist(resultKey, { protocol: 2, kind: 'repo-harness-campaign-acquisition-result', request_sha256: canonicalMessageDigest({ ...request }), result });
       }
       const definitive = result.ok || ['engineer_no_eligible_offer', 'engineer_offer_stale', 'engineer_concurrency_unavailable', 'claim_actor_receipt_failed', 'engineer_acquire_next_conflict'].includes(result.error);
-      if (definitive) appendAutomationUsage({ repo_root: root, reservation, outcome: result.ok ? 'progress' : 'no_progress',
+      if (definitive) deps.appendUsage({ repo_root: root, reservation, outcome: result.ok ? 'progress' : 'no_progress',
         evidence_refs: [{ ref: `campaign-acquisition:${resultKey}`, sha256: canonicalMessageDigest({ result }).slice(7) }], env: input.env });
       if (!replay || result.ok || result.error !== 'engineer_no_eligible_offer') return result;
       // acquire-next deliberately does not cache idle. Each later try receives its own reservation,
@@ -93,11 +175,11 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
     if (requireCampaignPlanningAuthority(root, intent, input.env).policy.mode !== 'active') throw new CampaignPlanningError('human_attention_required', 'campaign execution is no longer active');
   };
   let acceptedFresh = false;
-  const acquired = budgetedAcquisition(input, intent, principal, () => {
-    const result = acquire({
+  const acquisitionOptions: AcquireNextScheduledEngineerTaskOptions = {
     repo_root: root, principal, session_id: input.session_id, env: input.env,
     idempotency_key: canonicalMessageDigest({ operation: 'campaign-acquisition', intent_sha256: intent.intent_sha256, key: input.idempotency_key }),
     filters: { task_ids: authority.manifest.slots.map(slot => slot.task_id) },
+    admission_policy: campaignAcquisitionPolicyR1(input, intent, authority),
     accept_acquired: result => {
       try {
         validateHandoff(result);
@@ -122,8 +204,11 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
         }
         return { ok: false, error: 'claim_actor_receipt_failed', message };
       }
-    },
-    });
+    }
+  };
+  const request = buildAcquisitionRequestIdentity(acquisitionOptions);
+  const acquired = budgetedAcquisition(input, intent, request, () => {
+    const result = acquire(acquisitionOptions);
     if (result.ok && !acceptedFresh) throw new CampaignPlanningError('human_attention_required', 'unbudgeted acquisition replay requires reconciliation');
     return result;
   });

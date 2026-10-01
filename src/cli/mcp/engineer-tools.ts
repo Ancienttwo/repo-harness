@@ -38,7 +38,7 @@ import {
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
-import { acquireNextScheduledEngineerTask, prepareEngineerObservation } from '../../effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError } from '../../effects/engineers/scheduling-acquire-next';
 import {
   InterfaceChangeStoreError,
   readInterfaceChangeStatus,
@@ -765,7 +765,7 @@ export function callEngineerTool(
     if (name === 'engineer_work_demand_transition') return transitionWorkDemandAsEngineer(ctx,args,principal);
     return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
-    const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
+    const code = error instanceof EngineerAcquisitionLedgerError || error instanceof EngineerObservationError || error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
       || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError
       || error instanceof TaskInboxError || error instanceof TaskReplyError || error instanceof TaskReplyStoreError
       || error instanceof ModuleInboxError

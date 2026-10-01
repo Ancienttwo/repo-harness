@@ -1,16 +1,18 @@
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { readFileSync, rmSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { historicalPlanningFixture, installHistoricalBoundDispatch } from '../helpers/historical-campaign-lifecycle';
-import { runCampaignAcquisition } from '../../src/effects/automation/campaign-acquisition';
+import { runCampaignAcquisition, budgetedAcquisition, inspectCampaignAcquisitionCutover, migrateCampaignAcquisitionReceipts, type CampaignAcquisitionTransactionPorts } from '../../src/effects/automation/campaign-acquisition';
 import { withCampaignCapacity } from '../../src/effects/automation/campaign-capacity';
 import { ensureCampaignAuthoringBudget, readAutomationBudgetStatus } from '../../src/effects/automation/budget-store';
 import { requireCampaignPlanningAuthority } from '../../src/effects/automation/campaign-planning-proof';
 import { readLease } from '../../src/effects/state/coordination-lease-store';
 import { resolveEngineerPrincipal } from '../../src/effects/engineers/principal';
 import { collectEngineerOffers } from '../../src/effects/engineers/scheduling';
-import { acquireNextScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquireNextScheduledEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
+import { canonicalMessageDigest } from '../../src/core/messages/mechanics';
+import { readPlanningRecord, persistPlanningRecord, withCampaignPlanningLock } from '../../src/effects/automation/campaign-planning-store';
 import { validateFleetWorkEnvelope } from '../../src/effects/fleet/acquire';
 import { validateClaimActorReceiptLive } from '../../src/effects/engineers/claim-actor-store';
 const roots: string[] = [];
@@ -96,6 +98,9 @@ test('real Engineer acquire-next skips a campaign with unavailable revision admi
 });
 test('verified revision admits a real acquisition and worker binding while missing image refuses preparation', async () => {
   const f = await historicalPlanningFixture(false, false, undefined, true, {}, false, false, true); roots.push(f.root, f.home);
+  const inventory = inspectCampaignAcquisitionCutover(f.root, f.intent);
+  migrateCampaignAcquisitionReceipts({ repo_root: f.root, intent: f.intent,
+    expected_inventory_sha256: inventory.inventory_sha256, quiescence_evidence: 'fixture:all-old-producers-stopped' });
   const result = runCampaignAcquisition(f.executeInput);
   expect(result, JSON.stringify(result)).toHaveProperty('action', 'dispatch');
   if (!('action' in result) || result.action !== 'dispatch') throw new Error('expected actual dispatch');
@@ -117,3 +122,106 @@ test('verified revision admits a real acquisition and worker binding while missi
   await expect(bound.prepareChild('worker', 'prompt.md', Date.now() + 60000)).rejects.toThrow('BRC_CAMPAIGN_IMAGE');
   expect(() => bound.beforeChild('worker', 'worker')).toThrow('invocation intent is missing');
 }, 60000);
+
+
+// These cases exercise the real outer record protocol with existing budget ports; lower campaign
+// authority/claim E2E remains covered by the real fixture above. No production selected caller is added.
+test('S2 outer identity conflicts before reserve/invoke; completed replay does not repay budget', async () => {
+  const f=await historicalPlanningFixture();roots.push(f.root,f.home);
+  const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
+  migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:quiesced'});
+  const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
+  const base:AcquireNextScheduledEngineerTaskOptions={repo_root:f.root,principal,idempotency_key:'inner',session_id:'parent',
+    filters:{task_ids:['a'.repeat(64)]},admission_policy:{policy_id:'engineer/campaign',policy_revision:'R1',scope:{
+      campaign_id:f.intent.campaign_id,group_number:f.intent.group_number,intent_sha256:f.intent.intent_sha256,
+      manifest_sha256:'sha256:'+'a'.repeat(64),authorization_revision:f.authorization.authorization_sha256,parent_host:'codex',parent_session:'parent',
+    }},accept_acquired:()=>{}};
+  const request=buildAcquisitionRequestIdentity(base);
+  let reserves=0,effects=0;const settled=new Set<string>();
+  const ports:Partial<CampaignAcquisitionTransactionPorts>={
+    readAuthority:()=>({policy:{mode:'active'},grant:f.authorization}) as any,
+    ensureBudget:()=>({budget:{automation_run_id:'test-run',budget_sha256:'sha256:'+'b'.repeat(64)}}) as any,
+    reserveBudget:input=>{reserves++;return {idempotency_key:input.idempotency_key,reservation_sha256:'sha256:'+'c'.repeat(64)} as any;},
+    appendUsage:input=>{settled.add(input.reservation.reservation_sha256);return {} as any;},
+    requireInnerAdmission:()=>{},
+  };
+  const result={ok:true as const,offer:{} as any,envelope:{} as any,receipt:{} as any};
+  const invoke=()=>{effects++;return result;};
+  expect(budgetedAcquisition(f.executeInput,f.intent,request,invoke,ports)).toEqual(result);
+  expect(budgetedAcquisition(f.executeInput,f.intent,request,invoke,ports)).toEqual(result);
+  expect(reserves).toBe(1);expect(effects).toBe(1);expect(settled.size).toBe(1);
+  for(const changed of [{...request,session_id:'other'}, {...request,operation:'selected' as const,observation_ref:'sha256:'+'d'.repeat(64),assertion:{} as any,filters:null,max_selection_attempts:null},
+    {...request,policy:{...request.policy,scope:{...request.policy.scope!,manifest_sha256:'sha256:'+'f'.repeat(64)}}}]) {
+    expect(()=>budgetedAcquisition(f.executeInput,f.intent,changed,invoke,ports)).toThrow('different authenticated request');
+  }
+  expect(reserves).toBe(1);expect(effects).toBe(1);expect(settled.size).toBe(1);
+  // A completed inner transaction without an outer admission/result is never paid/re-invoked.
+  const extra={...base,idempotency_key:'orphan-inner',dependencies:{resolvePrincipal:()=>principal,
+    collectOffers:()=>({offers:[{work_package_id:'one',task_id:'a'.repeat(64)}]} as any),
+    acquire:()=>result}};
+  expect(acquireNextScheduledEngineerTask(extra).ok).toBeTrue();
+  const orphan=buildAcquisitionRequestIdentity(extra);
+  expect(()=>budgetedAcquisition({...f.executeInput,idempotency_key:'orphan-outer'},f.intent,orphan,invoke,
+    {...ports,requireInnerAdmission:requireFreshAcquisitionBudgetAdmission})).toThrow('matching outer outcome');
+  expect(reserves).toBe(1);expect(effects).toBe(1);
+});
+
+test('S2 outer unresolved effect and missing-result persistence never invoke twice', async () => {
+  const f=await historicalPlanningFixture();roots.push(f.root,f.home);
+  const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
+  migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:quiesced'});
+  const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
+  const request=buildAcquisitionRequestIdentity({repo_root:f.root,principal,idempotency_key:'inner'});
+  let effects=0,reserves=0,usage=0;
+  const ports:Partial<CampaignAcquisitionTransactionPorts>={readAuthority:()=>({policy:{mode:'active'},grant:f.authorization}) as any,
+    ensureBudget:()=>({budget:{automation_run_id:'test-run',budget_sha256:'sha256:'+'b'.repeat(64)}}) as any,
+    reserveBudget:input=>{reserves++;return {idempotency_key:input.idempotency_key} as any;},appendUsage:()=>{usage++;return {} as any;},requireInnerAdmission:()=>{}};
+  expect(()=>budgetedAcquisition(f.executeInput,f.intent,request,()=>{effects++;throw Error('effect outcome unknown');},ports)).toThrow('effect outcome unknown');
+  expect(()=>budgetedAcquisition(f.executeInput,f.intent,request,()=>{effects++;throw Error('must not execute');},ports)).toThrow('reconciliation');
+  expect(effects).toBe(1);expect(reserves).toBe(1);expect(usage).toBe(0);
+  const input={...f.executeInput,idempotency_key:'result-crash'};
+  const persist=ports.persistRecord??persistPlanningRecord;
+  const crashPorts={...ports,persistRecord:((root:any,intent:any,key:any,record:any)=>{
+    if(record.kind==='repo-harness-campaign-acquisition-result')throw Error('outer result persistence interrupted');
+    persist(root,intent,key,record);
+  }) as typeof persistPlanningRecord};
+  expect(()=>budgetedAcquisition(input,f.intent,request,()=>{effects++;return {ok:true,offer:{} as any,envelope:{} as any,receipt:{} as any};},crashPorts)).toThrow('outer result persistence interrupted');
+  expect(()=>budgetedAcquisition(input,f.intent,request,()=>{effects++;throw Error('must not execute');},ports)).toThrow('reconciliation');
+  expect(effects).toBe(2);expect(reserves).toBe(2);expect(usage).toBe(0);
+});
+
+test.each(['completed','pending'] as const)('S2 legacy outer %s is fenced or stops cutover without spending', async state => {
+  const f=await historicalPlanningFixture();roots.push(f.root,f.home);
+  const cursor=canonicalMessageDigest({operation:'campaign-acquisition-budget',intent_sha256:f.intent.intent_sha256,key:f.executeInput.idempotency_key});
+  const admissionKey=canonicalMessageDigest({cursor,part:'admission'}).slice(7),resultKey=canonicalMessageDigest({cursor,part:'result'}).slice(7);
+  const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
+  withCampaignPlanningLock(f.root,f.intent,()=>{
+    persistPlanningRecord(f.root,f.intent,admissionKey,{request:{principal,session_id:f.executeInput.session_id,authorization_id:f.executeInput.authorization_id},reservation:{operation:'acquisition',idempotency_key:cursor}});
+    if(state==='completed')persistPlanningRecord(f.root,f.intent,resultKey,{ok:true,offer:{},envelope:{},receipt:{}});
+  });
+  const original=readPlanningRecord(f.root,f.intent,admissionKey);
+  const operatorArgs = ['engineer', 'campaign-acquisition-cutover'];
+  const identityArgs = ['--campaign-id', f.intent.campaign_id, '--group-number', String(f.intent.group_number), '--intent-sha256', f.intent.intent_sha256, '--json'];
+  const operator = (action: string, extra: string[] = []) => Bun.spawnSync([process.execPath, resolve(import.meta.dir, '../../src/cli/index.ts'), ...operatorArgs, action, ...identityArgs, ...extra], { cwd: f.root, env: f.env, stdout: 'pipe', stderr: 'pipe' });
+  const inspected = operator('inspect');
+  expect(inspected.exitCode, inspected.stderr.toString()).toBe(0);
+  const inventory = JSON.parse(inspected.stdout.toString());
+  expect(inventory).toEqual(inspectCampaignAcquisitionCutover(f.root, f.intent));
+  const changed = operator('migrate', ['--expected-inventory-sha256', `sha256:${'0'.repeat(64)}`, '--quiescence-evidence', 'fixture:stopped']);
+  expect(changed.exitCode).toBe(1);
+  expect(JSON.parse(changed.stderr.toString())).toMatchObject({ error: 'human_attention_required', message: 'campaign cutover inventory changed' });
+  const migrate = () => {
+    const result = operator('migrate', ['--expected-inventory-sha256', inventory.inventory_sha256, '--quiescence-evidence', 'fixture:stopped']);
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    return JSON.parse(result.stdout.toString());
+  };
+  if(state==='pending')expect(migrate).toThrow('unresolved');else {expect(migrate().fenced_admissions).toContain(admissionKey);expect(migrate().fenced_admissions).toContain(admissionKey);}
+  expect(JSON.stringify(readPlanningRecord(f.root,f.intent,admissionKey))).toBe(JSON.stringify(original));
+  let mutations=0;
+  const request=buildAcquisitionRequestIdentity({repo_root:f.root,principal,idempotency_key:'inner'});
+  expect(()=>budgetedAcquisition(f.executeInput,f.intent,request,()=>{mutations++;throw Error('must not invoke');},{
+    readAuthority:()=>({policy:{mode:'active'},grant:f.authorization}) as any,
+    reserveBudget:()=>{mutations++;throw Error('must not reserve');},ensureBudget:()=>{mutations++;throw Error('must not initialize budget');},
+  })).toThrow(state==='pending'?'cutover':'fenced');
+  expect(mutations).toBe(0);
+});
