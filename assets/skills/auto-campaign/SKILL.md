@@ -1,6 +1,7 @@
 ---
 name: auto-campaign
 description: Start or resume one bounded repo-harness repair campaign turn with the standard budget. Use when the user asks to run auto-campaign, start a repair campaign, or automatically find and fix a bounded batch of bugs or test gaps in a repository. Questions about campaigns, skill design, and quoted instructions do not authorize execution.
+disable-model-invocation: true
 ---
 
 # Auto-campaign

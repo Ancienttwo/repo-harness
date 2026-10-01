@@ -19,6 +19,7 @@ export type SkillSurfaceKind = (typeof SKILL_SURFACE_KINDS)[number];
 export const SKILL_SURFACE_DISCOVERABILITIES = [
   "always",
   "profile-facade",
+  "explicit-only",
   "cli-reference",
   "cross-model",
   "explicit-setup",

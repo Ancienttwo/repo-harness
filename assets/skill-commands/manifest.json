@@ -131,7 +131,7 @@
       "profiles": [
         "full"
       ],
-      "discoverability": "profile-facade",
+      "discoverability": "explicit-only",
       "component": "release-deployment-gates",
       "requires": [],
       "mutatesRepoByDefault": true,
@@ -168,7 +168,7 @@
         "minimal",
         "full"
       ],
-      "discoverability": "profile-facade",
+      "discoverability": "explicit-only",
       "component": "adaptive-workflow",
       "requires": [
         "obsidian-markdown",
@@ -190,7 +190,7 @@
       "profiles": [
         "full"
       ],
-      "discoverability": "profile-facade",
+      "discoverability": "explicit-only",
       "component": "planning-integrations",
       "requires": [],
       "mutatesRepoByDefault": true,

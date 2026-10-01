@@ -12,6 +12,7 @@ description: |
   初始化记忆库, recall project memory, persist lessons, update the brain vault,
   knowledge base brain. Do not use for repo-runtime contracts (tasks/, docs/ stay
   authoritative in-repo), raw conversation archiving, or storing secrets.
+disable-model-invocation: true
 ---
 
 # obsidian-memory — cross-project long-term memory (Obsidian brain vault)
