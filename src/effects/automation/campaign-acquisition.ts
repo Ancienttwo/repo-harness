@@ -3,10 +3,9 @@ import { createCampaignWorkerHandoff } from './campaign-worker';
 import { assertMessageExactKeys, canonicalMessageBytes, canonicalMessageDigest } from '../../core/messages/mechanics';
 import { CampaignPlanningError } from '../../core/automation/campaign-planning';
 import { resolveEngineerPrincipal } from '../engineers/principal';
-import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquisitionRequestV2, type AcquisitionPolicyR1, type AcquireNextScheduledEngineerTaskOptions, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquisitionRequestV2, type AcquisitionPolicy, type AcquireNextScheduledEngineerTaskOptions, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
 import { readClaimActorReceipt, validateClaimActorReceiptLive } from '../engineers/claim-actor-store';
 import { validateFleetWorkEnvelope } from '../fleet/acquire';
-import { readLease } from '../state/coordination-lease-store';
 import { processSprintDependencies, releaseSprintCommand } from '../state/coordination-sprint';
 import type { ScheduledEngineerAcquireResult } from '../engineers/scheduling-acquire';
 import { readIssueBatchIntent } from './issue-batch-store';
@@ -35,13 +34,20 @@ export interface CampaignAcquisitionTransactionPorts {
   readonly persistRecord: typeof persistPlanningRecord;
   readonly requireInnerAdmission: typeof requireFreshAcquisitionBudgetAdmission;
 }
-export function campaignAcquisitionPolicyR1(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, authority: ReturnType<typeof requireCampaignPlanningAuthority>): AcquisitionPolicyR1 {
-  return Object.freeze({ policy_id: 'engineer/campaign', policy_revision: 'R1', scope: Object.freeze({
+export function campaignAcquisitionPolicyR2(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, authority: ReturnType<typeof requireCampaignPlanningAuthority>): AcquisitionPolicy {
+  return Object.freeze({ policy_id: 'engineer/campaign', policy_revision: 'R2', scope: Object.freeze({
     campaign_id: intent.campaign_id, group_number: intent.group_number, intent_sha256: intent.intent_sha256,
-    manifest_sha256: canonicalMessageDigest({ ...authority.manifest }), authorization_revision: authority.grant.authorization_sha256,
+    manifest_sha256: canonicalMessageDigest({ ...authority.manifest }), authorization_revision: canonicalMessageDigest({ authorization_sha256: authority.grant.authorization_sha256, policy: authority.policy }),
     parent_host: input.host, parent_session: input.session_id!,
   }) });
 }
+/** Owner-computed identity; no host-provided task collection or callback names. */
+function requireAcquisitionContext(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, policy: AcquisitionPolicy, authority: ReturnType<typeof requireCampaignPlanningAuthority>): void {
+  if (authority.policy.mode !== 'active' || canonicalMessageBytes({ ...policy }) !== canonicalMessageBytes({ ...campaignAcquisitionPolicyR2(input, intent, authority) })) {
+    throw new CampaignPlanningError('human_attention_required', 'campaign acquisition owner context changed');
+  }
+}
+
 interface CampaignAcquisitionFenceV2 { protocol: 2; kind: 'repo-harness-campaign-acquisition-legacy-fence'; admission_key: string; result_key: string; source_sha256: string }
 interface CampaignAcquisitionSealV2 { protocol: 2; kind: 'repo-harness-campaign-acquisition-cutover'; inventory_sha256: string; fenced_admissions: readonly string[]; quiescence_evidence: string }
 function campaignSealKey(intent: IssueBatchIntentV1): string { return canonicalMessageDigest({ operation: 'campaign-acquisition-cutover-v2', intent_sha256: intent.intent_sha256 }).slice(7); }
@@ -126,6 +132,8 @@ export function budgetedAcquisition(input: CampaignAcquisitionInput, intent: Iss
       const replay = result !== null;
       if (admission && !result) throw new CampaignPlanningError('human_attention_required', 'campaign acquisition requires reconciliation before another effect');
       if (!admission && result) throw new CampaignPlanningError('human_attention_required', 'campaign acquisition result has no admission');
+      requireAcquisitionContext(input, intent, request.policy, authority);
+      if (request.session_id !== input.session_id) throw new CampaignPlanningError('human_attention_required', 'campaign request session differs from its owner');
       if (!result) deps.requireInnerAdmission(root, request);
       const budget = deps.ensureBudget({ repo_root: root, authorization: authority.grant, env: input.env }).budget;
       const reservation = admission?.reservation ?? deps.reserveBudget({ repo_root: root, automation_run_id: budget.automation_run_id,
@@ -153,10 +161,11 @@ export function budgetedAcquisition(input: CampaignAcquisitionInput, intent: Iss
   }
 }
 
-export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire = acquireNextScheduledEngineerTask) {
+export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire = acquireNextScheduledEngineerTask, ports: Partial<CampaignAcquisitionTransactionPorts> = {}) {
   const root = input.repo_root;
   const intent = readIssueBatchIntent(root, input.campaign_id, input.group_number, input.intent_sha256);
-  const authority = requireCampaignPlanningAuthority(root, intent, input.env);
+  const readAuthority = ports.readAuthority ?? requireCampaignPlanningAuthority;
+  const authority = readAuthority(root, intent, input.env);
   if (input.host !== authority.grant.campaign!.local_parent_host || !input.session_id?.trim() || input.session_id.length > 256) throw new CampaignPlanningError('human_attention_required', 'execution requires the authorized local parent host and session');
   if (!input.idempotency_key || input.idempotency_key.length > 512) throw new CampaignPlanningError('human_attention_required', 'execution requires a bounded idempotency key');
   if (authority.policy.mode === 'shadow') return { action: 'idle' as const, reason: 'shadow campaign cannot acquire workers' };
@@ -165,21 +174,30 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
   if (!parent || parent.host !== input.host || parent.session_id !== input.session_id) throw new CampaignPlanningError('human_attention_required', 'execution session does not own this group planning');
   if (!authority.grant.campaign?.liveness_policy || authority.grant.campaign.liveness_policy.renewal_actor_kind !== 'controller') throw new CampaignPlanningError('human_attention_required', 'campaign execution requires an explicit controller liveness policy');
   const principal = resolveEngineerPrincipal({ repo_root: root, authorization_id: input.authorization_id, env: input.env });
+  const policy = campaignAcquisitionPolicyR2(input, intent, authority);
+  const requireMember = (taskId: string) => {
+    const current = readAuthority(root, intent, input.env);
+    requireAcquisitionContext(input, intent, policy, current);
+    if (!current.manifest.slots.some(slot => slot.task_id === taskId)) throw new CampaignPlanningError('human_attention_required', 'Task does not belong to this campaign intent manifest');
+  };
   const validateHandoff = (acquired: Extract<ScheduledEngineerAcquireResult, { ok: true }>) => {
+    requireMember(acquired.envelope.task_id);
+    if (acquired.offer.task_id !== acquired.envelope.task_id) throw new CampaignPlanningError('human_attention_required', 'acquired offer and handoff name different Tasks');
     const currentPrincipal = resolveEngineerPrincipal({ repo_root: root, authorization_id: input.authorization_id, env: input.env });
     if (canonicalMessageBytes({ ...currentPrincipal }) !== canonicalMessageBytes({ ...principal })) throw new CampaignPlanningError('human_attention_required', 'Engineer principal changed during acquisition');
     const receipt = readClaimActorReceipt(root, acquired.envelope.task_id, acquired.envelope.claim_id);
     if (!receipt || canonicalMessageBytes({ ...receipt }) !== canonicalMessageBytes({ ...acquired.receipt }) || receipt.engineer_id !== principal.engineer_id || receipt.binding_id !== principal.binding_id) throw new CampaignPlanningError('human_attention_required', 'acquisition lacks its authenticated stored ClaimActorReceipt');
     validateClaimActorReceiptLive(root, receipt, acquired.envelope);
     validateFleetWorkEnvelope(root, acquired.envelope, input.env);
-    if (requireCampaignPlanningAuthority(root, intent, input.env).policy.mode !== 'active') throw new CampaignPlanningError('human_attention_required', 'campaign execution is no longer active');
+    requireMember(acquired.envelope.task_id);
   };
   let acceptedFresh = false;
   const acquisitionOptions: AcquireNextScheduledEngineerTaskOptions = {
     repo_root: root, principal, session_id: input.session_id, env: input.env,
     idempotency_key: canonicalMessageDigest({ operation: 'campaign-acquisition', intent_sha256: intent.intent_sha256, key: input.idempotency_key }),
     filters: { task_ids: authority.manifest.slots.map(slot => slot.task_id) },
-    admission_policy: campaignAcquisitionPolicyR1(input, intent, authority),
+    admission_policy: policy,
+    before_acquire: offer => requireMember(offer.task_id),
     accept_acquired: result => {
       try {
         validateHandoff(result);
@@ -188,17 +206,28 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
         const message = error instanceof Error ? error.message : String(error);
         const work = result.envelope;
         try {
-          const live = readLease(root, work.task_id);
-          if (live.classification === 'unknown') throw new Error('own Lease state is unknown');
-          const lease = live.record;
-          if (lease && lease.claim_id === work.claim_id && lease.generation === work.generation
-            && lease.state === 'bound' && lease.execution_worktree === work.worktree_path
-            && lease.branch === work.branch && lease.unit_ref === work.unit_ref) {
-            const released = releaseSprintCommand({ claimId: work.claim_id }, processSprintDependencies(root));
-            if (released.exitCode !== 0) throw new Error(released.stderr || released.stdout);
-          } else if (lease?.claim_id === work.claim_id) {
-            throw new Error('own Lease no longer matches the acquired handoff');
-          }
+          const deps = processSprintDependencies(root);
+          // releaseSprintCommand invokes this read under its existing Task lock, closing check/release races.
+          const released = releaseSprintCommand({ claimId: work.claim_id }, { ...deps, coordination: { ...deps.coordination,
+            readLease: taskId => {
+              const live = deps.coordination.readLease(taskId);
+              const lease = live.record;
+              if (live.classification === 'unknown' || taskId !== work.task_id || !lease
+                || lease.claim_id !== work.claim_id || lease.generation !== work.generation || lease.state !== 'bound'
+                || lease.execution_worktree !== work.worktree_path || lease.branch !== work.branch || lease.unit_ref !== work.unit_ref) {
+                throw new Error('own Lease no longer matches the exact acquired handoff');
+              }
+              const actor = readClaimActorReceipt(root, work.task_id, work.claim_id);
+              if (!actor || canonicalMessageBytes({ ...actor }) !== canonicalMessageBytes({ ...result.receipt })
+                || actor.repository_id !== principal.repository_id || actor.engineer_id !== principal.engineer_id
+                || actor.binding_id !== principal.binding_id || actor.binding_generation !== principal.binding_generation
+                || actor.engineer_contract_revision !== principal.engineer_contract_revision || actor.lease_generation !== work.generation) {
+                throw new Error('own ClaimActor proof no longer matches the authenticated acquisition');
+              }
+              return live;
+            },
+          } });
+          if (released.exitCode !== 0) throw new Error(released.stderr || released.stdout);
         } catch (rollbackError) {
           return { ok: false, error: 'rollback_failed', message: `${message}; own-claim release failed: ${String(rollbackError)}; residual worktree: ${work.worktree_path}` };
         }
@@ -211,7 +240,7 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
     const result = acquire(acquisitionOptions);
     if (result.ok && !acceptedFresh) throw new CampaignPlanningError('human_attention_required', 'unbudgeted acquisition replay requires reconciliation');
     return result;
-  });
+  }, ports);
   if ('admission_busy' in acquired) return { action: 'idle' as const, reason: 'campaign acquisition admission lock is occupied' };
   if (!acquired.ok) {
     const fleet = acquired.error === 'fleet_acquire_failed' ? acquired.fleet : undefined;
@@ -219,7 +248,7 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
     return acquired;
   }
   // A replay may already be running in a worker; reject stale authority without releasing it.
-  if (!acceptedFresh) validateHandoff(acquired);
+  validateHandoff(acquired);
   return {
     action: 'dispatch' as const, envelope: acquired.envelope, receipt: acquired.receipt,
     worker_handoff: createCampaignWorkerHandoff(input, acquired),

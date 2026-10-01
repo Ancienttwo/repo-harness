@@ -527,6 +527,19 @@ describe('restricted Engineer MCP tools', () => {
       structuredContent: { error: { code: 'INVALID_ARGUMENT', message: 'dependency_revision is required' } },
     });
 
+    const ledgerDirectory = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/engineer-scheduling/v1/acquire-next');
+    mkdirSync(ledgerDirectory, { recursive: true });
+    const oldRecord = join(ledgerDirectory, `${'0'.repeat(64)}.json`);
+    writeFileSync(oldRecord, '{}');
+    const beforeCutover = coordinationState(repoRoot);
+    expect(await callMcpTool(context, 'engineer_acquire_next', { ...fences, idempotency_key: 'cutover-required' })).toMatchObject({
+      isError: true, structuredContent: { error: { code: 'engineer_acquisition_ledger_cutover_required' } },
+    });
+    expect(coordinationState(repoRoot)).toEqual(beforeCutover);
+    expect(readFileSync(oldRecord, 'utf8')).toBe('{}');
+    expect(existsSync(join(ledgerDirectory, 'cutover-v2.json'))).toBeFalse();
+    unlinkSync(oldRecord);
+
     // Fixture cutover initialization is separate from the idle poll whose side effects are measured.
     requireAcquisitionLedgerV2(repoRoot);
     const before = coordinationState(repoRoot);

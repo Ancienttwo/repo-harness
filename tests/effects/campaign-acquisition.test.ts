@@ -3,12 +3,13 @@ import { execFileSync } from 'child_process';
 import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { historicalPlanningFixture, installHistoricalBoundDispatch } from '../helpers/historical-campaign-lifecycle';
-import { runCampaignAcquisition, budgetedAcquisition, inspectCampaignAcquisitionCutover, migrateCampaignAcquisitionReceipts, type CampaignAcquisitionTransactionPorts } from '../../src/effects/automation/campaign-acquisition';
+import { runCampaignAcquisition, campaignAcquisitionPolicyR2, budgetedAcquisition, inspectCampaignAcquisitionCutover, migrateCampaignAcquisitionReceipts, type CampaignAcquisitionTransactionPorts } from '../../src/effects/automation/campaign-acquisition';
 import { withCampaignCapacity } from '../../src/effects/automation/campaign-capacity';
 import { ensureCampaignAuthoringBudget, readAutomationBudgetStatus } from '../../src/effects/automation/budget-store';
 import { requireCampaignPlanningAuthority } from '../../src/effects/automation/campaign-planning-proof';
-import { readLease } from '../../src/effects/state/coordination-lease-store';
+import { leaseOwnerPath, readLease, withTaskLock, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveEngineerPrincipal } from '../../src/effects/engineers/principal';
+import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
 import { collectEngineerOffers } from '../../src/effects/engineers/scheduling';
 import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquireNextScheduledEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
 import { canonicalMessageDigest } from '../../src/core/messages/mechanics';
@@ -131,15 +132,13 @@ test('S2 outer identity conflicts before reserve/invoke; completed replay does n
   const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
   migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:quiesced'});
   const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
-  const base:AcquireNextScheduledEngineerTaskOptions={repo_root:f.root,principal,idempotency_key:'inner',session_id:'parent',
-    filters:{task_ids:['a'.repeat(64)]},admission_policy:{policy_id:'engineer/campaign',policy_revision:'R1',scope:{
-      campaign_id:f.intent.campaign_id,group_number:f.intent.group_number,intent_sha256:f.intent.intent_sha256,
-      manifest_sha256:'sha256:'+'a'.repeat(64),authorization_revision:f.authorization.authorization_sha256,parent_host:'codex',parent_session:'parent',
-    }},accept_acquired:()=>{}};
+  const base:AcquireNextScheduledEngineerTaskOptions={repo_root:f.root,principal,idempotency_key:'inner',session_id:f.executeInput.session_id,
+    filters:{task_ids:['a'.repeat(64)]},admission_policy:campaignAcquisitionPolicyR2(f.executeInput,f.intent,requireCampaignPlanningAuthority(f.root,f.intent,f.env)),
+    before_acquire:()=>{},accept_acquired:()=>{}};
   const request=buildAcquisitionRequestIdentity(base);
   let reserves=0,effects=0;const settled=new Set<string>();
   const ports:Partial<CampaignAcquisitionTransactionPorts>={
-    readAuthority:()=>({policy:{mode:'active'},grant:f.authorization}) as any,
+    readAuthority:()=>requireCampaignPlanningAuthority(f.root,f.intent,f.env),
     ensureBudget:()=>({budget:{automation_run_id:'test-run',budget_sha256:'sha256:'+'b'.repeat(64)}}) as any,
     reserveBudget:input=>{reserves++;return {idempotency_key:input.idempotency_key,reservation_sha256:'sha256:'+'c'.repeat(64)} as any;},
     appendUsage:input=>{settled.add(input.reservation.reservation_sha256);return {} as any;},
@@ -150,6 +149,21 @@ test('S2 outer identity conflicts before reserve/invoke; completed replay does n
   expect(budgetedAcquisition(f.executeInput,f.intent,request,invoke,ports)).toEqual(result);
   expect(budgetedAcquisition(f.executeInput,f.intent,request,invoke,ports)).toEqual(result);
   expect(reserves).toBe(1);expect(effects).toBe(1);expect(settled.size).toBe(1);
+  // Exact historical protocol-2 R1 metadata, with no new schema reader/migration.
+  const legacyRequest={...request,policy:{...request.policy,policy_revision:'R1',scope:{...request.policy.scope!,authorization_revision:f.authorization.authorization_sha256}}};
+  const oldInput={...f.executeInput,idempotency_key:'r1-completed'};
+  const oldCursor=canonicalMessageDigest({operation:'campaign-acquisition-budget',intent_sha256:f.intent.intent_sha256,key:oldInput.idempotency_key});
+  withCampaignPlanningLock(f.root,f.intent,()=>{
+    persistPlanningRecord(f.root,f.intent,canonicalMessageDigest({cursor:oldCursor,part:'admission'}).slice(7),{
+      protocol:2,kind:'repo-harness-campaign-acquisition-admission',request:legacyRequest,reservation:{idempotency_key:oldCursor},
+    });
+    persistPlanningRecord(f.root,f.intent,canonicalMessageDigest({cursor:oldCursor,part:'result'}).slice(7),{
+      protocol:2,kind:'repo-harness-campaign-acquisition-result',request_sha256:canonicalMessageDigest({...legacyRequest}),result,
+    });
+  });
+  expect(()=>budgetedAcquisition(oldInput,f.intent,request,invoke,ports)).toThrow('different authenticated request');
+  expect(reserves).toBe(1);expect(effects).toBe(1);expect(settled.size).toBe(1);
+
   for(const changed of [{...request,session_id:'other'}, {...request,operation:'selected' as const,observation_ref:'sha256:'+'d'.repeat(64),assertion:{} as any,filters:null,max_selection_attempts:null},
     {...request,policy:{...request.policy,scope:{...request.policy.scope!,manifest_sha256:'sha256:'+'f'.repeat(64)}}}]) {
     expect(()=>budgetedAcquisition(f.executeInput,f.intent,changed,invoke,ports)).toThrow('different authenticated request');
@@ -171,9 +185,10 @@ test('S2 outer unresolved effect and missing-result persistence never invoke twi
   const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
   migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:quiesced'});
   const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
-  const request=buildAcquisitionRequestIdentity({repo_root:f.root,principal,idempotency_key:'inner'});
+  const request=buildAcquisitionRequestIdentity({repo_root:f.root,principal,idempotency_key:'inner',session_id:f.executeInput.session_id,
+    admission_policy:campaignAcquisitionPolicyR2(f.executeInput,f.intent,requireCampaignPlanningAuthority(f.root,f.intent,f.env)),before_acquire:()=>{},accept_acquired:()=>{}});
   let effects=0,reserves=0,usage=0;
-  const ports:Partial<CampaignAcquisitionTransactionPorts>={readAuthority:()=>({policy:{mode:'active'},grant:f.authorization}) as any,
+  const ports:Partial<CampaignAcquisitionTransactionPorts>={readAuthority:()=>requireCampaignPlanningAuthority(f.root,f.intent,f.env),
     ensureBudget:()=>({budget:{automation_run_id:'test-run',budget_sha256:'sha256:'+'b'.repeat(64)}}) as any,
     reserveBudget:input=>{reserves++;return {idempotency_key:input.idempotency_key} as any;},appendUsage:()=>{usage++;return {} as any;},requireInnerAdmission:()=>{}};
   expect(()=>budgetedAcquisition(f.executeInput,f.intent,request,()=>{effects++;throw Error('effect outcome unknown');},ports)).toThrow('effect outcome unknown');
@@ -218,10 +233,114 @@ test.each(['completed','pending'] as const)('S2 legacy outer %s is fenced or sto
   if(state==='pending')expect(migrate).toThrow('unresolved');else {expect(migrate().fenced_admissions).toContain(admissionKey);expect(migrate().fenced_admissions).toContain(admissionKey);}
   expect(JSON.stringify(readPlanningRecord(f.root,f.intent,admissionKey))).toBe(JSON.stringify(original));
   let mutations=0;
-  const request=buildAcquisitionRequestIdentity({repo_root:f.root,principal,idempotency_key:'inner'});
+  const request=buildAcquisitionRequestIdentity({repo_root:f.root,principal,idempotency_key:'inner',session_id:f.executeInput.session_id,
+    admission_policy:campaignAcquisitionPolicyR2(f.executeInput,f.intent,requireCampaignPlanningAuthority(f.root,f.intent,f.env)),before_acquire:()=>{},accept_acquired:()=>{}});
   expect(()=>budgetedAcquisition(f.executeInput,f.intent,request,()=>{mutations++;throw Error('must not invoke');},{
-    readAuthority:()=>({policy:{mode:'active'},grant:f.authorization}) as any,
+    readAuthority:()=>requireCampaignPlanningAuthority(f.root,f.intent,f.env),
     reserveBudget:()=>{mutations++;throw Error('must not reserve');},ensureBudget:()=>{mutations++;throw Error('must not initialize budget');},
   })).toThrow(state==='pending'?'cutover':'fenced');
   expect(mutations).toBe(0);
 });
+
+
+async function s3Fixture() {
+  const f=await historicalPlanningFixture(false,false,undefined,true,{},false,false,true);
+  roots.push(f.root,f.home);
+  const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
+  migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:old-producers-retired'});
+  const authority=requireCampaignPlanningAuthority(f.root,f.intent,f.env);
+  const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
+  const offer=collectEngineerOffers({repo_root:f.root,principal,env:f.env}).offers[0]!;
+  expect(offer).toBeDefined();
+  return {...f,authority,principal,offer};
+}
+
+test('S3 owner rejects an otherwise ready Task outside the current intent before A',async()=>{
+  const f=await s3Fixture();let calls=0;
+  // A trusted authority fixture supplies another group's collection; no transport can do so.
+  const otherGroup={...f.authority,manifest:{...f.authority.manifest,slots:[]}};
+  expect(()=>runCampaignAcquisition(f.executeInput,options=>{
+    options.before_acquire!(f.offer); calls++; throw Error('off-manifest A must not run');
+  },{readAuthority:()=>otherGroup})).toThrow('does not belong to this campaign intent');
+  expect(calls).toBe(0);expect(readLease(f.root,f.offer.task_id).record).toBeNull();
+},60000);
+
+test('S3 policy context drift is refused before outer budget reservation',async()=>{
+  const f=await s3Fixture();let reads=0,budget=0,calls=0;
+  const changed: typeof f.authority={...f.authority,policy:{...f.authority.policy,limits:{...f.authority.policy.limits,maximum_parallel_tasks:f.authority.policy.limits.maximum_parallel_tasks===1?2:1}}};
+  expect(()=>runCampaignAcquisition(f.executeInput,()=>{calls++;throw Error('A must not run');},{
+    readAuthority:()=>++reads===1?f.authority:changed,
+    ensureBudget:()=>{budget++;throw Error('must not initialize budget');},
+    reserveBudget:()=>{budget++;throw Error('must not reserve');},
+  })).toThrow('owner context changed');
+  expect([budget,calls]).toEqual([0,0]);expect(readLease(f.root,f.offer.task_id).record).toBeNull();
+},60000);
+
+test('S3 owner rechecks manifest after reservation before invoking unchanged A',async()=>{
+  const f=await s3Fixture();let changed=false,calls=0;
+  expect(()=>runCampaignAcquisition(f.executeInput,options=>{
+    changed=true;options.before_acquire!(f.offer);calls++;throw Error('A must not run');
+  },{readAuthority:()=>changed?{...f.authority,manifest:{...f.authority.manifest,slots:[]}}:f.authority})).toThrow('owner context changed');
+  expect(calls).toBe(0);expect(readLease(f.root,f.offer.task_id).record).toBeNull();
+  // Reservation/admission already exists: do not execute a second transaction to guess its outcome.
+  expect(()=>runCampaignAcquisition(f.executeInput,()=>{calls++;throw Error('must not retry');})).toThrow('reconciliation');
+  expect(calls).toBe(0);
+},60000);
+
+test('S3 real canonical manifest drift after claim compensates only its exact own Lease',async()=>{
+  const f=await s3Fixture();let claims=0;
+  const result=runCampaignAcquisition(f.executeInput,options=>acquireNextScheduledEngineerTask({...options,dependencies:{
+    acquire:input=>{
+      const acquired=acquireScheduledEngineerTask(input);
+      if(!acquired.ok)throw Error('expected real claim');
+      claims++;roots.push(acquired.envelope.worktree_path);
+      const path=join(f.root,f.authority.publication.manifest_path);
+      writeFileSync(path,readFileSync(path,'utf8')+'\n');git(f.root,['add',f.authority.publication.manifest_path]);git(f.root,['commit','-qm','fixture canonical manifest drift']);
+      return acquired;
+    },
+  }}));
+  expect(result).toMatchObject({ok:false,error:'claim_actor_receipt_failed'});
+  expect(claims).toBe(1);expect(readLease(f.root,f.offer.task_id).record).toBeNull();
+  expect(()=>runCampaignAcquisition(f.executeInput)).toThrow('canonical adoption manifest differs');
+},60000);
+
+test.each(['rotated','generation','unknown','receipt-mismatch'] as const)('S3 compensation preserves %s Lease evidence after claim',async boundary=>{
+  const f=await s3Fixture();let path='',after='',claims=0;
+  const result=runCampaignAcquisition(f.executeInput,options=>acquireNextScheduledEngineerTask({...options,dependencies:{
+    acquire:input=>{
+      const acquired=acquireScheduledEngineerTask(input);
+      if(!acquired.ok)throw Error('expected real claim');
+      claims++;roots.push(acquired.envelope.worktree_path);
+      path=leaseOwnerPath(f.root,acquired.envelope.task_id);
+      if(boundary==='receipt-mismatch') {
+        after=readFileSync(path,'utf8');
+        return {...acquired,receipt:{...acquired.receipt,binding_generation:acquired.receipt.binding_generation+1}};
+      }
+      withTaskLock(f.root,acquired.envelope.task_id,()=>{
+        const owner=readLease(f.root,acquired.envelope.task_id).record!;
+        if(boundary==='unknown')writeFileSync(path,'unknown owner bytes');
+        else writeLeaseOwnerDurably(f.root,owner.task_id,{...owner,generation:owner.generation+1,
+          ...(boundary==='rotated'?{claim_id:'99999999-9999-4999-8999-999999999999'}:{})});
+      });
+      after=readFileSync(path,'utf8');return acquired;
+    },
+  }}));
+  expect(result).toMatchObject({ok:false,error:'rollback_failed'});
+  expect(claims).toBe(1);expect(readFileSync(path,'utf8')).toBe(after);
+  expect(readLease(f.root,f.offer.task_id).classification).toBe(boundary==='unknown'?'unknown':'bound');
+  // Completed failed compensation is replayed without another A; it cannot clean foreign/unknown evidence.
+  let retried=0;
+  expect(runCampaignAcquisition(f.executeInput,()=>{retried++;throw Error('must not invoke');})).toEqual(result);
+  expect(retried).toBe(0);expect(readFileSync(path,'utf8')).toBe(after);
+},60000);
+
+
+test('S3 context drift after envelope validation is compensated before inner completion',async()=>{
+  const f=await s3Fixture();let reads=0,claims=0;
+  const changed:typeof f.authority={...f.authority,policy:{...f.authority.policy,limits:{...f.authority.policy.limits,maximum_parallel_tasks:f.authority.policy.limits.maximum_parallel_tasks===1?2:1}}};
+  const result=runCampaignAcquisition(f.executeInput,options=>acquireNextScheduledEngineerTask({...options,dependencies:{
+    acquire:input=>{const acquired=acquireScheduledEngineerTask(input);if(!acquired.ok)throw Error('expected real claim');claims++;roots.push(acquired.envelope.worktree_path);return acquired;},
+  }}),{readAuthority:()=>++reads>=5?changed:f.authority});
+  expect(result).toMatchObject({ok:false,error:'claim_actor_receipt_failed'});
+  expect(reads).toBe(5);expect(claims).toBe(1);expect(readLease(f.root,f.offer.task_id).record).toBeNull();
+},60000);
