@@ -20,6 +20,7 @@ import {
   type RepoHarnessRegisteredRepo,
 } from '../../effects/repo-registry';
 import { globMatches, isPathInside } from './paths';
+import { cleanupTaskWorktree } from '../../effects/terminal/task-session';
 
 export type CodingWorkspaceMode = 'checkout' | 'worktree';
 
@@ -646,11 +647,11 @@ export function listManagedCodingWorkspaces(env: NodeJS.ProcessEnv = process.env
   });
 }
 
-export function cleanupManagedCodingWorkspace(
+export async function cleanupManagedCodingWorkspace(
   workspaceId: string,
   env: NodeJS.ProcessEnv = process.env,
   options: { targetRef?: string } = {},
-): { workspace_id: string; removed: true; branch: string; integration_target_ref: string; merge_mode: Exclude<WorktreeMergeMode, 'unmerged'> } {
+): Promise<{ workspace_id: string; removed: true; branch: string; integration_target_ref: string; merge_mode: Exclude<WorktreeMergeMode, 'unmerged'> }> {
   const state = stateFile(env);
   const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
   if (!workspace || !workspace.managed) throw new CodingWorkspaceError('WORKSPACE_NOT_FOUND', 'managed workspace is unknown', { workspace_id: workspaceId });
@@ -668,9 +669,31 @@ export function cleanupManagedCodingWorkspace(
       integration_target_ref: targetRef,
     });
   }
+  // Git publication fences precede runtime cleanup; pending retains every Git/state artifact.
+  try {
+    const runtime = await cleanupTaskWorktree(workspace.sourceRoot, workspace.root);
+    if (runtime.status === 'cleanup_pending') throw new CodingWorkspaceError('RUNTIME_CLEANUP_PENDING', 'runtime cleanup incomplete', {
+      workspace_id: workspaceId, reason: runtime.reason, pids: runtime.pids,
+    });
+  } catch (error) {
+    if (error instanceof CodingWorkspaceError) throw error;
+    throw new CodingWorkspaceError('RUNTIME_CLEANUP_PENDING', `runtime cleanup incomplete: ${String(error)}`, { workspace_id: workspaceId });
+  }
+  const currentState = stateFile(env);
+  const currentWorkspace = currentState.workspaces.find(entry => entry.id === workspaceId);
+  if (!currentWorkspace || currentWorkspace.root !== workspace.root || currentWorkspace.sourceRoot !== workspace.sourceRoot
+    || currentWorkspace.branch !== workspace.branch || currentWorkspace.managed !== workspace.managed
+    || currentWorkspace.integrationTargetRef !== workspace.integrationTargetRef) {
+    throw new CodingWorkspaceError('WORKSPACE_IDENTITY_CHANGED', 'MCP workspace identity changed during runtime cleanup', { workspace_id: workspaceId });
+  }
+  // Shutdown crosses an async boundary. Publication identities must still match.
+  if (git(workspace.sourceRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]) !== targetCommit
+    || workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch).branchCommit !== branchCommit) {
+    throw new CodingWorkspaceError('WORKTREE_REVISION_CHANGED', 'workspace or target changed during runtime cleanup', { workspace_id: workspaceId });
+  }
   if (existsSync(workspace.root)) git(workspace.sourceRoot, ['worktree', 'remove', workspace.root]);
   deleteCodingWorkspaceBranchAtSnapshot(workspace.sourceRoot, branchRef, branchCommit, targetRef, targetCommit);
-  state.workspaces = state.workspaces.filter((entry) => entry.id !== workspaceId);
+  state.workspaces = currentState.workspaces.filter((entry) => entry.id !== workspaceId);
   writeState(env, state);
   if (existsSync(workspace.root)) rmSync(workspace.root, { recursive: true, force: true });
   return {

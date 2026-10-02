@@ -15,14 +15,20 @@ import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
-import { PROFILE_COMPONENTS, managedInstallSurfaceIsCurrent, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
+import {
+  PROFILE_COMPONENTS,
+  managedInstallSurfaceIsCurrent,
+  readInstalledProfile,
+  recordVerifiedAgentFleetOwnership,
+  type InstallProfile,
+} from "../installer/install-profile";
 import {
   parseSkillSurfaceCatalog,
   requiredExplicitExternalDependencyInstallGroups,
   requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
-import { archctxCapabilities } from "../../effects/architecture/archctx-provider";
+import { archctxCapabilities, verifyArchctxDaemonRuntime } from "../../effects/architecture/archctx-provider";
 import {
   discoverWindowsProtectedHelperContract,
   resolveProtectedHelperPlatform,
@@ -172,7 +178,6 @@ function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: st
   const activePath = env?.PATH ?? process.env.PATH ?? "";
   return {
     ...(env ?? process.env),
-    REPO_HARNESS_BUN_EXECUTABLE: bunExecutable,
     PATH: [dirname(bunExecutable), activePath].filter(Boolean).join(delimiter),
   };
 }
@@ -464,17 +469,18 @@ function readManagedRuntime(
   }
 
   try {
-    archctxCapabilities(cwd, {
+    const providerOptions = {
       consumerRoot: globalPackageRoot,
       env,
       policy: {
-        provider: "archctx",
-        applyMode: "manual",
-        failureGate: "advisory",
+        provider: "archctx" as const,
+        applyMode: "manual" as const,
+        failureGate: "advisory" as const,
         requiredVersion: String(dependencies.archctx),
         timeoutMs: 10_000,
       },
-    });
+    };
+    archctxCapabilities(cwd, providerOptions);
   } catch (error) {
     return { status: "runtime-mismatch", detail: error instanceof Error ? error.message : String(error) };
   }
@@ -522,6 +528,22 @@ function reconcileManagedRuntime(
   };
 }
 
+function inspectManagedDaemonRuntime(cwd: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  try {
+    const consumerRoot = bunGlobalPackageRoot(env);
+    if (!consumerRoot) throw new Error('unable to resolve Bun global package root');
+    const requiredVersion = recordValue(readPackageManifest(consumerRoot).dependencies).archctx;
+    if (typeof requiredVersion !== 'string') throw new Error('managed archctx dependency version is unavailable');
+    verifyArchctxDaemonRuntime(cwd, {
+      consumerRoot, env,
+      policy: { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion, timeoutMs: 10_000 },
+    });
+    return { step: 'check shared ArchContext daemon', status: 'ok', detail: 'daemon is compatible or cleanly stopped' };
+  } catch (error) {
+    return { step: 'check shared ArchContext daemon', status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function verifyInstalledManagedRuntime(
   opts: Pick<GlobalRuntimeOptions, 'sourceRoot' | 'cwd' | 'env'> = {},
 ): GlobalRuntimeStep {
@@ -533,7 +555,10 @@ export function verifyInstalledManagedRuntime(
   const cwd = opts.cwd ?? process.cwd();
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
-  return reconcileManagedRuntime(cwd, bunExecutable, env, `repo-harness@${version}`);
+  const packages = reconcileManagedRuntime(cwd, bunExecutable, env, `repo-harness@${version}`);
+  if (packages.status !== 'ok') return packages;
+  const daemon = inspectManagedDaemonRuntime(cwd, env);
+  return daemon.status === 'failed' ? { ...packages, status: 'failed', detail: daemon.detail } : packages;
 }
 
 function isBunGlobalPackageSource(sourceRoot: string, env?: NodeJS.ProcessEnv): boolean {
@@ -766,12 +791,32 @@ function reconcileWithInstalledCandidate(
   }
 }
 
-function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+const AGENT_FLEET_STEP = 'install agent fleet';
+
+function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
   if (!existsSync(script)) {
-    return { step: 'install agent fleet', status: 'failed', detail: `script not found: ${script}` };
+    return { step: AGENT_FLEET_STEP, status: 'failed', detail: `script not found: ${script}` };
   }
-  return withStepName(runProcess('bash', [script], sourceRoot, env), 'install agent fleet');
+  return withStepName(
+    runProcess('bash', [script], sourceRoot, { ...env, REPO_HARNESS_BUN_BIN: bunExecutable }),
+    AGENT_FLEET_STEP,
+  );
+}
+
+/** True only when this run's fleet helper verified every agent target (see applyInstallProfile). */
+export function agentFleetVerified(result: Pick<GlobalRuntimeResult, 'steps'>): boolean {
+  return result.steps.some((step) => step.step === AGENT_FLEET_STEP && step.status === 'ok');
+}
+
+function recordAgentFleetOwnership(profile: InstallProfile, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const step = 'record agent fleet ownership';
+  try {
+    recordVerifiedAgentFleetOwnership(profile, env);
+    return { step, status: 'ok' };
+  } catch (error) {
+    return { step, status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function externalSkillStepName(provider: string): string {
@@ -1417,6 +1462,16 @@ export function runGlobalRuntimeSetup(
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
 
+  if (updateMode && opts.installSpec) {
+    const daemon = inspectManagedDaemonRuntime(cwd, env);
+    // Package installation succeeded. Shared-daemon maintenance must not roll
+    // that candidate back and strand hoisted dependencies at a newer version.
+    // The strict installed-runtime verifier above still fails on this state.
+    steps.push(daemon.status === 'failed'
+      ? { ...daemon, status: 'skipped', detail: `Daemon readiness pending; verified packages retained. ${daemon.detail}` }
+      : daemon);
+  }
+
   // The updater that installed the package has already loaded predecessor
   // modules. Once dependency readback succeeds, only the candidate's absolute
   // entrypoint may write managed runtime surfaces.
@@ -1438,8 +1493,9 @@ export function runGlobalRuntimeSetup(
   if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
 
-  if (profile === 'full') steps.push(installAgentFleet(sourceRoot, env));
-  else steps.push({ step: 'install agent fleet', status: 'skipped', detail: 'disabled by install profile' });
+  if (profile === 'full') steps.push(installAgentFleet(sourceRoot, bunExecutable, env));
+  else steps.push({ step: AGENT_FLEET_STEP, status: 'skipped', detail: 'disabled by install profile' });
+  if (updateMode && agentFleetVerified({ steps })) steps.push(recordAgentFleetOwnership(profile, env));
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {

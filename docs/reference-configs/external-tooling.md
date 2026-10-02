@@ -97,8 +97,7 @@ Codex/Claude hook adapters, Waza (`think`, `hunt`, `check`, `health`), brain
 root persistence, Mermaid, and CodeGraph CLI/MCP configuration.
 `repo-harness init` remains a compatibility alias for existing automation. The
 bootstrap path must not silently install unrelated toolchains or Claude
-marketplace plugins. The one explicit exception is OpenAI's official
-`codex@openai-codex` plugin for the Codex-host outside-review capability.
+marketplace plugins. User-managed plugins remain outside repo-harness installation.
 
 `repo-harness uninstall --dry-run` previews user-level cleanup without writing
 configuration, locks or receipts. `repo-harness uninstall` applies it; `--json`
@@ -148,24 +147,13 @@ Waza and Mermaid providers remain behind explicit `--with-external-skills`;
 Repo-local workflow refresh stays on `repo-harness init`; `setup check
 --check-updates` remains the read-only advisory surface.
 
-The cross-review skill is **harness-owned** — its routing source lives in
-`assets/skills/repo-harness-cross-review/`. Claude hosts wrap `codex exec` in a
-read-only sandbox. Codex hosts discover and invoke OpenAI's official
-`codex@openai-codex` plugin companion/app-server runtime; they never launch
-Claude as the reviewer and never fall back when the plugin is unavailable.
-Installing that single plugin is therefore a workflow-owned runtime concern,
-not an unrelated toolchain. `repo-harness-cross-review` installs
-host-aware during `repo-harness install`/`init` and explicit external-skill
-refreshes: it installs into **both** `~/.claude/skills` (a Claude session
-asking Codex for an independent review, via its Codex provider mode) and
-`~/.codex/skills` (a Codex session asking Codex through the official plugin,
-via its `codex-plugin` provider mode) for the full profile. Review Gate is not
-enabled. `claude-plan` installs only into
-`~/.codex/skills` (a Codex session using Claude's headless plan mode for a
-plan consult on a mid-execution design fork) and is unaffected by this
-package's host-aware installation. These harness skills ship with the full
-profile (the default for `init`) and provide the peer acceptance gate surface
-for the typed `AcceptanceReceipt`; the review section is projection only.
+The cross-review skill is **harness-owned**; its routing source lives in
+`assets/skills/repo-harness-cross-review/`. Explicit independent review uses
+Codex's read-only provider mode. The full profile installs this skill on both
+hosts; Claude acceptance retains its persistent Herdr domain Result/Receipt.
+Plugin install/discovery/readiness is not a repo-harness runtime dependency;
+user-managed plugins remain untouched. Plan consultation uses persistent
+task-agent collaborators in Herdr. Review Markdown remains projection only.
 
 Reverse Skill is registered from `zhaoxuya520/reverse-skill` as the recommended
 but explicit-only `reverse-skill-router`. It is not part of either install
@@ -517,7 +505,7 @@ Minimal manifest shape:
   "run_id": "20260629T023507Z-aibridge-screenshot",
   "provider": {
     "name": "aibridge",
-    "version": "1.5.0"
+    "version": "1.6.1"
   },
   "subject": {
     "task_type": "unity.ui",
@@ -609,7 +597,7 @@ diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ### CodeGraph
 
 ```bash
-bun add -g @colbymchenry/codegraph@1.5.0 && codegraph sync . && codegraph status .
+bun add -g @colbymchenry/codegraph@1.6.1 && codegraph sync . && codegraph status .
 ```
 
 ## Agent Fleet
@@ -639,23 +627,24 @@ mapping.
 |---|---|---|---|
 | `opus` | `gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 | `sonnet`, `haiku` | `gpt-6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
-| `fable` | `gpt-6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
+| `fable` | `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 
-Five per-agent target overrides are applied after tuple validation, on top of
+Seven per-agent target overrides are applied after tuple validation, on top of
 the family row above, and are the only model/effort remaps in the generator:
-`fast-worker` (`opus`/`medium`) targets `gpt-6-sol` at `medium` reasoning;
-`deep-worker` (`opus`/`high`) targets `gpt-6-sol` at `xhigh` reasoning;
+`explorer` (`sonnet`/`medium`) targets `gpt-6-luna` at `high` reasoning;
+`deep-reasoner` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
+`fast-worker` (`sonnet`/`high`) targets `gpt-6.1-sol` at `medium` reasoning;
+`deep-worker` (`opus`/`high`) targets `gpt-6.1-sol` at `high` reasoning;
 `gatekeeper` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning;
-`root-cause-prover` and `harness-evaluator` (`opus`/`high`) target `gpt-6-sol`
-at `high` reasoning.
-Every other agent's Codex model and effort follow the family row unchanged.
+`root-cause-prover` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
+`harness-evaluator` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning.
 
 `fast-worker`, `deep-worker`, `root-cause-prover`, and `harness-evaluator`
 receive `sandbox_mode = "workspace-write"`; every other role receives
 `sandbox_mode = "read-only"`. Current assignments are explorer
-(`sonnet/high`), deep-reasoner (`opus/xhigh`), fast-worker (`opus/medium`),
+(`sonnet/medium`), deep-reasoner (`opus/xhigh`), fast-worker (`sonnet/high`),
 deep-worker (`opus/high`), gatekeeper (`opus/high`), root-cause-prover
-(`opus/high`), and harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
+(`opus/xhigh`), and harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
 writes to bugfix evidence inside the active contract's allowed paths;
 harness-evaluator runs existing skill/adoption surfaces only when both repo and
 HOME pass the runner's disposable boundary: skills uses `--require-disposable`,
@@ -1030,6 +1019,30 @@ not converted into apply. Pending evidence remains content-bound local runtime
 state after completion; the final acceptance receipt is the resolution authority.
 The readback capability must be present in both the packaged CLI and its daemon;
 installing a new CLI alone does not upgrade a running daemon.
+
+Managed install/update also verifies `daemon status --json` through the same
+exact package-local CLI and compatible Node runtime after static capabilities.
+A running daemon must prove RPC and product-version compatibility; upstream
+`versionUnsupported` diagnostics (including a replaced entrypoint) fail the
+strict installed-runtime verifier with an explicit user-authorization reminder.
+Install/update reports daemon readiness as pending (`skipped`) separately from
+verified package installation, retaining the candidate so a daemon mismatch
+cannot trigger package rollback and strand newer hoisted dependencies.
+An upstream `staleConnection:true` response is unhealthy, not cleanly stopped. A stopped daemon needs no
+replacement and this check never starts it. Upstream status may recover stale
+control files; the check never upgrades the daemon or creates/clears indexes.
+
+Runtime failures with the typed `AC_RUNTIME_VERSION_UNSUPPORTED` code and
+`upgrade-archctx-runtime` action preserve the reminder beyond the ordinary
+300-character process-error preview, including projection/refactor callers.
+The Agent presents the reported discrepancy and asks for user authorization
+before running `daemon upgrade` through the same managed CLI and Node runtime.
+Explain that replacing a shared daemon interrupts other clients. After authorized
+replacement, verify daemon compatibility and inspect this repository's configured
+CodeGraph index. Request authorization to rebuild only when its authoritative
+status reports it missing or stale; verify readiness before retrying the blocked
+operation. CLI upgrade alone does not prove that an index needs rebuilding.
+Never delete the shared database or all repository indexes as recovery.
 If a candidate's exact reason set is only `verified-flow-proof-changed`, use
 `repo-harness architecture-projection reconcile --signal-id <sha256> --json`
 after refreshing the configured CodeGraph index. Reconciliation runs the same

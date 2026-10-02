@@ -90,7 +90,7 @@ interface ChildResult {
 
 // Canonical anti-extras clause injected into every runner-reachable surface (worker
 // prompt here, the Codex delegation advisor hook, subagent start context, and the MCP
-// codex-goal path). Keep the first sentence byte-identical across all sources; a parity
+// task-goal path). Keep the first sentence byte-identical across all sources; a parity
 // test asserts they never drift apart.
 const EXECUTION_BOUNDARY = [
   "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.",
@@ -337,7 +337,14 @@ function parseList(block: string, key: string): string[] {
     if (!inList) continue;
     if (/^\S/.test(line) || /^\s+[a-zA-Z0-9_-]+:/.test(line)) break;
     const match = line.match(/^\s*-\s*(.+)$/);
-    if (match) values.push(match[1].trim().replace(/^["']|["']$/g, ""));
+    if (!match) continue;
+    let value = match[1].trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    // Drop a YAML inline comment: `#` at the start or after whitespace, outside a leading quoted scalar.
+    value = close > 0 ? value.slice(0, close + 1) : value.replace(/(^|\s+)#.*$/, "").trim();
+    value = value.replace(/^["']|["']$/g, "");
+    if (value.length > 0) values.push(value);
   }
   return values;
 }

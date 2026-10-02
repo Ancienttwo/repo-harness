@@ -11,7 +11,7 @@ transaction passes.
 | Profile | Codex hooks | Components and discovery |
 |---|---:|---|
 | `minimal` | 7 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-plan`, `repo-harness-check`, and the repo-owned `obsidian-memory` facade |
-| `full` | 11 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Codex-side `claude-plan`, Waza, and Mermaid |
+| `full` | 11 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
 
 Fresh global installs and adapter-only installs both default to `full`.
 `minimal` is the explicit bounded choice; there is no 5-hook profile.
@@ -34,7 +34,7 @@ CodeGraph CLI/MCP by default. Waza and Mermaid remain mutable third-party
 providers and refresh only with explicit `--with-external-skills`;
 `--no-codegraph` is the bounded CodeGraph opt-out.
 
-Full always projects the package-bundled cross-review and `claude-plan` Skills
+Full always projects the package-bundled cross-review Skill
 required by its provider surfaces. Marketplace Waza and Mermaid are mutable
 third-party providers and are selected only by an explicit install prompt or
 `update --with-external-skills`, independent of the stored profile.

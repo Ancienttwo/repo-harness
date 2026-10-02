@@ -52,7 +52,7 @@ describe('mcp command', () => {
     expect(result.stderr).toContain("unknown command 'missing'");
   }, 30_000);
 
-  test('prepare-goal writes Codex handoff and prints host-native /goal prompt', () => {
+  test('prepare-goal writes task handoff and prints task execution prompt', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-'));
     const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-home-'));
     try {
@@ -75,16 +75,16 @@ describe('mcp command', () => {
         '/tmp/reference-repo',
       ], { REPO_HARNESS_HOME: repoHarnessHome });
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('/goal');
+      expect(result.stdout).toContain('Task execution prompt');
       expect(result.stdout).toContain(`Read: ${join(repoRoot, 'plans/prds/example.prd.md')}`);
       expect(result.stdout).toContain(`Open or use a worktree and complete: ${join(repoRoot, 'plans/sprints/example.sprint.md')}`);
       expect(result.stdout).toContain('After each completed phase, stage the result before continuing.');
       expect(result.stdout).toContain("Use the user's language for status reports unless repo-local instructions require otherwise.");
       expect(result.stdout).not.toContain('阅读：');
       expect(result.stdout).not.toContain('开worktree完整执行');
-      const goalPath = join(repoRoot, '.ai/harness/handoff/codex-goal.md');
+      const goalPath = join(repoRoot, '.ai/harness/handoff/task-goal.md');
       expect(existsSync(goalPath)).toBe(true);
-      expect(readFileSync(goalPath, 'utf-8')).toContain('## Host-native /goal prompt');
+      expect(readFileSync(goalPath, 'utf-8')).toContain('## Task execution prompt');
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(repoHarnessHome, { recursive: true, force: true });
@@ -116,7 +116,7 @@ describe('mcp command', () => {
       const first = runMcp(baseArgs, env);
       expect(first.status).toBe(0);
 
-      const goalPath = join(repoRoot, '.ai/harness/handoff/codex-goal.md');
+      const goalPath = join(repoRoot, '.ai/harness/handoff/task-goal.md');
       const created = readFileSync(goalPath, 'utf-8');
 
       const second = runMcp(baseArgs, env);

@@ -14,8 +14,8 @@ Use this Skill when the user asks to set up, operate, inspect, or continue the r
 This Skill has four modes:
 
 1. Setup mode: configure local MCP server files, ChatGPT guide, or Codex MCP config.
-2. Planning handoff mode: preserve the chain idea -> PRD -> checklist Sprint -> Codex Goal.
-3. Execution mode: local Codex reads `.ai/harness/handoff/codex-goal.md` and executes the referenced checklist Sprint.
+2. Planning handoff mode: preserve the chain idea -> PRD -> checklist Sprint -> Task Goal.
+3. Execution mode: local Codex reads `.ai/harness/handoff/task-goal.md` and executes the referenced checklist Sprint.
 4. Direct coding mode: an explicitly enabled `coding` profile opens a granted repo workspace, retains the 19 workflow/status tools, and adds five guarded coding/process tools without invoking Codex.
 
 ## First Reads
@@ -24,7 +24,7 @@ Before acting, read the repo-local source of truth that matches the mode:
 
 - Setup: `docs/repo-harness-chatgpt-mcp-setup.md`, `.repo-harness/mcp.local.json` if present, and `repo-harness mcp doctor --repo .`.
 - Planning handoff: `docs/spec.md`, `tasks/current.md`, existing `plans/prds/`, existing `plans/sprints/`, and latest `.ai/harness/handoff/`.
-- Execution: `.ai/harness/handoff/codex-goal.md`, the referenced PRD, the referenced Sprint, `tasks/current.md`, and `.ai/harness/handoff/resume.md` when present.
+- Execution: `.ai/harness/handoff/task-goal.md`, the referenced PRD, the referenced Sprint, `tasks/current.md`, and `.ai/harness/handoff/resume.md` when present.
 
 Do not rely on chat history when these files exist.
 
@@ -43,8 +43,8 @@ For execution-ready planning, keep the chain explicit:
 
 1. idea -> PRD: use `write_prd_from_idea`.
 2. PRD -> checklist Sprint: use `write_checklist_sprint`.
-3. Sprint -> Goal: use `prepare_codex_goal_from_sprint` or local `repo-harness mcp prepare-goal`.
-4. Codex execution: use the host-native `/goal` prompt from `.ai/harness/handoff/codex-goal.md`.
+3. Sprint -> Goal: use `prepare_task_goal_from_sprint` or local `repo-harness mcp prepare-goal`.
+4. Codex execution: send the task execution prompt to the explicitly addressed Herdr agent from `.ai/harness/handoff/task-goal.md`.
 
 The local CLI equivalent is:
 
@@ -52,10 +52,9 @@ The local CLI equivalent is:
 repo-harness mcp prepare-goal --repo . --prd <prd-path> --sprint <sprint-path> --reference-repo <optional-reference-repo>
 ```
 
-The generated `/goal` prompt should preserve this shape when absolute paths are useful:
+The generated task execution prompt should preserve this shape when absolute paths are useful:
 
 ```text
-/goal
 Read: <prd-path>
 Open or use a worktree and complete: <sprint-path>
 After each completed phase, stage the result before continuing.
@@ -102,11 +101,11 @@ Never do these through planner, executor, or orchestrator MCP profiles:
 - Do not implement or run a default remote `codex exec` runner.
 - Do not modify `_ref/`, `_ops/`, `.env*`, `.git/`, package lockfiles, or source paths through planner-profile MCP tools.
 
-MCP prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution.
+MCP prepares `.ai/harness/handoff/task-goal.md`; the task owner directs its explicitly addressed Herdr agent.
 
 Coding exception: the user may explicitly run user-scoped setup with `--profile coding --grant-read-write <repo>`. That profile retains the 19 workflow/status tools and adds exactly five direct coding tools: `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`, for 24 tools total. It is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes.
 
-Exception: if the user explicitly enables the local `orchestrator` dev runner setting, MCP may expose `run_agent_goal`. That tool must stay local-only, timeout-bounded, audited, limited to the fixed `.ai/harness/handoff/codex-goal.md`, and limited to user-allowed agents such as `codex` or `claude`. It is not arbitrary shell and must not be exposed through an untrusted tunnel.
+Exception: if the user explicitly enables the local `orchestrator` dev runner setting, MCP may expose `run_agent_goal`. That tool must stay local-only, timeout-bounded, audited, limited to the fixed `.ai/harness/handoff/task-goal.md`, and limited to user-allowed agents such as `codex` or `claude`. It is not arbitrary shell and must not be exposed through an untrusted tunnel.
 
 ## Setup Commands
 
@@ -147,7 +146,7 @@ repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --
 
 ## Execution Checklist
 
-When consuming `.ai/harness/handoff/codex-goal.md`:
+When consuming `.ai/harness/handoff/task-goal.md`:
 
 1. Verify the PRD and Sprint paths exist.
 2. Confirm the Sprint is checklist-shaped and has stage gates.

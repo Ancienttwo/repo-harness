@@ -256,12 +256,12 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       );
     });
 
-    test("full is host-aware: codex additionally gets claude-plan", () => {
+    test("full exposes the same catalog without the retired plan skill", () => {
       const claudeNames = buildDiscoveredSkillSurface(catalog, "full", "claude").map((e) => e.name).sort();
       const codexNames = buildDiscoveredSkillSurface(catalog, "full", "codex").map((e) => e.name).sort();
       expect(claudeNames).not.toContain("claude-plan");
-      expect(codexNames).toContain("claude-plan");
-      expect(codexNames.filter((n) => n !== "claude-plan").sort()).toEqual(claudeNames.sort());
+      expect(codexNames).not.toContain("claude-plan");
+      expect(codexNames).toEqual(claudeNames);
     });
 
     test("full discovers both product and ship while minimal discovers neither", () => {
@@ -527,7 +527,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.excluded_unreachable_count).toBe(12);
     }, 30_000);
 
-    test("host-awareness changes nothing about route scoring for full (claude-plan is not canonical)", () => {
+    test("host-awareness changes nothing about route scoring for full", () => {
       const claudeReport = runProviderEval({
         profile: "full", host: "claude", provider: "stub", reportPath: tmpReportPath("host-claude"), dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
@@ -537,7 +537,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       expect(codexReport.metrics.top1_accuracy).toEqual(claudeReport.metrics.top1_accuracy);
-      expect(codexReport.discovered_surface.map((d) => d.name)).toContain("claude-plan");
+      expect(codexReport.discovered_surface.map((d) => d.name)).not.toContain("claude-plan");
       expect(claudeReport.discovered_surface.map((d) => d.name)).not.toContain("claude-plan");
     }, 30_000);
   });

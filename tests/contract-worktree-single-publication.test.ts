@@ -14,6 +14,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 
+import { copyHelpers } from "./helpers/helper-script-fixture";
+
 const ROOT = join(import.meta.dir, "..");
 const REAL_GIT = Bun.which("git");
 if (!REAL_GIT) throw new Error("git executable is required for contract-worktree publication tests");
@@ -102,10 +104,7 @@ function installFixture(container: string): { primary: string; linked: string } 
     "src/cli",
   ]) mkdirSync(join(primary, dir), { recursive: true });
 
-  for (const helper of ["contract-worktree.sh", "worktree-merge-lib.sh", "archive-workflow.sh"]) {
-    copyFileSync(join(ROOT, "scripts", helper), join(primary, "scripts", helper));
-    chmodSync(join(primary, "scripts", helper), 0o755);
-  }
+  copyHelpers(primary, { linkDependencies: false });
   copyFileSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"), join(primary, ".ai/hooks/lib/workflow-state.sh"));
   writeFileSync(join(primary, "scripts/acceptance-receipt.ts"), "process.exit(0);\n");
   writeFileSync(

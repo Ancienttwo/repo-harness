@@ -448,13 +448,7 @@ describe("check-agent-tooling", () => {
         architecture_diagram: "mermaid",
       });
       expect(report.tools.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
-      expect(report.tools.official_codex_plugin).toMatchObject({
-        status: "present",
-        required: true,
-        plugin_id: "codex@openai-codex",
-        version: "1.0.6",
-        review_gate: "not-enabled-by-repo-harness",
-      });
+      expect(report.tools).not.toHaveProperty("official_codex_plugin");
       expect(report.tools.obsidian_runtime_skills.required_skills).toEqual(["obsidian-markdown", "obsidian-cli"]);
       expect(report.tools.obsidian_runtime_skills.mode).toBe("catalog-dependency-closure");
       expect(report.tools.obsidian_runtime_skills.readiness).toBe("advisory");
@@ -483,31 +477,8 @@ describe("check-agent-tooling", () => {
       expect(textRes.status).toBe(0);
       expect(textRes.stdout.toLowerCase()).not.toContain("gstack");
       expect(textRes.stdout).toContain("Waza [present]");
-      expect(textRes.stdout).toContain("Official Codex plugin [present]");
+      expect(textRes.stdout).not.toContain("Official Codex plugin");
       expect(textRes.stdout).toContain("repo-harness install --target both --with-obsidian-skills");
-    } finally {
-      rmSync(envRoot.root, { recursive: true, force: true });
-    }
-  }, 15000);
-
-  test("reports an enabled but incomplete official plugin as invalid", () => {
-    const envRoot = setupFakeEnvironment("check-agent-tooling-invalid-plugin");
-    try {
-      rmSync(join(envRoot.home, ".claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs"));
-      const result = spawnSync("bash", [SCRIPT, "--host", "codex", "--json"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-        env: {
-          ...process.env,
-          HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
-          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
-        },
-      });
-      expect(result.status).toBe(0);
-      const report = JSON.parse(result.stdout);
-      expect(report.tools.official_codex_plugin.status).toBe("invalid");
-      expect(report.tools.official_codex_plugin.reason).toContain("missing a version, companion, manifest, or review schema");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -1234,7 +1205,7 @@ describe("check-agent-tooling", () => {
           turn_id: "turn-hook-e2e",
           agent_id: "agent-hook-e2e",
           agent_type: "fast-worker",
-          model: "gpt-6-sol",
+          model: "gpt-6.1-sol",
         }),
       });
       expect(hook.exitCode).toBe(0);
@@ -1256,7 +1227,7 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.native_role_routing.observations).toEqual([
         expect.objectContaining({
           agent_type: "fast-worker",
-          observed_model: "gpt-6-sol",
+          observed_model: "gpt-6.1-sol",
           reasoning_effort_status: "configured_unverified",
         }),
       ]);

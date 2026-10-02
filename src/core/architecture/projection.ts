@@ -15,7 +15,7 @@ export const ARCHCTX_CAPABILITIES_VERSION = 'archcontext.capabilities/v1' as con
 export const ARCHITECTURE_REFRESH_SIGNAL_VERSION = 'archcontext.architecture-refresh-signal/v1' as const;
 export const ARCHITECTURE_DOCS_RENDERER_VERSION = 'archcontext.docs-renderer/v4' as const;
 export const ARCHITECTURE_DOCS_LAYOUT_VERSION = 'archcontext.docs-layout/v1' as const;
-export const ARCHCTX_REQUIRED_VERSION = '0.5.12' as const;
+export const ARCHCTX_REQUIRED_VERSION = '0.6.1' as const;
 export const ARCHCTX_REQUIRED_FEATURES = Object.freeze([
   'architecture-docs-renderer-v2',
   'architecture-refresh-signal-v1',
@@ -83,7 +83,7 @@ export interface ProjectionSnapshotV1 extends ProjectionExpectedSnapshotV1 {
   layoutVersion: typeof ARCHITECTURE_DOCS_LAYOUT_VERSION;
   generatedFrom: {
     codeGraphPackage: '@colbymchenry/codegraph';
-    codeGraphVersion: '1.5.0';
+    codeGraphVersion: '1.6.1';
     codeGraphBinaryDigest: Sha256Digest;
     codeGraphStatus: 'ready' | 'unavailable';
   };
@@ -551,7 +551,7 @@ function assertProjectionSnapshot(value: unknown, label: string): void {
   if (snapshot.indexedWorktreeDigest !== null && !isDigest(snapshot.indexedWorktreeDigest)) throw new Error(`${label}.indexedWorktreeDigest invalid`);
   if (snapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || snapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error(`${label} renderer/layout mismatch`);
   const generated = record(snapshot.generatedFrom, `${label}.generatedFrom`);
-  if (generated.codeGraphPackage !== '@colbymchenry/codegraph' || generated.codeGraphVersion !== '1.5.0') throw new Error(`${label}.generatedFrom package/version mismatch`);
+  if (generated.codeGraphPackage !== '@colbymchenry/codegraph' || generated.codeGraphVersion !== '1.6.1') throw new Error(`${label}.generatedFrom package/version mismatch`);
   if (!isDigest(generated.codeGraphBinaryDigest) || (generated.codeGraphStatus !== 'ready' && generated.codeGraphStatus !== 'unavailable')) throw new Error(`${label}.generatedFrom invalid`);
   if (generated.codeGraphStatus === 'ready' && !isDigest(snapshot.indexedWorktreeDigest)) throw new Error(`${label}.indexedWorktreeDigest required when CodeGraph is ready`);
 }

@@ -5,7 +5,7 @@ import { basename, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
-import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
+import { runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 
@@ -176,25 +176,26 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.5.12', 'archctx-contracts': '0.5.12' },
+    dependencies: { archctx: '0.6.1', 'archctx-contracts': '0.6.1' },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
-    version: '0.5.12',
+    version: '0.6.1',
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
-    dependencies: { '@colbymchenry/codegraph': '1.5.0' },
+    dependencies: { '@colbymchenry/codegraph': '1.6.1' },
   }));
   writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.5.12' }));
-  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.5.0' }));
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.6.1' }));
+  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.6.1' }));
   const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
   writeExecutable(join(fakeBin, 'node'), [
     '#!/bin/bash',
     'if [[ "${1:-}" == "--version" ]]; then echo v24.11.0; exit 0; fi',
+    `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" && "\${2:-}" == "daemon" ]]; then printf '%s\\n' '{"schemaVersion":"archcontext.envelope/v1","ok":true,"data":{"running":false}}'; exit 0; fi`,
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
-      package: { name: 'archctx', version: '0.5.12' },
+      package: { name: 'archctx', version: '0.6.1' },
       protocols: {
         projectionRequest: 'archcontext.projection-request/v1',
         projectionResult: 'archcontext.projection-result/v2',
@@ -383,12 +384,55 @@ describe('install command global runtime bootstrap', () => {
       expect(runtimeStep.status).toBe('skipped');
       expect(runtimeStep.command?.[0]).toBe(process.execPath);
       expect(steps.find((step) => step.step === 'install repo-harness CLI')?.status).toBe('skipped');
-      expect(steps.find((step) => step.step === 'official Codex plugin')).toMatchObject({
-        status: 'ok',
-        detail: 'enabled codex@openai-codex version=1.0.6',
-        command: [join(fakeBin, 'claude'), 'plugin', 'list', '--json'],
-      });
+      expect(steps.find((step) => step.step === 'official Codex plugin')).toBeUndefined();
       expect(existsSync(bunLog)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('the agent fleet helper runs on the validated Bun when that executable is not named bun', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-fleet-bun-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    // npm-distributed Bun ships its executable as node_modules/bun/bin/bun.exe.
+    const validatedBun = join(tmp, 'npm', 'node_modules', 'bun', 'bin', 'bun.exe');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(join(validatedBun, '..'), { recursive: true });
+      symlinkSync(process.execPath, validatedBun);
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...sanitizedChildEnv(),
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:/usr/bin:/bin`,
+          REPO_HARNESS_BUN_EXECUTABLE: validatedBun,
+        },
+      });
+
+      expect(result.steps.find((step) => step.step === 'ensure Bun runtime')).toMatchObject({
+        status: 'skipped',
+        command: [validatedBun, '--version'],
+      });
+      const fleet = result.steps.find((step) => step.step === 'install agent fleet');
+      expect(fleet?.status, `${fleet?.stderr ?? ''}${fleet?.stdout ?? ''}`).toBe('ok');
+      expect(existsSync(join(home, '.codex', 'agents', 'fast-worker.toml'))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -645,8 +689,8 @@ exit 0
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
-      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.5.0');
-      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe('updated=1.5.0');
+      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.6.1');
+      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe('updated=1.6.1');
       expect(readFileSync(join(home, '.codex', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -2128,4 +2172,66 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
 
     expect(result).toEqual({ externalSkills: false, codegraph: false });
   });
+});
+
+
+test('managed runtime readback reports stale shared daemon after a successful package handshake', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-daemon-readback-'));
+  try {
+    const home = join(tmp, 'home');
+    const fakeBin = join(tmp, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    setupManagedRuntimeReadback(home, fakeBin);
+    const source = join(tmp, 'source');
+    mkdirSync(source);
+    writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+    const nodePath = join(fakeBin, 'node.fixture-body');
+    const original = readFileSync(nodePath, 'utf8');
+    writeFileSync(nodePath, original.replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.1","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+    const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, env: {
+      ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+      PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath,
+    } });
+    expect(result.status).toBe('failed');
+    expect(result.detail).toContain('received 0.2.3');
+    expect(result.detail).toContain('User authorization required');
+    expect(readFileSync(nodePath, 'utf8')).toContain('"received":"0.2.3"');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+
+
+test('daemon maintenance preserves the verified candidate and hoisted dependencies in an update transaction', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-daemon-maintenance-transaction-'));
+  try {
+    const home = join(tmp, 'home');
+    const fakeBin = join(tmp, 'bin');
+    const source = join(tmp, 'source');
+    mkdirSync(fakeBin, { recursive: true });
+    mkdirSync(source);
+    writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+    setupManagedRuntimeReadback(home, fakeBin, '1.0.0');
+    const globalModules = join(home, '.bun/install/global/node_modules');
+    const harnessManifest = join(globalModules, 'repo-harness/package.json');
+    writeFileSync(harnessManifest, JSON.stringify({ name: 'repo-harness', version: '1.0.0', dependencies: { archctx: '0.2.3', 'archctx-contracts': '0.2.3' } }));
+    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, profile: 'minimal' as const,
+      installCli: false, installSpec: 'repo-harness@9.9.9', updateMode: true,
+      syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+      env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath } };
+    const result = runTransactionalRuntimeRefresh(options, (transactionOptions) => {
+      setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
+      const body = join(fakeBin, 'node.fixture-body');
+      writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.1","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+      return runGlobalRuntimeSetup(transactionOptions);
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.status).toBe('ok');
+    expect(result.steps.find((step) => step.step === 'check shared ArchContext daemon')).toMatchObject({ status: 'skipped', detail: expect.stringContaining('User authorization required') });
+    expect(JSON.parse(readFileSync(harnessManifest, 'utf8')).version).toBe('9.9.9');
+    for (const packageName of ['archctx', 'archctx-contracts']) {
+      expect(JSON.parse(readFileSync(join(globalModules, packageName, 'package.json'), 'utf8')).version)
+        .toBe(JSON.parse(readFileSync(harnessManifest, 'utf8')).dependencies[packageName]);
+    }
+    expect(verifyInstalledManagedRuntime(options).status).toBe('failed');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 });

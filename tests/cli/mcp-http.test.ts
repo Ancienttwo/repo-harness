@@ -1076,6 +1076,7 @@ describe('mcp http transport', () => {
         'engineer_task_reply',
         'engineer_status',
         'engineer_offers',
+        'engineer_prepare',
         'engineer_acquire',
         'engineer_acquire_next',
         'engineer_messages',
@@ -1110,7 +1111,7 @@ describe('mcp http transport', () => {
       const profile = loadEngineerProfile(repoRoot, engineerId);
       // This HTTP reader fixture needs canonical Binding facts, not directory-fsync writer admission.
       const createdAt = new Date().toISOString();
-      const request = { engineer_id: engineerId, idempotency_key: 'http-reply-bind', transition: 'initialize' as const, provider: 'codex-app-thread', provider_thread_id: 'fixture', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision };
+      const request = { engineer_id: engineerId, idempotency_key: 'http-reply-bind', transition: 'initialize' as const, provider: 'herdr-cli-agent', provider_thread_id: 'fixture', host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision, expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null, expected_engineer_contract_revision: profile.engineer_contract_revision };
       const binding = {
         protocol: 1 as const, kind: 'repo-harness-engineer-binding' as const,
         binding_id: randomUUID(), engineer_id: engineerId, binding_generation: 1,

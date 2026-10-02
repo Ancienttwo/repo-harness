@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
@@ -13,6 +13,7 @@ import {
   type EngineerOfferV1,
 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
+import { observeRetryEligibility, projectAttemptCurrent } from '../../src/core/engineers/automation-attempt';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { ExclusiveLockContentionError } from '../../src/effects/locking/exclusive-directory-lock';
 import {
@@ -20,6 +21,7 @@ import {
   type ScheduledEngineerAcquireAssertionV1,
   type ScheduledEngineerAcquireResult,
 } from '../../src/effects/engineers/scheduling-acquire';
+import { prepareEngineerObservation, readEngineerObservation } from '../../src/effects/engineers/scheduling-acquire-next';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
@@ -44,7 +46,7 @@ function principal(): EngineerPrincipalV1 {
   };
 }
 
-function offer(): EngineerOfferV1 {
+function offerCandidate(observedAt?: string, retry?: ReturnType<typeof observeRetryEligibility>, snapshotConsistency = 'stable') {
   const graph = projectWorkGraph(validateWorkGraph({
     protocol: 1,
     kind: 'repo-harness-work-graph',
@@ -71,15 +73,27 @@ function offer(): EngineerOfferV1 {
     engineer: { engineer_id: ENGINEER, capability_id: CAPABILITY, engineer_contract_revision: DIGEST, max_active_claims: 1 },
     binding: { state: 'active', binding_id: BINDING, binding_generation: 2 },
     fleet_offer: {
-      execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
+      execution_readiness: 'execution_ready', snapshot_consistency: snapshotConsistency,
       task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64), offer_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 4,
     },
     dependencies: [],
     concurrency_available: true,
     concurrency_revision: `sha256:${'c'.repeat(64)}`,
-    retry: { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const,
+    retry: retry ?? (observedAt === undefined
+      ? { state: 'eligible', attempt_count: 0, last_outcome: null, next_eligible_at: null, eligible_since: '2026-09-04T00:00:00.000Z', attention_owner: 'none', starvation_attention: false, authority_revision: `sha256:${'9'.repeat(64)}` } as const
+      : observeRetryEligibility({
+        policy: graph.work_packages[0]!.retry_policy,
+        current: null,
+        work_package_revision: graph.work_packages[0]!.work_package_revision,
+        observed_at: observedAt,
+      })),
     active_claims: 0,
   });
+  return candidate;
+}
+
+function offer(observedAt?: string): EngineerOfferV1 {
+  const candidate = offerCandidate(observedAt);
   if (!candidate.eligible) throw new Error('fixture offer is not eligible');
   return candidate.offer;
 }
@@ -133,6 +147,85 @@ afterEach(() => {
 });
 
 describe('ME-1A scheduled Engineer acquire', () => {
+  test('starvation attention changes offer evidence, not eligibility or scheduled admission', () => {
+    const first = offer();
+    const current = projectAttemptCurrent({ repository_id: REPO, work_package_id: first.work_package_id,
+      work_package_revision: first.work_package_revision, policy: first.retry_policy, attempts: [],
+      first_eligible_at: '2026-09-04T00:00:00.000Z' });
+    const observed = ['2026-09-04T00:59:59.999Z', '2026-09-04T01:00:00.000Z'].map(at =>
+      observeRetryEligibility({ policy: first.retry_policy, current, work_package_revision: first.work_package_revision, observed_at: at }));
+    expect(observed.map(retry => [retry.state, retry.starvation_attention, retry.attention_owner]))
+      .toEqual([['eligible', false, 'none'], ['eligible', true, 'operator']]);
+    let acquisitions = 0;
+    const offers = observed.map(retry => {
+      const candidate = offerCandidate(undefined, retry);
+      const doc = buildEngineerOffersDocument({ repository_id: REPO, engineer_id: ENGINEER,
+        lane: 'engineering-v2', work_graph_revision: first.work_graph_revision, candidates: [candidate] });
+      expect(doc.exclusions).toEqual([]);
+      if (!candidate.eligible) throw new Error('attention must not exclude an eligible task');
+      const selected = candidate.offer;
+      const result = acquireScheduledEngineerTask({ repo_root: '/repo', principal: principal(), assertion: assertion(selected),
+        dependencies: { collectOffers: () => doc, withConcurrencyLock: (_root, _key, run) => run(),
+          acquire: () => { acquisitions += 1; return { ok: true, envelope: { repo_id: REPO } as any, receipt: { repository_id: REPO } as any }; } } });
+      expect(result).toMatchObject({ ok: true, offer: { work_package_id: first.work_package_id } });
+      return selected;
+    });
+    expect(acquisitions).toBe(2);
+    expect(offers.map(value => [value.blocker_owner, value.starvation_attention])).toEqual([['none', false], ['operator', true]]);
+    // Metadata remains revision-bound: each admission above uses its own current assertion.
+    expect(offers[0]!.offer_revision).not.toBe(offers[1]!.offer_revision);
+    const changed = offerCandidate(undefined, observed[1], 'changed_during_read');
+    expect(changed).toMatchObject({ eligible: false, exclusion: { blockers: ['fleet_offer_unavailable'] } });
+    let attempted = false;
+    const rejected = acquireScheduledEngineerTask({ repo_root: '/repo', principal: principal(), assertion: assertion(offers[1]!),
+      dependencies: { collectOffers: () => buildEngineerOffersDocument({ repository_id: REPO, engineer_id: ENGINEER,
+        lane: 'engineering-v2', work_graph_revision: first.work_graph_revision, candidates: [changed] }),
+        withConcurrencyLock: (_root, _key, run) => run(), acquire: () => { attempted = true; throw new Error('torn offer must not acquire'); } } });
+    expect(rejected).toMatchObject({ ok: false, error: 'engineer_offer_stale' });
+    expect(attempted).toBeFalse();
+  });
+
+  test('characterization: the first offer becomes stale when only its observation time is resampled', () => {
+    const t1 = '2026-09-30T10:00:00.000Z';
+    const t2 = '2026-09-30T10:00:00.001Z';
+    let observedAt = t1;
+    // The clock is controlled; retry projection and offer digest are production code.
+    const collectOffers = () => document(offer(observedAt));
+    const first = collectOffers().offers[0]!;
+    const selected = assertion(first);
+    observedAt = t2;
+    const resampled = collectOffers().offers[0]!;
+
+    const { eligible_since: firstTime, offer_revision: firstRevision, ...firstAuthority } = first;
+    const { eligible_since: laterTime, offer_revision: laterRevision, ...laterAuthority } = resampled;
+    expect(firstTime).toBe(t1);
+    expect(laterTime).toBe(t2);
+    expect(firstAuthority).toEqual(laterAuthority);
+    expect(firstRevision).not.toBe(laterRevision);
+
+    let mutations = 0;
+    let lockEntries = 0;
+    const result = acquireScheduledEngineerTask({
+      repo_root: '/repo',
+      principal: principal(),
+      assertion: selected,
+      dependencies: {
+        collectOffers,
+        withConcurrencyLock: (_root, _key, run) => { lockEntries += 1; return run(); },
+        acquire: () => { mutations += 1; throw new Error('stale first offer must not acquire'); },
+      },
+    });
+
+    // Expected-stale characterization of the unfixed cross-request behavior, not test.failing.
+    expect(result).toMatchObject({ ok: false, error: 'engineer_offer_stale' });
+    expect(lockEntries).toBe(0);
+    expect(mutations).toBe(0);
+    // S0 design only: a future server observation reference binds principal/Binding,
+    // canonical snapshot digest, observed_at_ms, expires_at_ms and policy revision.
+    // Its proposed 30s freshness applies at new-transaction admission start after
+    // ledger lookup, not at claim time after lock waits. No schema/TTL code is added.
+  });
+
   test('an N-way election on one repository_id:concurrency_key delegates to ME-0B exactly once', async () => {
     const root = gitFixture();
     const current = offer();
@@ -384,4 +477,35 @@ describe('ME-1A scheduled Engineer acquire', () => {
     });
     expect(result).toEqual({ ok: false, error: 'engineer_concurrency_unavailable', message: 'busy' });
   });
+});
+
+
+test('S1 receipt preserves the real first-offer T1 identity at T2 without admission wiring', () => {
+  const root = gitFixture();
+  mkdirSync(join(root, '.ai/harness'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/policy.json'), '{"version":1}');
+  const t1 = Date.parse('2026-09-30T10:00:00.000Z');
+  let now = t1;
+  const input = { repo_root: root, principal: principal(), dependencies: {
+    now: () => now, resolvePrincipal: () => principal(), collectOffers: (input: any) => document(offer(new Date(input.now_ms).toISOString())),
+  } };
+  const prepared = prepareEngineerObservation(input);
+  now += 1;
+  const trusted = readEngineerObservation({ ...input, observation_ref: prepared.observation_ref });
+  const selected = trusted.offers.offers[0]!;
+  expect(offer(new Date(now).toISOString()).offer_revision).not.toBe(selected.offer_revision);
+  let claims = 0;
+  const acquire = (at: number) => acquireScheduledEngineerTask({ repo_root: root, principal: principal(),
+    assertion: assertion(selected), offer_options: { now_ms: at }, dependencies: {
+      collectOffers: (options) => document(offer(new Date(options.now_ms!).toISOString())),
+      withConcurrencyLock: (_root, _key, run) => run(),
+      acquire: () => { claims += 1; return { ok: true, envelope: {} as any, receipt: {} as any }; },
+    },
+  });
+  expect(acquire(now)).toMatchObject({ ok: false, error: 'engineer_offer_stale' });
+  expect(claims).toBe(0);
+  expect(acquire(trusted.observation.observed_at_ms).ok).toBe(true);
+  expect(claims).toBe(1);
+  // Composition only: S1 transports do not call admission. TTL is admission-start freshness,
+  // not an assertion that a claim mutation occurs within 30 seconds after prepare.
 });

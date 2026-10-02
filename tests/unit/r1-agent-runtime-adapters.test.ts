@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import { buildAgentRuntimeEffectIntent, buildAgentRuntimeHostAction } from '../../src/core/engineers/agent-runtime-effect';
-import { executeCodexAppThreadAction } from '../../src/effects/engineers/agent-runtime-adapters/codex-app-thread';
 import { executeHerdrCliAgentAction } from '../../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
 
 const digest = `sha256:${'a'.repeat(64)}`;
@@ -9,7 +8,7 @@ const engineer = 'engineer:capability.verification.evals-checks';
 const binding = '11111111-1111-4111-8111-111111111111';
 const message = '22222222-2222-4222-8222-222222222222';
 
-function action(adapter: 'codex-app-thread' | 'herdr-cli-agent') {
+function action(adapter: 'herdr-cli-agent') {
   return buildAgentRuntimeHostAction(buildAgentRuntimeEffectIntent({
     idempotency_key: `adapter-${adapter}`,
     message_ref: { kind: 'module_message', message_id: message, message_event_digest: digest, engineer_id: engineer, binding_id: binding, binding_generation: 1, engineer_contract_revision: digest, delivery_attempt: 1 },
@@ -44,11 +43,6 @@ describe('R1 closed Agent Runtime adapters', () => {
     expect(JSON.stringify(observation)).not.toContain('secret-message-body');
   });
 
-  test('Codex receives the same control reference and no message body', () => {
-    const hostAction = action('codex-app-thread'); let input: unknown;
-    const observation = executeCodexAppThreadAction(hostAction, (value) => { input = value; return { accepted: true }; });
-    expect(input).toEqual({ host_id: 'local', thread_id: 'opaque-endpoint', operation: 'notify_inbox', control_ref: hostAction.control_ref }); expect(observation.outcome).toBe('accepted');
-  });
 });
 
 test('herdr refuses an implicit session before spawning and bounds a possibly delivered command', () => {

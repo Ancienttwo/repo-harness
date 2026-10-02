@@ -33,17 +33,17 @@ describe('docs command', () => {
     );
   }, 30_000);
 
-  test('resolves and prints bundled runtime docs', () => {
-    const pathResult = runDocs(['path', 'harness-overview']);
+  test.each([['harness-overview', 'Harness Overview'], ['host-invariants', 'Host Invariants']])('resolves and prints bundled runtime doc %s', (id, title) => {
+    const pathResult = runDocs(['path', id]);
     expect(pathResult.status).toBe(0);
     const docPath = pathResult.stdout.trim();
-    expect(docPath.endsWith('assets/reference-configs/harness-overview.md')).toBe(true);
+    expect(docPath.endsWith(`assets/reference-configs/${id}.md`)).toBe(true);
     expect(existsSync(docPath)).toBe(true);
-    expect(readFileSync(docPath, 'utf-8')).toContain('# Harness Overview');
+    expect(readFileSync(docPath, 'utf-8')).toContain(`# ${title}`);
 
-    const showResult = runDocs(['show', 'harness-overview']);
+    const showResult = runDocs(['show', id]);
     expect(showResult.status).toBe(0);
-    expect(showResult.stdout).toContain('# Harness Overview');
+    expect(showResult.stdout).toBe(readFileSync(docPath, 'utf-8').trimEnd() + '\n');
   }, 30_000);
 
   test('returns exit code 2 for unknown docs', () => {

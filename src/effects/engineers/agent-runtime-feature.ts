@@ -18,7 +18,7 @@ export class AgentRuntimePolicyError extends Error {
 const POLICY_PATH = '.ai/harness/policy.json';
 const DISABLED = Object.freeze({
   mode: 'off',
-  adapters: Object.freeze({ 'codex-app-thread': Object.freeze({ enabled: false }), 'herdr-cli-agent': Object.freeze({ enabled: false }) }),
+  adapters: Object.freeze({ 'herdr-cli-agent': Object.freeze({ enabled: false }) }),
 }) satisfies AgentRuntimePolicy;
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -38,17 +38,14 @@ export function readAgentRuntimePolicy(repoRoot: string): AgentRuntimePolicy {
     throw new AgentRuntimePolicyError('agent_runtime_policy_invalid', `${POLICY_PATH}#agent_runtime.mode must be off, shadow, or active`);
   }
   const adapters = object(runtime.adapters);
-  const codex = object(adapters?.['codex-app-thread']);
   const herdr = object(adapters?.['herdr-cli-agent']);
-  if (!adapters || Object.keys(adapters).sort().join(',') !== 'codex-app-thread,herdr-cli-agent'
-    || Object.keys(codex ?? {}).join(',') !== 'enabled' || typeof codex?.enabled !== 'boolean'
+  if (!adapters || Object.keys(adapters).sort().join(',') !== 'herdr-cli-agent'
     || Object.keys(herdr ?? {}).join(',') !== 'enabled' || typeof herdr?.enabled !== 'boolean') {
-    throw new AgentRuntimePolicyError('agent_runtime_policy_invalid', `${POLICY_PATH}#agent_runtime.adapters must contain exact boolean enablement for both adapters`);
+    throw new AgentRuntimePolicyError('agent_runtime_policy_invalid', `${POLICY_PATH}#agent_runtime.adapters must contain exact boolean enablement for Herdr only`);
   }
   return Object.freeze({
     mode: runtime.mode,
     adapters: Object.freeze({
-      'codex-app-thread': Object.freeze({ enabled: codex.enabled }),
       'herdr-cli-agent': Object.freeze({ enabled: herdr.enabled }),
     }),
   });

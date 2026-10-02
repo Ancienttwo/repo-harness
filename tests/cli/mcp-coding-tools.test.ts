@@ -378,12 +378,12 @@ describe('coding MCP workspace and file tools', () => {
       expect(readFileSync(join(workspace.root, 'src/a.txt'), 'utf-8')).toBe('indexed-later\n');
 
       writeFileSync(join(workspace.root, 'src/a.txt'), 'dirty\n');
-      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toThrow(CodingWorkspaceError);
+      await expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).rejects.toThrow(CodingWorkspaceError);
       git(workspace.root, 'add', 'src/a.txt');
       git(workspace.root, 'commit', '-m', 'coding change');
-      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toThrow('unmerged');
+      await expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).rejects.toThrow('unmerged');
       git(state.repo, 'merge', '--ff-only', workspace.branch);
-      expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toMatchObject({ workspace_id: opened.workspace_id, removed: true });
+      expect(await cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toMatchObject({ workspace_id: opened.workspace_id, removed: true });
       expect(listManagedCodingWorkspaces(state.env)).toEqual([]);
     } finally {
       await state.processManager.shutdown();
@@ -426,7 +426,7 @@ describe('coding MCP workspace and file tools', () => {
       expect(git(state.repo, 'merge-base', '--is-ancestor', workspace.branch, 'HEAD')).toBe('');
       expect(spawnSync('git', ['-C', state.repo, 'merge-base', '--is-ancestor', workspace.branch, 'main']).status).not.toBe(0);
 
-      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toThrow('unmerged');
+      await expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).rejects.toThrow('unmerged');
       expect(existsSync(workspace.root)).toBe(true);
       expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).toBe(0);
       expect(listManagedCodingWorkspaces(state.env)).toHaveLength(1);
@@ -448,13 +448,19 @@ describe('coding MCP workspace and file tools', () => {
       git(state.repo, 'commit', '-m', 'squash workspace');
       expect(spawnSync('git', ['-C', state.repo, 'merge-base', '--is-ancestor', workspace.branch, 'main']).status).not.toBe(0);
 
-      expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toMatchObject({
+      const removing = cleanupManagedCodingWorkspace(opened.workspace_id, state.env);
+      const statePath = codingWorkspaceStatePath(state.env);
+      const concurrent = JSON.parse(readFileSync(statePath, 'utf8'));
+      concurrent.workspaces.push({...concurrent.workspaces[0],id:'concurrent-checkout',root:state.repo,mode:'checkout',branch:'main',managed:false});
+      writeFileSync(statePath,JSON.stringify(concurrent));
+      expect(await removing).toMatchObject({
         workspace_id: opened.workspace_id,
         removed: true,
         integration_target_ref: 'refs/heads/main',
         merge_mode: 'absorbed',
       });
       expect(existsSync(workspace.root)).toBe(false);
+      expect(listManagedCodingWorkspaces(state.env).map(row=>row.id)).toEqual(['concurrent-checkout']);
       expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).not.toBe(0);
     } finally {
       await state.processManager.shutdown();
@@ -486,7 +492,7 @@ describe('coding MCP workspace and file tools', () => {
       const workspace = state.manager.get(opened.workspace_id);
       git(state.repo, 'branch', 'other');
 
-      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env, { targetRef: 'other' })).toThrow('does not match');
+      await expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env, { targetRef: 'other' })).rejects.toThrow('does not match');
       expect(existsSync(workspace.root)).toBe(true);
       expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).toBe(0);
       expect(listManagedCodingWorkspaces(state.env)).toHaveLength(1);
@@ -510,11 +516,11 @@ describe('coding MCP workspace and file tools', () => {
       delete persisted.workspaces[0]?.integrationTargetRef;
       writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
 
-      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toThrow('explicit --target');
+      await expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).rejects.toThrow('explicit --target');
       expect(existsSync(workspace.root)).toBe(true);
       expect(listManagedCodingWorkspaces(state.env)[0]?.integrationTargetRef).toBeNull();
 
-      expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env, { targetRef: 'main' })).toMatchObject({
+      expect(await cleanupManagedCodingWorkspace(opened.workspace_id, state.env, { targetRef: 'main' })).toMatchObject({
         workspace_id: opened.workspace_id,
         removed: true,
         integration_target_ref: 'refs/heads/main',

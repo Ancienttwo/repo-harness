@@ -76,12 +76,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(packageManifest.files).toContain("agents/");
     const specs: Array<{ name: string; model: string; effort: string; sandboxMode?: string }> = [
       { name: "explorer", model: "gpt-6-luna", effort: "high", sandboxMode: "read-only" },
-      { name: "deep-reasoner", model: "gpt-6-astra", effort: "xhigh", sandboxMode: "read-only" },
-      { name: "fast-worker", model: "gpt-6-sol", effort: "medium", sandboxMode: "workspace-write" },
-      { name: "deep-worker", model: "gpt-6-sol", effort: "xhigh", sandboxMode: "workspace-write" },
+      { name: "deep-reasoner", model: "gpt-6-astra", effort: "high", sandboxMode: "read-only" },
+      { name: "fast-worker", model: "gpt-6.1-sol", effort: "medium", sandboxMode: "workspace-write" },
+      { name: "deep-worker", model: "gpt-6.1-sol", effort: "high", sandboxMode: "workspace-write" },
       { name: "gatekeeper", model: "gpt-6-astra", effort: "medium", sandboxMode: "read-only" },
-      { name: "root-cause-prover", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
-      { name: "harness-evaluator", model: "gpt-6-sol", effort: "high", sandboxMode: "workspace-write" },
+      { name: "root-cause-prover", model: "gpt-6-astra", effort: "high", sandboxMode: "workspace-write" },
+      { name: "harness-evaluator", model: "gpt-6-astra", effort: "medium", sandboxMode: "workspace-write" },
     ];
 
     for (const spec of specs) {
@@ -497,20 +497,9 @@ describe("Bootstrap Script Contracts", () => {
   // canonical repo-harness-cross-review package's own prose properties:
   // read-only provider boundaries, model/timeout budgets, structured plugin
   // validation, and the no-merge-gate guarantee.
-  test("repo-harness-cross-review documents direct and official-plugin read-only review boundaries", () => {
-    const pluginMode = read("assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md");
+  test("repo-harness-cross-review documents the remaining read-only provider boundaries", () => {
     const codexMode = read("assets/skills/repo-harness-cross-review/references/codex-mode.md");
-
-    expect(pluginMode).toContain("official Claude Code");
-    expect(pluginMode).toContain("claude plugin list --json");
-    expect(pluginMode).toContain("adversarial-review --json");
-    expect(pluginMode).toContain("read-only sandbox");
-    expect(pluginMode).toContain("critical|high -> P1");
-    expect(pluginMode).toContain("repo-harness cross-review --provider codex-plugin");
-    expect(pluginMode).toContain("Review Gate stays disabled");
-    expect(pluginMode).toContain("No merge-gate");
-    expect(pluginMode).toContain("source=codex-plugin");
-
+    expect(existsSync(join(ROOT,"assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md"))).toBe(false);
     expect(codexMode).toContain("read-only reviewer");
     expect(codexMode).toContain("read-only Bash access");
     expect(codexMode).toContain("resolved commit SHA");

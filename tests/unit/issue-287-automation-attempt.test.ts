@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'fs'; import { tmpdir } from 'os'; import { join, resolve } from 'path'; import { execFileSync } from 'child_process';
-import { attemptIdentity, observeRetryEligibility, buildTaskAutomationAttempt, completeTaskAutomationAttempt, validateTaskAutomationAttempt, validateTaskAutomationAttemptCurrent, type TaskAutomationAttemptOutcome } from '../../src/core/engineers/automation-attempt';
+import { attemptIdentity, observeRetryEligibility, buildTaskAutomationAttempt, completeTaskAutomationAttempt, projectAttemptCurrent, validateTaskAutomationAttempt, validateTaskAutomationAttemptCurrent, type TaskAutomationAttemptOutcome } from '../../src/core/engineers/automation-attempt';
 import { buildEngineerOfferCandidate, buildEngineerOffersDocument, validateEngineerOffersDocument, projectWorkGraph, validateWorkGraph, type WorkPackageRetryPolicyV1 } from '../../src/core/engineers/scheduling';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { readTaskAutomationAttemptCurrent, recordTaskAutomationAttemptOutcome, recordTaskAutomationAttemptStart } from '../../src/effects/engineers/automation-attempt-store';
@@ -30,8 +30,17 @@ describe('issue #287 automation attempt authority',()=>{
  }finally{rmSync(repo,{recursive:true,force:true});}});
  test('offer revision binds retry evidence and equal priority orders oldest eligible first',()=>{const definition={work_package_id:'work',task_id:TASK,primary_capability:'capability.runtime.test',depends_on:[],priority:50,concurrency:{scope:'repo',key:'work'},execution_surface:'contract',integration_group:null,required_acceptance:[{gate:'module',policy_id:'p',policy_ref:'plans/p.json',policy_revision:D('7')}],rollback_boundary:{kind:'work_package',boundary_id:'r',boundary_ref:'plans/r.json',boundary_revision:D('8')},retry_policy:policy} as const;
   const graph=projectWorkGraph(validateWorkGraph({protocol:1,kind:'repo-harness-work-graph',repository_id:identity.repository_id,sprint_path:identity.sprint_path,lane:'engineering-v2',work_packages:[definition]}),[{task_id:TASK,task_revision:REV,task_ref:'Task',status:'Pending',row_order:1}]);
-  const make=(eligible:string,revision:string)=>buildEngineerOfferCandidate({graph,work_package:graph.work_packages[0]!,engineer:{engineer_id:identity.engineer_id,capability_id:'capability.runtime.test',engineer_contract_revision:D('4'),max_active_claims:1},binding:{state:'active',binding_id:'33333333-3333-4333-8333-333333333333',binding_generation:1},fleet_offer:{execution_readiness:'execution_ready',snapshot_consistency:'stable',task_id:TASK,task_revision:REV,offer_revision:D('5'),authorization_revision:1},dependencies:[],concurrency_available:true,concurrency_revision:D('6'),active_claims:0,retry:{state:'eligible',attempt_count:1,last_outcome:'transient_failure',next_eligible_at:eligible,eligible_since:eligible,attention_owner:'none',starvation_attention:false,authority_revision:revision}});
+  const make=(eligible:string,revision:string,retry?:ReturnType<typeof observeRetryEligibility>)=>buildEngineerOfferCandidate({graph,work_package:graph.work_packages[0]!,engineer:{engineer_id:identity.engineer_id,capability_id:'capability.runtime.test',engineer_contract_revision:D('4'),max_active_claims:1},binding:{state:'active',binding_id:'33333333-3333-4333-8333-333333333333',binding_generation:1},fleet_offer:{execution_readiness:'execution_ready',snapshot_consistency:'stable',task_id:TASK,task_revision:REV,offer_revision:D('5'),authorization_revision:1},dependencies:[],concurrency_available:true,concurrency_revision:D('6'),active_claims:0,retry:retry??{state:'eligible',attempt_count:1,last_outcome:'transient_failure',next_eligible_at:eligible,eligible_since:eligible,attention_owner:'none',starvation_attention:false,authority_revision:revision}});
   const newer=make('2026-09-04T00:01:00.000Z',D('a'));const older=make('2026-09-04T00:00:00.000Z',D('b'));if(!newer.eligible||!older.eligible)throw new Error('fixture');
+  const started=buildTaskAutomationAttempt({...identity,sequence:1,started_at:startedAt,ended_at:null,outcome:'started',evidence_refs:[],runtime_effect_id:null,previous_attempt_sha256:null});
+  const completed=completeTaskAutomationAttempt(started,{outcome:'transient_failure',ended_at:endedAt,runtime_effect_id:null,evidence_refs:['verification:retry']});
+  const current=projectAttemptCurrent({repository_id:identity.repository_id,work_package_id:'work',work_package_revision:D('c'),policy,attempts:[completed],first_eligible_at:startedAt});
+  const candidates=['2026-09-04T00:00:40.999Z','2026-09-04T00:00:41.000Z'].map(at=>make('unused',D('a'),observeRetryEligibility({policy,current,work_package_revision:D('c'),observed_at:at})));
+  const observed=buildEngineerOffersDocument({repository_id:identity.repository_id,engineer_id:identity.engineer_id,lane:'engineering-v2',work_graph_revision:graph.work_graph_revision,candidates});
+  expect(observed.exclusions).toEqual([]);
+  expect(observed.offers.map(value=>[value.blocker_owner,value.starvation_attention])).toEqual([['none',false],['operator',true]]);
+  const unresolved=projectAttemptCurrent({repository_id:identity.repository_id,work_package_id:'work',work_package_revision:D('c'),policy,attempts:[started],first_eligible_at:startedAt});
+  expect(make('unused',D('a'),observeRetryEligibility({policy,current:unresolved,work_package_revision:D('c'),observed_at:'2026-09-04T00:00:41.000Z'}))).toMatchObject({eligible:false,exclusion:{blockers:['attempt_reconciliation_required']}});
   expect(newer.offer.offer_revision).not.toBe(older.offer.offer_revision);expect(buildEngineerOffersDocument({repository_id:identity.repository_id,engineer_id:identity.engineer_id,lane:'engineering-v2',work_graph_revision:graph.work_graph_revision,candidates:[newer,older]}).offers[0]!.eligible_since).toBe('2026-09-04T00:00:00.000Z');
  });
 });
@@ -154,4 +163,20 @@ test('Engineer exclusions preserve the closed terminal outcome vocabulary', () =
   const { snapshot_revision: _revision, ...basis } = document;
   const unknown = { ...basis, exclusions: [{ ...document.exclusions[0], last_outcome: 'unexpected_outcome' }] };
   expect(() => validateEngineerOffersDocument({ ...unknown, snapshot_revision: engineerSha256(canonicalEngineerJson(unknown)) })).toThrow('last_outcome');
+});
+
+
+test('frozen observation keeps backoff/attention time-indexed but never hides new attempt authority', () => {
+ const repo=root();try {
+  const input=startInput(repo);
+  const first=recordTaskAutomationAttemptStart(input);
+  const completed=recordTaskAutomationAttemptOutcome(outcomeInput(repo,'transient_failure'));
+  const observe=(at:string,current=completed.current)=>observeRetryEligibility({policy,current,work_package_revision:D('c'),observed_at:at});
+  expect(observe('2026-09-04T00:00:10.999Z').state).toBe('retry_backoff');
+  expect(observe('2026-09-04T00:00:11.000Z').state).toBe('eligible');
+  expect(observe('2026-09-04T00:00:40.999Z').starvation_attention).toBeFalse();
+  expect(observe('2026-09-04T00:00:41.000Z').starvation_attention).toBeTrue();
+  expect(observe('2026-09-04T00:00:11.000Z',first.current)).toMatchObject({state:'reconciliation_required'});
+  expect(observe('2026-09-04T00:00:11.000Z',first.current).authority_revision).not.toBe(observe('2026-09-04T00:00:11.000Z').authority_revision);
+ }finally {rmSync(repo,{recursive:true,force:true});}
 });

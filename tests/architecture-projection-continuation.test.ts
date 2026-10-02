@@ -33,13 +33,13 @@ beforeAll(async () => {
   // This exercises expiry without sleeping through the 110-second host slice.
   writeFileSync(parentClock, `import { existsSync } from 'node:fs'; const realNow = Date.now; Date.now = () => realNow() + (existsSync(process.env.CONTINUATION_TEST_YIELD_MARKER!) ? 200000 : 0);`);
   mkdirSync(join(provider, 'bin'), { recursive: true });
-  writeFileSync(join(provider, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.5.12', type: 'module', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/provider.mjs' } }));
+  writeFileSync(join(provider, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.6.1', type: 'module', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/provider.mjs' } }));
   writeFileSync(join(provider, 'bin/provider.mjs'), `
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
- console.log(JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.5.12' },
+ console.log(JSON.stringify({ schemaVersion: 'archcontext.capabilities/v1', package: { name: 'archctx', version: '0.6.1' },
  protocols: { projectionRequest: 'archcontext.projection-request/v1', projectionResult: 'archcontext.projection-result/v2', architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1' },
  renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
  features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2'] }));
@@ -54,7 +54,7 @@ if (args[0] === 'capabilities') {
  const d = 'sha256:' + '1'.repeat(64);
  const snapshot = { ...request.expected, baseHeadSha: request.expected.headSha, sourceTreeDigest: d, modelDigest: d,
  codeGraphDigest: d, indexedWorktreeDigest: d, projectionInputDigest: d, rendererVersion: 'archcontext.docs-renderer/v4', layoutVersion: 'archcontext.docs-layout/v1',
- generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph', codeGraphVersion: '1.5.0', codeGraphBinaryDigest: d, codeGraphStatus: 'ready' } };
+ generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph', codeGraphVersion: '1.6.1', codeGraphBinaryDigest: d, codeGraphStatus: 'ready' } };
  const result = { schemaVersion: 'archcontext.projection-result/v2', requestId: request.requestId, status: 'noop', inputSnapshot: snapshot, outputSnapshot: snapshot,
  affectedNodeIds: [], files: [], humanActions: [], refreshSignals: [] };
  const canonical = x => Array.isArray(x) ? x.map(canonical) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, canonical(x[k])])) : x;

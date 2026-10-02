@@ -18,6 +18,7 @@ import {
 } from '../src/core/architecture/projection';
 import {
   archctxCapabilities,
+  verifyArchctxDaemonRuntime,
   inspectArchitectureProjectionReadiness,
   captureArchitectureProjectionSnapshot,
   architectureProjectionOwnedPaths,
@@ -90,14 +91,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.5.12', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.6.1', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.5.12', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.6.1', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -138,7 +139,7 @@ function vendorArchctx(root: string, version: string): string {
   return binary;
 }
 
-function capabilities(version = '0.5.12') {
+function capabilities(version = '0.6.1') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
@@ -176,7 +177,7 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     projectionInputDigest: digest('5'),
     rendererVersion: 'archcontext.docs-renderer/v4' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
-    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
   const withoutReceipt = {
     schemaVersion: 'archcontext.projection-result/v2' as const,
@@ -204,7 +205,7 @@ function applyEnvelope(
     sourceTreeDigest: digest('2'), modelDigest: digest('3'), codeGraphDigest: digest('4'), indexedWorktreeDigest: digest('1'), projectionInputDigest: digest('5'),
     rendererVersion: 'archcontext.docs-renderer/v4' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
-    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.1' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
   const applyReceipt = {
     schemaVersion: 'archcontext.projection-apply-identity/v1' as const,
@@ -776,7 +777,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.5.12');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.6.1');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -1121,7 +1122,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.5.7');
+    expect(readback.packages.contracts.version).toBe('0.6.1');
     expect(Object.keys(readback.packages.contracts).sort()).toEqual(['file', 'name', 'version']);
     expect(Object.keys(readback.packages.archctx).sort()).toEqual(['file', 'name', 'version']);
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
@@ -1237,5 +1238,73 @@ describe('package-local ArchContext projection provider', () => {
       : { status: 1, signal: null, stdout: '', stderr: 'AC_PRECONDITION_FAILED: expected snapshot is stale' };
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) })).toThrow('expected snapshot is stale');
     expect(diagnostics).toEqual([]);
+  });
+});
+
+
+describe('ArchContext maintenance reminders', () => {
+  const incompatible = {
+    schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status',
+    data: { running: true, versionUnsupported: {
+      reason: 'product-version-mismatch', expected: ARCHCTX_REQUIRED_VERSION, received: '0.2.3',
+      action: 'upgrade-archctx-runtime', command: 'archctx daemon upgrade',
+    } },
+  };
+
+  test('daemon lifecycle mismatch requests authorization without running recovery', () => {
+    const f = fixture();
+    const calls: string[][] = [];
+    const run: RunArchctxProcess = (_binary, args) => {
+      calls.push([...args]);
+      return { status: 0, signal: null, stdout: JSON.stringify(incompatible), stderr: '' };
+    };
+    expect(() => verifyArchctxDaemonRuntime(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
+      .toThrow('received 0.2.3. User authorization required');
+    expect(calls).toEqual([['daemon', 'status', '--json']]);
+  });
+
+  test('healthy and stopped daemons need no maintenance; malformed status fails closed', () => {
+    const f = fixture();
+    const check = (data: unknown) => verifyArchctxDaemonRuntime(f.repoRoot, {
+      consumerRoot: f.consumerRoot, policy,
+      run: () => ({ status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, data }), stderr: '' }),
+    });
+    expect(() => check({ running: false })).not.toThrow();
+    expect(() => check({ running: true, rpcVersionCompatible: true, productVersionCompatible: true })).not.toThrow();
+    expect(() => check({ running: true })).toThrow('did not prove runtime compatibility');
+    expect(() => check({ running: 'true' })).toThrow('invalid envelope');
+    expect(() => check({ running: false, staleConnection: true })).toThrow('unhealthy connection');
+    expect(() => check({ ...incompatible.data, versionUnsupported: { ...incompatible.data.versionUnsupported, action: 'unknown' } }))
+      .toThrow('invalid versionUnsupported diagnostic');
+  });
+
+  test('projection failure preserves typed maintenance guidance beyond diagnostic truncation', () => {
+    const f = fixture();
+    const calls: string[][] = [];
+    const run: RunArchctxProcess = (_binary, args) => {
+      calls.push([...args]);
+      return { status: args[0] === 'capabilities' ? 0 : 1, signal: null, stderr: 'short stderr', stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : {
+        schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'projection',
+        error: { code: 'AC_RUNTIME_VERSION_UNSUPPORTED', action: 'upgrade-archctx-runtime', message: 'x'.repeat(400) + ' daemon 0.2.3 requires replacement' },
+      }) };
+    };
+    let message = '';
+    try { runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }); }
+    catch (error) { message = (error as Error).message; }
+    expect(message).toContain('daemon 0.2.3 requires replacement');
+    expect(message).toContain('User authorization required');
+    expect(message).toContain('only if it is missing or stale');
+    expect(calls.map((args) => args[0])).toEqual(['capabilities', 'projection']);
+  });
+
+  test('untyped stderr and wrong envelope schemas never produce a reset recommendation', () => {
+    const f = fixture();
+    for (const schemaVersion of ['unknown', 'archcontext.envelope/v1']) {
+      const run: RunArchctxProcess = (_binary, args) => ({ status: args[0] === 'capabilities' ? 0 : 1, signal: null,
+        stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : { schemaVersion, ok: false, error: { code: 'AC_RUNTIME_VERSION_UNSUPPORTED', action: 'unknown', message: 'not authority' } }),
+        stderr: 'AC_RUNTIME_VERSION_UNSUPPORTED' });
+      expect(() => runArchitectureProjection(request(f.repoRoot), f.repoRoot, { consumerRoot: f.consumerRoot, policy, run }))
+        .toThrow('exit 1: AC_RUNTIME_VERSION_UNSUPPORTED');
+    }
   });
 });

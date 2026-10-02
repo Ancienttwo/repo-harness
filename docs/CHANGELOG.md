@@ -2,6 +2,80 @@
 
 All notable changes to this skill are documented here.
 
+## [0.20.0] - 2026-10-01
+
+### Added
+
+- Persistent Herdr task-agent lifecycle and CLI commands for task-scoped execution,
+  protected result collection, and repository-scoped workspace cleanup.
+- Trusted engineer observation preparation and first-offer staleness checks.
+- Managed updates detect stale ArchContext daemons and request user authorization
+  for maintenance. Runtime verification rejects unhealthy connections; a pending
+  daemon replacement preserves the verified CLI and its dependency closure.
+
+### Changed
+
+- Replace the old Codex goal MCP names with task-goal commands.
+- Retire the Codex plugin review provider, App-thread execution backend, and
+  headless Claude planning surface. Codex review uses the explicit Codex provider;
+  Claude acceptance retains its persistent Herdr domain reviewer.
+
+- Publish host-invariant guidance through the reference-document reader.
+
+### Fixed
+
+- Sample the MCP working baseline after request delivery before accepting an idle
+  observation, and keep observation cancellation separate from result collection.
+- Reap owned review providers after post-spawn setup failures and preserve CLI
+  help section spacing.
+
+## [0.19.5] - 2026-09-30
+
+### Fixed
+
+- Fleet install now records verified ownership on every update path and adopts
+  verified pristine agent fleet files into the ownership manifest.
+- `allowed_paths` items in contracts drop YAML inline comments in every reader.
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to `0.6.1` and
+  `@colbymchenry/codegraph` to `1.6.1`. The projection request, refresh signal
+  and capabilities protocol ids are unchanged; the only schema change is
+  `accepted-committed-change` v2, which repo-harness does not use.
+- `publishCoordinationSignal` and `publishWorkStateHandoff` call their builders
+  directly so archctx can prove the collaboration flow.
+- Refresh dev dependencies: `@modelcontextprotocol/sdk` 1.31.0, `vite` 8.3.1,
+  `react` 19.3.0, `happy-dom` 20.14.5, `@types/*`.
+- Remap agent fleet model/effort tiers and move the Sol workers to
+  `gpt-6.1-sol` with retuned effort.
+- Refresh the AXR5 clean-room readback (stale since `0.5.7`) against `arch-context`
+  tag `v0.6.1`, and update the test that pinned its contracts version.
+
+## [0.19.4] - 2026-09-28
+
+### Fixed
+
+- The agent fleet installer receives the runtime's already-validated Bun
+  executable through `REPO_HARNESS_BUN_BIN` instead of re-discovering `bun`
+  by name on `PATH`; a handed-off Bun below the version floor now fails the
+  whole helper closed instead of silently falling back to `PATH`/HOME
+  discovery.
+
+### Added
+
+- Isolated the two fleet Bun-handoff version tests from the invoking shell's
+  own `REPO_HARNESS_BUN_BIN`, and added a fail-closed regression test proving
+  a handed-off Bun below the version floor cannot fall back to `PATH`/HOME
+  discovery.
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to `0.5.13`, moving through `0.5.12`
+  since `0.19.3`. Capabilities are unchanged across `0.5.11` through `0.5.13`,
+  confirmed against each installed package, so `ARCHCTX_REQUIRED_FEATURES`
+  needs no companion change.
+
 ## [0.19.3] - 2026-09-24
 
 ### Added

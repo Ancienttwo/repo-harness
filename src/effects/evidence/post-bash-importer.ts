@@ -27,6 +27,7 @@ import { appendEvidenceEvent, appendGenesisRecord } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { ensureRepoRelativePath } from "../path-safety";
 import { uniqueSorted } from "../review/diff-fingerprint";
+import { stripYamlInlineComment } from "../../core/state/artifact-parsers";
 
 const PRODUCER_ID = "post-bash-importer";
 const EVENT_TYPE = "post_bash.command_observed";
@@ -233,7 +234,7 @@ function parseContractAllowedPaths(contractText: string): readonly string[] {
       if (/^\S/.test(line)) break;
       const itemMatch = line.match(/^\s*-\s*(.+?)\s*$/);
       if (!itemMatch) continue;
-      const value = (itemMatch[1] ?? "").replace(/^["'`]+|["'`]+$/g, "");
+      const value = stripYamlInlineComment(itemMatch[1] ?? "").replace(/^["'`]+|["'`]+$/g, "");
       if (value.length > 0) paths.push(value);
     }
     return paths;

@@ -16,13 +16,14 @@ bun_version_is_supported() {
 
 RUNTIME_BIN=""
 BUN_VERSION=""
-if [[ -n "${REPO_HARNESS_BUN_EXECUTABLE:-}" ]]; then
-  bun_candidates=("$REPO_HARNESS_BUN_EXECUTABLE")
+# A caller that already validated its Bun hands it over explicitly; only a
+# standalone invocation discovers Bun by name.
+if [[ -n "${REPO_HARNESS_BUN_BIN:-}" ]]; then
+  BUN_CANDIDATES=("$REPO_HARNESS_BUN_BIN")
 else
-  PATH_BUN="$(command -v bun 2>/dev/null || true)"
-  bun_candidates=("$PATH_BUN" "${HOME}/.bun/bin/bun")
+  BUN_CANDIDATES=("$(command -v bun 2>/dev/null || true)" "${HOME}/.bun/bin/bun")
 fi
-for candidate in "${bun_candidates[@]}"; do
+for candidate in "${BUN_CANDIDATES[@]}"; do
   [[ -n "$candidate" && -x "$candidate" ]] || continue
   candidate_version="$("$candidate" --version 2>/dev/null || true)"
   [[ -n "$BUN_VERSION" ]] || BUN_VERSION="$candidate_version"
@@ -106,57 +107,31 @@ if (force && acceptUserManaged) {
 }
 
 const HOME = os.homedir();
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
-const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
-const USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
-const { readInstalledProfile, managedInstallSurfaceIsCurrent } = require(
+const {
+  readInstalledProfile,
+  managedInstallSurfaceIsCurrent,
+  agentFleetUserManagedReceiptPath,
+  readAgentFleetUserManagedReceipt,
+} = require(
   path.join(SOURCE_DIR, "../../src/cli/installer/install-profile.ts"),
 );
+const USER_MANAGED_RECEIPT_PATH = agentFleetUserManagedReceiptPath({ ...process.env, HOME });
 const installedProfile = readInstalledProfile();
 
 // A generated persona carries role identity only. The anti-extras execution
-// boundary belongs to the runtime task packet (SubagentStart context in
-// src/cli/hook/subagent-handler.ts), which is the only surface that knows
+// boundary belongs to the final runtime task packet, which is the only surface that knows
 // whether the child is contract-bound and writable; a read-only persona must
 // never be told to implement anything.
 
 // Provider-native source tuples project deterministically to Codex-native labels.
 // Validation remains fail-closed; reasoning effort is carried through unchanged.
-const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
-
-function buildFamilyEffortMap(sourceLabel, targetModel, targetLabel) {
-  const map = {};
-  for (const effort of EFFORT_LEVELS) {
-    map[effort] = {
-      model: targetModel,
-      effort,
-      sourceDescription: `${sourceLabel} at ${effort} effort`,
-      targetDescription: `${targetLabel} at ${effort} reasoning`,
-    };
-  }
-  return map;
-}
-
-const MODEL_EFFORT_MAP = {
-  opus: buildFamilyEffortMap("Opus", "gpt-6-astra", "GPT-6 Astra"),
-  sonnet: buildFamilyEffortMap("Sonnet", "gpt-6-luna", "GPT-6 Luna"),
-  haiku: buildFamilyEffortMap("Haiku", "gpt-6-luna", "GPT-6 Luna"),
-  fable: buildFamilyEffortMap("Fable", "gpt-6-sol", "GPT-6 Sol"),
-};
-
-// Per-agent Codex target overrides — the only model/effort remaps in the fleet.
-// Execution and diagnostic roles use Sol or Luna; the gatekeeper uses Astra.
-// Explorer and deep-reasoner follow the family default.
-const AGENT_TARGET_OVERRIDES = {
-  "fast-worker": { model: "gpt-6-sol", effort: "medium", targetDescription: "GPT-6 Sol at medium reasoning" },
-  "deep-worker": { model: "gpt-6-sol", effort: "xhigh", targetDescription: "GPT-6 Sol at xhigh reasoning" },
-  gatekeeper: { model: "gpt-6-astra", effort: "medium", targetDescription: "GPT-6 Astra at medium reasoning" },
-  "root-cause-prover": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
-  "harness-evaluator": { model: "gpt-6-sol", effort: "high", targetDescription: "GPT-6 Sol at high reasoning" },
-};
+const { MANAGED_AGENTS, WRITABLE_AGENTS, EFFORT_LEVELS, MODEL_EFFORT_MAP, AGENT_TARGET_OVERRIDES,
+  parseRoleNameScalar, parseFrontmatter, validateFrontmatter } = require(
+  path.join(SOURCE_DIR, "../../src/effects/terminal/task-role-profiles.ts"),
+);
 
 function readSource(agent) {
   try {
@@ -168,79 +143,6 @@ function readSource(agent) {
   }
 }
 
-function parseRoleNameScalar(rawValue) {
-  if (typeof rawValue !== "string") return undefined;
-  const match = rawValue.trim().match(/^(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|([A-Za-z0-9_-]+))(?:\s+#.*)?$/);
-  return match?.[1] || match?.[2] || match?.[3];
-}
-
-function parseFrontmatter(raw) {
-  const lines = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
-  if (lines[0] !== "---") return null;
-
-  let closeIndex = -1;
-  for (let index = 1; index < lines.length; index += 1) {
-    if (lines[index] === "---") {
-      closeIndex = index;
-      break;
-    }
-  }
-  if (closeIndex === -1) return null;
-
-  const frontmatterLines = lines.slice(1, closeIndex);
-  const bodyLines = lines.slice(closeIndex + 1);
-  while (bodyLines.length > 0 && bodyLines[0].trim() === "") bodyLines.shift();
-  while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
-
-  const fieldLines = frontmatterLines.filter((line) => line.trim() && !line.trimStart().startsWith("#"));
-  const firstField = fieldLines[0]?.match(/^( *)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-  if (!firstField) return null;
-  const rootIndent = firstField[1].length;
-  const fields = {};
-  for (const line of fieldLines) {
-    const match = line.match(/^( *)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-    if (!match || match[1].length !== rootIndent) return null;
-    if (Object.hasOwn(fields, match[2])) return null;
-    fields[match[2]] = match[3];
-  }
-
-  return {
-    name: parseRoleNameScalar(fields.name),
-    description: fields.description,
-    model: fields.model,
-    effort: fields.effort,
-    hasTools: Object.hasOwn(fields, "tools"),
-    body: bodyLines.join("\n"),
-  };
-}
-
-function validateFrontmatter(parsed, expectedAgent) {
-  if (!parsed) {
-    return { ok: false, kind: "identity-invalid", reason: "missing or malformed frontmatter delimiters" };
-  }
-  if (parsed.name && parsed.name !== expectedAgent) {
-    return {
-      ok: false,
-      kind: "identity-mismatch",
-      reason: `frontmatter name does not match source role: ${parsed.name}/${expectedAgent}`,
-    };
-  }
-  if (!parsed.name) {
-    return { ok: false, kind: "identity-invalid", reason: "missing or malformed frontmatter name" };
-  }
-  if (!parsed.description || !parsed.model || !parsed.effort) {
-    return { ok: false, reason: "missing required frontmatter field (name/description/model/effort)" };
-  }
-  const modelMap = MODEL_EFFORT_MAP[parsed.model];
-  const mapped = modelMap ? modelMap[parsed.effort] : undefined;
-  if (!mapped) {
-    return { ok: false, reason: `unmapped model/effort combination: ${parsed.model}/${parsed.effort}` };
-  }
-  if (!parsed.description.includes(mapped.sourceDescription)) {
-    return { ok: false, reason: `description missing expected model label: ${mapped.sourceDescription}` };
-  }
-  return { ok: true, mapped };
-}
 
 function tomlBasicString(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -312,33 +214,6 @@ function validateUserManagedCodex(agent, content) {
   }
 }
 
-function loadUserManagedReceipt(allowedPaths) {
-  if (!fs.existsSync(USER_MANAGED_RECEIPT_PATH)) return { ok: true, hashes: new Map() };
-  try {
-    const parsed = JSON.parse(fs.readFileSync(USER_MANAGED_RECEIPT_PATH, "utf8"));
-    if (
-      parsed?.protocol !== 1
-      || parsed?.authority !== "user-managed-agent-fleet"
-      || !Array.isArray(parsed.files)
-    ) return { ok: false, hashes: new Map() };
-    const hashes = new Map();
-    for (const entry of parsed.files) {
-      if (
-        !entry
-        || typeof entry.path !== "string"
-        || !allowedPaths.has(entry.path)
-        || typeof entry.sha256 !== "string"
-        || !/^sha256:[a-f0-9]{64}$/.test(entry.sha256)
-        || hashes.has(entry.path)
-      ) return { ok: false, hashes: new Map() };
-      hashes.set(entry.path, entry.sha256);
-    }
-    return { ok: true, hashes };
-  } catch (_error) {
-    return { ok: false, hashes: new Map() };
-  }
-}
-
 function writeUserManagedReceipt(files) {
   fs.mkdirSync(path.dirname(USER_MANAGED_RECEIPT_PATH), { recursive: true });
   const receipt = {
@@ -404,7 +279,12 @@ for (const agent of MANAGED_AGENTS) {
     continue;
   }
 
-  const mapped = { ...validation.mapped, ...(AGENT_TARGET_OVERRIDES[agent] ?? {}) };
+  const target = AGENT_TARGET_OVERRIDES[agent];
+  if (!target) {
+    results.push({ host: "codex", file: `${agent}.toml`, status: "invalid-target" });
+    continue;
+  }
+  const mapped = { ...validation.mapped, ...target };
   prepared.push({ agent, source: source.text, parsed, mapped });
 }
 
@@ -433,8 +313,6 @@ const targets = prepared.flatMap(({ agent, source, parsed, mapped }) => {
     },
   ];
 });
-const allowedTargetPaths = new Set(targets.map((target) => target.path));
-
 if (acceptUserManaged) {
   const acceptedFiles = [];
   let invalid = false;
@@ -469,7 +347,7 @@ if (acceptUserManaged) {
 
 const receipt = force
   ? { ok: true, hashes: new Map() }
-  : loadUserManagedReceipt(allowedTargetPaths);
+  : readAgentFleetUserManagedReceipt({ ...process.env, HOME });
 if (!receipt.ok) {
   console.log("[fleet] user-managed receipt: invalid");
   process.exit(1);

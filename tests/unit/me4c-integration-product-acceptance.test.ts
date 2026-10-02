@@ -298,7 +298,7 @@ describe('ME-4C integration product acceptance', () => {
       disposition: 'external_pass',
       expected_reviewer: 'Codex',
       reviewer: 'Codex',
-      source: 'codex-plugin',
+      source: 'codex-review',
       actor: null,
       summary: 'verified before read race',
       findings: [],

@@ -26,6 +26,7 @@ import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } 
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { formatCrossReviewResult, runCrossReviewCommand } from './commands/cross-review';
 import { buildClaudeReviewCommand } from './commands/claude-review';
+import { buildTaskAgentCommand } from './commands/task-agent';
 import { CROSS_REVIEW_PROVIDER_MODES, type CrossReviewProviderMode } from '../core/review/cross-review';
 import { buildToolsCommand } from './commands/tools';
 import { buildBrainCommand } from './commands/brain';
@@ -53,6 +54,7 @@ import { buildExternalSourceCommand } from './commands/external-source';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   MIN_BUN_VERSION,
+  agentFleetVerified,
   bunVersionIsSupported,
   runGlobalRuntimeSetup,
   type GlobalRuntimeOptions,
@@ -219,6 +221,7 @@ function runTransactionalProfileProjection(
   commitState: (
     transaction: ReturnType<typeof beginInstallHostTransaction>,
     migrationSource: LegacyInstalledProfileState | null,
+    result: GlobalRuntimeResult,
   ) => InstalledProfileState,
   prepareProjection: () => LegacyInstalledProfileState | null = () => {
     prepareInstallProfileSwitch(profile, options.env);
@@ -242,7 +245,7 @@ function runTransactionalProfileProjection(
       return { result, state: null };
     }
     try {
-      const state = commitState(transaction, migrationSource);
+      const state = commitState(transaction, migrationSource, result);
       captureConfigurationRestores(transaction, transactionEnv);
       commitInstallHostTransaction(transaction);
       return { result, state };
@@ -465,13 +468,14 @@ async function runGlobalRuntimeBootstrap(
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
-  }, (transaction, migrationSource) => (
+  }, (transaction, migrationSource, result) => (
     applyInstallProfile(
       profile,
       process.env,
       new Date(),
       transaction,
       migrationSource ?? undefined,
+      { agentFleetVerified: agentFleetVerified(result) },
     ).state
   ), migrationRequested
     ? () => prepareLegacyInstallProfileMigration(profile)
@@ -826,6 +830,7 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand());
   program.addCommand(buildClaudeReviewCommand());
+  program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildSetupCommand());
 
   program
@@ -849,7 +854,7 @@ export function buildProgram(): Command {
     .option('--json', 'Output JSON result')
     .action((rawOpts: { provider: string; repo?: string; base?: string; timeoutMs?: string; json?: boolean }) => {
       if (!(CROSS_REVIEW_PROVIDER_MODES as readonly string[]).includes(rawOpts.provider)) {
-        console.error(`cross-review: --provider must be one of ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`);
+        console.error(rawOpts.provider === "codex-plugin" ? "cross-review: codex-plugin is retired; use --provider codex. No plugin fallback is available." : `cross-review: --provider must be one of ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`);
         process.exit(2);
       }
       const result = runCrossReviewCommand({

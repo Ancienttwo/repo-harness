@@ -59,17 +59,17 @@ const bindingTwo = '22222222-2222-4222-8222-222222222222';
 const messageOne = '33333333-3333-4333-8333-333333333333';
 const digest = `sha256:${'a'.repeat(64)}`;
 
-function fixture(adapter: 'codex-app-thread' | 'herdr-cli-agent' = 'codex-app-thread'): string {
+function fixture(adapter: 'herdr-cli-agent' = 'herdr-cli-agent'): string {
   const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-r1-runtime-'))); roots.push(repoRoot);
   execFileSync('git', ['init', '-q'], { cwd: repoRoot }); execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: repoRoot }); execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: repoRoot });
   mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true }); mkdirSync(join(repoRoot, 'agents'), { recursive: true }); mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true }); cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } } })}\n`);
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
   execFileSync('git', ['add', '.'], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
   bind(repoRoot, adapter, bindingOne); return repoRoot;
 }
 
-function bind(repoRoot: string, adapter: 'codex-app-thread' | 'herdr-cli-agent', bindingId: string) {
+function bind(repoRoot: string, adapter: 'herdr-cli-agent', bindingId: string) {
   const profile = loadEngineerProfile(repoRoot, engineerId); const status = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision); const previous = status.current;
   return bindEngineer(repoRoot, {
     engineer_id: engineerId, idempotency_key: `bind-${bindingId}`, provider: adapter, provider_thread_id: `endpoint-${bindingId.slice(0, 4)}`, host_id: 'local', engineer_contract_revision: profile.engineer_contract_revision,
@@ -87,11 +87,11 @@ function message(repoRoot: string, body = 'secret-message-body') {
   }) });
 }
 
-function capability(repoRoot: string, adapter: 'codex-app-thread' | 'herdr-cli-agent' = 'codex-app-thread') {
+function capability(repoRoot: string, adapter: 'herdr-cli-agent' = 'herdr-cli-agent') {
   return recordAgentRuntimeCapability(repoRoot, { adapter_kind: adapter, host_id: 'local', operations: { notify_inbox: 'supported', wake_for_offer: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:02:00.000Z' });
 }
 
-function prepare(repoRoot: string, adapter: 'codex-app-thread' | 'herdr-cli-agent' = 'codex-app-thread') {
+function prepare(repoRoot: string, adapter: 'herdr-cli-agent' = 'herdr-cli-agent') {
   message(repoRoot); const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; const observed = capability(repoRoot, adapter);
   const status = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'runtime-one', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
   if (status.intent.operation !== 'notify_inbox') throw new Error('prepared effect is not a message notification');
@@ -112,16 +112,16 @@ describe('R1 provider-neutral Agent Runtime', () => {
 
   test('persists before one Host action and exact Module receipt is the only success evidence', () => {
     const repoRoot = fixture(); const prepared = prepare(repoRoot); const started = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
-    expect(started.action?.adapter_kind).toBe('codex-app-thread'); expect(readAgentRuntimeEffectStatus(repoRoot, prepared.intent.effect_id).current.state).toBe('effect_started');
+    expect(started.action?.adapter_kind).toBe('herdr-cli-agent'); expect(readAgentRuntimeEffectStatus(repoRoot, prepared.intent.effect_id).current.state).toBe('effect_started');
     recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: started.action!.control_ref, observed_at: '2026-08-30T10:05:00.000Z' } });
-    const done = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: false });
+    const done = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: false });
     expect(done.current.state).toBe('observed_success'); expect(done.observation.receipt_kind).toBe('module_message_delivery_receipt');
   });
 
   test('a Module delivery observation without this effect control reference never succeeds', () => {
     const repoRoot = fixture(); const prepared = prepare(repoRoot); const started = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
     recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: null, observed_at: '2026-08-30T10:05:00.000Z' } });
-    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: true });
+    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: true });
     expect(observed.current.state).toBe('reconciliation_required'); expect(observed.observation.failure_class).toBe('receipt_missing');
   });
 
@@ -129,7 +129,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
     const repoRoot = fixture(); const prepared = prepare(repoRoot); startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
     const foreign = `repo-harness-inbox:sha256:${'f'.repeat(64)}:sha256:${'e'.repeat(64)}`;
     recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: foreign, observed_at: '2026-08-30T10:05:00.000Z' } });
-    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: true });
+    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: true });
     expect(observed.current.state).toBe('reconciliation_required');
   });
 
@@ -139,7 +139,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
   });
 
   test('Binding rotation after prepare prevents every Host action', () => {
-    const repoRoot = fixture(); const prepared = prepare(repoRoot); bind(repoRoot, 'codex-app-thread', bindingTwo);
+    const repoRoot = fixture(); const prepared = prepare(repoRoot); bind(repoRoot, 'herdr-cli-agent', bindingTwo);
     expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:05:00.000Z' })).toThrow(AgentRuntimeEffectStoreError);
     expect(readAgentRuntimeEffectStatus(repoRoot, prepared.intent.effect_id).current.state).toBe('intent_persisted');
   });
@@ -161,12 +161,12 @@ describe('R1 provider-neutral Agent Runtime', () => {
     const observed = capability(repoRoot); const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: taskMessageId, idempotency_key: 'task-runtime', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:02:00.000Z' });
     const started = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T11:03:00.000Z' }); expect(started.action).not.toBeNull(); expect(JSON.stringify(started.action)).not.toContain('task body');
     deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'agent_runtime_effect', message_id: taskMessageId, delivery_ref: started.action!.control_ref, delivered_at: '2026-08-30T11:04:00.000Z' });
-    const done = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:05:00.000Z', receipt_wait_exhausted: false }); expect(done.current.state).toBe('observed_success'); expect(done.observation.receipt_kind).toBe('task_message_delivery_receipt');
+    const done = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:05:00.000Z', receipt_wait_exhausted: false }); expect(done.current.state).toBe('observed_success'); expect(done.observation.receipt_kind).toBe('task_message_delivery_receipt');
     const input = { repo_root: repoRoot, task_id: taskId, task_revision: taskRevision, current_claim: { claim_id: claimId, generation: 1 } };
     const projection = projectTaskAgentRuntimeState(input);
     expect(projection.delivery_state).toBe('delivered');
     expect(projection.delivery_evidence).toEqual({ candidate_count: 1, latest: {
-      adapter_kind: 'codex-app-thread', effect_state: 'observed_success', receipt_kind: 'task_message_delivery_receipt',
+      adapter_kind: 'herdr-cli-agent', effect_state: 'observed_success', receipt_kind: 'task_message_delivery_receipt',
       observed_at: done.observation.observed_at, observation_sequence: done.current.sequence,
       observation_sha256: done.current.latest_observation_sha256,
     } });
@@ -182,8 +182,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
       expect(terminal.delivery_evidence.latest?.effect_state).toBe(state);
     }
     expect(() => projectTaskAgentRuntimeState({ ...input, statuses: [{ ...done, current: prepared.current }] })).toThrow(AgentRuntimeEffectStoreError);
-    const mismatched = buildAgentRuntimeEffectObservation({ ...done.observation, adapter: { ...done.observation.adapter, adapter_kind: 'herdr-cli-agent' } });
-    expect(() => projectTaskAgentRuntimeState({ ...input, statuses: [{ ...done, observation: mismatched, current: buildAgentRuntimeEffectCurrent(mismatched) }] })).toThrow(AgentRuntimeEffectStoreError);
+    expect(() => buildAgentRuntimeEffectObservation({ ...done.observation, adapter: { ...done.observation.adapter, adapter_kind: 'codex-app-thread' as never } })).toThrow('adapter_kind is invalid');
     // Two different messages are two candidates, not two runs or an invented latest effect.
     const secondId = '77777777-7777-4777-8777-777777777777';
     sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: secondId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body: 'another message', created_at: '2026-08-30T11:06:00.000Z', in_reply_to: null }) });
@@ -208,7 +207,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
     const observed = capability(repoRoot); const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: hookMessageId, idempotency_key: 'task-hook-lane', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:02:00.000Z' });
     startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T11:03:00.000Z' });
     deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'hook_session', delivered_at: '2026-08-30T11:04:00.000Z' });
-    const hookObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:05:00.000Z', receipt_wait_exhausted: true });
+    const hookObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:05:00.000Z', receipt_wait_exhausted: true });
     expect(hookObserved.current.state).toBe('reconciliation_required'); expect(hookObserved.observation.failure_class).toBe('receipt_missing');
 
     const foreignMessageId = '77777777-7777-4777-8777-777777777777';
@@ -216,7 +215,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
     const foreignPrepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: foreignMessageId, idempotency_key: 'task-foreign-ref', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:07:00.000Z' });
     const foreignStarted = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: foreignPrepared.intent.effect_id, started_at: '2026-08-30T11:08:00.000Z' });
     deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'agent_runtime_effect', message_id: foreignMessageId, delivery_ref: `repo-harness-inbox:${prepared.intent.effect_id}:sha256:${'a'.repeat(64)}`, delivered_at: '2026-08-30T11:09:00.000Z' });
-    const foreignObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: foreignPrepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:10:00.000Z', receipt_wait_exhausted: true });
+    const foreignObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: foreignPrepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:10:00.000Z', receipt_wait_exhausted: true });
     expect(foreignObserved.current.state).toBe('reconciliation_required');
     expect(foreignStarted.action).not.toBeNull();
   });
@@ -242,7 +241,7 @@ describe('R1 provider-neutral Agent Runtime', () => {
 
   test('observe before any delivery observation reconciles instead of throwing', () => {
     const repoRoot = fixture(); const prepared = prepare(repoRoot); startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
-    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:05:00.000Z', receipt_wait_exhausted: true });
+    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:05:00.000Z', receipt_wait_exhausted: true });
     expect(observed.current.state).toBe('reconciliation_required'); expect(observed.observation.failure_class).toBe('receipt_missing');
   });
 
@@ -262,35 +261,43 @@ describe('R1 provider-neutral Agent Runtime', () => {
       resource_refs: [], sender: { kind: 'program_orchestrator', principal_ref: 'human:r1', binding_generation: null }, body: 'module scope body', created_at: '2026-08-30T10:01:30.000Z',
     }) });
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; const cap = capability(repoRoot);
-    const intent = buildAgentRuntimeEffectIntent({ idempotency_key: 'legacy-module-scope', message_ref: { kind: 'module_message', message_id: '99999999-9999-4999-8999-999999999999', message_event_digest: sent.event.event_digest, engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, delivery_attempt: 1 }, endpoint_fence: { engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, adapter_kind: 'codex-app-thread', host_id: 'local', endpoint_id: 'endpoint-1111' }, operation: 'notify_inbox', capability_sha256: cap.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
+    const intent = buildAgentRuntimeEffectIntent({ idempotency_key: 'legacy-module-scope', message_ref: { kind: 'module_message', message_id: '99999999-9999-4999-8999-999999999999', message_event_digest: sent.event.event_digest, engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, delivery_attempt: 1 }, endpoint_fence: { engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, adapter_kind: 'herdr-cli-agent', host_id: 'local', endpoint_id: 'endpoint-1111' }, operation: 'notify_inbox', capability_sha256: cap.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
     const effectDir = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/agent-runtime-effects/v2/effects', deriveAgentRuntimeEffectId('legacy-module-scope').slice(7));
     mkdirSync(effectDir, { recursive: true }); writeFileSync(join(effectDir, 'intent.json'), canonicalAgentRuntimeEffectIntentBytes(intent));
-    const initial = buildAgentRuntimeEffectObservation({ effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, sequence: 0, state: 'intent_persisted', adapter: { adapter_kind: 'codex-app-thread', outcome: 'unknown', process_exit_code: null, process_signal: null }, receipt_kind: null, receipt_sha256: null, failure_class: 'none', observed_at: intent.created_at, previous_observation_sha256: null });
+    const initial = buildAgentRuntimeEffectObservation({ effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, sequence: 0, state: 'intent_persisted', adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'unknown', process_exit_code: null, process_signal: null }, receipt_kind: null, receipt_sha256: null, failure_class: 'none', observed_at: intent.created_at, previous_observation_sha256: null });
     mkdirSync(join(effectDir, 'observations'), { recursive: true }); writeFileSync(join(effectDir, 'observations', '00000000.json'), canonicalAgentRuntimeEffectObservationBytes(initial));
     writeFileSync(join(effectDir, 'current.json'), canonicalAgentRuntimeEffectCurrentBytes(buildAgentRuntimeEffectCurrent(initial)));
     expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' })).toThrow('no Binding fence');
   });
 
   test('shadow records preparation but refuses Host action', () => {
-    const repoRoot = fixture(); const prepared = prepare(repoRoot); writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'shadow', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } } })}\n`);
+    const repoRoot = fixture(); const prepared = prepare(repoRoot); writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'shadow', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
     expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:05:00.000Z' })).toThrow('forbids Host actions');
   });
 
   test('off and adapter disablement refuse mutation or action without fallback', () => {
     const repoRoot = fixture(); message(repoRoot); const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; const observed = capability(repoRoot);
-    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'off', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } } } })}\n`);
+    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'off', adapters: { 'herdr-cli-agent': { enabled: true } } } })}\n`);
     expect(() => prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'off-runtime', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' })).toThrow('forbids new effects');
     expect(existsSync(join(resolveGitCommonDirectory(repoRoot), 'repo-harness/agent-runtime-effects/v2/effects', deriveAgentRuntimeEffectId('off-runtime').slice(7)))).toBe(false);
-    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: false }, 'herdr-cli-agent': { enabled: true } } } })}\n`);
+    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: false } } } })}\n`);
     const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'disabled-runtime', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
-    expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:05:00.000Z' })).toThrow('codex-app-thread is disabled');
+    expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:05:00.000Z' })).toThrow('herdr-cli-agent is disabled');
     expect(readAgentRuntimeEffectStatus(repoRoot, prepared.intent.effect_id).current.state).toBe('intent_persisted');
   });
 
   test('feature policy rejects undeclared runtime fields instead of accepting a compatibility shape', () => {
     const repoRoot = fixture();
-    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'herdr-cli-agent': { enabled: true } }, fallback: 'herdr-cli-agent' } })}\n`);
+    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } }, fallback: 'herdr-cli-agent' } })}\n`);
     expect(() => readAgentRuntimePolicy(repoRoot)).toThrow('agent_runtime.mode must be off, shadow, or active');
+  });
+
+  test('retired backend config and capability evidence are rejected without translation', () => {
+    const repoRoot = fixture();
+    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({agent_runtime:{mode:'active',adapters:{'codex-app-thread':{enabled:true},'herdr-cli-agent':{enabled:true}}}}));
+    expect(() => readAgentRuntimePolicy(repoRoot)).toThrow('Herdr only');
+    const evidence = buildAgentRuntimeCapabilityObservation({adapter_kind:'herdr-cli-agent',host_id:'local',operations:{notify_inbox:'supported',wake_for_offer:'supported'},evidence_refs:[{ref:'canary',sha256:digest}],observed_at:'2026-08-30T10:00:00.000Z'});
+    expect(() => validateAgentRuntimeCapabilityObservation({...evidence,adapter_kind:'codex-app-thread'})).toThrow('adapter_kind is invalid');
   });
 
   test('V1 retirement is terminal-only and moves exact bytes without synthesizing V2 effects', () => {

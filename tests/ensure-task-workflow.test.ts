@@ -49,6 +49,9 @@ describe("ensure-task-workflow helper integration", () => {
       expect(fallbackPolicy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
       expect(readRefactorPolicy(fallbackPolicy).stages).toEqual(readRefactorPolicy({}).stages);
       expect(fallbackPolicy.architecture.projection_version).toBeUndefined();
+      expect(fallbackPolicy.delegation.preferred_runners).toEqual(['task-agent']);
+      expect(fallbackPolicy.delegation.runner_rule).not.toContain('native spawn_agent');
+      expect(fallbackPolicy.sidecar_research.preferred_runners).toEqual(['task-agent','main-thread trace']);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

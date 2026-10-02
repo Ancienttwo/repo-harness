@@ -78,7 +78,7 @@ function snapshot(expected: ProjectionExpectedSnapshotV1) {
     layoutVersion: 'archcontext.docs-layout/v1' as const,
     generatedFrom: {
       codeGraphPackage: '@colbymchenry/codegraph' as const,
-      codeGraphVersion: '1.5.0' as const,
+      codeGraphVersion: '1.6.1' as const,
       codeGraphBinaryDigest: digest('6'),
       codeGraphStatus: 'ready' as const,
     },

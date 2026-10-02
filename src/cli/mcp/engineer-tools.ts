@@ -38,7 +38,7 @@ import {
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
-import { acquireNextScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError } from '../../effects/engineers/scheduling-acquire-next';
 import {
   InterfaceChangeStoreError,
   readInterfaceChangeStatus,
@@ -55,6 +55,7 @@ export const ENGINEER_MCP_TOOL_NAMES = [
   'engineer_task_reply',
   'engineer_status',
   'engineer_offers',
+  'engineer_prepare',
   'engineer_acquire',
   'engineer_acquire_next',
   'engineer_messages',
@@ -75,6 +76,7 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
   engineer_task_message_ack: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'work_envelope', 'message_id', 'event_digest'],
   engineer_task_reply: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'work_envelope', 'parent_message_id', 'parent_event_digest', 'reply_message_id', 'body'],
   engineer_status: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
+  engineer_prepare: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
   engineer_offers: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
   engineer_acquire: [
     'repo_id',
@@ -217,6 +219,12 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
+      name: 'engineer_prepare',
+      description: 'Persist a server-timed immutable offers observation, fresh for 30 seconds at a new admission start. Evidence only; creates no claim.',
+      inputSchema: { type: 'object', properties: { ...principalFenceProperties }, additionalProperties: false },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     {
       name: 'engineer_acquire',
@@ -707,6 +715,11 @@ export function callEngineerTool(
       audit(ctx, name, 'ok', args);
       return textResult(result);
     }
+    if (name === 'engineer_prepare') {
+      const result = prepareEngineerObservation({ repo_root: ctx.repoRoot, principal });
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
+    }
     if (name === 'engineer_acquire') return acquireAsEngineer(ctx, args, principal);
     if (name === 'engineer_acquire_next') return acquireNextAsEngineer(ctx, args, principal);
     if (name === 'engineer_messages') {
@@ -725,7 +738,7 @@ export function callEngineerTool(
     }
     if (name === 'engineer_runtime_effect_capability') {
       const binding = currentBindingForPrincipal(ctx, principal);
-      if (binding.provider !== 'codex-app-thread' && binding.provider !== 'herdr-cli-agent') {
+      if (binding.provider !== 'herdr-cli-agent') {
         throw new EngineerPrincipalError('engineer_principal_mismatch', 'current Binding does not name an Agent Runtime adapter');
       }
       const result = agentRuntimeCapabilityStatusFor(ctx.repoRoot, binding.host_id, binding.provider as AgentRuntimeAdapterKind);
@@ -752,7 +765,7 @@ export function callEngineerTool(
     if (name === 'engineer_work_demand_transition') return transitionWorkDemandAsEngineer(ctx,args,principal);
     return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
-    const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
+    const code = error instanceof EngineerAcquisitionLedgerError || error instanceof EngineerObservationError || error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
       || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError
       || error instanceof TaskInboxError || error instanceof TaskReplyError || error instanceof TaskReplyStoreError
       || error instanceof ModuleInboxError

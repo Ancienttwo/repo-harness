@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
@@ -19,6 +19,7 @@ import {
   prepareInstallProfileSwitch,
   readLegacyInstalledProfileForMigration,
   readInstalledProfile,
+  recordVerifiedAgentFleetOwnership,
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
@@ -764,6 +765,54 @@ describe('install profiles', () => {
     expect(next?.content_hash).not.toBe(original?.content_hash);
     expect(installedProfileStatus(refreshed.state, env).drift.status).toBe('consistent');
   }));
+
+  test('a verified fleet run adopts pristine agents so a fleet projection change upgrades past a user-managed agent', () => withHome((env) => {
+    const home = env.HOME!;
+    writeManagedHostSurfaces(env, 'full');
+    rmSync(join(home, '.codex', 'agents'), { recursive: true, force: true });
+    const packageRoot = join(home, 'fleet-package');
+    const script = join(packageRoot, 'scripts', 'install-agent-fleet.sh');
+    mkdirSync(join(packageRoot, 'scripts'), { recursive: true });
+    cpSync(join(ROOT, 'scripts', 'install-agent-fleet.sh'), script);
+    cpSync(join(ROOT, 'agents', 'fleet'), join(packageRoot, 'agents', 'fleet'), { recursive: true });
+    symlinkSync(join(ROOT, 'src'), join(packageRoot, 'src'), 'dir');
+    const runFleet = (...args: string[]) => spawnSync('bash', [script, ...args], { cwd: ROOT, encoding: 'utf-8', env });
+    expect(runFleet().status).toBe(0);
+
+    const custom = join(home, '.codex', 'agents', 'explorer.toml');
+    const customContent = readFileSync(custom, 'utf-8').replace('model = "gpt-6-luna"', 'model = "gpt-6.1-sol"');
+    writeFileSync(custom, customContent);
+    expect(runFleet('--accept-user-managed').status).toBe(0);
+
+    const pristine = join(home, '.codex', 'agents', 'deep-worker.toml');
+    const unverified = applyInstallProfile('full', env).state;
+    expect(unverified.ownership_manifest.some(({ path }) => path === pristine)).toBe(false);
+
+    // Update paths record into the existing manifest without re-applying the profile.
+    recordVerifiedAgentFleetOwnership('full', env);
+    const recorded = readInstalledProfile(env)!;
+    const recordedPaths = recorded.ownership_manifest.map(({ path }) => path);
+    expect(recordedPaths).toContain(pristine);
+    expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'explorer.md'));
+    expect(recordedPaths).not.toContain(custom);
+    expect(installedProfileStatus(recorded, env).drift.status).toBe('consistent');
+
+    // Bootstrap has no prior manifest, so applyInstallProfile adopts directly.
+    rmSync(join(home, '.repo-harness', 'install-state.json'));
+    const adopted = applyInstallProfile('full', env, new Date(), undefined, undefined, { agentFleetVerified: true }).state;
+    expect(adopted.ownership_manifest.map(({ path }) => path).sort()).toEqual(recordedPaths.sort());
+
+    for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
+      const source = join(packageRoot, 'agents', 'fleet', `${agent}.md`);
+      writeFileSync(source, `${readFileSync(source, 'utf-8')}\nUpdated role instruction.\n`);
+    }
+    const upgraded = runFleet();
+    expect(upgraded.status).toBe(0);
+    expect(upgraded.stdout).toContain('[fleet] codex/deep-worker.toml: installed');
+    expect(upgraded.stdout).toContain('[fleet] codex/explorer.toml: user-managed');
+    expect(readFileSync(pristine, 'utf-8')).toContain('Updated role instruction.');
+    expect(readFileSync(custom, 'utf-8')).toBe(customContent);
+  }), 60_000);
 
   test('downgrade preserves a user-owned staging skill registry when only host links are transaction-owned', () => withHome((env) => {
     writeManagedHostSurfaces(env, 'full');

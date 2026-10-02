@@ -18,7 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-const VERSION = "0.5.12";
+const VERSION = "0.6.1";
 const REPO_HARNESS_VERSION = "0.17.0";
 const repoRoot = resolve(import.meta.dir, "..");
 const archContextRoot = resolve(flag("--arch-context-root") ?? join(repoRoot, "..", "arch-context"));
@@ -49,7 +49,7 @@ try {
       archctx: `file:${archctx.tarball}`,
       "archctx-contracts": `file:${contracts.tarball}`,
       "repo-harness": `file:${repoHarness.tarball}`,
-      "@colbymchenry/codegraph": "1.5.0",
+      "@colbymchenry/codegraph": "1.6.1",
     },
   }, null, 2)}\n`);
   run("npm", ["install", "--omit=dev"], consumer, { timeoutMs: 240_000 });

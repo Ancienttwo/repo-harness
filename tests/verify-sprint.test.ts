@@ -695,8 +695,8 @@ describe("verify-sprint helper integration", () => {
           "",
           "```yaml",
           "allowed_paths:",
-          "  - docs",
-          "  - tasks",
+          "  - docs  # inline comments are not part of the path",
+          '  - "tasks" # quoted item with a trailing comment',
           "exit_criteria:",
           "  files_exist:",
           "    - docs/spec.md",
@@ -723,6 +723,7 @@ describe("verify-sprint helper integration", () => {
       expect(run("git", ["checkout", "-b", "feature/scope"], cwd).status).toBe(0);
       mkdirSync(join(cwd, "src"), { recursive: true });
       writeFileSync(join(cwd, "src/outside.ts"), "export const outside = true;\n");
+      writeFileSync(join(cwd, "docs/inside.md"), "# Inside\n");
       commitAll(cwd, "change outside allowed paths");
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
@@ -748,6 +749,8 @@ describe("verify-sprint helper integration", () => {
       expect(checks.files_changed).toContain("src/outside.ts");
       expect(checks.allowed_paths_check.status).toBe("fail");
       expect(checks.allowed_paths_check.outside).toContain("src/outside.ts");
+      expect(checks.allowed_paths_check.outside).not.toContain("docs/inside.md");
+      expect(checks.contract.allowed_paths).toEqual(["docs", "tasks"]);
       expect(existsSync(join(cwd, ".expensive-ran"))).toBe(false);
       expect(checks.commands.some((entry: any) => entry.command.includes("expensive-ran"))).toBe(false);
     } finally {

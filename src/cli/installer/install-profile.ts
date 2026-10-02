@@ -66,6 +66,7 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
 }
 
 export const INSTALL_PROFILES = ['minimal', 'full'] as const;
+const AGENT_FLEET_AGENTS = ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'] as const;
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
 export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
 export type LegacyInstallProfile = (typeof LEGACY_INSTALL_PROFILES)[number];
@@ -493,6 +494,98 @@ export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface): 
   return surfaceIsCurrent(surface);
 }
 
+/** Generated agent fleet targets written by scripts/install-agent-fleet.sh. */
+export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const home = env.HOME ?? homedir();
+  return AGENT_FLEET_AGENTS.flatMap((agent) => [
+    join(home, '.codex', 'agents', `${agent}.toml`),
+    join(home, '.claude', 'agents', `${agent}.md`),
+  ]);
+}
+
+export function agentFleetUserManagedReceiptPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.HOME ?? homedir(), '.repo-harness', 'agent-fleet-user-managed.json');
+}
+
+/**
+ * Sole reader of the fleet user-managed receipt that scripts/install-agent-fleet.sh
+ * writes. A malformed receipt fails closed as `ok: false`.
+ */
+export function readAgentFleetUserManagedReceipt(
+  env: NodeJS.ProcessEnv = process.env,
+): { readonly ok: boolean; readonly hashes: ReadonlyMap<string, string> } {
+  const receiptPath = agentFleetUserManagedReceiptPath(env);
+  if (!existsSync(receiptPath)) return { ok: true, hashes: new Map() };
+  const allowedPaths = new Set(agentFleetTargetPaths(env));
+  try {
+    const parsed = JSON.parse(readFileSync(receiptPath, 'utf-8'));
+    if (
+      parsed?.protocol !== 1
+      || parsed?.authority !== 'user-managed-agent-fleet'
+      || !Array.isArray(parsed.files)
+    ) return { ok: false, hashes: new Map() };
+    const hashes = new Map<string, string>();
+    for (const entry of parsed.files) {
+      if (
+        !entry
+        || typeof entry.path !== 'string'
+        || !allowedPaths.has(entry.path)
+        || typeof entry.sha256 !== 'string'
+        || !/^sha256:[a-f0-9]{64}$/.test(entry.sha256)
+        || hashes.has(entry.path)
+      ) return { ok: false, hashes: new Map() };
+      hashes.set(entry.path, entry.sha256);
+    }
+    return { ok: true, hashes };
+  } catch {
+    return { ok: false, hashes: new Map() };
+  }
+}
+
+/**
+ * Fleet files written before ownership tracking, or during an update, are never
+ * transaction-created, so a later fleet projection change would report them as
+ * drift. Right after a successful fleet run every target is either the generated
+ * projection or receipt-accepted user-managed content; only the former is adopted.
+ */
+function verifiedAgentFleetSurfaces(
+  profile: InstallProfile,
+  env: NodeJS.ProcessEnv,
+): readonly ManagedInstallSurface[] {
+  if (!PROFILE_COMPONENTS[profile].includes('agent-fleet')) return [];
+  const receipt = readAgentFleetUserManagedReceipt(env);
+  if (!receipt.ok) return [];
+  return agentFleetTargetPaths(env).flatMap((path) => {
+    if (!lstatExists(path) || !lstatSync(path).isFile()) return [];
+    const hash = `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+    if (receipt.hashes.get(path) === hash) return [];
+    const surface = captureOwnedPath(path, componentsForTransactionPath(path));
+    return surface ? [surface] : [];
+  });
+}
+
+/**
+ * Update paths run the fleet helper but may never reach applyInstallProfile
+ * (partial or in-process reconciliation), so the verified fleet surfaces are
+ * merged into the existing ownership manifest right after the helper succeeds.
+ * Without installed state there is no manifest to extend.
+ */
+export function recordVerifiedAgentFleetOwnership(
+  profile: InstallProfile,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const current = readInstalledProfile(env);
+  if (current === null || current.profile !== profile) return;
+  const ownershipManifest = [...new Map(
+    [...current.ownership_manifest, ...verifiedAgentFleetSurfaces(profile, env)].map((surface) => [
+      `${surface.path}\0${surface.managed_marker ?? surface.type}`,
+      surface,
+    ]),
+  ).values()].sort((left, right) => left.path.localeCompare(right.path));
+  if (JSON.stringify(ownershipManifest) === JSON.stringify(current.ownership_manifest)) return;
+  writeState({ ...current, ownership_manifest: ownershipManifest }, env);
+}
+
 export function assertInstallProfile(value: string): InstallProfile {
   if (!INSTALL_PROFILES.includes(value as InstallProfile)) {
     throw new Error(`invalid install profile ${value}; expected ${INSTALL_PROFILES.join('|')}`);
@@ -508,7 +601,6 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   const home = env.HOME ?? homedir();
   const bunRoot = env.BUN_INSTALL ?? join(home, '.bun');
   const { repoHarnessSkills: skills, externalSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
-  const agents = ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'];
   const paths = [
     join(bunRoot, 'bin', 'repo-harness'),
     join(bunRoot, 'bin', 'codegraph'),
@@ -539,9 +631,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
       join(home, '.claude', 'rules', rule),
     );
   }
-  for (const agent of agents) {
-    paths.push(join(home, '.codex', 'agents', `${agent}.toml`), join(home, '.claude', 'agents', `${agent}.md`));
-  }
+  paths.push(...agentFleetTargetPaths(env));
   return [...new Set(paths)];
 }
 
@@ -951,7 +1041,7 @@ function completeHostSkillSetEvidence(home: string, names: readonly string[]): s
 }
 
 function completeAgentFleetEvidence(home: string): string[] {
-  const agents = ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'];
+  const agents = AGENT_FLEET_AGENTS;
   for (const [root, extension] of [[join(home, '.codex', 'agents'), '.toml'], [join(home, '.claude', 'agents'), '.md']] as const) {
     const paths = agents.map((agent) => join(root, `${agent}${extension}`));
     if (paths.every(existsSync)) return paths;
@@ -1093,6 +1183,7 @@ export function applyInstallProfile(
   now = new Date(),
   transaction?: InstallHostTransaction,
   migrationSource?: LegacyInstalledProfileState,
+  options: { readonly agentFleetVerified?: boolean } = {},
 ): { readonly plan: InstallProfilePlan; readonly state: InstalledProfileState } {
   const current = readInstalledProfile(env);
   const plan = planInstallProfile(profile, current, env);
@@ -1105,8 +1196,9 @@ export function applyInstallProfile(
   const transactionOwned = transaction
     ? transactionOwnedSurfaces(transaction, migrationSource ?? current)
     : [];
+  const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(profile, env) : [];
   const ownershipManifest = [...new Map(
-    [...discovered, ...preserved, ...transactionOwned].map((surface) => [
+    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned].map((surface) => [
       `${surface.path}\0${surface.managed_marker ?? surface.type}`,
       surface,
     ]),

@@ -16,14 +16,8 @@ import {
   parseFindings,
   type ProviderInvocationOutcome,
 } from "../../src/core/review/cross-review";
-import {
-  buildOfficialPluginFocus,
-  discoverOfficialCodexPlugin,
-  parseOfficialCodexPluginReview,
-} from "../../src/effects/review/codex-plugin-provider";
-
 // SSD-04: tests/cli/cross-review.test.ts. Every case uses a fixture provider
-// script standing in for the real `codex`/official-plugin binaries -- no real
+// script standing in for the real `codex` binary -- no real
 // provider or network call is ever invoked (RunCrossReviewInput.providerCommand
 // is the test seam). Scope-only tests (clean/staged/unstaged/untracked/
 // degraded/exact-base) invoke captureCrossReviewScope directly without a
@@ -154,104 +148,14 @@ function withFixture(fn: (repo: string, provider: string) => void): void {
   }
 }
 
-function officialPluginPayload(
-  findings: readonly Record<string, unknown>[] = [{
-    severity: "high",
-    title: "Swallowed failure",
-    body: "The error path reports success.",
-    file: "src/example.ts",
-    line_start: 12,
-    line_end: 12,
-    confidence: 0.98,
-    recommendation: "Return the failure.",
-  }],
-): string {
-  const result = {
-    verdict: findings.length > 0 ? "needs-attention" : "approve",
-    summary: findings.length > 0 ? "Material findings found." : "No material findings.",
-    findings,
-    next_steps: findings.length > 0 ? ["Address the findings."] : [],
-  };
-  const rawOutput = JSON.stringify(result);
-  return JSON.stringify({
-    codex: { status: 0, stderr: "", stdout: rawOutput, reasoning: "" },
-    result,
-    rawOutput,
-    parseError: null,
-    reasoningSummary: "",
-  });
-}
-
-function withOfficialPluginFixture(
-  fn: (fixture: {
-    repo: string;
-    home: string;
-    pluginRoot: string;
-    claudeCommand: string;
-    runtimeCommand: string;
-    env: NodeJS.ProcessEnv;
-  }) => void,
-): void {
-  const repo = initRepo();
-  const root = mkdtempSync(join(tmpdir(), "cross-review-official-plugin-"));
-  const home = join(root, "home");
-  const pluginRoot = join(root, "plugin", "1.0.6");
-  mkdirSync(join(pluginRoot, "scripts"), { recursive: true });
-  mkdirSync(join(pluginRoot, "schemas"), { recursive: true });
-  mkdirSync(join(pluginRoot, ".claude-plugin"), { recursive: true });
-  mkdirSync(home, { recursive: true });
-  writeFileSync(join(pluginRoot, "scripts", "codex-companion.mjs"), "// official companion fixture\n");
-  writeFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), JSON.stringify({
-    name: "codex",
-    version: "1.0.6",
-    author: { name: "OpenAI" },
-  }));
-  writeFileSync(join(pluginRoot, "schemas", "review-output.schema.json"), JSON.stringify({
-    required: ["verdict", "summary", "findings", "next_steps"],
-    properties: {
-      verdict: { enum: ["approve", "needs-attention"] },
-      findings: { items: { properties: { severity: { enum: ["critical", "high", "medium", "low"] } } } },
-    },
-  }));
-  const claudeCommand = join(root, "fake-claude.sh");
-  writeFileSync(claudeCommand, [
-    "#!/bin/sh",
-    'printf "%s\\n" "$CODEX_PLUGIN_INVENTORY"',
-  ].join("\n"));
-  chmodSync(claudeCommand, 0o755);
-  const runtimeCommand = join(root, "fake-node.sh");
-  writeFileSync(runtimeCommand, [
-    "#!/bin/sh",
-    'if [ -n "${CROSS_REVIEW_CWD_FILE:-}" ]; then pwd > "$CROSS_REVIEW_CWD_FILE"; fi',
-    'if [ -n "${CROSS_REVIEW_ARGS_FILE:-}" ]; then printf "%s\\n" "$@" > "$CROSS_REVIEW_ARGS_FILE"; fi',
-    'if [ -n "${CROSS_REVIEW_COUNTER_FILE:-}" ]; then count=0; [ -f "$CROSS_REVIEW_COUNTER_FILE" ] && count=$(cat "$CROSS_REVIEW_COUNTER_FILE"); echo $((count + 1)) > "$CROSS_REVIEW_COUNTER_FILE"; fi',
-    'if [ -n "${CROSS_REVIEW_MUTATE_FILE:-}" ]; then printf "changed during review\\n" >> "$CROSS_REVIEW_MUTATE_FILE"; fi',
-    'printf "%s\\n" "$CROSS_REVIEW_PLUGIN_PAYLOAD"',
-  ].join("\n"));
-  chmodSync(runtimeCommand, 0o755);
-  const env = {
-    ...process.env,
-    HOME: home,
-    CODEX_PLUGIN_INVENTORY: JSON.stringify([{
-      id: "codex@openai-codex",
-      version: "1.0.6",
-      enabled: true,
-      installPath: pluginRoot,
-    }]),
-    CROSS_REVIEW_PLUGIN_PAYLOAD: officialPluginPayload(),
-    // The fixture HOME is the only plugin-data authority here. An explicit
-    // undefined survives discoverOfficialCodexPlugin's `{ ...process.env,
-    // ...opts.env }` merge, so an ambient CLAUDE_PLUGIN_DATA cannot outrank
-    // the HOME-based default and point discovery outside the fixture.
-    CLAUDE_PLUGIN_DATA: undefined,
-  };
+test('removed plugin provider returns an explicit upgrade error before launching a harness', () => {
+  const repo=initRepo();
   try {
-    fn({ repo, home, pluginRoot, claudeCommand, runtimeCommand, env });
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
-}
+    const result=spawnSync(process.execPath,[join(import.meta.dir,'../../src/cli/index.ts'),'cross-review','--provider','codex-plugin'],{cwd:repo,env:{...GIT_ENV,HOME:repo},encoding:'utf8'});
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('codex-plugin is retired');
+  } finally {rmSync(repo,{recursive:true,force:true});}
+});
 
 describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
   test("clean tree: no diffs at all yields an empty path set", () => {
@@ -478,207 +382,6 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
   }, 30_000);
 });
 
-describe("runCrossReview (official codex-plugin mode)", () => {
-  test("discovers the enabled official install and binds the app-server request to the exact combined subject", () => {
-    withOfficialPluginFixture(({ repo, pluginRoot, claudeCommand, runtimeCommand, env }) => {
-      writeFileSync(join(repo, "untracked.txt"), "new file\n");
-      const scope = captureCrossReviewScope(repo, { baseRevision: "HEAD" });
-      expect(scope.status).toBe("ok");
-      if (scope.status !== "ok") throw new Error("expected ok scope");
-      const discovery = discoverOfficialCodexPlugin(repo, scope, {
-        env,
-        claudeCommand,
-        nodeCommand: runtimeCommand,
-      });
-      expect(discovery.status).toBe("ok");
-      if (discovery.status !== "ok") throw new Error(discovery.message);
-      expect(discovery.invocation.version).toBe("1.0.6");
-      expect(discovery.invocation.args[0]).toBe(realpathSync(join(pluginRoot, "scripts", "codex-companion.mjs")));
-      expect(discovery.invocation.args).toContain("adversarial-review");
-      expect(discovery.invocation.args).toContain("--json");
-      expect(discovery.invocation.args).toContain("--base");
-      expect(discovery.invocation.args).toContain(scope.baseRev);
-      const focus = discovery.invocation.args.at(-1) ?? "";
-      expect(focus).toContain(scope.reviewSubjectSha256);
-      expect(focus).toContain(`git diff ${scope.baseRev}...${scope.headRev}`);
-      expect(focus).toContain(JSON.stringify(scope.paths));
-      expect(focus).toContain("git diff --cached");
-      expect(focus).toContain("git ls-files --others --exclude-standard");
-      expect(discovery.invocation.env.CLAUDE_PLUGIN_DATA).toContain("codex-openai-codex");
-      expect(buildOfficialPluginFocus(scope)).toBe(focus);
-    });
-  });
-
-  test("maps official critical/high to P1 and medium/low to P2 while preserving the verbatim Codex transcript", () => {
-    withOfficialPluginFixture(({ repo, home, claudeCommand, runtimeCommand, env }) => {
-      const findings = [
-        {
-          severity: "high",
-          title: "High risk",
-          body: "The operation can lose data.",
-          file: "src/high.ts",
-          line_start: 8,
-          line_end: 9,
-          confidence: 0.99,
-          recommendation: "Make the write atomic.",
-        },
-        {
-          severity: "medium",
-          title: "Missing assertion",
-          body: "The test does not prove the failure path.",
-          file: "tests/example.test.ts",
-          line_start: 20,
-          line_end: 20,
-          confidence: 0.8,
-          recommendation: "Assert the error result.",
-        },
-      ];
-      const payload = officialPluginPayload(findings);
-      const counterFile = join(home, "plugin-counter.txt");
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "codex-plugin",
-        providerCommand: runtimeCommand,
-        claudeCommand,
-        timeoutMs: 5000,
-        env: { ...env, CROSS_REVIEW_PLUGIN_PAYLOAD: payload, CROSS_REVIEW_COUNTER_FILE: counterFile },
-      });
-      expect(result.status).toBe("ok");
-      if (result.status !== "ok") throw new Error(result.message);
-      expect(result.findings.map((finding) => finding.severity)).toEqual(["P1", "P2"]);
-      expect(result.transcript).toBe(JSON.parse(payload).codex.stdout);
-      expect(result.recommendation).toContain("FAIL");
-      expect(result.usedTranscriptRecovery).toBe(false);
-      expect(readFileSync(counterFile, "utf-8").trim()).toBe("1");
-    });
-  });
-
-  test("runs the official reviewer against an immutable snapshot and fails if the source subject changes", () => {
-    withOfficialPluginFixture(({ repo, home, claudeCommand, runtimeCommand, env }) => {
-      writeFileSync(join(repo, "README.md"), "# fixture\nreview me\n");
-      const cwdFile = join(home, "provider-cwd.txt");
-      const counterFile = join(home, "provider-count.txt");
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "codex-plugin",
-        providerCommand: runtimeCommand,
-        claudeCommand,
-        timeoutMs: 5000,
-        env: {
-          ...env,
-          CROSS_REVIEW_CWD_FILE: cwdFile,
-          CROSS_REVIEW_COUNTER_FILE: counterFile,
-          CROSS_REVIEW_MUTATE_FILE: join(repo, "README.md"),
-        },
-      });
-      expect(result.status).toBe("failed");
-      if (result.status !== "failed") throw new Error("expected stale scope failure");
-      expect(result.code).toBe("stale_scope");
-      expect(result.message).toContain("changed while");
-      expect(readFileSync(counterFile, "utf-8").trim()).toBe("1");
-      expect(readFileSync(cwdFile, "utf-8").trim()).not.toBe(repo);
-      expect(readFileSync(cwdFile, "utf-8")).toContain("repo-harness-cross-review-");
-    });
-  });
-
-  test("missing or disabled official plugin fails explicitly after the bounded budget and never runs a fallback", () => {
-    withOfficialPluginFixture(({ repo, home, claudeCommand, runtimeCommand, env }) => {
-      const counterFile = join(home, "plugin-counter.txt");
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "codex-plugin",
-        providerCommand: runtimeCommand,
-        claudeCommand,
-        timeoutMs: 5000,
-        env: {
-          ...env,
-          CODEX_PLUGIN_INVENTORY: JSON.stringify([{
-            id: "codex@openai-codex",
-            version: "1.0.6",
-            enabled: false,
-            installPath: "/ignored",
-          }]),
-          CROSS_REVIEW_COUNTER_FILE: counterFile,
-        },
-      });
-      expect(result.status).toBe("skipped");
-      if (result.status !== "skipped") throw new Error("expected skipped");
-      expect(result.attempts).toBe(2);
-      expect(result.message).toContain("installed but disabled");
-      expect(() => readFileSync(counterFile, "utf-8")).toThrow();
-    });
-  });
-
-  test("malformed official structured output fails closed instead of parsing prose", () => {
-    withOfficialPluginFixture(({ repo, claudeCommand, runtimeCommand, env }) => {
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "codex-plugin",
-        providerCommand: runtimeCommand,
-        claudeCommand,
-        timeoutMs: 5000,
-        env: { ...env, CROSS_REVIEW_PLUGIN_PAYLOAD: '{"result":"not-the-schema"}' },
-      });
-      expect(result.status).toBe("skipped");
-      if (result.status === "skipped") expect(result.code).toBe("malformed_transcript");
-    });
-  });
-
-  test("structured parser rejects unsafe finding paths", () => {
-    const payload = officialPluginPayload([{
-      severity: "low",
-      title: "Unsafe path",
-      body: "Path escaped the repository.",
-      file: "../outside.ts",
-      line_start: 1,
-      line_end: 1,
-      confidence: 0.5,
-      recommendation: "Use a repository-relative path.",
-    }]);
-    expect(parseOfficialCodexPluginReview(payload)).toEqual({
-      status: "failed",
-      message: "official Codex plugin returned an unsupported review result shape",
-    });
-  });
-
-  test("structured parser rejects wrapper fields that disagree with the verbatim Codex transcript", () => {
-    const payload = JSON.parse(officialPluginPayload()) as Record<string, unknown>;
-    payload.result = { verdict: "approve", summary: "tampered", findings: [], next_steps: [] };
-    expect(parseOfficialCodexPluginReview(JSON.stringify(payload))).toEqual({
-      status: "failed",
-      message: "official Codex plugin payload disagrees with the verbatim Codex transcript",
-    });
-  });
-
-  test("structured parser rejects verdict/findings combinations that could synthesize a false pass", () => {
-    for (const [verdict, findings] of [
-      ["needs-attention", []],
-      ["approve", [{
-        severity: "low",
-        title: "Advisory",
-        body: "A finding exists.",
-        file: "src/example.ts",
-        line_start: 1,
-        line_end: 1,
-        confidence: 0.8,
-        recommendation: "Address it.",
-      }]],
-    ] as const) {
-      const result = { verdict, summary: "inconsistent", findings, next_steps: [] };
-      const payload = JSON.stringify({
-        codex: { status: 0, stderr: "", stdout: JSON.stringify(result), reasoning: "" },
-        result,
-        rawOutput: JSON.stringify(result),
-        parseError: null,
-        reasoningSummary: "",
-      });
-      expect(parseOfficialCodexPluginReview(payload)).toEqual({
-        status: "failed",
-        message: "official Codex plugin returned an unsupported review result shape",
-      });
-    }
-  });
-});
 
 describe("bounded attempt budget: 2 attempts, then a non-blocking skip", () => {
   test("timeout on both attempts -> skipped after 2 attempts with exit code 0", () => {
@@ -891,7 +594,6 @@ describe("no-merge-gate reachability (hard constraint 3)", () => {
   const ROOT = join(import.meta.dir, "..", "..");
   const NEW_MODULE_PATHS = [
     "src/core/review/cross-review.ts",
-    "src/effects/review/codex-plugin-provider.ts",
     "src/effects/review/cross-review-runner.ts",
     "src/cli/commands/cross-review.ts",
   ];

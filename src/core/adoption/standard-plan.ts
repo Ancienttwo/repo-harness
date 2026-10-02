@@ -355,7 +355,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
     agent_runtime: {
       mode: "off",
       adapters: {
-        "codex-app-thread": { enabled: false },
         "herdr-cli-agent": { enabled: false },
       },
     },

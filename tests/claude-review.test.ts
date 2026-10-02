@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { execFileSync, spawn, type ChildProcess } from 'child_process';
@@ -12,6 +12,7 @@ import { claudeReviewStatus, closeClaudeReview, reviewSessionLocation, runClaude
 import { herdrCommand, herdrEnvironment, herdrResult } from '../src/effects/terminal/herdr';
 import { verifyAcceptance } from '../scripts/acceptance-receipt';
 import { emptyVerificationEvaluation, withEmptyVerificationPlan } from './helpers/verification-plan-fixture';
+import { processProofAlive, readSessionArtifact, signalCreatedProcess, type OwnedProcess } from '../src/effects/terminal/task-session';
 import { reviewContextDigest, validateClaudeReviewResult, type ClaudeReviewRequest } from '../src/core/review/claude-review';
 
 // Every case in this file drives the real pinned `herdr` binary (sentinel
@@ -24,15 +25,16 @@ if (!process.env.REPO_HARNESS_TEST_EXPENSIVE) {
   console.log('[gate] REPO_HARNESS_TEST_EXPENSIVE unset: skipping the real herdr review session cases (release lane only, not a failure).');
 }
 const fixtures: { root: string; home: string }[] = [];
-const sentinels: {name:string; process:ChildProcess; root:string; configPath:string}[] = [];
+const sentinels: {name:string; process:ChildProcess; root:string; configPath:string;home:string}[] = [];
 async function sentinelServer() {
-  const root=mkdtempSync(join(tmpdir(),'rh-herdr-sentinel-'));
-  const name='sentinel-'+randomUUID();
+  const root=realpathSync(mkdtempSync('/tmp/cs-'));
+  const home=join(root,'h'); mkdirSync(home);
+  const name='sentinel-'+randomUUID().replaceAll('-','').slice(0,16);
   const configPath=join(root,'herdr.toml');
   writeFileSync(configPath,'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n');
-  const endpoint={session:name,configPath};
+  const endpoint={session:name,configPath,home};
   const child=spawn('herdr',['--session',name,'server'],{env:herdrEnvironment(endpoint),stdio:'ignore'});
-  sentinels.push({name,process:child,root,configPath});
+  sentinels.push({name,process:child,root,configPath,home});
   const call=(args:string[])=>herdrResult(herdrCommand(endpoint,args));
   for(let i=0;;i++) { try{call(['workspace','list']);break;}catch(e){if(i===50)throw e;await Bun.sleep(100);} }
   const pane=call(['workspace','create','--cwd',root,'--no-focus']).root_pane.pane_id;
@@ -40,13 +42,51 @@ async function sentinelServer() {
   return {call,pane,identity,endpoint};
 }
 const contract = 'tasks/contracts/review.contract.md';
-afterEach(async () => {
-  for (const fixture of fixtures.splice(0)) {
-    try { await closeClaudeReview({ repoRoot: fixture.root, contract, authorityHome: fixture.home }, true); } catch { /* A session may never have started. */ }
-    rmSync(fixture.root, { recursive: true, force: true });
-    rmSync(fixture.home, { recursive: true, force: true });
+// Exit can race ps identity readback (for example comm changes while reaping).
+// A mismatch never permits a signal. Wait only for PID absence; a live
+// replacement still fails closed and keeps the fixture evidence.
+async function fixtureProofAlive(proof: OwnedProcess): Promise<boolean> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try { return processProofAlive(proof); }
+    catch (error) {
+      if (Date.now() >= deadline) throw error;
+      try { process.kill(proof.pid, 0); }
+      catch (absent) { if ((absent as NodeJS.ErrnoException).code === 'ESRCH') return false; throw absent; }
+      await Bun.sleep(25);
+    }
   }
-  for (const item of sentinels.splice(0)) { herdrCommand({session:item.name,configPath:item.configPath},['server','stop']); await new Promise<void>(resolve => item.process.exitCode !== null ? resolve() : item.process.once('exit',()=>resolve())); rmSync(item.root,{recursive:true,force:true}); }
+}
+async function teardownReviewFixture(fixture: { root: string; home: string }, cancel = () => closeClaudeReview({ repoRoot: fixture.root, contract, authorityHome: fixture.home }, true)) {
+  const dir = reviewSessionLocation(fixture.root, contract).dir;
+  const proofs: OwnedProcess[] = [];
+  const serverPath = join(dir, 'server.json');
+  if (existsSync(serverPath) && lstatSync(serverPath).isFile()) proofs.push(readSessionArtifact<OwnedProcess>(serverPath));
+  const processPath = join(dir, 'processes.json');
+  if (existsSync(processPath)) {
+    const recorded = readSessionArtifact<{ binding: { provider: OwnedProcess; host: {pid:number;identity:string} | null; ownership: OwnedProcess['ownership'] } }>(processPath);
+    proofs.push(recorded.binding.provider);
+    if (recorded.binding.host) proofs.push({ ...recorded.binding.host, ownership: recorded.binding.ownership });
+  }
+  try { await cancel(); } catch { /* Known creator proofs below fence fixture-only recovery. */ }
+  for (const proof of proofs) {
+    if (!await fixtureProofAlive(proof)) continue;
+    // The fixture is private. No name-only/default process lookup or killall.
+    signalCreatedProcess(proof, 'SIGTERM', true);
+    const end = Date.now() + 3000;
+    while (await fixtureProofAlive(proof) && Date.now() < end) await Bun.sleep(25);
+    if (await fixtureProofAlive(proof)) signalCreatedProcess(proof, 'SIGKILL', true);
+    const stoppedBy = Date.now() + 3000;
+    while (await fixtureProofAlive(proof) && Date.now() < stoppedBy) await Bun.sleep(25);
+    if (await fixtureProofAlive(proof)) throw new Error(`fixture cleanup incomplete; evidence retained at ${fixture.root}`);
+  }
+  // Never remove ledger/socket proof while a recorded disposable process lives.
+  rmSync(fixture.root, { recursive: true, force: true });
+  rmSync(fixture.home, { recursive: true, force: true });
+}
+afterEach(async () => {
+  for (const fixture of fixtures.splice(0)) await teardownReviewFixture(fixture);
+  for (const item of sentinels.splice(0)) { herdrCommand({session:item.name,configPath:item.configPath,home:item.home},['server','stop']); await new Promise<void>(resolve => item.process.exitCode !== null ? resolve() : item.process.once('exit',()=>resolve())); rmSync(item.root,{recursive:true,force:true}); }
 });
 
 function git(root: string, ...args: string[]) { return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
@@ -72,12 +112,12 @@ function prepare(root: string) {
 }
 
 function fixture(mode = 'normal') {
-  const root = mkdtempSync(join(tmpdir(), 'rh-claude-session-'));
-  const home = mkdtempSync(join(tmpdir(), 'rh-claude-authority-'));
+  const root = realpathSync(mkdtempSync('/tmp/cr-'));
+  const home = join(root, 'h'); mkdirSync(home);
   fixtures.push({ root, home });
   git(root, 'init', '-b', 'main'); git(root, 'config', 'user.name', 'Review Test'); git(root, 'config', 'user.email', 'review@test.invalid');
   for (const dir of ['.ai/harness/checks', 'tasks/contracts', 'tasks/reviews', 'plans']) mkdirSync(join(root, dir), { recursive: true });
-  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\nprovider\n');
+  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\nprovider\nh/\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { review_base: 'main' }, merge_gate: { enabled: true, rule: 'fixture' } }));
   writeFileSync(join(root, 'source.ts'), 'export const value = 0;\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'base'); git(root, 'checkout', '-b', 'codex/review');
@@ -94,7 +134,7 @@ function fixture(mode = 'normal') {
   chmodSync(provider, 0o700);
   prepare(root);
   let admissions = 0;
-  return { root, home, options: { repoRoot: root, contract, authorityHome: home, providerCommand: provider,
+  return { root, home, options: { repoRoot: root, contract, authorityHome: home, runtimeHome: home, providerCommand: provider,
     timeoutMs: 5000, admitSession: () => { admissions++; } }, admissions: () => admissions };
 }
 
@@ -208,6 +248,62 @@ releaseLaneOnly('schema enums reject array coercion instead of accepting malform
   }
 });
 
+releaseLaneOnly.each(['report-agent', 'rename', 'capture', 'publication'])('post-spawn %s failure reaps the provider before cancellation', async stage => {
+  const f = unstartedSession();
+  const sentinel = await sentinelServer();
+  const before = sentinel.identity();
+  const bin = join(f.root, 'bin'); mkdirSync(bin);
+  const pidFile = join(f.root, 'provider.pid');
+  const proofFile = join(f.root, 'provider-proof.json');
+  const provider = f.options.providerCommand;
+  writeFileSync(provider, readFileSync(provider, 'utf8').replace("let count=0;", `writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nlet count=0;`).replace("reader.on('close',()=>process.exit(0));", "setInterval(()=>{}, 1000);"));
+  const sessionModule = fileURLToPath(new URL('../src/effects/terminal/task-session.ts', import.meta.url));
+  const wrapper = join(bin, 'herdr');
+  writeFileSync(wrapper, `#!${process.execPath}
+import {existsSync, readFileSync, writeFileSync} from 'fs';
+import {spawnSync} from 'child_process';
+import {processIdentity} from ${JSON.stringify(sessionModule)};
+const args=process.argv.slice(2), stage=${JSON.stringify(stage)};
+const fail=(stage==='report-agent' && args[3]==='report-agent') || (stage==='rename' && args[3]==='rename') || (stage==='capture' && args[2]==='pane' && args[3]==='get');
+if(fail || (stage==='publication' && args[3]==='report-agent')) {
+ const deadline=Date.now()+3000;
+ while(!existsSync(${JSON.stringify(pidFile)}) && Date.now()<deadline) await Bun.sleep(10);
+ const pid=Number(readFileSync(${JSON.stringify(pidFile)},'utf8'));
+ writeFileSync(${JSON.stringify(proofFile)}, JSON.stringify({pid,identity:processIdentity(pid),ownership:{disposition:'created',intent_id:${JSON.stringify(f.session.session_id)}}}));
+ if(fail) process.exit(42);
+}
+const result=spawnSync(${JSON.stringify(f.session.herdr_bin)}, args, {stdio:'inherit'});
+process.exit(result.status ?? 1);
+`); chmodSync(wrapper, 0o700);
+  if (stage === 'publication') symlinkSync(join(f.dir, 'absent-processes'), join(f.dir, 'processes.json'));
+  const oldPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}:${oldPath}`;
+    await startReviewServer(f.session, f.dir);
+  } finally { process.env.PATH = oldPath; }
+  let proof: OwnedProcess | undefined;
+  try {
+    const deadline = Date.now() + 10000;
+    while (!existsSync(join(f.dir, 'failure.json')) && Date.now() < deadline) await Bun.sleep(25);
+    expect(existsSync(join(f.dir, 'failure.json'))).toBe(true);
+    proof = readSessionArtifact<OwnedProcess>(proofFile);
+    expect(await fixtureProofAlive(proof)).toBe(false);
+    expect(readSessionArtifact<{session_id:string}>(join(f.dir, 'startup-no-child.json')).session_id).toBe(f.session.session_id);
+    const result = await closeClaudeReview(f.options, true) as {cancelled:boolean};
+    expect(result.cancelled).toBe(true);
+    expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
+    expect(existsSync(join(f.dir, 'accepted-1.json'))).toBe(false);
+    expect(sentinel.identity()).toEqual(before);
+  } finally {
+    // Keep creator proof available even when reproducing the pre-fix leak.
+    if (proof && await fixtureProofAlive(proof)) {
+      signalCreatedProcess(proof, 'SIGKILL', true);
+      const deadline=Date.now()+3000;
+      while(await fixtureProofAlive(proof) && Date.now()<deadline) await Bun.sleep(25);
+    }
+  }
+}, 20000);
+
 releaseLaneOnly('startup spawn failure can be cancelled without process metadata or acceptance', async () => {
   const f = fixture();
   chmodSync(f.options.providerCommand, 0o600);
@@ -227,9 +323,9 @@ function unstartedSession() {
   const f = fixture();
   const location = reviewSessionLocation(f.root, contract);
   const id = randomUUID();
-  const session: ReviewSession = { protocol: 2, startup_protocol: 1, repo_root: location.root, contract_file: contract,
-    contract_sha256: 'contract', goal_sha256: 'goal', session_id: id, herdr_session: `review-${id}`,
-    herdr_bin: Bun.which('herdr')!, herdr_config: join(location.dir, 'herdr.toml'), provider_bin: realpathSync(f.options.providerCommand) };
+  const session: ReviewSession = { protocol: 3, startup_protocol: 1, repo_root: location.root, contract_file: contract,
+    contract_sha256: 'contract', goal_sha256: 'goal', session_id: id, herdr_session: `review-${id.replaceAll("-", "").slice(0, 20)}`,
+    herdr_bin: Bun.which('herdr')!, herdr_config: join(location.dir, 'herdr.toml'), provider_bin: realpathSync(f.options.providerCommand), runtime_home: f.home };
   writeFileSync(join(location.dir, 'session.json'), JSON.stringify(session));
   return { ...f, ...location, session };
 }
@@ -264,7 +360,7 @@ releaseLaneOnly('failed server metadata publication reaps its owned herdr child'
   await expect(startReviewServer(f.session, f.dir)).rejects.toThrow();
   expect(existsSync(join(f.dir, 'server-start-intent.json'))).toBe(true);
   expect(JSON.parse(readFileSync(join(f.dir, 'server-closed.json'), 'utf8')).session_id).toBe(f.session.session_id);
-  expect(herdrCommand({ session: f.session.herdr_session }, ['workspace', 'list']).status).not.toBe(0);
+  expect(herdrCommand({ session: f.session.herdr_session, home: f.home }, ['workspace', 'list']).status).not.toBe(0);
   await closeClaudeReview(f.options, true);
   expect(claudeReviewStatus(f.root, contract).status).toBe('closed');
 });
@@ -328,3 +424,29 @@ releaseLaneOnly('old tmux session metadata is rejected without translation or cl
     expect(existsSync(join(f.dir, 'closed.json'))).toBe(false);
   } finally { writeFileSync(path, original); }
 });
+
+releaseLaneOnly('fixture teardown does not lose live disposable process proof when normal cancel fails', async () => {
+  const f = fixture();
+  await runClaudeReviewRound(f.options);
+  const dir = reviewSessionLocation(f.root, contract).dir;
+  const server = readSessionArtifact<OwnedProcess>(join(dir, 'server.json'));
+  const processes = readSessionArtifact<{ binding: { provider: OwnedProcess; host: {pid:number;identity:string}; ownership: OwnedProcess['ownership'] } }>(join(dir, 'processes.json'));
+  const proofs = [processes.binding.provider, { ...processes.binding.host, ownership: processes.binding.ownership }, server];
+  try {
+    await teardownReviewFixture(f, async () => { throw new Error('injected normal cancellation failure'); });
+    expect(await fixtureProofAlive(server)).toBe(false);
+    expect((await Promise.all(proofs.map(proof => fixtureProofAlive(proof)))).every(alive => !alive)).toBe(true);
+    expect(existsSync(f.root)).toBe(false);
+  } finally {
+    // Pre-fix reproduction cleanup uses original creator proofs retained above,
+    // even if the buggy teardown unlinked their files. No default lookup.
+    for (const proof of [server, ...proofs.filter(item => item.pid !== server.pid)]) {
+      if (!await fixtureProofAlive(proof)) continue;
+      signalCreatedProcess(proof, 'SIGTERM', true);
+      const end=Date.now()+3000;while(await fixtureProofAlive(proof)&&Date.now()<end)await Bun.sleep(25);
+      if(await fixtureProofAlive(proof))signalCreatedProcess(proof,'SIGKILL',true);
+    }
+    const index = fixtures.findIndex(item => item.root === f.root);
+    if (index >= 0) fixtures.splice(index, 1);
+  }
+}, 20_000);

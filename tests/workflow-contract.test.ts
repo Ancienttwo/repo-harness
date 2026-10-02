@@ -78,7 +78,7 @@ describe("workflow contract manifest", () => {
 
   test("execution boundary canonical sentence stays identical across its constant sources", () => {
     // One owner per delegated runner path: the standalone contract-run worker
-    // prompt, the MCP codex-goal document, and the Codex native-child task packet
+    // prompt, the MCP task-goal document, and the Codex native-child task packet
     // (SubagentStart context). The generated agent fleet TOML is no longer a
     // source -- the persona owns role identity only, and the native child gets the
     // clause exactly once from the task packet. This asserts the first sentence
