@@ -1,6 +1,6 @@
 export type McpProfileName = 'planner' | 'executor' | 'orchestrator' | 'coding' | 'engineer';
 export type McpPathIntent = 'read' | 'write';
-export type McpAgentRunnerName = 'codex' | 'claude';
+export type McpAgentRunnerName = 'codex' | 'claude' | 'grok';
 
 export interface McpPolicy {
   profile: McpProfileName;

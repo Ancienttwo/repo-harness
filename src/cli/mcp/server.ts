@@ -72,7 +72,7 @@ function parseAgentList(value: unknown): McpAgentRunnerName[] {
   const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
   return Array.from(new Set(raw
     .map((entry) => String(entry).trim().toLowerCase())
-    .filter((entry): entry is McpAgentRunnerName => entry === 'codex' || entry === 'claude')));
+    .filter((entry): entry is McpAgentRunnerName => entry === 'codex' || entry === 'claude' || entry === 'grok')));
 }
 
 function parseTimeoutMs(value: unknown): number | undefined {

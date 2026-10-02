@@ -123,7 +123,7 @@ describe('mcp setup', () => {
       expect(config.chatgpt.serverName).toBe('repo-harness');
       expect(config.devMode).toMatchObject({
         agentRunner: false,
-        allowedAgents: ['codex'],
+        allowedAgents: ['codex', 'grok'],
         timeoutMs: 120000,
       });
       expect(config.rollout).toBeUndefined();
@@ -141,6 +141,7 @@ describe('mcp setup', () => {
       expect(doctor.mcp.configScope).toBeUndefined();
       expect(doctor.mcp.permissions.configurationScope).toBeUndefined();
       expect(doctor.mcp.devMode.agentRunner).toBe(false);
+      expect(doctor.mcp.devMode.allowedAgents).toEqual(['codex', 'grok']);
       expect(doctor.chatgpt.serverName).toBe('repo-harness');
       expect(doctor.chatgpt.localEndpoint).toBe('http://127.0.0.1:8765/mcp');
       expect(doctor.chatgpt.invocationVerification).toMatchObject({
@@ -747,6 +748,40 @@ describe('mcp setup', () => {
       expect(doctor.chatgpt.defaultServerName).toBe('repo-harness');
       expect(doctor.chatgpt.publicEndpoint).toBe('https://repo-harness-mcp.example.com/mcp');
       expect(runMcpDoctor({ repo: repoRoot }).lines.join('\n')).toContain('ChatGPT MCP server name: missing');
+    });
+  });
+
+  test('parses Grok runner allowlists from config, environment and CLI without enabling the runner by default', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      const envKey = 'REPO_HARNESS_MCP_DEV_RUNNER_AGENTS';
+      const previous = process.env[envKey];
+      try {
+        delete process.env[envKey];
+        writeFileSync(join(userHome, 'mcp.local.json'), JSON.stringify({
+          version: 3, profile: 'orchestrator',
+          devMode: { agentRunner: false, allowedAgents: ['grok'], timeoutMs: 120000 },
+        }));
+        expect(createMcpToolContext({ repo: repoRoot }).policy.execution.agentRunner).toBe(false);
+        const enabled = { repo: repoRoot, profile: 'orchestrator', enableDevRunner: true };
+        expect(createMcpToolContext(enabled).policy.execution.allowedAgents).toEqual(['grok']);
+        process.env[envKey] = ' GROK,claude,grok,unknown ';
+        expect(createMcpToolContext(enabled).policy.execution.allowedAgents).toEqual(['grok', 'claude']);
+        expect(createMcpToolContext({ ...enabled, devRunnerAgents: 'codex,GROK,grok,unknown' })
+          .policy.execution.allowedAgents).toEqual(['codex', 'grok']);
+        expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0])
+          .mcp.devMode.allowedAgents).toEqual(['grok']);
+        runMcpSetupChatgpt({ repo: repoRoot });
+        expect(JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf8'))
+          .devMode.allowedAgents).toEqual(['grok']);
+        rmSync(join(userHome, 'mcp.local.json'));
+        delete process.env[envKey];
+        expect(createMcpToolContext(enabled).policy.execution.allowedAgents).toEqual(['codex', 'grok']);
+        expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0])
+          .mcp.devMode.allowedAgents).toEqual(['codex', 'grok']);
+      } finally {
+        if (previous === undefined) delete process.env[envKey];
+        else process.env[envKey] = previous;
+      }
     });
   });
 

@@ -747,6 +747,21 @@ describe('mcp tools', () => {
     });
   });
 
+  test('advertises Grok and enforces its allowlist and explicit Herdr endpoint', async () => {
+    await withRepo(async (repoRoot) => {
+      writeFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), '# Scratch goal\n');
+      const ctx = { repoRoot, policy: getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['grok'] }) };
+      const schema = buildMcpToolDefinitions(ctx.policy).find((tool) => tool.name === 'run_agent_goal')!.inputSchema;
+      expect((schema as { properties: { agent: { enum: string[] } } }).properties.agent.enum).toContain('grok');
+      expect((await jsonTool(ctx, 'run_agent_goal', { agent: ' GROK ' })).error.code).toBe('HERDR_ENDPOINT_REQUIRED');
+      expect((await jsonTool({ repoRoot, policy: getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'] }) },
+        'run_agent_goal', { agent: 'grok' })).error.code).toBe('AGENT_DENIED');
+      expect((await jsonTool(ctx, 'run_agent_goal', { agent: 'unknown' })).error.code).toBe('INVALID_AGENT');
+      expect((await jsonTool({ repoRoot, policy: getMcpPolicy('orchestrator') },
+        'run_agent_goal', { agent: 'grok' })).error.code).toBe('DEV_RUNNER_DISABLED');
+    });
+  });
+
   test('requires an explicit Herdr endpoint without falling back to a direct harness', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-'));
     const binRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-bin-'));

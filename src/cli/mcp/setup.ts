@@ -410,7 +410,7 @@ deploy/runbooks/general-repo-mcp-codegraph.md
 
 ## Dev Mode Agent Runner
 
-The default planner Connector does not run Codex or Claude. If you intentionally want ChatGPT to trigger a local agent from MCP, use the \`orchestrator\` profile and enable the dev runner setting yourself.
+The default planner Connector does not run Codex, Claude or Grok. If you intentionally want ChatGPT to trigger a local agent from MCP, use the \`orchestrator\` profile and enable the dev runner setting yourself.
 
 Local config setting:
 
@@ -418,7 +418,7 @@ Local config setting:
 {
   "devMode": {
     "agentRunner": true,
-    "allowedAgents": ["codex"],
+    "allowedAgents": ["codex", "grok"],
     "timeoutMs": 120000
   }
 }
@@ -427,13 +427,13 @@ Local config setting:
 Equivalent one-shot launch:
 
 \`\`\`bash
-repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile orchestrator --enable-dev-runner --dev-runner-agents codex
+repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile orchestrator --enable-dev-runner --dev-runner-agents codex,grok
 \`\`\`
 
 Environment override:
 
 \`\`\`bash
-REPO_HARNESS_MCP_DEV_RUNNER=1 REPO_HARNESS_MCP_DEV_RUNNER_AGENTS=codex,claude repo-harness mcp serve --repo . --transport http --profile orchestrator
+REPO_HARNESS_MCP_DEV_RUNNER=1 REPO_HARNESS_MCP_DEV_RUNNER_AGENTS=codex,claude,grok repo-harness mcp serve --repo . --transport http --profile orchestrator
 \`\`\`
 
 When enabled, the server exposes \`run_agent_goal\`. The tool reads only \`.ai/harness/handoff/task-goal.md\` and runs that fixed handoff in a persistent Herdr agent (explicit addressing is required):
@@ -442,6 +442,8 @@ When enabled, the server exposes \`run_agent_goal\`. The tool reads only \`.ai/h
 run_agent_goal { agent, herdr: { endpoint: {session}, parent_pane } }
 start -> send -> read history -> close (Result received) / cancel (no Result: timeout, observed_idle, failure)
 \`\`\`
+
+Grok is an interactive Herdr-pane worker (\`herdr agent start --kind grok\`), not a headless runner. Herdr must report \`agent === "grok"\` and interactive readiness before delivery. A request-bound Result owns completion; \`idle\` / \`done\` alone do not. Real-harness read-only and resume capabilities remain \`unverified\`. See \`docs/researches/grok-herdr-worker-canary.md\` for CLI 1.0.44 canary observations, startup prompts and MCP/hooks controls.
 
 Keep this behind local Developer Mode and per-call confirmations. Do not expose an orchestrator tunnel to untrusted users.
 
@@ -764,7 +766,7 @@ function setupChatgptLocked(opts: {
     },
     devMode: existingConfig?.devMode ?? {
       agentRunner: false,
-      allowedAgents: ['codex'],
+      allowedAgents: ['codex', 'grok'],
       timeoutMs: 120000,
     },
   };
@@ -1122,7 +1124,7 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       authorizationRevision: repoHarnessAuthorizationRevision(),
       devMode: {
         agentRunner: localConfig?.devMode?.agentRunner === true,
-        allowedAgents: localConfig?.devMode?.allowedAgents ?? ['codex'],
+        allowedAgents: localConfig?.devMode?.allowedAgents ?? ['codex', 'grok'],
         timeoutMs: localConfig?.devMode?.timeoutMs ?? 120000,
       },
     },

@@ -186,7 +186,7 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       execution: executionPolicy({
         codexRunner: devRunner,
         agentRunner: devRunner,
-        allowedAgents: devRunner ? (opts.allowedAgents?.length ? opts.allowedAgents : ['codex']) : [],
+        allowedAgents: devRunner ? (opts.allowedAgents?.length ? opts.allowedAgents : ['codex', 'grok']) : [],
         runnerTimeoutMs: opts.runnerTimeoutMs ?? DEFAULT_RUNNER_TIMEOUT_MS,
       }),
     };

@@ -484,7 +484,7 @@ function timestampPrefix(date = new Date()): string {
 
 function parseRunnerAgent(value: unknown): McpAgentRunnerName | null {
   const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized === 'codex' || normalized === 'claude' ? normalized : null;
+  return normalized === 'codex' || normalized === 'claude' || normalized === 'grok' ? normalized : null;
 }
 
 function runnerGoalPath(args: Record<string, unknown>): string {
@@ -506,7 +506,7 @@ async function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>):
   const agent = parseRunnerAgent(args.agent);
   if (!agent) {
     audit(ctx, 'run_agent_goal', 'blocked', args, undefined, 'invalid agent');
-    return errorResult('INVALID_AGENT', 'agent must be codex or claude');
+    return errorResult('INVALID_AGENT', 'agent must be codex, claude or grok');
   }
   if (!ctx.policy.execution.allowedAgents.includes(agent)) {
     audit(ctx, 'run_agent_goal', 'blocked', args, undefined, `agent is not allowed: ${agent}`);
@@ -1067,7 +1067,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const agentRunnerSchema = {
     type: 'object',
     properties: {
-      agent: { type: 'string', enum: ['codex', 'claude'] },
+      agent: { type: 'string', enum: ['codex', 'claude', 'grok'] },
       goal_path: { type: 'string', default: '.ai/harness/handoff/task-goal.md' },
       timeout_ms: { type: 'number' },
       herdr: { type: 'object', properties: {

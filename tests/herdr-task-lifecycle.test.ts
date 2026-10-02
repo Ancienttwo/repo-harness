@@ -695,8 +695,8 @@ test('MCP goals use visible persistent Herdr peers, redact history and clean suc
   run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], fixture, env);
   mkdirSync(join(fixture, '.ai/harness/handoff'), {recursive:true});
   const goalPath = join(fixture, '.ai/harness/handoff/task-goal.md');
-  // Both kinds resolve only to this deterministic persistent TTY process.
-  for (const kind of ['codex', 'claude']) {
+  // All kinds resolve only to this deterministic persistent TTY process.
+  for (const kind of ['codex', 'claude', 'grok']) {
     const fake = join(bin, kind);
     writeFileSync(fake, `#!${process.execPath}
 import {readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
@@ -744,8 +744,8 @@ const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,stdio:'inh
     await until(()=>{try{call(['workspace','list']);return true;}catch{return false;}});
     const root=call(['workspace','create','--cwd',fixture,'--no-focus']);
     const parent=root.root_pane.pane_id;
-    const ctx={repoRoot:fixture,policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex','claude'],runnerTimeoutMs:10000})};
-    for(const [kind,mode] of [['codex','startup-working-result'],['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','result'],['claude','timeout']] as const){
+    const ctx={repoRoot:fixture,policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex','claude','grok'],runnerTimeoutMs:10000})};
+    for(const [kind,mode] of [['codex','startup-working-result'],['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','result'],['claude','timeout'],['grok','result']] as const){
       const hang=mode==='timeout'||mode==='idle-only', hasResult=mode==='result'||mode==='early-idle-result'||mode==='startup-working-result';
       writeFileSync(goalPath,mode==='startup-working-result'?'STARTUP_WORKING WRITE_RESULT':mode==='early-idle-result'?'EARLY_IDLE WRITE_RESULT':mode==='idle-only'?'EARLY_IDLE IDLE_ONLY':hang?'WAIT_FOREVER':hasResult?'WRITE_RESULT':'Finish fixture goal');
       const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:hang?5000:10000});
@@ -757,6 +757,8 @@ const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,stdio:'inh
       expect(value.stdout).not.toContain('fixture-secret-token');
       expect(Buffer.byteLength(value.stdout)).toBeLessThanOrEqual(128*1024);
       const binding=api.readTaskAgent(fixture,value.task,value.role).binding;
+      expect(binding.harness_kind).toBe(kind);
+      expect(binding.capabilities).toEqual({read_only:{status:'unverified',evidence_ref:null},resume:{status:'unverified',evidence_ref:null}});
       expect(binding.provider.pid).toBe(Number(readFileSync(join(fixture,kind+'.pid'),'utf8')));
       expect(live(binding.provider.pid)).toBe(false);
       expect(api.taskAgentStatus(fixture,value.task,value.role).status).toBe('closed');
