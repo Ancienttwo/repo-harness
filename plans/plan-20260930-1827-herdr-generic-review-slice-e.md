@@ -243,3 +243,5 @@ model/protection boundaries and all remote prohibitions remain unchanged.
 and installation_id. Accepted unverified later-session channel, no whole-dir
 grant. One zero-prompt Codex recheck, new denial stops; no model turn or Claude
 recheck. Real-turn path sufficiency remains unverified.
+
+23:56 admits only the thread-writer-locks directory subpath atop the sixteen literals/tmp. Symlink/non-directory refused. One zero-prompt startup, any new refusal stops; no other grant or real turn certification.

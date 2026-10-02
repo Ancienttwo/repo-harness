@@ -73,3 +73,10 @@ literals. Aimpact accepts the unverified later-session goals/memories channel.
 The single zero-prompt recheck still fails thread/start: the OS denies
 thread-writer-locks/.coordination.lock. No additional grant or relaunch; Codex
 remains unsupported. Real turns/further paths remain unverified.
+
+
+23:56 adds only thread-writer-locks as a subpath. The single zero-prompt SDK
+constructor/dispose succeeded, but new model-cache, shell-snapshot, plugin and
+thread-history writes were denied; all remain closed and the probe stopped.
+This is startup/disposal evidence only, not real-turn readiness or Receipt
+certification. No plugin or broader root grant is implied.

@@ -1,6 +1,6 @@
 # Task Contract: herdr-generic-review-slice-e Receipt implementation
 
-> **Substantive Change SHA256**: `sha256:0cd0e46f969e8c4f24c0b529277fef868dc51c6b2a7d074475f0dd84d2a61fda`
+> **Substantive Change SHA256**: `sha256:1f1d6e5e9f5ff9cfd2f367f6ba15a0f521ce01f1e84c3e5e9c2f5dacd226e698`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -411,3 +411,13 @@ refusal, no mixed-root grant, forbidden regex precedence unchanged. One Codex
 zero-prompt startup, no Claude rerun; new refusal means stop without expansion
 or relaunch. Aimpact accepts the unverified later-session channel via goals and
 memories; real-turn state-path sufficiency is also unverified. Local commit only.
+
+
+## Aimpact 23:56 single lock subpath
+
+Add only realpath ~/.codex/thread-writer-locks as a subpath, requiring an existing
+non-symlink directory and non-symlink .codex. All literals and forbidden-regex
+precedence unchanged, no mixed-root grant. Extend inherited positive/negative
+fixture, then one zero-prompt Codex startup (real HOME). New denial stops, no
+expansion/relaunch/Claude rerun. Prior accepted goals/memories channel and real
+turn path sufficiency remain unverified. Local commit only.

@@ -68,11 +68,13 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   symlinkSync(protectedPaths[0]!, join(output, 'escape-link'));
   const forbidden = ['CLAUDE.md','AGENTS.md','settings.local.json','auth.json','.credentials.json','config.toml','agents/definition.md','skills/definition.md','rules/definition.md','plugins/definition.json','hooks/handler.sh'].map(path => join(output, path));
   for (const path of forbidden) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
-  const nativeHome = join(root, 'native-home'); mkdirSync(join(nativeHome, '.codex', 'tmp'), { recursive: true });
+  const nativeHome = join(root, 'native-home'); mkdirSync(join(nativeHome, '.codex', 'tmp'), { recursive: true }); mkdirSync(join(nativeHome, '.codex', 'thread-writer-locks'));
   const grants = codexNativeStatePaths(nativeHome);
   expect(grants.nativeStateFiles).toHaveLength(16);
-  const allowedNative = [...grants.nativeStateFiles!, join(grants.nativeStateDirectories![0]!, 'probe.txt')];
-  const deniedNative = ['goals_2.sqlite','memories_2.sqlite','queue_2.sqlite','installation_id-other','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json'].map(path => join(nativeHome, '.codex', path));
+  const allowedNative = [...grants.nativeStateFiles!, ...grants.nativeStateDirectories!.map(path => join(path,'probe.txt'))];
+  expect(grants.nativeStateDirectories).toHaveLength(2);
+  expect(grants.nativeStateDirectories![1]).toBe(join(nativeHome, '.codex', 'thread-writer-locks'));
+  const deniedNative = ['goals_2.sqlite','memories_2.sqlite','queue_2.sqlite','installation_id-other','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json','sessions/decoy.txt','decoy/forbidden.txt'].map(path => join(nativeHome, '.codex', path));
   for (const path of [...allowedNative, ...deniedNative]) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
   const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden, ...deniedNative];
   const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output, ...grants });
@@ -228,7 +230,11 @@ test('Codex exact state admission refuses root/tmp/file symlinks and literal ove
   expect(() => codexNativeStatePaths(home)).toThrow('CODEX_HOME_UNSAFE'); unlinkSync(join(home, '.codex'));
   mkdirSync(join(home, '.codex')); symlinkSync(other, join(home, '.codex', 'tmp'));
   expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', 'tmp'));
-  mkdirSync(join(home, '.codex', 'tmp')); writeFileSync(join(other, 'authority.txt'), 'KEEP');
+  mkdirSync(join(home, '.codex', 'tmp'));
+  const locks = join(home, '.codex', 'thread-writer-locks');
+  symlinkSync(other, locks); expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(locks);
+  writeFileSync(locks, 'not a directory'); expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(locks); mkdirSync(locks);
+  writeFileSync(join(other, 'authority.txt'), 'KEEP');
   for (const name of [...['state_5.sqlite','logs_2.sqlite','goals_1.sqlite','memories_1.sqlite','queue_1.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => file + suffix)), 'installation_id']) {
     symlinkSync(join(other, 'authority.txt'), join(home, '.codex', name));
     expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', name));

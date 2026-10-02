@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:f434d733f4968609c7524889995d26d1f24e402408335b9cf915530f0a2b3217`
+> **Substantive Change SHA256**: `sha256:7b5005c88fb136d13c4a4d26669d66dc1895950a56adc5d8f948ce14fbf6b076`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -165,3 +165,14 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - 23:29 single zero-prompt recheck, Codex0.160.0/Node24.21.0/real HOME: thread/start failed with Failed to initialize session, thread-store internal error, Operation not permitted. OS newly denies ~/.codex/thread-writer-locks/.coordination.lock; native pid48603 was captured in process samples. Previously seen /dev/dtracehelper refusals remain optional and unopened. No Session returned for dispose; known process cleanup empty. STOP, no new grant or relaunch. No prompt/model call, no Claude rerun. Retain d3-codex2329-startup/{report.md,results.json,os-sandbox.ndjson,codex.sb,codex-audit.sb} and d3-codex2329-output.
 
 - 23:29 validation: focused generic/Receipt 30 pass / 716 assertions / 59.87s; type and required integrity checks pass after current digest binding. No full-suite rerun or model round. Canonical log/hash manifest: d3-codex2329-checkpoint.json. STOP pending next Aimpact decision; no additional allowance or launch.
+
+
+## Aimpact 23:56 single lock directory
+
+- Add only thread-writer-locks realpath subpath, requiring .codex and locks to be non-symlink directories. tmp and sixteen literals unchanged; no root subpath or regex grant. Existing config/auth/AGENTS/rules/skills deny-regex stays authoritative. Positive lock-file write plus sibling sessions/decoy negatives and symlink/non-directory tests cover the addition.
+- One zero-prompt Codex startup authorized; new OS denial ends scope without extra allowance or relaunch. Real HOME, OAR APIs only, no prompt/model round or Claude rerun. Accepted later-session goals/memories channel and real-turn further-path uncertainty unchanged; Claude startup-only/init-only-model/no Receipt remains.
+
+- 23:56 single Codex0.160.0/Node24.21.0/real HOME probe: Session constructor returned, gpt-6-astra/high SDK init readback, Session.dispose true, exit0/known children gone. NO prompt/model turn. This proves startup/disposal only, not a real review or backend model certification. Native pid20051 sampled.
+- New OS refusals: models_cache.json, shell_snapshots cleanup/temp creation, plugin cache/.remote-plugin-install-staging/metadata removal and thread_history_1.sqlite/-wal/-shm. Optional /dev/dtracehelper repeats earlier evidence. Correct STOP despite successful constructor: all new paths remain denied, no additional grant/relaunch/Claude rerun. Plugin namespace remains forbidden. Raw paths in d3-codex2356-startup/report.md and os-sandbox.ndjson; outputs retained under d3-codex2356-output. Accepted goals/memories channel and real-turn path uncertainty unchanged, Claude startup-only/init-only-model/no Receipt unchanged.
+
+- 23:56 validation: focused generic/Receipt 30 pass / 732 assertions / 54.44s, type and nine Required Checks pass after diff binding. No full-suite rerun or model round; no true-turn readiness claim. Manifest d3-codex2356-checkpoint.json.

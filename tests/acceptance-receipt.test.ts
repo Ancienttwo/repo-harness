@@ -784,6 +784,7 @@ function reviewFixture() {
   const endpointHome = realpathSync(mkdtempSync('/tmp/as-')); tempDirs.push(endpointHome);
   mkdirSync(join(endpointHome, '.codex'));
   mkdirSync(join(endpointHome, '.codex', 'tmp'));
+  mkdirSync(join(endpointHome, '.codex', 'thread-writer-locks'));
   writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n');
   commit(fixture.root, 'ignore private runtime communication');
   const reviewerRepo = join(fixture.home, 'reviewer');
