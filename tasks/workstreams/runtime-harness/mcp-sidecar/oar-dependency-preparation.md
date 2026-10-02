@@ -1,7 +1,7 @@
 # Workstream: OAR dependency preparation
 
 > **Status**: completed
-> **Substantive Change SHA256**: `sha256:70d50b5132f113f25bea7f5fac1a8df2b6de0ec3cf362a3634d94ea37144b0a2`
+> **Substantive Change SHA256**: `sha256:a619ba1044c5b5415a2bedcbcb5dcc182e11c0dd040135df32e7fd1fcea20ede`
 > **Capability ID**: `runtime-harness-mcp-sidecar`
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `mcp-sidecar`
@@ -10,7 +10,7 @@
 
 ## Scope
 
-From main at `3e953f0b`, add the exact OAR 0.13.3 dependency and resolved Pi 1.0
+From main at `f831c581`, add the exact OAR 0.13.3 dependency and resolved Pi 1.0
 graph, preserve prior locked versions, and apply the approved D4 type-checking
 policy. Align the root Node minimum to 24 for the required dependency while
 retaining the existing <26 upper bound. The latest create-and-merge instruction releases the earlier LOCAL-only
