@@ -91,8 +91,8 @@ promptAndWait在abort后继续等待runtime turn end，没有额外总上限（`
 | `tasks/notes/20260930-1827-herdr-generic-review-slice-e.notes.md` | edit | 记录决策、证据、限制与未闭环，不作为native事实替代。 |
 | `tasks/reviews/20260930-1827-herdr-generic-review-slice-e.review.md` | edit evidence only | 正确记录复审与验证，不自授PASS。 |
 | `dist/oar-review-host.js` | generated package artifact | 由package build产出，不手改；是否repo track由已有dist策略决定，不force-add生成物。 |
-| `.ai/harness/runs/review-design/oar-readonly-plan.md` | edit in this step | 本计划，明确例外：用户要求本地追踪commit。 |
-| `.ai/harness/runs/review-design/oar-readonly-upstream-proposal.md` | create in this step | A提案，仅本地文档，绝不对外提交。 |
+| `docs/researches/oar-readonly-plan.md` | edit in this step | 本计划，明确例外：用户要求本地追踪commit。 |
+| `docs/researches/oar-readonly-upstream-proposal.md` | create in this step | A提案，仅本地文档，绝不对外提交。 |
 
 冻结/不改：三个cross-review CLI/core/runner、27 retained文件的独立职责、campaign/容器/lease实现、OAR repo、全局host配置、真实/mini/default pane和进程。文档/消费者原E2改动照范围保留，不借本计划扩其它harness。
 
