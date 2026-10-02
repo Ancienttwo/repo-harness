@@ -11,7 +11,7 @@ import { leaseOwnerPath, readLease, withTaskLock, writeLeaseOwnerDurably } from 
 import { resolveEngineerPrincipal } from '../../src/effects/engineers/principal';
 import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
 import { collectEngineerOffers } from '../../src/effects/engineers/scheduling';
-import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquireNextScheduledEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquireNextScheduledEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
 import { canonicalMessageDigest } from '../../src/core/messages/mechanics';
 import { readPlanningRecord, persistPlanningRecord, withCampaignPlanningLock } from '../../src/effects/automation/campaign-planning-store';
 import { validateFleetWorkEnvelope } from '../../src/effects/fleet/acquire';
@@ -344,3 +344,28 @@ test('S3 context drift after envelope validation is compensated before inner com
   expect(result).toMatchObject({ok:false,error:'claim_actor_receipt_failed'});
   expect(reads).toBe(5);expect(claims).toBe(1);expect(readLease(f.root,f.offer.task_id).record).toBeNull();
 },60000);
+
+
+test('S4 selected campaign and CLI share exact choice/ref and R2 identity, never the auto port',async()=>{
+  const f=await s3Fixture();let auto=0,selectedCalls=0;
+  const prepared=prepareEngineerObservation({repo_root:f.root,principal:f.principal,env:f.env});
+  expect(prepared.offers.offers.length).toBeGreaterThanOrEqual(2);const [first,second]=prepared.offers.offers;
+  const keys=['offer_revision','work_package_id','work_package_revision','work_graph_revision','task_id','task_revision','dependency_revision','concurrency_revision','binding_id','binding_generation','engineer_contract_revision','fleet_offer_revision','authorization_revision'];
+  const assertion=Object.fromEntries(keys.map(k=>[k,second![k as keyof typeof second]])) as unknown as Parameters<typeof acquireSelectedEngineerTask>[0]['assertion'];
+  const selected={observation_ref:prepared.observation_ref,assertion};const input={...f.executeInput,idempotency_key:'selected-campaign',selected};
+  const result=runCampaignAcquisition(input,()=>{auto++;throw Error('must not PICK');},{acquireSelected:options=>{selectedCalls++;expect(options.assertion).toEqual(assertion);expect(options.observation_ref).toBe(selected.observation_ref);expect(options.admission_policy?.policy_revision).toBe('R2');return acquireSelectedEngineerTask(options);}});
+  expect(result).toHaveProperty('action','dispatch');if(!('action' in result)||result.action!=='dispatch')throw Error(JSON.stringify(result));roots.push(result.envelope.worktree_path);
+  expect(result.envelope.task_id).toBe(second!.task_id);expect(readLease(f.root,first!.task_id).record).toBeNull();expect([auto,selectedCalls]).toEqual([0,1]);
+  const path=join(f.root,'selected-campaign-assertion.json');writeFileSync(path,JSON.stringify(assertion));
+  const cli=Bun.spawnSync([process.execPath,resolve(import.meta.dir,'../../src/cli/index.ts'),'campaign','step','--repo',f.root,'--campaign-id',input.campaign_id,'--group-number',String(input.group_number),'--intent-sha256',input.intent_sha256,'--idempotency-key',input.idempotency_key,'--host',input.host,'--session-id',input.session_id,'--authorization-id',input.authorization_id,'--selected','--observation-ref',selected.observation_ref,'--assertion-file',path],{cwd:f.root,env:f.env,stdout:'pipe',stderr:'pipe'});
+  expect(cli.exitCode,cli.stderr.toString()).toBe(0);expect(JSON.parse(cli.stdout.toString())).toEqual(result);
+  expect(runCampaignAcquisition(input,()=>{auto++;throw Error('must not invoke auto');},{acquireSelected:()=>{selectedCalls++;throw Error('must not invoke inner on outer replay');}})).toEqual(result);
+  expect([auto,selectedCalls]).toEqual([0,1]);
+  const key=canonicalMessageDigest({operation:'campaign-acquisition',intent_sha256:f.intent.intent_sha256,key:input.idempotency_key});
+  const record=JSON.parse(readFileSync(join(f.root,'.git/repo-harness/engineer-scheduling/v1/acquire-next',require('node:crypto').createHash('sha256').update(key).digest('hex')+'.json'),'utf8'));
+  expect(record).toMatchObject({state:'completed',request:{operation:'selected',observation_ref:selected.observation_ref,assertion,policy:{policy_id:'engineer/campaign',policy_revision:'R2'}}});
+},120000);
+
+test.each([undefined,null,{}, {observation_ref:'sha256:'+'a'.repeat(64)}])('S4 malformed present campaign choice %p fails before owner/budget/auto',selected=>{
+  let calls=0;expect(()=>runCampaignAcquisition({repo_root:'/unread-selected-repo',campaign_id:'campaign',group_number:1,intent_sha256:'sha256:'+'a'.repeat(64),host:'codex',session_id:'parent',authorization_id:'auth',idempotency_key:'bad',selected:selected as never},()=>{calls++;throw Error('must not pick');},{ensureBudget:()=>{calls++;throw Error('must not reserve');}})).toThrow();expect(calls).toBe(0);
+});

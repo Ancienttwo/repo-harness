@@ -18,7 +18,7 @@ import {
 import { attemptIdentity } from '../../core/engineers/automation-attempt';
 import { recordTaskAutomationAttemptOutcome, recordTaskAutomationAttemptStart } from '../engineers/automation-attempt-store';
 import { resolveEngineerPrincipal } from '../engineers/principal';
-import { acquireNextScheduledEngineerTask, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, validateSelectedEngineerTaskChoice, type SelectedEngineerTaskChoice, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
 import { dispatchDelegatedRun, readDelegatedRunDispatchAuthority, type DelegatedRunDispatchAuthority, type DelegatedRunStatus } from '../engineers/delegated-run-store';
 import { repoHarnessAuthorizationRevision } from '../repo-registry';
 import { readLease } from '../state/coordination-lease-store';
@@ -30,6 +30,7 @@ export interface StepAutomationControllerInput {
   readonly idempotency_key: string;
   readonly dispatch_id?: string;
   readonly max_selection_attempts?: number;
+  readonly selected?: SelectedEngineerTaskChoice;
 }
 
 export interface AutomationControllerStepResult {
@@ -45,6 +46,7 @@ export interface AutomationControllerRunDependencies {
   readonly resolvePrincipal: typeof resolveEngineerPrincipal;
   readonly authorizationRevision: typeof repoHarnessAuthorizationRevision;
   readonly acquireNext: typeof acquireNextScheduledEngineerTask;
+  readonly acquireSelected: typeof acquireSelectedEngineerTask;
   readonly dispatch: typeof dispatchDelegatedRun;
   readonly readDispatchAuthority: typeof readDelegatedRunDispatchAuthority;
   readonly readBudget: typeof readAutomationBudgetStatus;
@@ -72,6 +74,7 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   resolvePrincipal: resolveEngineerPrincipal,
   authorizationRevision: repoHarnessAuthorizationRevision,
   acquireNext: acquireNextControllerTask,
+  acquireSelected: acquireSelectedEngineerTask,
   dispatch: dispatchControllerRun,
   readDispatchAuthority: readDelegatedRunDispatchAuthority,
   readBudget: readAutomationBudgetStatus,
@@ -179,7 +182,11 @@ function assertDispatchAuthority(
 }
 
 export function stepAutomationController(input: StepAutomationControllerInput, overrides: Partial<AutomationControllerRunDependencies> = {}): AutomationControllerStepResult {
+  const selected=Object.prototype.hasOwnProperty.call(input,'selected')?validateSelectedEngineerTaskChoice(input.selected):null;
+  if(selected && input.max_selection_attempts !== undefined) throw new Error('selected controller input cannot carry auto selection attempts');
+  const choiceEvidence=selected?[`selected-observation:${selected.observation_ref}`,`selected-choice:${canonicalMessageDigest({...selected})}`]:[];
   const deps = { ...defaultDependencies, ...overrides }; const status = readAutomationControllerStatus(input.repo_root, input.run_id); const run = status.run;
+  if(selected && !['created','observing','acquiring','waiting_for_evidence'].includes(status.current.state)) throw new Error('selected controller input requires an acquisition phase; inspect the existing acquired state instead');
   const startedAt = deps.now().getTime(); let current = status.current; let steps = 0; let acquisition: AcquireNextScheduledEngineerTaskResult | null = null; let dispatched: DelegatedRunStatus | null = null;
   const observedPrincipal = deps.resolvePrincipal({ repo_root: input.repo_root, authorization_id: run.principal.authorization_id });
   exactPrincipal(run.repository_id, run.principal, observedPrincipal, deps.authorizationRevision());
@@ -198,8 +205,8 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
     let reservation;
     try { reservation = deps.reserveBudget({ repo_root: input.repo_root, automation_run_id: run.run_id, expected_budget_sha256: run.budget_sha256, idempotency_key: `${input.idempotency_key}:acquisition`, operation: 'acquisition', unit_kind: 'execute', unit_id: run.run_id, attempt: 1, provider: null }); }
     catch (error) { if (error instanceof AutomationBudgetStoreError) { current = budgetRefusal(input.repo_root, run.run_id, current, input.idempotency_key, error, at()); return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps + 1 }); } throw error; }
-    current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-acquire`, 'begin_acquire', at(), receipt('begin_acquire', 'reserved', { evidence_refs: [reservation.reservation_sha256] })); steps += 1;
-    try { acquisition = deps.acquireNext({ repo_root: input.repo_root, principal: observedPrincipal, idempotency_key: `${input.idempotency_key}:acquire-next`, max_selection_attempts: input.max_selection_attempts }); }
+    current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:begin-acquire`, 'begin_acquire', at(), receipt('begin_acquire', 'reserved', { evidence_refs: [reservation.reservation_sha256,...choiceEvidence] })); steps += 1;
+    try { acquisition = selected ? deps.acquireSelected({repo_root:input.repo_root,principal:observedPrincipal,idempotency_key:`${input.idempotency_key}:acquire-next`,...selected}) : deps.acquireNext({ repo_root: input.repo_root, principal: observedPrincipal, idempotency_key: `${input.idempotency_key}:acquire-next`, max_selection_attempts: input.max_selection_attempts }); }
     catch (error) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquire-unknown`, 'require_reconciliation', at(), receipt('require_reconciliation', 'acquisition_outcome_unknown'), 'operator', 'controller_reconciliation_required'); throw error; }
     const acquisitionEvidence = evidence(run.run_id, current.current_event_sha256);
     const usage = deps.appendUsage({ repo_root: input.repo_root, reservation, outcome: acquisition.ok ? 'progress' : 'no_progress', evidence_refs: acquisitionEvidence });
@@ -208,7 +215,7 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
       const lease = deps.readLease(input.repo_root, acquisition.envelope.task_id);
       if (lease.record === null || lease.record.claim_id !== acquisition.envelope.claim_id || lease.record.generation !== acquisition.envelope.generation) throw new Error('acquired WorkEnvelope does not bind the exact current Lease');
       const renewed = deps.renewLiveness({ repo_root: input.repo_root, owner: lease.record, policy: run.policy.lease_liveness, owner_id: run.run_id, observed_at: at(), requested_ttl_ms: run.policy.lease_liveness.maximum_ttl_ms, binding_generation: run.principal.binding_generation, runtime_effect_id: null, expected_current_sha256: null });
-      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, attempt_context: { repository_id: run.repository_id, sprint_path: acquisition.offer.sprint_path, task_id: acquisition.offer.task_id, task_revision: acquisition.offer.task_revision, work_package_id: acquisition.offer.work_package_id, work_package_revision: acquisition.offer.work_package_revision, engineer_id: run.principal.engineer_id, binding_generation: run.principal.binding_generation, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, budget_revision: run.budget_sha256, retry_policy: acquisition.offer.retry_policy, first_eligible_at: acquisition.offer.eligible_since }, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256, renewed.renewal.renewal_sha256] })); steps += 1;
+      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, attempt_context: { repository_id: run.repository_id, sprint_path: acquisition.offer.sprint_path, task_id: acquisition.offer.task_id, task_revision: acquisition.offer.task_revision, work_package_id: acquisition.offer.work_package_id, work_package_revision: acquisition.offer.work_package_revision, engineer_id: run.principal.engineer_id, binding_generation: run.principal.binding_generation, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, budget_revision: run.budget_sha256, retry_policy: acquisition.offer.retry_policy, first_eligible_at: acquisition.offer.eligible_since }, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256, renewed.renewal.renewal_sha256,...choiceEvidence] })); steps += 1;
     } else if (acquisition.error === 'engineer_no_eligible_offer') {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:no-offer`, 'no_offer', at(), receipt('no_offer', 'no_eligible_offer', { evidence_refs: [usage.event.event_sha256] })); steps += 1;
     } else if (transientAcquisition(acquisition)) {

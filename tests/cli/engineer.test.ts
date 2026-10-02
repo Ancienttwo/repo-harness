@@ -9,6 +9,8 @@ import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
+import { historicalPlanningFixture } from '../helpers/historical-campaign-lifecycle';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
@@ -121,6 +123,33 @@ afterEach(() => {
 });
 
 describe('repo-harness engineer CLI', () => {
+  test('selected CLI admits only the caller chosen second snapshot offer and rejects incomplete requests',async()=>{
+    const f=await historicalPlanningFixture(false,false,undefined,true,{},false,false,true);tempRoots.push(f.root,f.home);
+    const invoke=(args:string[])=>{const r=Bun.spawnSync([process.execPath,cli,'engineer',...args],{cwd:f.root,env:f.env,stdout:'pipe',stderr:'pipe'});return {exitCode:r.exitCode,stdout:r.stdout.toString(),stderr:r.stderr.toString()};};
+    const before=invoke(['acquire','--authorization-id',f.executeInput.authorization_id,'--idempotency-key','selected','--json']);
+    expect(before.exitCode).toBe(1);expect(before.stderr).toContain('observation-ref');
+    const prepared=invoke(['prepare','--authorization-id',f.executeInput.authorization_id,'--json']);expect(prepared.exitCode,prepared.stderr).toBe(0);
+    const doc=JSON.parse(prepared.stdout);expect(doc.offers.offers.length).toBeGreaterThanOrEqual(2);const [first,second]=doc.offers.offers;
+    const keys=['offer_revision','work_package_id','work_package_revision','work_graph_revision','task_id','task_revision','dependency_revision','concurrency_revision','binding_id','binding_generation','engineer_contract_revision','fleet_offer_revision','authorization_revision'];
+    const assertion=Object.fromEntries(keys.map(k=>[k,second[k]]));const path=join(f.root,'selected-assertion.json');writeFileSync(path,JSON.stringify({...assertion,task_revision:undefined}));
+    const args=['acquire','--authorization-id',f.executeInput.authorization_id,'--idempotency-key','selected','--observation-ref',doc.observation_ref,'--assertion-file',path,'--json'];
+    expect(invoke(args).exitCode).toBe(1);expect(readLease(f.root,first.task_id).record).toBeNull();expect(readLease(f.root,second.task_id).record).toBeNull();
+    writeFileSync(path,JSON.stringify(assertion));const result=invoke(args);expect(result.exitCode,result.stderr).toBe(0);const acquired=JSON.parse(result.stdout);
+    tempRoots.push(acquired.envelope.worktree_path);expect(acquired.offer.work_package_id).toBe(second.work_package_id);expect(acquired.envelope.task_id).toBe(second.task_id);
+    expect(readLease(f.root,first.task_id).record).toBeNull();expect(readLease(f.root,second.task_id).record?.claim_id).toBe(acquired.envelope.claim_id);
+    expect(JSON.parse(invoke(args).stdout)).toEqual(acquired);
+  },120000);
+
+  test('controller/campaign selected CLI fields require explicit marker and complete input',()=>{
+    const root=fixture();
+    const controller=['automation','controller','step','--run',`sha256:${'a'.repeat(64)}`,'--idempotency-key','choice'];
+    expect(run(root,[...controller,'--selected']).stderr).toContain('requires observation-ref/assertion-file');
+    expect(run(root,[...controller,'--observation-ref',`sha256:${'a'.repeat(64)}`]).stderr).toContain('require --selected');
+    const campaign=['campaign','step','--campaign-id','campaign','--group-number','1','--intent-sha256',`sha256:${'a'.repeat(64)}`,'--idempotency-key','choice'];
+    expect(run(root,[...campaign,'--selected']).stderr).toContain('--selected requires authorization-id');
+    expect(run(root,[...campaign,'--observation-ref',`sha256:${'a'.repeat(64)}`]).stderr).toContain('require --selected');
+  });
+
   test('operator inner cutover requires inspected inventory and seals completed legacy evidence without replaying it', () => {
     const root = fixture();
     const store = join(root, '.git/repo-harness/engineer-scheduling/v1/acquire-next');

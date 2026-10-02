@@ -7,7 +7,7 @@ import { spawnSync } from 'child_process';
 import { buildAutomationControllerRun } from '../../src/core/automation/controller';
 import { workEnvelopeSha256 } from '../../src/core/engineers/principal-claim';
 import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
-import { startAutomationControllerRun } from '../../src/effects/automation/controller-store';
+import { startAutomationControllerRun, readAutomationControllerHeadEvent } from '../../src/effects/automation/controller-store';
 import { stepAutomationController, stopAutomationController } from '../../src/effects/automation/controller-run';
 
 const SHA = `sha256:${'a'.repeat(64)}`;
@@ -68,6 +68,24 @@ function dispatchAuthority(root: string, change: { task_id?: string; task_revisi
 }
 
 describe('issue #279 bounded controller orchestration', () => {
+  test('selected controller uses selected facade only and binds exact choice/reference in its acquired event',()=>{
+    const {root}=setup();try{
+      const result=acquired(root);let auto=0,selectedCalls=0;
+      const choice={observation_ref:SHA,assertion:{offer_revision:SHA,work_package_id:'wp-1',work_package_revision:SHA,work_graph_revision:SHA,task_id:result.offer.task_id,task_revision:result.offer.task_revision,dependency_revision:SHA,concurrency_revision:SHA,binding_id:principal.binding_id,binding_generation:1,engineer_contract_revision:SHA,fleet_offer_revision:SHA,authorization_revision:7}};
+      const step=stepAutomationController({repo_root:root,run_id:RUN_ID,idempotency_key:'selected-step',selected:choice},{...dependencies(result),acquireNext:()=>{auto++;throw Error('must not select');},acquireSelected:input=>{selectedCalls++;expect(input.assertion).toEqual(choice.assertion);expect(input.observation_ref).toBe(choice.observation_ref);return result as never;}});
+      expect(step.acquisition?.ok).toBeTrue();expect([auto,selectedCalls]).toEqual([0,1]);
+      expect(readAutomationControllerHeadEvent(root,RUN_ID).receipt.evidence_refs).toContain(`selected-observation:${SHA}`);
+      expect(()=>stepAutomationController({repo_root:root,run_id:RUN_ID,idempotency_key:'retry',selected:choice},dependencies(result))).toThrow('acquisition phase');
+      expect([auto,selectedCalls]).toEqual([0,1]);
+    }finally{rmSync(root,{recursive:true,force:true});}
+  });
+  test.each([undefined,null,{}, {observation_ref:SHA}, {assertion:{}}])('malformed present selected choice %p refuses before budget/events/auto',choice=>{
+    const {root}=setup();try{let calls=0;const before=readAutomationControllerHeadEvent(root,RUN_ID);
+      expect(()=>stepAutomationController({repo_root:root,run_id:RUN_ID,idempotency_key:'bad',selected:choice as never},{...dependencies(null),reserveBudget:()=>{calls++;throw Error('must not reserve');},acquireNext:()=>{calls++;throw Error('must not pick');}})).toThrow();
+      expect(calls).toBe(0);expect(readAutomationControllerHeadEvent(root,RUN_ID)).toEqual(before);
+    }finally{rmSync(root,{recursive:true,force:true});}
+  });
+
   test('persists acquisition before consuming a real WorkEnvelope and dispatches only through the fenced dependency', () => {
     const { root } = setup();
     try {

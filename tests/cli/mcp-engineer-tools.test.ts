@@ -5,6 +5,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { historicalPlanningFixture } from '../helpers/historical-campaign-lifecycle';
+import { readLease } from '../../src/effects/state/coordination-lease-store';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
 import { requireAcquisitionLedgerV2 } from '../../src/effects/engineers/scheduling-acquire-next';
@@ -183,6 +185,24 @@ describe('restricted Engineer MCP tools', () => {
     expect(names.some((name) =>
       /(?:^|_)(shell|read|write|fleet|publication|acceptance|binding|browser|agent)(?:_|$)/u.test(name))).toBe(false);
   });
+
+  test('selected MCP admits exact second snapshot offer through plain C and rejects unported/raw clients',async()=>{
+    const f=await historicalPlanningFixture(false,false,undefined,true,{},false,false,true);roots.push(f.root,f.home);process.env.REPO_HARNESS_HOME=f.home;
+    const ctx={repoRoot:f.root,policy:getMcpPolicy('engineer'),engineerAuthorizationId:f.executeInput.authorization_id};
+    const prepared=await callMcpTool(ctx,'engineer_prepare',{});expect(prepared.isError).toBeUndefined();
+    const doc=prepared.structuredContent as {observation_ref:string;offers:{offers:Array<Record<string,unknown>>}};expect(doc.offers.offers.length).toBeGreaterThanOrEqual(2);
+    const [first,second]=doc.offers.offers;const keys=['offer_revision','work_package_id','work_package_revision','work_graph_revision','task_id','task_revision','dependency_revision','concurrency_revision','binding_id','binding_generation','engineer_contract_revision','fleet_offer_revision','authorization_revision'];
+    const args={...Object.fromEntries(keys.map(k=>[k,second![k]])),repo_id:second!.repository_id,engineer_id:second!.engineer_id,idempotency_key:'mcp-selected-second',observation_ref:doc.observation_ref};
+    const {observation_ref:_missing,...legacy}=args;const before=coordinationState(f.root);
+    expect(await callMcpTool(ctx,'engineer_acquire',legacy)).toMatchObject({isError:true,structuredContent:{error:{code:'INVALID_ARGUMENT'}}});
+    expect(await callMcpTool(ctx,'engineer_acquire',{...args,max_attempts:2})).toMatchObject({isError:true,structuredContent:{error:{code:'INVALID_ARGUMENT'}}});
+    expect(coordinationState(f.root)).toEqual(before);
+    const result=await callMcpTool(ctx,'engineer_acquire',args);expect(result.isError,JSON.stringify(result)).toBeUndefined();
+    const acquired=result.structuredContent as {envelope:{worktree_path:string;task_id:string;claim_id:string}};roots.push(acquired.envelope.worktree_path);
+    expect(acquired.envelope.task_id).toBe(second!.task_id as string);expect(readLease(f.root,first!.task_id as string).record).toBeNull();
+    const replay=await callMcpTool(ctx,'engineer_acquire',args);expect(replay.isError).toBeUndefined();expect(replay.structuredContent).toEqual(result.structuredContent);
+    expect(readLease(f.root,second!.task_id as string).record?.claim_id).toBe(acquired.envelope.claim_id);
+  },120000);
 
   test('status derives the principal from verified authorization and rejects another subject or generic tool', async () => {
     const { repoRoot, home } = fixture();
@@ -500,7 +520,7 @@ describe('restricted Engineer MCP tools', () => {
       engineer_contract_revision: binding.engineer_contract_revision,
     };
     const acquireArgs = {
-      ...fences,
+      ...fences,idempotency_key:'selected-stale',observation_ref:evidence.observation_ref,
       work_package_id: 'wp-a',
       work_package_revision: `sha256:${'1'.repeat(64)}`,
       work_graph_revision: document.work_graph_revision!,
@@ -565,13 +585,26 @@ describe('restricted Engineer MCP tools', () => {
     expect(coordinationState(repoRoot)).toEqual(before);
     writeFileSync(sealPath, sealBytes);
 
+    const directSchema=buildMcpToolDefinitions(getMcpPolicy('engineer')).find(t=>t.name==='engineer_acquire')!;
+    expect(directSchema.inputSchema.required).toEqual(expect.arrayContaining(['idempotency_key','observation_ref']));
+    const {observation_ref:_ref,idempotency_key:_key,...legacyArgs}=acquireArgs;
+    const legacyBefore=coordinationState(repoRoot);
+    expect(await callMcpTool(context,'engineer_acquire',legacyArgs)).toMatchObject({isError:true,structuredContent:{error:{code:'INVALID_ARGUMENT'}}});
+    expect(coordinationState(repoRoot)).toEqual(legacyBefore);
+    const refreshed=await callMcpTool(context,'engineer_prepare',{});acquireArgs.observation_ref=(refreshed.structuredContent as {observation_ref:string}).observation_ref;
     const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
     expect(staleOffer).toMatchObject({
       isError: true,
       structuredContent: { error: { code: 'engineer_offer_stale' } },
     });
-    expect(coordinationState(repoRoot)).toEqual(beforeStale);
+    const withoutAcquisition=(paths:string[])=>paths.filter(p=>!p.startsWith('engineer-scheduling/v1/acquire-next/'));
+    expect(withoutAcquisition(coordinationState(repoRoot))).toEqual(withoutAcquisition(beforeStale));
+    const receiptFiles=readdirSync(ledgerDirectory).filter(name=>name!=='cutover-v2.json'&&name.endsWith('.json'));
+    expect(receiptFiles).toHaveLength(1);const selectedReceipt=JSON.parse(readFileSync(join(ledgerDirectory,receiptFiles[0]!),'utf8'));
+    expect(selectedReceipt).toMatchObject({state:'completed',request:{operation:'selected',observation_ref:acquireArgs.observation_ref,policy:{policy_id:'engineer/plain',policy_revision:'R1'}}});
+    const afterStale=coordinationState(repoRoot);expect(await callMcpTool(context,'engineer_acquire',acquireArgs)).toMatchObject({isError:true,structuredContent:{error:{code:'engineer_offer_stale'}}});
+    expect(coordinationState(repoRoot)).toEqual(afterStale);
     const policyPath = join(repoRoot, '.ai/harness/policy.json');
     writeFileSync(policyPath, 'not JSON');
     expect(await callMcpTool(context, 'engineer_prepare', {})).toMatchObject({

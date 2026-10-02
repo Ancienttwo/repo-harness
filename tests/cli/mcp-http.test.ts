@@ -1068,7 +1068,10 @@ describe('mcp http transport', () => {
         expect(response.status).toBe(200);
         return parseMcpResponse(await response.text());
       };
-      const tools = (await call(firstHeaders, 2, 'tools/list')).result.tools as Array<{ name: string }>;
+      const tools = (await call(firstHeaders, 2, 'tools/list')).result.tools as Array<{ name: string; inputSchema?:{required?:string[];properties?:Record<string,unknown>} }>;
+      const selectedSchema=tools.find(t=>t.name==='engineer_acquire')!.inputSchema!;
+      expect(selectedSchema.required).toEqual(expect.arrayContaining(['idempotency_key','observation_ref']));
+      expect(selectedSchema.properties).not.toHaveProperty('max_attempts');
       expect(tools.map((tool) => tool.name)).toEqual([
         'engineer_task_messages',
         'engineer_task_message_consume',

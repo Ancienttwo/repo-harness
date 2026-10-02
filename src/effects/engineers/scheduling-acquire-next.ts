@@ -67,6 +67,19 @@ export interface AcquireNextScheduledEngineerTaskOptions {
   readonly accept_acquired?: (result: Extract<ScheduledEngineerAcquireResult, { ok: true }>) => Exclude<ScheduledEngineerAcquireResult, { ok: true }> | void;
   readonly dependencies?: Partial<AcquireNextDependencies>;
 }
+export interface SelectedEngineerTaskChoice {
+  readonly observation_ref: string;
+  readonly assertion: ScheduledEngineerAcquireAssertionV1;
+}
+/** Closed transport choice; no principal, policy or caller timestamp belongs here. */
+export function validateSelectedEngineerTaskChoice(value: unknown): SelectedEngineerTaskChoice {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('selected choice is required');
+  const choice=value as Record<string, unknown>;
+  assertMessageExactKeys(choice,['observation_ref','assertion'],'selected choice',message=>{throw new Error(message);});
+  if (typeof choice.observation_ref !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(choice.observation_ref)) throw new Error('selected observation_ref is required and must be an exact digest');
+  return Object.freeze({ observation_ref:choice.observation_ref,assertion:closedAssertion(choice.assertion as ScheduledEngineerAcquireAssertionV1) });
+}
+
 export interface AcquireSelectedEngineerTaskOptions extends Omit<AcquireNextScheduledEngineerTaskOptions, 'filters' | 'max_selection_attempts'> {
   readonly assertion: ScheduledEngineerAcquireAssertionV1;
   readonly observation_ref: string;

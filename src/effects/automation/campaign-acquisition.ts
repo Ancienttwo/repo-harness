@@ -3,7 +3,7 @@ import { createCampaignWorkerHandoff } from './campaign-worker';
 import { assertMessageExactKeys, canonicalMessageBytes, canonicalMessageDigest } from '../../core/messages/mechanics';
 import { CampaignPlanningError } from '../../core/automation/campaign-planning';
 import { resolveEngineerPrincipal } from '../engineers/principal';
-import { acquireNextScheduledEngineerTask, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquisitionRequestV2, type AcquisitionPolicy, type AcquireNextScheduledEngineerTaskOptions, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, validateSelectedEngineerTaskChoice, buildAcquisitionRequestIdentity, requireFreshAcquisitionBudgetAdmission, type AcquisitionRequestV2, type AcquisitionPolicy, type AcquireNextScheduledEngineerTaskOptions, type AcquireSelectedEngineerTaskOptions, type SelectedEngineerTaskChoice, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
 import { readClaimActorReceipt, validateClaimActorReceiptLive } from '../engineers/claim-actor-store';
 import { validateFleetWorkEnvelope } from '../fleet/acquire';
 import { processSprintDependencies, releaseSprintCommand } from '../state/coordination-sprint';
@@ -21,9 +21,11 @@ import { ExclusiveLockContentionError } from '../locking/exclusive-directory-loc
 
 export interface CampaignAcquisitionInput extends Omit<CampaignPlanningStepInput, 'result'> {
   readonly authorization_id: string;
+  readonly selected?: SelectedEngineerTaskChoice;
 }
 
 export interface CampaignAcquisitionTransactionPorts {
+  readonly acquireSelected: typeof acquireSelectedEngineerTask;
   readonly withCampaignLock: typeof withDevelopmentCampaignLock;
   readonly withPlanningLock: typeof withCampaignPlanningLock;
   readonly readAuthority: typeof requireCampaignPlanningAuthority;
@@ -98,7 +100,7 @@ export function migrateCampaignAcquisitionReceipts(options: { repo_root: string;
 /** Serialize acquisition transactions, not worker execution. Budget owns all arithmetic. */
 export function budgetedAcquisition(input: CampaignAcquisitionInput, intent: IssueBatchIntentV1, request: AcquisitionRequestV2, invoke: () => AcquireNextScheduledEngineerTaskResult, ports: Partial<CampaignAcquisitionTransactionPorts> = {}): AcquireNextScheduledEngineerTaskResult | { readonly admission_busy: true } {
   const deps: CampaignAcquisitionTransactionPorts = {
-    withCampaignLock: withDevelopmentCampaignLock, readAuthority: requireCampaignPlanningAuthority,
+    acquireSelected: acquireSelectedEngineerTask, withCampaignLock: withDevelopmentCampaignLock, readAuthority: requireCampaignPlanningAuthority,
     ensureBudget: ensureCampaignAuthoringBudget, reserveBudget: reserveAutomationBudget, appendUsage: appendAutomationUsage,
     readRecord: readPlanningRecord, persistRecord: persistPlanningRecord, withPlanningLock: withCampaignPlanningLock,
     requireInnerAdmission: requireFreshAcquisitionBudgetAdmission, ...ports,
@@ -162,6 +164,7 @@ export function budgetedAcquisition(input: CampaignAcquisitionInput, intent: Iss
 }
 
 export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire = acquireNextScheduledEngineerTask, ports: Partial<CampaignAcquisitionTransactionPorts> = {}) {
+  const selected = Object.prototype.hasOwnProperty.call(input,'selected') ? validateSelectedEngineerTaskChoice(input.selected) : null;
   const root = input.repo_root;
   const intent = readIssueBatchIntent(root, input.campaign_id, input.group_number, input.intent_sha256);
   const readAuthority = ports.readAuthority ?? requireCampaignPlanningAuthority;
@@ -191,11 +194,11 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
     validateFleetWorkEnvelope(root, acquired.envelope, input.env);
     requireMember(acquired.envelope.task_id);
   };
+  if (selected) requireMember(selected.assertion.task_id);
   let acceptedFresh = false;
-  const acquisitionOptions: AcquireNextScheduledEngineerTaskOptions = {
+  const commonOptions: AcquireNextScheduledEngineerTaskOptions = {
     repo_root: root, principal, session_id: input.session_id, env: input.env,
     idempotency_key: canonicalMessageDigest({ operation: 'campaign-acquisition', intent_sha256: intent.intent_sha256, key: input.idempotency_key }),
-    filters: { task_ids: authority.manifest.slots.map(slot => slot.task_id) },
     admission_policy: policy,
     before_acquire: offer => requireMember(offer.task_id),
     accept_acquired: result => {
@@ -235,9 +238,11 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
       }
     }
   };
-  const request = buildAcquisitionRequestIdentity(acquisitionOptions);
+  const autoOptions: AcquireNextScheduledEngineerTaskOptions = { ...commonOptions, filters: {task_ids:authority.manifest.slots.map(slot=>slot.task_id)} };
+  const selectedOptions: AcquireSelectedEngineerTaskOptions | null = selected ? {...commonOptions,...selected} : null;
+  const request = buildAcquisitionRequestIdentity(selectedOptions ?? autoOptions);
   const acquired = budgetedAcquisition(input, intent, request, () => {
-    const result = acquire(acquisitionOptions);
+    const result = selectedOptions ? (ports.acquireSelected ?? acquireSelectedEngineerTask)(selectedOptions) : acquire(autoOptions);
     if (result.ok && !acceptedFresh) throw new CampaignPlanningError('human_attention_required', 'unbudgeted acquisition replay requires reconciliation');
     return result;
   }, ports);

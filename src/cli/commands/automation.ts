@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { canonicalRepoPath } from '../../effects/repo-registry';
 
 import { readFileSync } from 'fs';
+import { validateSelectedEngineerTaskChoice } from '../../effects/engineers/scheduling-acquire-next';
 
 import { validateProgramAuthorization, type ProgramAuthorizationV1 } from '../../core/automation/budget';
 import {
@@ -232,9 +233,18 @@ export function buildAutomationCommand(): Command {
     .requiredOption('--run <automationRunId>', 'Exact controller run digest')
     .requiredOption('--idempotency-key <key>', 'Stable step key')
     .option('--dispatch-id <digest>', 'Exact already-admitted delegated-run dispatch')
-    .option('--max-selection-attempts <n>', 'Bounded acquire-next rereads', '3')
-    .action((options: { run: string; idempotencyKey: string; dispatchId?: string; maxSelectionAttempts: string }) => {
-      try { process.stdout.write(`${JSON.stringify(stepAutomationController({ repo_root: process.cwd(), run_id: options.run, idempotency_key: options.idempotencyKey, dispatch_id: options.dispatchId, max_selection_attempts: number(options.maxSelectionAttempts, 'max-selection-attempts') }), null, 2)}\n`); } catch (error) { outputError(error); }
+    .option('--max-selection-attempts <n>', 'Bounded acquire-next rereads (auto only)')
+    .option('--selected', 'Use an exact caller-selected observation; never auto-pick')
+    .option('--observation-ref <digest>', 'Server-produced reference required with --selected')
+    .option('--assertion-file <path>', '13-field assertion JSON required with --selected')
+    .action((options: { run:string;idempotencyKey:string;dispatchId?:string;maxSelectionAttempts?:string;selected?:boolean;observationRef?:string;assertionFile?:string })=>{
+      try {
+        if(!options.selected && (options.observationRef!==undefined || options.assertionFile!==undefined)) throw new Error('selected-only fields require --selected');
+        if(options.selected && (!options.observationRef || !options.assertionFile || options.maxSelectionAttempts!==undefined)) throw new Error('--selected requires observation-ref/assertion-file and forbids auto selection attempts');
+        const selected=options.selected?validateSelectedEngineerTaskChoice({observation_ref:options.observationRef,assertion:JSON.parse(readFileSync(options.assertionFile!,'utf8'))}):null;
+        process.stdout.write(`${JSON.stringify(stepAutomationController({repo_root:process.cwd(),run_id:options.run,idempotency_key:options.idempotencyKey,dispatch_id:options.dispatchId,
+          ...(selected?{selected}:{max_selection_attempts:number(options.maxSelectionAttempts??'3','max-selection-attempts')})}),null,2)}\n`);
+      } catch(error){outputError(error);}
     });
   controller.command('status').option('--run <automationRunId>', 'Exact controller run digest').action((options: { run?: string }) => {
     try { process.stdout.write(`${JSON.stringify(options.run ? readAutomationControllerStatus(process.cwd(), options.run) : listAutomationControllerRuns(process.cwd()), null, 2)}\n`); } catch (error) { outputError(error); }

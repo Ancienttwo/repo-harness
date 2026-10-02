@@ -1,3 +1,4 @@
+import { validateSelectedEngineerTaskChoice } from '../../effects/engineers/scheduling-acquire-next';
 import { runCampaignRevisionObservation } from '../../effects/automation/campaign-revision-observation';
 import { CampaignFreshAuditError } from '../../core/automation/campaign-fresh-audit';
 import { runCampaignFreshAudit } from '../../effects/automation/campaign-fresh-audit';
@@ -213,7 +214,10 @@ export function runCampaignPlanningPreflight(repo: string, contract: string) {
 
 }
 
-export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; readonly campaignId?: string; readonly groupNumber?: string; readonly intentSha256?: string; readonly idempotencyKey?: string; readonly host?: string; readonly sessionId?: string; readonly planningResult?: string; readonly authorizationId?: string }): Promise<void> {
+export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; readonly campaignId?: string; readonly groupNumber?: string; readonly intentSha256?: string; readonly idempotencyKey?: string; readonly host?: string; readonly sessionId?: string; readonly planningResult?: string; readonly authorizationId?: string; readonly selected?: boolean; readonly observationRef?: string; readonly assertionFile?: string }): Promise<void> {
+  if(!raw.selected && (raw.observationRef!==undefined || raw.assertionFile!==undefined)) throw new CampaignArgumentError('selected-only fields require --selected');
+  if(raw.selected && (!raw.authorizationId || !raw.observationRef || !raw.assertionFile || raw.planningResult!==undefined)) throw new CampaignArgumentError('--selected requires authorization-id, observation-ref and assertion-file; planning-result is not allowed');
+  const selected=raw.selected?validateSelectedEngineerTaskChoice({observation_ref:raw.observationRef,assertion:requestJson(raw.assertionFile!)}):null;
   const root = canonicalRepoPath(raw.repo?.trim() || process.cwd());
   if (raw.authorizationId !== undefined && raw.planningResult !== undefined) throw new CampaignArgumentError('--authorization-id and --planning-result are mutually exclusive');
   const intent = readIssueBatchIntent(root, required(raw.campaignId, '--campaign-id'), groupNumber(raw.groupNumber), required(raw.intentSha256, '--intent-sha256'));
@@ -221,7 +225,7 @@ export async function runCampaignHeartbeatStep(raw: { readonly repo?: string; re
     if (raw.host !== 'claude' && raw.host !== 'codex') throw new CampaignArgumentError('post-adoption step requires --host claude|codex');
     if (raw.authorizationId !== undefined) {
       const acquired = runCampaignAcquisition({ repo_root: root, campaign_id: intent.campaign_id, group_number: intent.group_number, intent_sha256: intent.intent_sha256,
-        host: raw.host, session_id: required(raw.sessionId, '--session-id'), idempotency_key: required(raw.idempotencyKey, '--idempotency-key'), authorization_id: required(raw.authorizationId, '--authorization-id') });
+        host: raw.host, session_id: required(raw.sessionId, '--session-id'), idempotency_key: required(raw.idempotencyKey, '--idempotency-key'), authorization_id: required(raw.authorizationId, '--authorization-id'),...(selected?{selected}:{}) });
       output(acquired);
       if ('ok' in acquired && !acquired.ok) process.exitCode = 1;
       return;
@@ -371,6 +375,9 @@ export function buildCampaignCommand(): Command {
     .option('--session-id <id>', 'Exact local parent session owning adopted group planning')
     .option('--planning-result <path>', 'Closed local planning outcome and evidence JSON')
     .option('--authorization-id <id>', 'Issued Engineer authorization for one acquired worker handoff')
+    .option('--selected', 'Use a caller-selected campaign Task observation; no auto fallback')
+    .option('--observation-ref <digest>', 'Server-produced reference required with --selected')
+    .option('--assertion-file <path>', 'Complete13-field assertion JSON required with --selected')
     .action(async (options) => { try { await runCampaignHeartbeatStep(options); } catch (error) { outputError(error); } });
   command.command('adopt')
     .description('Verify exact-SHA readback, seal authoring and publish an atomic repair batch candidate')
