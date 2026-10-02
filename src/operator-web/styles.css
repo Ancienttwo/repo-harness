@@ -57,9 +57,7 @@
   --paper-100: #F4EEE1;
   --paper-200: #EAE1CF;
   --paper-300: #DBCFB6;
-  /* Carrot is the write accent. Nothing outside the composer may paint with it.
-     The send button pairs 700/800 with --text-inverse because 600 carries the
-     brand at 3.8:1, below the AA floor for the board's one write control. */
+  /* Carrot is the brand accent. */
   --carrot-600: #CC5F1C;
   --carrot-700: #A54B15;
   --carrot-800: #8A3E11;
@@ -295,31 +293,6 @@ code, .mono-value { font-family: var(--font-mono); }
 .collab-context { color: var(--text-muted); font-size: 11px; }
 .collab-context.is-withheld { color: var(--danger-text); font-weight: 600; }
 .collab-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-
-/* The one write on this board. Carrot appears here and nowhere else. */
-.composer { border-top: 1px solid var(--border-subtle); background: var(--surface-card); }
-.composer__toggle { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 20px; border: 0; color: var(--text-strong); background: transparent; cursor: pointer; font-family: var(--font-display); font-size: 13px; font-weight: 600; text-align: left; }
-.composer__toggle:hover { background: var(--surface-sunken); }
-.composer__toggle svg { color: var(--text-muted); transition: transform var(--dur-fast) var(--ease-out); }
-.composer__toggle svg.is-open { transform: rotate(180deg); }
-.composer__panel { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 9px; padding: 4px 20px 18px; }
-.composer__untrusted { color: var(--text-muted); font-size: 12px; }
-.composer__scope-note { padding: 9px 10px; border: 1px solid var(--attention-user-line); border-radius: var(--radius-md); color: var(--attention-user-text); background: var(--attention-user-surface); font-size: 12px; }
-.composer__label { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-.composer__body { min-width: 0; width: 100%; min-height: 88px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-strong); background: var(--surface-page); font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
-.composer__body:focus-visible { outline: 2px solid var(--carrot-600); outline-offset: 1px; }
-.composer__bytes { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; text-align: right; }
-.composer__bytes.is-over { color: var(--danger-text); font-weight: 500; }
-.composer__fence { overflow-wrap: anywhere; color: var(--text-body); font-family: var(--font-mono); font-size: 11px; }
-.composer__blocked { color: var(--attention-user-text); font-size: 12px; }
-.composer__error { color: var(--danger-text); font-size: 12px; }
-.composer__sent { color: var(--green-600); font-size: 12px; }
-.composer__send { color: var(--text-inverse); background: var(--carrot-700); }
-.composer__send:hover:not(:disabled) { background: var(--carrot-800); }
-/* Opaque on purpose: the shared button's .6 alpha composites this pair against
-   the panel and drops a 5.4:1 control to 2.6:1. */
-.composer__send:disabled { cursor: not-allowed; opacity: 1; color: var(--text-muted); border-color: var(--border-default); background: var(--surface-sunken); }
-.composer__boundary { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
 
 .stage-matrix__scroll { overflow-x: auto; }
 .stage-matrix { width: 100%; border-collapse: collapse; font-size: 12px; }

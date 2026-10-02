@@ -26,7 +26,6 @@ import {
   allCards,
   decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
-  decodeOperatorTaskMessageResponse,
   OPERATOR_COLUMNS,
   OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
   OPERATOR_PAYLOAD_INVALID_ERROR,
@@ -50,8 +49,6 @@ export interface OperatorAppProps {
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
   readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
-  /** The board's one write, injectable so tests never touch a real repository. */
-  readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
   readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal, decisionAfter: string | null) => Promise<OperatorCollaborationSnapshotV4>;
   /** A deterministic collaboration state for fixtures and server renders. */
@@ -1307,8 +1304,7 @@ function CollaborationOpportunities({
  * The whole read-only collaboration surface.
  *
  * Every panel below renders a field the server already decided. Nothing here
- * ranks, joins or infers, and there is no control of any kind: the board's one
- * write stays the task-message composer.
+ * ranks, joins or infers; all panels are read-only.
  */
 export function CollaborationPane({
   state,
@@ -1388,563 +1384,33 @@ export function CollaborationPane({
   );
 }
 
-/**
- * The transport limit restated for the browser. `src/core/fleet/task-message.ts`
- * owns the authority but reaches Node `crypto` and `Buffer`, which must not
- * enter this bundle, so the drift is caught by a test that imports both.
- */
-export const TASK_MESSAGE_BODY_LIMIT_BYTES = 8 * 1024;
-
-const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = clientApiError('task_message_unavailable');
-
-const OWNER_GONE_CODES: readonly string[] = ['claim_mismatch', 'recipient_unavailable', 'task_unowned'];
-const STALE_FENCE_CODES: readonly string[] = [
-  'canonical_source_stale',
-  'task_revision_mismatch',
-  'claim_mismatch',
-  'recipient_unavailable',
-  'task_unowned',
-  'task_not_pending',
-];
-
-type ComposerRecovery = 'rebind' | 'new_message_id' | null;
-
-function composerRecovery(error: OperatorApiErrorV1 | null): ComposerRecovery {
-  if (error === null) return null;
-  if (error.code === 'message_id_conflict') return 'new_message_id';
-  if (STALE_FENCE_CODES.includes(error.code)) return 'rebind';
-  return null;
-}
-
-function isAmbiguousMessageFailure(error: OperatorApiErrorV1): boolean {
-  return error.code === TASK_MESSAGE_FAILED_ERROR.code;
-}
-
-export interface TaskMessageFenceV1 {
-  /** The task revision the operator saw when the draft was opened. */
-  readonly expected_task_revision: string;
-  /** Claim identity is null for task-scoped delivery. */
-  readonly expected_claim_id: string | null;
-  /** Claim generation is null for task-scoped delivery. */
-  readonly expected_generation: number | null;
-}
-
-export interface TaskMessageRequestV1 {
-  readonly repository_id: string;
-  readonly task_id: string;
-  readonly message_id: string;
-  readonly scope: 'task' | 'claim';
-  readonly body: string;
-  readonly expected_task_revision: string;
-  readonly expected_claim_id: string | null;
-  readonly expected_generation: number | null;
-}
-
-export function taskMessageBodyBytes(body: string): number {
-  return new TextEncoder().encode(body).byteLength;
-}
-
-/**
- * Scope is derived from the observed lease, never offered as a choice: a bound
- * task is addressed to the claim that holds it, and an unheld task can only be
- * left for whoever claims it next.
- */
-export function composerScope(card: OperatorFleetCardV1): 'task' | 'claim' {
-  return card.lease_state === 'bound' && card.claim_id !== null ? 'claim' : 'task';
-}
-
-type OperatorLeaseState = OperatorFleetCardV1['lease_state'];
-
-/**
- * What the composer is actually addressing.
- *
- * `claim` is the frozen draft fence, so a refresh cannot retarget an open
- * draft. `held` is the case the board used to deny: the task carries a live
- * claim, the lease is not one the server will deliver a claim-scoped message
- * to, and the message therefore queues on the task while a holder exists.
- * `unheld` is the only case in which nobody holds the task.
- */
-export type ComposerTarget =
-  | { readonly kind: 'claim'; readonly claim: string; readonly generation: number | null }
-  | {
-      readonly kind: 'held';
-      readonly lease_state: OperatorLeaseState;
-      readonly claim: string;
-      readonly generation: number | null;
-    }
-  | { readonly kind: 'unheld'; readonly lease_state: OperatorLeaseState };
-
-export function composerTarget(card: OperatorFleetCardV1, fence: TaskMessageFenceV1): ComposerTarget {
-  if (fence.expected_claim_id !== null) {
-    return { kind: 'claim', claim: fence.expected_claim_id, generation: fence.expected_generation };
-  }
-  if (card.claim_id !== null) {
-    return { kind: 'held', lease_state: card.lease_state, claim: card.claim_id, generation: card.generation };
-  }
-  return { kind: 'unheld', lease_state: card.lease_state };
-}
-
-/**
- * One sentence per lease state on both sides of the claim question. The
- * exhaustive records are what keep a state from silently reusing another
- * state's sentence.
- */
-const HELD_TARGET_KEYS: Readonly<Record<OperatorLeaseState, OperatorMessageKey>> = {
-  available: 'composer.held.available',
-  reserving: 'composer.held.reserving',
-  bound: 'composer.held.bound',
-  completing: 'composer.held.completing',
-  reviewing: 'composer.held.reviewing',
-  released: 'composer.held.released',
-  unknown: 'composer.held.unknown',
-};
-
-const UNHELD_TARGET_KEYS: Readonly<Record<OperatorLeaseState, OperatorMessageKey>> = {
-  available: 'composer.unheld.available',
-  reserving: 'composer.unheld.reserving',
-  bound: 'composer.unheld.bound',
-  completing: 'composer.unheld.completing',
-  reviewing: 'composer.unheld.reviewing',
-  released: 'composer.unheld.released',
-  unknown: 'composer.unheld.unknown',
-};
-
-function composerFence(card: OperatorFleetCardV1): TaskMessageFenceV1 {
-  const scope = composerScope(card);
-  return Object.freeze({
-    expected_task_revision: card.task_revision,
-    expected_claim_id: scope === 'claim' ? card.claim_id : null,
-    expected_generation: scope === 'claim' ? card.generation : null,
-  });
-}
-
-export type ComposerBlock =
-  | 'read_only'
-  | 'changed_during_read'
-  | 'board_unstable'
-  | 'too_large'
-  | 'empty'
-  | null;
-
-/**
- * Every reason the one write is refused, in the order the operator should read
- * them: a permanent repository property first, then a torn observation, then a
- * board that cannot be trusted, then the message itself.
- */
-export function composerBlock(input: {
-  readonly access_mode: OperatorFleetRepositoryV1['access_mode'];
-  readonly card_consistency: OperatorFleetCardV1['snapshot_consistency'];
-  readonly board_unstable: boolean;
-  readonly body_bytes: number;
-}): ComposerBlock {
-  if (input.access_mode === 'read_only') return 'read_only';
-  if (input.card_consistency === 'changed_during_read') return 'changed_during_read';
-  if (input.board_unstable) return 'board_unstable';
-  if (input.body_bytes > TASK_MESSAGE_BODY_LIMIT_BYTES) return 'too_large';
-  if (input.body_bytes === 0) return 'empty';
-  return null;
-}
-
-export async function postTaskMessage(request: TaskMessageRequestV1): Promise<void> {
-  const response = await fetch(
-    `/api/v1/fleet/tasks/${encodeURIComponent(request.repository_id)}/${encodeURIComponent(request.task_id)}/messages`,
-    {
-      method: 'POST',
-      cache: 'no-store',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message_id: request.message_id,
-        scope: request.scope,
-        body: request.body,
-        expected_task_revision: request.expected_task_revision,
-        expected_claim_id: request.expected_claim_id,
-        expected_generation: request.expected_generation,
-      }),
-    },
-  );
-  let body: unknown = null;
-  try {
-    body = await response.json();
-  } catch {
-    body = null;
-  }
-  if (response.ok) {
-    decodeOperatorTaskMessageResponse(body, request, response.status);
-    return;
-  }
-  throw asApiError(body, TASK_MESSAGE_FAILED_ERROR);
-}
-
-function blockedMessage(block: Exclude<ComposerBlock, null>, t: OperatorTranslate): string {
-  if (block === 'read_only') return t('composer.blockedReadOnly');
-  if (block === 'changed_during_read') return t('composer.blockedChanged');
-  if (block === 'board_unstable') return t('composer.blockedBoard');
-  if (block === 'too_large') return t('composer.blockedTooLarge', { max: TASK_MESSAGE_BODY_LIMIT_BYTES });
-  return t('composer.blockedEmpty');
-}
-
-interface ComposerDraft {
-  readonly message_id: string;
-  readonly fence: TaskMessageFenceV1;
-}
-
-function readComposerDraft(key: string): { value: (ComposerDraft & { body: string }) | null; failed: boolean } {
-  if (typeof window === 'undefined') return { value: null, failed: false };
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return { value: null, failed: false };
-    const value = JSON.parse(raw);
-    const fence = value?.fence;
-    // Storage is editor state, never authority. Missing fields cannot be
-    // reconstructed from a newer card; transport still validates the envelope.
-    if (!value || Object.keys(value).length !== 3 || typeof value.body !== 'string' || value.body.length === 0
-      || typeof value.message_id !== 'string' || value.message_id.length === 0
-      || !fence || Object.keys(fence).length !== 3
-      || typeof fence.expected_task_revision !== 'string' || fence.expected_task_revision.length === 0
-      || !(fence.expected_claim_id === null && fence.expected_generation === null
-        || typeof fence.expected_claim_id === 'string' && fence.expected_claim_id.length > 0
-          && Number.isSafeInteger(fence.expected_generation) && fence.expected_generation > 0)) {
-      return { value: null, failed: true };
-    }
-    return { value, failed: false };
-  } catch {
-    return { value: null, failed: true };
-  }
-}
-
-/**
- * The board's only write affordance.
- *
- * It is collapsed by default, it carries its own fence instead of a separate
- * confirmation step, and it keeps no local record of what was sent: the
- * authoritative `inbox.unread_count` on the next snapshot is the delivery
- * feedback loop.
- */
-function Composer({
-  card,
-  repository,
-  boardUnstable,
-  sequence,
-  serviceEpoch,
-  onSent,
-  onDraftChange,
-  sendMessage,
-  t,
-}: {
-  readonly card: OperatorFleetCardV1;
-  readonly repository: OperatorFleetRepositoryV1;
-  readonly boardUnstable: boolean;
-  readonly sequence: number;
-  readonly serviceEpoch: string;
-  readonly onSent: () => void;
-  /** Reports whether discarding this panel would destroy operator text. */
-  readonly onDraftChange: (hasDraft: boolean) => void;
-  readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
-  readonly t: OperatorTranslate;
-}) {
-  const storageKey = `repo-harness:task-message-draft:v1:${taskKey(card)}`;
-  const [restored] = useState(() => readComposerDraft(storageKey));
-  const [open, setOpen] = useState(restored.value !== null || restored.failed);
-  const [draft, setDraft] = useState<ComposerDraft | null>(restored.value);
-  const [body, setBody] = useState(restored.value?.body ?? '');
-  const [storageWarning, setStorageWarning] = useState<OperatorMessageKey | null>(
-    restored.failed ? 'composer.draftRestoreFailed' : null,
-  );
-  const [sending, setSending] = useState(false);
-  const [sentAt, setSentAt] = useState<{ epoch: string; sequence: number } | null>(null);
-  const [error, setError] = useState<OperatorApiErrorV1 | null>(null);
-  const [staleFailure, setStaleFailure] = useState<{
-    readonly failed_sequence: number;
-    readonly failed_epoch: string;
-    readonly task_key: string;
-    readonly failed_fence: TaskMessageFenceV1;
-    readonly error_code: string;
-  } | null>(null);
-
-  const observedFence = composerFence(card);
-  // A draft owns its original fence. If the card refreshes while the composer
-  // is open, the POST still carries the old revision/claim/generation and the
-  // server can reject it atomically instead of silently retargeting the text.
-  const fence = draft?.fence ?? observedFence;
-  const scope = fence.expected_claim_id === null ? 'task' : 'claim';
-  const bytes = taskMessageBodyBytes(body);
-  const block = composerBlock({
-    access_mode: repository.access_mode,
-    card_consistency: card.snapshot_consistency,
-    board_unstable: boardUnstable,
-    body_bytes: bytes,
-  });
-  const target = composerTarget(card, fence);
-  const claimShort = target.kind === 'unheld' ? '' : target.claim.slice(-8);
-  const targetGeneration = target.kind === 'unheld' ? '—' : target.generation ?? '—';
-  const leaseLabel = t(`lease.${card.lease_state}` as OperatorMessageKey);
-  const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
-  const sent = sentAt !== null && sentAt.epoch === serviceEpoch && sentAt.sequence === sequence;
-  const recovery = composerRecovery(error);
-  const recoveryEnabled = block === null && !sending && (recovery !== 'rebind' || (
-    staleFailure !== null
-    && staleFailure.task_key === taskKey(card)
-    && (serviceEpoch !== staleFailure.failed_epoch || sequence > staleFailure.failed_sequence)
-    && repository.status === 'ok'
-    && repository.snapshot_consistency === 'stable'
-    && card.snapshot_consistency === 'stable'
-  ));
-
-  useEffect(() => {
-    onDraftChange(open && body.length > 0);
-    return () => onDraftChange(false);
-  }, [open, body, onDraftChange]);
-
-  const beginDraft = () => ({ message_id: crypto.randomUUID(), fence: observedFence });
-
-  const saveDraft = async (
-    nextDraft: ComposerDraft | null,
-    nextBody: string,
-    acknowledged?: ComposerDraft & { body: string },
-  ) => {
-    try {
-      // Every writer shares this origin/task lock: an old ACK may only remove
-      // the exact submitted draft, never text another tab saved in the meantime.
-      await window.navigator.locks.request(storageKey, () => {
-        if (acknowledged) {
-          const saved = readComposerDraft(storageKey);
-          if (saved.failed) throw new Error('Saved draft is unreadable');
-          if (saved.value === null || saved.value.message_id !== acknowledged.message_id
-            || saved.value.body !== acknowledged.body
-            || saved.value.fence.expected_task_revision !== acknowledged.fence.expected_task_revision
-            || saved.value.fence.expected_claim_id !== acknowledged.fence.expected_claim_id
-            || saved.value.fence.expected_generation !== acknowledged.fence.expected_generation) return;
-        }
-        if (nextDraft === null || nextBody.length === 0) window.localStorage.removeItem(storageKey);
-        else window.localStorage.setItem(storageKey, JSON.stringify({
-          message_id: nextDraft.message_id, fence: nextDraft.fence, body: nextBody,
-        }));
-      });
-      setStorageWarning(null);
-    } catch {
-      setStorageWarning('composer.draftSaveFailed');
-    }
-  };
-
-  const toggle = () => {
-    if (!open && draft === null) {
-      setDraft(beginDraft());
-      setSentAt(null);
-    }
-    setOpen(!open);
-  };
-
-  const rebind = () => {
-    if (!recoveryEnabled || recovery !== 'rebind') return;
-    const nextDraft = beginDraft();
-    saveDraft(nextDraft, body);
-    setDraft(nextDraft);
-    setError(null);
-    setStaleFailure(null);
-    setSentAt(null);
-  };
-
-  const startWithNewMessageId = () => {
-    if (!recoveryEnabled || recovery !== 'new_message_id' || draft === null) return;
-    const nextDraft = { ...draft, message_id: crypto.randomUUID() };
-    saveDraft(nextDraft, body);
-    setDraft(nextDraft);
-    setError(null);
-    setSentAt(null);
-  };
-
-  const submit = async () => {
-    if (block !== null || sending || draft === null || recovery !== null) return;
-    setSending(true);
-    setError(null);
-    try {
-      await sendMessage({
-        repository_id: card.repository_id,
-        task_id: card.task_id,
-        message_id: draft.message_id,
-        scope,
-        body,
-        ...draft.fence,
-      });
-      // A stored message is a new message: the retry id is spent, the draft is
-      // gone, and the next snapshot owns what the operator sees next.
-      await saveDraft(null, '', { ...draft, body });
-      setBody('');
-      setDraft(null);
-      setStaleFailure(null);
-      setSentAt({ epoch: serviceEpoch, sequence });
-      onSent();
-    } catch (failure) {
-      const apiError = asApiError(failure, TASK_MESSAGE_FAILED_ERROR);
-      setError(apiError);
-      setStaleFailure(composerRecovery(apiError) === 'rebind'
-        ? {
-            failed_sequence: sequence,
-            failed_epoch: serviceEpoch,
-            task_key: taskKey(card),
-            failed_fence: draft.fence,
-            error_code: apiError.code,
-          }
-        : null);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <section className={`composer${open ? ' is-open' : ''}`} data-slot="composer" aria-labelledby="composer-heading">
-      <button
-        className="composer__toggle"
-        type="button"
-        aria-expanded={open}
-        aria-controls="composer-panel"
-        onClick={toggle}
-      >
-        <Icon name="chevron" size={15} className={open ? 'is-open' : ''} />
-        <span id="composer-heading">
-          {target.kind === 'claim'
-            ? t('composer.toggleClaim')
-            : target.kind === 'held'
-              ? t('composer.toggleHeld', { claim: claimShort })
-              : t('composer.toggleTask')}
-        </span>
-      </button>
-      {open && (
-        <div className="composer__panel" id="composer-panel">
-          <p className="composer__untrusted">{t('composer.untrusted')}</p>
-          {target.kind === 'held' && (
-            <p className="composer__scope-note">
-              {t(HELD_TARGET_KEYS[target.lease_state], { claim: claimShort, generation: targetGeneration })}
-            </p>
-          )}
-          {target.kind === 'unheld' && (
-            <p className="composer__scope-note">{t(UNHELD_TARGET_KEYS[target.lease_state])}</p>
-          )}
-          <label className="composer__label" htmlFor="composer-body">{t('composer.bodyLabel')}</label>
-          <textarea
-            className="composer__body"
-            id="composer-body"
-            disabled={sending}
-            rows={4}
-            value={body}
-            placeholder={t('composer.bodyPlaceholder')}
-            onChange={(event) => {
-              const nextDraft = draft ?? beginDraft();
-              saveDraft(nextDraft, event.target.value);
-              if (draft === null) {
-                setDraft(nextDraft);
-                setSentAt(null);
-              }
-              setBody(event.target.value);
-            }}
-          />
-          <p className={`composer__bytes${bytes > TASK_MESSAGE_BODY_LIMIT_BYTES ? ' is-over' : ''}`}>
-            {t('composer.bytes', { used: bytes, max: TASK_MESSAGE_BODY_LIMIT_BYTES })}
-          </p>
-          <p className="composer__fence">
-            {target.kind === 'claim'
-              ? `${t('composer.fenceClaim', { claim: claimShort, generation: targetGeneration, consistency })} · rev ${fence.expected_task_revision}`
-              : target.kind === 'held'
-                ? `${t('composer.fenceHeld', { claim: claimShort, generation: targetGeneration, state: leaseLabel, consistency })} · rev ${fence.expected_task_revision}`
-                : `${t('composer.fenceTask', { consistency })} · rev ${fence.expected_task_revision}`}
-          </p>
-          {block !== null && <p className="composer__blocked" role="status">{blockedMessage(block, t)}</p>}
-          {storageWarning && <p className="composer__error" role="alert">{t(storageWarning)}</p>}
-          {error && (
-            <div className="composer__error" role="alert">
-              <p>{OWNER_GONE_CODES.includes(error.code) ? t('composer.ownerGone') : <ApiErrorText error={error} t={t} />}</p>
-              {recovery === 'rebind' && (
-                <>
-                  <p>{t('composer.rebindHint')}</p>
-                  <button
-                    className="operator-button operator-button--secondary"
-                    type="button"
-                    disabled={!recoveryEnabled}
-                    onClick={rebind}
-                  >
-                    {t('composer.rebind')}
-                  </button>
-                </>
-              )}
-              {recovery === 'new_message_id' && (
-                <>
-                  <p>{t('composer.newMessageIdHint')}</p>
-                  <button
-                    className="operator-button operator-button--secondary"
-                    type="button"
-                    disabled={!recoveryEnabled}
-                    onClick={startWithNewMessageId}
-                  >
-                    {t('composer.newMessageId')}
-                  </button>
-                </>
-              )}
-              {recovery === null && isAmbiguousMessageFailure(error) && <p>{t('composer.ambiguousRetry')}</p>}
-            </div>
-          )}
-          {sent && <p className="composer__sent" role="status">{t('composer.sent')}</p>}
-          <button
-            className="operator-button composer__send"
-            type="button"
-            data-write-action="task-message"
-            disabled={block !== null || sending || recovery !== null}
-            onClick={() => void submit()}
-          >
-            {sending
-              ? t('composer.sending')
-              : target.kind === 'claim'
-                ? t('composer.send', { claim: claimShort, generation: targetGeneration })
-                : target.kind === 'held'
-                  ? t('composer.sendHeld', { claim: claimShort, generation: targetGeneration, state: leaseLabel })
-                  : t('composer.sendTask')}
-          </button>
-          <p className="composer__boundary">{t('composer.boundary')}</p>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function DetailPane({
   snapshot,
   card,
-  repository,
   collaboration,
   revisionChangedFrom,
-  boardUnstable,
   evidenceGeneration,
   readTaskContext,
   readTaskActivity,
   onClose,
   onRefresh,
-  onSent,
-  sendMessage,
   t,
 }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null;
   readonly card: OperatorFleetCardV1;
-  readonly repository: OperatorFleetRepositoryV1 | null;
   readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
-  readonly boardUnstable: boolean;
   readonly evidenceGeneration: number;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
   readonly onRefresh: () => void;
-  readonly onSent: () => void;
-  readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
   readonly t: OperatorTranslate;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
-  const composerDraftRef = useRef(false);
   const cardKey = taskKey(card);
-  const reportComposerDraft = useCallback((hasDraft: boolean) => {
-    composerDraftRef.current = hasDraft;
-  }, []);
-
   useEffect(() => {
     if (typeof document === 'undefined') return;
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1952,14 +1418,6 @@ function DetailPane({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (event.isComposing || event.keyCode === 229) return;
-        // Escape is the IME candidate-cancel key. Closing the pane on it while
-        // the composer holds text would unmount the panel and take the draft
-        // and its retry-bearing message id with it. The close button, the
-        // scrim, and Escape from anywhere else all still close the pane.
-        const node = event.target as { readonly closest?: (selector: string) => unknown } | null;
-        const insideComposer = typeof node?.closest === 'function'
-          && node.closest('.composer__panel') !== null;
-        if (insideComposer && composerDraftRef.current) return;
         event.preventDefault();
         onClose();
         return;
@@ -2037,20 +1495,6 @@ function DetailPane({
               context for a decision the worklist already surfaced. */}
           <CollaborationPane state={collaboration} t={t} />
         </div>
-        {!(card.placement.kind === 'column' && card.placement.column === 'done') && repository && snapshot && (
-          <Composer
-            key={taskKey(card)}
-            card={card}
-            repository={repository}
-            boardUnstable={boardUnstable}
-            sequence={snapshot.sequence}
-            serviceEpoch={snapshot.service_epoch}
-            onSent={onSent}
-            onDraftChange={reportComposerDraft}
-            sendMessage={sendMessage}
-            t={t}
-          />
-        )}
       </aside>
     </>
   );
@@ -2098,7 +1542,6 @@ export function OperatorApp({
   initialState,
   initialSnapshot,
   fetchSnapshot = fetchOperatorSnapshot,
-  sendMessage = postTaskMessage,
   fetchCollaboration = fetchOperatorCollaborationSnapshot,
   initialCollaboration,
   initialLocale,
@@ -2199,9 +1642,6 @@ export function OperatorApp({
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
     ? selection.revision
     : null;
-  const selectedRepository = selectedCard && snapshot
-    ? snapshot.repositories.find((repository) => repository.repository_id === selectedCard.repository_id) ?? null
-    : null;
   const collaborationRepositoryId = activeRepository?.repository_id ?? null;
   const decisionAfter = decisionPage?.repositoryId === collaborationRepositoryId ? decisionPage.after : null;
   const changeDecisionPage = (after: string | null) => {
@@ -2228,14 +1668,6 @@ export function OperatorApp({
   useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId,decisionAfter,collaborationRefreshGeneration]), {
     enabled: !initialCollaboration && collaborationRepositoryId !== null,
   });
-  // A board that is stale, torn, or degraded is not a board you may write from.
-  const boardUnstable = stateKind === 'stale'
-    || stateKind === 'repo-degraded'
-    || stateKind === 'changed-during-read'
-    || (snapshot !== null && snapshot.snapshot_consistency !== 'stable')
-    || (selectedRepository !== null && (
-      selectedRepository.status !== 'ok' || selectedRepository.snapshot_consistency !== 'stable'
-    ));
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id,{ key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
 
   return (
@@ -2311,17 +1743,13 @@ export function OperatorApp({
             key={activeRepository?.repository_id ?? 'none'}
             snapshot={snapshot}
             card={selectedCard}
-            repository={selectedRepository}
             collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
-            boardUnstable={boardUnstable}
             evidenceGeneration={collaborationRefreshGeneration}
             readTaskContext={readTaskContext}
             readTaskActivity={readTaskActivity}
             onClose={closeSelection}
             onRefresh={() => void refresh()}
-            onSent={() => void refresh()}
-            sendMessage={sendMessage}
             t={t}
           />
         )}
@@ -2335,7 +1763,7 @@ export function OperatorApp({
         {/* Without an observed snapshot there is no protocol to report; the
             constant this bundle compiled against is not one. */}
         <span>{t('footer.protocol', { protocol: snapshot?.protocol ?? '—', sequence: snapshot?.sequence ?? '—' })}</span>
-        <span className="operator-footer__right">observe-only · one write: task message</span>
+        <span className="operator-footer__right">read-only</span>
       </footer>
     </div>
   );

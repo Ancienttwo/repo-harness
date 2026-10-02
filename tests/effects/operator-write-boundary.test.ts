@@ -17,7 +17,6 @@ import {
   OPERATOR_HEALTH_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
-  OPERATOR_TASK_MESSAGE_ROUTE,
   OPERATOR_TASK_DIFF_ROUTE,
   OPERATOR_TASK_ACTIVITY_ROUTE,
   OPERATOR_TASK_CONTEXT_ROUTE,
@@ -25,12 +24,12 @@ import {
 } from '../../src/effects/operator/server';
 
 /**
- * The inventory claim under test is "exactly one browser write". Probing a
+ * The inventory claim under test is "zero browser writes". Probing a
  * running server proves how the routes that exist behave, never which routes
  * exist, so the gate is applied to the declared inventory as a value.
  */
 function writeRouteIds(routes: readonly OperatorRouteV1[]): readonly string[] {
-  return routes.filter((route) => route.write).map((route) => route.id);
+  return routes.filter((route) => route.write || !['GET', 'HEAD'].includes(route.method)).map((route) => route.id);
 }
 
 function collaborationSnapshot(
@@ -49,16 +48,22 @@ function collaborationSnapshot(
 }
 
 describe('operator structural write boundary', () => {
-  test('declares exactly one write route and the negative probe fails the same assertion', () => {
-    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['task_message']);
+  test('declares zero write routes and rejects every mutation verb even when mislabeled read-only', () => {
+    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual([]);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+      const mutation: OperatorRouteV1 = { id: 'fake_write', method, pattern: '/api/v1/fleet/tasks/anything', write: false };
+      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['fake_write']);
+    }
+    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['get_write']);
+  });
 
-    const undeclaredWrite: OperatorRouteV1 = {
-      id: 'fake_write',
-      method: 'POST',
-      pattern: '/api/v1/fleet/tasks/anything',
-      write: true,
-    };
-    expect(writeRouteIds([...OPERATOR_ROUTES, undeclaredWrite])).not.toEqual(['task_message']);
+  test('the dispatcher only admits GET and HEAD before routing any request', async () => {
+    const source = await Bun.file(new URL('../../src/effects/operator/server.ts', import.meta.url)).text();
+    // Scan executable method comparisons as well as the declared inventory.
+    // This catches a mutation branch omitted from OPERATOR_ROUTES.
+    const methods = [...source.matchAll(/\bmethod\s*(?:!==|===|!=|==)\s*['"]([A-Z]+)['"]/gu)].map(match => match[1]);
+    expect(methods.length).toBeGreaterThan(0);
+    expect([...new Set(methods)].sort()).toEqual(['GET', 'HEAD']);
   });
 
   test('pins every inventory pattern to the value the dispatcher matches on', () => {
@@ -73,7 +78,6 @@ describe('operator structural write boundary', () => {
       'task_activity',
       'task_diff',
       'static_asset',
-      'task_message',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
     expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
@@ -83,11 +87,8 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
-    expect(patterns.get('task_message')).toBe(OPERATOR_TASK_MESSAGE_ROUTE.source);
 
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
-    expect(OPERATOR_TASK_MESSAGE_ROUTE.test('/api/v1/fleet/tasks/repo-a/'.concat('b'.repeat(64), '/messages'))).toBe(true);
-    expect(OPERATOR_TASK_MESSAGE_ROUTE.test('/API/v1/fleet/tasks/repo-a/'.concat('b'.repeat(64), '/messages'))).toBe(false);
   });
 
   test('refuses a collaboration snapshot that does not echo the requested identity', () => {
