@@ -69,7 +69,7 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Node24 architecture retry `/tmp/e1-s4-node24-failure-retry.log`: 78 pass, 0 fail, 493 expects; actual exit 0. Original failures remain preserved.
 - Current S4 code adds no external CLI launcher, adapter or stdout parser; product CLI assertion JSON input validation is within the four-entrypoint contract. No Pi/OAR integration work was added.
 
-> **Substantive Change SHA256**: `sha256:d0580e7b4e2bb4838f127a8b26a591072e49bb7a3a04c4d28a25c26d73c542a8`
+> **Substantive Change SHA256**: `sha256:fb4ebc1b970f63135525500cf45d89b9f0dca9ff78d9a1ba6dcfb6e417821997`
 
 ## Final verification disposition (blocked before commit/remote delivery)
 
