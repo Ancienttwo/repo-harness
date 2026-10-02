@@ -5,7 +5,7 @@
 
 建议将**以后由 repo-harness 创建的任务 worktree**集中到 `~/.repo-harness/worktrees/<repo-key>/<task-slug>`，在既有任务收尾入口补上有界 GC。系统 tmp 只放可重建 scratch/fixture。Git topology、现有 task/claim/publication 与 Herdr binding 继续拥有各自事实，不新建 daemon、全局任务库或另一套 cleanup controller。
 
-盘点见 [inventory.md](inventory.md)：16个注册 checkout 中只有 `repo-harness-wt-baseline-1d3c2f01` 是当前安全候选。其余因使用中、明确活跃、开放 PR、脏树、未推送提交或未保全 evidence 而保留。下面是未来实施方案，不是这次删除授权。
+盘点见 [inventory.md](inventory.md)：首轮16个注册 checkout 中只有 `repo-harness-wt-baseline-1d3c2f01` 是安全候选；04:45复查时它已由并行操作移除，当前Projects的17个checkout没有安全候选。其余因使用中、明确活跃、开放 PR、脏树、未推送提交或未保全 evidence 而保留。下面是未来实施方案，不是这次删除授权。
 
 ## P1：真实边界与当前能力
 
@@ -137,7 +137,7 @@ repo-harness worktree gc --repo <primary> --older-than 7d --apply
 
 ## 现有树迁移步骤（未来操作，本次未执行）
 
-1. 先重新采样[清单](inventory.md)，固定保护main、用户所列活跃树、474/476/477及其他open PR。记录exact HEAD、branch、dirty、ignored evidence和pane/session定位。唯一baseline候选应以后先显式dry-run，而非现在删除。
+1. 先重新采样[清单](inventory.md)，固定保护main、用户所列活跃树、474/476/477及其他open PR。记录exact HEAD、branch、dirty、ignored evidence和pane/session定位。首轮baseline候选已在04:45复查中消失；不能复用历史候选清单执行删除。
 2. 先部署新建位置：验证`start --path <new-root>/<repo-key>/<slug>`及MCP已有root override的真实入口；等默认创建逻辑和policy单authority落地再推广。现有活跃树继续使用原位置直至终态，避免在线迁移与compatibility symlink。
 3. 终态安全树直接GC，不为即将删除的树搬家。脏/未推送/活动树只报告。还有长期保留需求且干净、未使用的树，才做一次性migration；open PR须在其owner关闭本机使用后再单独安排。
 4. 迁移前在既有owner/closeout互斥范围冻结该树；保存审计材料到primary既有handoff/evidence位置，保留schema中历史execution_root。不修改签名receipt或旧binding来伪装历史路径。

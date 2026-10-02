@@ -1,8 +1,10 @@
 # repo-harness worktree inventory
 
+**交付前最新复查见文末：可安全回收清单为空。首轮 baseline 候选已由并行操作移除，不是本研究执行的。**
+
 本次只读盘点，不授权删除或迁移。来源是 Git topology、目录扫描、远端 refs、GitHub PR 和本机 Herdr 实时状态；不是从名称猜测。
 
-## 采样边界与结论
+## 首轮采样边界与结论（历史快照）
 
 - 2026-10-03 04:31–04:35（Asia/Singapore）采样，记录时间：`2026-10-03T04:31:48.176817+08:00`。并行 agent 仍在工作，HEAD、PR 和 dirty 状态会继续变化，执行回收前必须重查。
 - Git common directory：`/Users/chris/Projects/repo-harness/.git`。16 个 checkout = 1 个 main + 15 个 linked worktree；目录扫描发现相同的16个，没有同 clone 的未注册 `.git` checkout。
@@ -32,7 +34,7 @@ git worktree prune --dry-run --verbose
 
 Herdr 0.9.3：155个 session 条目中只有 `default` 为 running；对其 snapshot 的 pane `cwd` / `foreground_cwd` 做 canonical path containment 匹配。`idle` / `done` pane 仍占 cwd，不能删。“未见”只表示此次完整本机 snapshot 未命中；不是无会话、无使用者的绝对证明。`lsof` 退出0、无错误，对 baseline 未命中进程 cwd。明确活跃/开放 PR 的树，即使未命中 pane，也继续保护。
 
-## 可安全回收
+## 首轮可安全回收（历史候选，已失效）
 
 以下是**候选清单**，本次没有执行。baseline 无本地分支，无 PR、pane、进程 cwd、active-plan 或 Git lock；ignored 只有可重建的 `node_modules/`。没有 terminal task metadata 的旧树仅能在以后显式点名的 GC 中处理，不能被后台 sweep 自动认领。
 
@@ -87,3 +89,43 @@ Herdr 0.9.3：155个 session 条目中只有 `default` 为 running；对其 snap
 ## 安全解释
 
 可安全回收只表示采样时满足数据和使用条件，不代表已执行。现有 `contract-worktree cleanup --slug` 不覆盖 detached baseline，且会删除分支；不能为了处理 baseline 随便套 slug。后续统一 GC 应提供显式 exact-path scope，调用 Git 的非 force worktree remove，保留 branch ref，复查状态和使用者；详见 [PLAN.md](PLAN.md)。
+
+## 交付前复查：2026-10-03 04:45
+
+采样时间 `2026-10-03T04:45:09.935883+08:00`，再次读取 topology、Projects 根目录、远端refs、开放PR、Herdr snapshot及进程cwd。最新远端main为 `3cba96076881592e007037b1cc4e1198b1f32a8f`，表中ancestry以此OID为准。并行会话已推进远端refs并创建额外树，因此保留首轮证据，以下作为交付时结论。
+
+- `repo-harness-wt-baseline-1d3c2f01` 已不在Git topology，且原目录不存在。本研究没有执行删除或移动；原候选作废，**当前可安全回收：无**。
+- Projects 当前17个checkout（1 main + 16 linked），再加1个非worktree历史目录；最新Git列表还包含5个Projects之外的tmp检查树，额外列出，不擅自扩大删除范围。
+- Projects分类：14个正在使用/保护、3个只报告、0个可安全回收。新增campaign-freeze有活跃进程cwd且脏；oar-bump脏，未见pane/进程cwd，按只报告保留。用户明确活跃的树即使PR不再open或pane消失仍继续保护。
+
+| Projects目录 | branch / HEAD | clean | 最新main祖先 | 同名远端可达 | 开放PR | Herdr pane | 分类 / 理由 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `repo-harness` | `main` / `3e953f0b` | 是 | 是 | 是（祖先） | 无 | w8:p3 (working), w8:pG (idle), w8:p7 (done), w8:p4 (working), w8:pC (working) | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-campaign-freeze` | `codex/campaign-admission-freeze` / `3e953f0b` | 否（16条） | 是 | 否（无同名ref） | 无 | 未见 | 正在使用；新任务；dirty且8个process cwd |
+| `repo-harness-e1-selected-entrypoints` | `feat/e1-selected-entrypoints` / `3d66db7e` | 否（2条） | 否 | 否/未证明 | [474](https://github.com/Ancienttwo/repo-harness/pull/474) | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-grok-oar` | `codex/grok-oar-phase2` / `92bb8d9a` | 否（3条） | 否 | 否（无同名ref） | 无 | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-grok-oar-d` | `codex/grok-oar-d` / `9eed9c72` | 是 | 否 | 否（无同名ref） | 无 | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-grok-worker` | `feat/grok-herdr-worker` / `92bb8d9a` | 是 | 否 | 是（祖先） | [473](https://github.com/Ancienttwo/repo-harness/pull/473) | w8:pD (working) | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-oar-bump` | `codex/oar-0133-bump` / `3e953f0b` | 否（4条） | 是 | 否（无同名ref） | 无 | 未见 | 只报告；dirty |
+| `repo-harness-retire-cross-review` | `codex/retire-cross-review-prep` / `fbf73ff2` | 否（9条） | 否 | 否（无同名ref） | 无 | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-sched-a` | `codex/dev-scheduler-a-slim` / `8d221242` | 是 | 否 | 否（无同名ref） | 无 | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-sched-b` | `codex/kanban-read-only` / `3e953f0b` | 是 | 是 | 否（无同名ref） | 无 | w8:pJ (idle) | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-sched-c` | `codex/campaign-inventory` / `8d304116` | 是 | 否 | 是（祖先） | [479](https://github.com/Ancienttwo/repo-harness/pull/479) | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-sched-review` | `detached` / `bad25106` | 是 | 否 | detached；无同名branch | 无 | w8:pK (done) | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-wt-archctx-maintenance-reminder` | `detached` / `4e4898c2` | 是 | 否 | detached；无同名branch | 无 | 未见 | 只报告；Git clean但未证明main/远端可达 |
+| `repo-harness-wt-gc-design` | `codex/worktree-lifecycle-design` / `66fb1dba` | 是 | 否 | 是（tip相同） | [480](https://github.com/Ancienttwo/repo-harness/pull/480) | w8:pM (working) | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-wt-herdr-generic-review-design` | `codex/herdr-generic-review-design` / `209b00d8` | 是 | 否 | 是（tip相同） | [476](https://github.com/Ancienttwo/repo-harness/pull/476) | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-wt-local-update-closeout` | `codex/local-update-closeout` / `3cea3d61` | 是 | 否 | 是（tip相同） | [477](https://github.com/Ancienttwo/repo-harness/pull/477) | 未见 | 正在使用；用户活跃/primary/open PR保护 |
+| `repo-harness-wt-release-preflight` | `codex/release-preflight-current` / `dc880782` | 是 | 否 | 否（无同名ref） | 无 | 未见 | 只报告；Git clean但未证明main/远端可达 |
+
+Projects之外的5个 `git worktree list` 条目如下，均为本次并行新增的检查树；没有终态owner证据，不作GC候选。这里只按Git身份和snapshot判定，不从目录名推导PR归属。
+
+| path | branch / HEAD | clean | 最新main祖先 | 同名远端推送 | 开放PR / Herdr pane | 分类 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `/private/tmp/repo-harness-pr-closeout-20261003/pr473` | detached / `7f9988d3` | 是 | 否 | 不适用 | branch关联无；pane未见 | 只报告；临时检查树ownership/终态未核实 |
+| `/private/tmp/repo-harness-pr-closeout-20261003/pr474` | detached / `1a58cf4f` | 是 | 否 | 不适用 | branch关联无；pane未见 | 只报告；临时检查树ownership/终态未核实 |
+| `/private/tmp/repo-harness-pr-closeout-20261003/pr476` | detached / `2a1dc6bc` | 是 | 否 | 不适用 | branch关联无；pane未见 | 只报告；临时检查树ownership/终态未核实 |
+| `/private/tmp/repo-harness-pr-closeout-20261003/pr477` | detached / `3cea3d61` | 是 | 否 | 不适用 | branch关联无；pane未见 | 只报告；临时检查树ownership/终态未核实 |
+| `/private/tmp/repo-harness-pr-closeout-20261003/pr479` | detached / `395d1e42` | 是 | 否 | 不适用 | branch关联无；pane未见 | 只报告；临时检查树ownership/终态未核实 |
+
+最后这一轮是有时点的快照，不会持续追踪其他agent。实际GC仍必须重新取得远端OID、task终态与使用者事实。
