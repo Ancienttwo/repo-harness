@@ -131,9 +131,9 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   const subject = join(root, 'subject'), primary = join(root, 'primary'), output = join(root, 'output');
   for (const path of [subject, primary, output]) mkdirSync(path);
   const spec = { subject, primary, ownerRecord: primary, journal: primary, gitCommonDir: primary, output };
-  expect(() => reviewIsolationPolicy({ ...spec, output: primary }, 'darwin')).toThrow('OVERLAPS_AUTHORITY');
+  expect(() => reviewIsolationPolicy({ ...spec, output: primary })).toThrow('OVERLAPS_AUTHORITY');
   const link = join(root, 'link'); symlinkSync(output, link);
-  expect(() => reviewIsolationPolicy({ ...spec, output: link }, 'darwin')).toThrow('OUTPUT_UNSAFE');
+  expect(() => reviewIsolationPolicy({ ...spec, output: link })).toThrow('OUTPUT_UNSAFE');
   expect(() => reviewIsolationPolicy(spec, 'win32')).toThrow('UNSUPPORTED_PLATFORM');
 });
 

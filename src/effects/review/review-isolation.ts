@@ -94,7 +94,6 @@ export function removeCopiedAuth(output: string): { status: 'removed' | 'absent'
 
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */
 export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = process.platform): string {
-  if (platform !== 'darwin') throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM');
   if (!isAbsolute(paths.output) || lstatSync(paths.output).isSymbolicLink() || !lstatSync(paths.output).isDirectory()) {
     throw new Error('OAR_REVIEW_OUTPUT_UNSAFE');
   }
@@ -107,6 +106,7 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
       throw new Error('OAR_REVIEW_OUTPUT_OVERLAPS_AUTHORITY');
     }
   }
+  if (platform !== 'darwin') throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM');
   // Output alone is writable; every real CODEX_HOME state grant is retired.
   // Definitions, trust, settings/hooks and credentials stay denied even inside
   // an otherwise writable tree. This never opens HOME or native config roots.
