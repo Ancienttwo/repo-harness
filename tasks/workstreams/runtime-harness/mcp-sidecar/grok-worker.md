@@ -1,7 +1,7 @@
 # Workstream: Grok interactive worker (phase 1)
 
 > **Status**: completed
-> **Substantive Change SHA256**: `sha256:3c54a859f2dadca0cd9c637723b6c994d4fc85e6429d2a9bf60b10db51a7cc99`
+> **Substantive Change SHA256**: `sha256:9b6aff83ae946234f35286a28041cbee862cddbda600f42757269529920ad9c1`
 > **Capability ID**: `runtime-harness-mcp-sidecar`
 > **Functional Block**: `src/cli/mcp`
 > **Matched Prefix**: `src/cli/mcp`
