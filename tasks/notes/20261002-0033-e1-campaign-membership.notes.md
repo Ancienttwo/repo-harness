@@ -9,7 +9,11 @@
 
 ## Design Decisions
 
-- ...
+- Retain protocol-2 receipts and existing scope keys; campaign R2 binds owner manifest/current grant-policy context while plain stays R1. R1 completion cannot impersonate R2 under the same logical key.
+- Keep owner guards and trusted callback outside unchanged admission. Precise fresh-callback compensation checks authenticated stored ClaimActor and exact Lease tuple inside the existing Task lock.
+- Final validateHandoff is report-only even for a fresh claim after callback completion; retain bound/undispatched Lease and completed receipts for operator handling.
+- Post-reservation owner refusal retains reservation and pending evidence without usage; reconcile before same-key retry or choosing another key. New-key guard refusals can consume additional reservations.
+- AcceptanceReceipt：owner(Aimpact) 豁免，未生成 receipt。This records the explicit owner decision, not a typed receipt, verdict or Recommendation.
 
 ## Deviations From Plan Or Spec
 
@@ -19,7 +23,11 @@
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ... | ... | ... |
+| Add a second schema migration / compatibility producer | Rejected | R2 changes semantic identity using the same receipt/scope schema; old same-key evidence conflicts. |
+| Move campaign authority into lower admission | Rejected | Campaign owner retains scope/callback/budget authority; lower A and its assertion/revision remain unchanged. |
+| Compensate after final handoff validation fails | Report-only, per owner | Completed transactions may already be consumed by replay; keep Lease/receipt evidence and require operator handling. |
+| Retry post-reservation refusal with a new key | Reconcile first, per owner | Pending/reservation evidence is not a new-transaction proof; independent keys can accumulate reservations. |
+| Claim universal lock coverage | Rejected | Task-lock check/release protection requires cooperating writers; publication/Git writers do not share a complete admission mutex. |
 
 ## Open Questions
 
@@ -62,3 +70,17 @@ Execution-owner audit preserved the old callback end-of-envelope policy check as
 Final post-envelope context guard boundary:
 
 > **Substantive Change SHA256**: `sha256:060466c22684d0504da2197e19a738ca35688b18c7b4e3306c10679bec37d0d5`
+
+## Owner decision after gatekeeper PASS on fb95297c
+
+AcceptanceReceipt：owner(Aimpact) 豁免，未生成 receipt。
+
+This authorized follow-up changes only operator documentation, notes/review execution materials and a cooperating-writer qualification in a comment. It does not alter acquisition behavior or issue a typed waiver/receipt/verdict/Recommendation. Owner explicitly authorizes Ready and full CI after verification/push, while merge and S4 remain unauthorized. Ignore recovered duplicate S3 start prompts; continue this existing work-package only.
+
+Current CI boundary, merge-base origin/main (dba184d9):
+
+> **Substantive Change SHA256**: `sha256:d7e1fe67a36b556307d0039fbbfb05ada7d9ba268bbaf847b9695d0e69d5a954`
+
+Owner follow-up patch against fb95297c:
+
+> **Substantive Change SHA256**: `sha256:f7c77cdf56d40bb67fb9be839bb76a89f66556ed7e512ea7ead8a125145c85f8`

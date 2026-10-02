@@ -207,7 +207,7 @@ export function runCampaignAcquisition(input: CampaignAcquisitionInput, acquire 
         const work = result.envelope;
         try {
           const deps = processSprintDependencies(root);
-          // releaseSprintCommand invokes this read under its existing Task lock, closing check/release races.
+          // releaseSprintCommand invokes this read under its existing Task lock; check/release races close only for cooperating Lease writers holding that Task lock.
           const released = releaseSprintCommand({ claimId: work.claim_id }, { ...deps, coordination: { ...deps.coordination,
             readLease: taskId => {
               const live = deps.coordination.readLease(taskId);

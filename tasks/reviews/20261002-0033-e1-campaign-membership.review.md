@@ -14,13 +14,15 @@
 
 ## Human Review Card
 
+- AcceptanceReceipt：owner(Aimpact) 豁免，未生成 receipt。
+
 - Verdict: pending
 - Change type: code-change; S3 campaign owner/context and exact compensation plus typed cutover refusal.
 - Intended files changed: six explicit implementation/test/doc paths plus four workflow artifacts; no lower A/assertion/offer revision or S4 transports.
 - Actual files changed: two effects modules, three existing test files, one existing durable runbook, plan/contract/review/notes.
 - Check IDs and evidence disposition: 15 canonical checks including check:type; exact final report at .ai/harness/checks/e1-s3-verification.latest.json.
 - Residual risks: sampled pre/post authority, separate publication/Git locks, no cross-store atomic commit or live canary; pending/failed compensation stays evidence-owned.
-- Reviewer action required: inspect diff and card
+- Reviewer action required: owner reports gatekeeper PASS on fb95297c; this docs/comment follow-up does not author a new verdict or Recommendation.
 - Rollback: revert reviewed feature diff against dba184d9; preserve acquisition/outer-budget/claim evidence and do not fabricate new transactions or erase unknown outcomes.
 
 ## Mode Evidence
@@ -69,6 +71,10 @@ screenshot/artifact path, or reviewer observation.
 
 ## Behavior Diff Notes
 
+- Owner clarification: final validateHandoff failures are report-only even for fresh claims after callback success; bound/undispatched Leases and completed inner/outer receipts remain for operator handling.
+- Owner clarification: post-reservation owner refusal retains outer reservation and inner pending without usage. Reconcile before retrying the same or a new key; each fresh refusal consumes a reservation.
+- The Task-lock check/release claim applies only to cooperating Lease writers that hold that lock. Behavior is unchanged.
+
 - Plain remains R1; campaign R2 requires owner guard/callback. Same-key R1 completed evidence conflicts before new effects/reserves/callbacks. No schema migration.
 - Current owner identity/membership is checked before A and callback/final handoff, with context containing grant/current policy. Unknown/pending/outer replay stays fenced; no replay compensation.
 - Compensation reads exact Lease and stored authenticated ClaimActor inside existing Task lock; mismatch/unknown preserves evidence and returns rollback_failed.
@@ -78,7 +84,7 @@ screenshot/artifact path, or reviewer observation.
 
 - Publication/Git writers do not share a complete admission mutex; pre/post checking is not claim-instant membership freezing.
 - Multiple stores lack an atomic commit; result/pending/failed compensation and budget reconciliation remain owner responsibilities.
-- Formal semantic acceptance remains pending; no merge, Ready, finish, S4, new schema migration, benchmark/test doc or Receipt.
+- AcceptanceReceipt：owner(Aimpact) 豁免，未生成 receipt。Owner authorizes Ready/full CI for this follow-up; merge, finish and S4 remain unauthorized. No verdict or Recommendation is authored here.
 
 ## Scorecard
 
@@ -100,4 +106,4 @@ screenshot/artifact path, or reviewer observation.
 
 ## Summary
 
-- Execution materials for a Draft implementation handoff. Reviewer-owned verdict/Recommendation/Receipt are not filled by the execution owner.
+- Owner-reported gatekeeper PASS applies to fb95297c. This follow-up records the explicit receipt waiver and prepares Ready/full CI; reviewer-owned verdict/Recommendation remain unchanged and no receipt is generated.
