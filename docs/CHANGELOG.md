@@ -92,6 +92,10 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- Fleet installation keeps the Bun executable already validated by the CLI,
+  including launcher filenames such as `bun.exe`; an invalid explicit runtime
+  fails without selecting a different PATH executable.
+
 - Task Inbox migration uses portable storage paths, preserves record protocols
   and file identities, and reflushes recovered files through fresh inodes before
   publishing its receipt. Rollback permits a later fresh upgrade.
@@ -114,7 +118,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
-- Pin `archctx` and `archctx-contracts` to `0.5.11`, including architecture and
+- Pin `archctx` and `archctx-contracts` to `0.5.12`, including architecture and
   refactor admission, generated policy defaults and verification fixtures.
 - Route Codex agents by responsibility across GPT-6 Luna, Sol and Astra; worker
   execution uses Sol at medium and xhigh reasoning for its two execution roles.
