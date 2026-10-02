@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants } from 'node:fs';
+import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname, resolve } from 'node:path';
 
@@ -9,8 +9,6 @@ export interface ReviewIsolationPaths {
   readonly journal: string;
   readonly gitCommonDir: string;
   readonly output: string;
-  readonly nativeStateDirectories?: readonly string[];
-  readonly nativeStateFiles?: readonly string[];
 }
 
 function inside(path: string, directory: string): boolean {
@@ -18,36 +16,80 @@ function inside(path: string, directory: string): boolean {
   return rest === '' || (!isAbsolute(rest) && rest !== '..' && !rest.startsWith(`..${sep}`));
 }
 
-function canonicalStateDirectory(path: string): string {
-  if (!isAbsolute(path) || path.split('/').includes('..')) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
-  let ancestor = path;
-  while (!existsSync(ancestor)) ancestor = dirname(ancestor);
-  if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
-  return resolve(realpathSync(ancestor), relative(ancestor, path));
+function ownedOutput(output: string): string {
+  if (!isAbsolute(output) || lstatSync(output).isSymbolicLink() || !lstatSync(output).isDirectory()) throw new Error('review_codex_home_unsafe');
+  return realpathSync(output);
+}
+function assertAccessWindow(bytes: Buffer, runWindowMs: number): void {
+  if (!Number.isSafeInteger(runWindowMs) || runWindowMs < 1) throw new Error('review_auth_window_invalid');
+  let exp: unknown;
+  try {
+    const value = JSON.parse(bytes.toString('utf8'));
+    const token = value.tokens?.access_token;
+    if (typeof token !== 'string') throw new Error();
+    exp = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString('utf8')).exp;
+  } catch { throw new Error('review_access_exp_unverified'); }
+  if (typeof exp !== 'number' || !Number.isFinite(exp) || exp * 1000 <= Date.now() + runWindowMs) throw new Error('review_access_expires_within_run');
+}
+function readAuthBytes(path: string): Buffer {
+  let fd: number;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  catch { throw new Error('review_auth_source_unavailable'); }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('review_auth_source_unsafe');
+    return readFileSync(fd);
+  } finally { closeSync(fd); }
 }
 
-function canonicalStateFile(path: string): string {
-  if (!isAbsolute(path) || path.split('/').includes('..')) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
-  let stat;
-  try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  if (stat && (stat.isSymbolicLink() || !stat.isFile())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
-  return stat ? realpathSync(path) : join(realpathSync(dirname(path)), path.split('/').pop()!);
+/** Owner-only credential preparation. Never called by the sandboxed host. */
+export function prepareCodexHome(output: string, sourceHome: string, runWindowMs: number, reuse = false): { home: string; auth_copied: true; mode: '0600' } {
+  try {
+    const home = join(ownedOutput(output), '.codex-home');
+    try { mkdirSync(home, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new Error('review_codex_home_create_failed'); }
+    const dir = lstatSync(home);
+    if (!dir.isDirectory() || dir.isSymbolicLink() || dir.uid !== process.getuid?.() || (dir.mode & 0o777) !== 0o700) throw new Error('review_codex_home_unsafe');
+    const destination = join(home, 'auth.json');
+    if (reuse) {
+      const stat = lstatSync(destination);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600) throw new Error('review_auth_copy_unsafe');
+      const bytes = readAuthBytes(destination);
+      try { assertAccessWindow(bytes, runWindowMs); } finally { bytes.fill(0); }
+      return { home, auth_copied: true, mode: '0600' };
+    }
+    const sourceDirectory = join(realpathSync(sourceHome), '.codex');
+    if (lstatSync(sourceDirectory).isSymbolicLink() || !lstatSync(sourceDirectory).isDirectory()) throw new Error('review_auth_source_unsafe');
+    const bytes = readAuthBytes(join(sourceDirectory, 'auth.json'));
+    let fd: number | undefined; let created = false;
+    try {
+      assertAccessWindow(bytes, runWindowMs);
+      fd = openSync(destination, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); created = true;
+      writeFileSync(fd, bytes); fsyncSync(fd);
+    } catch (error) {
+      if (created) {
+        if (fd !== undefined) { closeSync(fd); fd = undefined; }
+        if (removeCopiedAuth(output).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+      }
+      if (error instanceof Error && /^review_access_/.test(error.message)) throw error;
+      throw new Error('review_auth_copy_failed');
+    } finally { if (fd !== undefined) closeSync(fd); bytes.fill(0); }
+    return { home, auth_copied: true, mode: '0600' };
+  } catch (error) {
+    if (error instanceof Error && /^(review_|cleanup_pending:)/.test(error.message)) throw error;
+    throw new Error('review_auth_preflight_failed');
+  }
 }
 
-/** Aimpact 23:07/23:29/23:56: two exact state subpaths and sixteen literals. */
-export function codexNativeStatePaths(home: string): Pick<ReviewIsolationPaths, 'nativeStateDirectories' | 'nativeStateFiles'> {
-  const root = join(realpathSync(home), '.codex');
-  if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) throw new Error('OAR_REVIEW_CODEX_HOME_UNSAFE');
-  const directory = realpathSync(root);
-  const tmp = join(directory, 'tmp');
-  let stat;
-  try { stat = lstatSync(tmp); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  if (stat && (stat.isSymbolicLink() || !stat.isDirectory())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
-  const locks = join(directory, 'thread-writer-locks');
-  const lockStat = lstatSync(locks);
-  if (lockStat.isSymbolicLink() || !lockStat.isDirectory()) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
-  return { nativeStateDirectories: [stat ? realpathSync(tmp) : tmp, realpathSync(locks)],
-    nativeStateFiles: [...['state_5.sqlite', 'logs_2.sqlite', 'goals_1.sqlite', 'memories_1.sqlite', 'queue_1.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => canonicalStateFile(join(directory, file + suffix)))), canonicalStateFile(join(directory, 'installation_id'))] };
+/** Delete only the isolated copy; never follow a directory link or touch source. */
+export function removeCopiedAuth(output: string): { status: 'removed' | 'absent' | 'cleanup_pending' } {
+  try {
+    const home = join(ownedOutput(output), '.codex-home');
+    let stat;
+    try { stat = lstatSync(home); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent' }; throw error; }
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(home) !== home) return { status: 'cleanup_pending' };
+    try { unlinkSync(join(home, 'auth.json')); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent' }; throw error; }
+    return { status: 'removed' };
+  } catch { return { status: 'cleanup_pending' }; }
 }
 
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */
@@ -65,18 +107,12 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
       throw new Error('OAR_REVIEW_OUTPUT_OVERLAPS_AUTHORITY');
     }
   }
-  const native = (paths.nativeStateDirectories ?? []).map(canonicalStateDirectory);
-  const files = (paths.nativeStateFiles ?? []).map(canonicalStateFile);
-  for (const state of [...native, ...files]) for (const authority of [paths.subject, ...protectedEntries, paths.output].map(path => realpathSync(path))) {
-    if (inside(state, authority) || inside(authority, state)) throw new Error('OAR_REVIEW_NATIVE_STATE_OVERLAPS_AUTHORITY');
-  }
-  // Only measured pure-state directories may enter the owner-admitted profile.
+  // Output alone is writable; every real CODEX_HOME state grant is retired.
   // Definitions, trust, settings/hooks and credentials stay denied even inside
   // an otherwise writable tree. This never opens HOME or native config roots.
   const forbiddenFiles = '/(CLAUDE\\.md|AGENTS\\.md|settings[^/]*\\.json|\\.claude\\.json|config\\.toml|auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json)$';
   const forbiddenDirectories = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules|\\.?plugins)(/|$)';
-  const exceptions = [...[output, ...native].map(path => `(require-not (subpath ${JSON.stringify(path)}))`),
-    ...files.map(path => `(require-not (literal ${JSON.stringify(path)}))`)].join(' ');
+  const exceptions = `(require-not (subpath ${JSON.stringify(output)}))`;
   return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n`;
 
 }

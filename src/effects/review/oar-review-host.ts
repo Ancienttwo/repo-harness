@@ -88,6 +88,7 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
   // writes result_ref; the host never interprets/publishes root-turn text.
   const run = await host.prompt(`TASK REQUEST: ${JSON.stringify(request)}\n\n${content}`, spec.timeoutMs);
+  if (run.kind !== 'rejected' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
   const observation = { request_id: request.request_id, kind: run.kind,
     outcome: run.kind === 'rejected' ? null : run.outcome.kind, actual_model: host.model(spec.kind) };
   writeSessionArtifact(join(spec.output, `observed-${request.round}.json`), observation);

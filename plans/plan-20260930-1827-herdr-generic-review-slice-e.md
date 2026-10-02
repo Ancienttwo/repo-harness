@@ -245,3 +245,10 @@ grant. One zero-prompt Codex recheck, new denial stops; no model turn or Claude
 recheck. Real-turn path sufficiency remains unverified.
 
 23:56 admits only the thread-writer-locks directory subpath atop the sixteen literals/tmp. Symlink/non-directory refused. One zero-prompt startup, any new refusal stops; no other grant or real turn certification.
+
+
+00:27 isolated CODEX_HOME replaces all real-home allowances. Only owner auth
+copy and SDK env seam, run-window exp preflight and all-exit cleanup required.
+Read risk assessment. One zero-prompt startup and conditionally round18 through
+production review and Receipt in disposable named-session fixture; first failure
+stops. No retry/Claude/config/trust/credential writeback/remote operation.

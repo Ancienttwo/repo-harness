@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:7b5005c88fb136d13c4a4d26669d66dc1895950a56adc5d8f948ce14fbf6b076`
+> **Substantive Change SHA256**: `sha256:b82e1dbd0ea33229f1a0d7282ecf741c37a17cf50ed58d6289d59f6aa3e52369`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -176,3 +176,17 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - New OS refusals: models_cache.json, shell_snapshots cleanup/temp creation, plugin cache/.remote-plugin-install-staging/metadata removal and thread_history_1.sqlite/-wal/-shm. Optional /dev/dtracehelper repeats earlier evidence. Correct STOP despite successful constructor: all new paths remain denied, no additional grant/relaunch/Claude rerun. Plugin namespace remains forbidden. Raw paths in d3-codex2356-startup/report.md and os-sandbox.ndjson; outputs retained under d3-codex2356-output. Accepted goals/memories channel and real-turn path uncertainty unchanged, Claude startup-only/init-only-model/no Receipt unchanged.
 
 - 23:56 validation: focused generic/Receipt 30 pass / 732 assertions / 54.44s, type and nine Required Checks pass after diff binding. No full-suite rerun or model round; no true-turn readiness claim. Manifest d3-codex2356-checkpoint.json.
+
+
+## Aimpact 00:27 isolated CODEX_HOME
+
+- Risk owner/handling rules: .ai/harness/runs/review-design/e2-codex-home-risk.md (advisor p7, Aimpact 2026-10-03 00:27).
+- Remove all real-home state subpath/literal grants, including accepted goals/memories write channel. Owner-only isolated auth copy, 0700/0600, exclusive/no-follow/regular-file checks, exp-only full-window preflight; never credential bytes/hash/token paths in evidence. env seam only, no config/trust/definitions/credential writeback. Failed cleanup remains explicit cleanup_pending.
+- Refresh may rotate server-side token before denied persistence; network/read isolation not claimed. Source id-token expiry ignored per risk; only access exp checked. Actual backend model remains SDK-observed label, not backend certification. One zero-prompt startup and only after pass round18, private task-proof session and disposable authority. No second real turn/Claude/config edits/remote operations.
+
+- 00:27 zero-model probe passed with isolated home: constructor/dispose true, no real-home write, no refresh/auth-write denial, auth copy removed by owner. Default isolated config/skills creation was refused but not required for startup; neither copied/created. Real model turn is conditional on this normal startup pass.
+- Round18 (exactly one production request) PASSED on disposable arithmetic fixture in private task-proof session: production generic Result/domain validation/recordAcceptance wrote generic-review external_pass; verifyAcceptance and persisted readback matched. actual_harness=codex, actual_role=deep-reasoner, actual_model=gpt-6-astra equals OAR Session.model observation; no launcher field. Actual backend identity beyond SDK observation is not claimed. Private close returned closed/pids[], server stopped, auth copy absent after owner cleanup, no credential write/refresh observed, no Claude run.
+- One pre-dispatch fixture preparation gate failed because verification event log was not ignored, changing snapshot despite arithmetic test pass. Added fixture-only runtime ignore boundary and revalidated using production executeVerificationContract; no model/session had started at that point. Model dispatch has an exclusive round18 marker and was never retried. Evidence d3-home0027-startup and round18-review/final.json; credentials are excluded from evidence and hashing, only auth_copied/mode recorded.
+- All real-home tmp/locks/sixteen file grants and later-session injection channel are removed. Remaining accepted risks: second copy briefly at rest, read/network exposure, possible server-side refresh rotation before failed persistence, source-token/body declarations unchecked per approved skipLibCheck, crash residue, Claude model gap and future-version/real-turn paths unverified. Normal close/cancel/start-failure/timeout cleanup and cleanup_pending are covered by zero-model production fixtures.
+
+- 00:27 focused validation: 31 pass / 795 assertions, including cleanup close/cancel/start-failure/timeout and delete-refusal; type and nine integrity gates pass after current diff binding. Previous full-suite evidence is historical, no new broad/full/model run. Canonical manifest home0027-checkpoint.json.

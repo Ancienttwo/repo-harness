@@ -59,7 +59,7 @@ test('retired CLI rejects with upgrade-required rather than routing to generic r
 test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
-  const { reviewIsolationPolicy, reviewHostTemporaryDirectory, codexNativeStatePaths } = await import('../src/effects/review/review-isolation');
+  const { reviewIsolationPolicy, reviewHostTemporaryDirectory, prepareCodexHome } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('oar-isolation'); roots.push(root);
   const subject = join(root, 'subject'), primary = join(root, 'primary'), owner = join(root, 'owner-record'), journal = join(root, 'journal'), git = join(root, 'git-common'), output = join(root, 'output');
   for (const dir of [subject, primary, owner, journal, git, output]) mkdirSync(dir);
@@ -69,17 +69,14 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   const forbidden = ['CLAUDE.md','AGENTS.md','settings.local.json','auth.json','.credentials.json','config.toml','agents/definition.md','skills/definition.md','rules/definition.md','plugins/definition.json','hooks/handler.sh'].map(path => join(output, path));
   for (const path of forbidden) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
   const nativeHome = join(root, 'native-home'); mkdirSync(join(nativeHome, '.codex', 'tmp'), { recursive: true }); mkdirSync(join(nativeHome, '.codex', 'thread-writer-locks'));
-  const grants = codexNativeStatePaths(nativeHome);
-  expect(grants.nativeStateFiles).toHaveLength(16);
-  const allowedNative = [...grants.nativeStateFiles!, ...grants.nativeStateDirectories!.map(path => join(path,'probe.txt'))];
-  expect(grants.nativeStateDirectories).toHaveLength(2);
-  expect(grants.nativeStateDirectories![1]).toBe(join(nativeHome, '.codex', 'thread-writer-locks'));
-  const deniedNative = ['goals_2.sqlite','memories_2.sqlite','queue_2.sqlite','installation_id-other','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json','sessions/decoy.txt','decoy/forbidden.txt'].map(path => join(nativeHome, '.codex', path));
-  for (const path of [...allowedNative, ...deniedNative]) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
-  const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden, ...deniedNative];
-  const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output, ...grants });
-  expect(policy).not.toContain(`(subpath ${JSON.stringify(join(nativeHome, '.codex'))})`);
-  for (const file of grants.nativeStateFiles!) expect(policy).toContain(`(literal ${JSON.stringify(file)})`);
+  const isolated = join(output, '.codex-home'); mkdirSync(isolated, { mode: 0o700 });
+  const allowedNative = [join(isolated,'state_5.sqlite'),join(isolated,'cache.txt')];
+  const deniedNative = ['state_5.sqlite','state_5.sqlite-wal','state_5.sqlite-shm','logs_2.sqlite','logs_2.sqlite-wal','logs_2.sqlite-shm','goals_1.sqlite','memories_1.sqlite','queue_1.sqlite','installation_id','tmp/state','thread-writer-locks/lock','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json'].map(path => join(nativeHome, '.codex', path));
+  const isolatedDenied = [join(isolated,'auth.json'),join(isolated,'config.toml')];
+  for (const path of [...allowedNative, ...deniedNative, ...isolatedDenied]) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
+  const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden, ...deniedNative, ...isolatedDenied];
+  const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output });
+  expect(policy).not.toContain(nativeHome);
   const profile = join(root, 'profile.sb'); writeFileSync(profile, policy);
   const worker = join(root, 'worker.cjs');
   writeFileSync(worker, `
@@ -122,7 +119,7 @@ else console.log(JSON.stringify({results,operations}));
     expect(evidence.operations.nested.status).toBe(71);
     expect(String(evidence.operations.nested.stderr)).toContain('sandbox_apply: Operation not permitted');
   }
-  for (const path of [...protectedPaths, ...forbidden, ...deniedNative]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
+  for (const path of [...protectedPaths, ...forbidden, ...deniedNative, ...isolatedDenied]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
   expect(readFileSync(join(output, 'host.txt'), 'utf8')).toBe('ALLOWED');
   expect(readFileSync(join(output, 'child.txt'), 'utf8')).toBe('ALLOWED');
 });
@@ -138,9 +135,6 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   const link = join(root, 'link'); symlinkSync(output, link);
   expect(() => reviewIsolationPolicy({ ...spec, output: link })).toThrow('OUTPUT_UNSAFE');
   expect(() => reviewIsolationPolicy(spec, 'win32')).toThrow('UNSUPPORTED_PLATFORM');
-  expect(() => reviewIsolationPolicy({ ...spec, nativeStateDirectories: [primary] })).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
-  expect(() => reviewIsolationPolicy({ ...spec, nativeStateDirectories: [root] })).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
-  expect(() => reviewIsolationPolicy({ ...spec, nativeStateDirectories: [output] })).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
 });
 
 async function runOarNodeFixture(label: string, body: string, confined = true) {
@@ -221,25 +215,28 @@ test('OAR installation is probed by the fixed Node host, never the Bun controlle
   }
 });
 
-test('Codex exact state admission refuses root/tmp/file symlinks and literal overlap', async () => {
-  const { mkdirSync, writeFileSync, symlinkSync, unlinkSync } = await import('node:fs');
-  const { codexNativeStatePaths, reviewIsolationPolicy } = await import('../src/effects/review/review-isolation');
-  const root = tmpWorkspace('codex-state-links'); roots.push(root);
-  const home = join(root, 'home'), other = join(root, 'other'); mkdirSync(home); mkdirSync(other);
-  symlinkSync(other, join(home, '.codex'));
-  expect(() => codexNativeStatePaths(home)).toThrow('CODEX_HOME_UNSAFE'); unlinkSync(join(home, '.codex'));
-  mkdirSync(join(home, '.codex')); symlinkSync(other, join(home, '.codex', 'tmp'));
-  expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', 'tmp'));
-  mkdirSync(join(home, '.codex', 'tmp'));
-  const locks = join(home, '.codex', 'thread-writer-locks');
-  symlinkSync(other, locks); expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(locks);
-  writeFileSync(locks, 'not a directory'); expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(locks); mkdirSync(locks);
-  writeFileSync(join(other, 'authority.txt'), 'KEEP');
-  for (const name of [...['state_5.sqlite','logs_2.sqlite','goals_1.sqlite','memories_1.sqlite','queue_1.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => file + suffix)), 'installation_id']) {
-    symlinkSync(join(other, 'authority.txt'), join(home, '.codex', name));
-    expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', name));
-  }
-  const output = join(root,'output'); mkdirSync(output);
-  const paths = { subject:other,primary:other,ownerRecord:other,journal:other,gitCommonDir:other,output };
-  expect(() => reviewIsolationPolicy({...paths,nativeStateFiles:[join(other,'authority.txt')]})).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
+test('Codex isolated home: exp-only preflight, exclusive no-follow copy, modes and cleanup', async () => {
+  const { mkdirSync, writeFileSync, symlinkSync, unlinkSync, lstatSync, existsSync } = await import('node:fs');
+  const { prepareCodexHome, removeCopiedAuth } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('codex-isolated-auth'); roots.push(root);
+  const source = join(root,'source'), output = join(root,'output'); mkdirSync(join(source,'.codex'),{recursive:true});mkdirSync(output);
+  const payload = (exp:number) => Buffer.from(JSON.stringify({exp})).toString('base64url');
+  const fixture = (exp:number) => JSON.stringify({tokens:{access_token:`fixture.${payload(exp)}.fixture`}});
+  const file = join(source,'.codex','auth.json');
+  writeFileSync(file,fixture(Math.floor(Date.now()/1000)+30),{mode:0o600});
+  expect(() => prepareCodexHome(output,source,60000)).toThrow('expires_within_run');
+  expect(existsSync(join(output,'.codex-home','auth.json'))).toBe(false);
+  writeFileSync(file,fixture(Math.floor(Date.now()/1000)+86400));
+  const prepared = prepareCodexHome(output,source,60000);
+  expect(prepared.auth_copied).toBe(true);expect(prepared.mode).toBe('0600');
+  expect(lstatSync(prepared.home).mode & 0o777).toBe(0o700);expect(lstatSync(join(prepared.home,'auth.json')).mode & 0o777).toBe(0o600);
+  expect(existsSync(join(prepared.home,'config.toml'))).toBe(false);
+  expect(() => prepareCodexHome(output,source,60000)).toThrow('copy_failed');
+  expect(prepareCodexHome(output,source,60000,true).auth_copied).toBe(true);
+  expect(removeCopiedAuth(output).status).toBe('removed');expect(removeCopiedAuth(output).status).toBe('absent');
+  unlinkSync(file);symlinkSync(join(root,'missing'),file);
+  expect(() => prepareCodexHome(output,source,60000)).toThrow('source_unavailable');unlinkSync(file);mkdirSync(file);
+  expect(() => prepareCodexHome(output,source,60000)).toThrow('source_unsafe');
+  mkdirSync(join(prepared.home,'auth.json'));
+  expect(removeCopiedAuth(output).status).toBe('cleanup_pending');
 });

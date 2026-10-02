@@ -1,6 +1,6 @@
 # Task Contract: herdr-generic-review-slice-e Receipt implementation
 
-> **Substantive Change SHA256**: `sha256:1f1d6e5e9f5ff9cfd2f367f6ba15a0f521ce01f1e84c3e5e9c2f5dacd226e698`
+> **Substantive Change SHA256**: `sha256:5264996f306ffeecffaa1866c38c3df493e565ca908c7136846c204d219fa7bc`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -421,3 +421,19 @@ precedence unchanged, no mixed-root grant. Extend inherited positive/negative
 fixture, then one zero-prompt Codex startup (real HOME). New denial stops, no
 expansion/relaunch/Claude rerun. Prior accepted goals/memories channel and real
 turn path sufficiency remain unverified. Local commit only.
+
+
+## Aimpact 2026-10-03 00:27 isolated CODEX_HOME
+
+Read/follow e2-codex-home-risk.md. Owner prepares output/.codex-home 0700 and
+exclusive no-follow auth-only copy 0600; only exp checked for full run window,
+never log/hash/record credential content or token paths. CODEX_HOME via OAR
+SessionOptions.env only, no argv or HOME/config/trust copy. Remove every real
+.codex state allowance. Owner auth-copy cleanup on close/cancel/start failure/
+timeout; failed removal is cleanup_pending. Existing forbidden regex retains
+auth/config write denial. One zero-prompt probe, then only if it passes exactly
+one real Codex review round18 through production generic review/Receipt writer/
+verifier, private task-proof Herdr session, disposable repo/authority. Any auth
+error/refresh or real-home/config/trust requirement stops, no retry/second turn/
+Claude run. No source-file deletion/remote/merge; local commits only. Risk pointer
+and evidence in slice notes. Zero-model implementation tests precede live work.

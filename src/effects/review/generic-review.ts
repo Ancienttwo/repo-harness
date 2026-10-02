@@ -14,7 +14,7 @@ import { taskRepository } from '../terminal/task-worktree';
 import { startTaskApplicationHost, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, type TaskCleanupResult, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, isolatedHostCommand, codexNativeStatePaths } from './review-isolation';
+import { reviewIsolationPolicy, isolatedHostCommand, prepareCodexHome, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
@@ -145,11 +145,12 @@ function sourcePacket(root: string, paths: readonly string[], target: string): s
 }
 
 /** Model/effort come from the existing fleet; vendor argv belongs to OAR. */
-export function reviewSessionOptions(kind: Harness, output: string): SessionOptions {
+export function reviewSessionOptions(kind: Harness, output: string, codexHome?: string): SessionOptions {
   const fleet = parseFrontmatter(readFileSync(fileURLToPath(new URL('../../../agents/fleet/deep-reasoner.md', import.meta.url)), 'utf8'));
   if (!fleet || !validateFrontmatter(fleet, GENERIC_REVIEW_ROLE).ok) throw new Error('review_fleet_invalid');
   const target = AGENT_TARGET_OVERRIDES[GENERIC_REVIEW_ROLE]!;
   return { cwd: output, model: kind === 'codex' ? target.model : fleet.model!, effort: kind === 'codex' ? target.effort : fleet.effort!,
+    ...(kind === 'codex' && codexHome ? { env: { CODEX_HOME: codexHome } } : {}),
     appendSystemPrompt: `${fleet.body}\nReview communication exception: writing the final JSON once to this request's exact result_ref is the only authorized mutation. No temporary file, rename, other edits or permission workarounds. This is communication, not production editing.` };
 }
 
@@ -158,6 +159,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   const client = { ...runtime, ...effects };
   const { root, primary, contract, key, dir } = reviewLocation(options.repoRoot, options.contract);
   const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
+  let authOutput: string | undefined;
   try {
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
     const legacyDir = join(root, '.ai/harness/runs/claude-review', createHash('sha256').update(contract).digest('hex'));
@@ -202,11 +204,18 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const taskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
     const outbox = join(reviewerRepo, '.ai/harness/runs/task-agent-outbox', taskDir.split('/').pop()!);
     ensureSessionDirectory(reviewerRepo, outbox);
+    let codexHome: string | undefined;
+    if (session.actual_harness === 'codex') {
+      authOutput = outbox;
+      const marker = join(dir, 'auth-copy.json');
+      const prepared = prepareCodexHome(outbox, options.endpoint.home ?? process.env.HOME ?? userInfo().homedir, timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
+      codexHome = prepared.home;
+      if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
+    }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
     const isolationPaths = { subject: root, primary, ownerRecord: resolve(root, contract), journal: dir,
-      gitCommonDir: repository.repository_id, output: outbox,
-      ...(session.actual_harness === 'codex' ? codexNativeStatePaths(options.endpoint.home ?? process.env.HOME ?? userInfo().homedir) : {}) };
+      gitCommonDir: repository.repository_id, output: outbox };
     const policy = reviewIsolationPolicy(isolationPaths);
     const profilePath = join(dir, 'isolation.sb');
     if (!existsSync(profilePath)) writeFileSync(profilePath, policy, { flag: 'wx', mode: 0o600 });
@@ -216,7 +225,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       const installation = await client.installation(session.actual_harness);
       if (installation.kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
       const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness, installation,
-        options: reviewSessionOptions(session.actual_harness, outbox), requestDirectory: taskDir, output: outbox, timeoutMs: timeout };
+        options: reviewSessionOptions(session.actual_harness, outbox, codexHome), requestDirectory: taskDir, output: outbox, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }
     const { node, entry: hostEntry } = hostExecutable();
@@ -275,6 +284,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (review) projectAcceptance(resolve(root, review), receipt);
     return { status: output.verdict === 'PASS' ? 'accepted' : 'rejected', round, output, receipt,
       requested_harness: session.requested_harness, actual_harness: session.actual_harness, fallback_reason: session.fallback_reason };
+  } catch (error) {
+    if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+    throw error;
   } finally { lock.release(); }
 }
 
@@ -292,7 +304,12 @@ export async function closeReview(repoRoot: string, contract: string, cancel = f
   effects: ReviewEffects = {}) {
   const { dir, primary, root } = reviewLocation(repoRoot, contract);
   const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
+  let authOutput: string | undefined;
   try {
+    if (existsSync(join(dir, 'session.json'))) {
+      const owned = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+      if (owned.actual_harness === 'codex') authOutput = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+    }
     if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
     const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
     if (!cancel) {
@@ -311,5 +328,8 @@ export async function closeReview(repoRoot: string, contract: string, cancel = f
     const cleanup = await (cancel ? client.cancel : client.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
     if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup });
     return cleanup;
-  } finally { lock.release(); }
+  } finally {
+    lock.release();
+    if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+  }
 }

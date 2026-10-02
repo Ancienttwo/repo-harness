@@ -80,3 +80,14 @@ constructor/dispose succeeded, but new model-cache, shell-snapshot, plugin and
 thread-history writes were denied; all remain closed and the probe stopped.
 This is startup/disposal evidence only, not real-turn readiness or Receipt
 certification. No plugin or broader root grant is implied.
+
+
+2026-10-03 00:27 replaces every real Codex state grant with owner-prepared
+output/.codex-home. Only auth is copied (exclusive/no-follow, 0700/0600), only
+access exp is checked against the run window, and CODEX_HOME is passed through
+OAR SessionOptions.env. No config/trust/instruction copy; auth/config writes
+remain denied. Owner deletes the copy on close/cancel/start failure/timeout;
+failed deletion is cleanup_pending. One zero-prompt startup and one authorized
+round18 production Codex review/Receipt write+verify passed in a disposable
+private session. This certifies that observed runtime/fixture path, not backend
+identity, future versions, network isolation, refresh safety or Claude Receipt.

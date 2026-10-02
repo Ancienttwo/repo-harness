@@ -783,8 +783,8 @@ function reviewFixture() {
   const fixture = makeFixture();
   const endpointHome = realpathSync(mkdtempSync('/tmp/as-')); tempDirs.push(endpointHome);
   mkdirSync(join(endpointHome, '.codex'));
-  mkdirSync(join(endpointHome, '.codex', 'tmp'));
-  mkdirSync(join(endpointHome, '.codex', 'thread-writer-locks'));
+  const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now()/1000)+86400 })).toString('base64url');
+  writeFileSync(join(endpointHome,'.codex','auth.json'),JSON.stringify({tokens:{access_token:`fixture.${payload}.fixture`}}),{mode:0o600});
   writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n');
   commit(fixture.root, 'ignore private runtime communication');
   const reviewerRepo = join(fixture.home, 'reviewer');
@@ -898,4 +898,25 @@ test('generic review refuses legacy cleanup-pending markers without reading or t
   for (const file of ['session.json', 'closed.json', 'server.json']) writeFileSync(join(legacy, file), 'not legacy JSON; marker-only check');
   await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_legacy_drain_required');
   expect(f.sent()).toBe(0); expect(f.calls).toEqual([]);
+});
+
+test('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
+  const { existsSync, unlinkSync } = await import('node:fs');
+  const copied = (f: ReturnType<typeof reviewFixture>) => {
+    const session = readSessionArtifact<{task:string}>(join(reviewLocation(f.root,f.options.contract).dir,'session.json'));
+    return join(f.reviewerRepo,'.ai/harness/runs/task-agent-outbox',importedTaskDir(f.reviewerRepo,session.task,'deep-reasoner').split('/').pop()!,'.codex-home','auth.json');
+  };
+  for (const cancel of [false,true]) {
+    const f=reviewFixture();f.verdict('PASS');await runReviewRound({...f.options,harness:'codex'},f.effects);
+    expect(existsSync(copied(f))).toBe(true);await closeReview(f.root,f.options.contract,cancel,f.home,f.effects);expect(existsSync(copied(f))).toBe(false);
+  }
+  const start=reviewFixture();
+  await expect(runReviewRound({...start.options,harness:'codex'},{...start.effects,start:async()=>{throw new Error('fixture_start_failure')}})).rejects.toThrow('fixture_start_failure');
+  expect(existsSync(copied(start))).toBe(false);
+  const timed=reviewFixture();
+  await expect(runReviewRound({...timed.options,harness:'codex',timeoutMs:1},{...timed.effects,collect:async()=>null})).rejects.toThrow('review_round_timeout');
+  expect(existsSync(copied(timed))).toBe(false);
+  const refused=reviewFixture();refused.verdict('PASS');await runReviewRound({...refused.options,harness:'codex'},refused.effects);
+  unlinkSync(copied(refused));mkdirSync(copied(refused));
+  await expect(closeReview(refused.root,refused.options.contract,true,refused.home,refused.effects)).rejects.toThrow('cleanup_pending: review_auth_copy_delete_failed');
 });
