@@ -237,3 +237,9 @@ these startup results are not real review acceptance.
 SQLite state/log literals only, goals excluded. Run one zero-prompt startup;
 any goals/new denial ends the probe scope with no automatic expansion. Receipt
 model/protection boundaries and all remote prohibitions remain unchanged.
+
+
+23:29 adds ten literal state paths only: goals/memories/queue SQLite families
+and installation_id. Accepted unverified later-session channel, no whole-dir
+grant. One zero-prompt Codex recheck, new denial stops; no model turn or Claude
+recheck. Real-turn path sufficiency remains unverified.

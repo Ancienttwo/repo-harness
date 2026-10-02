@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:1f0d300ec1ccdacf005b23c4aa1f6c9b8104c309956b20d54cd6a82c281f353e`
+> **Substantive Change SHA256**: `sha256:f434d733f4968609c7524889995d26d1f24e402408335b9cf915530f0a2b3217`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -154,3 +154,14 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Retained evidence: d3-codex2307-startup/{report.md,results.json,os-sandbox.ndjson,codex.sb,codex-audit.sb}, execution.log and output under .ai/harness/runs/d3-codex2307-output. One prelaunch guard refusal due stale evidence path happened before any native process; preserved separately. Claude limitation unchanged: prior startup only, real review turn unverified, init-only model cannot mint Receipt. Codex remains unsupported with this approved set. No model round, push, PR or merge.
 
 - 23:07 validation: focused generic/Receipt 30 pass / 670 assertions / 55.14s; type and nine Required Checks pass after current diff binding. No full-suite rerun for this narrowly scoped permission change; previous full run/pre-existing failure classification remains historical. Canonical command/hash evidence is d3-codex2307-checkpoint.json.
+
+
+## Aimpact 23:29 exact additions and accepted risk
+
+- Add only ten literals: goals_1/memories_1/queue_1 SQLite base/-wal/-shm and installation_id, retaining the previous six literals and tmp subpath. realpath, symlink refusal and forbidden-regex priority unchanged, no subpath/regex on mixed ~/.codex. New literal positives, sibling/authority negatives and every listed symlink tested.
+- Aimpact explicitly accepts that a danger-full-access reviewer may write goals_1 and memories_1 that the user's own Codex may consume in later sessions: this is an unverified cross-session channel, not prevented by the outer write profile. A real review turn may require additional state paths; that remains unverified. No Receipt security claim or scope expansion follows from startup success.
+- One new zero-prompt Codex startup is authorized, real HOME, standard OAR API, dispose if returned. Any new denial stops with no permission increase or second launch. No Claude rerun; Claude remains startup-only/real-turn-unverified/init-only-model/no Receipt.
+
+- 23:29 single zero-prompt recheck, Codex0.160.0/Node24.21.0/real HOME: thread/start failed with Failed to initialize session, thread-store internal error, Operation not permitted. OS newly denies ~/.codex/thread-writer-locks/.coordination.lock; native pid48603 was captured in process samples. Previously seen /dev/dtracehelper refusals remain optional and unopened. No Session returned for dispose; known process cleanup empty. STOP, no new grant or relaunch. No prompt/model call, no Claude rerun. Retain d3-codex2329-startup/{report.md,results.json,os-sandbox.ndjson,codex.sb,codex-audit.sb} and d3-codex2329-output.
+
+- 23:29 validation: focused generic/Receipt 30 pass / 716 assertions / 59.87s; type and required integrity checks pass after current digest binding. No full-suite rerun or model round. Canonical log/hash manifest: d3-codex2329-checkpoint.json. STOP pending next Aimpact decision; no additional allowance or launch.

@@ -70,8 +70,9 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   for (const path of forbidden) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
   const nativeHome = join(root, 'native-home'); mkdirSync(join(nativeHome, '.codex', 'tmp'), { recursive: true });
   const grants = codexNativeStatePaths(nativeHome);
+  expect(grants.nativeStateFiles).toHaveLength(16);
   const allowedNative = [...grants.nativeStateFiles!, join(grants.nativeStateDirectories![0]!, 'probe.txt')];
-  const deniedNative = ['goals_1.sqlite','goals_1.sqlite-wal','goals_1.sqlite-shm','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json'].map(path => join(nativeHome, '.codex', path));
+  const deniedNative = ['goals_2.sqlite','memories_2.sqlite','queue_2.sqlite','installation_id-other','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json'].map(path => join(nativeHome, '.codex', path));
   for (const path of [...allowedNative, ...deniedNative]) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
   const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden, ...deniedNative];
   const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output, ...grants });
@@ -228,7 +229,7 @@ test('Codex exact state admission refuses root/tmp/file symlinks and literal ove
   mkdirSync(join(home, '.codex')); symlinkSync(other, join(home, '.codex', 'tmp'));
   expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', 'tmp'));
   mkdirSync(join(home, '.codex', 'tmp')); writeFileSync(join(other, 'authority.txt'), 'KEEP');
-  for (const name of ['state_5.sqlite','state_5.sqlite-wal','state_5.sqlite-shm','logs_2.sqlite','logs_2.sqlite-wal','logs_2.sqlite-shm']) {
+  for (const name of [...['state_5.sqlite','logs_2.sqlite','goals_1.sqlite','memories_1.sqlite','queue_1.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => file + suffix)), 'installation_id']) {
     symlinkSync(join(other, 'authority.txt'), join(home, '.codex', name));
     expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', name));
   }

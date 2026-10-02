@@ -1,6 +1,6 @@
 # Task Contract: herdr-generic-review-slice-e Receipt implementation
 
-> **Substantive Change SHA256**: `sha256:39e36e72fc9e3beb3eb34404cabcd82454635f9d34f003715405057c5bedd313`
+> **Substantive Change SHA256**: `sha256:0cd0e46f969e8c4f24c0b529277fef868dc51c6b2a7d074475f0dd84d2a61fda`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -401,3 +401,13 @@ or a new denied path is still requested, stop and report; never widen. Real
 HOME retained, no credential/config copying or CLI arg/parser integration.
 Local commit only, no push/PR/merge. Existing JSON focused/required checks apply;
 no new full-suite request or model round is implied.
+
+
+## Aimpact 23:29 exact additions
+
+Lift HOLD only for goals_1/memories_1/queue_1 SQLite families (each base/-wal/-shm)
+and installation_id as ten additional literals. Same realpath and symlink
+refusal, no mixed-root grant, forbidden regex precedence unchanged. One Codex
+zero-prompt startup, no Claude rerun; new refusal means stop without expansion
+or relaunch. Aimpact accepts the unverified later-session channel via goals and
+memories; real-turn state-path sufficiency is also unverified. Local commit only.

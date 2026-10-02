@@ -34,7 +34,7 @@ function canonicalStateFile(path: string): string {
   return stat ? realpathSync(path) : join(realpathSync(dirname(path)), path.split('/').pop()!);
 }
 
-/** Aimpact 23:07: one tmp subpath and six SQLite literals, never the mixed root. */
+/** Aimpact 23:07/23:29: tmp plus sixteen exact state literals, never the mixed root. */
 export function codexNativeStatePaths(home: string): Pick<ReviewIsolationPaths, 'nativeStateDirectories' | 'nativeStateFiles'> {
   const root = join(realpathSync(home), '.codex');
   if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) throw new Error('OAR_REVIEW_CODEX_HOME_UNSAFE');
@@ -44,7 +44,7 @@ export function codexNativeStatePaths(home: string): Pick<ReviewIsolationPaths, 
   try { stat = lstatSync(tmp); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   if (stat && (stat.isSymbolicLink() || !stat.isDirectory())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
   return { nativeStateDirectories: [stat ? realpathSync(tmp) : tmp],
-    nativeStateFiles: ['state_5.sqlite', 'logs_2.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => canonicalStateFile(join(directory, file + suffix)))) };
+    nativeStateFiles: [...['state_5.sqlite', 'logs_2.sqlite', 'goals_1.sqlite', 'memories_1.sqlite', 'queue_1.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => canonicalStateFile(join(directory, file + suffix)))), canonicalStateFile(join(directory, 'installation_id'))] };
 }
 
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */

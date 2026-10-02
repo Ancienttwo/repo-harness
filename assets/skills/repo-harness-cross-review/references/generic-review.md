@@ -66,3 +66,10 @@ single zero-prompt recheck still exited: goals, memories/queue SQLite and
 installation_id writes were denied. Those paths remain closed; no retry or
 additional grant. Codex stays unsupported and Claude's prior init-only-model
 limitation is unchanged.
+
+
+23:29 adds only goals/memories/queue SQLite families and installation_id as ten
+literals. Aimpact accepts the unverified later-session goals/memories channel.
+The single zero-prompt recheck still fails thread/start: the OS denies
+thread-writer-locks/.coordination.lock. No additional grant or relaunch; Codex
+remains unsupported. Real turns/further paths remain unverified.
