@@ -154,7 +154,7 @@ export function recoverCampaignDispatch(input: {
   }
   const { root, intent, selector, handoff } = context;
   const previous = handoff.acquired.envelope;
-  return withCampaignPlanningLock(root, intent, () => {
+  const recovered = withCampaignPlanningLock(root, intent, () => {
     requireCampaignPlanningAuthority(root, intent, input.env);
     const principal = resolveEngineerPrincipal({ repo_root: root, authorization_id: handoff.authorization_id, env: input.env });
     let recovery = readPlanningRecord<RecoveryIntent>(root, intent, key(selector.dispatch_id, 'recovery-intent'));
@@ -183,9 +183,13 @@ export function recoverCampaignDispatch(input: {
       env: input.env, crash_hook: input.crash_hook });
     persistPlanningRecord(root, intent, key(selector.dispatch_id, 'recovered'), recovered);
     input.crash_hook?.('after_recovered');
-    const final = settleRecoveredCampaignWorkerFinal(selector, input.env);
-    return { ...recovered, final, disposition: final ? 'settled_final' as const : 'reconciliation_required' as const };
+    return recovered;
   });
+  // The immutable recovered record is durable before settlement. Its own
+  // budget/attempt locks serialize idempotent usage; slow final authority readback
+  // must not retain the group journal lock needed by another recovery caller.
+  const settledFinal = settleRecoveredCampaignWorkerFinal(selector, input.env);
+  return { ...recovered, final: settledFinal, disposition: settledFinal ? 'settled_final' as const : 'reconciliation_required' as const };
 }
 
 /** Async daemon observation is outside the short planning/Task locks. Revalidate before settlement. */
