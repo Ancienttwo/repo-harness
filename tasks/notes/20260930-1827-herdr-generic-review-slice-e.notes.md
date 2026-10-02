@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:d3a72a8acbae11a807dcd910a3b10f4944327c011d29806cd1cc9cf48f95ecfe`
+> **Substantive Change SHA256**: `sha256:1f0d300ec1ccdacf005b23c4aa1f6c9b8104c309956b20d54cd6a82c281f353e`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -144,3 +144,13 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Full-suite introduced finding: existing hook bundle test froze prepack to two builds. Merge-base file is 7/7 green; required E2 OAR build makes that exact-string assertion obsolete. Under user-authorized introduced-failure repair, admit tests/unit/hook-entry-single-file-bundle.test.ts before edit and update only wiring/file assertion and its redirect comment. Campaign BRC10 planning.lock failure reproduces on the entire merge-base file (12 pass/4 skip/1 fail); leave it untouched.
 
 - Final local full run: 457 files, 5751 pass / 56 skip / 2 fail, exit1 (capture elapsed 2594.96s). Every failure was rerun on local git-archive merge-base 9aef6693 with frozen base dependencies. BRC10 reproduces unchanged; hook wiring is introduced and fixed, focused file 7/7 green. Only that test assertion/comment changed after the run, no production change; no second expensive full run and no false all-green claim. Full/raw/base/fix hashes are in d234-full-suite.json. No GitHub CI run.
+
+
+## Aimpact 23:07 Codex state literals / stop
+
+- Allow exactly realpath-resolved ~/.codex/tmp as subpath and state_5.sqlite/logs_2.sqlite plus their -wal/-shm as six literal rules. No subpath/regex on ~/.codex. Refuse symlink .codex root, tmp or any listed file; reject protected-path/literal overlap. Existing forbidden definition/credential regex stays after the deny-by-complement and cannot be overridden. Production generic profile consumes this exact set for Codex only; Claude profile unchanged.
+- Fixture proves host and descendant can write tmp and all six literal files, while goals family, config/auth/AGENTS/rules/skills/rest of .codex, original protected authorities, symlink/traversal and output definitions remain denied. Root/tmp/all six symlink rejection is independently covered. Focused domain fixtures use their own short /tmp/as-* home to avoid sun_path overflow; no real HOME/config or server change in these fixtures.
+- Exactly one real Codex0.160.0 Runtime.session startup attempt under real HOME with NO prompt. Failed app-server exited; no Session returned to dispose, known process cleanup empty. OS records goals_1.sqlite/-wal/-shm still denied; new memories_1.sqlite/-wal/-shm, queue_1.sqlite/-wal/-shm and installation_id denied. /dev/dtracehelper denial repeats earlier optional startup diagnostics. No widening, no second launch, no Claude rerun. Short-lived native pid not sampled: OS native-name/time-window attribution is correlated, not captured parent proof.
+- Retained evidence: d3-codex2307-startup/{report.md,results.json,os-sandbox.ndjson,codex.sb,codex-audit.sb}, execution.log and output under .ai/harness/runs/d3-codex2307-output. One prelaunch guard refusal due stale evidence path happened before any native process; preserved separately. Claude limitation unchanged: prior startup only, real review turn unverified, init-only model cannot mint Receipt. Codex remains unsupported with this approved set. No model round, push, PR or merge.
+
+- 23:07 validation: focused generic/Receipt 30 pass / 670 assertions / 55.14s; type and nine Required Checks pass after current diff binding. No full-suite rerun for this narrowly scoped permission change; previous full run/pre-existing failure classification remains historical. Canonical command/hash evidence is d3-codex2307-checkpoint.json.

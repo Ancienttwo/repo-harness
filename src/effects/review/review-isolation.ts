@@ -10,6 +10,7 @@ export interface ReviewIsolationPaths {
   readonly gitCommonDir: string;
   readonly output: string;
   readonly nativeStateDirectories?: readonly string[];
+  readonly nativeStateFiles?: readonly string[];
 }
 
 function inside(path: string, directory: string): boolean {
@@ -23,6 +24,27 @@ function canonicalStateDirectory(path: string): string {
   while (!existsSync(ancestor)) ancestor = dirname(ancestor);
   if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
   return resolve(realpathSync(ancestor), relative(ancestor, path));
+}
+
+function canonicalStateFile(path: string): string {
+  if (!isAbsolute(path) || path.split('/').includes('..')) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
+  let stat;
+  try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  if (stat && (stat.isSymbolicLink() || !stat.isFile())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
+  return stat ? realpathSync(path) : join(realpathSync(dirname(path)), path.split('/').pop()!);
+}
+
+/** Aimpact 23:07: one tmp subpath and six SQLite literals, never the mixed root. */
+export function codexNativeStatePaths(home: string): Pick<ReviewIsolationPaths, 'nativeStateDirectories' | 'nativeStateFiles'> {
+  const root = join(realpathSync(home), '.codex');
+  if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) throw new Error('OAR_REVIEW_CODEX_HOME_UNSAFE');
+  const directory = realpathSync(root);
+  const tmp = join(directory, 'tmp');
+  let stat;
+  try { stat = lstatSync(tmp); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  if (stat && (stat.isSymbolicLink() || !stat.isDirectory())) throw new Error('OAR_REVIEW_NATIVE_STATE_UNSAFE');
+  return { nativeStateDirectories: [stat ? realpathSync(tmp) : tmp],
+    nativeStateFiles: ['state_5.sqlite', 'logs_2.sqlite'].flatMap(file => ['', '-wal', '-shm'].map(suffix => canonicalStateFile(join(directory, file + suffix)))) };
 }
 
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */
@@ -41,7 +63,8 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
     }
   }
   const native = (paths.nativeStateDirectories ?? []).map(canonicalStateDirectory);
-  for (const state of native) for (const authority of [paths.subject, ...protectedEntries, paths.output].map(path => realpathSync(path))) {
+  const files = (paths.nativeStateFiles ?? []).map(canonicalStateFile);
+  for (const state of [...native, ...files]) for (const authority of [paths.subject, ...protectedEntries, paths.output].map(path => realpathSync(path))) {
     if (inside(state, authority) || inside(authority, state)) throw new Error('OAR_REVIEW_NATIVE_STATE_OVERLAPS_AUTHORITY');
   }
   // Only measured pure-state directories may enter the owner-admitted profile.
@@ -49,7 +72,8 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
   // an otherwise writable tree. This never opens HOME or native config roots.
   const forbiddenFiles = '/(CLAUDE\\.md|AGENTS\\.md|settings[^/]*\\.json|\\.claude\\.json|config\\.toml|auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json)$';
   const forbiddenDirectories = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules|\\.?plugins)(/|$)';
-  const exceptions = [output, ...native].map(path => `(require-not (subpath ${JSON.stringify(path)}))`).join(' ');
+  const exceptions = [...[output, ...native].map(path => `(require-not (subpath ${JSON.stringify(path)}))`),
+    ...files.map(path => `(require-not (literal ${JSON.stringify(path)}))`)].join(' ');
   return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n`;
 
 }

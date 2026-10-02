@@ -59,7 +59,7 @@ test('retired CLI rejects with upgrade-required rather than routing to generic r
 test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
-  const { reviewIsolationPolicy, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
+  const { reviewIsolationPolicy, reviewHostTemporaryDirectory, codexNativeStatePaths } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('oar-isolation'); roots.push(root);
   const subject = join(root, 'subject'), primary = join(root, 'primary'), owner = join(root, 'owner-record'), journal = join(root, 'journal'), git = join(root, 'git-common'), output = join(root, 'output');
   for (const dir of [subject, primary, owner, journal, git, output]) mkdirSync(dir);
@@ -68,8 +68,15 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   symlinkSync(protectedPaths[0]!, join(output, 'escape-link'));
   const forbidden = ['CLAUDE.md','AGENTS.md','settings.local.json','auth.json','.credentials.json','config.toml','agents/definition.md','skills/definition.md','rules/definition.md','plugins/definition.json','hooks/handler.sh'].map(path => join(output, path));
   for (const path of forbidden) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
-  const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden];
-  const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output });
+  const nativeHome = join(root, 'native-home'); mkdirSync(join(nativeHome, '.codex', 'tmp'), { recursive: true });
+  const grants = codexNativeStatePaths(nativeHome);
+  const allowedNative = [...grants.nativeStateFiles!, join(grants.nativeStateDirectories![0]!, 'probe.txt')];
+  const deniedNative = ['goals_1.sqlite','goals_1.sqlite-wal','goals_1.sqlite-shm','config.toml','auth.json','AGENTS.md','rules/rule.md','skills/skill.md','other-state.json'].map(path => join(nativeHome, '.codex', path));
+  for (const path of [...allowedNative, ...deniedNative]) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
+  const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden, ...deniedNative];
+  const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output, ...grants });
+  expect(policy).not.toContain(`(subpath ${JSON.stringify(join(nativeHome, '.codex'))})`);
+  for (const file of grants.nativeStateFiles!) expect(policy).toContain(`(literal ${JSON.stringify(file)})`);
   const profile = join(root, 'profile.sb'); writeFileSync(profile, policy);
   const worker = join(root, 'worker.cjs');
   writeFileSync(worker, `
@@ -81,13 +88,14 @@ const stdioIgnore=capture(cp.spawnSync('/usr/bin/true',[],{stdio:'ignore'}));
 const devNull=capture(cp.spawnSync('/bin/sh',['-c','echo hi > /dev/null'],{encoding:'utf8'}));
 let temporary;try{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'oar-zero-'));fs.writeFileSync(path.join(dir,'check.txt'),'TMP');temporary={ok:true,dir}}catch(e){temporary={ok:false,code:e.code,message:e.message}};
 const nested=capture(cp.spawnSync('/usr/bin/sandbox-exec',['-p','(version 1)(allow default)','/usr/bin/true'],{encoding:'utf8'}));
-const operations={stdioIgnore,devNull,temporary,nested};
+const nativeWrites=spec.allowedNative.map(path=>{try{fs.writeFileSync(path,'NATIVE');return {path,allowed:true}}catch(e){return {path,allowed:false,code:e.code,message:e.message}}});
+const operations={stdioIgnore,devNull,temporary,nested,nativeWrites};
 fs.writeFileSync(spec.allowed,'ALLOWED');
 if(spec.child){const r=cp.spawnSync(process.execPath,[__filename,JSON.stringify({...spec,child:false,allowed:spec.childAllowed})],{encoding:'utf8'});console.log(JSON.stringify({results,operations,child:{status:r.status,stdout:r.stdout,stderr:r.stderr}}))}
 else console.log(JSON.stringify({results,operations}));
 `);
   const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
-  const spec = { targets, allowed: join(output, 'host.txt'), childAllowed: join(output, 'child.txt'), child: true };
+  const spec = { targets, allowedNative, allowed: join(output, 'host.txt'), childAllowed: join(output, 'child.txt'), child: true };
   const temporary = reviewHostTemporaryDirectory(output);
   const result = spawnSync('/usr/bin/sandbox-exec', ['-f', profile, node, worker, JSON.stringify(spec)], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } });
   console.log(JSON.stringify({ diagnostic: 'zero-model Seatbelt fixture', status: result.status, error: result.error?.message, stdout: result.stdout, stderr: result.stderr }));
@@ -101,16 +109,17 @@ else console.log(JSON.stringify({results,operations}));
     expect(['EPERM', 'EACCES'], row.path).toContain(row.code);
   }
   for (const evidence of [observed, child]) {
+    for (const result of evidence.operations.nativeWrites) expect(Boolean(result.allowed), String(result.path)).toBe(true);
     expect(evidence.operations.stdioIgnore.status).toBe(0);
     expect(evidence.operations.devNull.status).toBe(0);
     expect(evidence.operations.temporary.ok).toBe(true);
     expect(String(evidence.operations.temporary.dir).startsWith(temporary + '/')).toBe(true);
-    // D2 HOLD: nested Seatbelt remains unusable; this is not a supported
+    // Nested Seatbelt remains unusable; OAR defaults avoid nesting. Not a
     // native Codex exec proof or an instruction to weaken the outer policy.
     expect(evidence.operations.nested.status).toBe(71);
     expect(String(evidence.operations.nested.stderr)).toContain('sandbox_apply: Operation not permitted');
   }
-  for (const path of [...protectedPaths, ...forbidden]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
+  for (const path of [...protectedPaths, ...forbidden, ...deniedNative]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
   expect(readFileSync(join(output, 'host.txt'), 'utf8')).toBe('ALLOWED');
   expect(readFileSync(join(output, 'child.txt'), 'utf8')).toBe('ALLOWED');
 });
@@ -207,4 +216,23 @@ test('OAR installation is probed by the fixed Node host, never the Bun controlle
     if (priorNode === undefined) delete process.env.REPO_HARNESS_NODE_BIN; else process.env.REPO_HARNESS_NODE_BIN = priorNode;
     if (priorBin === undefined) delete process.env.OAR_CODEX_BIN; else process.env.OAR_CODEX_BIN = priorBin;
   }
+});
+
+test('Codex exact state admission refuses root/tmp/file symlinks and literal overlap', async () => {
+  const { mkdirSync, writeFileSync, symlinkSync, unlinkSync } = await import('node:fs');
+  const { codexNativeStatePaths, reviewIsolationPolicy } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('codex-state-links'); roots.push(root);
+  const home = join(root, 'home'), other = join(root, 'other'); mkdirSync(home); mkdirSync(other);
+  symlinkSync(other, join(home, '.codex'));
+  expect(() => codexNativeStatePaths(home)).toThrow('CODEX_HOME_UNSAFE'); unlinkSync(join(home, '.codex'));
+  mkdirSync(join(home, '.codex')); symlinkSync(other, join(home, '.codex', 'tmp'));
+  expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', 'tmp'));
+  mkdirSync(join(home, '.codex', 'tmp')); writeFileSync(join(other, 'authority.txt'), 'KEEP');
+  for (const name of ['state_5.sqlite','state_5.sqlite-wal','state_5.sqlite-shm','logs_2.sqlite','logs_2.sqlite-wal','logs_2.sqlite-shm']) {
+    symlinkSync(join(other, 'authority.txt'), join(home, '.codex', name));
+    expect(() => codexNativeStatePaths(home)).toThrow('NATIVE_STATE_UNSAFE'); unlinkSync(join(home, '.codex', name));
+  }
+  const output = join(root,'output'); mkdirSync(output);
+  const paths = { subject:other,primary:other,ownerRecord:other,journal:other,gitCommonDir:other,output };
+  expect(() => reviewIsolationPolicy({...paths,nativeStateFiles:[join(other,'authority.txt')]})).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
 });

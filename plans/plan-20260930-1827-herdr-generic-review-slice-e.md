@@ -231,3 +231,9 @@ denials in the OS probe window; no mixed ~/.codex root grant or HOME redirect is
 allowed, so Codex remains unsupported under current admission. OS deny logging
 is diagnostic only. Finish full-suite/base classification and integrity gates;
 these startup results are not real review acceptance.
+
+
+23:07 supersedes the directory-only Codex hold narrowly: tmp subpath plus six
+SQLite state/log literals only, goals excluded. Run one zero-prompt startup;
+any goals/new denial ends the probe scope with no automatic expansion. Receipt
+model/protection boundaries and all remote prohibitions remain unchanged.

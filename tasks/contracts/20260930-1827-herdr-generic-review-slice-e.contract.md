@@ -1,6 +1,6 @@
 # Task Contract: herdr-generic-review-slice-e Receipt implementation
 
-> **Substantive Change SHA256**: `sha256:400a850d49623b97c9072f05a0fff34038d846a1ae3cf31db2c3240b3e32db0c`
+> **Substantive Change SHA256**: `sha256:39e36e72fc9e3beb3eb34404cabcd82454635f9d34f003715405057c5bedd313`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -389,3 +389,15 @@ Historical 18:41 decision (runtime mode/startup/type superseded below at 20:30):
 Finish advisor corrections (a)(b)(c) first: preserve red fixture, only proved /dev/null device exception plus output-local TMPDIR, and OAR installation solely in Node host. Then D2 deletes inherited OAR_CODEX_SANDBOX before Session creation and uses stock default danger-full-access, admitted outer Seatbelt required. D3 is a zero-prompt native startup probe through OAR with real HOME; only OS-log-proved pure session/log/cache directories may become narrow allowances. Settings/hooks/trust/instructions/definitions/credentials remain denied; never redirect HOME or copy credentials. Unsupported native startup stays closed. D4 explicitly authorizes skipLibCheck true, including unchecked src/operator-web/styles.d.ts. Native/model evidence limitations remain recorded; local commits only.
 
 Introduced full-suite failure decision: merge-base hook bundle wiring is 7/7 green; E2 adds the required OAR prepack build. Exact existing test path admitted before editing, only preserve all build stdout redirections and packaged OAR host assertion. No hook production change or new test file.
+
+
+## Aimpact 23:07 Codex exact state admission
+
+Authorize only ~/.codex/tmp/ subpath and literal state_5.sqlite / logs_2.sqlite,
+each with -wal/-shm. No goals_1.sqlite family, config/auth/trust/instructions/
+rules/skills grant. Prove the exact positive and negative paths with inherited
+Seatbelt fixture, then one zero-prompt real Codex OAR startup probe. If goals
+or a new denied path is still requested, stop and report; never widen. Real
+HOME retained, no credential/config copying or CLI arg/parser integration.
+Local commit only, no push/PR/merge. Existing JSON focused/required checks apply;
+no new full-suite request or model round is implied.

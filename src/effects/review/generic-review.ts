@@ -14,7 +14,7 @@ import { taskRepository } from '../terminal/task-worktree';
 import { startTaskApplicationHost, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, type TaskCleanupResult, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, isolatedHostCommand } from './review-isolation';
+import { reviewIsolationPolicy, isolatedHostCommand, codexNativeStatePaths } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
@@ -205,7 +205,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
     const isolationPaths = { subject: root, primary, ownerRecord: resolve(root, contract), journal: dir,
-      gitCommonDir: repository.repository_id, output: outbox };
+      gitCommonDir: repository.repository_id, output: outbox,
+      ...(session.actual_harness === 'codex' ? codexNativeStatePaths(options.endpoint.home ?? process.env.HOME ?? userInfo().homedir) : {}) };
     const policy = reviewIsolationPolicy(isolationPaths);
     const profilePath = join(dir, 'isolation.sb');
     if (!existsSync(profilePath)) writeFileSync(profilePath, policy, { flag: 'wx', mode: 0o600 });

@@ -416,3 +416,11 @@ unsupported under this current profile; neither startup probe certifies real
 review/model execution. skipLibCheck is explicitly approved: all declaration
 bodies, including src/operator-web/styles.d.ts, are unchecked while strict
 source/test checking stays enabled.
+
+
+23:07 Codex admission is narrow: tmp subpath plus six state/log SQLite literals,
+with root/tmp/file symlink refusal and protected-authority overlap checks. The
+single zero-prompt recheck still exited: goals, memories/queue SQLite and
+installation_id writes were denied. Those paths remain closed; no retry or
+additional grant. Codex stays unsupported and Claude's prior init-only-model
+limitation is unchanged.

@@ -58,3 +58,11 @@ state allowances must avoid protected authorities and keep settings, hooks,
 trust, instructions/definitions and credentials denied, including inside an
 otherwise writable tree. The fixed host refuses Session creation without the
 owner-admitted profile and live Seatbelt denial evidence.
+
+
+23:07 Codex admission is narrow: tmp subpath plus six state/log SQLite literals,
+with root/tmp/file symlink refusal and protected-authority overlap checks. The
+single zero-prompt recheck still exited: goals, memories/queue SQLite and
+installation_id writes were denied. Those paths remain closed; no retry or
+additional grant. Codex stays unsupported and Claude's prior init-only-model
+limitation is unchanged.

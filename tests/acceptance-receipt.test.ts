@@ -2,7 +2,7 @@ import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from 
 import { readSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type TaskPaneBinding } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, relative, resolve } from 'path';
 import { spawnSync } from 'child_process';
@@ -781,6 +781,9 @@ describe('AcceptanceReceipt', () => {
 // Only provider/task-agent effects are deterministic; this is a fixture opinion, not model evidence.
 function reviewFixture() {
   const fixture = makeFixture();
+  const endpointHome = realpathSync(mkdtempSync('/tmp/as-')); tempDirs.push(endpointHome);
+  mkdirSync(join(endpointHome, '.codex'));
+  mkdirSync(join(endpointHome, '.codex', 'tmp'));
   writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n');
   commit(fixture.root, 'ignore private runtime communication');
   const reviewerRepo = join(fixture.home, 'reviewer');
@@ -813,7 +816,7 @@ function reviewFixture() {
     cancel: async () => { calls.push('cancel'); return { status: 'closed', pids: [] }; },
   };
   const options = { repoRoot: fixture.root, contract: 'tasks/contracts/demo.contract.md', reviewerRepo,
-    endpoint: { session: 'private-fixture', home: '/tmp/h' }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
+    endpoint: { session: 'private-fixture', home: endpointHome }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
     admitSession: () => { calls.push('admit'); } };
   return { ...fixture, reviewerRepo, calls, effects, options, sent: () => sent,
     verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
@@ -829,7 +832,7 @@ test('generic orchestration collects domain Results, keeps one reviewer for thre
     writeFileSync(join(f.root, 'feature.txt'), `candidate repair ${number}\n`);
     writePassingChecks(f.root);
     f.verdict(number === 3 ? 'PASS' : 'FAIL');
-    const result = await runReviewRound({ ...f.options, endpoint: { home: '/tmp/h', session: 'private-fixture' } }, f.effects);
+    const result = await runReviewRound({ ...f.options, endpoint: { home: f.options.endpoint.home, session: 'private-fixture' } }, f.effects);
     expect(result.round).toBe(number);
   }
   expect(f.sent()).toBe(3);
