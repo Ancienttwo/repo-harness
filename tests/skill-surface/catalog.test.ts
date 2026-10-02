@@ -365,7 +365,7 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
       if (entry.replacement !== null) expect(liveNames.has(entry.replacement)).toBe(true);
     }
     expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-autoplan")?.replacement).toBeNull();
-    expect(catalog.retiredPackages.find((e) => e.name === "codex-review")?.replacement).toBe("repo-harness-cross-review");
+    expect(catalog.retiredPackages.find((e) => e.name === "codex-review")?.replacement).toBeNull();
     // The exclusive CLI/schema/host/session is now retired without an alias.
     expect(catalog.retiredPackages.find((e) => e.name === "claude-review")?.replacement).toBe("repo-harness-cross-review");
     expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-handoff")?.replacement).toBe("repo-harness");

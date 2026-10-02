@@ -45,8 +45,8 @@ actual gateway backend, so Claude Results cannot mint a Receipt yet. Hooks,
 complete packet ingestion, forced host-loss cleanup and native isolation remain
 unverified. On normal cleanup SDK dispose acknowledgement and execution-owner
 exit precede pane close; missing proof remains pending.
-The independent Codex advisory cross-review path remains until a separate
-post-E2 follow-up; this entry does not replace that path.
+The independent direct Codex advisory runtime is retired. New acceptance
+requests use this generic domain; the removed command is not an alias or fallback.
 
 Current zero-prompt native evidence: Claude 2.1.284 constructed and disposed
 under the boundary despite denied state/plugin/trust writes; no native state

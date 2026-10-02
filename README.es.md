@@ -616,7 +616,7 @@ host mientras el CLI y los hooks poseen la ejecución.
 | `repo-harness-check` | Checks de workflow y release, más una referencia de deploy-readiness |
 | `repo-harness-ship` | Valida worktrees terminados, hace push de branches y abre PRs |
 | `repo-harness-architecture` | Docs de architecture, drift requests y diagramas sin un refresh completo del harness |
-| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
+| `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Consultas de Oracle browser/GPT Pro, setup del MCP Connector y bridge handoff; solo setup explícito |
 | `merge-gate` (externo) | Gate final de exact-candidate; repo-harness no distribuye ningún Skill de merge-gate — ver [external tooling](docs/reference-configs/external-tooling.md) |
 

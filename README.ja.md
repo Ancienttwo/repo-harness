@@ -608,7 +608,7 @@ Canonical な rule-owner package は `assets/skills/` と
 | `repo-harness-check` | workflow と release の checks、および deploy-readiness reference |
 | `repo-harness-ship` | 完了した worktree を検証し、branch を push し、PR を開きます |
 | `repo-harness-architecture` | harness 全体の refresh を伴わない architecture docs、drift request、diagram |
-| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
+| `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup、bridge handoff。explicit setup 限定 |
 | `merge-gate`(external) | exact-candidate な final gate。repo-harness は merge-gate Skill を同梱しません — [external tooling](docs/reference-configs/external-tooling.md) を参照 |
 

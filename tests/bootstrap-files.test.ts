@@ -490,27 +490,19 @@ describe("Bootstrap Script Contracts", () => {
   // (assets/skills/{claude-review,codex-review}) are deleted; their
   // deterministic scope-capture mechanics (branch/staged/unstaged/untracked
   // diff, exact-base binding) moved to code
-  // (src/effects/review/cross-review-runner.ts#captureCrossReviewScope,
-  // reused via diff-fingerprint.ts's buildReviewSubject) and are covered by
-  // tests/cli/cross-review.test.ts, not by scanning Skill Markdown for
-  // embedded shell variable assignments. This test now checks the one
-  // canonical repo-harness-cross-review package's own prose properties:
-  // read-only provider boundaries, model/timeout budgets, structured plugin
-  // validation, and the no-merge-gate guarantee.
-  test("repo-harness-cross-review documents the remaining read-only provider boundaries", () => {
-    const codexMode = read("assets/skills/repo-harness-cross-review/references/codex-mode.md");
-    expect(existsSync(join(ROOT,"assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md"))).toBe(false);
-    expect(codexMode).toContain("read-only reviewer");
-    expect(codexMode).toContain("read-only Bash access");
-    expect(codexMode).toContain("resolved commit SHA");
-    expect(codexMode).toContain('model_reasoning_effort="high"');
-    expect(codexMode).toContain("1800 seconds");
-    expect(codexMode).toContain("Exactly two attempts");
-    expect(codexMode).toContain("`skipped`: advisory and\n  non-blocking (exit 0)");
-    expect(codexMode).toContain("do not re-run the review");
-    expect(codexMode).toContain("repo-harness cross-review --provider codex");
-    expect(codexMode).toContain("No merge-gate");
-    expect(codexMode).toContain("retried against Claude");
+  // Shared subject capture and current generic review remain the runtime owners;
+  // retired advisory code is not reimplemented as Skill Markdown.
+  test("repo-harness-cross-review routes to merged Herdr review and rejects the old direct runtime", () => {
+    const skill = read("assets/skills/repo-harness-cross-review/SKILL.md");
+    const migration = read("assets/skills/repo-harness-cross-review/references/codex-mode.md");
+    const generic = read("assets/skills/repo-harness-cross-review/references/generic-review.md");
+    expect(skill).toContain("references/generic-review.md");
+    expect(skill).toContain("deep-reasoner");
+    expect(migration).toContain("command is retired");
+    expect(migration).toContain("not an\nalias");
+    expect(generic).toContain("repo-harness review round");
+    expect(generic).toContain("generic-review");
+    expect(migration).not.toContain("Exactly two attempts");
   });
 
   test("setup script should delegate to the typed global install path", () => {

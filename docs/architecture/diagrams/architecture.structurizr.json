@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:b859983f97115344cb2d922ace1e8499d648eeca197ec66cf58b3775378e135d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7337ddd80453b2a526b722f3addfc9ed16351a1a65483117ea5f42e7866357b0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c022eb5f01f2bdeb84713ae560d122badf0523983df27de89386765fa0842584" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a1e757d7792d15c956d3f576a67a1193c72fdace763f0966a9c1ffdf7ddc6690" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -342,7 +342,7 @@
       },
       {
         "id": "component.evals-checks.primary",
-        "name": "Review Outcome Classifier",
+        "name": "Verification Check Execution",
         "type": "Component",
         "tags": [
           "component"

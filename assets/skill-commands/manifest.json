@@ -213,7 +213,7 @@
       "component": "cross-model-acceptance",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Host-aware opposite-provider review skill: deterministic scope capture, provider invocation, timeout, and transcript recovery live in Core/Effects/CLI; the Skill owns mode selection (Claude vs. Codex) and finding interpretation only. Installed on both hosts for full.",
+      "summary": "Persistent fleet deep-reasoner acceptance review in Herdr through the existing OAR host, request-bound file Result and generic-review Receipt; direct advisory runtime retired.",
       "retirementCandidate": null
     },
     {
@@ -522,8 +522,8 @@
     },
     {
       "name": "codex-review",
-      "replacement": "repo-harness-cross-review",
-      "note": "Consolidated into repo-harness-cross-review's codex-mode reference; installed on the Claude host."
+      "replacement": null,
+      "note": "The direct Codex advisory Skill/runtime is retired without a launcher alias. New acceptance uses the live generic Herdr review domain; old launcher-specific Receipt sources are not reinterpreted."
     },
     {
       "name": "repo-harness-chatgpt-bridge",
