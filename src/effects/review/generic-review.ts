@@ -15,8 +15,8 @@ import { startTaskApplicationHost, readTaskAgent, processProofAlive, sendTaskReq
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, type TaskCleanupResult, type TaskRequest } from '../terminal/task-session';
 import { reviewIsolationPolicy, isolatedHostCommand } from './review-isolation';
-import { reviewRuntime, assertOarHostNode, type ReviewHostSpec, type HostRoundObservation } from './oar-review-host';
-import type { SessionOptions } from '@botiverse/oar';
+import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
+import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
   projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from '../../../scripts/acceptance-receipt';
 
@@ -84,10 +84,19 @@ function completedModel(session: ReviewSession, request: TaskRequest): string {
   if (session.actual_harness === 'claude' || !observation.actual_model) throw new Error('review_actual_model_unverified');
   return observation.actual_model;
 }
+function hostExecutable(): { node: string; entry: string } {
+  return { node: realpathSync(process.env.REPO_HARNESS_NODE_BIN ?? Bun.which('node') ?? ''),
+    entry: realpathSync(fileURLToPath(new URL('../../../dist/oar-review-host.js', import.meta.url))) };
+}
+/** Only the fixed Node>=24 host executes the OAR installation API. */
+export async function probeReviewInstallation(kind: Harness): Promise<InstallationSnapshot> {
+  const { node, entry } = hostExecutable();
+  return JSON.parse(execFileSync(node, [entry, '--installation', kind], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024 })) as InstallationSnapshot;
+}
 const runtime = { start: startTaskApplicationHost, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,
   cancel: cancelTaskAgent, status: taskAgentStatus, assertBinding: assertTaskBinding,
   owner: boundOwner, model: completedModel,
-  installation: async (kind: Harness) => { const probe = reviewRuntime(kind).installation; if (!probe) throw new Error('review_installation_unverified'); return probe(); },
+  installation: probeReviewInstallation,
   ready: waitHostFile,
   dispose: async (repo: string, task: string, output: string): Promise<void> => {
     const { binding } = readTaskAgent(repo, task, GENERIC_REVIEW_ROLE);
@@ -208,9 +217,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         options: reviewSessionOptions(session.actual_harness, outbox), requestDirectory: taskDir, output: outbox, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }
-    const node = realpathSync(process.env.REPO_HARNESS_NODE_BIN ?? Bun.which('node') ?? '');
-    assertOarHostNode(execFileSync(node, ['-p', 'process.versions.node'], { encoding: 'utf8' }).trim());
-    const hostEntry = realpathSync(fileURLToPath(new URL('../../../dist/oar-review-host.js', import.meta.url)));
+    const { node, entry: hostEntry } = hostExecutable();
     const binding = await client.start(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
       endpoint: session.endpoint, parent_pane: session.parent_pane, args: [], max_requests: REVIEW_MAX_ROUNDS },
       isolatedHostCommand(profilePath, node, hostEntry, specPath), () => client.ready(join(outbox, 'ready.json')));

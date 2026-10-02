@@ -48,6 +48,7 @@ Not applicable: approved schema implementation, not a production bugfix.
 ## Allowed Paths
 ```yaml
 allowed_paths:
+  - tsconfig.json
   - tests/herdr-task-lifecycle.test.ts
   - src/effects/terminal/task-session.ts
   - src/effects/review/oar-review-host.ts
@@ -161,6 +162,7 @@ delegation:
 {
   "protocol": 1,
   "checks": [
+    {"id":"full-suite-local","kind":"command","command":"env -u REPO_HARNESS_TEST_EXPENSIVE -u BUN_TEST_FILES BUN_TEST_ISOLATE_FILES=1 REPO_HARNESS_NODE_BIN=/opt/homebrew/opt/node@24/bin/node BUN_TEST_JOBS=2 BUN_TEST_MAX_CONCURRENCY=1 BUN_TEST_TIMEOUT_MS=120000 bash -c 'source scripts/lib/ci-run-tests.sh; run_bun_tests'","cwd":".","phase":"verification","cost":"expensive","evidence_policy":"current_exact","necessity":"User 20:30 explicitly requires local full suite and merge-base classification; no GitHub CI or real model lanes","inputs":{"env":[]}},
     {
       "id": "isolation-first",
       "kind": "command",
@@ -379,3 +381,8 @@ Gatekeeper Receipt round 2 PASS is recorded from the user. E2 wires review on ta
 Advisor released B steps 1–6 locally. Concrete mechanism: macOS /usr/bin/sandbox-exec Seatbelt policy around the OAR host execution tree; no third-party sandbox library. Output tree is the only writable filesystem tree; subject, primary, owner record, journal and Git common dir deny, including host descendants and symlink/traversal escapes. Zero-model isolation must pass before SDK host implementation; failure stops the work. No fallback to chmod/worktree/fingerprints.
 
 Aimpact 18:41 supersedes H1/H2 holds: reviewer authors result_ref; append only the communication exception through OAR SessionOptions.appendSystemPrompt, leaving RECOMMENDATION-first fleet content intact. Host root-turn text is observation only. Codex host env fixes workspace-write before Session creation, cwd=output; OS Seatbelt remains the sole write-protection authority. Stock OAR Claude bypass is authorized only under the proved inherited OS boundary; Grok is not wired. Claude actual_model is only init-derived in this OAR snapshot and cannot mint Receipt until upstream gap is closed. No launcher fields in Receipt. Local commits only; no remote operations or main changes.
+
+
+## Aimpact 20:30 D2/D3/D4 release
+
+Finish advisor corrections (a)(b)(c) first: preserve red fixture, only proved /dev/null device exception plus output-local TMPDIR, and OAR installation solely in Node host. Then D2 deletes inherited OAR_CODEX_SANDBOX before Session creation and uses stock default danger-full-access, admitted outer Seatbelt required. D3 is a zero-prompt native startup probe through OAR with real HOME; only OS-log-proved pure session/log/cache directories may become narrow allowances. Settings/hooks/trust/instructions/definitions/credentials remain denied; never redirect HOME or copy credentials. Unsupported native startup stays closed. D4 explicitly authorizes skipLibCheck true, including unchecked src/operator-web/styles.d.ts. Native/model evidence limitations remain recorded; local commits only.

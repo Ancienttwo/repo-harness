@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readSessionArtifact, writeSessionArtifact, type TaskRequest } from '../terminal/task-session';
 import type { AvailableInstallation } from '@botiverse/oar';
+import { dirname } from 'node:path';
+import { reviewHostTemporaryDirectory } from './review-isolation';
 
 export function assertOarHostNode(version = process.versions.node): void {
   if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');
@@ -92,7 +94,15 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
 
 async function main(): Promise<void> {
   assertOarHostNode();
+  if (process.argv[2] === '--installation') {
+    const runtime = reviewRuntime(process.argv[3]!);
+    if (!runtime.installation) throw new Error('OAR_REVIEW_INSTALLATION_UNVERIFIED');
+    console.log(JSON.stringify(await runtime.installation()));
+    return;
+  }
   const spec = readSessionArtifact<FixtureSpec | ReviewHostSpec>(process.argv[2]!);
+  const temporary = reviewHostTemporaryDirectory(spec.mode === 'scripted' ? dirname(spec.readyFile) : spec.output);
+  process.env.TMPDIR = temporary;
   let host: OarReviewHost;
   let output: string;
   if (spec.mode === 'scripted') {

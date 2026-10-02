@@ -59,7 +59,7 @@ test('retired CLI rejects with upgrade-required rather than routing to generic r
 test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
-  const { reviewIsolationPolicy } = await import('../src/effects/review/review-isolation');
+  const { reviewIsolationPolicy, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('oar-isolation'); roots.push(root);
   const subject = join(root, 'subject'), primary = join(root, 'primary'), owner = join(root, 'owner-record'), journal = join(root, 'journal'), git = join(root, 'git-common'), output = join(root, 'output');
   for (const dir of [subject, primary, owner, journal, git, output]) mkdirSync(dir);
@@ -70,10 +70,24 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output });
   const profile = join(root, 'profile.sb'); writeFileSync(profile, policy);
   const worker = join(root, 'worker.cjs');
-  writeFileSync(worker, `const fs=require('node:fs');const cp=require('node:child_process');const spec=JSON.parse(process.argv[2]);const results=spec.targets.map(path=>{try{fs.writeFileSync(path,'CHANGED');return {path,denied:false}}catch(e){return {path,denied:true,code:e.code,message:e.message}}});fs.writeFileSync(spec.allowed,'ALLOWED');if(spec.child){const r=cp.spawnSync(process.execPath,[__filename,JSON.stringify({...spec,child:false,allowed:spec.childAllowed})],{encoding:'utf8'});console.log(JSON.stringify({results,child:{status:r.status,stdout:r.stdout,stderr:r.stderr}}))}else console.log(JSON.stringify({results}));`);
+  writeFileSync(worker, `
+const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path'),os=require('node:os');
+const spec=JSON.parse(process.argv[2]);
+const results=spec.targets.map(path=>{try{fs.writeFileSync(path,'CHANGED');return {path,denied:false}}catch(e){return {path,denied:true,code:e.code,message:e.message}}});
+const capture=r=>({status:r.status,error:r.error?.code,message:r.error?.message,stdout:r.stdout,stderr:r.stderr});
+const stdioIgnore=capture(cp.spawnSync('/usr/bin/true',[],{stdio:'ignore'}));
+const devNull=capture(cp.spawnSync('/bin/sh',['-c','echo hi > /dev/null'],{encoding:'utf8'}));
+let temporary;try{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'oar-zero-'));fs.writeFileSync(path.join(dir,'check.txt'),'TMP');temporary={ok:true,dir}}catch(e){temporary={ok:false,code:e.code,message:e.message}};
+const nested=capture(cp.spawnSync('/usr/bin/sandbox-exec',['-p','(version 1)(allow default)','/usr/bin/true'],{encoding:'utf8'}));
+const operations={stdioIgnore,devNull,temporary,nested};
+fs.writeFileSync(spec.allowed,'ALLOWED');
+if(spec.child){const r=cp.spawnSync(process.execPath,[__filename,JSON.stringify({...spec,child:false,allowed:spec.childAllowed})],{encoding:'utf8'});console.log(JSON.stringify({results,operations,child:{status:r.status,stdout:r.stdout,stderr:r.stderr}}))}
+else console.log(JSON.stringify({results,operations}));
+`);
   const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
   const spec = { targets, allowed: join(output, 'host.txt'), childAllowed: join(output, 'child.txt'), child: true };
-  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', profile, node, worker, JSON.stringify(spec)], { encoding: 'utf8', timeout: 15000 });
+  const temporary = reviewHostTemporaryDirectory(output);
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', profile, node, worker, JSON.stringify(spec)], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } });
   console.log(JSON.stringify({ diagnostic: 'zero-model Seatbelt fixture', status: result.status, error: result.error?.message, stdout: result.stdout, stderr: result.stderr }));
   expect(result.status, result.stderr).toBe(0);
   const observed = JSON.parse(result.stdout);
@@ -83,6 +97,16 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   for (const row of [...observed.results, ...child.results]) {
     expect(Boolean(row.denied), String(row.path)).toBe(true);
     expect(['EPERM', 'EACCES'], row.path).toContain(row.code);
+  }
+  for (const evidence of [observed, child]) {
+    expect(evidence.operations.stdioIgnore.status).toBe(0);
+    expect(evidence.operations.devNull.status).toBe(0);
+    expect(evidence.operations.temporary.ok).toBe(true);
+    expect(String(evidence.operations.temporary.dir).startsWith(temporary + '/')).toBe(true);
+    // D2 HOLD: nested Seatbelt remains unusable; this is not a supported
+    // native Codex exec proof or an instruction to weaken the outer policy.
+    expect(evidence.operations.nested.status).toBe(71);
+    expect(String(evidence.operations.nested.stderr)).toContain('sandbox_apply: Operation not permitted');
   }
   for (const path of protectedPaths) expect(readFileSync(path, 'utf8')).toBe('KEEP');
   expect(readFileSync(join(output, 'host.txt'), 'utf8')).toBe('ALLOWED');
@@ -168,4 +192,30 @@ test('OAR file delivery: reviewer writes three Results; recommendation text neve
     await expect(host.prompt('fourth')).rejects.toThrow('BUDGET_EXHAUSTED');
     expect(host.model('claude')).toBeNull(); // never certify requested/init alias
   } finally { await host.dispose(); }
+});
+
+test('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {
+  const { mkdirSync, writeFileSync, realpathSync, chmodSync } = await import('node:fs');
+  const { probeReviewInstallation } = await import('../src/effects/review/generic-review');
+  const root = tmpWorkspace('oar-node-installation'); roots.push(root);
+  const trace = join(root, 'parent.txt'), executable = join(root, 'fake-codex');
+  writeFileSync(executable, `#!/bin/sh\n/bin/ps -p "$PPID" -o command= >> '${trace}'\nprintf '0.0.0\\n'\n`); chmodSync(executable, 0o700);
+  const priorNode = process.env.REPO_HARNESS_NODE_BIN, priorBin = process.env.OAR_CODEX_BIN;
+  try {
+    process.env.REPO_HARNESS_NODE_BIN = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+    process.env.OAR_CODEX_BIN = executable;
+    const observed = await probeReviewInstallation('codex');
+    expect(observed.kind).toBe('available');
+    if (observed.kind !== 'available' || observed.via !== 'executable') throw new Error('fixture installation not observed');
+    expect(observed.command).toBe(executable);
+    expect(readFileSync(trace, 'utf8')).toContain(process.env.REPO_HARNESS_NODE_BIN);
+    expect(readFileSync(trace, 'utf8')).toContain('oar-review-host.js --installation codex');
+    expect(readFileSync(trace, 'utf8')).not.toContain('bun ');
+    const source = readFileSync(join(import.meta.dir, '../src/effects/review/generic-review.ts'), 'utf8');
+    expect(source).not.toContain('reviewRuntime');
+    expect(source).toContain('import type { ReviewHostSpec, HostRoundObservation }');
+  } finally {
+    if (priorNode === undefined) delete process.env.REPO_HARNESS_NODE_BIN; else process.env.REPO_HARNESS_NODE_BIN = priorNode;
+    if (priorBin === undefined) delete process.env.OAR_CODEX_BIN; else process.env.OAR_CODEX_BIN = priorBin;
+  }
 });

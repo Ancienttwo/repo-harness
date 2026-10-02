@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:c46f7bc8929c878d8398933a5cde6f79bbe8bac492be7bd0d774d6421a138257`
+> **Substantive Change SHA256**: `sha256:f24df69c8ad586d402dcaa707fbb1c2ce5f212cb246aa2e5639e6364515eea6b`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -120,3 +120,11 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Host build and zero-model focused/CLI/MCP evidence is in b-*.log under review-design; canonical hashes/exit codes are recorded in b-checkpoint-results.json. An intermediate full regression failed at fixture start; it ran the generated host without the required cursor.sessionId. OAR session-kernel.js:69–71 rejects that cursor. The original launch error was wrapped, so this is a code/evidence correlation rather than captured original stderr; rebuilding the corrected host passed the same fixture, with no launch replay. All involved sessions were private task-proof-*; no default/mini/user pane, trusted canary fixture, OAR repo or global config was mutated. No native provider or model calls.
 - Previous full-suite evidence remains historical, not this OAR tree's full-suite PASS: final run exit1 (brc10-lifecycle, campaign-acquisition, verify-sprint); no unrelated fixes or new full run were performed after the dependency type gate blocked.
 - Normal disposal is proved only with scriptedRuntime in a private pane. Host SIGKILL/native orphan reconciliation, native auth/cache writes under the output-only profile, actual Claude model, hooks and complete delivery remain unverified; no fallback to weaker isolation. Frozen cross-review CLI/core/runner are still unchanged follow-ups after E2 merge; campaign is out of scope.
+
+
+## Advisor corrections (a)(b)(c) before D2/D3/D4
+
+- Red fixture on 60d7b723 policy: host and descendant each produced stdio ignore spawn EPERM, /dev/null redirect exit1/Operation not permitted, TMPDIR mkdtemp EPERM, nested sandbox-exec exit71/sandbox_apply: Operation not permitted. All fourteen protected-path/symlink/traversal refusals still held. Raw b-correction-isolation-before.log proves the missed operational cases; the prior isolation fixture did not prove OAR could spawn a runtime.
+- Minimal corrected policy excludes only the proved /dev/null literal from the deny rule; no /dev/* grant. reviewHostTemporaryDirectory creates and validates a private .tmp under canonical output, rejects symlink/traversal widening, and Node host sets TMPDIR before OAR Session creation. No HOME/config redirects or credential copies. Protected authorities remain denied. Nested sandbox application still fails and is not claimed fixed.
+- OAR installation now runs in the fixed Node>=24 host's --installation application mode. The production Bun controller imports host types only and consumes the application InstallationSnapshot; vendor probe args/output remain OAR-owned. A fake executable records its Node parent; no real provider/model is used for this proof.
+- Aimpact 20:30 separately releases D2 default danger-full-access under admitted outer Seatbelt, D3 zero-prompt native-state write evidence and narrow state allowances, and D4 skipLibCheck. Those decisions replace earlier holds; finish this correction checkpoint first, then implement them. Current checkpoint is not shippable.

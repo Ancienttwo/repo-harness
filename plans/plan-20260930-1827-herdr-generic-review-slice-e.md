@@ -217,3 +217,8 @@ Implement generic review CLI/orchestration on existing task-agent plus fleet dee
 ## B release and 18:41 result/isolation decision
 
 Implementation order is contract/preflight → pinned OAR + Node24 host build → macOS Seatbelt isolation FIRST → scriptedRuntime host → fixed Herdr pane.run execution-owner → removal of hand integration. Zero-model denial failure stops. The 18:41 decision releases reviewer-written result_ref only, with appendSystemPrompt communication authorization and unchanged RECOMMENDATION-first fleet text. Codex Session cwd=output and host env workspace-write are configuration; Seatbelt alone enforces writes. Stock OAR Claude bypass is permitted only under proved inherited OS isolation, but init-only actual_model cannot mint a Receipt. Grok remains unsupported, and no real model/native provider is run. Local commits only; no push/PR/merge/main.
+
+
+## Aimpact 20:30 runtime decisions
+
+After corrections (a)(b)(c), D2 uses stock OAR Codex danger-full-access, deleting inherited OAR_CODEX_SANDBOX; only admitted Seatbelt protects writes. D3 zero-prompt native startup records actual OS denial paths and permits only proved narrow pure state directories, never trust/settings/hooks/definitions/instructions/credentials. No HOME redirect or credential copying. D4 skipLibCheck is explicitly approved, with unchecked declaration surfaces disclosed. Run local full suite (120s per case) and classify each failure via merge-base rerun, fixing introduced failures only. Claude's init-only model remains insufficient for Receipt. No remote operations.

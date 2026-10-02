@@ -1,5 +1,5 @@
-import { lstatSync, realpathSync } from 'node:fs';
-import { isAbsolute, relative, sep } from 'node:path';
+import { lstatSync, realpathSync, mkdirSync } from 'node:fs';
+import { isAbsolute, relative, sep, join } from 'node:path';
 
 export interface ReviewIsolationPaths {
   readonly subject: string;
@@ -31,9 +31,21 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
     }
   }
   // Default deny-by-complement: all filesystem writes outside the one canonical
-  // output tree are denied, including links/traversal once the kernel resolves them.
+  // output tree are denied, except the proved /dev/null device literal. Links and
+  // traversal are still resolved by the kernel before matching this boundary.
   // Reads/process/network behavior remains the OS default; this is a write boundary.
-  return `(version 1)\n(allow default)\n(deny file-write* (require-not (subpath ${JSON.stringify(output)})))\n`;
+  return `(version 1)\n(allow default)\n(deny file-write* (require-all (require-not (subpath ${JSON.stringify(output)})) (require-not (literal "/dev/null"))))\n`;
+}
+
+/** One private output-local TMPDIR; no HOME/config/credential redirection. */
+export function reviewHostTemporaryDirectory(output: string): string {
+  if (!isAbsolute(output) || lstatSync(output).isSymbolicLink() || !lstatSync(output).isDirectory()) throw new Error('OAR_REVIEW_OUTPUT_UNSAFE');
+  const path = join(realpathSync(output), '.tmp');
+  try { mkdirSync(path, { mode: 0o700 }); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  if (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory() || realpathSync(path) !== path) throw new Error('OAR_REVIEW_TMPDIR_UNSAFE');
+  return path;
 }
 
 /** Fixed application host bootstrap only. Native vendor args belong to OAR. */
