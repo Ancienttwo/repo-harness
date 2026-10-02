@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:b82e1dbd0ea33229f1a0d7282ecf741c37a17cf50ed58d6289d59f6aa3e52369`
+> **Substantive Change SHA256**: `sha256:c46463891370168589749a019aae987c2b3933ba8c37cfb7f817cb6caa80d998`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -51,7 +51,7 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Receipt implementation is zero-model: production writer/verifier fixture opinion only, never converts RUN2revise intoPASS; added request/context/result binding and actualharness/role/model checked against owner-held domain Result. No requiredlauncher metadata. Historical projection text remains byte-frozen and display-only; retired source labels cannot pass current receipt verifier.
 - No files have been deleted; E2must show traced deletion candidates and shared-reference replacements to the user first.
 
-> **Substantive Change SHA256**: `sha256:ce653595f0739c54758ecae6244fa09cf98e480c83e4502b26676828eaa8b295`
+> **Substantive Change SHA256**: `sha256:c46463891370168589749a019aae987c2b3933ba8c37cfb7f817cb6caa80d998`
 
 ## Receipt slice evidence and inventory handoff (zero-model)
 
@@ -190,3 +190,45 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - All real-home tmp/locks/sixteen file grants and later-session injection channel are removed. Remaining accepted risks: second copy briefly at rest, read/network exposure, possible server-side refresh rotation before failed persistence, source-token/body declarations unchecked per approved skipLibCheck, crash residue, Claude model gap and future-version/real-turn paths unverified. Normal close/cancel/start-failure/timeout cleanup and cleanup_pending are covered by zero-model production fixtures.
 
 - 00:27 focused validation: 31 pass / 795 assertions, including cleanup close/cancel/start-failure/timeout and delete-refusal; type and nine integrity gates pass after current diff binding. Previous full-suite evidence is historical, no new broad/full/model run. Canonical manifest home0027-checkpoint.json.
+
+
+## Observation authority repair — Aimpact 2026-10-03 04:47
+
+- P1: the owner orchestrator and Receipt store are trusted; OAR owns provider
+  argv/session/model observation; the reviewer owns only its Result outbox. The
+  previous host-wide profile gave the host and reviewer identical write rights,
+  so an outbox observation could not certify who authored it.
+- P2 / root-cause proof: the real acceptance fixture invokes production
+  runReviewRound, with a matching reviewer Result plus forged completed/model
+  observation. Before the source fix the new regression failed because the
+  call resolved and minted a Receipt. The captured red command is
+  `bun test tests/acceptance-receipt.test.ts --test-name-pattern 'rejects forged outbox observation' --timeout 60000 --max-concurrency 1`
+  (exit 1); local log `/tmp/repo-harness-pr-closeout-20261003/476-regression-red.log`.
+  Existing request/hash/schema checks validate identity, not observation origin.
+- P3: retain the existing owner journal as the single host-evidence authority.
+  OAR probes one immutable owner launcher; the launcher only forwards argv to
+  Seatbelt and the OAR-selected native executable. The trusted Node host remains
+  outside that child boundary. SIGUSR1 inspection is disabled; child signal and
+  Unix socket access are denied to protect host and Herdr control authority.
+  ready/ack/observed/disposed use the owner journal together; no outbox fallback.
+  Cached old sessions/specs fail closed rather than migrate untrusted evidence.
+- Regression coverage: missing genuine completion refuses Receipt; failed
+  genuine completion refuses forged PASS; completed genuine observation wins
+  over an outbox forged model. An actual OAR codexRuntime/native-protocol fixture
+  proves Result writes succeed while seven owner control paths, host signal and
+  Unix socket access are denied; both failed and completed OAR outcomes persist
+  unchanged in the owner journal. It calls no real model/provider.
+- No dependency or source file added. The launcher is ignored runtime state,
+  needed only to apply the existing platform boundary at OAR's executable seam;
+  vendor arguments and protocol have one owner. No new transport abstraction.
+- Native tool self-cancellation under signal denial and a new real model run
+  remain unverified; OAR disposal from the trusted host still owns process-group
+  termination. This repair does not claim a new real-model acceptance.
+
+- Final local verification for this repair: `bun run check:type` exit 0;
+  `bun test tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/task-agent.test.ts tests/herdr-task-lifecycle.test.ts --timeout 60000 --max-concurrency 1`
+  exit 0, 50 pass / 0 fail / 1133 assertions, four files (194.51s). All nine
+  root integrity commands exit 0. Logs: `/tmp/repo-harness-pr-closeout-20261003/476-type-final.log`,
+  `476-related-final.log`, and `476-integrity-results.json` in the same directory.
+  The prior red result and this passing result are separate evidence boundaries.
+  Full suite and real-model rounds were not rerun. No Ready/merge in this follow-up.

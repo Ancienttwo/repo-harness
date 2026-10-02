@@ -780,7 +780,7 @@ const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,stdio:'inh
 
 test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
   const api = await import('../src/effects/terminal/task-session');
-  const { reviewIsolationPolicy, isolatedHostCommand } = await import('../src/effects/review/review-isolation');
+  const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/oh-'));
   const home = join(fixture, 'h'), repo = join(fixture, 'p'), output = join(fixture, 'out');
   for (const path of [home, repo, output]) mkdirSync(path);
@@ -806,7 +806,7 @@ test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a pri
   try {
     await until(() => { try { return call(['workspace','list']).type==='workspace_list'; } catch { return false; } });
     const workspace = call(['workspace','create','--cwd',repo,'--label','OAR fixture','--no-focus']);
-    const command = isolatedHostCommand(profile, realpathSync('/opt/homebrew/opt/node@24/bin/node'), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
+    const command = reviewHostCommand(realpathSync('/opt/homebrew/opt/node@24/bin/node'), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
     binding = await api.startTaskApplicationHost(repo, { task:'oar-fixture', role:'deep-reasoner', harness_kind:'codex', endpoint,
       parent_pane:workspace.root_pane.pane_id, args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
     expect(binding.host).toBeNull(); // No privileged protected-result host fence is bypassed.

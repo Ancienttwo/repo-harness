@@ -14,7 +14,7 @@ import { taskRepository } from '../terminal/task-worktree';
 import { startTaskApplicationHost, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, type TaskCleanupResult, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, isolatedHostCommand, prepareCodexHome, removeCopiedAuth } from './review-isolation';
+import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
@@ -34,6 +34,7 @@ interface ReviewSession {
   actual_harness: Harness;
   owner_harness: Harness | null;
   fallback_reason: string | null;
+  control_directory: string;
   started_at: number;
 }
 interface RoundRecord { subject_sha256: string; context_sha256: string; task_request: TaskRequest }
@@ -78,7 +79,7 @@ async function waitHostFile(path: string, timeout = 60_000): Promise<void> {
   }
 }
 function completedModel(session: ReviewSession, request: TaskRequest): string {
-  const observation = readSessionArtifact<HostRoundObservation>(join(resolve(request.result_ref, '..'), `observed-${request.round}.json`));
+  const observation = readSessionArtifact<HostRoundObservation>(join(session.control_directory, `observed-${request.round}.json`));
   if (observation.request_id !== request.request_id || observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('review_host_turn_unverified');
   // Init-only Claude projection cannot certify the actual gateway backend.
   if (session.actual_harness === 'claude' || !observation.actual_model) throw new Error('review_actual_model_unverified');
@@ -89,9 +90,10 @@ function hostExecutable(): { node: string; entry: string } {
     entry: realpathSync(fileURLToPath(new URL('../../../dist/oar-review-host.js', import.meta.url))) };
 }
 /** Only the fixed Node>=24 host executes the OAR installation API. */
-export async function probeReviewInstallation(kind: Harness): Promise<InstallationSnapshot> {
+export async function probeReviewInstallation(kind: Harness, executable?: string): Promise<InstallationSnapshot> {
   const { node, entry } = hostExecutable();
-  return JSON.parse(execFileSync(node, [entry, '--installation', kind], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024 })) as InstallationSnapshot;
+  return JSON.parse(execFileSync(node, [entry, '--installation', kind], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024,
+    env: executable ? { ...process.env, [kind === 'codex' ? 'OAR_CODEX_BIN' : 'OAR_CLAUDE_BIN']: executable } : process.env })) as InstallationSnapshot;
 }
 const runtime = { start: startTaskApplicationHost, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,
   cancel: cancelTaskAgent, status: taskAgentStatus, assertBinding: assertTaskBinding,
@@ -178,7 +180,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
       if (session.protocol !== 1 || session.owner_root !== root || session.contract_sha256 !== identity.contract_sha256 || session.goal_sha256 !== identity.goal_sha256
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(options.endpoint)))
-        || session.parent_pane !== options.parentPane || (options.harness && options.harness !== session.actual_harness)) throw new Error('review_session_spec_changed');
+        || session.control_directory !== dir || session.parent_pane !== options.parentPane || (options.harness && options.harness !== session.actual_harness)) throw new Error('review_session_spec_changed');
     } else {
       const owner = options.harness ? null : client.owner(root, options.endpoint, options.parentPane);
       if (!options.harness && !owner) throw new Error('review_owner_unknown; specify --harness');
@@ -195,7 +197,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       options.admitSession();
       session = { protocol: 1, owner_root: root, contract_sha256: identity.contract_sha256, goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
         endpoint: options.endpoint, parent_pane: options.parentPane, requested_harness: requested, actual_harness: actual,
-        owner_harness: owner, fallback_reason: reason, started_at: Date.now() };
+        owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);
     }
     const round = nextSessionRound<RoundRecord>(dir, REVIEW_MAX_ROUNDS, identity.subject_sha256, previous => previous.subject_sha256);
@@ -224,14 +226,21 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (!existsSync(specPath)) {
       const installation = await client.installation(session.actual_harness);
       if (installation.kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
-      const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness, installation,
-        options: reviewSessionOptions(session.actual_harness, outbox, codexHome), requestDirectory: taskDir, output: outbox, timeoutMs: timeout };
+      if (installation.via !== 'executable') throw new Error('review_provider_executable_required');
+      const launcher = prepareReviewLauncher(dir, profilePath, installation.command);
+      const isolatedInstallation = await client.installation(session.actual_harness, launcher);
+      if (isolatedInstallation.kind !== 'available' || isolatedInstallation.via !== 'executable' || isolatedInstallation.command !== launcher) {
+        throw new Error('review_isolated_installation_unverified');
+      }
+      const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness,
+        installation: isolatedInstallation, launcher, vendorExecutable: installation.command,
+        options: reviewSessionOptions(session.actual_harness, outbox, codexHome), requestDirectory: taskDir, output: outbox, controlDirectory: dir, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }
     const { node, entry: hostEntry } = hostExecutable();
     const binding = await client.start(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
       endpoint: session.endpoint, parent_pane: session.parent_pane, args: [], max_requests: REVIEW_MAX_ROUNDS },
-      isolatedHostCommand(profilePath, node, hostEntry, specPath), () => client.ready(join(outbox, 'ready.json')));
+      reviewHostCommand(node, hostEntry, specPath), () => client.ready(join(dir, 'ready.json')));
     client.assertBinding(binding);
     if (binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
     const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
@@ -255,13 +264,13 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
     const request = await client.send(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, relative(reviewerRepo, packetPath), 'repeatable',
-      request => client.ready(join(outbox, `ack-${request.round}.json`)));
+      request => client.ready(join(dir, `ack-${request.round}.json`)));
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: request });
     const deadline = Date.now() + timeout;
     let collected;
     for (;;) {
       collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
-      if (collected && existsSync(join(outbox, `observed-${request.round}.json`))) break;
+      if (collected && existsSync(join(dir, `observed-${request.round}.json`))) break;
       client.assertBinding(binding); lock.assertOwned();
       if (Date.now() >= deadline) throw new Error('review_round_timeout; inspect the same request; do not resend');
       await Bun.sleep(100);
@@ -320,11 +329,9 @@ export async function closeReview(repoRoot: string, contract: string, cancel = f
       if (last.output.verdict !== 'PASS' || JSON.stringify(last.receipt) !== JSON.stringify(receipt)) throw new Error('review_acceptance_mismatch');
     }
     const client = { ...runtime, ...effects };
-    const taskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
-    const output = join(session.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskDir.split('/').pop()!);
     // An ambiguous launch without a disposal acknowledgement remains pending;
     // never kill a host whose OAR children may still be alive.
-    await client.dispose(session.reviewer_repo, session.task, output);
+    await client.dispose(session.reviewer_repo, session.task, session.control_directory);
     const cleanup = await (cancel ? client.cancel : client.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
     if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup });
     return cleanup;

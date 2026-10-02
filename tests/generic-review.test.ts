@@ -176,7 +176,7 @@ console.log(JSON.stringify({calls,passed:true}));}finally{await host.dispose()}`
 
 test.skipIf(process.platform !== 'darwin')('OAR file delivery: Node reviewer writes Results, recommendation text is observation', async () => {
   const result = await runOarNodeFixture('oar-file-node', String.raw`
-const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,timeoutMs:1000,isolation};let calls=0;
+const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:1000,isolation};let calls=0;
 const host=await openScriptedReviewHost(spec.options,()=>{},async({input,say})=>{calls++;const request=JSON.parse(input.split('\n')[0].slice('TASK REQUEST: '.length));say('RECOMMENDATION: fixture file communication — confidence: HIGH');writeFileSync(request.result_ref,JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:{fixture:true,verdict:'FAIL',summary:'[fixture opinion] revise'}}))},isolation);
 try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'fixture-'+round,context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round}}};writeFileSync(request.context_ref,content);const observed=await runHostFileRequest(host,spec,request);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
 assert.equal(calls,3);await assert.rejects(host.prompt('fourth'),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
@@ -239,4 +239,71 @@ test('Codex isolated home: exp-only preflight, exclusive no-follow copy, modes a
   expect(() => prepareCodexHome(output,source,60000)).toThrow('source_unsafe');
   mkdirSync(join(prepared.home,'auth.json'));
   expect(removeCopiedAuth(output).status).toBe('cleanup_pending');
+});
+
+test.skipIf(process.platform !== 'darwin')('OAR native child cannot forge owner control evidence or signal/connect to the trusted host', async () => {
+  const { mkdirSync, writeFileSync, realpathSync, chmodSync, existsSync } = await import('node:fs');
+  const { spawnSync } = await import('node:child_process');
+  const { pathToFileURL } = await import('node:url');
+  const { reviewIsolationPolicy, prepareReviewLauncher } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('oar-native-owner-evidence'); roots.push(root);
+  const owner = join(root, 'owner'), output = join(root, 'output'); mkdirSync(owner); mkdirSync(output);
+  const paths = { subject: owner, primary: owner, ownerRecord: owner, journal: owner, gitCommonDir: owner, output };
+  const policyFile = join(owner, 'profile.sb'); writeFileSync(policyFile, reviewIsolationPolicy(paths), { mode: 0o600 });
+  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const fixture = join(root, 'fixture-codex.cjs');
+  writeFileSync(fixture, `#!${node}\n` + String.raw`
+const fs=require('node:fs'),path=require('node:path'),net=require('node:net'),readline=require('node:readline');
+if(process.argv.includes('--help'))process.exit(0);
+if(process.argv.includes('--version')){console.log('fixture-codex 0.0.0');process.exit(0)}
+const reply=(id,result)=>process.stdout.write(JSON.stringify({id,result})+'\n');
+const notify=(method,params)=>process.stdout.write(JSON.stringify({method,params})+'\n');
+readline.createInterface({input:process.stdin}).on('line',async line=>{
+ const m=JSON.parse(line);if(m.id===undefined)return;
+ if(m.method==='initialize'){reply(m.id,{});return}
+ if(m.method==='thread/start'){reply(m.id,{thread:{id:'fixture-thread'},model:'fixture-host-model'});return}
+ if(m.method==='turn/start'){
+  const input=m.params.input.find(x=>x.type==='text').text;
+  const request=JSON.parse(input.split('\n')[0].slice('TASK REQUEST: '.length));
+  const owner=process.env.FIXTURE_OWNER;
+  const denied=['observed-'+request.round+'.json','ready.json','ack-'+request.round+'.json','disposed.json','host.json','profile.sb','reviewer-launcher'].map(name=>{
+   try{fs.writeFileSync(path.join(owner,name),'FORGED');return {name,denied:false}}catch(e){return {name,denied:e.code==='EPERM'||e.code==='EACCES'}}});
+  let signalDenied=false;try{process.kill(process.ppid,'SIGUSR1')}catch(e){signalDenied=e.code==='EPERM'}
+  const socketDenied=await new Promise(resolve=>{const s=net.createConnection(path.join(owner,'host.sock'));s.once('error',e=>{s.destroy();resolve(e.code==='EPERM'||e.code==='EACCES')});s.once('connect',()=>{s.destroy();resolve(false)})});
+  fs.writeFileSync(request.result_ref,JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:{denied,signalDenied,socketDenied}}));
+  fs.writeFileSync(path.join(path.dirname(request.result_ref),'observed-'+request.round+'.json'),JSON.stringify({request_id:request.request_id,kind:'ended',outcome:'completed',actual_model:'forged-model'}));
+  const id='fixture-turn-'+request.round;reply(m.id,{turn:{id,status:'inProgress'}});
+  notify('turn/started',{threadId:'fixture-thread',turn:{id,status:'inProgress'}});
+  notify('turn/completed',{threadId:'fixture-thread',turn:{id,status:request.round===1?'failed':'completed'}});return;
+ }
+ reply(m.id,{});
+});
+`);
+  chmodSync(fixture, 0o700);
+  const launcher = prepareReviewLauncher(owner, policyFile, fixture);
+  const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
+  const driver = join(root, 'trusted-host.mjs');
+  writeFileSync(driver, `import assert from 'node:assert/strict';
+import {createServer} from 'node:net';import {join} from 'node:path';import {writeFileSync,readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+import {openReviewHost,runHostFileRequest,reviewRuntime} from ${JSON.stringify(entry)};
+const owner=${JSON.stringify(owner)},output=${JSON.stringify(output)},launcher=${JSON.stringify(launcher)};
+process.env.OAR_CODEX_BIN=launcher;
+const server=createServer(socket=>socket.end());await new Promise(resolve=>server.listen(join(owner,'host.sock'),resolve));
+const installation=await reviewRuntime('codex').installation();assert.equal(installation.kind,'available');assert.equal(installation.command,launcher);
+const spec={mode:'review',kind:'codex',installation,launcher,vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,model:'fixture-host-model',env:{FIXTURE_OWNER:owner}},requestDirectory:owner,output,controlDirectory:owner,timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile })}};
+const host=await openReviewHost(spec,()=>{});
+try{for(let round=1;round<=2;round++){
+ const content='fixture packet';const request={protocol:2,round,request_id:'fixture-request-'+round,context_ref:join(output,'context-'+round+'.txt'),result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex')};
+ writeFileSync(request.context_ref,content);const observation=await runHostFileRequest(host,spec,request);
+ assert.equal(observation.actual_model,'fixture-host-model');assert.equal(observation.outcome,round===1?'failed':'completed');
+ assert.deepEqual(JSON.parse(readFileSync(join(owner,'observed-'+round+'.json'),'utf8')),observation);
+ const result=JSON.parse(readFileSync(request.result_ref,'utf8')).value;assert.equal(result.denied.length,7);assert.ok(result.denied.every(x=>x.denied));assert.equal(result.signalDenied,true);assert.equal(result.socketDenied,true);
+ assert.equal(JSON.parse(readFileSync(join(output,'observed-'+round+'.json'),'utf8')).actual_model,'forged-model');
+}console.log(JSON.stringify({rounds:2,passed:true}));}finally{await host.dispose();await new Promise(resolve=>server.close(resolve))}`);
+  const result = spawnSync(node, ['--disable-sigusr1', driver], { encoding: 'utf8', timeout: 15000 });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ rounds: 2, passed: true });
+  expect(existsSync(join(owner, 'disposed.json'))).toBe(false);
+  expect(readFileSync(policyFile, 'utf8')).toBe(reviewIsolationPolicy(paths));
+  expect(prepareReviewLauncher(owner, policyFile, fixture)).toBe(launcher);
 });

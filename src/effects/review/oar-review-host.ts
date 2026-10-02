@@ -3,12 +3,13 @@ import { promptAndWait } from '@botiverse/oar/observe';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readSessionArtifact, writeSessionArtifact, type TaskRequest } from '../terminal/task-session';
 import type { AvailableInstallation } from '@botiverse/oar';
 import { dirname } from 'node:path';
-import { reviewHostTemporaryDirectory, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
+import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
 
 export function assertOarHostNode(version = process.versions.node): void {
   if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');
@@ -65,9 +66,12 @@ export interface ReviewHostSpec {
   isolation: ReviewIsolationAdmission;
   kind: 'codex' | 'claude';
   installation: AvailableInstallation;
+  launcher: string;
+  vendorExecutable: string;
   options: SessionOptions;
   requestDirectory: string;
   output: string;
+  controlDirectory: string;
   timeoutMs: number;
 }
 export interface HostRoundObservation {
@@ -84,22 +88,34 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
     || request.result_ref !== join(spec.output, `result-${request.round}.json`)) throw new Error('OAR_HOST_REQUEST_INVALID');
   const content = readFileSync(request.context_ref, 'utf8');
   if (`sha256:${createHash('sha256').update(content).digest('hex')}` !== request.context_sha256) throw new Error('OAR_HOST_CONTEXT_MISMATCH');
-  writeSessionArtifact(join(spec.output, `ack-${request.round}.json`), { request_id: request.request_id });
+  writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
   // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
   // writes result_ref; the host never interprets/publishes root-turn text.
   const run = await host.prompt(`TASK REQUEST: ${JSON.stringify(request)}\n\n${content}`, spec.timeoutMs);
   if (run.kind !== 'rejected' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
   const observation = { request_id: request.request_id, kind: run.kind,
     outcome: run.kind === 'rejected' ? null : run.outcome.kind, actual_model: host.model(spec.kind) };
-  writeSessionArtifact(join(spec.output, `observed-${request.round}.json`), observation);
+  writeSessionArtifact(join(spec.controlDirectory, `observed-${request.round}.json`), observation);
   return observation;
 }
 
 export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknown) => void): Promise<OarReviewHost> {
-  assertOarHostNode(); assertReviewIsolation(spec.isolation);
+  assertOarHostNode();
+  if (spec.controlDirectory !== spec.isolation.paths.journal || spec.output !== spec.isolation.paths.output
+    || readFileSync(spec.isolation.policyFile, 'utf8') !== reviewIsolationPolicy(spec.isolation.paths)
+    || spec.installation.via !== 'executable' || spec.installation.command !== spec.launcher
+    || prepareReviewLauncher(spec.controlDirectory, spec.isolation.policyFile, spec.vendorExecutable) !== spec.launcher) {
+    throw new Error('OAR_REVIEW_PROFILE_NOT_ADMITTED');
+  }
+  // Prove the child boundary before OAR can open a vendor Session. The host
+  // deliberately retains owner write authority; its vendor descendants do not.
+  const probe = spawnSync('/usr/bin/sandbox-exec', ['-f', spec.isolation.policyFile, process.execPath, '-e',
+    `const fs=require('node:fs');try{fs.closeSync(fs.openSync(process.argv[1],fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW));process.exit(1)}catch(e){process.exit(e.code==='EPERM'?0:1)}`,
+    spec.isolation.policyFile], { stdio: 'ignore', timeout: 5000 });
+  if (probe.status !== 0) throw new Error('OAR_REVIEW_SEATBELT_UNPROVEN');
   if (spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_OUTPUT_CWD_REQUIRED');
   process.env.TMPDIR = reviewHostTemporaryDirectory(spec.output);
-  delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted outer profile.
+  delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted child profile.
   return new OarReviewHost(await reviewRuntime(spec.kind).session(spec.installation, spec.options), print);
 }
 
@@ -112,27 +128,23 @@ async function main(): Promise<void> {
     return;
   }
   const spec = readSessionArtifact<FixtureSpec | ReviewHostSpec>(process.argv[2]!);
-  assertReviewIsolation(spec.isolation);
   const temporary = reviewHostTemporaryDirectory(spec.mode === 'scripted' ? dirname(spec.readyFile) : spec.output);
   process.env.TMPDIR = temporary;
   let host: OarReviewHost;
-  let output: string;
   if (spec.mode === 'scripted') {
     if (process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE !== '1' || spec.inputs.length > 3) throw new Error('OAR_HOST_FIXTURE_SPEC_INVALID');
-    output = spec.cwd;
-    host = await openScriptedReviewHost({ cwd: spec.cwd }, view => console.log(JSON.stringify({ fixture: true, view })),
-      async ({ input, say }) => { say(`RECOMMENDATION: fixture observation for ${input} — confidence: HIGH`); }, spec.isolation);
+    host = new OarReviewHost(await scriptedRuntime({ id: 'fixture', model: 'fixture-oar',
+      turn: async ({ input, say }) => { say(`RECOMMENDATION: fixture observation for ${input} — confidence: HIGH`); } }).session(
+      { kind: 'available', via: 'bundled' }, { cwd: spec.cwd }), view => console.log(JSON.stringify({ fixture: true, view })));
   } else {
     if (process.platform !== 'darwin' || spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED');
-    // Parent launches only through proved Seatbelt policy. The OAR knob is
-    // configuration, not evidence, and precedes native Session creation.
+    // OAR launches the reviewer through the proved child Seatbelt executable.
     delete process.env.OAR_CODEX_SANDBOX;
-    output = spec.output;
     host = await openReviewHost(spec, view => console.log(JSON.stringify({ oar: view })));
   }
-  const readyFile = spec.mode === 'scripted' ? spec.readyFile : join(output, 'ready.json');
-  const closeRequest = spec.mode === 'scripted' ? spec.closeRequest : join(output, 'close.request');
-  const disposedFile = spec.mode === 'scripted' ? spec.disposedFile : join(output, 'disposed.json');
+  const readyFile = spec.mode === 'scripted' ? spec.readyFile : join(spec.controlDirectory, 'ready.json');
+  const closeRequest = spec.mode === 'scripted' ? spec.closeRequest : join(spec.controlDirectory, 'close.request');
+  const disposedFile = spec.mode === 'scripted' ? spec.disposedFile : join(spec.controlDirectory, 'disposed.json');
   let closing: Promise<void> | undefined;
   const close = () => closing ??= host.dispose();
   // Disposal ack is written by finally, not inferred from a signal/idle.
@@ -157,7 +169,7 @@ async function main(): Promise<void> {
       }
     }
   } catch (error) {
-    if (spec.mode === 'review') writeSessionArtifact(join(output, 'error.json'), { error: String(error) });
+    if (spec.mode === 'review') writeSessionArtifact(join(spec.controlDirectory, 'error.json'), { error: String(error) });
     throw error;
   } finally {
     await close();

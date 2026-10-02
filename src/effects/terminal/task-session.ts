@@ -477,7 +477,8 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
  */
 export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgentSpec,
   command: readonly string[], ready: () => Promise<void>): Promise<TaskPaneBinding> {
-  if (spec.args.length !== 0 || command[0] !== '/usr/bin/sandbox-exec'
+  if (spec.args.length !== 0 || command.length !== 4 || !isAbsolute(command[0]!) || command[1] !== '--disable-sigusr1'
+    || command[2] !== realpathSync(join(import.meta.dir, '../../../dist/oar-review-host.js')) || !isAbsolute(command[3]!)
     || command.some(arg => /[\r\n]/.test(arg))) throw new Error('task_agent_application_host_command_invalid');
   return startTaskAgent(repoRoot, spec, { start: async (endpoint, name, pane, kind) => {
     mutate(endpoint, ['pane', 'run', pane, ...command]);

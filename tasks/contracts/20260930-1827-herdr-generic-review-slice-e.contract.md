@@ -437,3 +437,20 @@ verifier, private task-proof Herdr session, disposable repo/authority. Any auth
 error/refresh or real-home/config/trust requirement stops, no retry/second turn/
 Claude run. No source-file deletion/remote/merge; local commits only. Risk pointer
 and evidence in slice notes. Zero-model implementation tests precede live work.
+
+
+## Aimpact 2026-10-03 04:47 observation authority repair
+
+Fix the demonstrated reviewer-authored observation vulnerability, add regression
+coverage, run check:type and related tests with --timeout 60000
+--max-concurrency 1, then push this PR branch. No Ready transition or merge of
+this or any other PR is authorized in this follow-up. Aimpact owns the merge.
+
+The current boundary separates the trusted OAR host from its sandboxed native
+reviewer: host completion/model and ready/ack/disposed evidence are published
+only in the protected owner review journal. OAR probes an immutable owner-held
+Seatbelt executable launcher and still owns all vendor argv and native protocol.
+No reviewer-writable observation fallback or legacy-session translation exists.
+The child cannot signal the host or connect to Unix control sockets. This
+supersedes the earlier host-wide Seatbelt arrangement for the current candidate.
+Zero-model source/transport tests only; no new live reviewer/model round.

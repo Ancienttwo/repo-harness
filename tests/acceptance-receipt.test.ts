@@ -795,7 +795,7 @@ function reviewFixture() {
   let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;
   const binding = { pane_id: 'fixture-reviewer-pane' } as unknown as TaskPaneBinding;
   const effects: ReviewEffects = {
-    owner: () => 'codex', installation: async () => ({ kind: 'available', via: 'bundled' }), model: () => 'fixture-model', assertBinding: () => {}, ready: async () => {}, dispose: async () => { calls.push('dispose'); },
+    owner: () => 'codex', installation: async (_kind, executable) => ({ kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }), model: () => 'fixture-model', assertBinding: () => {}, ready: async () => {}, dispose: async () => { calls.push('dispose'); },
     start: async (_repo, spec) => { calls.push(`start:${spec.harness_kind}:${spec.role}`); return binding; },
     send: async (repo, task, role, ref) => {
       sent++; calls.push('send');
@@ -804,7 +804,7 @@ function reviewFixture() {
       request = { protocol: 2, task, role, round: sent, request_id: `fixture-request-${sent}`, context_sha256: authorityFingerprint(packet),
         context_ref: ref, source_ref: ref, result_ref: join(repo, `.ai/harness/runs/task-agent-outbox/${importedTaskDir(repo, task, role).split('/').pop()}/result-${sent}.json`),
         result_contract: { required_fields: ['request_id','context_sha256','value'], atomic_write: 'temp_rename', submission: { command: 'unused-fixture', repo, task, role, round: sent } } };
-      writeFileSync(join(resolve(request.result_ref, '..'), `observed-${sent}.json`), JSON.stringify({ fixture: true }));
+      writeFileSync(join(reviewLocation(fixture.root, 'tasks/contracts/demo.contract.md').dir, `observed-${sent}.json`), JSON.stringify({ fixture: true }));
       return request;
     },
     collect: async () => {
@@ -863,7 +863,7 @@ test.skipIf(process.platform !== 'darwin')('generic review allows explicit same-
   expect((await verifyAcceptance({ root: f.root, authorityHome: f.home })).actual_harness).toBe('codex');
   await closeReview(f.root, f.options.contract, true, f.home, f.effects);
   const fallback = reviewFixture(); fallback.verdict('PASS');
-  const accepted = await runReviewRound(fallback.options, { ...fallback.effects, installation: async kind => kind === 'codex' ? { kind: 'available', via: 'bundled' } : { kind: 'not_found' } });
+  const accepted = await runReviewRound(fallback.options, { ...fallback.effects, installation: async (kind, executable) => kind === 'codex' ? { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' } : { kind: 'not_found' } });
   expect(accepted.requested_harness).toBe('claude'); expect(accepted.actual_harness).toBe('codex');
   expect(accepted.fallback_reason).toContain('missing before start');
   const failed = reviewFixture(); let starts = 0;
@@ -919,4 +919,55 @@ test.skipIf(process.platform !== 'darwin')('Codex credential copy cleanup follow
   const refused=reviewFixture();refused.verdict('PASS');await runReviewRound({...refused.options,harness:'codex'},refused.effects);
   unlinkSync(copied(refused));mkdirSync(copied(refused));
   await expect(closeReview(refused.root,refused.options.contract,true,refused.home,refused.effects)).rejects.toThrow('cleanup_pending: review_auth_copy_delete_failed');
+});
+
+// Regression: reviewer-authored completion/model evidence must never mint a Receipt.
+test.skipIf(process.platform !== 'darwin')('generic review rejects forged outbox observation before genuine host completion', async () => {
+  const f = reviewFixture(); f.verdict('PASS');
+  const { model: _model, ...effects } = f.effects;
+  const send = effects.send!;
+  effects.send = async (...args) => {
+    const request = await send(...args);
+    rmSync(join(reviewLocation(f.root, f.options.contract).dir, `observed-${request.round}.json`));
+    writeFileSync(join(resolve(request.result_ref, '..'), `observed-${request.round}.json`), JSON.stringify({
+      request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: 'forged-model',
+    }));
+    return request;
+  };
+  await expect(runReviewRound({ ...f.options, harness: 'codex', timeoutMs: 50 }, effects)).rejects.toThrow('review_round_timeout');
+  const { existsSync } = await import('node:fs');
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+});
+
+test.skipIf(process.platform !== 'darwin')('generic review uses owner host completion and ignores forged outbox model', async () => {
+  const f = reviewFixture(); f.verdict('PASS');
+  const { model: _model, ...effects } = f.effects;
+  const send = effects.send!;
+  effects.send = async (...args) => {
+    const request = await send(...args);
+    const observation = { request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: 'fixture-host-model' };
+    writeFileSync(join(reviewLocation(f.root, f.options.contract).dir, `observed-${request.round}.json`), JSON.stringify(observation));
+    writeFileSync(join(resolve(request.result_ref, '..'), `observed-${request.round}.json`), JSON.stringify({ ...observation, actual_model: 'forged-model' }));
+    return request;
+  };
+  const result = await runReviewRound({ ...f.options, harness: 'codex' }, effects);
+  expect(result.status).toBe('accepted');
+  expect(result.receipt.actual_model).toBe('fixture-host-model');
+  expect((await verifyAcceptance({ root: f.root, authorityHome: f.home })).actual_model).toBe('fixture-host-model');
+});
+
+test.skipIf(process.platform !== 'darwin')('generic review refuses failed owner turn even with forged completed observation', async () => {
+  const f = reviewFixture(); f.verdict('PASS');
+  const { model: _model, ...effects } = f.effects;
+  const send = effects.send!;
+  effects.send = async (...args) => {
+    const request = await send(...args);
+    const observation = { request_id: request.request_id, kind: 'ended', outcome: 'failed', actual_model: 'fixture-host-model' };
+    writeFileSync(join(reviewLocation(f.root, f.options.contract).dir, `observed-${request.round}.json`), JSON.stringify(observation));
+    writeFileSync(join(resolve(request.result_ref, '..'), `observed-${request.round}.json`), JSON.stringify({ ...observation, outcome: 'completed', actual_model: 'forged-model' }));
+    return request;
+  };
+  await expect(runReviewRound({ ...f.options, harness: 'codex' }, effects)).rejects.toThrow('review_host_turn_unverified');
+  const { existsSync } = await import('node:fs');
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 });

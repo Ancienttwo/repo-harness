@@ -113,7 +113,7 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
   const forbiddenFiles = '/(CLAUDE\\.md|AGENTS\\.md|settings[^/]*\\.json|\\.claude\\.json|config\\.toml|auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json)$';
   const forbiddenDirectories = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules|\\.?plugins)(/|$)';
   const exceptions = `(require-not (subpath ${JSON.stringify(output)}))`;
-  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n`;
+  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound (remote unix-socket))\n`;
 
 }
 
@@ -154,8 +154,24 @@ export function assertReviewIsolation(admission: ReviewIsolationAdmission): void
   throw new Error('OAR_REVIEW_SEATBELT_REQUIRED');
 }
 
-/** Fixed application host bootstrap only. Native vendor args belong to OAR. */
-export function isolatedHostCommand(policyFile: string, node: string, hostEntry: string, specFile: string): readonly string[] {
-  for (const path of [policyFile, node, hostEntry, specFile]) if (!isAbsolute(path)) throw new Error('OAR_REVIEW_HOST_PATH_UNSAFE');
-  return ['/usr/bin/sandbox-exec', '-f', policyFile, node, hostEntry, specFile];
+/** Immutable executable seam: OAR owns every vendor argument and wire protocol. */
+export function prepareReviewLauncher(directory: string, policyFile: string, executable: string): string {
+  const policy = realpathSync(policyFile), vendor = realpathSync(executable), owner = realpathSync(directory);
+  if (!isAbsolute(directory) || owner !== directory || !lstatSync(owner).isDirectory()
+    || lstatSync(policyFile).isSymbolicLink() || !lstatSync(policy).isFile()
+    || !lstatSync(vendor).isFile()) throw new Error('OAR_REVIEW_LAUNCHER_UNSAFE');
+  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+  const content = `#!/bin/sh\nexec /usr/bin/sandbox-exec -f ${quote(policy)} ${quote(vendor)} "$@"\n`;
+  const launcher = join(owner, 'reviewer-launcher');
+  if (!existsSync(launcher)) writeFileSync(launcher, content, { flag: 'wx', mode: 0o700 });
+  const stat = lstatSync(launcher);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700
+    || readFileSync(launcher, 'utf8') !== content) throw new Error('OAR_REVIEW_LAUNCHER_CHANGED');
+  return launcher;
+}
+
+/** Trusted host alone writes control evidence; only OAR's child is sandboxed. */
+export function reviewHostCommand(node: string, hostEntry: string, specFile: string): readonly string[] {
+  for (const path of [node, hostEntry, specFile]) if (!isAbsolute(path)) throw new Error('OAR_REVIEW_HOST_PATH_UNSAFE');
+  return [node, '--disable-sigusr1', hostEntry, specFile];
 }
