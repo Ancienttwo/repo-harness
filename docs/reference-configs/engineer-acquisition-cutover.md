@@ -1,10 +1,10 @@
 # Engineer acquisition cutover and frozen observation time
 
-S2 keeps acquisition admission unchanged and moves transaction evidence to protocol 2. Deployments must quiesce old producers and explicitly seal each campaign intent before enabling campaign acquisition. The commands below inspect/migrate existing evidence; they dispatch no task and replay no external effect. Selected production entrypoints remain outside S2.
+S2 keeps acquisition admission unchanged and moves transaction evidence to protocol 2; S3 strengthens campaign owner checks with policy revision R2. Deployments must quiesce old producers and explicitly seal each campaign intent before enabling campaign acquisition. The commands below inspect/migrate existing evidence; they dispatch no task and replay no external effect. Selected production entrypoints remain outside S3 (S4 owns their wiring).
 
 ## Operator procedure
 
-Run the installed S2 `repo-harness` binary in the repository that owns the ledger. In a source checkout, replace `repo-harness` with `bun src/cli/index.ts`. Worktrees share their Git common-directory ledger. Local filesystem access is the operator authority; these commands are not MCP tools.
+Run a deployed `repo-harness` binary containing these S2/S3 commands in the repository that owns the ledger. In a source checkout, replace `repo-harness` with `bun src/cli/index.ts`. Worktrees share their Git common-directory ledger. Local filesystem access is the operator authority; these commands are not MCP tools.
 
 1. Stop old campaign/inner acquisition producers and prevent them from restarting. Resolve pending/unknown effects through their existing closeout/recovery owner before migration. Record the deployment identity and durable quiescence evidence. A supplied string is an operator attestation, not mechanically verified process quiescence.
 2. Back up the Git common-directory `repo-harness/engineer-scheduling/v1/acquire-next` ledger and campaign planning records. Preserve original bytes, pending outcomes, legacy fences, observations and their references. Never delete evidence merely because an observation is older than 30 seconds.
@@ -60,7 +60,7 @@ Remove the operator-only v1 decoder, migration exports and CLI migration command
 
 | Source | Stable error codes | Required handling |
 |---|---|---|
-| Inner receipt/seal/store | `engineer_acquisition_ledger_missing`, `engineer_acquisition_ledger_corrupt`, `engineer_acquisition_ledger_unsafe_path`, `engineer_acquisition_ledger_io` | Reconcile the ledger; never mint a replacement transaction or reinterpret as a missing observation. |
+| Inner receipt/seal/store | `engineer_acquisition_ledger_missing`, `engineer_acquisition_ledger_corrupt`, `engineer_acquisition_ledger_unsafe_path`, `engineer_acquisition_ledger_io`, `engineer_acquisition_ledger_cutover_required` | Reconcile the ledger; never mint a replacement transaction or reinterpret as a missing observation. |
 | Observation policy authority | `engineer_observation_policy_missing`, `engineer_observation_policy_corrupt`, `engineer_observation_policy_unsafe_path` | Restore reviewed policy authority; no default policy and no observation-missing fallback. |
 | Observation receipt | `engineer_observation_missing`, `engineer_observation_corrupt`, `engineer_observation_identity_mismatch`, `engineer_observation_expired`, `engineer_observation_future`, `engineer_observation_policy_changed`, `engineer_observation_unsafe_path` | New transactions refuse; known pending/completed keys are resolved **before** observation lookup/freshness. |
 
@@ -82,3 +82,29 @@ The existing MCP engineer boundary and local engineer CLI preserve these typed c
 Board liveness is not part of its revision composition (`collect-board-inputs.ts:261-275`); this limits diagnostic consistency, not current lease admission. The read-only effective-state path does not run the separate snapshot compatibility writer. The unchanged `acquireScheduledEngineerTask` rereads/matches offers before and inside the concurrency lock (`src/effects/engineers/scheduling-acquire.ts:124-158`) and delegates to current Fleet admission. No source authority, 13-field assertion or offer revision algorithm is changed.
 
 This proof covers current read-only consumers and existing production boundary functions with fixture ports. It is not an end-to-end deployment migration canary or a claim that attention timing cannot change UI output. A future liveness/freshness consumer that gates admission needs a new frozen-time audit before wiring.
+
+## Campaign R2 owner authority and compensation (S3)
+
+Plain acquisition remains R1. Campaign producers use R2 with the same protocol-2 receipt and seven scope keys; there is no second schema migration or compatibility producer. A completed R1 request cannot match an R2 request under the same logical key, even when its Task or result looks usable. Pending or contradictory records still require reconciliation; expiry is not permission to start again.
+
+`campaignAcquisitionPolicyR2` keeps `manifest_sha256` as the exact manifest digest. For R2, `authorization_revision` binds `{ authorization_sha256: current grant SHA, policy: current campaign policy }` with the existing canonical digest. The rest of the identity binds intent/group/campaign and parent host/session. Policy/context is owner-computed, not a transport field or host-supplied task list.
+
+The existing campaign budget wrapper compares stored request/disposition before reserves, and rechecks its current owner context. Both C facades call the trusted `before_acquire` port on the exact offer before unchanged scheduled admission; R2 requires that guard and the trusted callback. The owner rechecks current context and manifest membership, and the callback checks membership/context plus principal, stored ClaimActor and envelope before inner completion. Final handoff validation also runs after outer completion, including on replay. A final `validateHandoff` failure only reports the refusal and does not compensate, on both fresh-claim and replay paths. If context changes after the fresh callback succeeds, the later failure can leave a bound but undispatched Lease. Completed inner/outer receipts are retained; same-key replay continues to refuse while the invalid context/handoff remains, and the operator must handle the retained Claim/Lease and evidence explicitly.
+
+When the owner guard refuses after reservation, the outer admission retains its reservation, the inner receipt stays pending, and no usage is settled. Same-key retry requires reconcile. The operator must also reconcile before changing to a new key: each fresh guard-refused transaction consumes one reservation, so changing keys can accumulate reservations; same-key fenced retries do not allocate another one. This is an operator usage constraint, not a cross-key automatic reconciliation gate.
+
+On fresh callback refusal, compensation uses the existing `releaseSprintCommand`. Its existing `coordination.readLease` port checks the acquired Task, claim ID, generation, bound state, execution worktree, branch and unit **inside the Task lock**, together with the authenticated stored ClaimActor proof. Missing, unknown, rotated or contradictory ownership reports `rollback_failed`; it cannot release a replacement claim or silently discard evidence. There is no worktree deletion or automatic recovery replay.
+
+### Exact lock strength and limits
+
+| Owner/reader/writer | Actual lock coverage | Claim supported |
+|---|---|---|
+| `budgetedAcquisition`, campaign lifecycle decisions | `withDevelopmentCampaignLock`, per-campaign mutation lock | Outer acquisition transactions/lifecycle writers using this port serialize. |
+| Inner C transaction | Per-key acquisition lock | One key has one pending/effect/result owner; this is not an authority writer lock. |
+| Campaign capacity | Separate admission lock through `withCampaignCapacity` | Capacity/claim admission serialized for those callers; it does not cover every manifest writer. |
+| Planning evidence | `withCampaignPlanningLock` | Immutable admission/result/handoff planning writes are serialized. |
+| Issue publication/adoption evidence | `withIssueBatchPublicationLock` and issue-batch store lock (`issue-batch-publication.ts`, `issue-batch-store.ts`) | These are separate from campaign mutation and Task lease locks. |
+| Claim release/Lease mutation | `withOwnedLease` → `withTaskLock` → injected exact `readLease` check → unchanged release transition (`coordination-sprint.ts`) | Cooperating Lease writers cannot change the checked owner tuple between validation and release. |
+| Canonical Git target/ref, policy and manifest | No common admission mutex covering external Git writers | Membership/context is sampled before/after effect; **claim-instant membership stability is not proved**. |
+
+The real manifest-drift fixture commits a canonical manifest change while acquisition is in progress; it proves refusal and exact own-claim compensation, not atomic scope freezing. Other fixtures inject the existing trusted authority/acquire ports to observe pre-budget/pre-A drift, exact R1/R2 conflicts, callback pending, outer result crashes and replay ordering. Plain/current admission and its 13-field assertion/offer revision stay unchanged. Unknown cross-store outcomes retain their fences; usage settlement is idempotent and does not create another acquisition/callback on completed replay. No global atomic commit, scheduler, S4 production selected entrypoint or live deployment canary is claimed.
