@@ -74,8 +74,8 @@ export function hasRecordedAcceptanceReceipt(contractText: string, reviewText: s
   const findings = receipt.match(/^- Findings:\s*(.+?)\s*$/mi)?.[1]?.trim() ?? '';
   const identityValid = (
     disposition === 'external_pass'
-    && reviewer === policy.reviewer
-    && source === acceptancePolicySource(policy)
+    && (reviewer === 'Claude' || reviewer === 'Codex')
+    && source === acceptancePolicySource()
   ) || (
     disposition === 'user_waiver'
     && policy.user_waiver === 'allowed'

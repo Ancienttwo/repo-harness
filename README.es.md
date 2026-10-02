@@ -472,15 +472,12 @@ y contract.
 ### Review de aceptación persistente
 
 ```bash
-repo-harness claude-review round --timeout-ms 1800000
-repo-harness claude-review status
-repo-harness claude-review close
+repo-harness review round --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked-checkout> --herdr-endpoint <address.json>
+repo-harness review status --contract tasks/contracts/<task>.contract.md
+repo-harness review close --contract tasks/contracts/<task>.contract.md
 ```
 
-Un reviewer de Claude de solo lectura, alojado en una sesión de herdr propia que
-sobrevive hasta tres rondas de reparación contra evidencia de `verify-sprint`
-preparada. Una sesión repetida más allá del budget de rondas se rechaza con
-`claude_review_session_budget_exhausted`.
+Un task-agent fleet `deep-reasoner` persiste en un linked checkout dedicado y la sesión Herdr indicada, durante un máximo de tres rondas. Por defecto se elige el harness opuesto al owner; `--harness` permite elegirlo explícitamente. Sólo un ejecutable ausente antes de iniciar permite fallback anunciado. El Result de archivo pasa la validación de dominio y el writer/verifier Receipt generic-review; close verifica el Receipt otra vez. History es observación. Claude usa una allowlist de archivos resultado y fingerprints; aislamiento OS de producción e ingestión completa de paquetes grandes siguen sin verificar.
 
 ## Hooks
 
@@ -619,7 +616,7 @@ host mientras el CLI y los hooks poseen la ejecución.
 | `repo-harness-check` | Checks de workflow y release, más una referencia de deploy-readiness |
 | `repo-harness-ship` | Valida worktrees terminados, hace push de branches y abre PRs |
 | `repo-harness-architecture` | Docs de architecture, drift requests y diagramas sin un refresh completo del harness |
-| `repo-harness-cross-review` | Review independiente con Codex; acceptance de Claude conserva su domain reviewer persistente en Herdr |
+| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
 | `repo-harness-chatgpt` | Consultas de Oracle browser/GPT Pro, setup del MCP Connector y bridge handoff; solo setup explícito |
 | `merge-gate` (externo) | Gate final de exact-candidate; repo-harness no distribuye ningún Skill de merge-gate — ver [external tooling](docs/reference-configs/external-tooling.md) |
 

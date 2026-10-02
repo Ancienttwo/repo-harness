@@ -1468,7 +1468,7 @@ workflow_acceptance_expected_reviewer() {
       select(
         (.protocol == 1 and (keys | sort) == ["protocol", "reviewer", "user_waiver"] and (.reviewer == "Claude" or .reviewer == "Codex"))
         or
-        (.protocol == 2 and (keys | sort) == ["protocol", "reviewer", "source", "user_waiver"] and .reviewer == "Codex" and (.source == "codex-review"))
+        (.protocol == 2 and (keys | sort) == ["protocol", "reviewer", "source", "user_waiver"] and .reviewer == "Codex" and (.source == "generic-review"))
       )
       | select(.user_waiver == "allowed" or .user_waiver == "forbidden")
       | .reviewer
@@ -1481,8 +1481,8 @@ workflow_acceptance_expected_reviewer() {
 workflow_acceptance_source_for_reviewer() {
   local reviewer="${1:-}"
   case "$(printf '%s' "$reviewer" | tr '[:upper:]' '[:lower:]')" in
-    claude) printf 'claude-review' ;;
-    *) printf 'codex-review' ;;
+    claude|codex) printf 'generic-review' ;;
+    *) return 1 ;;
   esac
 }
 
@@ -1493,8 +1493,8 @@ workflow_acceptance_expected_source() {
   printf '%s' "$policy_json" | jq -er '
     select(.user_waiver == "allowed" or .user_waiver == "forbidden")
     | if .protocol == 1 and (keys | sort) == ["protocol", "reviewer", "user_waiver"] then
-        if .reviewer == "Claude" then "claude-review" elif .reviewer == "Codex" then "codex-review" else empty end
-      elif .protocol == 2 and (keys | sort) == ["protocol", "reviewer", "source", "user_waiver"] and .reviewer == "Codex" and (.source == "codex-review") then
+        if .reviewer == "Claude" or .reviewer == "Codex" then "generic-review" else empty end
+      elif .protocol == 2 and (keys | sort) == ["protocol", "reviewer", "source", "user_waiver"] and .reviewer == "Codex" and (.source == "generic-review") then
         .source
       else empty end
   ' 2>/dev/null

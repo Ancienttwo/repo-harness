@@ -1,6 +1,6 @@
 ---
 name: repo-harness-cross-review
-description: Independent outside review of the current review scope (branch diff plus staged, unstaged, untracked changes). Uses the explicit Codex provider; Claude acceptance retains its persistent Herdr domain reviewer. Use before merging, after a tricky change, or for a debug second opinion.
+description: Independent outside review of the current review scope (branch diff plus staged, unstaged, untracked changes). Uses the explicit Codex advisory provider; generic acceptance uses a persistent fleet deep-reasoner task-agent in Herdr. Use before merging, after a tricky change, or for a debug second opinion.
 when_to_use: "cross review, second opinion, outside voice, codex review, 让 codex 审, 找外部意见, 二审"
 ---
 
@@ -15,7 +15,7 @@ how to interpret findings, and the boundaries below.
 ## Mode Selection
 
 - Explicit Codex advisory review: `references/codex-mode.md`.
-- Explicit Claude acceptance review -> `references/claude-mode.md`.
+- Acceptance review through task-agent -> `references/generic-review.md`.
 - An explicit provider request wins over the host default.
 
 ## When to use

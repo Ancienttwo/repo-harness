@@ -34,7 +34,7 @@
   ],
   "handoffs": [],
   "acceptance_receipt": {
-    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "claude-review"
+    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "generic-review"
   },
   "files_changed": ["tests/fixtures/harness-traces/eval-only-pass.json"],
   "allowed_paths_check": {

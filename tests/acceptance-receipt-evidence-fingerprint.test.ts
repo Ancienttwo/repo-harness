@@ -1,3 +1,4 @@
+import { recordFixtureAcceptance } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -138,11 +139,11 @@ describe('AcceptanceReceipt verification-evidence fingerprint', () => {
     const checks = passingChecks(root);
     writeChecks(root, checks);
 
-    const receipt = await recordAcceptance({
+    const receipt = await recordFixtureAcceptance({
       root, authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
       verification: '.ai/harness/checks/latest.json',
-      disposition: 'external_pass', reviewer: 'Claude', source: 'claude-review',
+      disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
       actor: null, summary: 'fixture acceptance', findings: [],
     });
 
@@ -162,11 +163,11 @@ describe('AcceptanceReceipt verification-evidence fingerprint', () => {
     const { root, home } = makeFixture();
     const checks = passingChecks(root);
     writeChecks(root, checks);
-    await recordAcceptance({
+    await recordFixtureAcceptance({
       root, authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
       verification: '.ai/harness/checks/latest.json',
-      disposition: 'external_pass', reviewer: 'Claude', source: 'claude-review',
+      disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
       actor: null, summary: 'fixture acceptance', findings: [],
     });
     writeChecks(root, {

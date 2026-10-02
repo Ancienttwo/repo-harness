@@ -43,7 +43,7 @@ const ROOT = join(import.meta.dir, '..');
 // These two cases run `npm pack` over the whole repository and install the
 // resulting tarball into an isolated HOME, so they belong to the release lane
 // (`scripts/check-ci.sh` with no lane argument) rather than the hosted
-// functional lane. Same gate variable as tests/claude-review.test.ts.
+// functional lane. The release lane owns this gate variable; generic review domain fixtures need no live provider.
 const releaseLaneOnly = test.skipIf(!process.env.REPO_HARNESS_TEST_EXPENSIVE);
 if (!process.env.REPO_HARNESS_TEST_EXPENSIVE) {
   console.log('[gate] REPO_HARNESS_TEST_EXPENSIVE unset: skipping the real pack/install cases (release lane only, not a failure).');

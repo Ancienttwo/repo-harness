@@ -302,7 +302,7 @@ describe("projection drift: materialized checks/latest", () => {
 
   const OVERLAY_ARGS = {
     reviewer: "Claude",
-    source: "claude-review",
+    source: "generic-review",
     disposition: "external_pass",
     message: "recorded",
   } as const;

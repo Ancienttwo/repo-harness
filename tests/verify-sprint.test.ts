@@ -89,7 +89,7 @@ describe("verify-sprint helper integration", () => {
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n\nPackage helper change.\n");
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "generic-review", cwd), ""].join("\n")
       );
 
       const res = run("bash", [join(HELPER_DIR, "verify-sprint.sh"), "--prepare-acceptance"], cwd, {
@@ -492,7 +492,7 @@ describe("verify-sprint helper integration", () => {
         join(cwd, "scripts/acceptance-receipt.ts"),
         [
           `const mode = process.argv[2];`,
-          `if (mode === "verify") console.log("pass\\tClaude\\tclaude-review\\texternal_pass\\taccepted once");`,
+          `if (mode === "verify") console.log("pass\\tClaude\\tgeneric-review\\texternal_pass\\taccepted once");`,
           `else if (mode === "project") await Bun.write(${JSON.stringify(projectionMarker)}, "projected\\n");`,
           `else process.exit(2);`,
           "",
@@ -599,7 +599,7 @@ describe("verify-sprint helper integration", () => {
         writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), notesBody);
         writeFileSync(
           join(cwd, "tasks/reviews/demo.review.md"),
-          ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
+          ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "generic-review", cwd), ""].join("\n")
         );
       };
 
@@ -715,7 +715,7 @@ describe("verify-sprint helper integration", () => {
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "generic-review", cwd), ""].join("\n")
       );
 
       initGitRepo(cwd);
@@ -727,7 +727,7 @@ describe("verify-sprint helper integration", () => {
       commitAll(cwd, "change outside allowed paths");
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "generic-review", cwd), ""].join("\n")
       );
 
       const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
@@ -828,7 +828,7 @@ describe("verify-sprint helper integration", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", cwd),
+          externalAcceptanceAdvice("Codex", "generic-review", cwd),
           "",
         ].join("\n")
       );
@@ -855,7 +855,7 @@ describe("verify-sprint helper integration", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", cwd),
+          externalAcceptanceAdvice("Codex", "generic-review", cwd),
           "",
         ].join("\n")
       );

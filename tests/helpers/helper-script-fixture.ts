@@ -299,7 +299,7 @@ export function reviewSubjectMetadata(cwd: string): string {
   ].join("\n");
 }
 
-export function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", cwd?: string): string {
+export function externalAcceptanceAdvice(reviewer = "Codex", source = "generic-review", cwd?: string): string {
   const binding = cwd ? currentReviewBinding(cwd) : null;
   return [
     "## External Acceptance Advice",
@@ -463,7 +463,7 @@ export function installAutomaticProjectionVerifyFixture(
       "",
       humanReviewCard(),
       "",
-      externalAcceptanceAdvice("Codex", "codex-review", cwd),
+      externalAcceptanceAdvice("Codex", "generic-review", cwd),
       "",
     ].join("\n"),
   );

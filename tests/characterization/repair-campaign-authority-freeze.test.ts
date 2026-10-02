@@ -203,7 +203,8 @@ const ACCEPTANCE_MATRIX = buildAcceptanceMatrix({
   verifier_receipt_sha256: `sha256:${'4'.repeat(64)}`,
 });
 
-const ACCEPTANCE_RECEIPT: AcceptanceReceipt = Object.freeze({
+// Historical projection fixture stays byte-frozen; it is not accepted by the current verifier.
+const ACCEPTANCE_RECEIPT: Omit<AcceptanceReceipt, 'source' | 'request_id' | 'context_sha256' | 'result_sha256' | 'actual_harness' | 'actual_role' | 'actual_model'> & { source: 'codex-review' } = Object.freeze({
   protocol: 2,
   kind: 'repo-harness-acceptance-receipt',
   repository_root: '/frozen/repo',

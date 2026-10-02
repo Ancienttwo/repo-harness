@@ -26,7 +26,7 @@ const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
 const PACKAGE_DIR = "repo-harness-cross-review";
 const ROUTER_BODY_BYTE_LIMIT = 2048;
-const REFERENCES = ["codex-mode.md", "claude-mode.md"] as const;
+const REFERENCES = ["codex-mode.md", "generic-review.md"] as const;
 
 function readSkill(): string {
   return readFileSync(join(SKILLS_ROOT, PACKAGE_DIR, "SKILL.md"), "utf-8");
@@ -204,14 +204,9 @@ describe("repo-harness-cross-review package: activation proof -- live in manifes
     expect(existsSync(join(SKILLS_ROOT, "codex-review"))).toBe(false);
   });
 
-  // The `claude-review` Skill package retired into this package, but the name came
-  // back as a live CLI command (`repo-harness claude-review`) backing this package's
-  // Claude acceptance mode. A retiredPackages[] entry would make the retired-name scan
-  // reject that command's own source, so the name is no longer recorded as retired --
-  // only its absence as a Skill package is still asserted.
-  test("claude-review is not a Skill package: absent from packages[], from disk, and from retiredPackages", () => {
+  test("claude-review is retired with an explicit replacement and no package alias", () => {
     expect(catalog.packages.find((pkg) => pkg.name === "claude-review")).toBeUndefined();
-    expect(catalog.retiredPackages.find((r) => r.name === "claude-review")).toBeUndefined();
+    expect(catalog.retiredPackages.find((r) => r.name === "claude-review")?.replacement).toBe(PACKAGE_DIR);
     expect(existsSync(join(SKILLS_ROOT, "claude-review"))).toBe(false);
   });
 

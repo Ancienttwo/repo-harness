@@ -96,7 +96,7 @@ function writeEvidenceReview(cwd: string, fp: { subject: string; target: string 
       "",
       "> **External Acceptance**: pass",
       "> **External Reviewer**: Claude",
-      "> **External Source**: claude-review",
+      "> **External Source**: generic-review",
       "> **External Started**: 2026-03-04T14:05:00+0800",
       "> **External Completed**: 2026-03-04T14:06:00+0800",
       `> **Reviewed Subject SHA256**: ${fp.subject}`,

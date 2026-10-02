@@ -1,3 +1,4 @@
+import { recordFixtureAcceptance, fixtureReviewResult } from '../helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
@@ -103,7 +104,7 @@ const CONTRACT_TEXT = withEmptyVerificationPlan([
   '## Acceptance Policy',
   '',
   '```json',
-  '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
+  '{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}',
   '```',
   '',
 ].join('\n'));
@@ -341,7 +342,8 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
     disposition: 'external_pass',
     expected_reviewer: 'Codex',
     reviewer: 'Codex',
-    source: 'codex-review',
+    source: 'generic-review',
+    request_id: 'fixture-request', context_sha256: `sha256:${'1'.repeat(64)}`, result_sha256: `sha256:${'2'.repeat(64)}`, actual_harness: 'codex', actual_role: 'deep-reasoner', actual_model: 'fixture-model',
     actor: null,
     summary: 'accepted wp-a',
     findings: [],
@@ -383,6 +385,7 @@ function waivedReceipt(subject: Fixture, grant: UserWaiverGrant, overrides: Part
     disposition: 'user_waiver',
     reviewer: 'User',
     source: 'user-waiver',
+    request_id: null, context_sha256: null, result_sha256: null, actual_harness: null, actual_role: null, actual_model: null,
     actor: OWNER,
     summary: grant.summary,
     waiver_grant_sha256: engineerSha256(stableJson(grant)),
@@ -691,14 +694,14 @@ function recordExternalPass(
   fixtureValue: RecordFixture,
   overrides: { readonly verification?: string } = {},
 ): ReturnType<typeof recordAcceptance> {
-  return recordAcceptance({
+  return recordFixtureAcceptance({
     root: fixtureValue.root,
     authorityHome: fixtureValue.home,
     contract: RECORD_CONTRACT_REF,
     verification: overrides.verification ?? '.ai/harness/checks/latest.json',
     disposition: 'external_pass',
     reviewer: 'Claude',
-    source: 'claude-review',
+    source: 'generic-review',
     actor: null,
     summary: 'candidate accepted',
     findings: [],
@@ -1005,15 +1008,18 @@ describe('issue #284 closed dependency authority', () => {
     };
     expect(validateAcceptanceReceiptAgainstPolicy(base)).toEqual({ ok: true });
 
-    // Policy is {reviewer: Codex, source: codex-review}.
+    // Frozen domain policy is {reviewer: Codex, source: generic-review}; retired labels never satisfy it.
     expect(validateAcceptanceReceiptAgainstPolicy({
       ...base,
-      receipt: { ...valid, expected_reviewer: 'Claude', reviewer: 'Claude', source: 'claude-review' },
+      receipt: { ...valid, expected_reviewer: 'Claude', reviewer: 'Claude', source: 'generic-review' },
     }).ok).toBe(false);
     expect(validateAcceptanceReceiptAgainstPolicy({
       ...base,
-      receipt: { ...valid, reviewer: 'Claude', source: 'claude-review' },
+      receipt: { ...valid, source: 'claude-review' } as unknown as AcceptanceReceipt,
     }).ok).toBe(false);
+    for (const source of ['claude-review','codex-review']) {
+      expect(validateAcceptanceReceiptAgainstPolicy({ ...base,receipt: { ...valid,source } as AcceptanceReceipt }).ok).toBe(false);
+    }
     expect(validateAcceptanceReceiptAgainstPolicy({
       ...base,
       goalContent: '# Plan: wp-a\n\n> **Status**: Approved\n\n## Approach\n\nSomething else.\n',
@@ -1427,7 +1433,8 @@ describe('issue #284 closed dependency authority', () => {
       disposition: 'reject',
       expected_reviewer: 'Claude',
       reviewer: 'Claude',
-      source: 'claude-review',
+      source: 'codex-review',
+      request_id: '', context_sha256: 'not-a-digest', result_sha256: 'not-a-digest', actual_harness: 'claude', actual_role: 'fast-worker', actual_model: '',
       actor: 'someone-else',
       summary: '   ',
       findings: [{ severity: 'P0', message: 'blocked' }],

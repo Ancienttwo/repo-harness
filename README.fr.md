@@ -469,15 +469,12 @@ approuvé et un contract.
 ### Review d'acceptance persistante
 
 ```bash
-repo-harness claude-review round --timeout-ms 1800000
-repo-harness claude-review status
-repo-harness claude-review close
+repo-harness review round --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked-checkout> --herdr-endpoint <address.json>
+repo-harness review status --contract tasks/contracts/<task>.contract.md
+repo-harness review close --contract tasks/contracts/<task>.contract.md
 ```
 
-Un reviewer Claude read-only hébergé dans une session herdr détenue, qui survit
-jusqu'à trois rounds de réparation contre l'evidence préparée par
-`verify-sprint`. Une session répétée au-delà du budget de rounds est refusée
-avec `claude_review_session_budget_exhausted`.
+Un task-agent fleet `deep-reasoner` persiste dans un linked checkout dédié et la session Herdr explicitement adressée, pour trois rounds au maximum. Le harness opposé à celui du owner est choisi par défaut ; `--harness` permet un choix explicite. Seul un executable absent avant le démarrage permet un fallback annoncé. Le Result fichier passe la validation de domaine puis le writer/verifier Receipt generic-review ; close revérifie le Receipt. History reste une observation. Claude utilise une allowlist de fichiers résultat et des fingerprints ; isolation OS de production et ingestion complète des grands packets restent non vérifiées.
 
 ## Hooks
 
@@ -614,7 +611,7 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 | `repo-harness-check` | Checks workflow et release, plus une référence deploy-readiness |
 | `repo-harness-ship` | Valide les worktrees terminés, push les branches et ouvre les PRs |
 | `repo-harness-architecture` | Docs d'architecture, drift requests et diagrammes sans rafraîchissement complet du harness |
-| `repo-harness-cross-review` | Review indépendante via Codex ; acceptance Claude conserve son domain reviewer persistant dans Herdr |
+| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
 | `repo-harness-chatgpt` | Consults Oracle browser/GPT Pro, setup du Connecteur MCP et bridge handoff ; setup explicite uniquement |
 | `merge-gate` (externe) | Gate final exact-candidate ; repo-harness ne fournit aucun Skill merge-gate — voir [external tooling](docs/reference-configs/external-tooling.md) |
 

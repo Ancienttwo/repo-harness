@@ -502,9 +502,9 @@ function emitReviewHints(
       const contract = text(fsApi, repoRoot, state.contractFile) ?? '';
       try {
         const policy = parseAcceptancePolicy(contract);
-        // The contract freezes the source. Protocol 1 remains readable for
-        // historical receipts; protocol 2 names the host-specific Codex path.
-        const source = acceptancePolicySource(policy);
+        // Both policy protocols use the generic review domain source;
+        // retired launcher-specific Receipt sources are invalid.
+        const source = acceptancePolicySource();
         const command = 'repo-harness-cross-review';
         out.push('[ExternalAcceptance] Review/release intent detected. Start peer acceptance in parallel with local /check.\n');
         out.push(`[ExternalAcceptance] Current active plan: ${state.activePlan ?? '(none)'}\n`);
@@ -512,7 +512,7 @@ function emitReviewHints(
         out.push(`[ExternalAcceptance] Current review: ${state.reviewFile ?? 'tasks/reviews/<slug>.review.md'}\n`);
         out.push(`[ExternalAcceptance] Current checks: ${state.checksFile}\n`);
         out.push(`[ExternalAcceptance] Peer reviewer: ${policy.reviewer} via ${command}\n`);
-        out.push(`[ExternalAcceptance] Record external acceptance only through repo-harness run acceptance-receipt record --contract "${state.contractFile}" --verification "${state.checksFile}" --review "${state.reviewFile ?? 'tasks/reviews/<slug>.review.md'}" --disposition external_pass --reviewer "${policy.reviewer}" --source "${source}". Markdown is projection only.\n`);
+        out.push(`[ExternalAcceptance] Record external acceptance only through repo-harness run acceptance-receipt record --contract "${state.contractFile}" --verification "${state.checksFile}" --review "${state.reviewFile ?? 'tasks/reviews/<slug>.review.md'}" --disposition external_pass --reviewer "${policy.reviewer}" --source "${source}" --review-result "<owner-held-review-result.json>". Markdown is projection only.\n`);
         if (policy.user_waiver === 'allowed') {
           out.push('[ExternalAcceptance] If the contract owner chooses the allowed user-waiver path:\n');
           out.push('1. Obtain one explicit owner decision for this contract/goal authority. Do not ask the owner to quote or track a subject hash; the helper binds the verified subject.\n');

@@ -64,7 +64,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Acceptance Policy
 
 ```json
-{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}
+{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}
 ```
 
 ## Allowed Paths
