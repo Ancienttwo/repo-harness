@@ -62,7 +62,7 @@ Cheapest proof: a parent-held native zombie must return false, not identity_lost
 ## Acceptance Policy
 
 ```json
-{"protocol":2,"reviewer":"Claude","source":"claude-review","user_waiver":"forbidden"}
+{"protocol":1,"reviewer":"Claude","user_waiver":"forbidden"}
 ```
 No model review is invoked by this contract: designated external advisor/gatekeeper supplies acceptance before commit.
 
@@ -307,3 +307,7 @@ Owning existing CLI task-agent process-ownership suite gains two new tests: one 
 ## Rollback Point
 
 Baseline origin/main281e6555. One processProofAlive predicate/source+existing test/workflow package; no persistent identity format migration. Changes stay uncommitted until external PASS.
+
+## Acceptance policy re-freeze (E2)
+
+Re-frozen by the user-approved generic review cutover on 2026-10-02. This invalidates old policy-bound acceptance; historical receipts remain read-only evidence and are not translated. A future closeout must obtain fresh generic-review acceptance against this contract hash.

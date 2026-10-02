@@ -25,7 +25,7 @@ import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { formatCrossReviewResult, runCrossReviewCommand } from './commands/cross-review';
-import { buildClaudeReviewCommand } from './commands/claude-review';
+import { buildReviewCommand } from './commands/review';
 import { buildTaskAgentCommand } from './commands/task-agent';
 import { CROSS_REVIEW_PROVIDER_MODES, type CrossReviewProviderMode } from '../core/review/cross-review';
 import { buildToolsCommand } from './commands/tools';
@@ -829,7 +829,9 @@ export function buildProgram(): Command {
     });
 
   program.addCommand(buildInitHookCommand());
-  program.addCommand(buildClaudeReviewCommand());
+  program.addCommand(buildReviewCommand());
+  program.command('claude-review', { hidden: true }).helpOption(false).allowUnknownOption().argument('[args...]')
+    .action(() => { console.error('UPGRADE_REQUIRED: claude-review is retired; use repo-harness review. Drain old sessions with the previous version and archive old receipts.'); process.exitCode = 1; });
   program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildSetupCommand());
 

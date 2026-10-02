@@ -1,8 +1,10 @@
-# Task Contract: herdr-generic-review-slice-e design
+# Task Contract: herdr-generic-review-slice-e Receipt implementation
 
-> **Status**: Draft
+> **Substantive Change SHA256**: `sha256:755d52e15f4f475b5136ad4a9d3d76d5df89cd9a69c0128490589b5d33bcc395`
+
+> **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
-> **Task Profile**: docs-only
+> **Task Profile**: strict
 > **Owner**: chris
 > **Capability ID**: root
 > **Review File**: `tasks/reviews/20260930-1827-herdr-generic-review-slice-e.review.md`
@@ -10,74 +12,131 @@
 
 ## Why
 
-用户已决定旧claude-review按umbrella plan退役为generic review，现有deep-reasoner/fleet配置和task-agent是唯一review角色/运行边界。R6真实Claude/Herdr/sandbox/Result与quota后GO尚未取得，当前只准备原子设计和可核对的探针，不以假proof删除已有能力。
+User-approved generic review needs a Receipt independent of reviewer launch transport, retaining the existing production authority and domain-verification protection.
 
 ## Goal
 
-交付Draft work-package plan/contract、ignored probe/预期表/目标8硬10预算，无模型deterministic校验；发送CHECKPOINT-6等明确GO。未来实施须整体writer/verifier/source/policy/projection/close atomic cutover，无新host/adapter/registry或alias。
+Complete launcher-independent generic-review Receipt binding and wire fleet deep-reasoner review through task-agent; preserve three-round/domain/close-fence rules, remove exactly the approved six exclusive legacy files and update their shared consumers atomically.
 
 ## Scope
 
-- In scope: E设计/contract/notes、ignored脚本预算/预期，无模型解析、参数/预算/选择规则校验；记录campaign A和同轮probe。
-- Out of scope: 当前PR464内容/merge、生产代码修改/旧CLI/source/host删除、paused/H5/campaign implementation、真实模型未GO调用、全局安装/mini/default/main dirty。
+- In scope: existing schema/policy/functions and byte-identical helper projection, existing test consumers/fixture builders, canonical gates, actual RUN2/RUN3 notes and the approved DELETE6 / EDIT36 / RETAIN27 cutover inventory.
+- Out of scope: hand-written vendor adapters/argv/output parsers, OAR upstream changes, new model requests or canary items, campaign implementation, the three retained cross-review source files, global config/trust edits, main checkout/user pane changes, merge.
 
 ## Stop Conditions
 
-- 任何真实模型命令之前必须已核对脚本/预期/预算并收到用户GO。8目标/10硬上限，first unexpected failure stop，不重试、不post-send切harness。
-- owner只从已有binding/parent证明；未知要求explicit harness。explicit override无fallback；唯一默认fallback仅可证明start前opposite executable missing；ambiguous launch报错/cancel不fallback。
-- execution result是claim；terminal sentinel仅观察，不能mintReceipt。没有readonly/domain来源完整证据就unverified/unsupported，不退旧路径。
+Any workflow gate requiring an unresolved user decision is reported, not bypassed. The user has approved the traced DELETE6 / EDIT36 / RETAIN27 inventory; delete only those six after generic wiring. All source verification stays zero-model. Local commits only. Push/PR/merge are not authorized. Aimpact 18:41 releases reviewer-written result_ref and stock OAR Claude bypass only inside proved inherited OS isolation. Codex uses host-local OAR_CODEX_SANDBOX=workspace-write with Session cwd=output. Grok is unsupported. Retired Receipt source names have no alias. No launcher-specific field enters validity.
 
 ## Falsifier
 
-首个最便宜proof是readonly真实provider是否能读linked request、提交execution result，以及primary/外部owner record是否真拒写。任何来源/权限/cleanup签名不成立即停止，而非加兼容层或降低保护。
+A required Receipt field that can be tampered without verifier rejection, or a launch-dependent byte/validity difference, fails this slice.
 
 ## Root Cause Evidence
 
-Not applicable: design-only proposal, not production bugfix.
-
-## Workflow Inventory
-
-- Current design plan/contract/notes under stem20260930-1827-herdr-generic-review-slice-e。
-- Review保持pending，只有实际评审才写；tasks/todos不作活动清单。
-- Ignored `.ai/harness/runs/review-design` owns probes/budget/results；durable script SHA/结论进notes，真运行状态独立private fixture，不是default/userrepo。
-- Branch codex/herdr-generic-review-design派生PR464，不动PRbranch实现；实施批准后再收窄contract到具体源文件，不src/**。
+Not applicable: approved schema implementation, not a production bugfix.
 
 ## Change Assessment
-
 ```json
 {"protocol":1,"oracles":[]}
 ```
 
 ## Acceptance Policy
-
 ```json
 {"protocol":1,"reviewer":"Claude","user_waiver":"forbidden"}
 ```
 
-这是当前设计评审政策，不预先铸未来generic domain Receipt；未来schema原子切换另需R6证明。
-
 ## Allowed Paths
-
 ```yaml
 allowed_paths:
+  - tests/herdr-task-lifecycle.test.ts
+  - src/effects/terminal/task-session.ts
+  - src/effects/review/oar-review-host.ts
+  - src/effects/review/review-isolation.ts
+  - bun.lock
+  - package.json
+  - tasks/contracts/20261001-0329-task-session-exit-state-identity.contract.md
+  - tasks/contracts/20260912-1053-release-0-19-1.contract.md
+  - assets/skills/repo-harness-cross-review/references/generic-review.md
+  - tests/generic-review.test.ts
+  - src/effects/review/generic-review.ts
+  - src/core/review/generic-review.ts
+  - src/cli/commands/review.ts
+  - tests/skill-surface/retired-names-scan.test.ts
+  - tests/skill-surface/cross-review-package.test.ts
+  - tests/skill-surface/catalog.test.ts
+  - tests/harness-benchmark-matrix.test.ts
+  - tests/expensive-test-gate.test.ts
+  - src/cli/index.ts
+  - docs/spec.md
+  - assets/skills/repo-harness-test/references/running.md
+  - assets/skills/repo-harness-test/references/authoring.md
+  - assets/skills/repo-harness-cross-review/SKILL.md
+  - assets/skill-commands/manifest.json
+  - README.zh-CN.md
+  - README.md
+  - README.ja.md
+  - README.fr.md
+  - README.es.md
+  - tests/claude-review.test.ts
+  - src/effects/review/claude-review-session.ts
+  - src/effects/review/claude-review-host.ts
+  - src/core/review/claude-review.ts
+  - src/cli/commands/claude-review.ts
+  - assets/skills/repo-harness-cross-review/references/claude-mode.md
   - plans/plan-20260930-1827-herdr-generic-review-slice-e.md
   - tasks/contracts/20260930-1827-herdr-generic-review-slice-e.contract.md
+  - tasks/reviews/20260930-1827-herdr-generic-review-slice-e.review.md
   - tasks/notes/20260930-1827-herdr-generic-review-slice-e.notes.md
-  - .ai/harness/runs/review-design/canary-budget.json
-  - .ai/harness/runs/review-design/canary.ts
-  - .ai/harness/runs/review-design/expected-results.md
-  - .ai/harness/runs/review-design/probe-manifest.json
+  - scripts/acceptance-receipt.ts
+  - assets/templates/helpers/acceptance-receipt.ts
+  - tests/acceptance-receipt.test.ts
+  - tests/acceptance-receipt-evidence-fingerprint.test.ts
+  - tests/merge-gate.test.ts
+  - tests/evidence-attested-import.test.ts
+  - tests/unit/issue-284-dependency-authority.test.ts
+  - tests/helpers/repo-fixture.ts
+  - tests/historical-plan-classifier.test.ts
+  - tests/characterization/repair-campaign-authority-freeze.test.ts
+  - tests/unit/me4c-integration-product-acceptance.test.ts
+  - tests/unit/merge-readiness-v1-effect.test.ts
+  - src/effects/evidence/checks-materializer.ts
+  - src/cli/hook/prompt-handler.ts
+  - scripts/classify-historical-plans.ts
+  - assets/templates/helpers/classify-historical-plans.ts
+  - assets/templates/contract.template.md
+  - .claude/templates/contract.template.md
+  - assets/hooks/lib/workflow-state.sh
+  - .ai/hooks/lib/workflow-state.sh
+  - .ai/hooks/.projection.json
+  - scripts/harness-trace-grade.sh
+  - assets/templates/helpers/harness-trace-grade.sh
+  - assets/reference-configs/sprint-contracts.md
+  - docs/reference-configs/sprint-contracts.md
+  - tests/archive-evidence-gates.test.ts
+  - tests/harness-trace-grade.test.ts
+  - tests/workflow-state-lib.test.ts
+  - tests/verify-sprint.test.ts
+  - tests/evidence-checks-materializer.test.ts
+  - tests/evidence-projection-drift.test.ts
+  - tests/helpers/helper-script-fixture.ts
+  - tests/plan-to-todo.test.ts
+  - tests/prompt-handler.test.ts
+  - tests/fixtures/harness-traces/code-change-pass.json
+  - tests/fixtures/harness-traces/migration-pass.json
+  - tests/fixtures/harness-traces/ledger-closeout-pass.json
+  - tests/fixtures/harness-traces/bugfix-pass.json
+  - tests/fixtures/harness-traces/docs-only-pass.json
+  - tests/fixtures/harness-traces/eval-only-pass.json
+  - tests/fixtures/harness-traces/frontend-pass.json
 ```
 
 ## Evidence Requirements
-
 ```yaml
 evidence_requirements:
   benchmark: not_applicable
 ```
 
 ## Delegation Contract
-
 ```yaml
 delegation:
   budget:
@@ -91,144 +150,208 @@ delegation:
   roles:
     parent:
       mode: edit_and_gatekeep
-      purpose: E_design_and_probe_preparation_only
+      purpose: approved_receipt_slice
     verifier:
       mode: read_only
       purpose: designated_advisor_review
 ```
 
 ## Verification Plan
-
 ```json
 {
   "protocol": 1,
   "checks": [
     {
-      "id": "E0-no-model-probe",
+      "id": "isolation-first",
       "kind": "command",
-      "command": "bun .ai/harness/runs/review-design/canary.ts --verify",
+      "command": "bun test tests/generic-review.test.ts -t \"OAR isolation\" --timeout 120000",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Budget/argv/source/route deterministic checks only; never spawn server/provider/model.",
+      "necessity": "Mandatory first falsifier: paired OS denials and descendants; stop before SDK host if not passed",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-hooks",
+      "id": "host-build",
+      "kind": "command",
+      "command": "bun run build:oar-review-host",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Node >=24 OAR host package build",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "oar-domain",
+      "kind": "command",
+      "command": "bun test tests/generic-review.test.ts tests/acceptance-receipt.test.ts --timeout 120000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Zero-model SDK/file-result/domain tests; no native providers or model calls",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "task-agent-regression",
+      "kind": "command",
+      "command": "bun test tests/cli/task-agent.test.ts tests/herdr-task-lifecycle.test.ts --timeout 120000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Existing ownership and additive host path regression; private named fixtures only",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "mcp-regression",
+      "kind": "command",
+      "command": "bun test tests/cli/mcp-tools.test.ts --timeout 120000",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Keep existing MCP goal communication behavior",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "type",
+      "kind": "command",
+      "command": "bun run check:type",
+      "cwd": ".",
+      "phase": "verification",
+      "cost": "normal",
+      "evidence_policy": "current_exact",
+      "necessity": "Required repository integrity check",
+      "inputs": {
+        "env": []
+      }
+    },
+    {
+      "id": "hooks",
       "kind": "command",
       "command": "bun run check:hooks",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-helpers",
+      "id": "helpers",
       "kind": "command",
       "command": "bun run check:helpers",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-references",
+      "id": "references",
       "kind": "command",
       "command": "bun run check:reference-configs",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-sql",
+      "id": "deploy",
       "kind": "command",
       "command": "bash scripts/check-deploy-sql-order.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-architecture",
+      "id": "architecture",
       "kind": "command",
       "command": "bash scripts/check-architecture-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-task-sync",
+      "id": "task-sync",
       "kind": "command",
       "command": "bash scripts/check-task-sync.sh",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-workflow",
+      "id": "workflow",
       "kind": "command",
       "command": "bash scripts/check-task-workflow.sh --strict",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-state",
+      "id": "inspect",
       "kind": "command",
       "command": "bun scripts/inspect-project-state.ts --repo . --format text",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
     },
     {
-      "id": "E0-dry-run",
+      "id": "adoption-dry",
       "kind": "command",
       "command": "bun src/cli/index.ts init --repo . --dry-run",
       "cwd": ".",
       "phase": "verification",
       "cost": "normal",
       "evidence_policy": "current_exact",
-      "necessity": "Required repo integrity for design artifacts only; no global apply/provider invocation.",
+      "necessity": "Required repository integrity check",
       "inputs": {
         "env": []
       }
@@ -238,11 +361,21 @@ delegation:
 ```
 
 ## Exit Criteria
-
 ```yaml
 exit_criteria:
-  - Draft plan/contract and ignored executable probes/expectations/budget exist with exact script SHA.
-  - E0 deterministic verification exits 0 with model_call_count 0 and no src/tests mutation.
-  - CHECKPOINT-6 includes owner/opposite/explicit/preflight-only fallback, atomic writer/verifier/policy/source/projection/close path, campaign A and actual unknowns.
-  - No actual model before reviewed GO; no old path removed or real capability falsely certified.
+  - Both approved RUN3 large cases produce a valid collected Result.
+  - Receipt is written and verified through production functions, with fixed-time launcher-independent fixture bytes and required-field tamper rejections.
+  - Existing RUN3 zeroSandbox assertion passes, custom-profile OS denial only.
+  - Focused tests and required checks pass or exact gate decision/failure is reported without bypass.
+  - Exact18-file retirement inventory is shown with refs/replacement plan, no deletion.
 ```
+
+## E2 approval boundary
+
+Gatekeeper Receipt round 2 PASS is recorded from the user. E2 wires review on task-agent/fleet, preserves domain findings/three rounds/close fence, then deletes the approved six files. Cross-review CLI/core/runner are RETAIN and must be retired only in a separate follow-up after E2 merges. Two named Active contracts are re-frozen in place; no historical receipt is translated. Local full suite, type and Required Checks precede commit/push/PR; skip GitHub CI, no merge without Aimpact.
+
+## B release / mandatory holds
+
+Advisor released B steps 1–6 locally. Concrete mechanism: macOS /usr/bin/sandbox-exec Seatbelt policy around the OAR host execution tree; no third-party sandbox library. Output tree is the only writable filesystem tree; subject, primary, owner record, journal and Git common dir deny, including host descendants and symlink/traversal escapes. Zero-model isolation must pass before SDK host implementation; failure stops the work. No fallback to chmod/worktree/fingerprints.
+
+Aimpact 18:41 supersedes H1/H2 holds: reviewer authors result_ref; append only the communication exception through OAR SessionOptions.appendSystemPrompt, leaving RECOMMENDATION-first fleet content intact. Host root-turn text is observation only. Codex host env fixes workspace-write before Session creation, cwd=output; OS Seatbelt remains the sole write-protection authority. Stock OAR Claude bypass is authorized only under the proved inherited OS boundary; Grok is not wired. Claude actual_model is only init-derived in this OAR snapshot and cannot mint Receipt until upstream gap is closed. No launcher fields in Receipt. Local commits only; no remote operations or main changes.

@@ -609,7 +609,7 @@ describe("checks-materializer: parseAcceptancePolicySummary", () => {
       present: true,
       userWaiverAllowed: false,
     });
-    expect(parseAcceptancePolicySummary(contractWithPolicy('{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}'))).toEqual({
+    expect(parseAcceptancePolicySummary(contractWithPolicy('{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}'))).toEqual({
       present: true,
       userWaiverAllowed: true,
     });

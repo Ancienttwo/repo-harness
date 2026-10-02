@@ -1,6 +1,6 @@
 # Plan: Herdr generic review slice E design and bounded canary
 
-> **Status**: Draft
+> **Status**: Executing
 > **Created**: 20260930-1827
 > **Slug**: herdr-generic-review-slice-e
 > **Planning Source**: repo-harness-plan
@@ -8,7 +8,7 @@
 > **Source Ref**: (none)
 > **Artifact Level**: work-package
 > **Promotion Reason**: risk_boundary
-> **Verification Boundary**: Design-only deterministic probe and contract checks; live 8 hard10 rounds require separately reviewed GO
+> **Verification Boundary**: Completed bounded RUN2/RUN3 proof (cap17 exhausted); E2 uses zero-model domain tests, local full suite, type and Required Checks; no new canary.
 > **Rollback Surface**: Design-only artifacts now; eventual atomic writer/verifier/source/policy/projection LIFO after draining review tasks
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
@@ -170,10 +170,12 @@ start前不能确定owner而无--harness：fail closed要求显式选择。capab
 
 ## Task Breakdown
 
-- [ ] E0：capture此Draft work-package、design-only contract/notes、可运行ignored probes/expected/budget、无模型deterministic验证；CHECKPOINT-6送审。
-- [ ] E1：用户GO后最多8(hard10)模型轮，first failure stop，按真实证据逐能力verified/partial/unverified/unsupported；CHECKPOINT-6结果。未GO不得开始。
-- [ ] E2：R6所有必要证据+明确实施放行后冻结schema并实施上表atomic cutover，focused+Required Checks，旧路径退役/closure证明。
-- [ ] E3：指定gate→独立PR；drain owned runtime，历史只读归档，rollback从新任务drain后LIFO。
+- [x] E0/E1: approved design, bounded canary preparation and RUN2 real Result/three-round evidence.
+- [x] E1-large: approved RUN3 two rounds, valid collected Result is pass; complete ingestion remains follow-up.
+- [x] E1-receipt: implement launcher-independent generic-review Receipt binding in existing writer/verifier; zero-model fixture evidence and field tamper guards.
+- [x] E1-denial: existing RUN3 zeroSandbox assertion only; custom-profile OS denial, no new repo test.
+- [x] E2-inventory: traced DELETE6 / EDIT36 / RETAIN27 inventory reviewed; user approved exact six deletions.
+- [ ] E2-cutover: same PR after these three conditions and deletion-list review; no aliases.
 
 ## Workflow Inventory / 验证与 rollback
 
@@ -186,13 +188,6 @@ E0 rollback只删除/回滚设计文件，无provider进程。E2 rollback必须�
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
-## Task Breakdown
-- [ ] E0：capture此Draft work-package、design-only contract/notes、可运行ignored probes/expected/budget、无模型deterministic验证；CHECKPOINT-6送审。
-- [ ] E1：用户GO后最多8(hard10)模型轮，first failure stop，按真实证据逐能力verified/partial/unverified/unsupported；CHECKPOINT-6结果。未GO不得开始。
-- [ ] E2：R6所有必要证据+明确实施放行后冻结schema并实施上表atomic cutover，focused+Required Checks，旧路径退役/closure证明。
-- [ ] E3：指定gate→独立PR；drain owned runtime，历史只读归档，rollback从新任务drain后LIFO。
-
-
 ### 最新校准 / proof边界
 
 独立case-key只证单轮real provider/lifecycle/argv有效pin与A/B观察，不证同provider多轮、生产domain三轮预算/Receipt/role resolver或idle提前回收。canary默认8，候选可选C1b同Codex binding第二轮另需GO一并批准（9/hard10）；未做/未观察的能力仍unverified。postintent失败只cancel，fallback只preflightmissing；N8预期0模型不算失败重试。
@@ -204,3 +199,21 @@ Claude依最新用户pin加Bash但不加Write/Edit，不通过sandbox强制read-
 ## CHECKPOINT-6 corrections（待增量评审，未GO）
 
 S0（0模型）先经同一生产start路径用fake TTY逐字节核对fleet args，再分别真实harness start/ready/cancel，不发送prompt；全部正常start timeout45000ms。S0与模型轮共用明确GO围栏，失败停在0轮。N8预声明缺执行文件负向仍4000ms。真实轮顺序C1/C2/L1/L2/R7/R8/C3/L3，候选C1b在C1后仅获额外GO才运行；默认8、可选9、硬10不变。拒写证明按写命令call id/output配对，排除原指令文本。Claude日志以mtime+record cwd/time归属；Codex按本地日期。大包full/truncated均预期，截断或无全量证据不升级支持。
+
+## Approved implementation scope, 20261002 (supersedes old design-only/quota prerequisites)
+
+User approved implementation of the Receipt slice and normal repo gates. Exit conditions are exactly two large cases, normal production Receipt write/verify, and the existing custom-profile denial assertion. Other UNVERIFIED items are nonblocking notes follow-ups. No new canary, no deletion in this slice, no OAR adapter. Receipt validity binds only domain subject/request/result/schema/verdict and actual harness/role/model; no launch-specific validity field. This plan stays in the existing E branch/PR boundary.
+
+P1: scripts/acceptance-receipt.ts owns schema/policy/writer/verifier; its helper template is a byte projection; callers/tests use the production functions. P2: acceptanceContext -> domain Result binding -> recordAcceptance -> protected owner Receipt/result authority -> verifyAcceptance -> subject/evidence/policy and domain binding. P3: extend existing functions, not a new host/registry; reject retired source labels, keep transport ownership outside Receipt validity; identical fixed-time domain inputs must generate identical Receipt bytes from Herdr/headless fixture callers.
+
+## Gatekeeper critical ship boundary
+
+The obsolete src/effects/review/claude-review-session.ts:289-292 calls recordAcceptance with the retired source and no reviewResult. Do not patch it or add an alias. Delete it in the SAME PR as generic-review wiring, after the user has seen the traced inventory; the PR CANNOT ship before this replacement/removal. tests/claude-review.test.ts is exclusively being deleted/replaced, so do not enable REPO_HARNESS_TEST_EXPENSIVE for that suite in this Receipt correction phase.
+
+## E2 execution approved after Receipt gate round 2 PASS
+
+Implement generic review CLI/orchestration on existing task-agent plus fleet deep-reasoner, then remove exactly DELETE6; apply EDIT36, retain RETAIN27. The former critical session caller is removed in this atomic PR; no alias/compat reader. Preserve prepared domain binding, stable finding IDs/status, three-round accounting and verified close. No new live/model tests. The three src/{cli/commands,core/review,effects/review}/cross-review*.ts paths remain untouched: their retirement is a separate follow-up only after E2 merges. Commit/push/PR authorized; merge requires Aimpact. Re-freeze the two named active contracts without translating historical receipts.
+
+## B release and 18:41 result/isolation decision
+
+Implementation order is contract/preflight → pinned OAR + Node24 host build → macOS Seatbelt isolation FIRST → scriptedRuntime host → fixed Herdr pane.run execution-owner → removal of hand integration. Zero-model denial failure stops. The 18:41 decision releases reviewer-written result_ref only, with appendSystemPrompt communication authorization and unchanged RECOMMENDATION-first fleet text. Codex Session cwd=output and host env workspace-write are configuration; Seatbelt alone enforces writes. Stock OAR Claude bypass is permitted only under proved inherited OS isolation, but init-only actual_model cannot mint a Receipt. Grok remains unsupported, and no real model/native provider is run. Local commits only; no push/PR/merge/main.

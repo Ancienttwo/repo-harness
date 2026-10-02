@@ -51,7 +51,7 @@ function passingChecks(overrides: Record<string, unknown> = {}): Record<string, 
       status: 'pass',
       disposition: 'external_pass',
       reviewer: 'Claude',
-      source: 'claude-review',
+      source: 'generic-review',
       subject_sha256: 'sha256:subject-before',
       verification_evidence_sha256: 'sha256:evidence-before',
     },
@@ -179,16 +179,16 @@ describe('typed UserPromptSubmit.default handler', () => {
     }
   }, 30_000);
 
-  test('protocol 2 Codex-host guidance records source=codex-review', () => {
+  test('protocol 2 Codex-host guidance records source=generic-review', () => {
     const repo = fixture({
       contract: true,
-      acceptancePolicy: '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
+      acceptancePolicy: '{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}',
     });
     try {
       const { result } = invoke(repo.root, '/check', { env: { HOOK_HOST: 'codex' } });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Peer reviewer: Codex via repo-harness-cross-review');
-      expect(result.stdout).toContain('--reviewer "Codex" --source "codex-review"');
+      expect(result.stdout).toContain('--reviewer "Codex" --source "generic-review"');
     } finally {
       repo.cleanup();
     }
@@ -235,7 +235,7 @@ describe('typed UserPromptSubmit.default handler', () => {
       const { result, commands } = invoke(repo.root, 'done', {
         commands: (args) => {
           if (args.includes('verify-contract')) return { exitCode: 0, stdout: '', stderr: '' };
-          if (args.includes('acceptance-receipt')) return { exitCode: 0, stdout: 'pass\tClaude\tclaude-review\texternal_pass\tvalid\n', stderr: '' };
+          if (args.includes('acceptance-receipt')) return { exitCode: 0, stdout: 'pass\tClaude\tgeneric-review\texternal_pass\tvalid\n', stderr: '' };
           return { exitCode: 0, stdout: 'archived\n', stderr: '' };
         },
       });
@@ -283,7 +283,7 @@ describe('typed UserPromptSubmit.default handler', () => {
       try {
         const { result } = invoke(repo.root, 'done', {
           commands: (args) => args.includes('acceptance-receipt')
-            ? { exitCode: 0, stdout: 'pass\tClaude\tclaude-review\texternal_pass\tvalid\n', stderr: '' }
+            ? { exitCode: 0, stdout: 'pass\tClaude\tgeneric-review\texternal_pass\tvalid\n', stderr: '' }
             : { exitCode: 0, stdout: 'archived\n', stderr: '' },
         });
         expect(result.exitCode).toBe(0);

@@ -419,14 +419,12 @@ contract 的任务上。
 ### 常驻验收 review
 
 ```bash
-repo-harness claude-review round --timeout-ms 1800000
-repo-harness claude-review status
-repo-harness claude-review close
+repo-harness review round --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked-checkout> --herdr-endpoint <address.json>
+repo-harness review status --contract tasks/contracts/<task>.contract.md
+repo-harness review close --contract tasks/contracts/<task>.contract.md
 ```
 
-一个只读的 Claude reviewer 托管在自有的 herdr session 里，对着准备好的
-`verify-sprint` 证据最多撑过三轮修复。超出 round budget 的重复 session 会被
-`claude_review_session_budget_exhausted` 拒绝。
+独立 linked checkout 里的 fleet `deep-reasoner` task-agent 在明确指定的 Herdr session 中最多执行三轮修复 review。默认选 owner 对侧 harness，`--harness` 可显式选择；只有启动前证明可执行文件缺失才允许明确提示的 fallback。文件 Result 通过领域绑定与 finding 校验，再由 generic-review Receipt writer/verifier 记录，close 重新验收；history 只是观察。Claude 使用精确结果文件 allowlist 与修改指纹，生产 OS 写隔离和大包完整读取仍未证。
 
 ## Hooks
 
@@ -552,7 +550,7 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | `repo-harness-check` | Workflow 和 release check，附带 deploy-readiness reference |
 | `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
 | `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
-| `repo-harness-cross-review` | 独立 Codex advisory review；Claude 验收保留持久 Herdr domain reviewer |
+| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
 

@@ -1,7 +1,10 @@
+import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
+import { readSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type TaskPaneBinding } from '../src/effects/terminal/task-session';
+import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
@@ -37,12 +40,46 @@ test('provider expected-context fence rejects each stale identity without overwr
     target_revision: context.subject.target_rev,
   };
   for (const field of Object.keys(expected)) {
-    await expect(recordAcceptance({ root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json', disposition: 'external_pass', reviewer: 'Claude', source: 'claude-review',
+    await expect(recordFixtureAcceptance({ root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md',
+      verification: '.ai/harness/checks/latest.json', disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
       actor: null, summary: 'Real provider opinion for a different context', findings: [], expectedContext: { ...expected, [field]: 'stale' },
     })).rejects.toThrow(`reviewed acceptance context is stale: ${field}`);
     expect(readFileSync(acceptanceReceiptPath(root, home), 'utf8')).toBe(before);
   }
+});
+
+test('generic review Receipt is launcher-independent and rejects every added binding tamper', async () => {
+  const { root, home } = makeFixture();
+  const input = { root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md',
+    verification: '.ai/harness/checks/latest.json', disposition: 'external_pass' as const,
+    reviewer: 'Claude', source: 'generic-review', actor: null,
+    summary: '[fixture opinion] candidate accepted; no real model verdict', findings: [],
+    now: () => new Date('2026-10-02T00:00:00.000Z') };
+  const reviewResult = await fixtureReviewResult(input);
+  const bytes: string[] = [];
+  for (const launcher of ['herdr', 'headless']) {
+    // launcher is a test diagnostic only, never passed to the production authority.
+    const receipt = await recordAcceptance({ ...input, reviewResult });
+    const verified = await verifyAcceptance({ root, authorityHome: home });
+    expect(verified, `fixture caller: ${launcher}`).toEqual(receipt);
+    bytes.push(readFileSync(acceptanceReceiptPath(root, home), 'utf8'));
+  }
+  expect(bytes[0]).toBe(bytes[1]);
+  const valid = JSON.parse(bytes[0]!);
+  for (const field of ['pane_id','herdr_session','pid','process_proof','host_launch_mode','provider_log_path']) expect(Object.hasOwn(valid,field)).toBe(false);
+  const mutations = { request_id: 'other-request', context_sha256: `sha256:${'a'.repeat(64)}`,
+    result_sha256: `sha256:${'b'.repeat(64)}`, actual_harness: 'codex', actual_role: 'fast-worker', actual_model: 'other-model' };
+  for (const [field,value] of Object.entries(mutations)) {
+    writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,[field]:value }));
+    await expect(verifyAcceptance({root,authorityHome:home})).rejects.toThrow(`AcceptanceReceipt generic-review ${field} mismatch`);
+  }
+  writeFileSync(acceptanceReceiptPath(root,home),bytes[0]!);
+  for (const source of ['claude-review','codex-review']) {
+    await expect(recordAcceptance({ ...input,reviewResult,source })).rejects.toThrow('frozen contract reviewer');
+    writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,source }));
+    await expect(verifyAcceptance({root,authorityHome:home})).rejects.toThrow('AcceptanceReceipt source is invalid');
+  }
+  writeFileSync(acceptanceReceiptPath(root,home),bytes[0]!);
 });
 
 afterEach(() => {
@@ -197,14 +234,14 @@ function makeFixture(waiver: 'allowed' | 'forbidden' = 'allowed') {
 }
 
 async function externalPass(root: string, home: string) {
-  return recordAcceptance({
+  return recordFixtureAcceptance({
     root,
     authorityHome: home,
     contract: 'tasks/contracts/demo.contract.md',
     verification: '.ai/harness/checks/latest.json',
     disposition: 'external_pass',
     reviewer: 'Claude',
-    source: 'claude-review',
+    source: 'generic-review',
     actor: null,
     summary: 'candidate accepted',
     findings: [],
@@ -216,26 +253,26 @@ describe('AcceptanceReceipt', () => {
     expect(parseAcceptancePolicy(contract())).toEqual({ protocol: 1, reviewer: 'Claude', user_waiver: 'allowed' });
     expect(parseAcceptancePolicy(contract().replace(
       '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
-      '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
-    ))).toEqual({ protocol: 2, reviewer: 'Codex', source: 'codex-review', user_waiver: 'allowed' });
+      '{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}',
+    ))).toEqual({ protocol: 2, reviewer: 'Codex', source: 'generic-review', user_waiver: 'allowed' });
     expect(() => parseAcceptancePolicy(contract().replace('"allowed"', '"maybe"'))).toThrow('user_waiver');
     expect(() => parseAcceptancePolicy(contract().replace(
       '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
       '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
-    ))).toThrow('source must be codex-review');
+    ))).toThrow('source must be generic-review');
   });
 
-  test('protocol 2 truthfully binds Codex-host acceptance to source=codex-review', async () => {
+  test('protocol 2 binds Codex review to generic domain source and rejects retired labels', async () => {
     const { root, home } = makeFixture();
     const contractPath = join(root, 'tasks', 'contracts', 'demo.contract.md');
     writeFileSync(contractPath, contract().replace(
       '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
-      '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
+      '{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}',
     ));
     commit(root, 'freeze Codex acceptance policy');
     writePassingChecks(root);
 
-    await expect(recordAcceptance({
+    await expect(recordFixtureAcceptance({
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
@@ -248,20 +285,20 @@ describe('AcceptanceReceipt', () => {
       findings: [],
     })).rejects.toThrow('frozen contract reviewer');
 
-    const receipt = await recordAcceptance({
+    const receipt = await recordFixtureAcceptance({
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
       verification: '.ai/harness/checks/latest.json',
       disposition: 'external_pass',
       reviewer: 'Codex',
-      source: 'codex-review',
+      source: 'generic-review',
       actor: null,
       summary: 'Codex review passed',
       findings: [],
     });
-    expect(receipt).toMatchObject({ reviewer: 'Codex', source: 'codex-review', expected_reviewer: 'Codex' });
-    expect((await verifyAcceptance({ root, authorityHome: home })).source).toBe('codex-review');
+    expect(receipt).toMatchObject({ reviewer: 'Codex', source: 'generic-review', expected_reviewer: 'Codex' });
+    expect((await verifyAcceptance({ root, authorityHome: home })).source).toBe('generic-review');
     writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({...receipt,source:'codex-plugin'}));
     await expect(verifyAcceptance({root,authorityHome:home})).rejects.toThrow('source is invalid');
   }, 30_000);
@@ -420,7 +457,7 @@ describe('AcceptanceReceipt', () => {
     expect(receipt.protocol).toBe(2);
     expect(receipt.waiver_grant_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect((await verifyAcceptance({ root: allowed.root, authorityHome: allowed.home })).disposition).not.toBe('external_pass');
-    await expect(recordAcceptance({
+    await expect(recordFixtureAcceptance({
       root: allowed.root,
       authorityHome: allowed.home,
       contract: 'tasks/contracts/demo.contract.md',
@@ -589,14 +626,14 @@ describe('AcceptanceReceipt', () => {
       join(root, 'plans', 'plan-demo.md'),
       readFileSync(join(root, 'plans', 'archive', 'plan-demo.md'), 'utf-8'),
     );
-    await expect(recordAcceptance({
+    await expect(recordFixtureAcceptance({
       root,
       authorityHome: home,
       contract: 'tasks/archive/contract-20260721-0800-demo.md',
       verification: '.ai/harness/checks/latest.json',
       disposition: 'external_pass',
       reviewer: 'Claude',
-      source: 'claude-review',
+      source: 'generic-review',
       actor: null,
       summary: 'mismatched archive projection must fail',
       findings: [],
@@ -665,14 +702,14 @@ describe('AcceptanceReceipt', () => {
     expect(archivedContract).toContain(`> **Plan**: ${archivePlanPath}`);
 
     const firstAuthority = acceptanceAuthorityFingerprint(root, home);
-    const renewed = await recordAcceptance({
+    const renewed = await recordFixtureAcceptance({
       root,
       authorityHome: home,
       contract: archiveContractPath,
       verification: '.ai/harness/checks/latest.json',
       disposition: 'external_pass',
       reviewer: 'Claude',
-      source: 'claude-review',
+      source: 'generic-review',
       actor: null,
       summary: 'archived authority accepted again',
       findings: [],
@@ -737,4 +774,124 @@ describe('AcceptanceReceipt', () => {
     expect(verifyUserWaiverGrant({ root, authorityHome: home }).actor).toBe('kito');
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('user_waiver');
   }, 30_000);
+});
+
+
+// Domain integration reuses this file's real acceptanceContext/Verification Plan fixture.
+// Only provider/task-agent effects are deterministic; this is a fixture opinion, not model evidence.
+function reviewFixture() {
+  const fixture = makeFixture();
+  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n');
+  commit(fixture.root, 'ignore private runtime communication');
+  const reviewerRepo = join(fixture.home, 'reviewer');
+  git(fixture.root, 'worktree', 'add', '-qb', 'fixture-reviewer', reviewerRepo);
+  writePassingChecks(fixture.root);
+  const calls: string[] = [];
+  let request: TaskRequest; let domain: Record<string, unknown>; let sent = 0;
+  let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;
+  const binding = { pane_id: 'fixture-reviewer-pane' } as unknown as TaskPaneBinding;
+  const effects: ReviewEffects = {
+    owner: () => 'codex', installation: async () => ({ kind: 'available', via: 'bundled' }), model: () => 'fixture-model', assertBinding: () => {}, ready: async () => {}, dispose: async () => { calls.push('dispose'); },
+    start: async (_repo, spec) => { calls.push(`start:${spec.harness_kind}:${spec.role}`); return binding; },
+    send: async (repo, task, role, ref) => {
+      sent++; calls.push('send');
+      const packet = readFileSync(join(repo, ref), 'utf8');
+      domain = JSON.parse(packet.match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
+      request = { protocol: 2, task, role, round: sent, request_id: `fixture-request-${sent}`, context_sha256: authorityFingerprint(packet),
+        context_ref: ref, source_ref: ref, result_ref: join(repo, `.ai/harness/runs/task-agent-outbox/${importedTaskDir(repo, task, role).split('/').pop()}/result-${sent}.json`),
+        result_contract: { required_fields: ['request_id','context_sha256','value'], atomic_write: 'temp_rename', submission: { command: 'unused-fixture', repo, task, role, round: sent } } };
+      writeFileSync(join(resolve(request.result_ref, '..'), `observed-${sent}.json`), JSON.stringify({ fixture: true }));
+      return request;
+    },
+    collect: async () => {
+      calls.push('collect');
+      return { request_id: request.request_id, context_sha256: request.context_sha256,
+        value: { request_id: request.request_id, context_sha256: domain.context_sha256, subject_sha256: domain.subject_sha256,
+          verdict, summary: '[fixture opinion] review current subject', findings: [{ id: 'fence', severity: 'P1', status: verdict === 'PASS' ? 'resolved' : prior ? 'open' : 'new', message: '[fixture opinion] fence evidence' }] } };
+    },
+    close: async () => { calls.push('close'); return { status: 'closed', pids: [] }; },
+    cancel: async () => { calls.push('cancel'); return { status: 'closed', pids: [] }; },
+  };
+  const options = { repoRoot: fixture.root, contract: 'tasks/contracts/demo.contract.md', reviewerRepo,
+    endpoint: { session: 'private-fixture', home: '/tmp/h' }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
+    admitSession: () => { calls.push('admit'); } };
+  return { ...fixture, reviewerRepo, calls, effects, options, sent: () => sent,
+    verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
+}
+
+test('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
+  const f = reviewFixture();
+  expect(reviewLocation(f.root, f.options.contract).dir).toBe(reviewLocation(f.reviewerRepo, f.options.contract).dir);
+  const first = await runReviewRound(f.options, f.effects);
+  expect(first.status).toBe('rejected');
+  await expect(closeReview(f.root, f.options.contract, false, f.home, f.effects)).rejects.toThrow('disposition is reject');
+  for (const number of [2, 3]) {
+    writeFileSync(join(f.root, 'feature.txt'), `candidate repair ${number}\n`);
+    writePassingChecks(f.root);
+    f.verdict(number === 3 ? 'PASS' : 'FAIL');
+    const result = await runReviewRound({ ...f.options, endpoint: { home: '/tmp/h', session: 'private-fixture' } }, f.effects);
+    expect(result.round).toBe(number);
+  }
+  expect(f.sent()).toBe(3);
+  expect(f.calls.filter(call => call === 'admit')).toHaveLength(1);
+  expect(f.calls.filter(call => call.startsWith('start:'))).toEqual(Array(3).fill('start:claude:deep-reasoner'));
+  const receipt = await verifyAcceptance({ root: f.root, authorityHome: f.home });
+  expect(receipt.actual_model).toBe('fixture-model');
+  expect(receipt.source).toBe('generic-review');
+  const path = acceptanceReceiptPath(f.root, f.home), bytes = readFileSync(path, 'utf8');
+  writeFileSync(path, JSON.stringify({ ...receipt, actual_model: 'tampered' }));
+  await expect(closeReview(f.root, f.options.contract, false, f.home, f.effects)).rejects.toThrow('actual_model mismatch');
+  expect(f.calls).not.toContain('close');
+  writeFileSync(path, bytes);
+  writeFileSync(join(f.root, 'feature.txt'), 'fourth repair\n'); writePassingChecks(f.root);
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('round_budget_exhausted');
+  // Restore the exact accepted semantic bytes before close.
+  writeFileSync(join(f.root, 'feature.txt'), 'candidate repair 3\n'); writePassingChecks(f.root);
+  expect((await closeReview(f.root, f.options.contract, false, f.home, f.effects)).status).toBe('closed');
+  expect(f.calls).toContain('close');
+});
+
+test('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {
+  const f = reviewFixture(); f.verdict('PASS');
+  const result = await runReviewRound({ ...f.options, harness: 'codex' }, f.effects);
+  expect(result.actual_harness).toBe('codex'); expect(result.fallback_reason).toBeNull();
+  expect(result.receipt.expected_reviewer).toBe('Claude'); expect(result.receipt.reviewer).toBe('Codex');
+  expect((await verifyAcceptance({ root: f.root, authorityHome: f.home })).actual_harness).toBe('codex');
+  await closeReview(f.root, f.options.contract, true, f.home, f.effects);
+  const fallback = reviewFixture(); fallback.verdict('PASS');
+  const accepted = await runReviewRound(fallback.options, { ...fallback.effects, installation: async kind => kind === 'codex' ? { kind: 'available', via: 'bundled' } : { kind: 'not_found' } });
+  expect(accepted.requested_harness).toBe('claude'); expect(accepted.actual_harness).toBe('codex');
+  expect(accepted.fallback_reason).toContain('missing before start');
+  const failed = reviewFixture(); let starts = 0;
+  const effects = { ...failed.effects, start: async () => { starts++; throw new Error('task_agent_ambiguous_launch'); } };
+  await expect(runReviewRound(failed.options, effects)).rejects.toThrow('ambiguous_launch');
+  await expect(runReviewRound(failed.options, { ...effects, installation: async () => ({ kind: 'not_found' }) })).rejects.toThrow('ambiguous_launch');
+  // start is the existing task-agent reconciliation entry, never a fallback or alternate harness.
+  expect(starts).toBe(2); expect(failed.sent()).toBe(0);
+  expect(failed.calls).not.toContain('start:codex:deep-reasoner');
+  expect((await closeReview(failed.root, failed.options.contract, true, failed.home, effects)).status).toBe('closed');
+});
+
+test('generic review unknown owner, explicit missing provider and timeout fail closed without history acceptance', async () => {
+  const f = reviewFixture();
+  await expect(runReviewRound(f.options, { ...f.effects, owner: () => null })).rejects.toThrow('owner_unknown');
+  expect(f.sent()).toBe(0);
+  await expect(runReviewRound({ ...f.options, harness: 'claude' }, { ...f.effects, installation: async () => ({ kind: 'not_found' }) })).rejects.toThrow('executable_missing');
+  await expect(runReviewRound({ ...f.options, timeoutMs: 1 }, { ...f.effects, collect: async () => null })).rejects.toThrow('review_round_timeout');
+  const { dir } = reviewLocation(f.root, f.options.contract);
+  expect(readSessionArtifact(join(dir, 'request-1.json'))).toBeDefined();
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('ambiguous_round');
+  expect(f.sent()).toBe(1);
+  expect((await closeReview(f.root, f.options.contract, true, f.home, f.effects)).status).toBe('closed');
+});
+
+
+test('generic review refuses legacy cleanup-pending markers without reading or translating old records', async () => {
+  const f = reviewFixture();
+  const key = createHash('sha256').update(f.options.contract).digest('hex');
+  const legacy = join(f.root, '.ai/harness/runs/claude-review', key);
+  mkdirSync(legacy, { recursive: true });
+  for (const file of ['session.json', 'closed.json', 'server.json']) writeFileSync(join(legacy, file), 'not legacy JSON; marker-only check');
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_legacy_drain_required');
+  expect(f.sent()).toBe(0); expect(f.calls).toEqual([]);
 });

@@ -29,7 +29,7 @@ export type AcceptancePolicyV1 = {
 export type AcceptancePolicyV2 = {
   protocol: 2;
   reviewer: 'Codex';
-  source: 'codex-review';
+  source: 'generic-review';
   user_waiver: 'allowed' | 'forbidden';
 };
 
@@ -59,13 +59,85 @@ export type AcceptanceReceipt = {
   disposition: AcceptanceDisposition;
   expected_reviewer: 'Claude' | 'Codex';
   reviewer: 'Claude' | 'Codex' | 'User';
-  source: 'claude-review' | 'codex-review' | 'user-waiver';
+  source: 'generic-review' | 'user-waiver';
+  request_id: string | null;
+  context_sha256: string | null;
+  result_sha256: string | null;
+  actual_harness: 'claude' | 'codex' | null;
+  actual_role: string | null;
+  actual_model: string | null;
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
   waiver_grant_sha256: string | null;
   issued_at: string;
 };
+
+/** Closed review-domain role approved by the product contract, not runtime fleet configuration.
+ * This is its single validity definition; fleet owns model/effort for this named role.
+ */
+export const GENERIC_REVIEW_ROLE = 'deep-reasoner' as const;
+
+export interface AcceptanceReviewResult {
+  request_id: string;
+  context_sha256: string;
+  subject_sha256: string;
+  actual_harness: 'claude' | 'codex';
+  actual_role: string;
+  actual_model: string;
+  verdict: 'PASS' | 'FAIL';
+  summary: string;
+  findings: AcceptanceFinding[];
+}
+
+export function acceptanceReviewContextDigest(context: Awaited<ReturnType<typeof acceptanceContext>>): string {
+  return authorityFingerprint(stableJson([
+    authorityFingerprint(context.contract.content), authorityFingerprint(context.goal.content),
+    context.subject.review_subject_sha256, context.evidence.fingerprint, context.subject.target_rev,
+  ]));
+}
+
+function reviewResultPath(root: string, authorityHome: string): string {
+  return acceptanceReceiptPath(root, authorityHome).replace('acceptance.latest.json', 'acceptance.review-result.json');
+}
+
+function validateDomainReview(value: unknown): AcceptanceReviewResult {
+  if (!isRecord(value) || Object.keys(value).sort().join(',') !== ['request_id','context_sha256','subject_sha256','actual_harness','actual_role','actual_model','verdict','summary','findings'].sort().join(',')) fail('generic-review result schema is invalid');
+  if (typeof value.request_id !== 'string' || !value.request_id.trim()
+    || !/^sha256:[0-9a-f]{64}$/.test(String(value.context_sha256)) || !/^sha256:[0-9a-f]{64}$/.test(String(value.subject_sha256))
+    || !['claude','codex'].includes(String(value.actual_harness)) || value.actual_role !== GENERIC_REVIEW_ROLE
+    || typeof value.actual_model !== 'string' || !value.actual_model.trim()
+    || !['PASS','FAIL'].includes(String(value.verdict)) || typeof value.summary !== 'string' || !value.summary.trim()) fail('generic-review result identity/verdict is invalid');
+  return { ...value, findings: validateFindings(value.findings) } as unknown as AcceptanceReviewResult;
+}
+
+function assertReviewFields(receipt: AcceptanceReceipt): void {
+  const fields = ['request_id','context_sha256','result_sha256','actual_harness','actual_role','actual_model'] as const;
+  if (receipt.disposition === 'user_waiver') {
+    if (fields.some(field => receipt[field] !== null)) fail('AcceptanceReceipt user waiver has review binding');
+    return;
+  }
+  if (typeof receipt.request_id !== 'string' || !receipt.request_id.trim()) fail('AcceptanceReceipt generic-review request_id is invalid');
+  if (!/^sha256:[0-9a-f]{64}$/.test(String(receipt.context_sha256))) fail('AcceptanceReceipt generic-review context_sha256 is invalid');
+  if (!/^sha256:[0-9a-f]{64}$/.test(String(receipt.result_sha256))) fail('AcceptanceReceipt generic-review result_sha256 is invalid');
+  if (receipt.actual_harness !== receipt.reviewer.toLowerCase()) fail('AcceptanceReceipt generic-review actual_harness mismatch');
+  if (receipt.actual_role !== GENERIC_REVIEW_ROLE) fail('AcceptanceReceipt generic-review actual_role mismatch');
+  if (typeof receipt.actual_model !== 'string' || !receipt.actual_model.trim()) fail('AcceptanceReceipt generic-review actual_model is invalid');
+}
+
+function verifyReviewResult(root: string, authorityHome: string, receipt: AcceptanceReceipt, contextDigest: string): void {
+  assertReviewFields(receipt); if (receipt.disposition === 'user_waiver') return;
+  const path = reviewResultPath(root, authorityHome);
+  const stat = lstatSync(path); if (!stat.isFile() || stat.isSymbolicLink()) fail('generic-review result authority is unsafe');
+  const review = validateDomainReview(JSON.parse(readFileSync(path,'utf8')));
+  for (const field of ['request_id','context_sha256','actual_harness','actual_role','actual_model'] as const) {
+    if (receipt[field] !== review[field]) fail(`AcceptanceReceipt generic-review ${field} mismatch`);
+  }
+  if (receipt.context_sha256 !== contextDigest || review.subject_sha256 !== receipt.subject_sha256) fail('AcceptanceReceipt generic-review context/subject mismatch');
+  if (receipt.result_sha256 !== authorityFingerprint(stableJson(review))) fail('AcceptanceReceipt generic-review result_sha256 mismatch');
+  if (review.verdict !== (receipt.disposition === 'external_pass' ? 'PASS' : 'FAIL')
+    || review.summary !== receipt.summary || stableJson(review.findings) !== stableJson(receipt.findings)) fail('AcceptanceReceipt generic-review verdict/findings mismatch');
+}
 
 export type UserWaiverGrant = {
   protocol: 1;
@@ -366,8 +438,8 @@ export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
     return value as AcceptancePolicyV1;
   }
   if (value.reviewer !== 'Codex') fail('acceptance policy protocol 2 reviewer must be Codex');
-  if (value.source !== 'codex-review') {
-    fail('acceptance policy protocol 2 source must be codex-review');
+  if (value.source !== 'generic-review') {
+    fail('acceptance policy protocol 2 source must be generic-review');
   }
   if (JSON.stringify(keys) !== JSON.stringify(['protocol', 'reviewer', 'source', 'user_waiver'])) {
     fail('acceptance policy protocol 2 contains unknown fields');
@@ -375,9 +447,8 @@ export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
   return value as AcceptancePolicyV2;
 }
 
-export function acceptancePolicySource(policy: AcceptancePolicy): 'claude-review' | 'codex-review' {
-  if (policy.protocol === 2) return policy.source;
-  return policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review';
+export function acceptancePolicySource(): 'generic-review' {
+  return 'generic-review';
 }
 
 async function currentSubject(root: string, targetRef?: string, targetRevision?: string): Promise<ReviewSubject> {
@@ -854,8 +925,11 @@ function validateDisposition(
   findings: AcceptanceFinding[],
 ): void {
   if (disposition === 'external_pass') {
-    const expectedSource = acceptancePolicySource(policy);
-    if (reviewer !== policy.reviewer || source !== expectedSource || actor !== null) {
+    // The frozen preferred reviewer stays in expected_reviewer. The actual
+    // independent harness may differ under explicit selection/preflight fallback.
+    // Its identity is joined to the owner-held domain Result, never an alias.
+    const expectedSource = acceptancePolicySource();
+    if (!['Claude', 'Codex'].includes(reviewer) || source !== expectedSource || actor !== null) {
       fail('external_pass reviewer/source must match the frozen contract reviewer');
     }
     if (findings.some((finding) => finding.severity === 'P0' || finding.severity === 'P1')) {
@@ -870,7 +944,7 @@ function validateDisposition(
     }
     return;
   }
-  if (reviewer !== policy.reviewer || source !== acceptancePolicySource(policy)) {
+  if (!['Claude', 'Codex'].includes(reviewer) || source !== acceptancePolicySource()) {
     fail('reject reviewer/source must match the frozen contract reviewer');
   }
   if (findings.length === 0) fail('reject requires at least one finding');
@@ -947,7 +1021,7 @@ export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
   'benchmark_evidence_sha256', 'subject_sha256', 'subject_scope', 'target_ref',
   'target_revision', 'reviewed_paths', 'disposition', 'expected_reviewer',
   'reviewer', 'source', 'actor', 'summary', 'findings', 'waiver_grant_sha256',
-  'issued_at',
+  'issued_at', 'request_id', 'context_sha256', 'result_sha256', 'actual_harness', 'actual_role', 'actual_model',
 ];
 
 const SHA256_FIELD = /^sha256:[0-9a-f]{64}$/;
@@ -1016,6 +1090,7 @@ export function validateAcceptanceReceiptAgainstPolicy(
       return no('waiver_binding_symmetry', 'AcceptanceReceipt waiver grant binding does not match disposition');
     }
     try {
+      assertReviewFields(receipt);
       validateDisposition(policy, owner, receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
     } catch (error) {
       return no('disposition_policy', (error as Error).message);
@@ -1051,7 +1126,7 @@ function readReceipt(path: string): AcceptanceReceipt {
   if (!['external_pass', 'user_waiver', 'reject'].includes(String(value.disposition))) fail('AcceptanceReceipt disposition is invalid');
   if (!['Claude', 'Codex'].includes(String(value.expected_reviewer))) fail('AcceptanceReceipt expected_reviewer is invalid');
   if (!['Claude', 'Codex', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
-  if (!['claude-review', 'codex-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
+  if (!['generic-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
   if (value.actor !== null && (typeof value.actor !== 'string' || value.actor.trim() === '')) fail('AcceptanceReceipt actor is invalid');
   if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {
     fail('AcceptanceReceipt waiver_grant_sha256 is invalid');
@@ -1065,7 +1140,9 @@ function readReceipt(path: string): AcceptanceReceipt {
   if ((value.disposition === 'user_waiver') !== (value.waiver_grant_sha256 !== null)) {
     fail('AcceptanceReceipt waiver grant binding does not match disposition');
   }
-  return { ...value, findings: validateFindings(value.findings) } as AcceptanceReceipt;
+  const receipt = { ...value, findings: validateFindings(value.findings) } as AcceptanceReceipt;
+  assertReviewFields(receipt);
+  return receipt;
 }
 
 /**
@@ -1077,7 +1154,7 @@ export function readAcceptanceReceiptFile(path: string): AcceptanceReceipt {
   return readReceipt(path);
 }
 
-function writeReceipt(path: string, receipt: AcceptanceReceipt): void {
+function writeReceipt(path: string, receipt: AcceptanceReceipt | AcceptanceReviewResult): void {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
   chmodSync(temporary, 0o600);
@@ -1372,6 +1449,8 @@ function buildReceipt(
     expected_reviewer: context.policy.reviewer,
     reviewer,
     source,
+    request_id: null, context_sha256: null, result_sha256: null,
+    actual_harness: null, actual_role: null, actual_model: null,
     actor,
     summary,
     findings,
@@ -1478,6 +1557,7 @@ function assertRecordedReceiptPolicy(
 }
 
 export async function recordAcceptance(args: {
+  reviewResult?: AcceptanceReviewResult;
   root: string;
   authorityHome: string;
   contract: string;
@@ -1527,7 +1607,16 @@ export async function recordAcceptance(args: {
     null,
     args.now ?? (() => new Date()),
   );
+  const review = validateDomainReview(args.reviewResult);
+  if (review.context_sha256 !== acceptanceReviewContextDigest(context) || review.subject_sha256 !== receipt.subject_sha256) fail('generic-review result context/subject is stale');
+  Object.assign(receipt, { request_id: review.request_id, context_sha256: review.context_sha256,
+    result_sha256: authorityFingerprint(stableJson(review)), actual_harness: review.actual_harness,
+    actual_role: review.actual_role, actual_model: review.actual_model });
+  if (review.verdict !== (args.disposition === 'external_pass' ? 'PASS' : 'FAIL') || review.summary !== args.summary
+    || stableJson(review.findings) !== stableJson(args.findings)) fail('generic-review result verdict/findings mismatch');
   assertRecordedReceiptPolicy(context, receipt, null);
+  acceptanceReceiptPath(context.root,args.authorityHome,true);
+  writeReceipt(reviewResultPath(context.root,args.authorityHome),review);
   writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
   return receipt;
 }
@@ -1584,6 +1673,9 @@ export async function verifyAcceptance(args: {
   if (subject.review_subject_sha256 !== receipt.subject_sha256) fail('AcceptanceReceipt semantic subject is stale');
   const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
   if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
+  verifyReviewResult(root,args.authorityHome,receipt,authorityFingerprint(stableJson([
+    receipt.contract_sha256,receipt.goal_sha256,subject.review_subject_sha256,evidence.fingerprint,subject.target_rev,
+  ])));
   // The gate's one synchronous rule set. Readers outside this module do not
   // run it: they read the AcceptanceVerificationObservationV1 written below.
   const policyVerdict = validateAcceptanceReceiptAgainstPolicy({
@@ -1600,7 +1692,10 @@ export async function verifyAcceptance(args: {
   return receipt;
 }
 
-export function renderAcceptanceProjection(receipt: AcceptanceReceipt): string {
+/** Human-readable projection only; archived source text grants no receipt validity. */
+export function renderAcceptanceProjection(receipt: Pick<AcceptanceReceipt,
+  'disposition' | 'reviewer' | 'actor' | 'subject_sha256' | 'subject_scope' | 'target_revision'
+  | 'verification_evidence_sha256' | 'issued_at' | 'summary' | 'findings'> & { source: string }): string {
   return [
     '## Acceptance Receipt Projection',
     '',
@@ -1835,7 +1930,10 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       return 0;
     }
     const findingsRaw = option(argv, '--findings-json', false) ?? '[]';
+    const reviewResultFile = option(argv, '--review-result')!;
+    if (!lstatSync(reviewResultFile).isFile() || lstatSync(reviewResultFile).isSymbolicLink()) fail('--review-result must be a regular file');
     const receipt = await recordAcceptance({
+      reviewResult: validateDomainReview(JSON.parse(readFileSync(reviewResultFile,'utf8'))),
       root,
       authorityHome,
       contract,

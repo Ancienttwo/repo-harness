@@ -355,10 +355,10 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
     }
   });
 
-  test("retiredPackages records all 18 retired names with a live or null replacement", () => {
+  test("retiredPackages records all 19 retired names with a live or null replacement", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
     const catalog = resolution.catalog;
-    expect(catalog.retiredPackages.length).toBe(18);
+    expect(catalog.retiredPackages.length).toBe(19);
     const liveNames = new Set(catalog.packages.map((p) => p.name));
     for (const entry of catalog.retiredPackages) {
       expect(entry.note.length).toBeGreaterThan(0);
@@ -366,9 +366,8 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
     }
     expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-autoplan")?.replacement).toBeNull();
     expect(catalog.retiredPackages.find((e) => e.name === "codex-review")?.replacement).toBe("repo-harness-cross-review");
-    // `claude-review` is no longer a retired name: it is the live CLI command that
-    // drives repo-harness-cross-review's Claude acceptance mode.
-    expect(catalog.retiredPackages.find((e) => e.name === "claude-review")).toBeUndefined();
+    // The exclusive CLI/schema/host/session is now retired without an alias.
+    expect(catalog.retiredPackages.find((e) => e.name === "claude-review")?.replacement).toBe("repo-harness-cross-review");
     expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-handoff")?.replacement).toBe("repo-harness");
   });
 

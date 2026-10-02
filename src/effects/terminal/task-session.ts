@@ -469,6 +469,25 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     throw error;
   });
 }
+
+/** Internal fixed application-host seam; never exposed as CLI/MCP command input.
+ * The execution owner is the foreground host. Native children are OAR-owned,
+ * and must be disposed before the existing task-agent pane cleanup is invoked.
+ * This does not change binding.host's protected-domain-result semantics.
+ */
+export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgentSpec,
+  command: readonly string[], ready: () => Promise<void>): Promise<TaskPaneBinding> {
+  if (spec.args.length !== 0 || command[0] !== '/usr/bin/sandbox-exec'
+    || command.some(arg => /[\r\n]/.test(arg))) throw new Error('task_agent_application_host_command_invalid');
+  return startTaskAgent(repoRoot, spec, { start: async (endpoint, name, pane, kind) => {
+    mutate(endpoint, ['pane', 'run', pane, ...command]);
+    await ready();
+    mutate(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', kind, '--state', 'working', '--seq', '1']);
+    mutate(endpoint, ['pane', 'report-agent', pane, '--source', 'repo-harness', '--agent', kind, '--state', 'idle', '--seq', '2']);
+    mutate(endpoint, ['agent', 'rename', pane, name]);
+  } });
+}
+
 export function readTaskAgent(repoRoot: string, task: string, role: string): { dir: string; binding: TaskPaneBinding } {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);
   assertSessionDirectory(root, dir);
@@ -562,7 +581,7 @@ export async function submitTaskResult(repoRoot: string, task: string, role: str
     return result;
   });
 }
-export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable'): Promise<TaskRequest> {
+export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only' = 'repeatable', applicationDelivery?: (request: TaskRequest) => Promise<void>): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
   if (binding.host) throw new Error('task_agent_host_domain_delivery_required');
   return locked(root, dir, async () => {
@@ -593,7 +612,8 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.
     // Inspect the same request/result files. Never replay it or allocate a fresh one.
     try {
-      mutate(binding.endpoint, ['agent', 'prompt', binding.agent_name, `Read task request ${requestPath}; write its result only to ${request.result_ref}.`]);
+      if (applicationDelivery) await applicationDelivery(request);
+      else mutate(binding.endpoint, ['agent', 'prompt', binding.agent_name, `Read task request ${requestPath}; write its result only to ${request.result_ref}.`]);
       writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'accepted' });
     } catch (error) {
       writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'unknown', error: String(error) });

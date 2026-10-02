@@ -534,6 +534,11 @@
       "name": "repo-harness-chatgpt-browser",
       "replacement": "repo-harness-chatgpt",
       "note": "Consolidated into repo-harness-chatgpt's continue reference. The underlying browser/session CLI engine at src/cli/chatgpt-browser survives unchanged, documented at docs/repo-harness-chatgpt-browser-engine.md."
+    },
+    {
+      "name": "claude-review",
+      "replacement": "repo-harness-cross-review",
+      "note": "Retired exclusive CLI/schema/host/session; use repo-harness review with fleet deep-reasoner task-agent. No alias; drain old sessions with the previous version and archive old receipts."
     }
   ]
 }

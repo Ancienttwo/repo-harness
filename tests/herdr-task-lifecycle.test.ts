@@ -777,3 +777,54 @@ const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,stdio:'inh
     await exited(server);rmSync(fixture,{recursive:true,force:true});
   }
 },60000);
+
+test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
+  const api = await import('../src/effects/terminal/task-session');
+  const { reviewIsolationPolicy, isolatedHostCommand } = await import('../src/effects/review/review-isolation');
+  const fixture = realpathSync(mkdtempSync('/tmp/oh-'));
+  const home = join(fixture, 'h'), repo = join(fixture, 'p'), output = join(fixture, 'out');
+  for (const path of [home, repo, output]) mkdirSync(path);
+  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  const configPath = join(fixture, 'herdr.toml'), endpoint = { session, configPath, home };
+  requireFixtureSession(session);
+  const env = { ...herdrEnvironment(endpoint), REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const herdr = Bun.which('herdr'); if (!herdr) throw new Error('fixture_herdr_required');
+  writeFileSync(configPath, 'onboarding=false\n[terminal]\ndefault_shell="/bin/sh"\nshell_mode="non_login"\n[update]\nversion_check=false\nmanifest_check=false\n');
+  run('git', ['init', '-qb', 'main'], repo, env);
+  run('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','fixture'], repo, env);
+  const execute = (args: string[]) => { requireFixtureSession(session); return run(herdr, ['--session', session, ...args], repo, env); };
+  const call = (args: string[]) => JSON.parse(execute(args)).result;
+  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' }); server.on('error', () => {});
+  const closeRequest = join(output, 'close.request'), readyFile = join(output, 'ready.json'), disposedFile = join(output, 'disposed.json');
+  const specFile = join(fixture, 'fixture.json'), profile = join(fixture, 'profile.sb');
+  writeFileSync(specFile, JSON.stringify({ mode: 'scripted', cwd: repo, inputs: ['one','two','three'], closeRequest, readyFile, disposedFile }));
+  writeFileSync(profile, reviewIsolationPolicy({ subject: repo, primary: repo, ownerRecord: repo, journal: repo, gitCommonDir: join(repo,'.git'), output }));
+  const priorPath = process.env.PATH, priorFlag = process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE;
+  process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE='1';
+  let binding: Awaited<ReturnType<typeof api.startTaskApplicationHost>> | undefined;
+  try {
+    await until(() => { try { return call(['workspace','list']).type==='workspace_list'; } catch { return false; } });
+    const workspace = call(['workspace','create','--cwd',repo,'--label','OAR fixture','--no-focus']);
+    const command = isolatedHostCommand(profile, realpathSync('/opt/homebrew/opt/node@24/bin/node'), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
+    binding = await api.startTaskApplicationHost(repo, { task:'oar-fixture', role:'deep-reasoner', harness_kind:'codex', endpoint,
+      parent_pane:workspace.root_pane.pane_id, args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
+    expect(binding.host).toBeNull(); // No privileged protected-result host fence is bypassed.
+    expect(binding.provider.pid).toBe(JSON.parse(readFileSync(readyFile,'utf8')).pid);
+    const screen = execute(['pane','read',binding.pane_id,'--source','recent','--lines','120','--format','text','--raw']);
+    expect(screen).toContain('fixture-oar');
+    await until(() => execute(['pane','read',binding!.pane_id,'--source','recent','--lines','120','--format','text','--raw']).includes('OAR_HOST_ROUNDS_DONE_FIXTURE'));
+    writeFileSync(closeRequest, 'close');
+    await until(() => existsSync(disposedFile));
+    await until(() => !live(binding!.provider.pid));
+    expect((await api.cancelTaskAgent(repo,'oar-fixture','deep-reasoner')).status).toBe('closed');
+    expect(call(['pane','get',workspace.root_pane.pane_id]).pane.pane_id).toBe(workspace.root_pane.pane_id);
+  } finally {
+    writeFileSync(closeRequest,'close');
+    if (binding && live(binding.provider.pid)) { await until(() => !live(binding!.provider.pid)); }
+    try { execute(['server','stop']); } catch { if (server.exitCode===null && server.signalCode===null) server.kill('SIGTERM'); }
+    await exited(server);
+    process.env.PATH=priorPath;
+    if(priorFlag===undefined)delete process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE;else process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE=priorFlag;
+    rmSync(fixture,{recursive:true,force:true});
+  }
+}, 60000);

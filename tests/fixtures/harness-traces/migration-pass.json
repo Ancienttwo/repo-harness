@@ -34,7 +34,7 @@
   ],
   "handoffs": [],
   "acceptance_receipt": {
-    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "claude-review"
+    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "generic-review"
   },
   "files_changed": ["scripts/lib/project-init-lib.sh", "assets/workflow-contract.v1.json"],
   "allowed_paths_check": {

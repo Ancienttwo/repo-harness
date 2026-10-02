@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 const ROOT = resolve(import.meta.dir, '..');
 const laneScript = readFileSync(join(ROOT, 'scripts/check-ci.sh'), 'utf8');
-const GATED_FILES = ['tests/harness-benchmark-matrix.test.ts', 'tests/claude-review.test.ts'];
+const GATED_FILES = ['tests/harness-benchmark-matrix.test.ts'];
 
 // The lane script is the single authority for the variable name; the gated test
 // files are checked against whatever it exports, so a rename cannot leave one

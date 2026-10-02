@@ -88,8 +88,6 @@ const FILE_ALLOWLIST: Record<string, string> = {
     "explanatory comments documenting the retired repo-harness-handoff facade",
   // Same acceptance-receipt source-enum concept as R1, implemented as a
   // bash sibling of scripts/acceptance-receipt.ts's TS enum.
-  "assets/hooks/lib/workflow-state.sh":
-    "acceptance-receipt source-enum value (bash sibling of R1's TS enum)",
   // Explanatory docstring: names the retired predecessor facade this file
   // used to back, alongside its current owner (repo-harness-setup).
   "src/cli/commands/init.ts":
@@ -105,7 +103,7 @@ const FILE_ALLOWLIST: Record<string, string> = {
 // scripts/harness-trace-grade.sh, scripts/sprint-backlog.sh,
 // scripts/plan-to-todo.sh, scripts/capture-plan.sh,
 // scripts/lib/project-init-lib.sh enum usages" -- permanent provenance-enum
-// vocabulary (claude-review/codex-review as AcceptanceReceipt.source;
+// vocabulary (generic-review is the current Receipt source; retired provider sources are rejected;
 // repo-harness-sprint/repo-harness-plan as plan-capture --source). Each has
 // a byte-synced assets/templates/helpers/ mirror (package.json's
 // sync:helpers/check:helpers), exempted for the same reason. Contract seeds,
@@ -176,6 +174,10 @@ function allFiles(root: string): string[] {
  * to more identifier/hyphen characters on either side (rejects homonyms
  * like `.repo-harness-migrate-backup` or `repo-harness-deploy-sql`, which a
  * plain substring scan would false-positive on). */
+const RETIREMENT_DIAGNOSTICS: Record<string, string[]> = {
+  "claude-review": ["src/cli/index.ts", "src/effects/review/generic-review.ts"],
+};
+
 function hasLiveHit(content: string, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const pattern = new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_-])`, "u");
@@ -219,6 +221,8 @@ describe("retired Skill package names: live-reference scan", () => {
       }
 
       for (const name of RETIRED_NAMES) {
+        // Only explicit upgrade refusal and legacy drain path detection; no runnable alias/reader.
+        if (RETIREMENT_DIAGNOSTICS[name]?.includes(rel)) continue;
         if (hasLiveHit(content, name)) {
           violations.push(`${rel}: ${name}`);
         }

@@ -396,35 +396,12 @@ Only Human authority may accept or reject a submitted demand. Acceptance freezes
 - Campaign journal inspection and stop/reconciliation/expiry recording remain available after target movement or grant expiry; they grant no fresh execution authority. Post-merge continuation remains disabled until a typed Campaign-to-owned-publication proof is available. Omitted CLI start timestamps replay the first immutable start definition.
 - Live canonical Sprint carriers share one Task ID namespace, including completed rows in a live Sprint. Archived carriers are excluded. Canonical readers and proposed materialization validate the same invariant before shared Lease/message use or publication.
 
-## Persistent Claude acceptance reviewer
+## Persistent generic acceptance review
 
-`repo-harness claude-review round/status/close/cancel` owns one reviewer session
-per canonical task contract and worktree. Both host profiles require usable
-herdr >=0.9.0 in readiness. Each review owns a dedicated named headless herdr
-server, a readable activity pane and one persistent Claude stream-json child.
-A private config and launcher isolate the host from user shell startup and restore.
-It does not parse terminal text or change user configuration.
+`repo-harness review round/status/close/cancel` uses the existing task-agent runtime and fleet deep-reasoner in a dedicated linked checkout. The caller supplies `{endpoint, parent_pane}` and the reviewer checkout; review starts only the fixed Node >=24 OAR application host inside a visible Herdr pane and never starts a server or a second native launcher. Default selection uses an existing typed task binding for the parent pane and chooses its opposite harness. Unknown owner requires explicit `--harness`. Only preflight executable absence permits reported fallback; explicit selection and every post-intent failure refuse fallback/replay.
 
-The existing acceptance context owns contract/goal identity, current Git subject,
-target revision and prepared verification fingerprint. Each numbered request
-freezes these values. The provider returns a closed structured result with exact
-round/session/context identities, verdict and stable finding IDs. Host validation
-and a fresh context fence precede the existing protected `AcceptanceReceipt`
-writer. Raw provider results and receipt associations are transport evidence,
-not another acceptance authority. Review Markdown remains a receipt projection.
+The existing acceptance context owns contract/goal identity, Git subject, target revision and prepared verification fingerprint. Each numbered request freezes that context. The provider writes the exact request's Result file; immutable task-agent collection precedes domain identity, verdict and stable finding validation. The owner consumes model observation from the OAR Session API and binds actual harness/role/model to the reviewed Result. Missing or ambiguous observation fails closed. The generic-review Receipt has no launcher fields and remains equally writable/verifiable by headless domain callers. History and idle never grant acceptance.
 
-Initial session creation consumes existing semantic-review admission. Up to three
-changed-subject repair rounds retain the same PID/session; each prior finding
-must explicitly remain open or become resolved. The read-only provider has only
-Read/Grep/Glob tools, no inherited MCP servers, hooks or skills. Unknown delivery,
-identity loss, timeout, malformed output, stale evidence or concurrent submission
-fails closed without replay or automatic recovery.
+Three changed-subject repair rounds share one task-agent binding; every prior finding stays open or becomes resolved. Durable request intent prevents unknown delivery from consuming a new round. Initial creation uses the existing semantic-review admission. Fleet model/effort and the exact result-write communication exception are passed through OAR SessionOptions; the fleet RECOMMENDATION-first message remains unchanged. No vendor argv, native-log or TUI parser belongs to this application. The macOS Seatbelt profile denies all writes outside the canonical output tree, inherited by host descendants; paired zero-model fixture coverage proves this policy only. Codex host env configures workspace-write before Session creation and Session cwd is the output directory, while the OS policy is the protection authority. Stock OAR Claude bypass is allowed only under that proved OS boundary. Claude's system/init-only model projection cannot certify its actual gateway backend and therefore cannot mint a Receipt. Unsupported platforms fail closed. Native behavior, hooks, complete payload ingestion and forced host-loss cleanup remain unverified.
 
-After verification passes, explicit `close` checks the current passing receipt
-against the session's final recorded round, shuts down the child and its host,
-and retains evidence. `cancel` permits owned cleanup after failure without
-acceptance. PID/group/start-time/executable and herdr server/session/pane/host
-identity fence operations; a reused pane is never a cleanup target. Run close
-before `contract-worktree finish` removes the workspace. This reviewer does not
-create scheduler Tasks, Claims, Leases or Engineer Bindings; Herdr notification
-adapters and the provider-free merge gate keep their existing authority.
+`close` re-verifies the current passing Receipt and exact final accepted round before requesting OAR Session.dispose, proving its acknowledgement and execution-owner exit, then task-agent owned cleanup. `cancel` permits cleanup without acceptance. All identity/ownership cleanup remains task-agent's responsibility; attached user objects are never closed. Before upgrading, drain old sessions with the previous version and archive old evidence read-only. The retired command returns upgrade-required; old source labels have no current Receipt reader or alias. Cross-review CLI/core/runner remain an independent advisory path and their retirement is a separate scope after E2 merges. Campaign remains out of scope.

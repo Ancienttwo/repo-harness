@@ -12,6 +12,7 @@
     "agents/",
     "assets/",
     "dist/hook-entry.js",
+    "dist/oar-review-host.js",
     "dist/operator-ui/",
     "docs/images/",
     "docs/repo-harness-chatgpt-browser-engine.md",
@@ -65,10 +66,11 @@
     "check:task-workflow": "repo-harness run check-task-workflow --strict",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_BUNDLED_CLI_VERSION=\"\\\"$npm_package_version\\\"\" && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_BUNDLED_CLI_VERSION dist/hook-entry.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",
-    "prepack": "bun run build:hook-bundle 1>&2 && bun run build:operator-web 1>&2",
+    "prepack": "bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2",
     "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all",
-    "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh"
+    "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh",
+    "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
   },
   "devDependencies": {
     "@colbymchenry/codegraph": "1.6.1",
@@ -88,6 +90,7 @@
     "vite": "^8.3.1"
   },
   "dependencies": {
+    "@botiverse/oar": "0.10.2",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "archctx": "0.6.1",
     "archctx-contracts": "0.6.1",

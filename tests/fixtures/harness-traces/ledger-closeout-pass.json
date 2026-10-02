@@ -34,7 +34,7 @@
   ],
   "handoffs": [],
   "acceptance_receipt": {
-    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "claude-review"
+    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "generic-review"
   },
   "files_changed": ["plans/sprints/fixture.sprint.md", "tasks/reviews/fixture.review.md"],
   "allowed_paths_check": {

@@ -1,3 +1,4 @@
+import { recordFixtureAcceptance } from './helpers/repo-fixture';
 import { ROOT as scriptROOT } from "./helpers/helper-script-fixture";
 import { run } from "./helpers/repo-fixture";
 
@@ -133,14 +134,14 @@ async function makeFixture(seedCandidate?: (cwd: string) => void) {
 
   const providerCalls = join(home, 'provider-calls');
   writeFileSync(providerCalls, '1\n');
-  await recordAcceptance({
+  await recordFixtureAcceptance({
     root: cwd,
     authorityHome: home,
     contract: 'tasks/contracts/demo.contract.md',
     verification: '.ai/harness/checks/latest.json',
     disposition: 'external_pass',
     reviewer: 'Claude',
-    source: 'claude-review',
+    source: 'generic-review',
     actor: null,
     summary: 'the sole semantic reviewer accepted the candidate',
     findings: [],

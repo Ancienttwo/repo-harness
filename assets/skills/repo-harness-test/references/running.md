@@ -47,8 +47,8 @@ callers run `all`.
 
 Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1` (line 73), which is
 what unskips the real `npm pack`/install cases in
-`tests/harness-benchmark-matrix.test.ts` and the real `herdr` review-session
-cases in `tests/claude-review.test.ts`. So a green hosted `functional` run has
+`tests/harness-benchmark-matrix.test.ts`. Generic review domain fixtures are
+zero-model, with existing task-agent lifecycle coverage. A green hosted `functional` run has
 deliberately not exercised them; run `bash scripts/check-ci.sh` with no lane
 argument before a release, and read the `[gate] ... unset` lines in any other
 run as "not covered here" rather than "passed".
