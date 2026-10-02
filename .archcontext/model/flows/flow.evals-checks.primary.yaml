@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.evals-checks.primary
 capabilityId: capability.verification.evals-checks
-name: "Evaluate a cross-model review"
+name: "Execute a declared verification check"
 applicability: required
 participants:
   - id: capability
@@ -12,38 +12,38 @@ steps:
   - id: dispatch
     from: capability
     to: component
-    label: "Dispatch Review Outcome Classifier"
+    label: "Dispatch Verification Check Execution"
     evidence:
       entrypointId: entrypoint.evals-checks.primary
-      sourceSymbol: "runCrossReviewCommand"
+      sourceSymbol: "executeVerificationContract"
       sinkId: sink.evals-checks.primary
 outcomes:
   - id: success
     kind: success
-    label: "Evaluate a cross-model review completes"
+    label: "Execute a declared verification check completes"
     steps:
       - id: invoke-success
         from: capability
         to: component
-        label: "Invoke Review Outcome Classifier"
+        label: "Invoke Verification Check Execution"
         evidence:
           entrypointId: entrypoint.evals-checks.primary
-          sourceSymbol: "runCrossReviewCommand"
+          sourceSymbol: "executeVerificationContract"
           sinkId: sink.evals-checks.primary
     terminal:
       participant: capability
       label: Return success receipt
   - id: error
     kind: error
-    label: "Evaluate a cross-model review is rejected or fails"
+    label: "Execute a declared verification check is rejected or fails"
     steps:
       - id: invoke-error
         from: capability
         to: component
-        label: "Propagate Review Outcome Classifier failure"
+        label: "Propagate Verification Check Execution failure"
         evidence:
           entrypointId: entrypoint.evals-checks.primary
-          sourceSymbol: "runCrossReviewCommand"
+          sourceSymbol: "executeVerificationContract"
           sinkId: sink.evals-checks.primary
     terminal:
       participant: capability

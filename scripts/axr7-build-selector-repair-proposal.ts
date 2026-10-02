@@ -5,12 +5,13 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const output = "tasks/notes/20260809-0327-axr7-consumer-e2e-adoption-dogfood.selector-repair-proposal.json";
+// Evals/checks now uses its current verification-execution anchors; the retired
+// direct advisory selector repair must not recreate those obsolete symbols.
 const repairs = [
   ["action-commands", "capability.public-surface.action-commands", "src/cli/commands/init.ts", "runInit", "src/cli/commands/init.ts", "installExternalSkills", "src/cli/commands/init.ts", "installExternalSkills", "src/cli/commands/init.ts", "loadSkillSurfaceCatalog"],
   ["root-router", "capability.public-surface.root-router", "src/cli/commands/init.ts", "runInit", "src/cli/commands/adoption-plan.ts", "runAdoptionPlan", "src/cli/commands/adoption-plan.ts", "runAdoptionPlan", "src/cli/commands/adoption-plan.ts", "createPlan"],
   ["hook-adapters", "capability.runtime-harness.hook-adapters", "src/cli/hook/mutation-observed.ts", "consumePendingPostEditEvents", "src/cli/hook/mutation-observed.ts", "processArchitectureCascade", "src/cli/hook/mutation-observed.ts", "processArchitectureCascade", "src/cli/hook/mutation-observed.ts", "runRepoHarnessHelper"],
   ["general-repo-access", "capability.runtime-mcp.general-repo-access", "src/cli/mcp/general-repo-access.ts", "callGeneralRepoTool", "src/cli/mcp/general-repo-access.ts", "readFileTool", "src/cli/mcp/reader-tools.ts", "callReaderTool", "src/cli/mcp/general-repo-access.ts", "callGeneralRepoTool"],
-  ["evals-checks", "capability.verification.evals-checks", "src/effects/review/cross-review-runner.ts", "runCrossReview", "src/core/review/cross-review.ts", "classifyCrossReviewOutcome", "src/cli/commands/cross-review.ts", "runCrossReviewCommand", "src/effects/review/cross-review-runner.ts", "runCrossReview"],
   ["contract-assets", "capability.workflow-engine.contract-assets", "src/core/adoption/standard-plan.ts", "planStandardAdoption", "src/core/adoption/workflow-contract-asset.ts", "readWorkflowContractAsset", "src/core/adoption/workflow-contract-asset.ts", "loadWorkflowContractAsset", "src/core/adoption/workflow-contract-asset.ts", "readWorkflowContractAsset"],
   ["inspection-migration", "capability.workflow-engine.inspection-migration", "src/cli/commands/init.ts", "runInit", "src/cli/commands/init.ts", "runProcess", "src/cli/commands/init.ts", "runProcess", "src/effects/process-runner.ts", "runProcess"]
 ] as const;

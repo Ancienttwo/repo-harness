@@ -149,8 +149,9 @@ Repo-local workflow refresh stays on `repo-harness init`; `setup check
 
 The cross-review skill is **harness-owned**; its routing source lives in
 `assets/skills/repo-harness-cross-review/`. Explicit independent review uses
-Codex's read-only provider mode. The full profile installs this skill on both
-hosts; Claude acceptance retains its persistent Herdr domain Result/Receipt.
+the persistent fleet deep-reasoner task-agent and existing OAR host in Herdr.
+The full profile installs this Skill on both hosts; generic-review file Result
+and typed Receipt own acceptance. The direct advisory runtime is retired.
 Plugin install/discovery/readiness is not a repo-harness runtime dependency;
 user-managed plugins remain untouched. Plan consultation uses persistent
 task-agent collaborators in Herdr. Review Markdown remains projection only.

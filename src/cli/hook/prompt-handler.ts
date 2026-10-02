@@ -505,7 +505,7 @@ function emitReviewHints(
         // Both policy protocols use the generic review domain source;
         // retired launcher-specific Receipt sources are invalid.
         const source = acceptancePolicySource();
-        const command = 'repo-harness-cross-review';
+        const command = 'repo-harness review round (fleet deep-reasoner in Herdr)';
         out.push('[ExternalAcceptance] Review/release intent detected. Start peer acceptance in parallel with local /check.\n');
         out.push(`[ExternalAcceptance] Current active plan: ${state.activePlan ?? '(none)'}\n`);
         out.push(`[ExternalAcceptance] Current contract: ${state.contractFile}\n`);
@@ -541,7 +541,7 @@ function emitReviewHints(
     strongBoundary: false,
   }, recordCircuit, err)) return;
   const peer = env.HOOK_HOST === 'codex' ? 'Claude' : 'Codex';
-  const skill = 'repo-harness-cross-review';
+  const skill = 'repo-harness-cross-review / repo-harness review round (Herdr)';
   out.push(`[CrossReview] Pre-merge moment — consider an independent ${peer} review of the diff via ${skill}: a different training distribution has non-overlapping blind spots. Skip if the change is trivial.\n`);
 }
 

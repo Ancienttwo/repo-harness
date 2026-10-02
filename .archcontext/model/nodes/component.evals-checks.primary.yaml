@@ -1,7 +1,7 @@
 schemaVersion: archcontext.node/v2
 id: component.evals-checks.primary
 kind: component
-name: "Review Outcome Classifier"
+name: "Verification Check Execution"
 status: active
 parent: capability.verification.evals-checks
-summary: "Executes the reviewed evaluate a cross-model review boundary."
+summary: "Executes the existing contract Verification Plan with exact snapshot, process result and evidence binding."

@@ -583,7 +583,7 @@ hooks own execution.
 | `repo-harness-check` | Workflow and release checks plus a deploy-readiness reference |
 | `repo-harness-ship` | Validate finished worktrees, push branches, and open PRs |
 | `repo-harness-architecture` | Architecture docs, drift requests, and diagrams without a full harness refresh |
-| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
+| `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consults, MCP Connector setup, and bridge handoff; explicit setup only |
 | `merge-gate` (external) | Exact-candidate final gate; repo-harness ships no merge-gate Skill — see [external tooling](docs/reference-configs/external-tooling.md) |
 

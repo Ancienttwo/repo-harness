@@ -550,7 +550,7 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | `repo-harness-check` | Workflow 和 release check，附带 deploy-readiness reference |
 | `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
 | `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
-| `repo-harness-cross-review` | Codex advisory review; generic acceptance uses fleet deep-reasoner task-agent + review |
+| `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
 
