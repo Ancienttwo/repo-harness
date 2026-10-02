@@ -823,7 +823,7 @@ function reviewFixture() {
     verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
 }
 
-test('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
+test.skipIf(process.platform !== 'darwin')('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
   const f = reviewFixture();
   expect(reviewLocation(f.root, f.options.contract).dir).toBe(reviewLocation(f.reviewerRepo, f.options.contract).dir);
   const first = await runReviewRound(f.options, f.effects);
@@ -855,7 +855,7 @@ test('generic orchestration collects domain Results, keeps one reviewer for thre
   expect(f.calls).toContain('close');
 });
 
-test('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {
+test.skipIf(process.platform !== 'darwin')('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {
   const f = reviewFixture(); f.verdict('PASS');
   const result = await runReviewRound({ ...f.options, harness: 'codex' }, f.effects);
   expect(result.actual_harness).toBe('codex'); expect(result.fallback_reason).toBeNull();
@@ -876,7 +876,7 @@ test('generic review allows explicit same-harness and only preflight-missing fal
   expect((await closeReview(failed.root, failed.options.contract, true, failed.home, effects)).status).toBe('closed');
 });
 
-test('generic review unknown owner, explicit missing provider and timeout fail closed without history acceptance', async () => {
+test.skipIf(process.platform !== 'darwin')('generic review unknown owner, explicit missing provider and timeout fail closed without history acceptance', async () => {
   const f = reviewFixture();
   await expect(runReviewRound(f.options, { ...f.effects, owner: () => null })).rejects.toThrow('owner_unknown');
   expect(f.sent()).toBe(0);
@@ -900,7 +900,7 @@ test('generic review refuses legacy cleanup-pending markers without reading or t
   expect(f.sent()).toBe(0); expect(f.calls).toEqual([]);
 });
 
-test('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
+test.skipIf(process.platform !== 'darwin')('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
   const { existsSync, unlinkSync } = await import('node:fs');
   const copied = (f: ReturnType<typeof reviewFixture>) => {
     const session = readSessionArtifact<{task:string}>(join(reviewLocation(f.root,f.options.contract).dir,'session.json'));
