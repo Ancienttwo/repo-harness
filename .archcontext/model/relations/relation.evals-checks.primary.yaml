@@ -3,4 +3,4 @@ id: relation.evals-checks.primary
 kind: calls
 source: capability.verification.evals-checks
 target: component.evals-checks.primary
-intent: "Evaluate a cross-model review"
+intent: "Execute a declared verification check"

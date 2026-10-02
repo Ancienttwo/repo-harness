@@ -23,13 +23,13 @@ source:
     - "scripts/sync-brain-docs.sh"
   entrypoints:
     - id: entrypoint.evals-checks.primary
-      path: "src/cli/commands/cross-review.ts"
+      path: "src/effects/evidence/verification-execution.ts"
       symbols:
-        - name: "runCrossReviewCommand"
+        - name: "executeVerificationContract"
           sinks:
             - id: sink.evals-checks.primary
-              path: "src/effects/review/cross-review-runner.ts"
-              symbol: "runCrossReview"
+              path: "src/effects/evidence/verification-execution.ts"
+              symbol: "executeCheck"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

@@ -187,7 +187,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     try {
       const { result } = invoke(repo.root, '/check', { env: { HOOK_HOST: 'codex' } });
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Peer reviewer: Codex via repo-harness-cross-review');
+      expect(result.stdout).toContain('Peer reviewer: Codex via repo-harness review round (fleet deep-reasoner in Herdr)');
       expect(result.stdout).toContain('--reviewer "Codex" --source "generic-review"');
     } finally {
       repo.cleanup();

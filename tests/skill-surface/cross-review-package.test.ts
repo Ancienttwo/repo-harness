@@ -196,11 +196,11 @@ describe("repo-harness-cross-review package: activation proof -- live in manifes
     expect(profileOwnedSkillNames(catalog)).toContain(PACKAGE_DIR);
   });
 
-  test("codex-review is fully retired: absent from packages[], recorded in retiredPackages pointing at this package", () => {
+  test("codex-review is fully retired: absent from packages[], recorded in retiredPackages without a launcher alias", () => {
     expect(catalog.packages.find((pkg) => pkg.name === "codex-review")).toBeUndefined();
     const entry = catalog.retiredPackages.find((r) => r.name === "codex-review");
     expect(entry).toBeDefined();
-    expect(entry?.replacement).toBe(PACKAGE_DIR);
+    expect(entry?.replacement).toBeNull();
     expect(existsSync(join(SKILLS_ROOT, "codex-review"))).toBe(false);
   });
 
