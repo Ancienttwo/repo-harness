@@ -473,3 +473,14 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   removal, then retries atomic `mkdir`. Release now removes only locks whose
   owner token still matches the process-created token, so a cleanup path cannot
   remove a replacement lock.
+
+## 2026-06-30 local CodeGraph install parity
+
+- `repo-harness update --check --check-updates --json` reported one remaining
+  `needs_agent` item because this repo pinned local `@colbymchenry/codegraph`
+  to `1.1.3` while the visible CLI/latest package was `1.1.6`.
+- Upgraded the exact devDependency pin to `@colbymchenry/codegraph@1.1.6` and
+  refreshed the project index with `bash scripts/ensure-codegraph.sh --sync`.
+- The install-health acceptance surface is the setup check, not only
+  `codegraph --version`: after the bump it reports status `ok`, local source
+  version `1.1.6`, index `up-to-date`, and no `agent_actions`.
