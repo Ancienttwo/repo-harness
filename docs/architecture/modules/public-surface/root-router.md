@@ -83,7 +83,8 @@ sequenceDiagram
 3. **AGENTS.md ≡ CLAUDE.md**：两个 host 契约必须字节相同。任何单侧编辑都是漂移。
 4. **公开面与内部步骤分离**：`hooks-init` / `docs-init` / `create-project-dirs` 永远不是公开命令。
 5. **profile 只增不诱导**：`repo-harness-setup`、`repo-harness-architecture`、`repo-harness-chatgpt` 的 `profiles: []` + `discoverability: cli-reference|explicit-setup` 意味着它们**永不被任何 profile 隐式发现**，只能经路由器或显式安装到达。这是把发现面压在五动作之内的关键机制。
-6. **无兼容回落**：protocol 1 → 2 只有一条显式迁移路径，越界一律 throw。
+6. **explicit-only 是“装了但不被模型自动选用”一档**：`discoverability: explicit-only` 的 facade 仍按 kind+profile 正常安装；`manifest.json` 是唯一声明，`SKILL.md` 的 `disable-model-invocation: true`（Claude）与 `agents/openai.yaml` 的 `policy.allow_implicit_invocation: false`（Codex）是提交在 skill 源码目录里的投影，由 `tests/skill-surface/catalog.test.ts` 校验两者不漂移。
+7. **无兼容回落**：protocol 1 → 2 只有一条显式迁移路径，越界一律 throw。
 
 ### 3.3 10x 规模下先垮的点
 

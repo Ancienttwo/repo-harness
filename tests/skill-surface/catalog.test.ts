@@ -551,3 +551,43 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(expectations.crossModel).toEqual(["repo-harness-cross-review"]);
   });
 });
+
+// `explicit-only` is the "installed but not model-auto-routed" tier. The
+// manifest is the single source of truth; the committed host-native switches
+// (Claude SKILL.md `disable-model-invocation`, Codex agents/openai.yaml
+// `allow_implicit_invocation`) are projections that must never drift from it.
+describe("skill-surface catalog: explicit-only projection onto host-native switches", () => {
+  const resolution = parseSkillSurfaceCatalog(readFileSync(MANIFEST_PATH, "utf-8"), { declared: true, profileComponents: PROFILE_COMPONENTS });
+  if (resolution.status !== "valid") throw new Error("expected the real manifest to be a valid catalog");
+  const catalog = resolution.catalog;
+  const facades = catalog.packages.filter((pkg) => pkg.kind === "facade" && pkg.source !== null);
+
+  function claudeDisablesModelInvocation(source: string): boolean {
+    const frontmatter = readFileSync(join(ROOT, source, "SKILL.md"), "utf-8").match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+    return /^disable-model-invocation:\s*true\s*$/m.test(frontmatter);
+  }
+
+  function codexDisablesImplicitInvocation(source: string): boolean {
+    const path = join(ROOT, source, "agents", "openai.yaml");
+    return existsSync(path) && /^\s*allow_implicit_invocation:\s*false\s*$/m.test(readFileSync(path, "utf-8"));
+  }
+
+  test("the explicit-only set is exactly auto-campaign, repo-harness-ship and obsidian-memory", () => {
+    expect(facades.filter((pkg) => pkg.discoverability === "explicit-only").map((pkg) => pkg.name).sort()).toEqual([
+      "auto-campaign", "obsidian-memory", "repo-harness-ship",
+    ]);
+  });
+
+  test("every facade carries both host switches iff the manifest declares it explicit-only", () => {
+    for (const pkg of facades) {
+      const explicitOnly = pkg.discoverability === "explicit-only";
+      expect([pkg.name, claudeDisablesModelInvocation(pkg.source as string)]).toEqual([pkg.name, explicitOnly]);
+      expect([pkg.name, codexDisablesImplicitInvocation(pkg.source as string)]).toEqual([pkg.name, explicitOnly]);
+    }
+  });
+
+  test("explicit-only facades stay installed: facade selection filters kind and profile, never discoverability", () => {
+    expect(facadesForProfile(catalog, "minimal")).toContain("obsidian-memory");
+    for (const name of ["auto-campaign", "repo-harness-ship", "obsidian-memory"]) expect(facadesForProfile(catalog, "full")).toContain(name);
+  });
+});

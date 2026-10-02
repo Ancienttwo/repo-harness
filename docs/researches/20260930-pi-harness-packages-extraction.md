@@ -8,7 +8,7 @@
 
 十个 package 里没有值得作为依赖引入的。可以萃取的是四个设计模式，按投入从小到大排列：
 
-1. **交互澄清契约去重（小，可直接做）。** 仓库自己的两处规定互相矛盾：`docs/researches/20260811-minimum-effective-interview-routing.md` 规定每批最多 3 个问题，`assets/skills/repo-harness-plan/references/create.md:12` 规定只问 1 个信息增益最高的问题。pi-ask 的 `high_stakes / ambiguous / both / clear` 分类和“先取证 → 中立摘要 → 提问 → 复述决定”握手可以作为统一时的参照。宿主已有结构化提问工具（Claude `AskUserQuestion`），不需要再造工具。
+1. **交互澄清契约去重（小，可直接做）。** 原先判断为两处规定互相矛盾，核实后是文档过期：`docs/researches/20260811-minimum-effective-interview-routing.md` 的“每批最多 3 个”现在只管 PRD 路线，plan 路线在 08-14 的 `877a8b64` 经批准改为 `create.md` 的“恰好 1 个”，两条规则各有测试锁定，研究文档已补更新节。pi-ask 的 `high_stakes / ambiguous / both / clear` 分类和“先取证 → 中立摘要 → 提问 → 复述决定”握手可以作为统一时的参照。宿主已有结构化提问工具（Claude `AskUserQuestion`），不需要再造工具。
 2. **Skill 可见性投影到宿主原生开关（小，需先核实宿主能力）。** pi-skillful 用 480 行实现“从 `<available_skills>` 隐藏但仍可显式调用”。我们的 `assets/skill-commands/manifest.json` 已有封闭的 `discoverability` 枚举，但只影响装不装，没有“装了但不自动路由”这一档。如果 Claude/Codex 的 skill frontmatter 支持禁止隐式调用（Claude `disable-model-invocation`、Codex `agents/openai.yaml` 的 `allow_implicit_invocation`，均已核实，见第六节），就把 `explicit-setup` / `cli-reference` 这类值投影成对应 frontmatter，不另建隐藏机制。
 3. **按授权延迟暴露工具 schema（中，归入已有 codemode 研究）。** pi-subagents 的新 session 默认只暴露一个很小的 `subagents_enable` loader，完整 `subagent` schema 到下一轮请求才出现；提示词写明“复杂度本身不构成授权”。这和 `docs/researches/20260930-pi-codemode-lazy-loading.md` 里 MCP exposure 的 P3 第 2 条是同一问题，放在那条边界里评估，不单独开工。
 4. **重新审视 fleet 运行时调度器的必要性（大，高风险，需要先做方向判断）。** pi-subagents 把编排定位为“父 agent 的指导，不是运行时 workflow 模式”：父 agent 写一段 JS `workflowScript`，host 在沙箱里执行，并在 admission 边界强制单 writer、worktree 干净前提、预算、typed gate。repo-harness 的 fleet / engineers / collaboration / automation / operator 源码的实测范围为 147 个 .ts 文件、46,008 physical LOC（见 `20260930-fleet-responsibility-trace.md`），`20260808-repo-harness-in-opencode.md` §七还规划了确定性 fleet scheduler。宿主侧已经出现同形态的 workflow runtime（pi-subagents、Claude Code Workflow 工具）时，我们可能只需要守住 admission 不变量，把调度交给宿主。这条会改变系统边界。用户已裁定方向：调度交给宿主，repo-harness 作为上游给出指引（见第六节）；具体删哪些代码仍需先盘点。
@@ -93,7 +93,7 @@ pi-subagents 本身并不“薄”（14.9k 行源码、3.8k 行文档），它�
 
 ### 6.1 模式 1：澄清工具
 
-不做新工具。Claude 用 `AskUserQuestion`，Pi 用 pi-ask，Codex 按 `$interview` 或编号文本降级。repo-harness 只保留一份宿主无关的“何时必须问、每批问几个、默认值和 `[ASSUMED]` / `[UNKNOWN]` 怎么记”的契约。目前这份契约在 `20260811-minimum-effective-interview-routing.md`（≤3 个）和 `create.md:12`（恰好 1 个）两处互相矛盾，先选定一处为准。
+不做新工具。Claude 用 `AskUserQuestion`，Pi 用 pi-ask，Codex 按 `$interview` 或编号文本降级。repo-harness 只保留一份宿主无关的“何时必须问、每批问几个、默认值和 `[ASSUMED]` / `[UNKNOWN]` 怎么记”的契约。已核实（2026-10-02）：不是规则冲突。plan 路线恰好 1 个（`create.md`，08-14 #186 起），PRD 路线每批 ≤3 个（`prd.md`），有意分叉；`20260811-minimum-effective-interview-routing.md` 只是过期，已补更新节说明。
 
 ### 6.2 模式 2：skill 可见性（宿主开关已核实）
 

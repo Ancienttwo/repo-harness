@@ -2,6 +2,7 @@
 name: repo-harness-ship
 description: Final repo-harness closeout workflow. Runs review/check gates, commits finished contract worktrees, pushes codex branches, and creates GitHub PRs by default.
 when_to_use: "repo-harness-ship, ship repo-harness work, close out contract worktree, commit push PR, cleanup merged worktree, local merge harness work"
+disable-model-invocation: true
 ---
 
 # repo-harness-ship

@@ -28,6 +28,19 @@ question contract through its structured question tool or numbered plain text.
 That is a transport fallback only: it does not introduce a second semantic
 authority or relax the decision ledger.
 
+## Update 2026-08-14: plan route narrowed to one question
+
+The batch ceiling above now governs the PRD route only (`prd.md` step 1, one
+batch of at most 3 questions plus an accept-all-defaults path). Commit
+`877a8b64` (#186, goal calibration gate) changed the plan route in
+`create.md` to: a compact calibration card, then exactly 1
+highest-information-gain question, zero when repo evidence resolves the
+decision. Plan creation has already read the repo, so usually one high-impact
+gap remains; a PRD starts from a vague idea and needs several gaps confirmed in
+one pass. The `[ASSUMED]` / `[UNKNOWN]` ledger, the contradiction-only second
+round and the non-interactive no-question rule are shared by both routes and
+unchanged. Both rules are locked by `tests/action-command-skills.test.ts`.
+
 ## P1: boundary map
 
 - `assets/skills/repo-harness-plan/references/create.md` owns complex planning

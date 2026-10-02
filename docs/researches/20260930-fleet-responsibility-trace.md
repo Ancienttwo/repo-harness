@@ -499,6 +499,19 @@ effect、callback或outer result之间crash留下unknown/pending，先reconcile�
 
 因此首次offer在T1读出、admission在T2重采，即使Task没变也可能必然stale。GAP5不能仅靠“进admission时Date.now一次”闭合。
 
+#### 时间的实际作用范围
+
+`observed_at` 只经 `observeRetryEligibility` 进入 offer（`src/core/engineers/automation-attempt.ts:69`），但其输出的多个字段都在被hash的offer basis内（`src/core/engineers/scheduling.ts:660`–`src/core/engineers/scheduling.ts:669`），所以时间影响的不只是“是否可选”：
+
+| 场景 | 时间的作用 | 对 offer_revision 的影响 |
+|---|---|---|
+| `current=null`（首次offer） | `eligible_since = observed_at` 原值 | **每个不同的时刻产生不同revision**；T1与T2必然不等。这是上面的反例，也是必须冻结时间的根本原因。 |
+| `current` 存在且 `state=eligible` | `eligible_since` 取 `next_eligible_at ?? first_eligible_at`，与时间无关；时间只决定 `starvation_attention` 与 `blocker_owner` 是否跨过 `attention_after_seconds` 阈值 | 仅在T1与T2之间跨阈值时revision变化；否则稳定。 |
+| `current` 存在且 `next_eligible_at` 在未来 | `now < next_eligible_at` 时 `state=retry_backoff`，offer不可选 | 时间越过 `next_eligible_at` 后该Task才出现offer。冻结到更早的时刻会让已过backoff的Task仍不可选，冻结到未来会绕过backoff（见选项A）。 |
+| `current` 存在但 `work_package_revision` 不同 / 终态（exhausted、forbidden、reconciliation） | 无 | 与时间无关。 |
+
+结论：冻结的时间同时决定可选性、`starvation_attention`/`blocker_owner` 和（仅首次offer时）`eligible_since`；它不改变retry policy，也不改变 Binding/attempt 等其余authority字段。
+
 | 最小选项 | 好处 | 问题 |
 |---|---|---|
 | A. host传任意observed_at，wrapper填offer_options.now_ms。 | 最小字段改动。 | 时间无可信来源；未来时间可绕过backoff投影（`src/core/engineers/automation-attempt.ts:76`），陈旧时间冻结attention。拒绝。 |
@@ -513,7 +526,7 @@ effect、callback或outer result之间crash留下unknown/pending，先reconcile�
 
 - `src/effects/engineers/scheduling.ts:314` 的collector仍提供fact读取，不改offer语义；producer在 `src/effects/engineers/scheduling-acquire-next.ts:137` 附近新增函数，选一次服务端时间再调用collector并durable保存。
 - CLI offers的认证位置 `src/cli/commands/engineer.ts:317` 和 MCP offers surface对应入口增加**显式prepare**能力；不要默默把纯read的offers变成写store。具体新增MCP prepare工具/schema/annotation在 `src/cli/mcp/engineer-tools.ts:150` 的封闭inventory与tool definitions一起注册，fixture验证；新增窄producer不会获得claim权。
-- selected façade验证record后通过已存在 `offer_options.now_ms` 调unchanged A（`src/effects/engineers/scheduling-acquire.ts:76`）；两次重采仍读取当前Binding/attempt等authority，时间只固定retry/attention投影。
+- selected façade验证record后通过已存在 `offer_options.now_ms` 调unchanged A（`src/effects/engineers/scheduling-acquire.ts:76`）；两次重采仍读取当前Binding/attempt等authority。`now_ms` 除进入 `observeRetryEligibility` 外，还经 `collectFleetOffers` 传给 board 解析，用于判定 lease 是否仍 live（`src/effects/engineers/scheduling.ts:349`、`src/effects/fleet/acquire.ts:220`）；较旧的冻结时刻会使 lease 判定偏向“live”。S2 接线前必须审计这条路径，作用范围见上文“时间的实际作用范围”（该节只覆盖 retry/attention/eligible_since，不含 lease 判定）。路径已复核：`scheduling.ts:349` → `fleet/acquire.ts:220` → `state/collect-board-inputs.ts:234`（lease liveness fallback），并进入 workflow state。全部时间消费者的安全性仍未证明，必须在 S2 接线前审计。
 - GAP2 request包含ref；每次新effect用该ref，completed replay不重算时间或claim。expired ref不妨碍纯completed-result读取，但不能把读取结果当新的admission；current授权仍须检查。pending永远不能因expiry被当未发生。
 - observation record若被pending/completed receipt引用，保留到显式证据retention规则允许清理；本切片不加自动GC。原始snapshot/record消失应fail closed。
 - **expiry建议：新事务进入admission前的引用新鲜度先冻结为30秒设计上限**，边界测试使用注入clock。30秒不是实测SLO；实际host往返/人工选择时延和部署clock行为 **[unverified]**，首次canary不满足就重新裁定该常量，不能运行时偷偷放宽。host若需要更久选择，重新prepare并用新key提交最新assertion。producer时间与expiry进record，transport不能覆盖它。30秒检查点是获得request key锁后、进入新事务admission前；下层A的concurrency/Binding/capacity锁等待可能跨过expiry。此设计**不保证实际claim mutation发生时快照年龄仍小于30秒**，只固定可信观察语义并继续重读当前authority。要求mutation-time TTL将需要下层lock/admission port改动，超出本次admission unchanged推荐，须另行裁定。
@@ -530,7 +543,7 @@ effect、callback或outer result之间crash留下unknown/pending，先reconcile�
 |---|---|---|---|
 | S0 | 取证反例、冻结observation schema/30秒上限与migration key语义。 | 先做测试/契约设计；无运行行为切换。 | 真实首次offer跨T1/T2 stale被现有test fixture复现；明确scope/policy/callback身份与legacy key处理，不能只用stub offer。 |
 | S1 | GAP5窄prepare producer/reader与可信时间验证；暴露显式prepare表面。 | **纯新增能力**，但prepare明确写观察证据；原纯read offers不变。 | 当前null-attempt、foreign/tamper/future/expiry/clock rollback测试通过；无任何claim；原始snapshot与record可读回。source authority unchanged。 |
-| S2 | GAP2同模块shared C core和selected façade；同时一次性receipt及campaign外层身份切换。 | **行为变化**：持久化schema/legacy-key replay升级；auto选择策略暂不变。 | old pending不能被新namespace绕开；同key身份冲突、并发单effect、callback前后crash及outer/inner不一致fail closed；迁移没有永久v1 reader。S2先绑定现有callback语义的policy revision R1；尚不接新production selected入口。 |
+| S2 | GAP2同模块shared C core和selected façade；同时一次性receipt及campaign外层身份切换。**前置条件：** S0已冻结 `observation_ref` 形状与其在request identity中的位置，S1的reader可读回record；否则S2只能对stub ref建receipt，新事务的freshness检查无法验证。 | **行为变化**：持久化schema/legacy-key replay升级；auto选择策略暂不变。 | old pending不能被新namespace绕开；同key身份冲突、并发单effect、callback前后crash及outer/inner不一致fail closed；迁移没有永久v1 reader。S2先绑定现有callback语义的policy revision R1；尚不接新production selected入口。 |
 | S3 | GAP3/4 campaign membership owner guard、policy/context identity、callback/compensation/budget次序。 | **行为变化/不变量强化**；原authorized auto选择仍在manifest内，普通A不变。 | 其他group合法Task zero claim拒绝；新增membership/post-effect语义升级policy revision为R2，同key的R1 completed须冲突，不能冒充R2验证通过。scope schema在S0已冻结，不再新增第二次兼容schema迁移。manifest变化及own-claim补偿、unknown/pending/outer replay链被tests覆盖。完整锁覆盖若未证明，明确限制其强度，不能跳过该未知。 |
 | S4 | GAP1 CLI selected输入、MCP direct acquire schema切换、controller/campaign selected接线。 | CLI selected是**新增能力**；MCP必填字段与controller/campaign selected协议是**行为变化**。 | 四入口同一choice/ref通过同一C core到原A；缺字段不fallback，plain/campaign不串policy；CLI/MCP inventories和原自动路径验证通过。schema消费者同步迁移，未迁移客户端明确拒绝。 |
 | S5 | host prepare→只读选择→selected admit的fixture/受控canary，核对原admission和closeout。 | **验收验证**，不新增调度器/删除代码。 | 四入口的stale/rotation/capacity/claim race/current-null/time、key replay与handoff证据均成立；host实测延迟验证30秒上限；用精确subject验收，不能用readyz或exit0代替。 |
@@ -538,3 +551,9 @@ effect、callback或outer result之间crash留下unknown/pending，先reconcile�
 S2的私有共享抽取不能独立绕过持久化切换；它保护唯一receipt owner。若实施者为了review先单独做byte-identical提取，该提取是refactor验证子项，不得先上线一个忽略旧key的selected新目录。S4不能先于S1–S3开放到host。
 
 **下一实际瓶颈是 S0 的首次offer跨请求时间反例与可信快照契约**：它决定selected API能否工作，且能用现有fixture明确验证。之后才是receipt迁移；不是立即搬走 `find` 或修改lower admission。以上只给推荐次序，没有决定删除E1/Fleet fallback，也没有提交、推送或发布。
+
+### 已裁定事项（S1 验收后）
+
+- **合并顺序：** 先合 #467，再让 #468 rebase：删除自己的 `firstOffer` 闭包，复用 #467 的 `offer(observedAt)`，只保留一处 `observeRetryEligibility` import。隔离合并模拟无文字冲突，但产物有两处 import，typecheck 报两个 TS2300（本机 Bun build 不报错）。验收必须看合并后真实 tree 的 `check:type` 与完整验证，不能只看各分支绿灯。
+- **quota/GC：** S1 接受暂无，保留现有 prepare 入口，PR 保持 Draft、不独立发布。S2 的责任归 repo-harness：acquisition ledger owner 记录 `observation_ref` 引用；evidence closeout/recovery owner 负责保留规则与显式清理，host picker 不负责删除。30 秒是 admission freshness，不是 retention TTL；pending、仍被保留的 completed 引用及未知/损坏元数据不得据过期删除，未引用记录按明确保留规则清理。发布时若该责任仍未闭合，就推迟入口暴露。
+- **observation 错误类型（gatekeeper finding 6）：** 留给 S2，届时与 MCP 映射、ledger replay 顺序一并冻结，区分缺失、损坏、身份不符与过期；过期或缺失不得把 pending/completed 当成新事务。
