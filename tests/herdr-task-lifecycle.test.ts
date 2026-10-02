@@ -797,8 +797,9 @@ test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a pri
   const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' }); server.on('error', () => {});
   const closeRequest = join(output, 'close.request'), readyFile = join(output, 'ready.json'), disposedFile = join(output, 'disposed.json');
   const specFile = join(fixture, 'fixture.json'), profile = join(fixture, 'profile.sb');
-  writeFileSync(specFile, JSON.stringify({ mode: 'scripted', cwd: repo, inputs: ['one','two','three'], closeRequest, readyFile, disposedFile }));
-  writeFileSync(profile, reviewIsolationPolicy({ subject: repo, primary: repo, ownerRecord: repo, journal: repo, gitCommonDir: join(repo,'.git'), output }));
+  const paths = { subject: repo, primary: repo, ownerRecord: repo, journal: repo, gitCommonDir: join(repo,'.git'), output };
+  writeFileSync(profile, reviewIsolationPolicy(paths));
+  writeFileSync(specFile, JSON.stringify({ mode: 'scripted', cwd: repo, inputs: ['one','two','three'], closeRequest, readyFile, disposedFile, isolation: { paths, policyFile: profile } }));
   const priorPath = process.env.PATH, priorFlag = process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE;
   process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE='1';
   let binding: Awaited<ReturnType<typeof api.startTaskApplicationHost>> | undefined;

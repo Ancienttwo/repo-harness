@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { readSessionArtifact, writeSessionArtifact, type TaskRequest } from '../terminal/task-session';
 import type { AvailableInstallation } from '@botiverse/oar';
 import { dirname } from 'node:path';
-import { reviewHostTemporaryDirectory } from './review-isolation';
+import { reviewHostTemporaryDirectory, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
 
 export function assertOarHostNode(version = process.versions.node): void {
   if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');
@@ -49,18 +49,20 @@ export class OarReviewHost {
 
 /** Zero-model seam uses OAR's scriptedRuntime, not a hand-built adapter. */
 export async function openScriptedReviewHost(options: SessionOptions, print: (view: unknown) => void,
-  turn: Parameters<typeof scriptedRuntime>[0]['turn']): Promise<OarReviewHost> {
+  turn: Parameters<typeof scriptedRuntime>[0]['turn'], admission: ReviewIsolationAdmission): Promise<OarReviewHost> {
   assertOarHostNode();
+  assertReviewIsolation(admission);
   // Configuration only; Seatbelt is the protection authority.
-  process.env.OAR_CODEX_SANDBOX = 'workspace-write';
+  delete process.env.OAR_CODEX_SANDBOX;
   const runtime: Runtime = scriptedRuntime({ id: 'fixture', model: 'fixture-oar', turn });
   const session = await runtime.session({ kind: 'available', via: 'bundled' }, options);
   return new OarReviewHost(session, print);
 }
 
-interface FixtureSpec { mode: 'scripted'; cwd: string; inputs: string[]; closeRequest: string; readyFile: string; disposedFile: string }
+interface FixtureSpec { mode: 'scripted'; cwd: string; inputs: string[]; closeRequest: string; readyFile: string; disposedFile: string; isolation: ReviewIsolationAdmission }
 export interface ReviewHostSpec {
   mode: 'review';
+  isolation: ReviewIsolationAdmission;
   kind: 'codex' | 'claude';
   installation: AvailableInstallation;
   options: SessionOptions;
@@ -92,6 +94,14 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   return observation;
 }
 
+export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknown) => void): Promise<OarReviewHost> {
+  assertOarHostNode(); assertReviewIsolation(spec.isolation);
+  if (spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_OUTPUT_CWD_REQUIRED');
+  process.env.TMPDIR = reviewHostTemporaryDirectory(spec.output);
+  delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted outer profile.
+  return new OarReviewHost(await reviewRuntime(spec.kind).session(spec.installation, spec.options), print);
+}
+
 async function main(): Promise<void> {
   assertOarHostNode();
   if (process.argv[2] === '--installation') {
@@ -101,6 +111,7 @@ async function main(): Promise<void> {
     return;
   }
   const spec = readSessionArtifact<FixtureSpec | ReviewHostSpec>(process.argv[2]!);
+  assertReviewIsolation(spec.isolation);
   const temporary = reviewHostTemporaryDirectory(spec.mode === 'scripted' ? dirname(spec.readyFile) : spec.output);
   process.env.TMPDIR = temporary;
   let host: OarReviewHost;
@@ -109,15 +120,14 @@ async function main(): Promise<void> {
     if (process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE !== '1' || spec.inputs.length > 3) throw new Error('OAR_HOST_FIXTURE_SPEC_INVALID');
     output = spec.cwd;
     host = await openScriptedReviewHost({ cwd: spec.cwd }, view => console.log(JSON.stringify({ fixture: true, view })),
-      async ({ input, say }) => { say(`RECOMMENDATION: fixture observation for ${input} — confidence: HIGH`); });
+      async ({ input, say }) => { say(`RECOMMENDATION: fixture observation for ${input} — confidence: HIGH`); }, spec.isolation);
   } else {
     if (process.platform !== 'darwin' || spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED');
     // Parent launches only through proved Seatbelt policy. The OAR knob is
     // configuration, not evidence, and precedes native Session creation.
-    process.env.OAR_CODEX_SANDBOX = 'workspace-write';
+    delete process.env.OAR_CODEX_SANDBOX;
     output = spec.output;
-    const session = await reviewRuntime(spec.kind).session(spec.installation, spec.options);
-    host = new OarReviewHost(session, view => console.log(JSON.stringify({ oar: view })));
+    host = await openReviewHost(spec, view => console.log(JSON.stringify({ oar: view })));
   }
   const readyFile = spec.mode === 'scripted' ? spec.readyFile : join(output, 'ready.json');
   const closeRequest = spec.mode === 'scripted' ? spec.closeRequest : join(output, 'close.request');

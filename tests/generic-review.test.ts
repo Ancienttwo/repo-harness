@@ -66,7 +66,9 @@ test.skipIf(process.platform !== 'darwin')('OAR isolation: Seatbelt denies paire
   const protectedPaths = [subject, primary, owner, journal, git].map(dir => join(dir, 'protected.txt'));
   for (const path of protectedPaths) writeFileSync(path, 'KEEP');
   symlinkSync(protectedPaths[0]!, join(output, 'escape-link'));
-  const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt')];
+  const forbidden = ['CLAUDE.md','AGENTS.md','settings.local.json','auth.json','.credentials.json','config.toml','agents/definition.md','skills/definition.md','rules/definition.md','plugins/definition.json','hooks/handler.sh'].map(path => join(output, path));
+  for (const path of forbidden) { const { dirname } = await import('node:path'); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'KEEP'); }
+  const targets = [...protectedPaths, join(output, 'escape-link'), join(output, '../subject/protected.txt'), ...forbidden];
   const policy = reviewIsolationPolicy({ subject, primary, ownerRecord: owner, journal, gitCommonDir: git, output });
   const profile = join(root, 'profile.sb'); writeFileSync(profile, policy);
   const worker = join(root, 'worker.cjs');
@@ -91,7 +93,7 @@ else console.log(JSON.stringify({results,operations}));
   console.log(JSON.stringify({ diagnostic: 'zero-model Seatbelt fixture', status: result.status, error: result.error?.message, stdout: result.stdout, stderr: result.stderr }));
   expect(result.status, result.stderr).toBe(0);
   const observed = JSON.parse(result.stdout);
-  expect(observed.results).toHaveLength(7);
+  expect(observed.results).toHaveLength(targets.length);
   expect(Number(observed.child.status), String(observed.child.stderr)).toBe(0);
   const child = JSON.parse(observed.child.stdout);
   for (const row of [...observed.results, ...child.results]) {
@@ -108,7 +110,7 @@ else console.log(JSON.stringify({results,operations}));
     expect(evidence.operations.nested.status).toBe(71);
     expect(String(evidence.operations.nested.stderr)).toContain('sandbox_apply: Operation not permitted');
   }
-  for (const path of protectedPaths) expect(readFileSync(path, 'utf8')).toBe('KEEP');
+  for (const path of [...protectedPaths, ...forbidden]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
   expect(readFileSync(join(output, 'host.txt'), 'utf8')).toBe('ALLOWED');
   expect(readFileSync(join(output, 'child.txt'), 'utf8')).toBe('ALLOWED');
 });
@@ -124,74 +126,61 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   const link = join(root, 'link'); symlinkSync(output, link);
   expect(() => reviewIsolationPolicy({ ...spec, output: link })).toThrow('OUTPUT_UNSAFE');
   expect(() => reviewIsolationPolicy(spec, 'win32')).toThrow('UNSUPPORTED_PLATFORM');
+  expect(() => reviewIsolationPolicy({ ...spec, nativeStateDirectories: [primary] })).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
+  expect(() => reviewIsolationPolicy({ ...spec, nativeStateDirectories: [root] })).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
+  expect(() => reviewIsolationPolicy({ ...spec, nativeStateDirectories: [output] })).toThrow('NATIVE_STATE_OVERLAPS_AUTHORITY');
 });
 
-test('OAR scripted host: one Session, three prompts, typed view printing and dispose; reviewer file delivery preserves observation', async () => {
-  const { openScriptedReviewHost, reviewRuntime, assertOarHostNode } = await import('../src/effects/review/oar-review-host');
-  const root = tmpWorkspace('oar-scripted-host'); roots.push(root);
-  const views: unknown[] = [], inputs: string[] = [];
-  const prior = process.env.OAR_CODEX_SANDBOX;
-  let host: Awaited<ReturnType<typeof openScriptedReviewHost>> | undefined;
-  try {
-    process.env.OAR_CODEX_SANDBOX = 'danger-full-access';
-    host = await openScriptedReviewHost({ cwd: root }, view => views.push(view), async ({ input, say }) => {
-      expect(process.env.OAR_CODEX_SANDBOX).toBe('workspace-write'); inputs.push(input);
-      say('RECOMMENDATION: fixture observation only — confidence: HIGH');
-    });
-    const id = host.sessionId;
-    for (const input of ['one', 'two', 'three']) {
-      const run = await host.prompt(input); expect(run.kind).toBe('ended');
-      expect(host.sessionId).toBe(id);
-    }
-    expect(inputs).toEqual(['one', 'two', 'three']); expect(views.length).toBeGreaterThan(0);
-    await expect(host.prompt('four')).rejects.toThrow('BUDGET_EXHAUSTED');
-    expect(inputs).toHaveLength(3);
-    await host.dispose(); await expect(host.prompt('after-dispose')).rejects.toThrow('HOST_DISPOSED');
-    expect(reviewRuntime('claude').id).toBe('claude'); expect(() => reviewRuntime('grok')).toThrow('UNSUPPORTED');
-    expect(reviewRuntime('codex').id).toBe('codex'); // no Session created
-    expect(() => assertOarHostNode('22.22.0')).toThrow('NODE_24_REQUIRED');
-  } finally {
-    await host?.dispose();
-    if (prior === undefined) delete process.env.OAR_CODEX_SANDBOX; else process.env.OAR_CODEX_SANDBOX = prior;
-  }
+async function runOarNodeFixture(label: string, body: string, confined = true) {
+  const { mkdirSync, writeFileSync, realpathSync } = await import('node:fs');
+  const { pathToFileURL } = await import('node:url');
+  const { spawnSync } = await import('node:child_process');
+  const { reviewIsolationPolicy, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace(label); roots.push(root);
+  const subject = join(root, 'subject'), output = join(root, 'output'); mkdirSync(subject); mkdirSync(output);
+  const paths = { subject, primary: subject, ownerRecord: subject, journal: subject, gitCommonDir: subject, output };
+  const policyFile = join(root, 'profile.sb'); writeFileSync(policyFile, reviewIsolationPolicy(paths), { mode: 0o600 });
+  const temporary = reviewHostTemporaryDirectory(output), worker = join(root, 'fixture.mjs');
+  const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
+  writeFileSync(worker, `import assert from 'node:assert/strict';
+import {writeFileSync,readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {openScriptedReviewHost,runHostFileRequest,reviewRuntime,assertOarHostNode} from ${JSON.stringify(entry)};
+const output=${JSON.stringify(output)},isolation=${JSON.stringify({paths,policyFile})};
+${body}`);
+  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const result = confined ? spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, node, worker], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } })
+    : spawnSync(node, [worker], { encoding: 'utf8', timeout: 15000 });
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout) as { calls: number; passed: boolean; model: string | null };
+}
+
+test.skipIf(process.platform !== 'darwin')('OAR scripted host: Node Session budget, default sandbox knob and disposal under admission', async () => {
+  const result = await runOarNodeFixture('oar-scripted-node', `
+let calls=0;const events=[];process.env.OAR_CODEX_SANDBOX='workspace-write';
+const host=await openScriptedReviewHost({cwd:output},v=>events.push(v),async({say})=>{assert.equal(process.env.OAR_CODEX_SANDBOX,undefined);calls++;say('RECOMMENDATION: fixture observation only — confidence: HIGH')},isolation);
+try{const id=host.sessionId;for(const input of ['one','two','three']){assert.equal((await host.prompt(input)).kind,'ended');assert.equal(host.sessionId,id)}
+assert.equal(calls,3);assert.ok(events.length>0);await assert.rejects(host.prompt('fourth'),/BUDGET_EXHAUSTED/);
+await host.dispose();await assert.rejects(host.prompt('after-dispose'),/HOST_DISPOSED/);
+assert.equal(reviewRuntime('claude').id,'claude');assert.equal(reviewRuntime('codex').id,'codex');assert.throws(()=>reviewRuntime('grok'),/UNSUPPORTED/);assert.throws(()=>assertOarHostNode('22.22.0'),/NODE_24_REQUIRED/);
+console.log(JSON.stringify({calls,passed:true}));}finally{await host.dispose()}`);
+  expect(result.calls).toBe(3); expect(result.passed).toBe(true);
 });
 
-test('OAR file delivery: reviewer writes three Results; recommendation text never becomes a Result', async () => {
-  const { mkdirSync } = await import('node:fs');
-  const { openScriptedReviewHost, runHostFileRequest } = await import('../src/effects/review/oar-review-host');
-  const { readSessionArtifact, writeSessionArtifact } = await import('../src/effects/terminal/task-session');
-  const { createHash } = await import('node:crypto');
-  const root = tmpWorkspace('oar-file-results'); roots.push(root);
-  const output = join(root, 'output'); mkdirSync(output);
-  const spec = { mode: 'review' as const, kind: 'codex' as const, installation: { kind: 'available' as const, via: 'bundled' as const },
-    options: { cwd: output }, requestDirectory: root, output, timeoutMs: 1000 };
-  let calls = 0;
-  const host = await openScriptedReviewHost(spec.options, () => {}, async ({ input, say }) => {
-    calls++;
-    const request = JSON.parse(input.split('\n')[0]!.slice('TASK REQUEST: '.length)); // fixture application input
-    say('RECOMMENDATION: fixture file communication — confidence: HIGH');
-    writeSessionArtifact(request.result_ref, { request_id: request.request_id, context_sha256: request.context_sha256,
-      value: { fixture: true, verdict: 'FAIL', summary: '[fixture opinion] revise' } });
-  });
-  const id = host.sessionId;
-  try {
-    for (let round = 1; round <= 3; round++) {
-      const content = `Domain-shaped fixture review ${round}`;
-      const request = { protocol: 2 as const, task: 'fixture', role: 'deep-reasoner', round, request_id: `fixture-${round}`,
-        context_ref: join(output, `context-${round}.txt`), source_ref: 'fixture', result_ref: join(output, `result-${round}.json`),
-        context_sha256: `sha256:${createHash('sha256').update(content).digest('hex')}`,
-        result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' as const,
-          submission: { command: 'fixture', repo: root, task: 'fixture', role: 'deep-reasoner', round } } };
-      const { writeFileSync } = await import('node:fs'); writeFileSync(request.context_ref, content);
-      const observed = await runHostFileRequest(host, spec, request);
-      expect(observed.kind).toBe('ended'); expect(observed.actual_model).toBe('fixture-oar');
-      expect(host.sessionId).toBe(id);
-      expect(readSessionArtifact<any>(request.result_ref).value.summary).toBe('[fixture opinion] revise');
-    }
-    expect(calls).toBe(3);
-    await expect(host.prompt('fourth')).rejects.toThrow('BUDGET_EXHAUSTED');
-    expect(host.model('claude')).toBeNull(); // never certify requested/init alias
-  } finally { await host.dispose(); }
+test.skipIf(process.platform !== 'darwin')('OAR file delivery: Node reviewer writes Results, recommendation text is observation', async () => {
+  const result = await runOarNodeFixture('oar-file-node', String.raw`
+const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,timeoutMs:1000,isolation};let calls=0;
+const host=await openScriptedReviewHost(spec.options,()=>{},async({input,say})=>{calls++;const request=JSON.parse(input.split('\n')[0].slice('TASK REQUEST: '.length));say('RECOMMENDATION: fixture file communication — confidence: HIGH');writeFileSync(request.result_ref,JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:{fixture:true,verdict:'FAIL',summary:'[fixture opinion] revise'}}))},isolation);
+try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'fixture-'+round,context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round}}};writeFileSync(request.context_ref,content);const observed=await runHostFileRequest(host,spec,request);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
+assert.equal(calls,3);await assert.rejects(host.prompt('fourth'),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
+  expect(result.calls).toBe(3); expect(result.model).toBeNull();
+});
+
+test.skipIf(process.platform !== 'darwin')('OAR Session refuses unconfined or changed owner profiles before opening', async () => {
+  const result = await runOarNodeFixture('oar-unconfined', `
+let calls=0;await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},async()=>{calls++},isolation),/SEATBELT_REQUIRED/);assert.equal(calls,0);writeFileSync(isolation.policyFile,'(version 1)(allow default)');await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},async()=>{calls++},isolation),/PROFILE_NOT_ADMITTED/);assert.equal(calls,0);console.log(JSON.stringify({calls,passed:true}))`, false);
+  expect(result.calls).toBe(0); expect(result.passed).toBe(true);
 });
 
 test('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {

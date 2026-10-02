@@ -1,6 +1,6 @@
 # Implementation Notes: herdr-generic-review-slice-e
 
-> **Substantive Change SHA256**: `sha256:f24df69c8ad586d402dcaa707fbb1c2ce5f212cb246aa2e5639e6364515eea6b`
+> **Substantive Change SHA256**: `sha256:d3a72a8acbae11a807dcd910a3b10f4944327c011d29806cd1cc9cf48f95ecfe`
 
 > **Status**: Active
 > **Plan**: plans/plan-20260930-1827-herdr-generic-review-slice-e.md
@@ -128,3 +128,19 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Minimal corrected policy excludes only the proved /dev/null literal from the deny rule; no /dev/* grant. reviewHostTemporaryDirectory creates and validates a private .tmp under canonical output, rejects symlink/traversal widening, and Node host sets TMPDIR before OAR Session creation. No HOME/config redirects or credential copies. Protected authorities remain denied. Nested sandbox application still fails and is not claimed fixed.
 - OAR installation now runs in the fixed Node>=24 host's --installation application mode. The production Bun controller imports host types only and consumes the application InstallationSnapshot; vendor probe args/output remain OAR-owned. A fake executable records its Node parent; no real provider/model is used for this proof.
 - Aimpact 20:30 separately releases D2 default danger-full-access under admitted outer Seatbelt, D3 zero-prompt native-state write evidence and narrow state allowances, and D4 skipLibCheck. Those decisions replace earlier holds; finish this correction checkpoint first, then implement them. Current checkpoint is not shippable.
+
+
+## D2/D3/D4 implementation
+
+- D2 (Aimpact 20:30) replaces workspace-write: delete inherited OAR_CODEX_SANDBOX before each Session creation; stock OAR selects danger-full-access and outer admitted Seatbelt is the only write authority. No vendor arguments are added by the application.
+- D4 is an explicit user decision: skipLibCheck true skips body checking for every .d.ts, including src/operator-web/styles.d.ts and SDK/transitive declarations. These declarations still provide usage types; strict source/test checking remains enabled. This is no longer an unresolved or silently bypassed gate.
+- D3 probe must send no prompt, preserve real HOME/config/credentials, record raw OS denial paths, and allow only proved pure state subpaths. Forbidden authority surfaces and unknown/unsupported startup stay denied. Native Claude actual_model remains init-only and cannot mint Receipt.
+
+- D3 native startup (real HOME /Users/chris, Node24.21.0, NO prompt): Claude 2.1.284 constructor returned and Session.dispose completed; no model/text turn observed, init actual_model still null. OS denied session-env/sessions, plugin .in_use/data/marketplace locks, fixed /private/tmp sockets/probes, CLI cache, .codegraph telemetry and .claude.json.tmp writes. Because startup succeeded without those grants, they are not proved necessary; no native directory allowance is added. Plugins and .claude.json remain forbidden.
+- Codex 0.160.0 installation was available, but Runtime.session failed with app-server exited. OS probe-window logs show ~/.codex/tmp/arg0 and state_5.sqlite/logs_2.sqlite/goals_1.sqlite with WAL/SHM writes denied. These databases are files in a mixed ~/.codex root, not narrow pure-state directories; no broad ~/.codex allowance is made. Codex is unsupported under the current directory-only admission. The very short-lived codex PID was not captured by the 100ms ps sampler, so OS-log/time-window attribution is strongly correlated rather than a captured parent proof; no grant depends on it.
+- The OS log probe used (debug deny) only to emit audit events, with the same permission rules as the admitted profile. Both runtime probes retained real HOME, sent no prompt, observed no turn/model call, disposed the returned Claude Session, and left no identity-proven child alive. Evidence: d3-native-startup/results.json, os-sandbox.ndjson, per-kind process/stdout/stderr logs; outputs retained under .ai/harness/runs/d3-native-startup-output. No config, trust or credentials were copied or edited. No further native launch is attempted for Codex.
+- D3 policy tests now cover native-dir/authority overlap and forbidden definitions/credentials even inside the writable output tree. This caught a regex reader-escaping error before commit; raw SB regex constants (rather than JSON-escaped regex bodies) fixed it, and all host/descendant denied writes passed. Native-state allowlist remains empty in production and probe.
+
+- Full-suite introduced finding: existing hook bundle test froze prepack to two builds. Merge-base file is 7/7 green; required E2 OAR build makes that exact-string assertion obsolete. Under user-authorized introduced-failure repair, admit tests/unit/hook-entry-single-file-bundle.test.ts before edit and update only wiring/file assertion and its redirect comment. Campaign BRC10 planning.lock failure reproduces on the entire merge-base file (12 pass/4 skip/1 fail); leave it untouched.
+
+- Final local full run: 457 files, 5751 pass / 56 skip / 2 fail, exit1 (capture elapsed 2594.96s). Every failure was rerun on local git-archive merge-base 9aef6693 with frozen base dependencies. BRC10 reproduces unchanged; hook wiring is introduced and fixed, focused file 7/7 green. Only that test assertion/comment changed after the run, no production change; no second expensive full run and no false all-green claim. Full/raw/base/fix hashes are in d234-full-suite.json. No GitHub CI run.

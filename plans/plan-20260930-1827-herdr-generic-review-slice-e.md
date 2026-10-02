@@ -214,7 +214,7 @@ The obsolete src/effects/review/claude-review-session.ts:289-292 calls recordAcc
 
 Implement generic review CLI/orchestration on existing task-agent plus fleet deep-reasoner, then remove exactly DELETE6; apply EDIT36, retain RETAIN27. The former critical session caller is removed in this atomic PR; no alias/compat reader. Preserve prepared domain binding, stable finding IDs/status, three-round accounting and verified close. No new live/model tests. The three src/{cli/commands,core/review,effects/review}/cross-review*.ts paths remain untouched: their retirement is a separate follow-up only after E2 merges. Commit/push/PR authorized; merge requires Aimpact. Re-freeze the two named active contracts without translating historical receipts.
 
-## B release and 18:41 result/isolation decision
+## B release / historical 18:41 decision (20:30 supersedes runtime mode, startup and type gate)
 
 Implementation order is contract/preflight → pinned OAR + Node24 host build → macOS Seatbelt isolation FIRST → scriptedRuntime host → fixed Herdr pane.run execution-owner → removal of hand integration. Zero-model denial failure stops. The 18:41 decision releases reviewer-written result_ref only, with appendSystemPrompt communication authorization and unchanged RECOMMENDATION-first fleet text. Codex Session cwd=output and host env workspace-write are configuration; Seatbelt alone enforces writes. Stock OAR Claude bypass is permitted only under proved inherited OS isolation, but init-only actual_model cannot mint a Receipt. Grok remains unsupported, and no real model/native provider is run. Local commits only; no push/PR/merge/main.
 
@@ -222,3 +222,12 @@ Implementation order is contract/preflight → pinned OAR + Node24 host build �
 ## Aimpact 20:30 runtime decisions
 
 After corrections (a)(b)(c), D2 uses stock OAR Codex danger-full-access, deleting inherited OAR_CODEX_SANDBOX; only admitted Seatbelt protects writes. D3 zero-prompt native startup records actual OS denial paths and permits only proved narrow pure state directories, never trust/settings/hooks/definitions/instructions/credentials. No HOME redirect or credential copying. D4 skipLibCheck is explicitly approved, with unchecked declaration surfaces disclosed. Run local full suite (120s per case) and classify each failure via merge-base rerun, fixing introduced failures only. Claude's init-only model remains insufficient for Receipt. No remote operations.
+
+
+D3 observed checkpoint: native-state allowlist is empty. Claude 2.1.284 SDK
+Session constructor and dispose passed without state grants (actual backend
+model remains unproved). Codex 0.160.0 app-server exited with root SQLite/WAL/SHM
+denials in the OS probe window; no mixed ~/.codex root grant or HOME redirect is
+allowed, so Codex remains unsupported under current admission. OS deny logging
+is diagnostic only. Finish full-suite/base classification and integrity gates;
+these startup results are not real review acceptance.

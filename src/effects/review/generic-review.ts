@@ -204,8 +204,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     ensureSessionDirectory(reviewerRepo, outbox);
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
-    const policy = reviewIsolationPolicy({ subject: root, primary, ownerRecord: resolve(root, contract), journal: dir,
-      gitCommonDir: repository.repository_id, output: outbox });
+    const isolationPaths = { subject: root, primary, ownerRecord: resolve(root, contract), journal: dir,
+      gitCommonDir: repository.repository_id, output: outbox };
+    const policy = reviewIsolationPolicy(isolationPaths);
     const profilePath = join(dir, 'isolation.sb');
     if (!existsSync(profilePath)) writeFileSync(profilePath, policy, { flag: 'wx', mode: 0o600 });
     else if (readFileSync(profilePath, 'utf8') !== policy) throw new Error('review_isolation_changed');
@@ -213,7 +214,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (!existsSync(specPath)) {
       const installation = await client.installation(session.actual_harness);
       if (installation.kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
-      const spec: ReviewHostSpec = { mode: 'review', kind: session.actual_harness, installation,
+      const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness, installation,
         options: reviewSessionOptions(session.actual_harness, outbox), requestDirectory: taskDir, output: outbox, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }
