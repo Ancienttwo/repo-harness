@@ -8,7 +8,7 @@
 - 参考：`git show origin/codex/development-scheduler-skill:docs/researches/development-scheduler/PLAN.md`，该 ref=`bad25106182afe07d3ab844976c872b3c6dbdbba`。根目录没有 PLAN.md，实际路径由 git ls-tree 定位。重点为『删除、保留、共享耦合』『单次退役顺序与回滚』：先盘点、有限 drain、冻结、cutover，之后才按 owner 授权删除。通用新 runtime store 在参考中是设计，不冒称已实现。
 - 本 worktree 无 `.codegraph/`，按规则使用 rg + 当前源码；专用模块表以直接/动态相对 import、显式脚本引用建立调用方，不能覆盖无法定位的反射/远端旧二进制。专用候选还必须过逐消费者/运行态 drain 的后续删除门，不能仅凭文件名决定。
 - 只读观察窗口 UTC `2026-10-02T20:21:03.064433+00:00`（HKT/SGT +08:00）。各查询不是原子快照；worktree 拓扑在并行工作中可变化。命令 stdout/exit 原始材料留本地 `/tmp/retire-campaign-runtime.json`，不发布 prompt、credential、完整 ps argv 或 unrelated Docker labels。
-- 唯一版本化交付为本文件。`.ai/harness/runs/` 默认 ignored，按本次明确“commit 只含盘点文档”授权对这个单文件 `git add -f`；不改 ignore/manifest/workflow rules，不新增 plan/contract/notes。state resolve 为 idle/lite、无 active plan/contract。
+- 唯一版本化交付为本文件，归档于 `docs/researches/development-scheduler/`。下述运行态与验证结果均为上述观察窗口的历史快照；实施冻结或删除前必须重新观察。未改 ignore/manifest/workflow rules，未新增 plan/contract/notes；盘点时 state resolve 为 idle/lite、无 active plan/contract。
 
 ## P1：真实权威与系统边界
 
