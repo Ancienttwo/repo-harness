@@ -27,3 +27,9 @@ generic Git common-dir runtime store/CAS/handoff fence、campaign 退役及 Dock
 ## 公开归档验证
 
 公开归档仅调整 Plan 路径与私有证据引用、补来源摘要；未重写三个 Skill。本次链接/hash 和 diff whitespace 检查通过。九项仓库完整性检查中八项通过；check-architecture-sync 在本分支和移走新增文件后的原始 origin/main 基线均失败，原因均为 ArchitectureProjection provider=archctx、state=mismatch、blocking=1。该既有投影未修复，不能声称全部检查通过。公开文档归档不修改其策略或生成投影；产品测试未新增；没有运行付费故障、生产删除或 Host 安装测试。
+
+## 任务 A：批准后精简（2026-10-03）
+
+以上 PASS、hash 和验证结论保留为 `bad25106` 原文候选历史，不能用于此次修改后的 Skill。Aimpact 04:17 批准任务 A：在 `codex/dev-scheduler-a-slim` 精简 Skill、Plan 和两份 references，直接引用现有 task-agent/Herdr/Git/PR 事实；撤销先建通用 runtime store 的前置。后续顺序为 A 文档、B Kanban 只读、C campaign 盘点与冻结准入、D 专用代码/Docker 删除；D 等 #476/#474 合并且 Aimpact 看过盘点，删除文件或改依赖前先报告停下。
+
+保留权限、独立审查、未知 writer 不 reset/重派、先保存证据再清理；改为按需/事件驱动检查。对齐后端 Codex gpt-6.1-sol high、前端 Claude 正常权限、Claude 只读审查另案、所有 CLI worker 复用 Pi 1.0/OAR、Herdr 0.9.3。本次未改运行代码、依赖或安装入口，未执行退役或 Host 集成。检查证据与提交状态随本次 Draft PR 说明交付；不把历史 PASS 写成新候选独立审查通过。

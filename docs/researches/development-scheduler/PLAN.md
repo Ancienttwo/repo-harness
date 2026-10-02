@@ -1,117 +1,80 @@
 # 可移植开发调度 Skill：正式 Plan
 
-计划 ID：development-scheduler-v1。本文件是正式架构设计；[skill/SKILL.md](skill/SKILL.md)是唯一调度 SOP，[Host 导入说明](skill/references/hosts.md)和[repo-harness 薄适配](skill/references/repo-harness.md)按需引用，不另维护流程规则。
+计划 ID：development-scheduler-v1。[skill/SKILL.md](skill/SKILL.md)是调度原则与硬底线的唯一来源，[Host 接入](skill/references/hosts.md)与 [repo-harness 适配](skill/references/repo-harness.md)按需引用。
 
-本交付包含通用 Bot Skill、薄适配、Host 导入指引和 campaign Docker 退役设计。原候选经过 Herdr 派出的独立 Codex 审查，最终 PASS。用户随后授权将交付 commit/push 到 repo-harness；此分支只归档文档，不安装到全局 Bot、不修改产品实现或执行 campaign 删除，不合并、部署。
+Aimpact 于 2026-10-03 04:17 批准本次精简方向。任务 A 在 `codex/dev-scheduler-a-slim`（基于 `bad25106`）只改文档，完成检查、commit、push 和 Draft PR；不 merge、ready、删分支、改运行代码或依赖，不触碰 main 检出、其他 worktree 或 #476/#474/#473/#477。B/C/D 是后续有界任务，各自取得实施授权；删除文件或改依赖前先报告停下。
 
-公开路径在归档时调整；三个 Skill 文件保留原候选逐字内容。私人会话、进程记录和原始验证材料不发布，公开摘要只记录验证结论与证据边界。当前尚未实现的 shared store/CAS/fence/只读 Kanban 不得冒称已可用；缺失工具阻塞依赖动作，外部审计记录不是新的数据库或锁服务。
+## P1：边界与事实来源
 
-## Host 加载与导入边界
+Bot 负责对话、目标/验收、派工、跟进和结果收集；worker 实现，独立 reviewer 审查。repo-harness session 保留直接开发，Host 提供既有 executor、远控、凭据管理与自动化。Kanban 是只读投影。
 
-Grok Bot 对话保存、slash 引用和插件管理入口与 Grok Build/native local 目录不同，详见 Host 说明及其中官方来源。任意 SKILL.md ZIP native import 未建立；原文材料交接须现场保存/回读，不能以摘要形成竞争 SOP。Hermes 可写 external dirs 与同名 shadow 须核对，不能用 learn 重写权威。此轮完成文档和隔离验证，未做各 Host 原生加载、多设备或外部接入实测。
+第一阶段直接用现有 **task-agent + Herdr + Git 分支/PR 状态**：
 
-Herdr 具体命令由当前官方 Skill/help 决定；远控入口参考 [Persistence and remote access](https://herdr.dev/docs/persistence-remote/)与[Connecting machines](https://herdr.dev/docs/connecting-machines/)。Host 现有 cloud/remote/automation 提供 transport，不新增控制平面；machine add 的安装/启动/替换语义另行判断授权。
+| 事实 | 来源与使用边界 |
+|---|---|
+| 任务、请求、session、执行与结果 | 现有 task-agent 返回/journal 与 Herdr live 观察；状态未知时不猜测完成或未执行 |
+| 代码、计划、候选与交付 | 分支、HEAD/范围、项目 plan/contract、verification/receipt 与实际 PR 状态；证据绑定同一 subject |
+| 对话、独立审查与恢复 | worktree 外保存的原始证据和真实 session 恢复信息；摘要与 Kanban 只索引，不形成可写副本 |
+| 用户意图与权限 | 当前用户对话和明确授权；工具、PASS 与自然语言均不能替代特定动作权限 |
 
-## 正式架构决定与实施边界
+删除“先建新的 Git common-dir runtime store（CAS/revision/fence/lease/单写者交接）再退役”的前置。不设计替代 store、mutation 接口或迁移 schema，也不移除现有 primitives 的约束。**若将来出现真实并发或交接故障，再按需补最小锁，届时另开计划。**
 
-Bot 与 session 模式共用受控小工具，Bot 承担需求、验收标准、派工、监工与反馈；Kanban 只观看。以下是产品后续实施设计，尚未实现的 store、原子变更接口与人工 handoff fence 必须标为前置条件。
+## P2：现有路径与压力点
 
-### 状态在哪里，谁可写
+源码观察基线为任务起点 `bad25106`，不是所有安装环境的能力声明。Bot/session → 当前 CLI/schema → `src/cli/commands/task-agent.ts` → `src/effects/terminal/task-session.ts` → Herdr worker。task-agent 提供 start/send/result/collect/status/history/read/close/cancel，journal 位于 primary root 的 `.ai/harness/runs/task-agents`；`HerdrEndpoint` 是目标机本地 session/configPath/home 和 Unix socket，远控通过已授权 Host executor 在目标机运行 harness。
 
-| 信息 | 权威与生命周期 | 两模式如何使用 |
+启动提交与实际活动、result 与 collect、取消请求与确认退出是不同事实。timeout/失联时先查询同一任务与已有候选，**未知 writer 不 reset budget、不重复派工**。人工接手先暂停 Bot 新指令与自动发送、收集在途工作并确认 owner/同一真实 session，明确归还后才恢复；idle/断连不作为交接凭证。该路径不宣称已有完整原子 fence，也不把其建设设为第一阶段门槛。
+
+所有 CLI worker 启动必须复用 **Pi 1.0 / OAR**，由现有 task-agent + Herdr 承载；不写手工 adapter/parser。现场版本尚未接通就暂停相应启动并报告缺口。Herdr 基准 **0.9.3**，实际参数按安装版本 Skill/help。后端默认 **Codex（gpt-6.1-sol high）**，前端 **Claude**；Claude 不使用跳过权限模式（未批准），Claude 只读审查接入另立方案，当前用已验证的 Codex 独立审查路径。
+
+## P3：选择与不变量
+
+用判断替代固定 SOP：只保留任务边界、权限、唯一文件 owner、预算/去重、独立审查、候选与证据、未知 writer 和清理底线。删除每任务四组字段表、process/pane/Tab 三层读回步骤、默认 60 秒巡查；改为按需/事件驱动的有界检查。进程退出不等于全部资源释放，共享资源不得关闭；清理前必须保存并核验可恢复证据。
+
+独立 reviewer 未参与设计/实现，审查同一冻结候选；漂移使旧 PASS 失效，修复后复验 finding。审查同时挑战过度设计、兼容 fallback 和无消费者抽象；测试通过不等于独立审查或发布授权。新 Skill 不继承原文候选 PASS。
+
+取舍是先用现有事实与显式交接获得有界 Bot 协调能力，避免为尚未观察到的并发故障建设运行控制层。10x 任务量首先压迫现有状态查询、结果收集和人工交接；只在实测故障出现后另切最小锁或相应瓶颈，不预建通用 store。Host 加载、Pi/OAR 与多设备能力仍需现场证据，本次文档不冒充产品验收。
+
+## 阶段与准入
+
+| 阶段 | 有界交付与验收 | 准入 |
 |---|---|---|
-| task/owner/session/request/phase/locks/lease/budget/idempotence/recovery | 目标 worker 的仓库 Git common dir 下，共用持久 runtime store；跨该仓库 worktree、cleanup 不丢；机器原子维护 | Bot 与 session CLI/MCP调用同一受控工具、使用稳定 handle与 revision；接口不是存储 |
-| plan/contract/code/test | 随分支版本化，验收后按授权合入 main | 同一候选与subject，工具自动产生/校验内部digest，Bot不手工管理大量SHA |
-| final audit、双方对话、receipt/恢复证据 | worktree 外持久审计区；可恢复、可索引 | 文档只索引真实证据；Bot摘要、云端缓存与Kanban投影不成为可写多副本权威 |
-| 用户目标、反馈、澄清、审批意图 | Bot对话入口，映射到受控request | 自然语言不绕过安全检查、批准凭据或特定动作授权；敏感凭据不进文档 |
+| **A 精简文档** | Skill 约为原来的 1/3；Plan 与两份 references 对齐批准规则；格式、链接、仓库检查；commit/push/Draft PR | 本次已批准，只在当前 worktree 执行 |
+| **B Kanban 只读** | 删除实际 browser 写入口，保留进度/阻碍/候选/证据 GET 与刷新；write inventory=0，GET 不写 authority | 后续实施授权；不依赖新 store |
+| **C campaign 盘点与冻结准入** | 列出实际消费者、存量任务/资源/在途写入与恢复证据；停止新 campaign admission，已知 owned 工作有界收集/排空，未知 writer 留阻塞 | 后续实施授权；将盘点交 Aimpact 看过 |
+| **D 删除 campaign 专用代码与 Docker** | 按盘点删专用面，保留共用 primitives；针对真实消费者验证，无新双读/双写或空壳 | **#476 与 #474 均合并，且 Aimpact 已看过 C 的盘点**；删除文件/改依赖前先报告停下 |
 
-新通用 store 建议 namespace 为 `<git-common-dir>/repo-harness/runtime/v1`（设计建议，不是已实现路径/CLI）。复用现有 Git common-dir resolver、短同步锁、append事件/原子持久快照、lease/budget/idempotence/receipt/cleanup原语，选最小可表达业务的不变量；不搬整套 campaign schema、不新造远端控制平面或同步可写副本。既有 campaign store 已在 common-dir 下，不应误称当前全部状态只在 worktree；要替换的是专属状态模型及业务控制链。
+### B：只读 Kanban
 
-机器接口的语义设计为 observe/register/acquire-owner/submit-request/capture-candidate/collect/review-evidence/handoff/resume/close/recover，不宣称这些是当前 CLI 命令名。每个 mutation由同一权威 store校验expected revision、执行owner、授权/批准凭据、资源/文件锁、预算与去重键后原子提交；并发失败返回冲突或reconciliation，不reset预算、二次dispatch或从Bot摘要合成状态。候选校验保留；SHA由工具捕获和绑定，Bot仅使用稳定handle。
+基线 `src/effects/operator/server.ts` 的实际 browser write 为 task-message POST。实施盘点并移除该路由、handler/授权 payload/UI composer 及实查其他可变入口，保留 GET 投影。验证 browser write route=0，GET 不产生 mutation；反馈、澄清、改需求、催办和审批跟进回 Bot。不要虚构现有 dispatch 按钮或声称文档已让产品只读。
 
-repo-harness session模式可直接用现有CLI做开发操作；Bot模式调用同一检查/受控工具，承担需求与监督。云端基础设施、多设备transport、自动化、凭据管理复用Host现成能力。目标机harness仍执行其本地fs/ps/kill/Unixsocket接口；经已授权remoteexecutor在该目标运行，不把本机endpoint字段伪装成远程MCP地址。
+### C：盘点先于删除
 
-目标架构图（共用 store/fence、只读 Kanban 待产品实施）：
+在目标 worker 只读核验版本、live grant/lease/owner、containers、request/outbox、pending mutations 与旧 common-dir runs。policy off 或 tracked tasks/campaigns 缺失不证明无存量。列出每个拟删面的生产/测试/脚本/CI/docs/dependency 引用、非 campaign 消费者及调用链，确定保留/删除边界与恢复材料。
 
-```mermaid
-flowchart TD
- U["用户"] --> B["Bot 对话与跟进"]
- U --> H["另一设备 Herdr 人工 terminal"]
- B --> X["Host 既有授权 remote executor / 自动化"]
- X --> I["目标 worker 受控 CLI / MCP（访问接口）"]
- H --> I
- S["repo-harness session 直接开发"] --> I
- I --> R["Git common-dir runtime store（待实施）<br/>原子 owner / request / locks / budget / recovery"]
- I --> W["分支 worktree<br/>版本化 plan / contract / code / test"]
- W --> A["worktree 外持久 audit / receipt / 对话"]
- R --> K["Kanban 只读投影（待实施）"]
- A --> K
- R --> B
- A --> B
- C["campaign 专有业务状态机"] -.-> R
-```
+冻结新准入后保留已知 owned 工作的结果、session 和终态；未知 writer 不能拆锁、重置额度或重复派工。盘点和冻结不授权删除，Aimpact 看过盘点以及 #476/#474 合并是 D 的硬门槛；#473/#477 不在任务 A 操作范围。
 
-人工接手须显式handoff事件及单写者fence：先暂停Bot的新指令与本任务自动化发送，核对/收集在途request，确认当前owner与真实session，然后交给人工；Bot只读监工。resume也必须显式由当前owner归还，机器校验revision/fence后Bot才能发送。pane idle、断连、关闭窗口不是接手/归还凭证。现有Herdr远程terminal可作为连接路径，但现有工具未提供上述完整原子跨入口fence的实测证据，必须在产品实施阶段补齐，不能用手写日志称已实现安全锁。
+### D：专用面与共用边界
 
-### 只读基线与当前能力
+以下是 C 的盘点入口，不是已经完成的零消费者证明：
 
-固定源码基线为 `1d3c2f017fa867cfbaf3cd61873395b4945e6f04`（package 0.20.0）。此处源码结论绑定该版本；不代表已安装 CLI、draft PR 或远端后续提交已现场验收。PR473/474/476 在核验时为 draft，PR475 已合并；使用新能力前须重新核对合并状态与现场证据。
-
-- [campaign runtime](https://github.com/Ancienttwo/repo-harness/blob/1d3c2f017fa867cfbaf3cd61873395b4945e6f04/src/effects/automation/campaign-runtime.ts#L60)直接Docker隔离下Codex exec，并非Herdr task-agent薄consumer。已有auto-campaign Skill、group/slot、GPTPro author、adoption/plan/acquisition与closeout链；不能按“只有派工”删掉安全/持久化部分。
-- [旧持久store](https://github.com/Ancienttwo/repo-harness/blob/1d3c2f017fa867cfbaf3cd61873395b4945e6f04/src/effects/automation/development-campaign-store.ts#L25)已复用Git common dir和exclusive-directory-lock；新store复用通用原语，删除业务绑定。policy的development_campaign/external_sources为off只是版本化配置，不能证明目标机没有旧runs、grant或containers。
-- [revision evidence decoder](https://github.com/Ancienttwo/repo-harness/blob/1d3c2f017fa867cfbaf3cd61873395b4945e6f04/src/core/automation/campaign-revision-evidence.ts#L106)已经读取实际capture与exact revision。旧BRC6a的“active全disabled”不是当前结论，不照抄。
-- [HerdrEndpoint](https://github.com/Ancienttwo/repo-harness/blob/1d3c2f017fa867cfbaf3cd61873395b4945e6f04/src/effects/terminal/herdr.ts#L6)只有session/configPath/home，验证本地socket，不能据此声称remoteendpoint支持。
-- [task-agent CLI](https://github.com/Ancienttwo/repo-harness/blob/1d3c2f017fa867cfbaf3cd61873395b4945e6f04/src/cli/commands/task-agent.ts#L4)在固定main源码已有start/send/result/collect/status/history/read/close/cancel。此前Mini旧checkout/已安装0.19.5未定位到该接口，二者版本需分开；源码存在不等于安装 CLI/MCP 暴露或本次已现场验收。`src/cli/mcp/types.ts:3` 与 `tools.ts:1070` 的 dev runner 仍为 codex|claude，约束该执行接口，不排除外部 Grok/Hermes Bot 入口。当前 task-agent journal 位于 primary_root 的 `.ai/harness/runs/task-agents`（`task-session.ts:356-359`），不是设计中的统一 Git common-dir runtime store；不能把全部现状统称 worktree-only 或已统一持久化。
-- 当前PR476的generic review/OAR/Task-agent/Deep-reasoner路径不等于campaignruntime已迁移；Claude actual-model/Receipt边界及外层隔离仍是明确前置条件，不能以Codex fixture canary声明完整验收。此设计不等待draft即可写，产品使用新能力则需要真实可用/权限/身份和结果证据。
-
-### 删除、保留、共享耦合
-
-退役删 campaign 专有group/slot/GPTPro author lane、successor/fresh-audit业务编排、专有CLI/UI/Skill/container脚本和schema。在每项删除前按真实消费者核对，不为清字符串删除历史审计。task-agent、contract、ordinary/selected acquisition、lease、budget、idempotence、receipt和cleanup等通用原语保留；没有真实其他消费者的campaign-only机制随专有实现删除，不保留空壳抽象。
-
-| 共享影响范围 | 设计处理与实施前证据 |
+| 面 | 删除候选与必须保留的边界 |
 |---|---|
-| src/effects/fleet/acquire.ts | 拆除campaign admission/proof/capacity绑定；保留普通offer/claim/authority与幂等，追踪每个非campaign消费者 |
-| src/effects/engineers/scheduling-acquire-next.ts、src/cli/commands/engineer.ts | 清理campaign R2 policy/callback/cutover专用面；普通R1和已存在的 selected acquisition 原语和 PR474 待合并入口不能一起删 |
-| core/effects automation budget/projection/store | 原子owner/预算/恢复所需通用原语保留并进入共用store；不照搬campaign业务schema |
-| core/effects operator automation-summary、src/operator-web、src/effects/operator/server.ts | 改成权威runtime只读投影；去专有campaign卡片与控制动作，不造board state source |
-| scripts/contract-run.ts与assets/templates/helpers镜像 | 去campaign handoff/provider专属路径，保留合同执行/收集/安全/恢复语义；镜像按同一owner更新 |
-| scripts/ensure-task-workflow.sh、core/adoption/standard-plan、policy、assets/skill-commands/manifest.json | 清理默认activation与auto-campaign入口，保留普通plan/contract/tool路径及迁移检查 |
-| core/architecture/model与projection、effects/architecture投影 | 删除活跃专有模型与投影，不为历史展示保留新core双读；历史audit独立归档和索引 |
+| campaign 编排 | 专用 group/slot、GPTPro author lane、successor/fresh-audit、专有 CLI/UI/Skill/schema；task-agent 与普通 contract 仍有真实消费者 |
+| acquisition | `src/effects/fleet/acquire.ts`、`src/effects/engineers/scheduling-acquire-next.ts`、`src/cli/commands/engineer.ts` 中 campaign admission/R2/proof/capacity/cutover；保留 ordinary/selected acquisition、authority 与幂等 |
+| automation/state/operator | 专用 budget/projection/store 与 campaign 卡片/控制动作；有真实其他消费者的 lease/budget/idempotence/receipt/cleanup 保留，不迁到新 store |
+| helpers/adoption/policy | `scripts/contract-run.ts` 及镜像、`scripts/ensure-task-workflow.sh`、standard-plan、policy、Skill manifest 中专有 activation/handoff；保留共用执行、安全、结果收集与恢复 |
+| 架构与历史 | 退役后的活跃专用模型/投影按当时授权更新；不可变历史 audit 保留索引，不为历史展示保留产品双读 |
+| Docker | `deploy/campaign-container/`、`scripts/build-campaign-image.sh`、`scripts/run-campaign-preflight.ts`、`scripts/cleanup-campaign-container.ts`、`src/effects/automation/campaign-container.ts`、runtime 专用 container/image 与 `BRC_CAMPAIGN_IMAGE` 引用；同步处理专用依赖、测试、CI、文档 |
 
-campaign Docker 删除面：Bot 与 session-Herdr 通路不依赖旧 campaign Docker。退役实施在完成上述 drain/cutover 前置后，删除专用 image 定义/构建上下文 `deploy/campaign-container/`（Dockerfile、campaign-init.c）、`scripts/build-campaign-image.sh`、`scripts/run-campaign-preflight.ts`、`scripts/cleanup-campaign-container.ts`、`src/effects/automation/campaign-container.ts` 及 runtime 的专用 container/image 依赖（含 BRC_CAMPAIGN_IMAGE），并清理对应 package/脚本依赖、专用测试、CI 配置和活跃文档说明。历史 audit 不删。此处是产品删除设计，本任务不执行删除或 Docker 命令。
+旧 campaign store 已使用 Git common dir，campaign runtime 直接 Docker 下 Codex exec，不能把它们描述为单纯 worktree 状态或现成 task-agent 薄 consumer。generic review/OAR 路径也不证明 campaign 已迁移；合并门槛满足后仍核验实际安装与消费者。没有真实其他消费者的 campaign-only 机制随专用实现删除，不以“保留安全”为名留 image/脚本空壳。
 
-固定只读基线已见 campaign-runtime、preflight 和 cleanup 脚本直接消费 campaign-container，build 脚本复制专用 Dockerfile/init；这些是 campaign 专用消费者，不能据此保留空壳。实施时逐项列实际非 campaign consumer 的源码调用链与用途，才保留它需要的通用 Docker/安全隔离；当前核对未建立足以保留该专用容器实现的其他消费者。CI/docs/dependency 全量引用盘点属于实施前检查，不能凭局部搜索称已全部移除，也不虚构已有 Docker build CI job；删除相关专用检查、工作流步骤及文档，保留有据的其他消费者检查。不得以“保留安全”为名保留无 consumer 的 campaign image、脚本或配置壳。
+## 验证、回滚与证据边界
 
-Kanban只读：保留进度/阻碍/候选/证据的GET投影及刷新，不接受反馈、审批、dispatch/retry/accept/mutation。固定基线[operator server route inventory](https://github.com/Ancienttwo/repo-harness/blob/1d3c2f017fa867cfbaf3cd61873395b4945e6f04/src/effects/operator/server.ts#L139)当前实际唯一browser write是task-message POST，不能虚构已有所有派工按钮。实施明确删除该POST路由、handler/授权payload/UI composer及任何实查到的可变入口；结构测试要求browser write route=0，GET投影不产生mutation。反馈、改需求、催办、澄清和审批都回Bot，经过相同受控工具与批准凭据。Session CLI保留直接开发入口。
+A 只做文档格式/链接、差异审阅和仓库必需检查，不新增执行测试或运行付费故障、Docker、Host 安装、多机配置。测试如确需运行，参数用 `--timeout 60000 --max-concurrency 1`；忽略 GitHub CI。本研究目录不在 npm package allowlist 中，本次不新增安装入口。
 
-### 单次退役顺序与回滚
+B/C/D 冻结各自最小 verification：B 零 browser write 与 GET 无副作用；C 盘点/冻结与未知 writer 保留；D 保留消费者真实路径、存量结果可恢复、旧入口退出。先保存证据再释放 owned 资源，不触碰他人资源；默认保留分支/历史。无需先建 runtime store、迁移全部事实或做两入口 store 验收。
 
-1. 在目标worker只读盘点live grant/lease/owner、containers、请求/outbox、pending mutations和旧common-dir runs；记录版本与恢复证据。tracked tasks/campaigns缺失及policy off不能替代盘点。未知writer留reconciliation，禁止reset budget或重复dispatch。
-2. 先实现/验收共用小工具通路与持久store、原子fence、subject/receipt校验、只读projection；既有Host云/远控/自动化提供transport和定时运行，不新增orchestrator服务。此步骤是待产品代码实施，不是本次Skill能力。
-3. 禁止新的campaign admission，固定旧binary与其状态路径，仅有界drain已知owned旧工作。保留结果、证据、sessions及grant/lease终态；不能让新旧writer同时接管同一任务。
-4. 全部旧writer/在途mutation已确认排空后，做一次明确cutover，将必要runtime事实经机器校验写到唯一新store；保留不可变历史audit，删除专有实现/入口。新core不留双读/双写兼容补丁；必要迁移工具有明确一次性用途与移除条件。
-5. 在两模式同一store上做真实验收，包括重复request、并发owner、重启/断连、跨worktree、人工handoff/resume、candidate漂移/receipt、预算与清理恢复、Kanban零write。Grok Bot多设备仍需可用授权入口实测，当前只user-reported；dot单机、Hermes能力逐项自检。未验收不宣称完成退役。
+A 文档可 revert 本次提交。C/D 涉及运行状态，回滚先暂停新指令、收集在途与保存原有 journal/预算/候选，再按盘点确认 owner 和恢复路径；单纯 git revert 不证明运行状态已回滚。未确认静止的 writer 保持阻塞，不能销毁未知资源。
 
-回滚先暂停并排空新writer，保存新store/在途request/预算/候选和审计，核对没有跨代owner；按明确映射恢复旧binary/状态，再验证唯一writer。仅git revert代码既不回滚运行状态，也可能重复执行，因此不作为充分回滚。未确认quiescence时保留阻塞并升级，不拆未知锁或销毁未知资源。
-
-### 独立资源释放
-
-Herdr operating guide 仅作为流程参考，Skill 不授予资源清理或发布权限。此任务的独立审查已收集并完成授权 owned 资源释放，完整记录另行归档。通用生命周期按以下保存、独立核实与授权前置执行；具体 Herdr 命令按当前官方 Skill/help 核对。
-
-先在 worktree 外保存 session 审计/恢复信息、候选、证据和有用 untracked 并核验；正常停止 owned process 后独立 process-readback，再关闭 owned pane 后独立 pane-readback。仅当 owned 任务 Tab 无其他任务共享才关闭 Tab，并独立 Tab-readback；process stopped 不是 pane/Tab closed。共享 Tab 保留须记录 owner/共享者/原因，不称已关闭；意外残留逐项报告，不笼统 cleanup complete。worktree 清理另行判定，默认保留 branch/history，不因进程退出顺带删除。
-
-### 本次验收与实现缺口
-
-此次验收限于可加载Skill、正式设计与有证据独立审查：入口仍可用已核验的Herdr CLI做有界协调；凡依赖新generic runtime store/CAS/handoff fence/只读Kanban产品变化的动作须明确尚待实现。独立审查检查source版本、删除/保留消费者、单写者/权限和历史/恢复边界；加隔离原始判断场景：store不等于CLI/MCP、Kanban不能变更、未知writer不能reset/re-dispatch；另含process退出但无人共享的pane/Tab残留与Tab共享他人任务。不给 evaluator 预期 verdict。只做文档/本地fixture验证，不实际删campaign、改产品UI、配置设备、drain生产或运行付费故障测试。用户新增明确决定形成S002有界范围变化，不把未来全部实现验收无限加到此文档任务。
-
-
-| 实现缺口 | 足够的下一阶段验收面（本任务不执行） |
-|---|---|
-| generic runtime store 与原子 mutation 尚未实现 | 两入口同一 Git common-dir authority；重复 request、revision 冲突、预算/锁、重启和跨 worktree/cleanup 恢复；未知 writer 保持 reconciliation |
-| handoff/resume 单写者 fence 未完整验收 | 明确 owner 交接、在途 request 收集、旧 owner mutation 拒绝及显式 resume；现有远程连接不是 fence |
-| Kanban 只读产品变更未实施 | 删除实际 task-message POST/handler/composer 与实查可变入口；write inventory=0，GET 不写 authority，Bot 使用受控工具跟进 |
-| campaign 退役与共享消费者重构未实施 | 保留 ordinary/selected acquisition、contract/lease/budget/idempotence/receipt/cleanup；排空旧 writer后一次 cutover；新 core 无双读；回滚先排空新 writer |
-| PR476 generic review 仍 draft，Claude actual-model/Receipt 与隔离边界有缺口 | 同一 subject/真实请求的 model 来源、receipt 和隔离/清理证据；Codex fixture/canary 不证明 Claude 或 campaign runtime 已迁移 |
-| Host/machine 接入未做现场验证 | Grok 多设备只 user-reported、优先设计验证；dot 当前单机；Hermes 逐项自检。配置/凭据/跨设备验证另需授权 |
-
-本次候选、独立判断、实际验证层级和交付来源见[归档验收摘要](../../../tasks/archive/review-20261003-development-scheduler-skill.md)。这是已有验收的公开投影，不把原候选 PASS 冒充为未实现产品能力或新的发布候选独立审查。
+原文候选的归档验收见 [历史摘要](../../../tasks/archive/review-20261003-development-scheduler-skill.md)，其 PASS/hash 只绑定原文。此次精简是新文档候选，未执行 Bot/worker 现场集成或独立模型行为验收；Claude 只读审查接入另立方案。
