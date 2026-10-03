@@ -6,20 +6,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
-import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import type { OperatorCollaborationSnapshotV4 } from '../../src/core/operator/collaboration-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { OperatorCollaborationError, readOperatorCollaborationSnapshot } from '../../src/effects/operator/collaboration';
 import {
-  OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES,
-  OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES,
   startOperatorServer,
   type OperatorServerOptions,
 } from '../../src/effects/operator/server';
-import type {
-  SendOperatorTaskMessageInput,
-  SendOperatorTaskMessageResult,
-} from '../../src/effects/fleet/task-message-request';
 import {
   buildOperatorCommand,
   parseOperatorServeOptions,
@@ -45,56 +38,6 @@ function snapshot(sequence = 1) {
 const TASK_ID = 'a'.repeat(64);
 const TASK_REVISION = 'b'.repeat(64);
 const CLAIM_ID = '123e4567-e89b-42d3-a456-426614174012';
-const MESSAGE_ID = '123e4567-e89b-42d3-a456-426614174011';
-
-function messagePath(repositoryId: string, taskId = TASK_ID): string {
-  return `/api/v1/fleet/tasks/${repositoryId}/${taskId}/messages`;
-}
-
-function taskMessagePayload(body = 'ping', scope: 'task' | 'claim' = 'task'): string {
-  return JSON.stringify({
-    message_id: MESSAGE_ID,
-    scope,
-    body,
-    expected_task_revision: TASK_REVISION,
-    expected_claim_id: scope === 'claim' ? CLAIM_ID : null,
-    expected_generation: scope === 'claim' ? 1 : null,
-  });
-}
-
-interface WriteHarness {
-  readonly server: Awaited<ReturnType<typeof startOperatorServer>>;
-  readonly calls: SendOperatorTaskMessageInput[];
-  readonly staticRoot: string;
-}
-
-async function startWriteServer(
-  send: OperatorServerOptions['send_task_message'],
-  calls: SendOperatorTaskMessageInput[],
-  env?: NodeJS.ProcessEnv,
-  timeoutMs?: number,
-): Promise<WriteHarness> {
-  const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-'));
-  writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-  const server = await startOperatorServer({
-    port: 0,
-    static_root: staticRoot,
-    env,
-    timeout_ms: timeoutMs,
-    collect_fleet_board: async () => snapshot(),
-    send_task_message: send === undefined ? undefined : (input) => {
-      calls.push(input);
-      return send(input);
-    },
-  });
-  return { server, calls, staticRoot };
-}
-
-async function stopWriteServer(harness: WriteHarness): Promise<void> {
-  await harness.server.close();
-  rmSync(harness.staticRoot, { recursive: true, force: true });
-}
-
 function registryHome(entries: readonly { readonly path: string; readonly accessMode: 'read_only' | 'read_write' }[]): {
   readonly env: NodeJS.ProcessEnv;
   readonly home: string;
@@ -115,19 +58,6 @@ function registryHome(entries: readonly { readonly path: string; readonly access
     `${JSON.stringify({ version: 1, authorizationRevision: 1, repos }, null, 2)}\n`,
   );
   return { env: { REPO_HARNESS_HOME: home }, home, ids: repos.map((repo) => repo.id) };
-}
-
-function sendResult(overrides: Partial<SendOperatorTaskMessageResult> = {}): SendOperatorTaskMessageResult {
-  return {
-    repository_id: 'repo-write',
-    task_id: TASK_ID,
-    message_id: MESSAGE_ID,
-    scope: 'task',
-    target_claim_id: null,
-    target_generation: null,
-    created: true,
-    ...overrides,
-  };
 }
 
 async function waitFor(condition: () => boolean, message: string): Promise<void> {
@@ -289,323 +219,38 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('UX-operator-task-message-v1-N1 refuses a write without a matching Origin and refuses POST elsewhere', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    const harness = await startWriteServer(async () => sendResult(), calls);
-    const url = `${harness.server.url}${messagePath('repo-write')}`;
-    const payload = taskMessagePayload();
-    try {
-      const missingOrigin = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
-      });
-      expect(missingOrigin.status).toBe(403);
-      expect(await missingOrigin.json()).toMatchObject({ error: { code: 'origin_required' } });
-
-      const foreignOrigin = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: 'http://attacker.example' },
-        body: payload,
-      });
-      expect(foreignOrigin.status).toBe(403);
-      expect(await foreignOrigin.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
-
-      const foreignHost = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: harness.server.url, Host: 'attacker.example' },
-        body: payload,
-      });
-      expect(foreignHost.status).toBe(421);
-
-      const elsewhere = await fetch(`${harness.server.url}/api/v1/fleet/snapshot`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: harness.server.url },
-        body: payload,
-      });
-      expect(elsewhere.status).toBe(405);
-      expect(await elsewhere.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
-
-      const readTheWriteRoute = await fetch(url, { headers: { Origin: harness.server.url } });
-      expect(readTheWriteRoute.status).toBe(405);
-
-      const stillReadable = await fetch(`${harness.server.url}/api/v1/fleet/snapshot`);
-      expect(stillReadable.status).toBe(200);
-      expect(await stillReadable.json()).toMatchObject({ kind: 'operator_fleet_snapshot' });
-
-      expect(calls).toEqual([]);
-    } finally {
-      await stopWriteServer(harness);
-    }
-  });
-
-  test('UX-operator-task-message-v1-N2 mirrors the protocol body limit and rejects malformed requests', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    const harness = await startWriteServer(async () => sendResult(), calls);
-    const url = `${harness.server.url}${messagePath('repo-write')}`;
-    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
-    try {
-      expect(OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
-
-      for (const body of [
-        'x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES),
-        `${'界'.repeat(2_730)}xx`,
-        '😀'.repeat(2_048),
-        '"\\'.repeat(4_096),
-        '\0'.repeat(TASK_MESSAGE_BODY_MAX_BYTES),
-      ]) {
-        expect(new TextEncoder().encode(body).byteLength).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
-        const legal = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: taskMessagePayload(body),
-        });
-        expect(legal.status).toBe(201);
-      }
-
-      const oversized = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: taskMessagePayload('x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES + 1)),
-      });
-      expect(oversized.status).toBe(413);
-      expect(await oversized.json()).toMatchObject({ error: { code: 'task_message_body_too_large' } });
-
-      const huge = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: 'x'.repeat(OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES + 1),
-      });
-      expect(huge.status).toBe(413);
-      expect(await huge.json()).toMatchObject({ error: { code: 'task_message_envelope_too_large' } });
-
-      for (const body of [
-        'not json',
-        JSON.stringify({ message_id: MESSAGE_ID, scope: 'task' }),
-        JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 'ping', audience: 'owner' }),
-        JSON.stringify({ message_id: MESSAGE_ID, scope: 'orchestrator', body: 'ping' }),
-        JSON.stringify({ message_id: '', scope: 'task', body: 'ping' }),
-        JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 7 }),
-      ]) {
-        const response = await fetch(url, { method: 'POST', headers, body });
-        expect(response.status).toBe(400);
-        expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
-      }
-
-      expect(calls).toHaveLength(5);
-    } finally {
-      await stopWriteServer(harness);
-    }
-  });
-
-  test('starts the task-message deadline before a slow body and cancels body reads on disconnect or shutdown', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    const harness = await startWriteServer(async () => sendResult(), calls, undefined, 1_000);
-    const payload = taskMessagePayload();
-    const requestHead = [
-      `POST ${messagePath('repo-write')} HTTP/1.1`,
-      `Host: ${harness.server.host}:${harness.server.port}`,
-      `Origin: ${harness.server.url}`,
-      'Content-Type: application/json',
-      `Content-Length: ${Buffer.byteLength(payload)}`,
-      'Connection: keep-alive',
-      '',
-      '',
-    ].join('\r\n');
-    try {
-      const timeoutResponse = await new Promise<string>((resolveResponse, rejectResponse) => {
-        const socket = createConnection({ host: harness.server.host, port: harness.server.port });
-        let responseText = '';
-        let nextByte = 0;
-        let drip: ReturnType<typeof setInterval> | null = null;
-        let settled = false;
-        const finish = (error?: Error): void => {
-          if (settled) return;
-          settled = true;
-          if (drip !== null) clearInterval(drip);
-          socket.destroy();
-          if (error !== undefined && responseText.length === 0) rejectResponse(error);
-          else resolveResponse(responseText);
-        };
-        socket.setEncoding('utf-8');
-        socket.on('data', (chunk) => { responseText += chunk; });
-        socket.once('error', (error) => finish(error));
-        socket.once('close', () => finish());
-        socket.once('connect', () => {
-          socket.write(requestHead);
-          drip = setInterval(() => {
-            if (nextByte < payload.length) socket.write(payload[nextByte++]!);
-          }, 200);
-        });
-      });
-      expect(timeoutResponse).toContain('HTTP/1.1 503');
-      expect(timeoutResponse).toContain('task_message_timeout');
-      expect(calls).toHaveLength(0);
-
-      const disconnected = createConnection({ host: harness.server.host, port: harness.server.port });
-      await new Promise<void>((resolveConnected, rejectConnected) => {
-        disconnected.once('connect', resolveConnected);
-        disconnected.once('error', rejectConnected);
-      });
-      disconnected.write(requestHead);
-      disconnected.write(payload.slice(0, 5));
-      disconnected.destroy();
-      await Bun.sleep(50);
-      expect((await fetch(`${harness.server.url}/healthz`)).status).toBe(200);
-      expect(calls).toHaveLength(0);
-    } finally {
-      await stopWriteServer(harness);
-    }
-
-    const shutdownCalls: SendOperatorTaskMessageInput[] = [];
-    const shutdownHarness = await startWriteServer(async () => sendResult(), shutdownCalls);
-    const shutdownSocket = createConnection({ host: shutdownHarness.server.host, port: shutdownHarness.server.port });
-    try {
-      await new Promise<void>((resolveConnected, rejectConnected) => {
-        shutdownSocket.once('connect', resolveConnected);
-        shutdownSocket.once('error', rejectConnected);
-      });
-      shutdownSocket.write([
-        `POST ${messagePath('repo-write')} HTTP/1.1`,
-        `Host: ${shutdownHarness.server.host}:${shutdownHarness.server.port}`,
-        `Origin: ${shutdownHarness.server.url}`,
-        'Content-Type: application/json',
-        `Content-Length: ${Buffer.byteLength(payload)}`,
-        '',
-        payload.slice(0, 5),
-      ].join('\r\n'));
-      await Bun.sleep(30);
-      const startedAt = Date.now();
-      await shutdownHarness.server.close();
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
-      expect(shutdownCalls).toHaveLength(0);
-    } finally {
-      shutdownSocket.destroy();
-      rmSync(shutdownHarness.staticRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('bounds ambiguous task-message writes and recovers through the same message identity', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    let abortObserved = false;
-    let committed = false;
-    const harness = await startWriteServer(
-      async ({ signal }) => {
-        if (committed) return sendResult({ created: false });
-        committed = true;
-        signal.addEventListener('abort', () => { abortObserved = true; }, { once: true });
-        return new Promise<never>(() => {});
-      },
-      calls,
-      undefined,
-      1_000,
-    );
-    const url = `${harness.server.url}${messagePath('repo-write')}`;
-    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
-    try {
-      const timedOut = await fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
-      expect(timedOut.status).toBe(503);
-      expect(await timedOut.json()).toMatchObject({
-        error: {
-          code: 'task_message_timeout',
-          next_action: expect.stringContaining('same message_id'),
-        },
-      });
-      expect(abortObserved).toBe(true);
-      expect((await fetch(`${harness.server.url}/healthz`)).status).toBe(200);
-
-      const retry = await fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
-      expect(retry.status).toBe(200);
-      expect(await retry.json()).toMatchObject({ ok: true, created: false, message_id: MESSAGE_ID });
-      expect(calls).toHaveLength(2);
-    } finally {
-      await stopWriteServer(harness);
-    }
-  });
-
-  test('server shutdown aborts an active task-message sender', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    let started = false;
-    let abortObserved = false;
-    const harness = await startWriteServer(async ({ signal }) => {
-      started = true;
-      signal.addEventListener('abort', () => { abortObserved = true; }, { once: true });
-      return new Promise<never>(() => {});
-    }, calls);
-    const request = fetch(`${harness.server.url}${messagePath('repo-write')}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: harness.server.url },
-      body: taskMessagePayload(),
-    }).catch(() => null);
-    try {
-      await waitFor(() => started, 'task-message sender did not start');
-      const startedAt = Date.now();
-      await harness.server.close();
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
-      expect(abortObserved).toBe(true);
-      await request;
-    } finally {
-      rmSync(harness.staticRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('isolates the default task-message sender before a blocked canonical read can freeze the server', async () => {
-    if (process.platform === 'win32') return;
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-task-message-worker-'));
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-task-message-repo-')));
-    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
-    const markerPath = join(repoRoot, '.ai/harness/sprint/active-sprint');
-    mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
+  test('rejects every browser write method on all read routes and the retired message route', async () => {
+    let reads = 0;
     const server = await startOperatorServer({
       port: 0,
-      static_root: staticRoot,
-      timeout_ms: 1_000,
-      env: registry.env,
-      collect_fleet_board: async () => snapshot(),
+      collect_fleet_board: async () => { reads++; return snapshot(); },
+      read_collaboration_snapshot: async input => { reads++; return unavailableCollaboration(input.repository_id); },
+      read_task_context: async () => { reads++; throw new Error('unexpected read'); },
+      read_task_activity: async () => { reads++; throw new Error('unexpected read'); },
+      read_task_diff: async () => { reads++; throw new Error('unexpected read'); },
+      read_task_history: async () => { reads++; throw new Error('unexpected read'); },
+      read_automation_summary: async () => { reads++; throw new Error('unexpected read'); },
     });
-    const writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
     try {
-      const startedAt = Date.now();
-      const timedOut = await fetch(`${server.url}${messagePath(registry.ids[0]!)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: server.url },
-        body: taskMessagePayload(),
-      });
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
-      expect(timedOut.status).toBe(503);
-      expect(await timedOut.json()).toMatchObject({ error: { code: 'task_message_timeout' } });
+      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/fleet/repositories/repo-a/snapshot',
+        '/api/v1/collaboration/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+        for (const path of paths) {
+          for (const headers of [new Headers(), new Headers({ Origin: server.url })]) {
+            const response = await fetch(server.url + path, { method, headers, body: 'ignored' });
+            expect(response.status).toBe(405);
+            expect(response.headers.get('allow')).toBe('GET, HEAD');
+            expect(await response.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
+          }
+        }
+      }
+      expect(reads).toBe(0);
+      const retired = await fetch(`${server.url}/api/v1/fleet/tasks/repo-a/${TASK_ID}/messages`);
+      expect(retired.status).toBe(404);
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
-      const registryLockPath = `${repoHarnessRegisteredReposPath(registry.env)}.lock`;
-      // The blocked worker is past registry authorization and stuck in this
-      // repository's canonical read, so the machine-global registry lock is
-      // free for every other repository while it hangs.
-      expect(existsSync(registryLockPath)).toBe(false);
-      expect(existsSync(join(repoRoot, '.git/repo-harness/coordination/v1/locks/tasks', `${TASK_ID}.lock`))).toBe(false);
-      expect(existsSync(join(repoRoot, '.git/repo-harness/task-inbox/v2', TASK_ID, 'events'))).toBe(false);
-
-      writer.kill('SIGTERM');
-      rmSync(markerPath);
-      writeFileSync(markerPath, '\n');
-      const retryStartedAt = Date.now();
-      const retry = await fetch(`${server.url}${messagePath(registry.ids[0]!)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: server.url },
-        body: taskMessagePayload(),
-      });
-      expect(Date.now() - retryStartedAt).toBeLessThan(2_500);
-      expect(retry.status).toBe(503);
-      expect(await retry.json()).toMatchObject({ error: { code: 'canonical_sprint_unavailable' } });
-      expect(existsSync(registryLockPath)).toBe(false);
-    } finally {
-      writer.kill('SIGTERM');
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-      rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
-    }
+      expect((await fetch(`${server.url}/api/v1/fleet/snapshot`)).status).toBe(200);
+      expect(reads).toBe(1);
+    } finally { await server.close(); }
   });
 
   test('bounds collaboration reads and permits a healthy retry after timeout', async () => {
@@ -908,123 +553,6 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('UX-operator-task-message-v1-P1 resolves the repository through the registry and fails closed on read_only', async () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repo-')));
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
-    const harness = await startWriteServer(undefined, [], registry.env);
-    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
-    const payload = taskMessagePayload();
-    try {
-      const readOnly = await fetch(`${harness.server.url}${messagePath(registry.ids[0]!)}`, {
-        method: 'POST',
-        headers,
-        body: payload,
-      });
-      expect(readOnly.status).toBe(403);
-      const readOnlyBody = await readOnly.json() as { error: { code: string; message: string; next_action: string } };
-      expect(readOnlyBody.error.code).toBe('repository_read_only');
-      expect(readOnlyBody.error.next_action.length).toBeGreaterThan(0);
-      expect(JSON.stringify(readOnlyBody)).not.toContain(repoRoot);
-
-      const unknown = await fetch(`${harness.server.url}${messagePath('repo_0000000000000000')}`, {
-        method: 'POST',
-        headers,
-        body: payload,
-      });
-      expect(unknown.status).toBe(404);
-      expect(await unknown.json()).toMatchObject({ error: { code: 'repository_not_found' } });
-    } finally {
-      await stopWriteServer(harness);
-      rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
-    }
-  });
-
-  test('UX-operator-task-message-v1-P2 hands a valid write to the effect and passes typed failures through', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    let behavior: 'created' | 'replay' | 'claim_mismatch' | 'canonical_source_stale' | 'task_not_pending' = 'created';
-    const { OperatorTaskMessageError } = await import('../../src/effects/fleet/task-message-request');
-    const harness = await startWriteServer(
-      async (input) => {
-        if (behavior === 'claim_mismatch') {
-          throw new OperatorTaskMessageError('claim_mismatch', `task ${input.task_id} owner moved`);
-        }
-        if (behavior === 'canonical_source_stale') {
-          throw new OperatorTaskMessageError('canonical_source_stale', `task ${input.task_id} source moved`);
-        }
-        if (behavior === 'task_not_pending') {
-          throw new OperatorTaskMessageError('task_not_pending', `task ${input.task_id} is done`);
-        }
-        return sendResult({ scope: input.scope, created: behavior === 'created' });
-      },
-      calls,
-    );
-    const url = `${harness.server.url}${messagePath('repo-write')}`;
-    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
-    try {
-      const created = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: taskMessagePayload('look at the base branch', 'claim'),
-      });
-      expect(created.status).toBe(201);
-      expect(await created.json()).toMatchObject({ ok: true, created: true, scope: 'claim', task_id: TASK_ID });
-      expect(calls.length).toBe(1);
-      expect(calls[0]).toMatchObject({
-        repository_id: 'repo-write',
-        task_id: TASK_ID,
-        message_id: MESSAGE_ID,
-        scope: 'claim',
-        body: 'look at the base branch',
-      });
-
-      behavior = 'replay';
-      const replay = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: taskMessagePayload('look at the base branch', 'claim'),
-      });
-      expect(replay.status).toBe(200);
-      expect(await replay.json()).toMatchObject({ ok: true, created: false });
-
-      behavior = 'claim_mismatch';
-      const conflict = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: taskMessagePayload('look at the base branch', 'claim'),
-      });
-      expect(conflict.status).toBe(409);
-      const conflictBody = await conflict.json() as { error: { code: string; message: string } };
-      expect(conflictBody.error.code).toBe('claim_mismatch');
-      expect(conflictBody.error.message).toBe('The task owner changed while the message was being sent.');
-      expect(JSON.stringify(conflictBody)).not.toContain('owner moved');
-
-      behavior = 'canonical_source_stale';
-      const staleSource = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: taskMessagePayload('look at the base branch', 'claim'),
-      });
-      expect(staleSource.status).toBe(409);
-      expect(await staleSource.json()).toMatchObject({
-        error: { code: 'canonical_source_stale', message: 'The active task board authority changed since the snapshot.' },
-      });
-
-      behavior = 'task_not_pending';
-      const completed = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: taskMessagePayload('look at the base branch', 'claim'),
-      });
-      expect(completed.status).toBe(409);
-      expect(await completed.json()).toMatchObject({
-        error: { code: 'task_not_pending', message: 'This task no longer accepts messages.' },
-      });
-    } finally {
-      await stopWriteServer(harness);
-    }
-  });
-
   test('refuses static assets that escape through an intermediate symlink', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-ui-'));
     const outsideRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-outside-'));
@@ -1045,88 +573,6 @@ describe('operator serve command and HTTP boundary', () => {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
       rmSync(outsideRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('bounds concurrent task-message writes and refuses above the admission cap', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-admission-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    let started = 0;
-    let releaseFirst!: (result: SendOperatorTaskMessageResult) => void;
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      max_concurrency: 1,
-      collect_fleet_board: async () => snapshot(),
-      send_task_message: () => new Promise<SendOperatorTaskMessageResult>((resolveSend) => {
-        started += 1;
-        releaseFirst = resolveSend;
-      }),
-    });
-    const url = `${server.url}${messagePath('repo-write')}`;
-    const headers = { 'Content-Type': 'application/json', Origin: server.url };
-    const first = fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
-    try {
-      await waitFor(() => started === 1, 'first task-message write did not start');
-      const overloaded = await fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
-      expect(overloaded.status).toBe(503);
-      expect(overloaded.headers.get('retry-after')).toBe('1');
-      expect(await overloaded.json()).toMatchObject({
-        error: {
-          code: 'task_message_busy',
-          message: 'The task message service is busy.',
-        },
-      });
-      expect(started).toBe(1);
-
-      releaseFirst(sendResult());
-      expect((await first).status).toBe(201);
-    } finally {
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('requires an application/json media type on the one write route', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    const harness = await startWriteServer(async () => sendResult(), calls);
-    const url = `${harness.server.url}${messagePath('repo-write')}`;
-    try {
-      for (const declared of ['text/plain;charset=UTF-8', 'application/x-www-form-urlencoded', 'application/jsonish']) {
-        const refused = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': declared, Origin: harness.server.url },
-          body: taskMessagePayload(),
-        });
-        expect(refused.status).toBe(415);
-        expect(await refused.json()).toMatchObject({
-          error: {
-            code: 'unsupported_media_type',
-            message: 'The task message request must be sent as application/json.',
-          },
-        });
-      }
-      expect(calls).toEqual([]);
-
-      const parameterized = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'Application/JSON; charset=utf-8', Origin: harness.server.url },
-        body: taskMessagePayload(),
-      });
-      expect(parameterized.status).toBe(201);
-      expect(calls).toHaveLength(1);
-
-      // Origin is the CSRF barrier and stays ahead of the media-type check.
-      const foreignOrigin = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain', Origin: 'http://attacker.example' },
-        body: taskMessagePayload(),
-      });
-      expect(foreignOrigin.status).toBe(403);
-      expect(await foreignOrigin.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
-      expect(calls).toHaveLength(1);
-    } finally {
-      await stopWriteServer(harness);
     }
   });
 
@@ -1185,7 +631,7 @@ describe('operator serve command and HTTP boundary', () => {
 
       const options = await fetch(`${server.url}/api/v1/fleet/snapshot`, { method: 'OPTIONS' });
       expect(options.status).toBe(405);
-      expect(options.headers.get('allow')).toBe('GET, HEAD, POST');
+      expect(options.headers.get('allow')).toBe('GET, HEAD');
       expect(options.headers.get('content-security-policy')).toBeNull();
       expect(await options.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
     } finally {
@@ -1195,9 +641,9 @@ describe('operator serve command and HTTP boundary', () => {
   });
 
   test('logs one stderr line per refusal without the body, headers, or Origin', async () => {
-    const calls: SendOperatorTaskMessageInput[] = [];
-    const harness = await startWriteServer(async () => sendResult(), calls);
-    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    const server = await startOperatorServer({ port: 0 });
+    const path = `/api/v1/fleet/tasks/repo-write/${TASK_ID}/messages`;
+    const url = server.url + path;
     const captured: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
     try {
@@ -1208,12 +654,12 @@ describe('operator serve command and HTTP boundary', () => {
       try {
         const refused = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain', Origin: harness.server.url },
-          body: taskMessagePayload('confidential-operator-body'),
+          headers: { 'Content-Type': 'text/plain', Origin: server.url },
+          body: 'confidential-operator-body',
         });
-        expect(refused.status).toBe(415);
+        expect(refused.status).toBe(405);
         await waitFor(() => captured.length > 0, 'refusal was not logged');
-        const accepted = await fetch(`${harness.server.url}/healthz`);
+        const accepted = await fetch(`${server.url}/healthz`);
         expect(accepted.status).toBe(200);
       } finally {
         process.stderr.write = originalWrite;
@@ -1222,15 +668,14 @@ describe('operator serve command and HTTP boundary', () => {
       expect(lines).toHaveLength(1);
       const line = lines[0]!;
       expect(line).toContain('method=POST');
-      expect(line).toContain('status=415');
-      expect(line).toContain('code=unsupported_media_type');
-      expect(line).toContain(messagePath('repo-write'));
+      expect(line).toContain('status=405');
+      expect(line).toContain('code=method_not_allowed');
+      expect(line).toContain(path);
       expect(line).not.toContain('confidential-operator-body');
-      expect(line).not.toContain(harness.server.url);
+      expect(line).not.toContain(server.url);
       expect(line).not.toContain('text/plain');
-      expect(calls).toEqual([]);
     } finally {
-      await stopWriteServer(harness);
+      await server.close();
     }
   });
 });
@@ -1650,7 +1095,6 @@ test('repository snapshot rejects automation from another repository', async () 
     expect(response.status).toBe(503); expect(await response.json()).toMatchObject({error:{code:'fleet_snapshot_unavailable'}});
   } finally { await server.close(); rmSync(root,{recursive:true,force:true}); }
 });
-
 
 describe('collaboration protocol4 source collection', () => {
   test('reads real registered stores without writes and retains organization when WorkExchange is corrupt', () => {

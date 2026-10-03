@@ -48,7 +48,7 @@ describe('operator web control board', () => {
       'Done',
     )).toBe(true);
     expect(markup).toContain('protocol 7');
-    expect(markup).toContain('observe-only · one write: task message');
+    expect(markup).toContain('read-only');
   });
 
   test('UX-operator-worklist-v1-P2 leads every row with the human task label, never the digest', () => {
@@ -117,7 +117,7 @@ describe('operator web control board', () => {
       expect(markup).not.toContain(affordance);
     }
     expect(markup).not.toContain('data-write-action');
-    expect(markup).toContain('observe-only · one write: task message');
+    expect(markup).toContain('read-only');
   });
 
   test('UX-local-human-control-board-v1-F1 renders a fatal authority failure instead of an empty success board', () => {
