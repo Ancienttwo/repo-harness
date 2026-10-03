@@ -41,6 +41,7 @@ jobs:
         with:
           name: affected-tests
           path: .ci-affected-tests.json
+          include-hidden-files: true
           if-no-files-found: error
 
   verify:
