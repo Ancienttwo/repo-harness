@@ -1,7 +1,8 @@
 # repo-harness
 
 ## Workflow
-- Read the current request and AGENTS.md, work on a branch, make bounded commits, verify once, then report the PR outcome.
+- Keep root CLAUDE.md and AGENTS.md as standalone regular files; repeat shared rules in both and keep host-specific guidance separate.
+- Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
 - Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
 - Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.
 - Once automated checks pass, a model may squash-merge unless the user says otherwise; tag the publication and record `git revert <squash-commit>` plus the daily report.
@@ -38,3 +39,11 @@
 - Never include secrets, tokens or real environment files in handoff text.
 - On resume, verify the live checkout and source artifacts before reusing a result; `tasks/current.md` is an optional local read model.
 - Preserve dirty work and other workers' edits; hand back an ownership conflict instead of discarding their changes.
+
+## Codex
+- Own backend implementation and testing; Claude owns frontend implementation and interaction, and the parent coordinates scope and integration.
+- User-level `~/.codex/hooks.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired; `.ai/hooks/lib/workflow-state.sh` is an operator helper.
+- Use `~/.codex/skills` as the runtime skill source; `~/.agents/skills` is staging/cache only. Keep `think`, `hunt`, `check` and `health` updates verified before runtime use.
+- The Codex automation profile requires runtime-provided `health`, `check` and `mermaid`; do not vendor their bodies.
+- Treat auto-compact as a fallback; prepare ignored `.ai/harness/handoff/current.md` and `resume.md` when long-task rollover is needed.
+- Keep this file short; load [development flow](docs/reference-configs/agentic-development-flow.md) and [external tooling](docs/reference-configs/external-tooling.md) only when needed.
