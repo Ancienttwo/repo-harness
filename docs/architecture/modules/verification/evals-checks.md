@@ -301,4 +301,4 @@ is not reused as acceptance for a different merge subject.
   of hooks. Optimize cold hook execution and Standard/Strict promotion cost
   before claiming a performance win; do not lower deterministic risk floors.
 
-- `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`
+- `tasks/archive/gate-audit-20261003/workstreams/verification/evals-checks/github-issues-158-159.md`

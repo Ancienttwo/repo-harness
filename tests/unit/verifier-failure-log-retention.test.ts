@@ -29,22 +29,26 @@ function runVerifier(script: string, command: string, inspect: (root: string, re
     ].join('\n'));
     git(['add', '.']);
     git(['commit', '-qm', 'fixture']);
-    const result = spawnSync('bash', [join(ROOT, script), '--contract', 'retention.contract.md',
-      '--strict', '--read-only', '--report-file', 'report.json'], { cwd: root, encoding: 'utf8',
+    const result = spawnSync(process.execPath, [join(ROOT, script), 'execute', '--repo', root, '--contract', 'retention.contract.md',
+      '--report-file', '.ai/harness/checks/report.json'], { cwd: root, encoding: 'utf8',
       env: { ...process.env, REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, 'assets/hooks/lib/workflow-state.sh') } });
     expect(result.status).toBe(command.includes('exit 3') ? 1 : 0);
-    inspect(root, JSON.parse(readFileSync(join(root, 'report.json'), 'utf8')));
+    inspect(root, JSON.parse(readFileSync(join(root, '.ai/harness/checks/report.json'), 'utf8')));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
-for (const script of ['scripts/verify-contract.sh', 'assets/templates/helpers/verify-contract.sh']) {
+for (const script of ['scripts/verification-plan.ts', 'assets/templates/helpers/verification-plan.ts']) {
   describe(script, () => {
     test('failure retains stdout with the immutable execution reference', () => {
       runVerifier(script, `echo ${MARKER}; exit 3`, (root, report) => {
         const result = report.results.find((entry: any) => entry.id === 'retention');
-        expect(result).toMatchObject({ passed: false, exit_code: 3 });
+        expect(result).toMatchObject({ passed: false, exit_code: 3, execution: 'executed' });
+        expect(result.run_file).toBe(`.ai/harness/runs/verification-${result.execution_id}.json`);
+        const immutable = JSON.parse(readFileSync(join(root, result.run_file), 'utf8'));
+        expect(immutable.execution_id).toBe(result.execution_id);
+        expect(immutable.result.failure_log_file).toBe(result.failure_log_file);
         expect(result.failure_log_file).toMatch(/^\.ai\/harness\/runs\/verification-.+\.log$/);
         expect(readFileSync(join(root, result.failure_log_file), 'utf8')).toContain(MARKER);
       });

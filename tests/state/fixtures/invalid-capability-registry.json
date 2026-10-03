@@ -16,10 +16,10 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:6389518accc0bdc6423e49894179bc307cb6efe02d287bef7e77cdf747539ff5",
-    "evidence_revision": "sha256:08c42ae89d23b19297bef7bc44739f62d754abecc87ef7aea33fbdc4fc0db379",
+    "subject_revision": "sha256:c08f7667ff811a62c66b5c7e0c34ef99960e9f1c59a38101c1240b033ae8f005",
+    "evidence_revision": "sha256:58577e8e6a1e5af02a9bb7fe5c9cbd1a915fc32db61f3578a36f1d0f5b31d02b",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:333dd8c129ed2450acdf996326a1291bbd48d62daf4805077af76fbfe7370cb7",
+    "progress_token": "sha256:6f026d10219463ae638f462f9226bfc7324c23db7841b3360648303c500d4788",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -30,12 +30,12 @@
       "plan": "plans/plan-20260712-2327-effective-fixture.md"
     },
     "task_profile": "code-change",
-    "workflow_profile": "standard",
-    "requested_workflow_profile": "standard",
-    "risk_floor": "lite",
+    "workflow_profile": "routine",
+    "requested_workflow_profile": "routine",
+    "risk_floor": "routine",
     "profile_reasons": [
-      "risk-floor:lite:local-low-risk",
-      "explicit-override:raise:standard",
+      "risk-floor:routine:local-change",
+      "explicit-override:equal:routine",
       "capability:registry:invalid",
       "capability:unmapped:1"
     ],
@@ -52,7 +52,7 @@
       "tests/effective-state.test.ts"
     ],
     "next_action": "resolve blockers",
-    "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
+    "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [
       "capability_registry:invalid"
     ],
@@ -72,7 +72,7 @@
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
       ".ai/harness/sprint/active-sprint": "sha256:a9f63c09a80ac033d6c3c3a1078aa2e85f5e192e87ccc51506a382e7ea180aa5",
       "plans/plan-20260712-2327-effective-fixture.md": "sha256:b2320675859fb4584b5602730cf3c21388f92b26d360c6fefff820b331395d50",
-      "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:39ee31d8d04c79cbfc24f87724175d754e2822a3666a9a7c4d055f5e04d87898",
+      "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:de393bedcbc7440719eacbf5a7c660f7e6eb49b59d6b76a1ac67d32d762f6215",
       "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
       "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:f41ca543703e6ccb56ee06570274a16eb33ae10d06ff0f52f5d05f492512ed7e",
       "review_subject": "sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183",
@@ -120,22 +120,14 @@
     "readiness": {
       "ok": true,
       "allowedToEdit": {
-        "decision": "block",
-        "reasons": [
-          "hard_blocker_present"
-        ]
+        "decision": "allow"
       },
       "allowedToStop": {
-        "decision": "block",
-        "reasons": [
-          "required_recovery_state_missing",
-          "hard_blocker_present"
-        ]
+        "decision": "allow"
       },
       "readyToShip": {
         "decision": "block",
         "reasons": [
-          "required_work_package_missing",
           "required_evidence_missing",
           "hard_blocker_present"
         ]
@@ -143,42 +135,21 @@
       "requirements": {
         "edit": [
           {
-            "key": "complete_approved_work_package",
+            "key": "safe_path",
             "status": "required",
-            "satisfied": true
-          },
-          {
-            "key": "separate_contract",
-            "status": "not_required",
             "satisfied": true
           }
         ],
-        "stop": [
-          {
-            "key": "durable_recovery_state",
-            "status": "required",
-            "satisfied": false
-          }
-        ],
+        "stop": [],
         "ship": [
-          {
-            "key": "complete_approved_work_package",
-            "status": "required",
-            "satisfied": false
-          },
           {
             "key": "subject_bound_targeted_evidence",
             "status": "required",
             "satisfied": false
           },
           {
-            "key": "separate_contract",
-            "status": "not_required",
-            "satisfied": true
-          },
-          {
-            "key": "external_acceptance",
-            "status": "not_required",
+            "key": "candidate_revision_precondition",
+            "status": "required",
             "satisfied": true
           }
         ]

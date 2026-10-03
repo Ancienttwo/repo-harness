@@ -144,7 +144,16 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
           targetPaths: [],
           operationKind: 'inspect',
         });
-        expect(fields(requested, AUTHORITY_FIELDS)).toEqual(fields(inspect, AUTHORITY_FIELDS));
+        // High risk includes isolation in the revision; inspect omits that signal.
+        const sharedAuthority = scenario.risk?.explicitOverride === 'high'
+          ? AUTHORITY_FIELDS.filter((field) => !['authority_revision', 'state_revision', 'state_version'].includes(field))
+          : AUTHORITY_FIELDS;
+        expect(fields(requested, sharedAuthority)).toEqual(fields(inspect, sharedAuthority));
+        if (scenario.risk?.explicitOverride === 'high') {
+          expect(requested.authority_revision).not.toBe(inspect.authority_revision);
+          expect(requested.state_revision).not.toBe(inspect.state_revision);
+          expect(inspect.state_version).toBeGreaterThan(requested.state_version);
+        }
 
         const hook = runPublicHook(fixture.cwd);
         expect(hook).toEqual(buildStateSnapshot(fixture.cwd, nowMs));
@@ -272,7 +281,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
   test('allowed-to-stop with readyToShip=false is reported identically by CLI, MCP, and the Stop hook', async () => {
     const fixture = createEffectiveStateFixture();
     try {
-      replaceContractProfile(fixture.cwd, 'strict');
+      replaceContractProfile(fixture.cwd, 'high');
       writeFixture(fixture.cwd, '.ai/harness/handoff/current.md', [
         '# Handoff',
         '> **Task ID**: adapter-parity-probe',
@@ -328,7 +337,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       expect(hook.stdout).not.toContain('"decision":"block"');
       const shipReasons = readiness.readyToShip.decision === 'block' ? readiness.readyToShip.reasons.join(',') : '';
       expect(hook.stderr).toContain(
-        `[ReadinessGate] readyToShip=false (missing: ${shipReasons}); Stop is not blocked -- resolve before shipping.`,
+        `[ReadinessGate] Publication not verified: ${shipReasons}. Stop may continue.`,
       );
     } finally {
       fixture.cleanup();

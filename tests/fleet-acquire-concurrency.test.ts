@@ -129,6 +129,7 @@ function raceContract(planPath: string): string {
   return [
     '# Task Contract: Fleet Acquire Race Fixture',
     '',
+    '> **Task Profile**: code-change',
     `> **Plan**: ${planPath}`,
     '> **Review File**: tasks/reviews/acquire.review.md',
     '',
@@ -405,7 +406,7 @@ describe('fleet acquire process race', () => {
         };
       });
       const winners = parsed.filter((result) => result.ok && result.envelope !== undefined);
-      expect(winners).toHaveLength(1);
+      expect(winners, JSON.stringify(parsed)).toHaveLength(1);
       for (const result of parsed.filter((candidate) => !candidate.ok)) {
         expect(result.error).toBeDefined();
         expect(['no_eligible_task', 'offer_stale']).toContain(result.error!);

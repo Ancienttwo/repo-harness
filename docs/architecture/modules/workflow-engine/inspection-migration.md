@@ -178,6 +178,6 @@ bun scripts/inspect-project-state.ts --repo . --format text
 
 - Reduce duplicated required-path lists that still exist across shell scripts.
 
-- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
 
-- `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`

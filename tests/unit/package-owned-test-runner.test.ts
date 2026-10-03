@@ -5,7 +5,6 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 
 const ROOT = join(import.meta.dir, '..', '..');
-const VERIFY_CONTRACT = join(ROOT, 'scripts/verify-contract.sh');
 const temporaryRoots: string[] = [];
 
 type VerificationResult = {
@@ -14,7 +13,7 @@ type VerificationResult = {
   stderr: string;
   report: {
     results: Array<{ id?: string; kind: string; target: string; passed: boolean; message: string; command?: string }>;
-  };
+  } | null;
 };
 
 afterEach(() => {
@@ -79,7 +78,7 @@ function writeContract(root: string, paths: string[]): string {
       '```json',
       JSON.stringify({
         protocol: 1,
-        checks: paths.map((path, index) => ({
+        checks: paths.map((path) => ({
           id: packageTestId(path),
           kind: 'package_test',
           path,
@@ -116,8 +115,8 @@ function runVerifier(root: string, contract: string): VerificationResult {
   }
   const reportPath = join(root, 'report.json');
   const result = spawnSync(
-    'bash',
-    [VERIFY_CONTRACT, '--contract', 'task.contract.md', '--strict', '--read-only', '--report-file', reportPath],
+    process.execPath,
+    [join(ROOT, 'scripts/verification-plan.ts'), 'execute', '--repo', root, '--contract', 'task.contract.md', '--report-file', reportPath],
     {
       cwd: root,
       encoding: 'utf-8',
@@ -127,17 +126,17 @@ function runVerifier(root: string, contract: string): VerificationResult {
       },
     },
   );
-  expect(existsSync(reportPath), `${result.stdout}\n${result.stderr}`).toBe(true);
+  if (result.status === 0) expect(existsSync(reportPath), `${result.stdout}\n${result.stderr}`).toBe(true);
   return {
     status: result.status,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
-    report: JSON.parse(readFileSync(reportPath, 'utf-8')),
+    report: existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, 'utf-8')) : null,
   };
 }
 
 function criterion(result: VerificationResult, path: string) {
-  return result.report.results.find((entry) => entry.kind === 'package_test' && entry.id === packageTestId(path));
+  return result.report?.results.find((entry) => entry.kind === 'package_test' && entry.id === packageTestId(path));
 }
 
 function packageTestId(path: string): string {
@@ -190,8 +189,9 @@ describe('package-owned contract test runner', () => {
     );
     const result = runVerifier(cwd, writeContract(cwd, [path]));
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
-    expect(result.stdout).toContain('package_test package scripts.test is missing');
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(2);
+    expect(result.report).toBeNull();
+    expect(result.stderr).toContain('package_test package scripts.test is missing');
   }, 30_000);
 
   test('fails closed when the nearest package manifest is malformed', () => {
@@ -206,8 +206,9 @@ describe('package-owned contract test runner', () => {
     );
     const result = runVerifier(cwd, writeContract(cwd, [path]));
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
-    expect(result.stdout).toContain('package_test package manifest is malformed');
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(2);
+    expect(result.report).toBeNull();
+    expect(result.stderr).toContain('package_test package manifest is malformed');
   }, 30_000);
 
   test('fails closed when a package_test symlink resolves outside the repository', () => {
@@ -223,12 +224,14 @@ describe('package-owned contract test runner', () => {
     symlinkSync(join(outside, 'tests'), join(cwd, 'linked-tests'), 'dir');
     const result = runVerifier(cwd, writeContract(cwd, [path]));
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
-    expect(result.stdout).toContain('package_test path resolves outside repository');
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(2);
+    expect(result.report).toBeNull();
+    expect(result.stderr).toContain('package_test path resolves outside repository');
   }, 30_000);
 
   test('contains no bare Bun test fallback for package_test criteria', () => {
-    const source = readFileSync(VERIFY_CONTRACT, 'utf-8');
-    expect(source).not.toContain('run_bounded "$log_path" "$result_path" "$bun_bin" test "$path"');
+    const source = readFileSync(join(ROOT, 'src/effects/evidence/verification-execution.ts'), 'utf-8');
+    expect(source).toContain('args: ["run", "--cwd", owner, "test", "--", testRelative]');
+    expect(source).not.toContain('args: ["test", testRelative]');
   });
 });

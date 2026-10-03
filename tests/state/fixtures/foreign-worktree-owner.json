@@ -16,18 +16,18 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:f5a3c1f0fe5500cdd78614cc9d6067db2f97c9be62ac2c4eaa757a343c259ad5",
-    "evidence_revision": "sha256:91534084cf775e755e7214290ec89415552665e3b3ad5cf4d572c227ffae9d8d",
+    "subject_revision": "sha256:d47a6db34690d8f06c48754bcfebc48cd85231cd31268fedf43f67222a3afd2e",
+    "evidence_revision": "sha256:eeaf5a36bc4014c12dbc3478d21cc308c709e6f1d79710e28c1b56b82061220c",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:b0f9e5048bd82f97a308ff7d6f88f35d4c8347d6dd9d93046820662bb783d93e",
+    "progress_token": "sha256:565f9fc20a591f8385c08c65444d48305a56e271dcddd3caad6361d0ddfe19ad",
     "authoritative_plan": null,
     "contract": null,
     "task_profile": null,
-    "workflow_profile": "standard",
+    "workflow_profile": "routine",
     "requested_workflow_profile": null,
-    "risk_floor": "standard",
+    "risk_floor": "routine",
     "profile_reasons": [
-      "risk-floor:standard:feature",
+      "risk-floor:routine:local-change",
       "capability:registry:absent"
     ],
     "profile_signals": {
@@ -40,7 +40,7 @@
     },
     "allowed_paths": [],
     "next_action": "resolve blockers",
-    "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
+    "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [
       "conflict:worktree_owner"
     ],
@@ -106,23 +106,14 @@
     "readiness": {
       "ok": true,
       "allowedToEdit": {
-        "decision": "block",
-        "reasons": [
-          "required_work_package_missing",
-          "hard_blocker_present"
-        ]
+        "decision": "allow"
       },
       "allowedToStop": {
-        "decision": "block",
-        "reasons": [
-          "required_recovery_state_missing",
-          "hard_blocker_present"
-        ]
+        "decision": "allow"
       },
       "readyToShip": {
         "decision": "block",
         "reasons": [
-          "required_work_package_missing",
           "required_evidence_missing",
           "hard_blocker_present"
         ]
@@ -130,42 +121,21 @@
       "requirements": {
         "edit": [
           {
-            "key": "complete_approved_work_package",
+            "key": "safe_path",
             "status": "required",
-            "satisfied": false
-          },
-          {
-            "key": "separate_contract",
-            "status": "not_required",
             "satisfied": true
           }
         ],
-        "stop": [
-          {
-            "key": "durable_recovery_state",
-            "status": "required",
-            "satisfied": false
-          }
-        ],
+        "stop": [],
         "ship": [
-          {
-            "key": "complete_approved_work_package",
-            "status": "required",
-            "satisfied": false
-          },
           {
             "key": "subject_bound_targeted_evidence",
             "status": "required",
             "satisfied": false
           },
           {
-            "key": "separate_contract",
-            "status": "not_required",
-            "satisfied": true
-          },
-          {
-            "key": "external_acceptance",
-            "status": "not_required",
+            "key": "candidate_revision_precondition",
+            "status": "required",
             "satisfied": true
           }
         ]

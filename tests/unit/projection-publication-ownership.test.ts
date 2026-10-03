@@ -1,48 +1,29 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
 const ROOT = join(import.meta.dir, "../..");
+const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 
-function read(path: string): string {
-  return readFileSync(join(ROOT, path), "utf8");
-}
-
-test("prepare-acceptance materializes automatic architecture projection before freezing the review subject", () => {
+test("explicit verification never authors automatic architecture or approval projections", () => {
   const helper = read("scripts/verify-sprint.sh");
-  const materialize = helper.indexOf(
-    'materialize_automatic_architecture_projection "${projection_changed_paths',
-  );
-  const subject = helper.indexOf(
-    "review_subject_sha256=\"$(workflow_source_authority_call workflow_current_review_subject_value",
-  );
-
-  expect(materialize).toBeGreaterThan(-1);
-  expect(subject).toBeGreaterThan(materialize);
+  expect(helper).not.toContain("materialize_automatic_architecture_projection");
+  expect(helper).not.toContain("review_subject_sha256");
+  expect(helper).not.toContain("prepare-acceptance");
+  expect(helper).toContain('"$BUN_BIN" run check:type');
+  expect(helper).toContain('"$BUN_BIN" "$SCRIPT_DIR/merge-gate.ts" run --base "$base"');
 });
-
-test("only the projection manifest is workflow-owned during scope checks", () => {
-  for (const path of ["scripts/verify-sprint.sh", "scripts/contract-worktree.sh"]) {
-    const helper = read(path);
-    expect(helper).toContain("docs/architecture/.projection-manifest.json");
-    expect(helper).toContain("is_workflow_owned_projection_output");
-  }
-});
-
-test("a manifest-bearing publication is acknowledged before closeout commits its merge journal", () => {
+test("contract scope exemption remains confined to the projection manifest", () => {
   const helper = read("scripts/contract-worktree.sh");
-  const publicationMerge = helper.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"');
-  const acknowledgement = helper.indexOf(
-    'acknowledge_architecture_projection_publication "$target_worktree" "$publication_sha"',
-  );
-  const mergedPhase = helper.indexOf('finish_transaction_phase merged "$publication_sha"');
-
-  expect(publicationMerge).toBeGreaterThan(-1);
-  expect(acknowledgement).toBeGreaterThan(publicationMerge);
-  expect(mergedPhase).toBeGreaterThan(acknowledgement);
-  expect(helper).toContain("diff-tree --no-commit-id --name-only -r");
+  expect(helper).toContain('[[ "$1" == "docs/architecture/.projection-manifest.json" ]]');
+  expect(helper).toContain("is_workflow_owned_projection_output");
 });
-
+test("closeout binds provider verification to the exact publication candidate", () => {
+  const helper = read("scripts/contract-worktree.sh");
+  expect(helper).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
+  expect(helper).toContain('[[ "$verified_sha" == "$current_head" ]]');
+  expect(helper).toContain("target branch moved after merge-gate review");
+  expect(helper).not.toContain("acknowledge_architecture_projection_publication");
+});
 test("source and packaged helpers remain byte-identical", () => {
   expect(read("assets/templates/helpers/verify-sprint.sh")).toBe(read("scripts/verify-sprint.sh"));
   expect(read("assets/templates/helpers/contract-worktree.sh")).toBe(read("scripts/contract-worktree.sh"));

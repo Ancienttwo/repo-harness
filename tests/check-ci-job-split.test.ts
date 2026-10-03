@@ -45,6 +45,10 @@ describe('single affected verification and daily fallback', () => {
     expect(jobs.required.needs).toEqual(['selection', 'verify']);
     expect(jobs.verify.if).toBe("needs.selection.outputs.mode == 'affected'");
     expect(jobs.verify.steps.some((step: any) => step.run === 'bash scripts/check-ci.sh affected')).toBe(true);
+    const upload = jobs.selection.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
+    expect(upload.with.path).toBe('.ci-affected-tests.json');
+    expect(upload.with['include-hidden-files']).toBe(true);
+    expect(upload.with['if-no-files-found']).toBe('error');
     for (const id of ['governance', 'test', 'mcp-path-matrix']) {
       expect(jobs[id].if).toBe("needs.selection.outputs.mode == 'daily'");
       expect(jobs[id].steps.find((step: any) => step.uses === 'actions/checkout@v4').with.ref).toBe('${{ needs.selection.outputs.sha }}');

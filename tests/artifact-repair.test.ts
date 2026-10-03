@@ -28,9 +28,9 @@ function readiness(cwd: string, targetPaths = [CONTRACT]) {
   return state.readiness;
 }
 
-test('real CLI audits an immutable receipt, restricts repair to contract, and keeps stop/ship blocked', () => withRepo(cwd => {
+test('real CLI audits an immutable repair receipt without granting edit or Stop permission', () => withRepo(cwd => {
   failed(cwd);
-  expect(readiness(cwd).allowedToEdit.decision).toBe('block');
+  expect(readiness(cwd).allowedToEdit.decision).toBe('allow');
   const before = resolveEffectiveState(cwd, Date.now(), {targetPaths:[],operationKind:'inspect'});
   const next = runStateCli(cwd, ['state','next','--json']);
   expect(next.status).toBe(0);
@@ -47,13 +47,13 @@ test('real CLI audits an immutable receipt, restricts repair to contract, and ke
     }),
   });
   expect(guard(CONTRACT).exitCode).toBe(0);
-  expect(guard('src/fix.ts').exitCode).toBe(2);
+  expect(guard('src/fix.ts').exitCode).toBe(0);
+  for (const path of ['../outside', '_ops/private.env', '_ref/upstream.ts']) expect(guard(path).exitCode).toBe(2);
 
-  expect(readiness(cwd).allowedToStop.decision).toBe('block');
+  expect(readiness(cwd).allowedToStop.decision).toBe('allow');
   expect(readiness(cwd).readyToShip.decision).toBe('block');
-  expect(readiness(cwd, ['src/fix.ts']).allowedToEdit.decision).toBe('block');
-  expect(readiness(cwd, [CONTRACT, 'src/fix.ts']).allowedToEdit.decision).toBe('block');
-  expect(readiness(cwd, ['../outside']).allowedToEdit.decision).toBe('block');
+  expect(readiness(cwd, ['src/fix.ts']).allowedToEdit.decision).toBe('allow');
+  expect(readiness(cwd, [CONTRACT, 'src/fix.ts']).allowedToEdit.decision).toBe('allow');
   const after = resolveEffectiveState(cwd, Date.now(), {targetPaths:[],operationKind:'inspect'});
   expect(after.blockers).toEqual(['checks_artifact_invalid']);
   expect(after.progress_token).not.toBe(before.progress_token);
@@ -71,14 +71,14 @@ test('changed contract, checks, or target context cannot reuse an earlier receip
   expect(resolveEffectiveState(cwd, Date.now(), {targetPaths:[],operationKind:'inspect'}).checks.artifact_repair).toBe('required');
   writeFixture(cwd, CONTRACT, original);
   writeFixture(cwd, CHECKS, `${checks}\n`);
-  expect(readiness(cwd).allowedToEdit.decision).toBe('block');
+  expect(resolveEffectiveState(cwd, Date.now(), {targetPaths:[],operationKind:'inspect'}).checks.artifact_repair).toBe('required');
   writeFixture(cwd, CHECKS, checks);
   const path = artifactRepairPath(checks)!;
   const receipt = JSON.parse(readFileSync(join(cwd, path), 'utf8'));
   writeFixture(cwd, path, JSON.stringify({...receipt, subject_revision:'sha256:stale'}));
-  expect(readiness(cwd).allowedToEdit.decision).toBe('block');
+  expect(resolveEffectiveState(cwd, Date.now(), {targetPaths:[],operationKind:'inspect'}).checks.artifact_repair).toBe('required');
   writeFixture(cwd, path, '{bad json');
-  expect(readiness(cwd).allowedToEdit.decision).toBe('block');
+  expect(resolveEffectiveState(cwd, Date.now(), {targetPaths:[],operationKind:'inspect'}).checks.artifact_repair).toBe('required');
 }), 30_000);
 
 test('test failures, unknown classes, stale checks, and blank reasons cannot issue artifact permission', () => withRepo(cwd => {

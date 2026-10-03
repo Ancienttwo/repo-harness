@@ -408,6 +408,16 @@ process.exit(2);
       policy,
       run,
       env: { ...process.env, REPO_HARNESS_CLI: stubCli, REPO_HARNESS_BUN: process.execPath },
+      // Default refreshes are observation-only. This case explicitly owns a
+      // real context-map mutation followed by a failing capability refresh.
+      runRefreshActions: () => {
+        const sync = spawnSync(process.execPath, [stubCli, 'run', 'context-contract-sync'], { cwd: f.repoRoot, encoding: 'utf8' });
+        const capability = spawnSync(process.execPath, [stubCli, 'capability-context'], { cwd: f.repoRoot, encoding: 'utf8' });
+        return [
+          { actionKey: 'context-contract-sync:src/core', action: 'context-contract-sync' as const, status: sync.status ?? 1, stdout: sync.stdout, stderr: sync.stderr },
+          { actionKey: 'capability-context-request:src/core', action: 'capability-context-request' as const, status: capability.status ?? 1, stdout: capability.stdout, stderr: capability.stderr },
+        ];
+      },
     },
     semanticApplies: () => semanticApplies,
   };
@@ -471,7 +481,7 @@ describe('package-local ArchContext projection provider', () => {
       .toThrow('different approval reference');
   });
 
-  test('known limitation: a refresh-owned input change after a committed apply fails closed on retry', () => {
+  test('an explicitly requested refresh mutation after a committed apply fails closed on stale retry', () => {
     const m = refreshOwnedMutationFixture();
     expect(() => acceptArchitectureProjectionCandidate(m.repoRoot, m.signalId, m.approval, m.options))
       .toThrow('architecture refresh capability-context-request failed');

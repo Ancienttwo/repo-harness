@@ -214,7 +214,6 @@ describe('mutation boundaries after workflow cutover', () => {
       } });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain('action":"block');
-      expect(result.stdout).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
   test('path traversal, symlink escapes and private/reference state remain refused', () => {

@@ -5,7 +5,7 @@
   "cli_stderr": "",
   "field": {
     "exit": 0,
-    "stdout": "standard\n",
+    "stdout": "routine\n",
     "stderr": ""
   },
   "state": {
@@ -16,21 +16,21 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:f5a3c1f0fe5500cdd78614cc9d6067db2f97c9be62ac2c4eaa757a343c259ad5",
-    "evidence_revision": "sha256:3feddb9cf5c00c8e56cb1adbd277b2f4512f0317a87283c6434edc89ab072b55",
+    "subject_revision": "sha256:d47a6db34690d8f06c48754bcfebc48cd85231cd31268fedf43f67222a3afd2e",
+    "evidence_revision": "sha256:7931659ff277877b792c1fbc967cf6549cff9584912d6e37d7d4d5d1e77c5d30",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:0002285960c77ed0c327a256b20bf6018b17c6eda78646257ec3ad1406d0ae9a",
+    "progress_token": "sha256:4b913afb2f49d66cfd2f0166198145d2b253b90ce3c772547dc454648e319696",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
     },
     "contract": null,
     "task_profile": null,
-    "workflow_profile": "standard",
+    "workflow_profile": "routine",
     "requested_workflow_profile": null,
-    "risk_floor": "standard",
+    "risk_floor": "routine",
     "profile_reasons": [
-      "risk-floor:standard:feature",
+      "risk-floor:routine:local-change",
       "capability:registry:absent"
     ],
     "profile_signals": {
@@ -43,7 +43,7 @@
     },
     "allowed_paths": [],
     "next_action": "implement resolver",
-    "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
+    "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
       "checks",
@@ -111,57 +111,32 @@
         "decision": "allow"
       },
       "allowedToStop": {
-        "decision": "block",
-        "reasons": [
-          "required_recovery_state_missing"
-        ]
+        "decision": "allow"
       },
       "readyToShip": {
         "decision": "block",
         "reasons": [
-          "required_work_package_missing",
           "required_evidence_missing"
         ]
       },
       "requirements": {
         "edit": [
           {
-            "key": "complete_approved_work_package",
+            "key": "safe_path",
             "status": "required",
-            "satisfied": true
-          },
-          {
-            "key": "separate_contract",
-            "status": "not_required",
             "satisfied": true
           }
         ],
-        "stop": [
-          {
-            "key": "durable_recovery_state",
-            "status": "required",
-            "satisfied": false
-          }
-        ],
+        "stop": [],
         "ship": [
-          {
-            "key": "complete_approved_work_package",
-            "status": "required",
-            "satisfied": false
-          },
           {
             "key": "subject_bound_targeted_evidence",
             "status": "required",
             "satisfied": false
           },
           {
-            "key": "separate_contract",
-            "status": "not_required",
-            "satisfied": true
-          },
-          {
-            "key": "external_acceptance",
-            "status": "not_required",
+            "key": "candidate_revision_precondition",
+            "status": "required",
             "satisfied": true
           }
         ]

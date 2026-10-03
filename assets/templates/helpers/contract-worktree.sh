@@ -176,71 +176,6 @@ policy_get() {
   printf '%s' "$default_value"
 }
 
-check_architecture_freshness() {
-  local target_branch="$1"
-  local mode
-
-  if [[ -f "$helper_dir/check-architecture-sync.sh" ]]; then
-    bash "$helper_dir/check-architecture-sync.sh" --target "$target_branch"
-    return $?
-  fi
-
-  mode="$(policy_get '.architecture.freshness_gate' 'advisory')"
-  if [[ "$mode" == "strict" ]]; then
-    echo "contract-worktree: strict architecture freshness gate failed: missing packaged check-architecture-sync helper" >&2
-    return 1
-  fi
-
-  echo "contract-worktree: WARN missing packaged check-architecture-sync helper; skipping advisory architecture freshness gate" >&2
-  return 0
-}
-
-acknowledge_architecture_projection_publication() {
-  local target_worktree="$1" publication_sha="$2" apply_mode changed_paths output
-  local -a projection_cli=()
-
-  if ! changed_paths="$(git -C "$target_worktree" diff-tree --no-commit-id --name-only -r \
-      "$publication_sha^" "$publication_sha")"; then
-    echo "contract-worktree: could not inspect the publication tree for architecture projection output" >&2
-    return 1
-  fi
-  if ! printf '%s\n' "$changed_paths" | grep -Fqx 'docs/architecture/.projection-manifest.json'; then
-    return 0
-  fi
-
-  # This acknowledgement mutates ignored cursor state only, after the exact
-  # accepted tree is already public. Prefer the just-published source CLI so a
-  # self-hosting repo does not depend on an older globally installed command.
-  if [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" && [[ -f "$target_worktree/src/cli/index.ts" ]]; then
-    projection_cli=("$BUN_BIN" "$target_worktree/src/cli/index.ts")
-  elif [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]] && is_trusted_executable "$REPO_HARNESS_CLI_BIN"; then
-    projection_cli=("$REPO_HARNESS_CLI_BIN")
-  elif command -v repo-harness >/dev/null 2>&1; then
-    projection_cli=(repo-harness)
-  else
-    echo "contract-worktree: automatic projection publication acknowledgement requires the repo-harness CLI" >&2
-    return 1
-  fi
-
-  output="$(cd "$target_worktree" && "${projection_cli[@]}" architecture-projection policy --json)" || return 1
-  apply_mode="$(printf '%s' "$output" | jq -er '.applyMode')" || return 1
-  case "$apply_mode" in
-    disabled|manual) return 0 ;;
-    automatic) ;;
-    *) echo "contract-worktree: invalid global projection mode" >&2; return 1 ;;
-  esac
-
-  if ! output="$(cd "$target_worktree" \
-    && REPO_HARNESS_TARGET_REPO_ROOT="$target_worktree" \
-      "${projection_cli[@]}" architecture-projection acknowledge-publication \
-        --json --publication-sha "$publication_sha" 2>&1)"; then
-    printf '%s\n' "$output" >&2
-    echo "contract-worktree: could not acknowledge the manifest-bearing publication in the architecture drift cursor" >&2
-    return 1
-  fi
-  echo "[ContractWorktree] Architecture projection publication acknowledged: $publication_sha"
-}
-
 normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
@@ -1135,32 +1070,26 @@ closeout_journal_report() {
 # Restores the pre-closeout snapshot recorded in the journal. Safe from a fresh
 # process: the path index and the original HEAD both live on disk.
 closeout_journal_restore_snapshot() {
-  local dir="$1"
-  local index_file="$dir/snapshot/paths.tsv"
-  local -a rows=()
-  local row index path existed original_head count
-  [[ -f "$index_file" ]] || return 1
-  while IFS= read -r row; do
-    [[ -n "$row" ]] || continue
-    rows+=("$row")
-  done < "$index_file"
-  for ((count = ${#rows[@]} - 1; count >= 0; count--)); do
-    row="${rows[$count]}"
-    index="${row%%$'\t'*}"
-    path="${row#*$'\t'}"
-    existed="${path#*$'\t'}"
-    path="${path%%$'\t'*}"
-    rm -rf "$path"
-    if [[ "$existed" == "1" ]]; then
-      mkdir -p "$(dirname "$path")"
-      cp -Rp "$dir/snapshot/$index/value" "$path"
-    fi
-  done
+  local dir="$1" index_file="$1/snapshot/paths.tsv"
+  local original_head owned_head expected_branch current_branch current_head
+  [[ -f "$index_file" && ! -L "$index_file" ]] || { echo "recovery: snapshot index unavailable; work preserved" >&2; return 1; }
+  [[ ! -s "$index_file" ]] || { echo "recovery: legacy artifact snapshot requires explicit migration; work preserved" >&2; return 1; }
+  expected_branch="$(closeout_journal_field "$dir/meta.json" branch)"
+  current_branch="$(git symbolic-ref -q HEAD)" || { echo "recovery: detached or unknown branch; work preserved" >&2; return 1; }
+  [[ -n "$expected_branch" && "$current_branch" == "refs/heads/$expected_branch" ]] || { echo "recovery: branch differs from journal; work preserved" >&2; return 1; }
   original_head="$(closeout_journal_field "$dir/meta.json" original_head)"
-  if [[ -n "$original_head" ]] && [[ "$(git rev-parse HEAD)" != "$original_head" ]]; then
-    git reset --mixed "$original_head"
-  fi
+  [[ "$original_head" =~ ^[a-f0-9]{40,64}$ ]] || { echo "recovery: original head unavailable; work preserved" >&2; return 1; }
+  current_head="$(git rev-parse HEAD)"
+  [[ "$current_head" != "$original_head" ]] || return 0
+  owned_head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  [[ "$owned_head" =~ ^[a-f0-9]{40,64}$ && "$current_head" == "$owned_head" ]] || { echo "recovery: head differs from owned commit; work preserved" >&2; return 1; }
+  [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || { echo "recovery: new dirty or untracked work requires a user decision; work preserved" >&2; return 1; }
+  git update-ref "$current_branch" "$original_head" "$owned_head" || return 1
+  # Change only the index/ref. The authorized implementation contents survive
+  # as an uncommitted diff; user files are never restored from a folder snapshot.
+  git read-tree "$original_head"
 }
+
 
 finish_transaction_dir=""
 finish_transaction_active=0
@@ -1203,12 +1132,6 @@ finish_transaction_begin() {
   finish_transaction_paths=()
   finish_transaction_existed=()
   trap finish_transaction_on_exit EXIT
-  finish_transaction_snapshot "plans"
-  finish_transaction_snapshot "tasks"
-  finish_transaction_snapshot ".ai/harness/active-plan"
-  finish_transaction_snapshot ".ai/harness/active-worktree"
-  finish_transaction_snapshot ".ai/harness/sprint"
-  finish_transaction_snapshot ".claude/.plan-state"
   finish_transaction_write_index
   closeout_journal_record "$closeout_journal_dir" in_progress prepared "$finish_transaction_original_head"
 }
@@ -1222,7 +1145,13 @@ finish_transaction_abort() {
   local index path
   emit_finish_attempt aborted "$finish_attempt_frozen_base" ""
   if [[ -n "$finish_transaction_original_head" ]] && [[ "$(git rev-parse HEAD)" != "$finish_transaction_original_head" ]]; then
-    git reset --mixed "$finish_transaction_original_head"
+    local current_head owned_head branch_ref
+    current_head="$(git rev-parse HEAD)"
+    owned_head="$(closeout_journal_phase_ref "$closeout_journal_dir" implementation_committed)"
+    [[ "$current_head" == "$owned_head" ]] || { echo "finish: branch moved outside this transaction; preserve work and journal" >&2; return 1; }
+    branch_ref="$(git symbolic-ref HEAD)"
+    git update-ref "$branch_ref" "$finish_transaction_original_head" "$owned_head" || return 1
+    git read-tree "$finish_transaction_original_head" || return 1
   fi
   for ((index = ${#finish_transaction_paths[@]} - 1; index >= 0; index--)); do
     path="${finish_transaction_paths[$index]}"
@@ -1452,21 +1381,6 @@ recover_worktree() {
       head="$(closeout_journal_phase_ref "$dir" publication_prepared)"
       [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
       [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
-      # Only the synthesized-publication journal shape can carry the exact
-      # manifest-bearing tree proof required by the acknowledgement command.
-      # The documented pre-cutover journal shape remains reconcilable without
-      # inventing that proof.
-      if closeout_journal_has_phase "$dir" publication_prepared; then
-        target_ref="$(closeout_journal_field "$dir/meta.json" target_branch)"
-        target_worktree="$(find_worktree_for_branch "$target_ref" || true)"
-        [[ -n "$target_worktree" ]] || {
-          echo "contract-worktree: target branch has no checked-out worktree for projection acknowledgement: $target_ref" >&2
-          return 1
-        }
-        acknowledge_architecture_projection_publication "$target_worktree" "$head" || return 1
-        closeout_journal_has_phase "$dir" projection_acknowledged \
-          || closeout_journal_record "$dir" in_progress projection_acknowledged "$head"
-      fi
       closeout_journal_has_phase "$dir" merged || closeout_journal_record "$dir" in_progress merged "$head"
       closeout_journal_record "$dir" complete complete "$head"
       rm -rf "$dir/snapshot"
@@ -1477,145 +1391,11 @@ recover_worktree() {
   esac
 }
 
-latest_plan_for_slug() {
-  local slug="$1"
-  local latest
-  latest="$(find plans -maxdepth 1 -type f -name "plan-*-${slug}.md" 2>/dev/null | sort | tail -1)"
-  [[ -n "$latest" ]] || return 1
-  printf '%s' "$latest"
-}
-
-archive_finished_workflow() {
-  local plan_file="$1" timestamp="$2" timestamp_human="$3" parent_run_id="$4"
-
-  [[ -n "$plan_file" ]] || { echo "contract-worktree: no active plan found to archive" >&2; exit 1; }
-  [[ -f "$plan_file" ]] || { echo "contract-worktree: active plan not found for archive: $plan_file" >&2; exit 1; }
-  [[ -n "$timestamp" ]] || { echo "contract-worktree: no timestamp provided for archive" >&2; exit 1; }
-  [[ -x "$helper_dir/archive-workflow.sh" ]] || { echo "contract-worktree: archive-workflow helper is missing or not executable" >&2; exit 1; }
-
-  echo "[ContractWorktree] Archiving completed workflow before merge: $plan_file"
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" \
-    --plan "$plan_file" --outcome Completed --timestamp "$timestamp" \
-    --timestamp-human "$timestamp_human" --parent-run-id "$parent_run_id"
-}
-
-predict_post_freeze_manifest() {
-  local plan_file="$1" timestamp="$2" timestamp_human="$3" parent_run_id="$4" output="$5"
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" \
-    --plan "$plan_file" --outcome Completed --timestamp "$timestamp" \
-    --timestamp-human "$timestamp_human" --parent-run-id "$parent_run_id" \
-    --predict-manifest "$output"
-}
-
-
-# Post-freeze allowlist: the exact repo-relative paths finish's own lifecycle step
-# (archive + local-marker cleanup + sprint backfill) is expected to touch after the
-# merge gate reviews frozen candidate F. Computed BEFORE archiving so the gate can
-# bind the allowlist to F. The archive-family timestamp is supplied by the caller
-# (a single `date` call in finish_worktree, shared with archive_finished_workflow's
-# own --timestamp argument below) rather than computed here, so the allowlist
-# prediction and archive-workflow.sh's actual output cannot disagree across a
-# minute boundary. Under-enumeration must fail closed at verify time, never
-# silently pass -- so this only ever predicts exact paths, never a directory or
-# wildcard.
-compute_post_freeze_allowlist() {
-  local plan_file="$1" contract_file="$2" review_file="$3" timestamp="$4"
-  local plan_base raw_slug artifact_stem notes_file source_ref sprint_path
-  local -a paths=()
-
-  plan_base="$(basename "$plan_file")"
-  raw_slug="$(derive_raw_slug_from_plan "$plan_file")"
-  artifact_stem="$(derive_artifact_stem_from_plan "$plan_file")"
-
-  paths+=("plans/${plan_base}")
-  paths+=("plans/archive/${plan_base}")
-  paths+=("$contract_file")
-  paths+=("$review_file")
-  paths+=("tasks/current.md")
-  paths+=("tasks/todos.md")
-  # clean_local_runtime_markers deletes these two unconditionally. They are
-  # gitignored in a normal install (never appear in a diff, so listing them here
-  # is a no-op), but a repo/fixture that tracks them still needs the allowlist
-  # entry for the delete to verify.
-  paths+=(".ai/harness/active-plan")
-  paths+=(".ai/harness/active-worktree")
-
-  notes_file="tasks/notes/${artifact_stem}.notes.md"
-  if [[ ! -f "$notes_file" && -f "tasks/notes/${raw_slug}.notes.md" ]]; then
-    notes_file="tasks/notes/${raw_slug}.notes.md"
-  fi
-
-  paths+=("tasks/archive/contract-${timestamp}-${raw_slug}.md")
-  paths+=("tasks/archive/review-${timestamp}-${raw_slug}.md")
-  if [[ -f "$notes_file" ]]; then
-    paths+=("$notes_file")
-    paths+=("tasks/archive/notes-${timestamp}-${raw_slug}.md")
-  fi
-  if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
-    paths+=("tasks/archive/todo-${timestamp}-${raw_slug}.md")
-  fi
-
-  source_ref="$(awk '/^> \*\*Source Ref\*\*:/ {sub(/^> \*\*Source Ref\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$plan_file" 2>/dev/null | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-  case "$source_ref" in
-    sprint:*#*)
-      sprint_path="${source_ref#sprint:}"
-      sprint_path="${sprint_path%%#*}"
-      paths+=("$sprint_path")
-      ;;
-  esac
-
-  printf '%s\n' "${paths[@]}" | awk 'NF && !seen[$0]++'
-}
-
 run_merge_gate() {
-  local base_ref="$1" manifest_file="$2"
-  shift 2
-  local -a allow_args=() destination_args=()
-  local allow_path destination_path destination_sha extra
-  for allow_path in "$@"; do
-    allow_args+=(--allow-post-freeze "$allow_path")
-  done
-  while IFS=$'\t' read -r destination_path destination_sha extra; do
-    [[ -n "$destination_path" && -n "$destination_sha" && -z "$extra" ]] || {
-      echo "contract-worktree: invalid post-freeze destination manifest row" >&2
-      exit 1
-    }
-    destination_args+=(--expect-post-freeze-destination "${destination_path}=${destination_sha}")
-  done < "$manifest_file"
-  [[ -f "$helper_dir/merge-gate.ts" ]] || {
-    echo "contract-worktree: merge-gate helper is missing: $helper_dir/merge-gate.ts" >&2
-    exit 1
-  }
-  is_trusted_executable "$BUN_BIN" || {
-    echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
-    exit 1
-  }
-  echo "[ContractWorktree] Sealing the exact local candidate against $base_ref" >&2
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" "${allow_args[@]}" "${destination_args[@]}" --format sha
-}
-
-verify_merge_gate_seal() {
   local base_ref="$1"
-  echo "[ContractWorktree] Revalidating local merge seal against $base_ref" >&2
-  is_trusted_executable "$BUN_BIN" || {
-    echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
-    exit 1
-  }
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" verify --base "$base_ref" --format sha
-}
-
-verify_acceptance_receipt() {
-  local contract_file="$1"
-  [[ -f "$helper_dir/acceptance-receipt.ts" ]] || {
-    echo "contract-worktree: AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts" >&2
-    exit 1
-  }
-  is_trusted_executable "$BUN_BIN" || {
-    echo "contract-worktree: AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run" >&2
-    exit 1
-  }
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
-    --contract "$contract_file" --verification ".ai/harness/checks/latest.json" >/dev/null
+  [[ -f "$helper_dir/merge-gate.ts" ]] || { echo "contract-worktree: merge-gate helper missing" >&2; return 1; }
+  is_trusted_executable "$BUN_BIN" || { echo "contract-worktree: trusted Bun runtime required" >&2; return 1; }
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha
 }
 
 refresh_and_freeze_base() {
@@ -1898,45 +1678,29 @@ finish_worktree() {
     return 1
   fi
 
-  local current_branch slug active_plan contract_file review_file target_worktree artifact_stem
+  local current_branch slug active_plan="" contract_file="" target_worktree
   local frozen_base_sha
   current_branch="$(git branch --show-current)"
   [[ -n "$current_branch" ]] || { echo "contract-worktree: detached HEAD is not supported" >&2; exit 1; }
   [[ "$current_branch" != "$target_branch" ]] || { echo "contract-worktree: already on target branch $target_branch" >&2; exit 1; }
   slug="$(normalize_slug "${current_branch##*/}")"
   finish_attempt_slug="$slug"
-  commit_message="${commit_message:-feat(contract): complete ${slug}}"
+  commit_message="${commit_message:-feat: complete ${slug}}"
 
-  if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
-    # shellcheck source=/dev/null
-    . "$WORKFLOW_STATE_LIB"
-    active_plan="$(get_active_plan || true)"
-    if [[ -n "$active_plan" ]]; then
-      contract_file="$(workflow_active_contract || true)"
-      review_file="$(workflow_active_review || true)"
-    fi
+  resolve_sprint_claim_token || { closeout_claim_release; return 1; }
+  if [[ "$merge_back" -eq 0 && -z "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
+    local completed_dir completed_head
+    completed_head="$(git rev-parse HEAD)"
+    while IFS= read -r completed_dir; do
+      [[ -n "$completed_dir" ]] || continue
+      if [[ "$(closeout_journal_field "$completed_dir/meta.json" merge_back)" == "0"          && "$(closeout_journal_field "$completed_dir/meta.json" branch)" == "$current_branch"          && "$(closeout_journal_field "$completed_dir/meta.json" target_branch)" == "$target_branch"
+         && "$(closeout_journal_field "$completed_dir/meta.json" claim_id)" == "$sprint_lease_claim_id"          && "$(closeout_journal_phase_ref "$completed_dir" complete)" == "$completed_head" ]]; then
+        closeout_claim_release
+        echo "[ContractWorktree] Candidate already committed; completed transaction replay is a no-op."
+        return 0
+      fi
+    done < <(closeout_journal_list "finish" "complete")
   fi
-
-  if [[ -z "${active_plan:-}" ]]; then
-    active_plan="$(latest_plan_for_slug "$slug" || true)"
-  fi
-  if [[ -n "${active_plan:-}" && -z "${contract_file:-}" ]]; then
-    artifact_stem="$(derive_artifact_stem_from_plan "$active_plan")"
-    if [[ -f "tasks/contracts/${artifact_stem}.contract.md" ]] || [[ ! -f "tasks/contracts/${slug}.contract.md" ]]; then
-      contract_file="tasks/contracts/${artifact_stem}.contract.md"
-    fi
-  fi
-  if [[ -n "${active_plan:-}" && -z "${review_file:-}" ]]; then
-    artifact_stem="${artifact_stem:-$(derive_artifact_stem_from_plan "$active_plan")}"
-    if [[ -f "tasks/reviews/${artifact_stem}.review.md" ]] || [[ ! -f "tasks/reviews/${slug}.review.md" ]]; then
-      review_file="tasks/reviews/${artifact_stem}.review.md"
-    fi
-  fi
-  contract_file="${contract_file:-tasks/contracts/${slug}.contract.md}"
-  review_file="${review_file:-tasks/reviews/${slug}.review.md}"
-
-  [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "contract-worktree: no active sprint contract found" >&2; exit 1; }
-  [[ -n "$review_file" && -f "$review_file" ]] || { echo "contract-worktree: no active sprint review found" >&2; exit 1; }
 
   # Sprint lease gate, before any verification or publication work: ownership
   # is checked first so a displaced agent stops here rather than after running
@@ -1946,14 +1710,6 @@ finish_worktree() {
 
   frozen_base_sha="$(refresh_and_freeze_base "$gate_base_ref" "$target_branch")"
   finish_attempt_frozen_base="$frozen_base_sha"
-  verify_acceptance_receipt "$contract_file"
-  check_architecture_freshness "$target_branch"
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/verify-sprint.sh"
-  [[ "$(git rev-parse "$gate_base_ref^{commit}")" == "$frozen_base_sha" ]] || {
-    echo "contract-worktree: target base moved during final verification; restart closeout from the refreshed base" >&2
-    exit 1
-  }
-  check_scope_against_contract "$contract_file"
   if [[ "$merge_back" -eq 1 ]]; then
     target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
     [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
@@ -1979,6 +1735,9 @@ finish_worktree() {
     "repo=$(closeout_journal_root)" \
     "worktree=$closeout_journal_worktree" \
     "operation=finish" \
+    "merge_back=$merge_back" \
+    "claim_id=$sprint_lease_claim_id" \
+    "task_id=$sprint_lease_task_id" \
     "plan=${active_plan:-}" \
     "contract=$contract_file" \
     "original_head=$closeout_original_head" \
@@ -2001,7 +1760,9 @@ finish_worktree() {
     "target_branch=$target_branch" \
     "base_ref=$gate_base_ref" \
     "base_sha=$frozen_base_sha" \
-    "merge_back=$merge_back" || closeout_begin_status=$?
+    "merge_back=$merge_back" \
+    "claim_id=$sprint_lease_claim_id" \
+    "task_id=$sprint_lease_task_id" || closeout_begin_status=$?
   case "$closeout_begin_status" in
     0) ;;
     2)
@@ -2033,104 +1794,17 @@ finish_worktree() {
   fi
   finish_transaction_phase implementation_committed "$(git rev-parse HEAD)"
 
-  local run_gate=0
-  if [[ "$merge_back" -eq 1 || "$gate_base_explicit" -eq 1 ]]; then
-    run_gate=1
-  fi
-
   local verified_sha current_head publication_sha publication_tree frozen_base_tree commit_gpgsign_raw commit_gpgsign config_status
-  # Single timestamp authority: one `date` call for this whole finish run, shared
-  # by the post-freeze allowlist prediction (Step 3, when a gate runs) and the
-  # archive step's actual output (Step 4, unconditional), so the two cannot
-  # disagree across a minute boundary.
-  local finish_timestamp finish_timestamp_human finish_parent_run_id
-  finish_timestamp="$(date +%Y%m%d-%H%M)"
-  finish_timestamp_human="$(date '+%Y-%m-%d %H:%M')"
-  finish_parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${finish_timestamp}}}}"
-  if [[ "$run_gate" -eq 1 ]]; then
-    # Step 3: review F while the goal plan is still live at its pre-archive path,
-    # binding the receipt to F plus the exact set of paths the lifecycle step below
-    # is expected to touch.
-    local -a post_freeze_allowlist=()
-    local allow_path
-    while IFS= read -r allow_path; do
-      [[ -n "$allow_path" ]] && post_freeze_allowlist+=("$allow_path")
-    done < <(compute_post_freeze_allowlist "$active_plan" "$contract_file" "$review_file" "$finish_timestamp")
-
-    local post_freeze_manifest
-    post_freeze_manifest="$(mktemp)"
-    if ! predict_post_freeze_manifest "$active_plan" "$finish_timestamp" "$finish_timestamp_human" "$finish_parent_run_id" "$post_freeze_manifest"; then
-      rm -f "$post_freeze_manifest"
-      finish_transaction_abort
-      return 1
-    fi
-    if ! verified_sha="$(run_merge_gate "$gate_base_ref" "$post_freeze_manifest" "${post_freeze_allowlist[@]}")"; then
-      rm -f "$post_freeze_manifest"
-      finish_transaction_abort
-      return 1
-    fi
-    rm -f "$post_freeze_manifest"
-    current_head="$(git rev-parse HEAD)"
-    if [[ "$verified_sha" != "$current_head" ]]; then
-      echo "contract-worktree: merge gate verified $verified_sha but branch HEAD is $current_head" >&2
-      finish_transaction_abort
-      return 1
-    fi
-    finish_transaction_phase gate_sealed "$verified_sha"
-  fi
-
-  # Step 4: lifecycle mutation now that the gate (if any) has already reviewed F.
-  if ! archive_finished_workflow "$active_plan" "$finish_timestamp" "$finish_timestamp_human" "$finish_parent_run_id"; then
-    finish_transaction_abort
-    return 1
-  fi
-  if ! clean_local_runtime_markers; then
-    finish_transaction_abort
-    return 1
-  fi
-  if ! backfill_sprint_backlog "$active_plan"; then
-    finish_transaction_abort
-    return 1
-  fi
-  finish_transaction_phase lifecycle_applied "$(git rev-parse HEAD)"
-
-  # Step 5: lifecycle changes land as a separate, deterministic commit L. If
-  # archiving produced no tracked change, L is simply F.
-  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-    git add -A
-    git commit -m "chore(workflow): archive ${slug} closeout"
-  else
-    echo "[ContractWorktree] No lifecycle changes to commit."
-  fi
-  finish_transaction_phase lifecycle_committed "$(git rev-parse HEAD)"
-
-  # Step 6: no gate ran at all (plain --no-merge) -- nothing further to verify.
-  if [[ "$run_gate" -eq 0 ]]; then
-    finish_transaction_commit
-    echo "[ContractWorktree] Merge skipped by --no-merge."
-    return 0
-  fi
-
+  verified_sha="$(git rev-parse HEAD)"
   if [[ "$merge_back" -eq 0 ]]; then
-    # A gate ran against F above; verify the receipt against the post-lifecycle
-    # HEAD (L) before this transaction is allowed to commit, so an
-    # out-of-allowlist lifecycle mutation (or any other post-freeze drift) is
-    # caught and rolled back here instead of being handed to the caller as a
-    # silently-unverified success.
-    if ! verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"; then
-      finish_transaction_abort
-      return 1
-    fi
-    current_head="$(git rev-parse HEAD)"
-    if [[ "$verified_sha" != "$current_head" ]]; then
-      echo "contract-worktree: merge gate receipt does not verify against post-archive HEAD $current_head (got $verified_sha)" >&2
-      finish_transaction_abort
-      return 1
-    fi
-    finish_transaction_commit
-    echo "[ContractWorktree] Merge skipped by --no-merge."
+    finish_transaction_commit "$verified_sha"
+    echo "[ContractWorktree] Candidate committed; no main merge or additional verification was performed."
     return 0
   fi
+  # Only the actual main effect consumes trusted checks. No archive mutation
+  # or second verification can change the candidate after this observation.
+  verified_sha="$(run_merge_gate "$gate_base_ref")" || { finish_transaction_abort; return 1; }
+  finish_transaction_phase gate_sealed "$verified_sha"
 
   # Step 7: re-validate the receipt against L (F plus only allowlisted drift),
   # then synthesize one publication commit P whose sole parent is the frozen
@@ -2142,7 +1816,6 @@ finish_worktree() {
     exit 1
   fi
 
-  verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"
   current_head="$(git rev-parse "$current_branch^{commit}")"
   [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
   [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{commit}")" == "$frozen_base_sha" ]] || {
@@ -2205,8 +1878,6 @@ finish_worktree() {
     echo "contract-worktree: published target tree does not match verified lifecycle tree" >&2
     exit 1
   }
-  acknowledge_architecture_projection_publication "$target_worktree" "$publication_sha" || exit 1
-  finish_transaction_phase projection_acknowledged "$publication_sha"
   finish_transaction_phase merged "$publication_sha"
   finish_transaction_commit "$publication_sha"
   sprint_lease_reconcile_after_publication "$target_branch"
@@ -2421,7 +2092,7 @@ cleanup_worktree() {
     fi
     if [[ -n "$worktree_status" ]]; then
       echo "contract-worktree: linked worktree is dirty, refusing cleanup: $worktree_path" >&2
-      echo "contract-worktree: pick/apply/commit useful changes first; scaffold-only discard belongs in repo-harness run ship-worktrees --cleanup-merged --discard-scaffold-only" >&2
+      echo "contract-worktree: preserve the dirty worktree and ask the user before any deletion" >&2
       exit 1
     fi
   else

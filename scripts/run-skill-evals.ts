@@ -15,6 +15,7 @@ import {
 import { spawnSync } from "child_process";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { fileURLToPath } from "url";
+import type { VerificationExecutionReport } from "../src/effects/evidence/verification-execution";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -198,17 +199,6 @@ export interface GraderResult {
   target: string;
   passed: boolean;
   message: string;
-}
-
-export interface GraderReport {
-  contract: string;
-  previous_status: string;
-  next_status: string;
-  quiet: boolean;
-  strict: boolean;
-  total: number;
-  failed: number;
-  results: GraderResult[];
 }
 
 const ARTIFACT_FILES = [
@@ -943,114 +933,62 @@ function relativeLink(fromRoot: string, targetPath: string): string {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
-function escapeYamlSingleQuoted(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
 function renderEvalVerificationPlan(evalEntry: EvalEntry): string {
-  // Eval grader command policy is explicit and fixed; never infer it from command text.
-  const checks = (evalEntry.graders.commands_succeed ?? []).map((command, index) => ({
-    id: `eval-command-${index + 1}`,
+  // Every declared predicate is an explicit canonical check. Preserve grep ERE
+  // semantics; shell arguments are literal data through the existing quoting.
+  const commands = [...(evalEntry.graders.commands_succeed ?? [])];
+  for (const path of evalEntry.graders.files_exist ?? []) commands.push(`test -e ${quoteShellArg(path)}`);
+  for (const { path, pattern } of evalEntry.graders.files_contain ?? []) {
+    commands.push(`test -f ${quoteShellArg(path)} && grep -Eq -- ${quoteShellArg(pattern)} ${quoteShellArg(path)}`);
+  }
+  for (const path of evalEntry.anti_graders?.files_not_exist ?? []) commands.push(`test ! -e ${quoteShellArg(path)}`);
+  for (const { path, pattern } of evalEntry.anti_graders?.files_not_contain ?? []) {
+    commands.push(`if [ ! -f ${quoteShellArg(path)} ]; then exit 0; fi; grep_status=0; grep -Eq -- ${quoteShellArg(pattern)} ${quoteShellArg(path)} || grep_status=$?; test "$grep_status" -eq 1`);
+  }
+  const checks = commands.map((command, index) => ({
+    id: `eval-grader-${index + 1}`,
     kind: "command" as const,
     command,
     cwd: ".",
     phase: "verification" as const,
     cost: "normal" as const,
     evidence_policy: "current_exact" as const,
-    necessity: `Eval grader command ${index + 1} must succeed for ${evalEntry.slug}.`,
-    inputs: { env: [] as string[] },
+    necessity: `Declared eval grader ${index + 1} must pass for ${evalEntry.slug}.`,
+    inputs: { env: ['PATH'] },
   }));
   return JSON.stringify({ protocol: 1, checks }, null, 2);
 }
 
 function renderEvalContract(evalEntry: EvalEntry): string {
-  const lines: string[] = [
-    `# Eval Contract: ${evalEntry.slug}`,
-    "",
-    "> **Status**: Pending",
-    "",
-    "```yaml",
-    "exit_criteria:",
-  ];
-
-  const appendList = (section: string, values: string[] | undefined): void => {
-    if (!values || values.length === 0) return;
-    lines.push(`  ${section}:`);
-    for (const value of values) {
-      lines.push(`    - ${escapeYamlSingleQuoted(value)}`);
-    }
-  };
-
-  const appendPathPatterns = (
-    section: string,
-    values: PathPatternCheck[] | undefined
-  ): void => {
-    if (!values || values.length === 0) return;
-    lines.push(`  ${section}:`);
-    for (const value of values) {
-      lines.push(`    - path: ${escapeYamlSingleQuoted(value.path)}`);
-      lines.push(`      pattern: ${escapeYamlSingleQuoted(value.pattern)}`);
-    }
-  };
-
-  appendList("files_exist", evalEntry.graders.files_exist);
-  appendPathPatterns("files_contain", evalEntry.graders.files_contain);
-  appendList("files_not_exist", evalEntry.anti_graders?.files_not_exist);
-  appendPathPatterns("files_not_contain", evalEntry.anti_graders?.files_not_contain);
-
-  lines.push(
-    "```",
-    "",
-    "## Verification Plan",
-    "",
-    "```json",
-    renderEvalVerificationPlan(evalEntry),
-    "```",
-    "",
-  );
-
-  lines.push(
-    "## Evidence Requirements",
-    "",
-    "```yaml",
-    "evidence_requirements:",
-    "  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.",
-    "  benchmark: not_applicable",
-    "```",
-    ""
-  );
-
-  return `${lines.join("\n")}\n`;
+  return [
+    `# Eval Contract: ${evalEntry.slug}`, '', '> **Status**: Pending', '',
+    '## Verification Plan', '', '```json', renderEvalVerificationPlan(evalEntry), '```', '',
+  ].join('\n');
 }
 
 function runEvalGraders(repoRoot: string, workspacePath: string, evalEntry: EvalEntry, home?: string): {
-  report: GraderReport;
+  report: VerificationExecutionReport;
   reportPath: string;
 } {
-  const verifyScriptPath = join(repoRoot, "assets", "templates", "helpers", "verify-contract.sh");
+  const verifyScriptPath = join(repoRoot, "scripts", "verification-plan.ts");
   const contractPath = join(workspacePath, "eval-grader.contract.md");
   const reportPath = join(workspacePath, "eval-grader-report.json");
   writeTextFile(contractPath, renderEvalContract(evalEntry));
 
   const result = runProcess(
-    "bash",
+    process.execPath,
     [
       verifyScriptPath,
+      "execute",
+      "--repo",
+      workspacePath,
       "--contract",
-      contractPath,
-      "--strict",
-      "--quiet",
-      "--read-only",
+      "eval-grader.contract.md",
       "--report-file",
-      reportPath,
+      "eval-grader-report.json",
     ],
     workspacePath,
     {
-      // workspacePath is a disposable directory outside repoRoot, so
-      // verify-contract.sh's cwd-relative default lib path never resolves;
-      // point it at the packaged mirror explicitly (same pattern as
-      // tests/contract-run.test.ts and tests/helper-scripts.test.ts).
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(repoRoot, "assets", "hooks", "lib", "workflow-state.sh"),
       ...(home ? { HOME: home } : {}),
     },
     Boolean(home),
@@ -1062,8 +1000,18 @@ function runEvalGraders(repoRoot: string, workspacePath: string, evalEntry: Eval
     );
   }
 
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new Error(`Eval grader execution failed for ${evalEntry.slug}: ${result.stderr.trim() || `exit ${result.exitCode}`}`);
+  }
+  const report = readJsonFile<VerificationExecutionReport>(reportPath);
+  if (report.protocol !== 1 || report.kind !== 'verification_execution_report'
+    || typeof report.passed !== 'boolean' || !Array.isArray(report.results)
+    || report.passed !== (result.exitCode === 0)) {
+    throw new Error(`Eval grader report is invalid for ${evalEntry.slug}`);
+  }
+
   return {
-    report: readJsonFile<GraderReport>(reportPath),
+    report,
     reportPath,
   };
 }
@@ -1076,7 +1024,7 @@ function buildRunMetadata(params: {
   command: string;
   exitCode: number | null;
   graderReportPath: string | null;
-  graderReport: GraderReport | null;
+  graderReport: VerificationExecutionReport | null;
   durationMs: number;
   dryRun: boolean;
   stdoutPath: string;
@@ -1111,20 +1059,20 @@ function buildRunMetadata(params: {
         : "failed",
     graderStatus: params.dryRun
       ? "skipped"
-      : (params.graderReport?.failed ?? 0) === 0
+      : params.graderReport?.passed === true
         ? "passed"
         : "failed",
     graderReportPath: params.graderReportPath,
     graderSummary: {
-      total: params.graderReport?.total ?? 0,
-      failed: params.graderReport?.failed ?? 0,
+      total: params.graderReport?.results.length ?? 0,
+      failed: params.graderReport?.results.filter(result => !result.passed).length ?? 0,
     },
-    graderResults: params.graderReport?.results ?? [],
+    graderResults: [...(params.graderReport?.results ?? [])],
     durationMs: params.durationMs,
     dryRun: params.dryRun,
     status: params.dryRun
       ? "dry_run"
-      : params.exitCode === 0 && (params.graderReport?.failed ?? 0) === 0
+      : params.exitCode === 0 && params.graderReport?.passed === true
         ? "success"
         : "failed",
     stdoutPath: params.stdoutPath,
@@ -1212,7 +1160,7 @@ function runSingleEval(params: {
   let exitCode: number | null = 0;
   let stdout = "";
   let stderr = "";
-  let graderReport: GraderReport | null = null;
+  let graderReport: VerificationExecutionReport | null = null;
   let graderReportPath: string | null = null;
   let structuredEvidence = unavailableStructuredEvidence("dry_run");
   const startedAt = Date.now();

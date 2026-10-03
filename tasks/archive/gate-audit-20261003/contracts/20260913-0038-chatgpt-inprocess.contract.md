@@ -298,7 +298,7 @@ exit_criteria:
 }
 ```
 
-Author the actual checks using [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
+Author the actual checks using [Testing Policy and Artifact Standards](../../../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
 The empty array is not permission to omit required repository checks: retain it
 only when no executable criterion applies and explain why in Acceptance Notes.
 Prefer existing covering tests; creating a task-named test or adding typecheck

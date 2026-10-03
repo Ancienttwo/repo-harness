@@ -33,7 +33,7 @@
 
 ## Verification Evidence
 
-Follow [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
+Follow [Testing Policy and Artifact Standards](../../../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
 Consume canonical evidence; do not rerun checks to populate this review or
 copy the executable plan. Return missing/stale evidence to its execution owner.
 

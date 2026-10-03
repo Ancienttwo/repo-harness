@@ -446,7 +446,7 @@ describe('doctor command (Phase 1C)', () => {
         },
       });
 
-      expect(res.status).toBe(0);
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
       const report = JSON.parse(res.stdout);
       const codegraph = report.checks.find((entry: { id: string }) => entry.id === 'codegraph-readiness');
       expect(codegraph).toBeDefined();

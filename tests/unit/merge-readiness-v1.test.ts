@@ -92,6 +92,8 @@ describe('MergeReadinessV1', () => {
       'draft',
       'head_moved',
       'base_moved_since_verification',
+      'changes_requested',
+      'unresolved_threads',
       'checks_pending',
       'checks_failed',
       'not_mergeable',
@@ -142,11 +144,22 @@ test.each(['head_sha','base_sha'] as const)('an otherwise green Publication lose
   expect(verdict.ready).toBe(false);
   expect(verdict.blockers.map(b=>b.code)).toEqual([field==='head_sha'?'head_moved':'base_moved_since_verification']);
 });
-test('ordinary PR readiness needs no receipt, lease, review or acceptance artifact', () => {
+test('ordinary PR readiness needs no receipt, lease or acceptance artifact', () => {
   const { provider, integration_mode, observation } = readyInput();
-  const input = { provider: { ...provider!, review_decision: 'CHANGES_REQUESTED', unresolved_thread_count: 4 }, integration_mode, observation,
+  const input = { provider: provider!, integration_mode, observation,
     expected_head_sha: HEAD, expected_base_sha: BASE };
   expect(projectPullRequestMergeReadiness(input).ready).toBe(true);
   expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [] } }).ready).toBe(false);
   expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [{ name: 'fake-green', bucket: 'pass' }] } }).ready).toBe(false);
+});
+
+test.each([null, -1, 0.5, Number.NaN])('missing or invalid thread count %s fails closed', count => {
+  const input = readyInput();
+  const verdict = projectMergeReadiness({ ...input, provider: { ...input.provider!, unresolved_thread_count: count } });
+  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['provider_data_incomplete']);
+});
+
+test.each(['APPROVED', 'REVIEW_REQUIRED', null])('review decision %s needs no local approval artifact', decision => {
+  const input = readyInput();
+  expect(projectMergeReadiness({ ...input, provider: { ...input.provider!, review_decision: decision } }).ready).toBe(true);
 });

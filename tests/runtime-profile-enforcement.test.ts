@@ -174,56 +174,7 @@ describe('risk-based runtime profile enforcement', () => {
       const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' });
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain('action\":\"block');
-      expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  }, 30_000);
-
-  test('High-risk edits permit both missing contracts and isolated contract worktrees', () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'profile-strict-')));
-    const base = join(root, 'base');
-    const worktree = join(root, 'worktree');
-    try {
-      mkdirSync(base, { recursive: true });
-      initRepo(base);
-      git(base, ['worktree', 'add', '-b', 'codex/strict-fixture', worktree]);
-      mkdirSync(join(worktree, 'docs'), { recursive: true });
-      mkdirSync(join(worktree, 'plans'), { recursive: true });
-      mkdirSync(join(worktree, 'tasks/contracts'), { recursive: true });
-      mkdirSync(join(worktree, '.ai/harness'), { recursive: true });
-      writeFileSync(join(worktree, 'docs/spec.md'), '# Spec\n');
-      const plan = 'plans/plan-20260712-0000-strict.md';
-      const contract = 'tasks/contracts/20260712-0000-strict.contract.md';
-      writeFileSync(join(worktree, plan), [
-        // Status is deliberately not "Executing"/"Approved": either would also
-        // trip the state resolver's own `missing_contract` blocker (plan
-        // approved/executing with no contract file yet), which now fails
-        // pre-edit-guard.sh closed via the generic WorkflowProfileGuard
-        // before ever reaching the StrictContractGuard check this test wants
-        // to isolate. "Blocked" is a real status in the policy.json
-        // active_plan.statuses authority (not Draft/Annotating, so it still
-        // passes PlanStatusGuard's own case arm; not Approved/Executing, so
-        // it avoids missing_contract) -- unlike the plan's original
-        // "InProgress" placeholder, it also passes the fail-closed default
-        // branch instead of relying on that branch not existing yet.
-        '# Strict', '', '> **Status**: Blocked', `> **Task Contract**: ${contract}`, '',
-        '## Evidence Contract', '- **State/progress path**: plan', '- **Verification evidence**: test',
-        '- **Evaluator rubric**: review', '- **Stop condition**: pass', '- **Rollback surface**: revert', '',
-      ].join('\n'));
-      writeFileSync(join(worktree, '.ai/harness/active-plan'), `${plan}\n`);
-      writeFileSync(join(worktree, '.ai/harness/active-worktree'), `${realpathSync(worktree)}\n`);
-
-      const missing = preEdit(worktree, 'src/auth/session.ts');
-      expect(missing.status).toBe(0);
-      expect(missing.stderr).not.toContain('StrictContractGuard');
-
-      writeFileSync(join(worktree, contract), [
-        '# Contract', '', '> **Status**: Active', `> **Plan**: ${plan}`, '> **Workflow Profile**: high', '',
-        '## Allowed Paths', '```yaml', 'allowed_paths:', '  - src/auth/', '```', '',
-      ].join('\n'));
-      const allowed = preEdit(worktree, 'src/auth/session.ts');
-      expect(allowed.status).toBe(0);
-      expect(allowed.stdout).toContain('TDD Guard');
-    } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
   test('Codex apply_patch permits authorized high-risk edits and refuses private targets', () => {
@@ -287,7 +238,6 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       const result = preApplyPatch(cwd, patchFromFiles(FOUR_NORMAL_FILES));
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain('action\":\"block');
-      expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -332,7 +282,6 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       const result = preApplyPatch(cwd, patchFromFiles(['src/module-a/a.ts', 'src/module-b/b.ts']));
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain('action\":\"block');
-      expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -346,7 +295,6 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       const result = preApplyPatch(cwd, patchFromFiles(reorderedWithDuplicate));
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain('action\":\"block');
-      expect(result.stderr).not.toContain('StrictContractGuard');
 
       const direct = resolveStateDirect(cwd, reorderedWithDuplicate);
       expect(direct.json.profile_signals?.targetPathCount).toBe(4);
@@ -358,30 +306,6 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-strict-leak-')));
     try {
       initRepo(cwd);
-      mkdirSync(join(cwd, 'docs'), { recursive: true });
-      mkdirSync(join(cwd, 'plans'), { recursive: true });
-      writeFileSync(join(cwd, 'docs/spec.md'), '# Spec\n');
-      const plan = 'plans/plan-20260713-1300-batch-strict.md';
-      writeFileSync(join(cwd, plan), [
-        // Status "Blocked" (not Executing/Approved/Draft/Annotating), same
-        // reasoning as the "Strict high-risk paths" fixture above: avoids
-        // the state resolver's own missing_contract blocker AND passes the
-        // plan-status fail-closed default branch (it is a real status in
-        // the policy.json active_plan.statuses authority) so this test's
-        // specific assertion (src/plain1.ts named by StrictContractGuard,
-        // proving the batch-scope strict-token leak) is reachable and
-        // unambiguous, not masked by an unrelated, coincidental blocker
-        // that would fire regardless of whether the batch-scope fix under
-        // test works at all.
-        '# Batch Strict', '', '> **Status**: Blocked', '',
-        '## Evidence Contract', '- **State/progress path**: plan', '- **Verification evidence**: test',
-        '- **Evaluator rubric**: review', '- **Stop condition**: pass', '- **Rollback surface**: revert', '',
-      ].join('\n'));
-      writeFileSync(join(cwd, '.ai/harness/active-plan'), `${plan}\n`);
-      writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${cwd}\n`);
-
-      // The plain implementation file is listed BEFORE the strict-category path so the
-      // recursive check on it runs first; it must fail closed on batch-wide scope alone.
       const result = preApplyPatch(cwd, [
         '*** Begin Patch',
         '*** Add File: src/plain1.ts',
@@ -391,7 +315,6 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         '*** End Patch',
       ].join('\n'));
       expect(result.status).toBe(0);
-      expect(result.stderr).not.toContain('StrictContractGuard');
       expect(result.stdout).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
@@ -475,7 +398,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
     // counting), but its "auth" token must still be scanned via
     // strictScanPaths -- otherwise a batch that touches auth-related docs
     // alongside ordinary implementation code would silently resolve lite and
-    // skip the StrictContractGuard that src/plain.ts should trip.
+    // understate the risk of the implementation edit.
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-docs-auth-strict-leak-')));
     try {
       initRepo(cwd);

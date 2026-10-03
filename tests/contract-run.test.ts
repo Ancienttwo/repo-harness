@@ -378,8 +378,9 @@ describe("contract-run helper", () => {
       expect(workerPromptContent).toContain("Permission scope: inherit_allowed_paths");
       expect(workerPromptContent).toContain("## Why this task matters");
       expect(workerPromptContent).toContain("## Before you finish (mandatory self-verification)");
-      expect(workerPromptContent).toContain("repo-harness run verify-sprint --prepare-acceptance");
-      expect(workerPromptContent).toContain("Verification Plan");
+      expect(workerPromptContent).toContain("bun run check:type");
+      expect(workerPromptContent).toContain("caller-selected affected tests");
+      expect(workerPromptContent).not.toContain("--prepare-acceptance");
       expect(workerPromptContent).toContain("do not rerun the old full-suite criterion merely because the subject changed");
       expect(workerPromptContent).not.toContain("Run every command listed under exit_criteria.commands_succeed");
       expect(workerPromptContent).toContain("## Record what you learned");
@@ -514,51 +515,19 @@ describe("contract-run helper", () => {
 
       initGitRepo(repo);
 
-      const verifyReport = ".ai/harness/runs/pilot/verify-report.json";
-      const verify = spawnSync(
-        "bash",
-        [
-          join(ROOT, "scripts/verify-contract.sh"),
-          "--contract",
-          "tasks/contracts/pilot.contract.md",
-          "--strict",
-          "--read-only",
-          "--report-file",
-          verifyReport,
-        ],
-        {
-          cwd: repo,
-          encoding: "utf-8",
-          // This synthetic repo has no .ai/hooks/ scaffold, so point verify-contract.sh
-          // at the real repo's shared lib (its documented override) instead of letting
-          // it silently fail the evidence_requirements check closed for a missing lib.
-          env: { ...process.env, REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh") },
-        },
-      );
-      if (verify.status !== 0) {
-        console.error(
-          [
-            "verify-contract failed in contract-run test",
-            `status=${verify.status}`,
-            `signal=${verify.signal ?? ""}`,
-            "stdout:",
-            verify.stdout,
-            "stderr:",
-            verify.stderr,
-            "report:",
-            existsSync(join(repo, verifyReport)) ? readFileSync(join(repo, verifyReport), "utf-8") : "(missing)",
-            "review:",
-            existsSync(join(repo, "tasks/reviews/pilot.review.md"))
-              ? readFileSync(join(repo, "tasks/reviews/pilot.review.md"), "utf-8")
-              : "(missing)",
-            "artifact:",
-            existsSync(join(repo, "src/pilot.txt")) ? readFileSync(join(repo, "src/pilot.txt"), "utf-8") : "(missing)",
-          ].join("\n"),
-        );
+      const verify = spawnSync(process.execPath, [
+        join(ROOT, "scripts/verification-plan.ts"), "execute", "--repo", repo,
+        "--contract", "tasks/contracts/pilot.contract.md",
+      ], { cwd: repo, encoding: "utf-8" });
+      expect(verify.status, verify.stdout + verify.stderr).toBe(0);
+      const report = JSON.parse(verify.stdout);
+      expect(report).toMatchObject({ kind: "verification_execution_report", passed: true, status: "passed" });
+      expect(report.results.length).toBeGreaterThan(0);
+      for (const result of report.results) {
+        expect(result.passed).toBe(true);
+        expect(result.run_file).toBeTruthy();
+        expect(existsSync(join(repo, result.run_file))).toBe(true);
       }
-      expect(verify.status).toBe(0);
-      expect(verify.stdout).toContain("[ContractVerify] total=");
-      expect(verify.stdout).toContain("failed=0");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

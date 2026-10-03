@@ -1,4 +1,5 @@
 # Task Review: {{TASK_SLUG}}
+Optional document: use this template only when the task calls for it. Ordinary work records Goal / Scope / Changes / Verification / Risk / Rollback in the PR description. This document is not a merge permit.
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
@@ -51,21 +52,6 @@ screenshot/artifact path, or reviewer observation.
 
 - [ ] Exact manual_checks requirement
   - Evidence: concrete observation, command output, screenshot path, or reviewer note
-
-## Acceptance Receipt Projection
-
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
-> **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
-
-- Summary: No AcceptanceReceipt has been recorded.
-- Findings: none
 
 ## Behavior Diff Notes
 

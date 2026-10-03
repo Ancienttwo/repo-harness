@@ -1,88 +1,49 @@
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from "fs";
+import { describe, expect, test } from "bun:test";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
-import { defaultPolicy } from "../src/core/adoption/standard-plan";
-import { readRefactorPolicy } from "../src/core/refactor/policy";
+import { initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 
-import { copyHelpers, installCanonicalContractTemplate } from "./helpers/helper-script-fixture";
-import { run, tmpWorkspace } from "./helpers/repo-fixture";
+function copyHelper(cwd: string) {
+  mkdirSync(join(cwd, "scripts"), { recursive: true });
+  copyFileSync(join(import.meta.dir, "../scripts/ensure-task-workflow.sh"), join(cwd, "scripts/ensure-task-workflow.sh"));
+}
 
-setDefaultTimeout(30000);
-
-describe("ensure-task-workflow helper integration", () => {
-  test("ensure-task-workflow should create a draft plan when none exists", () => {
-    const cwd = tmpWorkspace("helper-ensure-workflow");
+describe("ensure-task-workflow runtime preparation", () => {
+  test("creates recovery directories without approval artifacts or modifying existing planning data", () => {
+    const cwd = tmpWorkspace("helper-ensure-runtime");
     try {
-      copyHelpers(cwd);
-      installCanonicalContractTemplate(cwd);
-
-      const res = run(
-        "bash",
-        ["scripts/ensure-task-workflow.sh", "--slug", "alpha-feature", "--title", "Alpha Feature"],
-        cwd
-      );
-
-      expect(res.status).toBe(0);
-      const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-alpha-feature\.md$/.test(name));
-      expect(plans.length).toBe(1);
-
-      const todo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
-      expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("**Status**: Backlog");
-      expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(true);
-
-      // Parity guard: ensure-task-workflow.sh's ensure_auxiliary_files fallback writer (this
-      // fresh cwd has no pre-existing .ai/harness/policy.json, so it just fired) is a third,
-      // independently hardcoded source for agentic_development.routing alongside
-      // scripts/lib/project-init-lib.sh and src/core/adoption/standard-plan.ts. Assert it stays
-      // identical to the TS default so it cannot silently diverge again.
-      const fallbackPolicy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;
-      expect(fallbackPolicy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
-      expect(readRefactorPolicy(fallbackPolicy).stages).toEqual(readRefactorPolicy({}).stages);
-      expect(fallbackPolicy.architecture.projection_version).toBeUndefined();
-      expect(fallbackPolicy.delegation.preferred_runners).toEqual(['task-agent']);
-      expect(fallbackPolicy.delegation.runner_rule).not.toContain('native spawn_agent');
-      expect(fallbackPolicy.sidecar_research.preferred_runners).toEqual(['task-agent','main-thread trace']);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("ensure-task-workflow should create a new draft plan when requested despite an existing plan", () => {
-    const cwd = tmpWorkspace("helper-ensure-workflow-new-plan");
-    try {
-      copyHelpers(cwd);
-      installCanonicalContractTemplate(cwd);
+      initGitRepo(cwd);
+      copyHelper(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-0900-old-draft.md"),
-        "# Plan: old draft\n\n> **Status**: Draft\n"
-      );
-
-      const res = run(
-        "bash",
-        ["scripts/ensure-task-workflow.sh", "--new-plan", "--slug", "beta-feature", "--title", "Beta Feature"],
-        cwd
-      );
-
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("Created plan:");
-      const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-beta-feature\.md$/.test(name));
-      expect(plans.length).toBe(1);
-      expect(readFileSync(join(cwd, "plans", plans[0]), "utf-8")).toContain("> **Status**: Draft");
-      expect(existsSync(join(cwd, ".ai/harness/active-plan"))).toBe(false);
-      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
+      writeFileSync(join(cwd, "plans/existing.md"), "# Plan\n> **Status**: Draft\n");
+      const result = run("bash", ["scripts/ensure-task-workflow.sh"], cwd);
+      expect(result.status, result.stderr).toBe(0);
+      for (const path of ["handoff", "checks", "runs"]) expect(existsSync(join(cwd, ".ai/harness", path))).toBe(true);
+      expect(result.stdout).toContain("no plan/contract/review/notes");
+      expect(readFileSync(join(cwd, "plans/existing.md"), "utf8")).toBe("# Plan\n> **Status**: Draft\n");
+      for (const path of ["tasks", ".ai/harness/active-plan", ".ai/harness/policy.json", ".claude/templates"]) expect(existsSync(join(cwd, path))).toBe(false);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+  test("rejects retired plan projection arguments", () => {
+    const cwd = tmpWorkspace("helper-ensure-retired");
+    try {
+      initGitRepo(cwd); copyHelper(cwd);
+      const result = run("bash", ["scripts/ensure-task-workflow.sh", "--new-plan", "--slug", "demo"], cwd);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("no plan/contract projection");
+      expect(existsSync(join(cwd, ".ai/harness"))).toBe(false);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+  test("refuses a symlinked runtime directory", () => {
+    const cwd = tmpWorkspace("helper-ensure-symlink");
+    const outside = tmpWorkspace("helper-ensure-outside");
+    try {
+      initGitRepo(cwd); copyHelper(cwd);
+      symlinkSync(outside, join(cwd, ".ai"), "dir");
+      const result = run("bash", ["scripts/ensure-task-workflow.sh"], cwd);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Unsafe runtime directory");
+      expect(existsSync(join(outside, "harness"))).toBe(false);
+    } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+  });
 });

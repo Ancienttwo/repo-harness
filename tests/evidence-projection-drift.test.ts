@@ -1,4 +1,4 @@
-import { run, withTempRepo } from "./helpers/repo-fixture";
+import { commitAll, initGitRepo, run, withTempRepo } from "./helpers/repo-fixture";
 /**
  * EPC-09 Program closeout, Goal 1: cross-package projection-drift check.
  *
@@ -271,34 +271,9 @@ describe("projection drift: materialized checks/latest", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Regression: verify-sprint's post-acceptance finalize overlay re-ingests a
-  // materialized projection as if it were a run trace. `provenance` is
-  // materializer-owned derived metadata; when it rides along in the payload,
-  // the next materialization records `content_hash = sha256(run trace INCLUDING
-  // the previous provenance)` while publishing a file whose consumer-facing
-  // content excludes it, and the live check above goes red. The shipped
-  // overlay must therefore hand the materializer a provenance-free run trace.
-  // -------------------------------------------------------------------------
+  // The retired shell finalizer used to re-ingest materialized provenance.
+  // Preserve its hash falsifier at the current event/materializer boundary.
   const VERIFY_SPRINT_PATH = join(REPO_ROOT, "scripts/verify-sprint.sh");
-
-  /**
-   * Extracts the exact jq program `finalize_prepared_acceptance()` runs, so the
-   * test below exercises the shipped filter instead of a copy of it that could
-   * silently drift. Bounded by the overlay's own unique invocation tail, in the
-   * same read-the-real-source style as the no-independent-authoring test in
-   * tests/evidence-checks-materializer.test.ts. The packaged
-   * assets/templates/helpers/verify-sprint.sh mirror is covered by the helper
-   * projection check (`bun scripts/sync-helper-sources.ts --check`).
-   */
-  function readFinalizeOverlayProgram(): string {
-    const source = readFileSync(VERIFY_SPRINT_PATH, "utf-8");
-    const tail = source.indexOf(`' "$prepared_run_file" > "$finalized_checks"`);
-    expect(tail).toBeGreaterThan(-1);
-    const head = source.slice(0, tail);
-    const open = head.lastIndexOf("\n    '\n");
-    expect(open).toBeGreaterThan(-1);
-    return head.slice(open + "\n    '\n".length);
-  }
 
   const OVERLAY_ARGS = {
     reviewer: "Claude",
@@ -307,8 +282,7 @@ describe("projection drift: materialized checks/latest", () => {
     message: "recorded",
   } as const;
 
-  /** A run trace shaped like the one --prepare-acceptance freezes: the overlay
-   * rewrites `.guards[]`, so the fixture has to carry a real guard list. */
+  /** A primitive immutable run trace with explicit guard results. */
   function preparedRunTrace(contractPath: string): Record<string, JsonValue> {
     return {
       schema: "repo-harness-run-trace.v1",
@@ -347,28 +321,14 @@ describe("projection drift: materialized checks/latest", () => {
     });
   }
 
-  test("the shipped finalizer replays the immutable run snapshot and skips an already-finalized receipt", () => {
+  test("ordinary verification has no receipt finalizer or projection re-ingestion path", () => {
     const source = readFileSync(VERIFY_SPRINT_PATH, "utf-8");
-    const program = readFinalizeOverlayProgram();
-    expect(source).toContain('prepared_run_file="$(jq -r \'.run_file // empty\' "$checks_file")"');
-    expect(source).toContain('Sprint acceptance already finalized for the receipt-bound evidence');
-    expect(source).toContain('immutable prepared run snapshot does not match the receipt-bound evidence');
-    expect(source).toContain(`' "$prepared_run_file" > "$finalized_checks"`);
-    expect(program).toContain("del(.provenance)");
-    // The strip must run on the whole document, before the acceptance fields
-    // are layered on -- not on some sub-object after the fact.
-    expect(program.indexOf("del(.provenance)")).toBeLessThan(program.indexOf(".acceptance_receipt ="));
+    expect(source).not.toContain("finalize_prepared_acceptance");
+    expect(source).not.toContain("prepared_run_file");
+    expect(source).not.toContain("finalized_checks");
   });
 
-  test("running the shipped finalize overlay through the materializer yields a content_hash self-consistent projection", () => {
-    const jqProbe = run("jq", ["--version"], REPO_ROOT);
-    if (jqProbe.error !== undefined || jqProbe.status !== 0) {
-      // jq is an optional prerequisite for this repo (README), and the
-      // overlay itself refuses to run without it. The source-binding test
-      // above still guards the fix on a jq-less machine.
-      return;
-    }
-
+  test("repeated immutable run traces yield self-consistent checks while re-ingested provenance exposes drift", () => {
     withTempRepo("drift-checks-latest-finalize-overlay", (repoRoot) => {
       mkdirSync(join(repoRoot, "tasks/contracts"), { recursive: true });
       const contractPath = "tasks/contracts/drift-overlay.contract.md";
@@ -390,33 +350,24 @@ describe("projection drift: materialized checks/latest", () => {
         now: FIXED_NOW,
       };
 
-      // 1. What `--prepare-acceptance` leaves on disk: a real materialized
-      //    projection, provenance block and all.
+      // Materialize accepted immutable event content with real provenance.
       const { accepted: acceptedPrepared } = readAcceptedEvents(repoRoot);
       const prepared = buildChecksLatestProjection(input, acceptedPrepared, contractText);
       const preparedPath = join(repoRoot, "prepared-checks.json");
       writeFileSync(preparedPath, `${JSON.stringify(prepared, null, 2)}\n`);
 
-      // 2. The finalize path's own jq overlay, run verbatim from the script
-      //    against the immutable raw snapshot rather than the materialized
-      //    projection that already contains redaction output.
-      const overlayed = run(
-        "jq",
-        [
-          "--arg", "reviewer", OVERLAY_ARGS.reviewer,
-          "--arg", "source", OVERLAY_ARGS.source,
-          "--arg", "disposition", OVERLAY_ARGS.disposition,
-          "--arg", "message", OVERLAY_ARGS.message,
-          readFinalizeOverlayProgram(),
-          rawPreparedPath,
+      // The automatic shell finalizer is retired. Exercise immutable event
+      // materialization directly, retaining the provenance drift falsifier.
+      const finalizedRunTrace: Record<string, JsonValue> = {
+        ...rawPrepared,
+        acceptance_receipt: { status: "pass", ...OVERLAY_ARGS },
+        guards: [
+          { name: "acceptance_receipt", status: "pass" },
+          { name: "allowed_paths_check", status: "pass" },
         ],
-        repoRoot,
-      );
-      expect(overlayed.stderr).toBe("");
-      expect(overlayed.status).toBe(0);
-      const finalizedRunTrace = JSON.parse(overlayed.stdout) as Record<string, JsonValue>;
+      };
 
-      // The overlay really applied ...
+      // Explicit event content carries the accepted result.
       expect(finalizedRunTrace.acceptance_receipt).toEqual({
         status: "pass",
         disposition: OVERLAY_ARGS.disposition,
@@ -431,8 +382,7 @@ describe("projection drift: materialized checks/latest", () => {
       // ... and it hands back a run trace, not a projection.
       expect("provenance" in finalizedRunTrace).toBe(false);
 
-      // 3. Emit that run trace and re-materialize, exactly as the finalize
-      //    path does through emit-verify-evidence.
+      // Replay the immutable event through the materializer.
       seedRunTraceEvent(repoRoot, contractHash, finalizedRunTrace as JsonValue);
       const { accepted: acceptedFinal } = readAcceptedEvents(repoRoot);
       const finalized = buildChecksLatestProjection(input, acceptedFinal, contractText);
@@ -446,7 +396,7 @@ describe("projection drift: materialized checks/latest", () => {
       const repeated = buildChecksLatestProjection(input, acceptedRepeated, contractText);
       expect(repeated.commands).toEqual(prepared.commands);
 
-      // Causality lock: the pre-fix shape -- the same overlay output with the
+      // Causality lock: the pre-fix shape -- the same immutable content with the
       // previous materialization's provenance still embedded -- reproduces the
       // exact defect, so this test cannot pass for an unrelated reason.
       seedRunTraceEvent(repoRoot, contractHash, {
@@ -466,20 +416,26 @@ describe("projection drift: materialized checks/latest", () => {
 // ---------------------------------------------------------------------------
 describe("projection drift: tasks/current.md (refresh-current-status.sh double-regeneration)", () => {
   test("two independent non-mutating preview regenerations agree byte-for-byte modulo the volatile updated_at timestamp", () => {
-    // Non-mutating (no --write): tasks/current.md itself is a point-in-time
-    // snapshot, legitimately stale mid-task (root CLAUDE.md), so this never
-    // compares against the tracked file directly -- it proves the
-    // materializer is stable across repeated regenerations of the same live
-    // source-of-truth artifacts instead, mirroring the EPC-07 precedent
-    // test in tests/evidence-recovery-materializer.test.ts exactly.
-    const first = run("bash", ["scripts/refresh-current-status.sh"], REPO_ROOT);
-    const second = run("bash", ["scripts/refresh-current-status.sh"], REPO_ROOT);
-    expect(first.status).toBe(0);
-    expect(second.status).toBe(0);
-    expect(first.stdout).toContain("<!-- generated-by: repo-harness refresh-current-status v1 -->");
-
-    const strip = (text: string) =>
-      text.replace(/^<!-- updated_at:.*$/m, "").replace(/^> \*\*Updated At\*\*:.*$/m, "");
-    expect(strip(first.stdout)).toBe(strip(second.stdout));
+    // Compare stable source inputs in a disposable repository; concurrent
+    // workers can legitimately change the real checkout's Git status.
+    withTempRepo("drift-current-preview", (repoRoot) => {
+      initGitRepo(repoRoot);
+      mkdirSync(join(repoRoot, "tasks"), { recursive: true });
+      writeFileSync(join(repoRoot, "README.md"), "# Fixture\n");
+      writeFileSync(join(repoRoot, "tasks/current.md"), "existing local read model\n");
+      commitAll(repoRoot, "stable projection inputs");
+      writeFileSync(join(repoRoot, "README.md"), "# Fixture\nChanged source\n");
+      const script = join(REPO_ROOT, "scripts/refresh-current-status.sh");
+      const first = run("bash", [script], repoRoot);
+      const second = run("bash", [script], repoRoot);
+      expect(first.status, first.stderr).toBe(0);
+      expect(second.status, second.stderr).toBe(0);
+      expect(first.stdout).toContain("<!-- generated-by: repo-harness refresh-current-status v1 -->");
+      expect(first.stdout).toContain(" M README.md");
+      expect(readFileSync(join(repoRoot, "tasks/current.md"), "utf8")).toBe("existing local read model\n");
+      const strip = (text: string) =>
+        text.replace(/^<!-- updated_at:.*$/m, "").replace(/^> \*\*Updated At\*\*:.*$/m, "");
+      expect(strip(first.stdout)).toBe(strip(second.stdout));
+    });
   }, 30_000);
 });

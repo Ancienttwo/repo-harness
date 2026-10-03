@@ -110,6 +110,7 @@ function usage(): string {
     "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-runner-invocations <n>] [--runner <label>] [--effort <tier>] [--json]",
     "",
     "recover --campaign-handoff <file> --campaign-parent-host <codex|claude> --campaign-parent-session <id> fences and recovers the exact retained worktree without spawning a child.",
+    "run accepts the same paired parent identity to resume an already-retired, expired, evidence-proven orphan with a persisted final; recovery never launches another provider.",
     "--campaign-provider codex-exec uses the tracked Codex role profiles and records managed invocation evidence.",
     "--campaign-handoff <selector-json-file> binds run to an acquired campaign worker. The local parent supplies commands; exact ownership is checked before child execution.",
     "",
@@ -227,7 +228,11 @@ function parseArgs(argv: string[]): Options {
     }
     return opts;
   }
-  if (opts.campaignParentHost || opts.campaignParentSession) throw new CliError("contract-run: campaign parent identity is only used by recover", 2);
+  if (opts.campaignParentHost || opts.campaignParentSession) {
+    if (opts.mode !== "run" || !opts.campaignHandoff || !opts.campaignParentHost || !opts.campaignParentSession) {
+      throw new CliError("contract-run: automatic recovery requires run, campaign handoff and paired parent host/session", 2);
+    }
+  }
   if (!opts.contract) {
     throw new CliError("contract-run: --contract is required", 2);
   }
@@ -893,9 +898,20 @@ async function buildRun(opts: Options) {
   const campaignResultPath = join(runDir, "campaign-attempt-result.json");
   const packageRoot = basename(SCRIPT_DIR) === "helpers" && basename(dirname(SCRIPT_DIR)) === "templates" && basename(dirname(dirname(SCRIPT_DIR))) === "assets"
     ? resolve(SCRIPT_DIR, "../../..") : resolve(SCRIPT_DIR, "..");
-  const campaign = opts.campaignHandoff && briefPreflight.ok
+  const campaignSelector = opts.campaignHandoff && briefPreflight.ok
+    ? JSON.parse(readFileSync(repoPath(repo, opts.campaignHandoff), "utf8")) : null;
+  if (campaignSelector && opts.campaignParentHost && opts.campaignParentSession) {
+    const { recoverRetiredCampaignDispatchIfEligible } = await import(pathToFileURL(join(packageRoot, "src/effects/automation/campaign-recovery.ts")).href);
+    const recovered = recoverRetiredCampaignDispatchIfEligible({ selector: campaignSelector,
+      host: opts.campaignParentHost, session_id: opts.campaignParentSession, env: process.env });
+    if (recovered) return { manifest: { version: 1, kind: "repo-harness-contract-run",
+      status: recovered.final?.contract_run.status ?? "fail", contract: repoRelative(repo, contractPath),
+      failure_class: recovered.final ? recovered.final.contract_run.failure_class : "reconciliation_required",
+      campaign_attempt: recovered.final, campaign_recovery: recovered }, manifestPath: "" };
+  }
+  const campaign = campaignSelector
     ? (await import(pathToFileURL(join(packageRoot, "src/effects/automation/campaign-worker.ts")).href)).bindCampaignWorker({
-      selector: JSON.parse(readFileSync(repoPath(repo, opts.campaignHandoff), "utf8")), worktree: repo, contract: repoRelative(repo, contractPath),
+      selector: campaignSelector, worktree: repo, contract: repoRelative(repo, contractPath),
       worker_command: opts.workerCommand!, verifier_command: opts.verifierCommand!, provider: opts.campaignProvider, env: process.env,
     }) as ReturnType<typeof import("../src/effects/automation/campaign-worker").bindCampaignWorker>
     : null;
@@ -933,7 +949,7 @@ async function buildRun(opts: Options) {
     "",
     "## Before you finish (mandatory self-verification)",
     "",
-    "Use focused regression checks during implementation. If a full suite already passed and only a bounded follow-up edit remains, report its delta and proposed focused checks to the parent so the parent can revise final criteria before another acceptance run; do not rerun the old full-suite criterion merely because the subject changed. After freezing the implementation and final criteria, prepare final executable evidence once with repo-harness run verify-sprint --prepare-acceptance, setting --contract to the Contract path above. Do not separately execute every Verification Plan check before that canonical run. The contract owner declares cost and evidence_policy in Verification Plan before the run; never broaden reuse or amend acceptance criteria yourself. Report the exact command, exit status, immutable run artifact, and each executed or reused criterion. Report failed criteria and pending manual/QA observations explicitly; a partial run is not a passing acceptance. If executable evidence fails and cannot be repaired within scope, STOP and report it. If no executable criteria are declared, state that instead of inventing checks.",
+    "Use focused regression checks during implementation. If a full suite already passed and only a bounded follow-up edit remains, report its delta and proposed focused checks to the parent; do not rerun the old full-suite criterion merely because the subject changed. After freezing the implementation, run bun run check:type plus the caller-selected affected tests once with bun test <affected tests> --timeout 60000 --max-concurrency 1. Report the exact command, exit status, revision, environment, and retained evidence paths. Report failed criteria and pending manual/QA observations explicitly; a partial run is not a passing verification. If executable evidence fails and cannot be repaired within scope, STOP and report it. If no affected tests are selected, state that instead of inventing coverage.",
     "",
     "## Record what you learned",
     "",

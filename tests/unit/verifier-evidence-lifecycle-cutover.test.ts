@@ -118,16 +118,13 @@ describe('verifier evidence lifecycle cutover', () => {
     }
   }, 30_000);
 
-  test('strict verifier has a fixed budget and records timing evidence', () => {
-    const source = readFileSync(join(ROOT, 'scripts/verify-contract.sh'), 'utf-8');
-    expect(source).toContain('VERIFICATION_BUDGET_MS=3600000');
-    expect(source).not.toContain('REPO_HARNESS_VERIFICATION_BUDGET');
-    expect(source).toContain('"budget_ms"');
-    expect(source).toContain('"total_duration_ms"');
-    expect(source).toContain('"duration_ms"');
-    expect(source).toContain('"timed_out"');
-    expect(source).toContain('"signal"');
-    expect(source).toContain('failure_class="verification_budget"');
+  test('explicit execution owns a fixed default deadline and timing evidence', () => {
+    const source = readFileSync(join(ROOT, 'src/effects/evidence/verification-execution.ts'), 'utf-8');
+    expect(source).toContain('input.timeoutMs ?? 3_600_000');
+    expect(source).toContain('deadlineMs - Date.now()');
+    expect(source).toContain('duration_ms: Date.now() - started');
+    expect(source).toContain('timed_out: run.timedOut');
+    expect(source).toContain('signal: run.signal');
   });
 
   test('verifier rejects evidence producers before execution', () => {
@@ -164,18 +161,14 @@ describe('verifier evidence lifecycle cutover', () => {
         '```',
         '',
       ].join('\n'));
-      const result = spawnSync('bash', [
-        join(ROOT, 'scripts/verify-contract.sh'), '--contract', contract,
-        '--strict', '--read-only', '--report-file', report,
+      const result = spawnSync(process.execPath, [
+        join(ROOT, 'scripts/verification-plan.ts'), 'execute', '--repo', cwd, '--contract', 'producer.contract.md',
+        '--report-file', report,
       ], { cwd, encoding: 'utf-8' });
-      expect(result.status).toBe(1);
-      const evidence = JSON.parse(readFileSync(report, 'utf-8'));
-      const command = evidence.results.find((entry: { kind: string }) => entry.kind === 'verification_plan');
-      expect(command.exit_code).toBeNull();
-      expect(command.duration_ms).toBeNull();
-      expect(command.signal).toBeNull();
-      expect(command.message).toContain('evidence producer');
-      expect(evidence.failure_class).toBe('missing_artifact');
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('evidence producer');
+      expect(existsSync(report)).toBe(false);
+      expect(existsSync(join(cwd, '.ai/harness/runs'))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

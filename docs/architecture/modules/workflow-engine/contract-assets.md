@@ -463,11 +463,11 @@ regressions verify these separate boundaries.
 
 ## Workstream Ledger
 
-- `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
-- `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
-- `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
-- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`
-- `tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`
+- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`
 
 ## Optimization Backlog
 

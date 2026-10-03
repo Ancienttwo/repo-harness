@@ -409,12 +409,14 @@ describe('AcceptanceReceipt', () => {
     expect(subject.status).toBe('ok');
     const forgedAssessment = assessChange({
       subject,
-      workflowProfile: 'routine',
+      workflowProfile: 'high',
       strictCategories: [],
       patternNoveltyPaths: [],
       declaredOracles: [],
     });
     if (forgedAssessment.status !== 'ready') throw new Error('fixture forged assessment must be ready');
+    const actual = JSON.parse(readFileSync(join(root, '.ai/harness/checks/latest.json'), 'utf8')).change_assessment.assessment;
+    expect(forgedAssessment.assessment_sha256).not.toBe(actual.assessment_sha256);
     replaceChangeAssessment(root, changeAssessmentEnvelope(forgedAssessment, buildReviewSelectionPacket(forgedAssessment)));
     await expect(externalPass(root, home)).rejects.toThrow('does not match current base assessment');
 

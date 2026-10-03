@@ -235,7 +235,7 @@ async function ghAbortable(
 }
 
 function identityBytes(identity: ProviderIdentity): string {
-  const { body: _body, review_decision: _reviewDecision, ...fences } = identity;
+  const { body: _body, ...fences } = identity;
   return JSON.stringify(fences);
 }
 
@@ -319,6 +319,7 @@ function parseProviderReadinessFacts(
   identity: ProviderIdentity,
   checksValue: unknown,
   rollbackTags: ProviderMergeReadinessFactsV1['rollback_tags'],
+  graphValue: unknown,
 ): ProviderMergeReadinessFactsV1 {
   if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
   const checks = checksValue.map((entry) => {
@@ -328,17 +329,57 @@ function parseProviderReadinessFacts(
     }
     return Object.freeze({ name: string(check.name, 'provider required check name'), bucket: check.bucket as 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' });
   });
+  const graph = object(graphValue, 'provider GraphQL result');
+  if (graph.errors !== undefined && (!Array.isArray(graph.errors) || graph.errors.length > 0)) {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider review query has errors');
+  }
+  const node = object(object(graph.data, 'provider GraphQL data').node, 'provider repository node');
+  const pr = object(node.pullRequest, 'provider review PR');
+  if (node.id !== identity.provider_repo_id || pr.number !== identity.pr_number
+    || pr.headRefOid !== identity.head_sha || pr.baseRefOid !== identity.base_sha) {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider reviews do not bind this PR/head/base');
+  }
+  if (pr.reviewDecision !== identity.review_decision) {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider review decision changed during read');
+  }
+  const threads = object(pr.reviewThreads, 'provider review threads');
+  const reviews = object(pr.latestOpinionatedReviews, 'provider latest opinionated reviews');
+  for (const connection of [threads, reviews]) {
+    if (object(connection.pageInfo, 'provider review pageInfo').hasNextPage !== false || !Array.isArray(connection.nodes)) {
+      throw new MergeReadinessError('provider_data_incomplete', 'provider reviews and threads were not exhaustively observed');
+    }
+  }
+  let unresolved = 0;
+  for (const entry of threads.nodes as unknown[]) {
+    const thread = object(entry, 'provider review thread');
+    if (typeof thread.isResolved !== 'boolean') throw new MergeReadinessError('provider_data_incomplete', 'provider review thread isResolved is invalid');
+    if (!thread.isResolved) unresolved++;
+  }
+  let changesRequested = pr.reviewDecision === 'CHANGES_REQUESTED';
+  for (const entry of reviews.nodes as unknown[]) {
+    const review = object(entry, 'provider review');
+    if (!['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING'].includes(String(review.state))) {
+      throw new MergeReadinessError('provider_data_incomplete', 'provider review state is unknown');
+    }
+    if (review.state === 'CHANGES_REQUESTED') changesRequested = true;
+  }
   return Object.freeze({
     state: identity.state,
     is_draft: identity.is_draft,
     head_sha: identity.head_sha,
     base_sha: identity.base_sha,
-    review_decision: identity.review_decision,
-    unresolved_thread_count: null,
+    review_decision: changesRequested ? 'CHANGES_REQUESTED' : identity.review_decision,
+    unresolved_thread_count: unresolved,
     rollback_tags: rollbackTags,
     checks: Object.freeze(checks),
     mergeable: identity.mergeable,
   });
+}
+
+function providerReviewArgs(identity: ProviderIdentity): string[] {
+  // Latest opinionated reviews preserve a change request across later comment-only reviews.
+  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){id ... on Repository{pullRequest(number:$number){number headRefOid baseRefOid reviewDecision latestOpinionatedReviews(first:100){pageInfo{hasNextPage}nodes{state}} reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved}}}}}}';
+  return ['api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${identity.pr_number}`];
 }
 
 function requiredCIRunPath(identity: ProviderIdentity, checksValue: unknown): string {
@@ -413,7 +454,7 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
   const boundary = rollbackTagBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(gh(input, ['api', request.value], [0, 1]));
-  return parseProviderReadinessFacts(identity, checks, request.value);
+  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)));
 }
 
 export async function observeProviderReadinessFactsAbortable(
@@ -428,7 +469,7 @@ export async function observeProviderReadinessFactsAbortable(
   const boundary = rollbackTagBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], [0, 1]));
-  return parseProviderReadinessFacts(identity, checks, request.value);
+  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)));
 }
 
 /** Ordinary main PRs consume the same provider/check decoder as fleet publications, without a receipt or Lease. */

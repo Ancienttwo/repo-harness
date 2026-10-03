@@ -11,14 +11,6 @@ function read(path: string): string {
   return readFileSync(join(ROOT, path), "utf-8");
 }
 
-function designBriefProjection(script: string): string {
-  const body = script.match(
-    /<<'DESIGN_BRIEF_TEMPLATE_EOF'\n([\s\S]*?)\nDESIGN_BRIEF_TEMPLATE_EOF/,
-  )?.[1];
-  if (body === undefined) throw new Error("design brief projection heredoc missing");
-  return `${body}\n`;
-}
-
 describe("UX feature pre-implementation guard", () => {
   test("ships one canonical runtime convention", () => {
     const asset = read("assets/reference-configs/ux-feature-guard.md");
@@ -34,11 +26,11 @@ describe("UX feature pre-implementation guard", () => {
     expect(asset).toContain("never a competing authority");
   });
 
-  test("routes UX feature creation through the guard before the existing brief and BDD flow", () => {
+  test("keeps the convention available on explicit request without a workflow stage gate", () => {
     const assetFlow = read("assets/reference-configs/agentic-development-flow.md");
 
-    expect(assetFlow).toContain("repo-harness docs show ux-feature-guard");
-    expect(assetFlow).toContain("then the existing design brief and BDD scenarios");
+    expect(assetFlow).toContain("Ordinary tasks live in the PR description");
+    expect(assetFlow).toContain("Ordinary work has no plan/contract/review/notes");
 
     const shown = spawnSync(
       "bun",
@@ -49,41 +41,27 @@ describe("UX feature pre-implementation guard", () => {
     expect(shown.stdout).toContain("# UX Feature Guard");
   }, 30_000);
 
-  test("projects the same guard card through every design-brief template authority", () => {
-    const template = read("assets/templates/design-brief.template.md");
-    const copies = [
-      read(".claude/templates/design-brief.template.md"),
-      read("scripts/ensure-task-workflow.sh"),
-      read("assets/templates/helpers/ensure-task-workflow.sh"),
-    ];
-
-    expect(copies[0]).toBe(template);
-    expect(designBriefProjection(copies[1])).toBe(template);
-    expect(designBriefProjection(copies[2])).toBe(template);
-    for (const copy of copies) {
-      expect(copy).toContain("## UX Feature Guard");
-      expect(copy).toContain("Exact payload acted on");
-      expect(copy).toContain("### Authority & Reuse Map");
-      expect(copy).toContain("### Observable & Copy Contract");
-      expect(copy).toContain("Positive, negative, and authority-failure Given/When/Then scenarios");
-      expect(copy).toContain("UX-{{SLUG}}-P1");
-      expect(copy).toContain("Carry these IDs unchanged into the task contract");
+  test('retains the guard schema in optional self-host and downstream design briefs without automatic projection', () => {
+    for (const copy of [read('assets/templates/design-brief.template.md'), read('.claude/templates/design-brief.template.md')]) {
+      for (const field of ['## UX Feature Guard', 'Exact payload acted on', '### Authority & Reuse Map',
+        '### Observable & Copy Contract', 'Positive, negative, and authority-failure Given/When/Then scenarios',
+        'UX-{{SLUG}}-P1', 'Carry these IDs unchanged into the task contract']) expect(copy).toContain(field);
     }
-    expect(copies[2]).toBe(copies[1]);
+    expect(read('.claude/templates/design-brief.template.md')).toContain('Optional document');
+    for (const helper of ['scripts/ensure-task-workflow.sh', 'assets/templates/helpers/ensure-task-workflow.sh']) {
+      expect(read(helper)).not.toContain('DESIGN_BRIEF_TEMPLATE_EOF');
+      expect(read(helper)).toContain('no plan/contract/review/notes');
+    }
   });
 
-  test("keeps PRD and prompt guidance short and points both at the canonical guard", () => {
+  test("keeps explicit PRD guidance while retiring automatic prompt guard advice", () => {
     const prd = read("assets/skills/repo-harness-product/references/prd.md");
     const promptHandler = read("src/cli/hook/prompt-handler.ts");
 
     expect(prd).toContain("first read `repo-harness docs show ux-feature-guard`");
     expect(prd).toContain("do not restate or replace that field schema in the PRD");
-    expect(promptHandler).toContain("[UXFeatureGuard]");
-    expect(promptHandler).toContain("separate instruction from payload");
-    expect(promptHandler).toContain("no parallel authority or compatibility fallback");
-    // Frontend-scoped gate (BDD² follow-through): [UXFeatureGuard] is pushed
-    // under its own frontend/UI-noun classifier, not the generic BDD gate.
-    expect(promptHandler).toContain("if (shouldEmitUxFeatureGuardAdvice(context))");
+    expect(promptHandler).not.toContain("[UXFeatureGuard]");
+    expect(promptHandler).not.toContain("if (shouldEmitUxFeatureGuardAdvice(context))");
   });
 
   test("includes the convention in minimal-agentic adoption without a second product surface", () => {

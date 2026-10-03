@@ -5,7 +5,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -175,6 +174,10 @@ function acquireFixture(): AcquireFixture {
   writeFileSync(join(repo, 'tasks/notes/20260823-0202-cli-acquire.notes.md'), '# Authored notes\n');
   writeFileSync(join(repo, 'tasks/todos.md'), '# Deferred goals\n');
   writeFileSync(join(repo, 'src/index.ts'), 'export const business = false;\n');
+  mkdirSync(join(repo, 'tests'), { recursive: true });
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { 'check:type': 'bun typecheck.ts' } }));
+  writeFileSync(join(repo, 'typecheck.ts'), 'import { business } from "./src/index"; if (typeof business !== "boolean") throw Error("invalid business type");\n');
+  writeFileSync(join(repo, 'tests/business.test.ts'), 'import { expect, test } from "bun:test"; import { business } from "../src/index"; test("business change", () => expect(business).toBe(true));\n');
   writeFileSync(join(repo, '.gitignore'), '.ai/harness/*\n!.ai/harness/policy.json\n');
   git(repo, ['init', '-b', 'main']);
   git(repo, ['config', 'user.name', 'Fleet CLI Test']);
@@ -406,56 +409,42 @@ describe('fleet offers CLI', () => {
       const verify = () => {
         const run = spawnSync(verifierBun, ['-e',
           `import { runHelper } from ${JSON.stringify(join(CWD, 'src/effects/runtime/helper-runner.ts'))}; console.log(JSON.stringify(runHelper(${JSON.stringify({
-            helper: 'verify-sprint', args: ['--prepare-acceptance'], cwd: envelope.worktree_path,
+            helper: 'verify-sprint', args: ['--test', 'tests/business.test.ts'], cwd: envelope.worktree_path,
             trustedPackage: true, stdio: 'pipe',
           })})));`,
         ], { cwd: envelope.worktree_path, encoding: 'utf8', env: { ...process.env, ...env } });
         expect(run.status, run.stderr).toBe(0);
         return JSON.parse(run.stdout) as ReturnType<typeof runHelper>;
       };
-      const snapshot = () => {
-        const runs = join(envelope.worktree_path, '.ai/harness/runs');
-        const files = readdirSync(runs).filter(path => path.startsWith('run-') && path.endsWith('.json')).sort();
-        return JSON.parse(readFileSync(join(runs, files.at(-1)!), 'utf8'));
-      };
       const accepted = verify();
       expect(accepted.exitCode, (accepted.stdout ?? "") + (accepted.stderr ?? "")).toBe(0);
-      expect(snapshot().allowed_paths_check.status).toBe('pass');
-      expect(snapshot().contract.status).toBe('pass');
-      const sentinel = join(envelope.worktree_path, '.ai/harness/business-command-ran');
-      expect(readFileSync(sentinel, 'utf8')).toBe('passed');
-      rmSync(sentinel);
-      const notesPath = 'tasks/notes/20260823-0202-cli-acquire.notes.md';
-      writeFileSync(join(envelope.worktree_path, notesPath), '# Out of scope workflow mutation\n');
-      const refused = verify();
-      expect(refused.exitCode, (refused.stdout ?? "") + (refused.stderr ?? "")).toBe(1);
-      expect(snapshot().allowed_paths_check.outside).toContain(notesPath);
-      expect(existsSync(sentinel)).toBe(false);
-      writeFileSync(join(envelope.worktree_path, notesPath), readFileSync(join(fixture.repo, notesPath)));
+      expect((accepted.stdout ?? '') + (accepted.stderr ?? '')).toContain('1 pass');
+      writeFileSync(join(envelope.worktree_path, 'src/index.ts'), 'export const business = false;\n');
+      const failed = verify();
+      expect(failed.exitCode, (failed.stdout ?? "") + (failed.stderr ?? "")).toBe(1);
+      expect((failed.stdout ?? "") + (failed.stderr ?? "")).toContain('1 fail');
+      writeFileSync(join(envelope.worktree_path, 'src/index.ts'), 'export const business = true;\n');
 
-      // Missing contracts are initialized; replay must leave that template invalid
-      // and byte-identical until an author supplies the actual task authority.
+      // Optional reference projection cannot create task execution authority.
+      // The retained contract-run preflight owns rejection of missing input.
       const contractFile = join(envelope.worktree_path, envelope.plan.contract_path);
       rmSync(contractFile);
-      const project = () => {
-        const planFile = join(envelope.worktree_path, envelope.plan.plan_path);
-        writeFileSync(planFile, readFileSync(planFile, 'utf8').replace('**Status**: Executing', '**Status**: Approved'));
-        return spawnSync('bash', [join(CWD, 'scripts/plan-to-todo.sh'), '--plan', envelope.plan.plan_path], {
+      const planFile = join(envelope.worktree_path, envelope.plan.plan_path);
+      const originalPlan = readFileSync(planFile, 'utf8');
+      const project = () => spawnSync('bash', [join(CWD, 'scripts/plan-to-todo.sh'), '--plan', envelope.plan.plan_path], {
         cwd: envelope.worktree_path, encoding: 'utf8',
         env: { ...process.env, ...env, REPO_HARNESS_TARGET_REPO_ROOT: envelope.worktree_path },
-        });
-      };
-      const initialized = project();
-      expect(initialized.status, initialized.stdout + initialized.stderr).toBe(0);
-      const template = readFileSync(contractFile, 'utf8');
-      expect(template).toContain('Describe the exact outcome this task must deliver.');
+      });
+      for (let replay = 0; replay < 2; replay++) {
+        const projected = project();
+        expect(projected.status, projected.stdout + projected.stderr).toBe(0);
+        expect(projected.stdout).toContain(originalPlan);
+        expect(existsSync(contractFile)).toBe(false);
+        expect(readFileSync(planFile, 'utf8')).toBe(originalPlan);
+      }
       const rejected = spawnSync(process.execPath, [join(CWD, 'scripts/contract-run.ts'), 'preflight',
         '--repo', envelope.worktree_path, '--contract', envelope.plan.contract_path, '--json'], { encoding: 'utf8', env: { ...process.env, ...env } });
       expect(rejected.status).not.toBe(0);
-      expect(rejected.stdout).toContain('incomplete_brief');
-      const replayed = project();
-      expect(replayed.status, replayed.stdout + replayed.stderr).toBe(0);
-      expect(readFileSync(contractFile, 'utf8')).toBe(template);
 
       const repeated = runCli(args, env);
       expect(repeated.status).not.toBe(0);
@@ -483,7 +472,8 @@ for (const state of ['missing', 'uncommitted-only'] as const) test(`acquire refu
     expect(result.status, result.stdout + result.stderr).toBe(1);
     const refused = JSON.parse(result.stdout);
     expect(refused).toMatchObject({ ok: false, error: state === 'missing' ? 'offer_stale' : 'provision_failed' });
-    expect(refused.message).toContain('review artifact');
+    expect(refused.message).toContain('ENOENT');
+    expect(refused.message).toContain('20260823-0202-cli-acquire.review.md');
     expect(result.stdout).not.toContain('repo-harness-work-envelope');
     const lease = readLease(fixture.repo, offer.task_id).record;
     expect(lease).toBeNull();

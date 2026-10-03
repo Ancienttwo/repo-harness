@@ -96,7 +96,7 @@
 | G07 | WorkflowProfile / unstable resolution guards — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | 投影无法稳定导致错误工作流许可 | 无证据 | 无证据 | 降级为只记录 | 提示来源失效，不把profile解析作为所有编辑前提；共享写入仍拒绝坏数据 |
 | G08 | ContractScopeGuard / allowed_paths — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | worker越出任务范围 | 无证据 | 无证据 | 降级为只记录 | 任务包保留scope约束；记录越界并在H01 diff检测，不新增scope审批轮次 |
 | G09 | EditPlanGate / SpecGuard — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | 无Approved plan/spec就实现 | 无证据 | 无证据 | 删除 | 批准/annotation不是常驻编辑许可证；需求歧义才问用户 |
-| G10 | StrictContractGuard / StrictWorktreeGuard — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | 高profile缺contract或linked worktree | 无证据 | 无证据 | 删除 | 按实际并发风险选worktree；不按profile齐套 |
+| G10 | 按 profile 强制 contract / linked worktree 的旧守卫 — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | 高profile缺contract或linked worktree | 无证据 | 无证据 | 删除 | 按实际并发风险选worktree；不按profile齐套 |
 | G11 | PlanTransitionGuard / annotations — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | status跳步、有NOTE仍批准 | 无证据 | 无证据 | 删除 | 保留状态记录，不以阶段顺序拦本地工作 |
 | G12 | Asset-layer / DeployAsset / TDD / BDD reminders — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | 漏投影/测试/SQL规范 | 无证据 | 无证据 | 降级为只记录 | 当前已有advisory；继续按实际影响选验证 |
 | G13 | Done / Evidence Contract / review freshness gates — [src/cli/hook/prompt-handler.ts](../../../src/cli/hook/prompt-handler.ts) | 模型声明done但契约或证据不全 | 无证据 | 无证据 | 删除 | 保留诚实完成报告；exact check freshness只在H01消费，不阻自然语言/Stop |

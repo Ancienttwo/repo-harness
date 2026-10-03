@@ -825,15 +825,16 @@ describe('BRC0 negative freeze: heartbeat-triage stays discovery-only', () => {
 
     const snapshot = JSON.parse(stdout) as {
       readonly kind: string;
-      readonly entries: readonly { readonly kind: string; readonly status: string }[];
+      readonly entries: readonly { readonly kind: string; readonly status: string; readonly details: string }[];
     };
     expect(snapshot.kind).toBe('repo-harness-heartbeat-triage');
     expect(snapshot.entries.map((entry) => entry.kind).sort()).toEqual(['drift-requests', 'sprint-next', 'workflow-check']);
-    // `fail`, not `warning`: the real `check-task-workflow.sh --strict` sibling
-    // was found and executed against the fixture, so the write-set assertion
-    // above covers that transitive path too.
+    // The real workflow checker runs diagnostics without becoming a stage gate.
+    // Its result still follows the exact inbox/snapshot write boundary above.
     const workflowCheck = snapshot.entries.find((entry) => entry.kind === 'workflow-check');
-    expect(workflowCheck?.status).toBe('fail');
+    expect(workflowCheck?.status).toBe('pass');
+    expect(workflowCheck?.details).toContain('diagnostic issues=');
+    expect(workflowCheck?.details).toContain('does not grant or block edits');
 
     // The sprint probe takes the local awk fallback because the fixture has no
     // `.ai/harness/sprint/active-sprint` marker. That branch is fixture-scoped.

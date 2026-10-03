@@ -9,7 +9,6 @@ const ROOT = join(import.meta.dir, '..');
 let sandbox: string;
 let consumer: string;
 let bundle: string;
-let parentClock: string;
 beforeAll(async () => {
   sandbox = realpathSync(mkdtempSync(join(tmpdir(), 'projection-continuation-')));
   consumer = join(sandbox, 'consumer');
@@ -27,11 +26,6 @@ beforeAll(async () => {
     symlinkSync(join(ROOT, 'node_modules', name), join(consumer, 'node_modules', name));
   }
   const provider = join(consumer, 'node_modules/archctx');
-  parentClock = join(consumer, 'parent-clock.ts');
-  // Advance only the host clock after provider return. The detached child is
-  // launched without --preload and therefore receives its real policy budget.
-  // This exercises expiry without sleeping through the 110-second host slice.
-  writeFileSync(parentClock, `import { existsSync } from 'node:fs'; const realNow = Date.now; Date.now = () => realNow() + (existsSync(process.env.CONTINUATION_TEST_YIELD_MARKER!) ? 200000 : 0);`);
   mkdirSync(join(provider, 'bin'), { recursive: true });
   writeFileSync(join(provider, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.6.1', type: 'module', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/provider.mjs' } }));
   writeFileSync(join(provider, 'bin/provider.mjs'), `
@@ -130,7 +124,7 @@ function launch(root: string, env: NodeJS.ProcessEnv) {
 
 describe('architecture projection detached continuation', () => {
   for (const mode of ['source', 'bundle']) {
-    test(`${mode} Stop yields an expired host budget and completes after parent exit with one owned receipt`, async () => {
+    test(`${mode} explicit continuation consumes queued work once while Stop stays advisory`, async () => {
       const f = fixture(mode);
       const policyPath = join(f.root, '.ai/harness/test-home/.repo-harness/config.json');
       const policy = JSON.parse(readFileSync(policyPath, 'utf8'));
@@ -139,46 +133,46 @@ describe('architecture projection detached continuation', () => {
       const head = git(f.root, ['rev-parse', 'HEAD']);
       writeFileSync(join(f.root, 'src/index.ts'), 'export const value = 2;\n');
       const entry = mode === 'source' ? join(consumer, 'src/cli/hook-entry.ts') : bundle;
-      const env = { ...f.env, CONTINUATION_TEST_RELEASE: join(f.root, '.ai/harness/release-child'), CONTINUATION_TEST_YIELD_MARKER: join(f.root, '.ai/harness/host-clock-expired') };
-      const parent = spawnSync(process.execPath, ['--preload', parentClock, entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
+      const env = { ...f.env, CONTINUATION_TEST_RELEASE: join(f.root, '.ai/harness/release-child'), CONTINUATION_TEST_YIELD_MARKER: join(f.root, '.ai/harness/explicit-worker-held') };
+      const stop = () => spawnSync(process.execPath, [entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
         input: JSON.stringify({ cwd: f.root, session_id: 'continuation-test' }), encoding: 'utf8', timeout: 35_000 });
-      expect(parent.status).toBe(0);
-      expect(JSON.parse(parent.stdout).decision).toBe('block');
-      expect(parent.stderr).toContain('continuation started pid=');
-      expect(receipts(f.root)).toHaveLength(0);
-      await until(() => architectureProjectionQueueState(f.root).running === 1, 'detached claim');
-      // A second detached wake while the first owns the queue must not invoke
-      // the provider or publish a competing receipt.
+      const before = stop();
+      expect(before.status, before.stderr).toBe(0);
+      expect(before.stdout).toBe('');
+      expect(architectureProjectionQueueState(f.root)).toMatchObject({ pending: 0, running: 0, receipts: 0 });
+      expect(existsSync(f.calls)).toBe(false);
+
+      enqueueArchitectureProjectionJob(f.root, ['event-explicit'], ['key-explicit'], ['src/index.ts']);
+      writeFileSync(env.CONTINUATION_TEST_YIELD_MARKER, 'hold explicit worker');
+      const worker = Bun.spawn([process.execPath, entry, '--architecture-projection-continuation', f.root], {
+        cwd: f.root, env, stdout: 'pipe', stderr: 'pipe',
+      });
       try {
+        await until(() => existsSync(f.calls), 'explicit provider invocation');
+        expect(architectureProjectionQueueState(f.root).running).toBe(1);
         const duplicate = launch(f.root, env);
         await until(() => readFileSync(join(f.root, duplicate.logPath), 'utf8').includes('"status":"idle"'), 'duplicate idle result');
-        const second = spawnSync(process.execPath, [entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
-          input: JSON.stringify({ cwd: f.root, session_id: 'continuation-second-stop' }), encoding: 'utf8', timeout: 35_000 });
+        const during = stop();
+        expect(during.status, during.stderr).toBe(0);
+        expect(during.stdout).toBe('');
         expect(architectureProjectionQueueState(f.root).running).toBe(1);
         expect(receipts(f.root)).toHaveLength(0);
-        expect(second.status).toBe(0);
-        expect(second.stdout).toContain('Strict projection failure gate blocked Stop');
-        expect(JSON.parse(second.stdout).decision).toBe('block');
       } finally {
         writeFileSync(env.CONTINUATION_TEST_RELEASE, 'release');
-        await until(() => receipts(f.root).length === 1, 'released child completion');
+        await until(() => receipts(f.root).length === 1, 'released explicit worker completion');
+        expect(await worker.exited, await new Response(worker.stderr).text()).toBe(0);
       }
-      await until(() => receipts(f.root).length === 1, 'provider completion');
       const [receipt] = receipts(f.root);
-      expect(receipt.attempt).toBe(1); // host yield is refunded, not a business failure
+      expect(receipt.attempt).toBe(1);
       expect(receipt.result.status).toBe('noop');
       expect(receipt.result.requestId).toBe(`repo-harness.projection.${receipt.jobId}`);
       expect(architectureProjectionQueueState(f.root)).toMatchObject({ pending: 0, running: 0, deadLetters: 0, receipts: 1 });
       const calls = readFileSync(f.calls, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-      expect(calls).toHaveLength(2); // expired Stop + independent full-budget attempt
-      expect(new Set(calls.map(call => call.requestId)).size).toBe(1);
-      const completed = spawnSync(process.execPath, [entry, 'Stop', '--route', 'default'], { cwd: f.root, env,
-        input: JSON.stringify({ cwd: f.root, session_id: 'continuation-completed-stop' }), encoding: 'utf8', timeout: 35_000 });
-      expect(completed.status).toBe(0);
-      expect(completed.stdout).toBe('');
-      expect(architectureProjectionQueueState(f.root)).toMatchObject({ pending: 0, running: 0, deadLetters: 0, receipts: 1 });
+      expect(calls).toHaveLength(1);
+      expect(stop().stdout).toBe('');
+      expect(architectureProjectionQueueState(f.root)).toMatchObject({ pending: 0, running: 0, receipts: 1 });
       expect(git(f.root, ['rev-parse', 'HEAD'])).toBe(head);
-    }, 65_000);
+    }, 60_000);
   }
   test('rechecks manual policy without claiming or invoking the provider', async () => {
     const f = fixture('manual', 'manual');
