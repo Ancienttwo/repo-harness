@@ -74,12 +74,12 @@ if [[ "$lane" != functional ]]; then
   bash scripts/check-architecture-sync.sh
   echo "[ci] context map"
   bun run check:context-map
+  # Preserve the read-only helper's failure before checking successful evidence.
+  bash scripts/check-task-sync.sh
   if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${REPO_HARNESS_DIFF_BASE:-}" ]]; then
     echo "[ci] GitHub Actions must provide REPO_HARNESS_DIFF_BASE for diff-bound workflow evidence." >&2
     exit 1
   fi
-  bash scripts/check-task-sync.sh
-
   bash scripts/check-task-workflow.sh --strict
 
   echo "[ci] repository inspection"
