@@ -8,8 +8,8 @@
 - Once automated checks pass, a model may squash-merge unless the user says otherwise; tag the publication and record `git revert <squash-commit>` plus the daily report.
 - Automatically delete only merged, clean worktrees/branches; ask the user for every other deletion. Credentials/permissions (including confirmation bypass) and release/production operations require user approval.
 - Use gatekeeper/cross-model review for large changes, security/permissions, or unresolved model uncertainty; ordinary steps record diagnostics without approval loops.
-- Architecture drafts are written by Claude (deep tier), not Codex; Codex executes against an agreed architecture plan and owns detail-level implementation.
-- When one PR changes both test assertions and implementation code, run one read-only Claude review focused on tests bent to fit a bug (on-demand review, not a restored gate).
+- Suggested split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute). Route all cross-model dispatch and review through herdr panes (OAR/herdr), never direct subprocesses or hand-written calls.
+- When one PR changes both test assertions and implementation code, run one read-only review focused on tests bent to fit a bug: dispatch it to the other model via herdr when available, otherwise run a read-only self-review in a separate same-model pane (on-demand, not a restored gate).
 - `.archcontext/model/` owns architecture boundaries; read `docs/architecture/` on demand and update only real responsibility changes. Architecture diagnostics do not block work or author nested agent instructions.
 - Preserve `agents/fleet/`, release checklists and downstream `assets/templates` / `assets/partials*`. Keep `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json` aligned.
 - `_ops/` is ignored private operations state: never commit or agent-edit it. `_ref/` is an ignored reference cache; cite influential revisions. Follow deploy SQL policy, otherwise use ascending 4-digit files under `deploy/sql/`.
