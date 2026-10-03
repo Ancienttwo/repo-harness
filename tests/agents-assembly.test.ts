@@ -54,7 +54,8 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain("The main agent decides whether to spawn based on task breadth");
     expect(output).toContain("Do not ask the user for spawn confirmation");
     expect(output).toContain("repo-harness run check-task-sync");
-    expect(output).toContain("repo-harness run check-task-workflow --strict");
+    expect(output).not.toContain("repo-harness run check-task-workflow --strict");
+    expect(output).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
     expect(output).toContain("Run the declared Verification Plan checks once and record their actual results");
     expect(output).not.toContain("verify-sprint --prepare-acceptance");
     expect(output).toContain("bounded follow-up edits");

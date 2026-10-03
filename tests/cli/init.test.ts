@@ -333,7 +333,7 @@ describe("init command", () => {
     }
   });
 
-  test("runInit refreshes Codex handoff before outer workflow verification", () => {
+  test("runInit refreshes Codex handoff and checks context without a plan file", () => {
     const tmp = join(tmpdir(), `repo-harness-init-handoff-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
@@ -358,6 +358,8 @@ describe("init command", () => {
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "refresh handoff packet")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "verify repo harness")?.status).toBe("ok");
+      expect(result.steps.find((step) => step.step === "verify repo harness")?.detail).toBe("repo-harness run check-context-files");
+      expect(existsSync(join(repo, ".ai", "harness", "active-plan"))).toBe(false);
       expect(readFileSync(join(repo, ".ai", "harness", "handoff", "current.md"), "utf-8")).toContain("repo-harness-init-verify");
       expect(readFileSync(join(repo, ".ai", "harness", "handoff", "resume.md"), "utf-8")).toContain("Codex Resume Packet");
     } finally {

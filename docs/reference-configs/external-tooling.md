@@ -208,6 +208,23 @@ dialect. This repo does not vendor either skill body.
 - Route all cross-model dispatch and review through herdr panes (OAR runs the worker, herdr owns panes and visibility); never start direct subprocesses or hand-written CLI calls.
 - When a PR changes both test assertions and implementation code, dispatch its read-only review to the other model via herdr when available; otherwise run a read-only self-review in a separate same-model pane.
 
+### Test and Review Rules
+
+- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
+- Rebase before the final full test run.
+- Run the full test suite once on the final rebased head before merge.
+- For a baseline comparison, run only the test files that failed.
+- Run long tasks in the background.
+- Wait for the completion notice, or check at intervals of 5 to 10 minutes.
+- Do not report each check.
+- Use one cross-reviewer for each artifact.
+- Limit each artifact to two review rounds.
+- Ask the user to decide before a third review round.
+- Before commit, remove debug writes to `/tmp` and other debug instrumentation.
+- Before commit, get a cross-model read-only review when tests and implementation change together.
+
+Known flaky test: `tests/herdr-task-lifecycle.test.ts`, "MCP goals use visible persistent Herdr peers, redact history and clean success and timeout panes", can fail with `task_agent_ambiguous_launch`. Record this failure as known flaky. Do not skip the test or weaken its assertions. Do not treat this signature as a new failure.
+
 ## Detect Safely
 
 Use `repo-harness run check-agent-tooling` for a read-only tooling report.

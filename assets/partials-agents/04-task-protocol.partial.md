@@ -13,7 +13,7 @@ TASK_SOURCES:
   - .ai/harness/handoff/current.md
   - plans/
 
-PHASES: research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
+PHASES: for explicit plans, research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
 
 ARCHIVE:
   PLAN: plans/archive/
@@ -24,26 +24,26 @@ RULES:
   - For non-chat tasks, sync tasks/ whenever substantive work changes the repo
   - Research first for unfamiliar areas and persist findings in docs/researches/
   - Keep stable product intent in docs/spec.md
-  - Plan with trade-offs in plans/plan-{timestamp}-{slug}.md
+  - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
   - Treat .ai/harness/active-plan as authoritative only for this worktree; .ai/harness/active-worktree records the owner
-  - Keep multiple active plans in parallel worktrees when tasks diverge; fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path
+  - When the task requires a plan file, keep separate plans in parallel worktrees and fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path
   - Process annotation notes before implementing
-  - Project approved plans with `repo-harness run plan-to-todo` only after a concrete Promotion Gate; the execution checklist stays in the plan ## Task Breakdown, inline sprint rows stay inline, and only contract rows generate contract/review/notes artifacts
-  - Define task contracts in tasks/contracts/{plan-stem}.contract.md
-  - Fill tasks/reviews/{plan-stem}.review.md from Waza /check after verification
+  - When the task requires a plan file, project approved plans with `repo-harness run plan-to-todo` only after a concrete Promotion Gate; the execution checklist stays in the plan ## Task Breakdown, inline sprint rows stay inline, and only contract rows generate contract/review/notes artifacts
+  - Define task contracts in tasks/contracts/{plan-stem}.contract.md only when the task explicitly requires a contract
+  - For an explicit contract, fill tasks/reviews/{plan-stem}.review.md from Waza /check after verification
   - Record only non-obvious implementation decisions, deviations, tradeoffs, and open questions in tasks/notes/{plan-stem}.notes.md
   - Verify contracts before claiming completion
-  - Require review pass before claiming completion
+  - For an explicit contract, require review pass before claiming completion
   - Keep tasks/todos.md limited to deferred medium/long-term goals, with tradeoff and revisit trigger; do not duplicate plan Task Breakdown
   - Record correction-derived prevention rules in tasks/lessons.md
   - Distill repeated corrections into tasks/lessons.md instead of keeping them in tasks/todos.md
   - Capture deep findings and hidden contracts in docs/researches/
   - Keep sprint-level verification notes, behavior diffs, and residual risks in tasks/reviews/{plan-stem}.review.md
   - Do not use implementation notes as durable memory or task logs; before closeout, promote durable truth into docs/architecture/, docs/researches/, docs/spec.md, or tasks/lessons.md, then archive fulfilled plan/contract/review/notes/todo artifacts so root workflow surfaces represent active work only
-  - Promote implementation-ready follow-up work into a new plans/plan-{timestamp}-{slug}.md file; keep deferred goals in tasks/todos.md only when intentionally postponed
+  - Create a plan file for follow-up work only when the plan rule requires one
   - Treat `.ai/hooks/` as the shared automation entrypoint when repo scripts reference hook-backed workflow checks
   - Treat user-level `~/.claude/settings.json` and `~/.codex/hooks.json` as host adapters; do not add repo-local project hook adapters unless explicitly migrating legacy config
-  - For Codex sessions, treat `repo-harness run check-task-sync` and `repo-harness run check-task-workflow --strict` as required checks
+  - For Codex sessions, run `repo-harness run check-task-sync`
   - Before ending a session, refresh `.ai/harness/handoff/current.md` when the task state changed
   - Update `tasks/workstreams/` only when durable capability progress changes
   - Archive completed/abandoned plans, contracts, reviews, notes, and todos with metadata
@@ -62,7 +62,7 @@ STATUS:
   TRANSITIONS:
     - Draft -> Annotating -> Approved -> Executing -> Archived
     - Annotating -> Draft (rollback when plan direction needs rethinking)
-  GUARD: do not implement when status is Draft or Annotating
+  GUARD: when the task uses a plan, do not implement when status is Draft or Annotating
 ```
 
 ---

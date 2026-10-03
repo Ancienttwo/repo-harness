@@ -1976,8 +1976,8 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 ## Root Workflow Contract
 
 - Keep sibling `CLAUDE.md` and `AGENTS.md` files aligned. Claude Code consumes `CLAUDE.md`; Codex consumes `AGENTS.md`.
-- Prefer repo-local workflow artifacts over tool-specific chat memory.
-- Treat `docs/spec.md` as stable product truth, `tasks/current.md` as a derived status snapshot, and `tasks/todos.md` as the deferred-goal ledger; current execution stays in the active plan's `## Task Breakdown`.
+- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
+- Treat `docs/spec.md` as stable product truth, `tasks/current.md` as a derived status snapshot, and `tasks/todos.md` as the deferred-goal ledger.
 - Treat `docs/researches/`, `tasks/lessons.md`, `tasks/notes/`, `.ai/harness/policy.json`, and `.ai/harness/handoff/current.md` as durable workflow context.
 - Use `.ai/context/context-map.json` and `.ai/context/capabilities.json` to discover functional-block contracts before adding local agent files.
 - Do not infer local `CLAUDE.md` or `AGENTS.md` files from broad physical layouts such as `apps/*`, `packages/*`, or `services/*`.
@@ -2013,7 +2013,7 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 - For docs-only or ledger-closeout changes with no executable impact, check diff hygiene, affected links/paths, and task-sync/workflow consistency when workflow artifacts changed. No full suite or typecheck is required solely for closeout.
 - For isolated code changes, run the regression and affected suites, plus relevant type/lint/build checks. For generator or template changes, generate a fixture and check the affected mirrors.
 - High-risk, cross-module, or release changes require the full repo verification set; this includes shared contracts, auth, publication, migrations, and hooks/runtime. Use full verification when the impact boundary is uncertain, and never weaken explicit contract or CI criteria.
-- Run `bash scripts/check-task-sync.sh` and `bash scripts/check-task-workflow.sh --strict` when workflow artifacts changed and those scripts exist. A passed suite need not be repeated for a subsequent docs/ledger-only closeout against unchanged executable source.
+- Run `repo-harness run check-task-sync` when workflow artifacts change. A passed suite need not be repeated for a subsequent docs/ledger-only closeout against unchanged executable source.
 - Report what changed, why it was the smallest coherent change, verification evidence, and any concrete residual risk.
 EOF_ROOT_CONTEXT
 }
@@ -2451,7 +2451,6 @@ pi_ensure_task_sync() {
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
     "check:architecture-sync": "repo-harness run check-architecture-sync",
     "check:task-sync": "repo-harness run check-task-sync",
-    "check:task-workflow": "repo-harness run check-task-workflow --strict",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all"
   }
 }
@@ -2476,7 +2475,9 @@ pkg.scripts["check:context-files"] = "repo-harness run check-context-files";
 pkg.scripts["check:deploy-sql"] = "repo-harness run check-deploy-sql-order";
 pkg.scripts["check:architecture-sync"] = "repo-harness run check-architecture-sync";
 pkg.scripts["check:task-sync"] = "repo-harness run check-task-sync";
-pkg.scripts["check:task-workflow"] = "repo-harness run check-task-workflow --strict";
+if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
+  delete pkg.scripts["check:task-workflow"];
+}
 pkg.scripts["sync:brain-docs"] = "repo-harness run sync-brain-docs --all";
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$package_file"

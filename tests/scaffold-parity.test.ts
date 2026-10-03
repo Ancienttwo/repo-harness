@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, relative } from "path";
 import { spawnSync } from "child_process";
@@ -130,6 +130,9 @@ describe("create-project-dirs scaffold parity", () => {
       expect(agents).toContain("High-risk, cross-module, or release changes");
       expect(agents).toContain("complete P1/P2/P3 before design decisions or code edits");
       expect(agents).toContain("do not implement until the user approves");
+      expect(agents).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
+      expect(agents).not.toContain("check-task-workflow.sh --strict");
+      expect(JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts["check:task-workflow"]).toBeUndefined();
       expect(agents).toContain("re-derives an authority's semantics");
       expect(agents).toBe(readFileSync(join(cwd, "CLAUDE.md"), "utf-8"));
 
@@ -190,4 +193,24 @@ describe("create-project-dirs scaffold parity", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, SCAFFOLD_PARITY_TIMEOUT_MS);
+
+  test("legacy package refresh removes only the generated strict workflow script", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-workflow-script-"));
+    try {
+      for (const command of ["repo-harness run check-task-workflow --strict", "bun run custom-workflow.ts"]) {
+        writeFileSync(join(cwd, "package.json"), JSON.stringify({
+          scripts: { test: "bun test", "check:task-workflow": command },
+        }));
+        const result = spawnSync("bash", ["-c", 'source "$1"; pi_ensure_task_sync "$2" 0 apply',
+          "bash", join(ROOT, "scripts/lib/project-init-lib.sh"), cwd], { cwd, encoding: "utf-8" });
+        expect(result.status).toBe(0);
+        const scripts = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts;
+        expect(scripts.test).toBe("bun test");
+        expect(scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
+        expect(scripts["check:task-workflow"]).toBe(command.startsWith("repo-harness") ? undefined : command);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

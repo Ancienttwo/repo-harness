@@ -92,7 +92,10 @@ describe("canonical adoption plan", () => {
   test("standard apply installs state, hooks, templates, package scripts, and a recoverable manifest", () => {
     const repo = tempRepo();
     try {
-      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture", scripts: { test: "bun test" } }, null, 2));
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture", scripts: {
+        test: "bun test",
+        "check:task-workflow": "repo-harness run check-task-workflow --strict",
+      } }, null, 2));
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
 
       expect(apply.ok).toBe(true);
@@ -103,11 +106,32 @@ describe("canonical adoption plan", () => {
       expect(existsSync(join(repo, ".ai", "hooks", "lib", "workflow-state.sh"))).toBe(true);
       expect(existsSync(join(repo, ".claude", "templates", "contract.template.md"))).toBe(true);
       expect(existsSync(join(repo, "docs", "reference-configs", "harness-overview.md"))).toBe(true);
-      expect(JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts["check:task-workflow"]).toBe(
-        "repo-harness run check-task-workflow --strict",
-      );
+      const scripts = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts;
+      expect(scripts["check:task-workflow"]).toBeUndefined();
+      expect(scripts.test).toBe("bun test");
+      expect(scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
+      for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+        const context = readFileSync(join(repo, name), "utf-8");
+        expect(context).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
+        expect(context).not.toContain("Keep current execution in the active plan");
+      }
       expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("standard apply preserves a custom task workflow script", () => {
+    const repo = tempRepo();
+    try {
+      writeFileSync(join(repo, "package.json"), JSON.stringify({
+        name: "fixture", scripts: { "check:task-workflow": "bun run custom-workflow.ts" },
+      }));
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts["check:task-workflow"])
+        .toBe("bun run custom-workflow.ts");
     } finally {
       cleanup(repo);
     }
