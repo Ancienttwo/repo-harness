@@ -6,14 +6,23 @@ cd "$ROOT"
 
 # PR CI verifies one candidate; daily and release callers explicitly select the full lanes.
 lane="${1:-affected}"
-if [[ "$#" -gt 1 ]] || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected ]]; then
-  echo "Usage: scripts/check-ci.sh [affected|all|governance|functional]" >&2
+base=""
+if [[ "$#" -gt 0 ]]; then shift; fi
+if [[ "$#" -eq 2 && "$1" == --base && -n "$2" && "$2" != -* ]]; then
+  base="$2"
+  shift 2
+fi
+if [[ "$#" -gt 0 || ( -n "$base" && "$lane" != affected ) ]] || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected ]]; then
+  echo "Usage: scripts/check-ci.sh [affected|all|governance|functional] [--base <git-ref>]" >&2
   exit 2
 fi
 
 BUN_TEST_TIMEOUT_MS="${BUN_TEST_TIMEOUT_MS:-60000}"
-BUN_TEST_MAX_CONCURRENCY="${BUN_TEST_MAX_CONCURRENCY:-4}"
-BUN_TEST_ISOLATE_FILES="${BUN_TEST_ISOLATE_FILES:-0}"
+BUN_TEST_MAX_CONCURRENCY="${BUN_TEST_MAX_CONCURRENCY:-1}"
+BUN_TEST_ISOLATE_FILES="${BUN_TEST_ISOLATE_FILES:-1}"
+BUN_TEST_JOBS="${BUN_TEST_JOBS:-8}"
+BUN_TEST_SCHEDULE_FILES=1
+BUN_TEST_SUITE=full
 
 source "$ROOT/scripts/lib/ci-run-tests.sh"
 
@@ -21,6 +30,9 @@ echo "[ci] install"
 bun install --frozen-lockfile
 
 if [[ "$lane" == affected ]]; then
+  if [[ -n "$base" ]]; then
+    bun scripts/select-ci-coverage.ts --base "$base"
+  fi
   echo "[ci] typecheck"
   bun run check:type
   echo "[ci] affected tests"
@@ -29,7 +41,7 @@ if [[ "$lane" == affected ]]; then
     BUN_TEST_ISOLATE_FILES=1
     BUN_TEST_TIMEOUT_MS=60000
     BUN_TEST_MAX_CONCURRENCY=1
-    BUN_TEST_JOBS="${BUN_TEST_JOBS:-4}"
+    BUN_TEST_JOBS="${BUN_TEST_JOBS:-8}"
     run_bun_tests
   else
     echo "[ci] No executable consumers changed; typecheck completed."

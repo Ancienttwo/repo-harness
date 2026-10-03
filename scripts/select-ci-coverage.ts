@@ -20,13 +20,17 @@ export function diffBase(eventName: string, event: unknown): unknown {
   const payload = event as any;
   return eventName === 'pull_request' ? payload?.pull_request?.base?.sha : payload?.before;
 }
+function validPath(path: string): boolean {
+  return !path.split('/').some(part => !part || part === '.' || part === '..') && !/[\r\n]/.test(path);
+}
 export function selectCoverage(input: CoverageInput): CoverageSelection {
   const result = (mode: CoverageSelection['mode'], reason: string, paths: string[] = []): CoverageSelection => ({ mode, reason, paths });
   const { eventName, event, headSha, actualHead, diffRaw } = input;
   if (!validSha(headSha) || headSha !== actualHead) return result('invalid', 'checkout-mismatch');
   if (eventName === 'schedule' || eventName === 'workflow_dispatch') return result('daily', 'fixed-main-snapshot');
-  if (!['pull_request', 'push'].includes(eventName)) return result('invalid', 'unknown-event');
+  if (!['pull_request', 'push', 'local'].includes(eventName)) return result('invalid', 'unknown-event');
   if (!validSha(diffBase(eventName, event))) return result('invalid', 'invalid-diff-endpoint');
+  if (eventName === 'local' && diffRaw === '') return result('affected', 'complete-diff');
   if (diffRaw === null || !diffRaw || !diffRaw.endsWith('\0')) return result('invalid', 'diff-unavailable-or-empty');
   const records = diffRaw.slice(0, -1).split('\0');
   if (records.length % 2) return result('invalid', 'invalid-diff');
@@ -34,7 +38,7 @@ export function selectCoverage(input: CoverageInput): CoverageSelection {
   for (let index = 0; index < records.length; index += 2) {
     const metadata = /^:(\d{6}) (\d{6}) ([0-9a-f]{40}) ([0-9a-f]{40}) ([AMD])$/.exec(records[index]!);
     const path = records[index + 1]!;
-    if (!metadata || path.split('/').some(part => !part || part === '.' || part === '..') || /[\r\n]/.test(path)) return result('invalid', 'invalid-diff');
+    if (!metadata || !validPath(path)) return result('invalid', 'invalid-diff');
     const [, oldMode, newMode, oldSha, newSha, status] = metadata;
     const modes = ['100644', '100755', '120000', '160000'];
     if (status === 'A' ? oldMode !== '000000' || oldSha !== '0'.repeat(40) || !modes.includes(newMode!)
@@ -108,19 +112,28 @@ function git(args: string[]): string {
   return result.stdout;
 }
 if (import.meta.main) {
-  const eventName = process.env.GITHUB_EVENT_NAME ?? '';
-  const headSha = process.env.GITHUB_SHA ?? '';
-  const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, 'utf8'));
-  const base = diffBase(eventName, event);
+  const args = process.argv.slice(2);
+  const local = args.length === 2 && args[0] === '--base' && !!args[1] && !args[1].startsWith('-');
+  if (args.length && !local) throw new Error('Usage: select-ci-coverage.ts [--base <git-ref>]');
   const actualHead = git(['rev-parse', 'HEAD']).trim();
+  const eventName = local ? 'local' : process.env.GITHUB_EVENT_NAME ?? '';
+  const headSha = local ? actualHead : process.env.GITHUB_SHA ?? '';
+  const event = local ? { before: git(['rev-parse', '--verify', `${args[1]}^{commit}`]).trim() }
+    : JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, 'utf8'));
+  const base = diffBase(eventName, event);
   const diffRaw = validSha(base) && validSha(headSha) && actualHead === headSha
-    ? git(['diff', '--raw', '--no-abbrev', '--no-renames', '-z', base, headSha, '--']) : null;
+    ? git(['diff', '--raw', '--no-abbrev', '--no-renames', '-z', base, ...(local ? [] : [headSha]), '--']) : null;
   const selection = selectCoverage({ eventName, event, headSha, actualHead, diffRaw });
   if (selection.mode === 'invalid') throw new Error(selection.reason);
   if (selection.mode === 'daily' && process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Daily validation requires the fixed main snapshot');
   if (selection.mode === 'affected') {
+    if (local) {
+      const untracked = git(['ls-files', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json', '-z']).split('\0').filter(Boolean);
+      if (untracked.some(path => !validPath(path))) throw new Error('invalid-diff');
+      selection.paths = [...new Set([...selection.paths, ...untracked])];
+    }
     const sources = new Map<string, string>();
-    for (const file of git(['ls-files', '-z']).split('\0').filter(Boolean)) if (existsSync(file)) {
+    for (const file of git(['ls-files', ...(local ? ['--cached', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json'] : []), '-z']).split('\0').filter(Boolean)) if (existsSync(file)) {
       try { sources.set(file, readFileSync(file, 'utf8')); } catch { /* directories/submodules are validated by their consumer */ }
     }
     const previousSources = new Map<string, string>();
@@ -133,5 +146,5 @@ if (import.meta.main) {
     console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
   }
   console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}`);
-  appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\n`);
+  if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\n`);
 }

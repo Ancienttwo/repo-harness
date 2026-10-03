@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles } from '../scripts/select-test-suite';
+import recordedDurations from '../scripts/test-file-durations.json';
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -116,6 +118,28 @@ function summaryEntries(output: string): string[] {
 }
 
 describe("ci isolate-mode test loop", () => {
+  test('core and integration retain the complete file inventory without overlap', () => {
+    const files = discoverTestFiles(REPO_ROOT);
+    const core = selectTestSuite('core', files);
+    const integration = selectTestSuite('integration', files);
+    expect(core.filter(file => integration.includes(file))).toEqual([]);
+    expect([...core, ...integration].sort()).toEqual(files);
+    expect(selectTestSuite('full', files)).toEqual(files);
+    expect(Object.keys(recordedDurations.files).filter(file => !files.includes(file))).toEqual([]);
+    expect(integration.sort()).toEqual([...integrationFiles].sort());
+    for (const file of serialFiles) expect(files).toContain(file);
+    expect(() => selectTestSuite('unknown', files)).toThrow('Suite must be');
+    expect(() => selectTestSuite('full', [files[0]!, files[0]!])).toThrow('Duplicate');
+    expect(() => selectTestSuite('full', ['tests/../escape.test.ts'])).toThrow('Invalid');
+  });
+
+  test('recorded durations schedule the longest files first without losing new files', () => {
+    const files = ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts', 'tests/new.test.ts'];
+    expect(scheduleTestFiles(files, { [files[0]!]: 20, [files[1]!]: 90, [files[2]!]: 20 }))
+      .toEqual(['tests/b.test.ts', 'tests/a.test.ts', 'tests/c.test.ts', 'tests/new.test.ts']);
+    expect(() => scheduleTestFiles(files, { [files[0]!]: -1 })).toThrow('Invalid recorded duration');
+  });
+
   test("runs every selected file and reports each failing file once", () => {
     const dir = mkdtempSync(join(tmpdir(), "rh-ci-isolate-"));
     try {
@@ -241,6 +265,33 @@ function outputBlocks(output: string): { file: string; body: string }[] {
 }
 
 describe("ci isolate-mode job pool", () => {
+  test('the HOME lane runs after the parallel pool, even after a file fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-ci-tail-'));
+    try {
+      mkdirSync(join(root, 'tests/cli'), { recursive: true });
+      const finished = join(root, 'finished');
+      const parallel = join(root, 'tests/parallel.test.ts');
+      writeFileSync(parallel, `import { expect, test } from 'bun:test';
+        test('parallel failure', async () => {
+          await Bun.sleep(25);
+          await Bun.write(${JSON.stringify(finished)}, 'complete');
+          expect(1).toBe(2);
+        });`);
+      writeFileSync(join(root, 'tests/cli/init.test.ts'), `import { expect, test } from 'bun:test';
+        test('serial tail', async () => {
+          expect(await Bun.file(${JSON.stringify(finished)}).text()).toBe('complete');
+        });`);
+      const result = spawnSync('bash', ['-c', 'set -euo pipefail; source "$1"; run_bun_tests', 'tail', LIB_PATH], {
+        cwd: root, encoding: 'utf8', env: gateEnv({ BUN_TEST_ISOLATE_FILES: '1', BUN_TEST_SCHEDULE_FILES: '1',
+          BUN_TEST_JOBS: '2', BUN_TEST_FILES: 'tests/cli/init.test.ts tests/parallel.test.ts' }),
+      });
+      expect(result.status).toBe(1);
+      expect(summaryEntries(result.stderr)).toEqual(['tests/parallel.test.ts (exit 1)']);
+      expect(outputBlocks(result.stdout).map(block => block.file)).toEqual(['tests/parallel.test.ts', 'tests/cli/init.test.ts']);
+      expect(result.stdout + result.stderr).toContain('(pass) serial tail');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test("BUN_TEST_JOBS=1 reproduces the serial baseline byte for byte", () => {
     const root = mkdtempSync(join(tmpdir(), "rh-ci-jobs-"));
     try {

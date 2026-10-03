@@ -110,7 +110,7 @@ jobs:
       BUN_TEST_MAX_CONCURRENCY: '1'
       BUN_TEST_TIMEOUT_MS: '60000'
       BUN_TEST_ISOLATE_FILES: '1'
-      BUN_TEST_JOBS: '4'
+      BUN_TEST_JOBS: '8'
     steps:
       - uses: actions/checkout@v4
         with:

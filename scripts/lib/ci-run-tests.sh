@@ -157,6 +157,7 @@ run_bun_tests() {
   esac
 
   local files=()
+  local serial_files=()
   local file
   local status
   local failed_list=""
@@ -166,30 +167,50 @@ run_bun_tests() {
     for file in $BUN_TEST_FILES; do
       files[${#files[@]}]="$file"
     done
-  else
-    while IFS= read -r file; do
-      files[${#files[@]}]="$file"
-    done < <(find tests -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | LC_ALL=C sort)
   fi
 
-  if [[ "${#files[@]}" -eq 0 ]]; then
+  if [[ "${#files[@]}" -eq 0 || "${BUN_TEST_SCHEDULE_FILES:-0}" == 1 ]]; then
+    local selection lane
+    local selector="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/select-test-suite.ts"
+    selection="$(bun "$selector" "${BUN_TEST_SUITE:-full}" ${files[@]+"${files[@]}"})" || return $?
+    files=()
+    while IFS=$'\t' read -r lane file; do
+      [[ -n "$file" ]] || continue
+      case "$lane" in
+        parallel) files[${#files[@]}]="$file" ;;
+        serial) serial_files[${#serial_files[@]}]="$file" ;;
+        *) echo "[ci] invalid test lane: $lane" >&2; return 1 ;;
+      esac
+    done <<< "$selection"
+  fi
+
+  if [[ "${#files[@]}" -eq 0 && "${#serial_files[@]}" -eq 0 ]]; then
     echo "[ci] no test files matched" >&2
     return 1
   fi
 
   # Isolate mode keeps running every selected file after a failure so one early
   # red file cannot hide the rest of the suite from the gate's log.
+  echo "[ci] parallel files=${#files[@]} jobs=$jobs; serial tail=${#serial_files[@]}"
   if [[ "$jobs" -eq 1 ]]; then
-    for file in "${files[@]}"; do
+    for file in ${files[@]+"${files[@]}"}; do
       status=0
       run_bun_test_file "$file" || status=$?
       if [[ "$status" != "0" ]]; then
         failed_list+="  $file (exit $status)"$'\n'
       fi
     done
-  else
+  elif [[ "${#files[@]}" -gt 0 ]]; then
     _ci_run_bun_test_pool "$jobs" "${files[@]}" || pool_status=$?
   fi
+
+  for file in ${serial_files[@]+"${serial_files[@]}"}; do
+    status=0
+    run_bun_test_file "$file" || status=$?
+    if [[ "$status" != "0" ]]; then
+      failed_list+="  $file (exit $status)"$'\n'
+    fi
+  done
 
   local failed_count=0
   if [[ -n "$failed_list" ]]; then
@@ -207,3 +228,17 @@ run_bun_tests() {
     return 1
   fi
 }
+
+# Direct use runs a complete suite. Sourcing keeps the caller's settings.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+  if [[ "$#" -gt 1 ]]; then echo "Usage: ci-run-tests.sh [core|integration|full]" >&2; exit 2; fi
+  cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+  BUN_TEST_SUITE="${1:-full}"
+  unset BUN_TEST_FILES
+  BUN_TEST_ISOLATE_FILES=1
+  BUN_TEST_SCHEDULE_FILES=1
+  BUN_TEST_JOBS="${BUN_TEST_JOBS:-8}"
+  BUN_TEST_MAX_CONCURRENCY="${BUN_TEST_MAX_CONCURRENCY:-1}"
+  run_bun_tests
+fi
