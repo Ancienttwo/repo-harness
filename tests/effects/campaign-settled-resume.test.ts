@@ -1,5 +1,6 @@
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { AUTOMATION_TEST_CLOCK_SEAM_ENV, __resetAutomationClockForTests, __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -24,10 +25,12 @@ import { observeVerifiedFixtureRevision } from '../helpers/campaign-adoption-rep
 import { campaignBrowserMetadata } from '../helpers/campaign-browser-session';
 
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
+afterAll(() => templates.dispose());
 afterEach(() => { for (const root of roots.splice(0).reverse()) rmSync(root, { recursive: true, force: true }); });
 const sha = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 async function fixture(mode = 'settled') {
-  const f = await historicalPlanningFixture(false, false, undefined, true, {}, false, false, true);
+  const f = await templates.materialize(false, false, undefined, true, {}, false, false, true);
   roots.push(f.root, f.home);
   const d = installHistoricalBoundDispatch(f); roots.push(d.envelope.worktree_path);
   const budget = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env }).budget;

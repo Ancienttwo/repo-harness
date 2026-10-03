@@ -150,14 +150,24 @@ test('typed transient read failures exhaust the campaign before another adapter 
     if (calls !== 2) throw new GithubAdapterError('network', 'typed network failure');
     return { stdout: 'observed' };
   });
-  expect(() => provider.read(['first'], options)).toThrow('typed network failure');
-  await Bun.sleep(5);
-  expect(provider.read(['successful-read'], options).stdout).toBe('observed');
-  expect(() => provider.read(['second-failure'], options)).toThrow('typed network failure');
-  expect(() => provider.read(['forbidden'], options)).toThrow('campaign_retry_exhausted');
-  expect(calls).toBe(3);
-  expect(f.status().current.open_reservation_sha256s).toHaveLength(0);
-  expect(f.status().current.consumed.provider_failures).toBe(2);
+  const prior = process.env.REPO_HARNESS_TEST_CLOCK_SEAM;
+  let now = Date.now();
+  process.env.REPO_HARNESS_TEST_CLOCK_SEAM = '1';
+  __setAutomationClockForTests(() => new Date(now));
+  try {
+    expect(() => provider.read(['first'], options)).toThrow('typed network failure');
+    now += 5;
+    expect(provider.read(['successful-read'], options).stdout).toBe('observed');
+    expect(() => provider.read(['second-failure'], options)).toThrow('typed network failure');
+    expect(() => provider.read(['forbidden'], options)).toThrow('campaign_retry_exhausted');
+    expect(calls).toBe(3);
+    expect(f.status().current.open_reservation_sha256s).toHaveLength(0);
+    expect(f.status().current.consumed.provider_failures).toBe(2);
+  } finally {
+    __resetAutomationClockForTests();
+    if (prior === undefined) delete process.env.REPO_HARNESS_TEST_CLOCK_SEAM;
+    else process.env.REPO_HARNESS_TEST_CLOCK_SEAM = prior;
+  }
 });
 
 test('a non-transient typed read error is not reclassified as a transient result', () => {

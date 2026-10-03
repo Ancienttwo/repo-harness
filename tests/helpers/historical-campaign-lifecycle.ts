@@ -182,7 +182,7 @@ export function installHistoricalAdoption(f: Awaited<ReturnType<typeof createAdo
 }
 
 /** Construct a pre-existing bound Claim, never call a current admission API. */
-export function installHistoricalBoundDispatch(f: Awaited<ReturnType<typeof historicalPlanningFixture>>, index = 0) {
+export function installHistoricalBoundDispatch(f: Pick<Awaited<ReturnType<typeof historicalPlanningFixture>>, 'root' | 'home' | 'env' | 'intent' | 'authorization' | 'executeInput' | 'secondAuthorization'>, index = 0) {
   const tasks = projectCanonicalTasks({ repoIdentity: resolveRepoIdentity(f.root), sprintPath: sprint, sprintText: readFileSync(join(f.root, sprint), 'utf8') });
   const graph = projectWorkGraph(validateWorkGraph(JSON.parse(readFileSync(join(f.root, 'plans/sprints/repair.work-graph.v1.json'), 'utf8'))),
     tasks.map((t,i)=>({task_id:t.task_id,task_revision:t.task_revision,task_ref:t.row.task,status:t.row.status,row_order:i+1})));

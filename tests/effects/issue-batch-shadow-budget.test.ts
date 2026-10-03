@@ -1,4 +1,6 @@
-import { afterEach, expect, spyOn, test } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { AUTOMATION_TEST_CLOCK_SEAM_ENV, __resetAutomationClockForTests, __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
+import { afterAll, afterEach, expect, spyOn, test } from 'bun:test';
 import * as fs from 'fs';
 import { rmSync } from 'fs';
 import { createAdoptionRepository } from '../helpers/campaign-adoption-repository';
@@ -12,9 +14,28 @@ import {
 } from '../../src/effects/automation/budget-store';
 import { GithubAdapterError, type GithubCommandRunner } from '../../src/effects/external-sources/github';
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+const templates = fixtureTemplate(createAdoptionRepository);
+afterAll(() => templates.dispose());
+let resetClock: (() => void) | undefined;
+afterEach(() => {
+  resetClock?.(); resetClock = undefined;
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 async function fixture(rounds = 1, cap = 100, firstReadDelayMs = 0) {
-  const f = await createAdoptionRepository('shadow', rounds, undefined, {}, {}, { max_provider_calls: cap, github_deadline_ms: 20000 }); roots.push(f.root, f.home);
+  const f = await templates.materialize('shadow', rounds, undefined, {}, {}, { max_provider_calls: cap, github_deadline_ms: 20000 });
+  f.resetCalls();
+  roots.push(f.root, f.home);
+  let clockMs = Date.now();
+  if (firstReadDelayMs) {
+    const previous = process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV];
+    process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = '1';
+    __setAutomationClockForTests(() => new Date(clockMs));
+    resetClock = () => {
+      __resetAutomationClockForTests();
+      if (previous === undefined) delete process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV];
+      else process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = previous;
+    };
+  }
   const budget = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env }).budget;
   const binding = { repo_root: f.root, automation_run_id: budget.automation_run_id, expected_budget_sha256: budget.budget_sha256,
     campaign_id: f.intent.campaign_id, group_number: 1 as const, intent_sha256: f.intent.intent_sha256, env: f.env };
@@ -24,13 +45,14 @@ async function fixture(rounds = 1, cap = 100, firstReadDelayMs = 0) {
   const runner: GithubCommandRunner = args => {
     expect(status().current.open_reservation_sha256s).toHaveLength(1);
     calls++;
-    if (calls === 1 && firstReadDelayMs) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, firstReadDelayMs);
+    if (calls === 1) clockMs += firstReadDelayMs;
     if (failure) throw failure;
     if (args.includes('repos/acme/widgets')) return { stdout: JSON.stringify({ id: 100, full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) };
     return { stdout: JSON.stringify(makeSnapshot(f.intent, slots).observations.map((o, i) => ({ id: i + 1, number: i + 1, html_url: o.url,
       state: o.state, title: changeTitle && calls > 2 ? 'changed title' : o.title, body: o.body, labels: [{ name: 'campaign' }], assignees: [] }))) };
   };
-  const deps = { ...f.deps, runner, observe: observeIssueBatch };
+  const deps = { ...f.deps, runner, observe: observeIssueBatch,
+    ...(firstReadDelayMs ? { now: () => new Date(clockMs) } : {}) };
   return { ...f, binding, status, ledger: () => readCampaignBudgetLedger(f.root, budget.automation_run_id, f.env),
     run: () => adoptIssueBatch({ ...f.input, dry_run: true }, deps), terminal: () => readCampaignAuthoringBudgetTerminal(binding),
     githubCalls: () => calls, setSlots: (value: readonly string[]) => { slots = value; },

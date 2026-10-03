@@ -1,7 +1,8 @@
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { campaignBrowserMetadata } from '../helpers/campaign-browser-session';
 import { createAdoptionRepository } from '../helpers/campaign-adoption-repository';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { readFileSync, readdirSync, rmSync } from 'fs';
@@ -15,11 +16,14 @@ import type { GithubCommandRunner } from '../../src/effects/external-sources/git
 import { AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, appendAutomationUsage, reconcileAutomationReservation, ensureCampaignAuthoringBudget, reserveCampaignAuthoringBudget } from '../../src/effects/automation/budget-store';
 import { makeSnapshot, policy } from '../helpers/issue-batch-adoption-fixture';
 const roots: string[] = [];
+const templates = fixtureTemplate(createAdoptionRepository);
+afterAll(() => templates.dispose());
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const SPRINT = 'plans/sprints/repair.sprint.md';
 function git(root: string, args: string[]) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
 async function fixture(mode: 'shadow' | 'active' = 'shadow', rounds = 1, maxProviderCalls = 100) {
-  const f = await createAdoptionRepository(mode, rounds, undefined, {}, {}, { max_provider_calls: maxProviderCalls });
+  const f = await templates.materialize(mode, rounds, undefined, {}, {}, { max_provider_calls: maxProviderCalls });
+  f.resetCalls();
   roots.push(f.root, f.home);
   return { ...f, input: { ...f.input, dry_run: mode === 'shadow' } };
 }
@@ -195,7 +199,8 @@ test('interrupted shadow observation remains unsealed and cannot repeat I/O', as
  });
 
 test('valid production revision guard permits actual adoption and publication with fake provider I/O', async () => {
- const f = await createAdoptionRepository('active', 1, undefined, {}, {}, { verified_revision: true });
+ const f = await templates.materialize('active', 1, undefined, {}, {}, { verified_revision: true });
+  f.resetCalls();
  try {
   expect(f.revisionObservation?.revision_evidence).toBe('verified');
   const adopted = await adoptIssueBatch(f.input, f.deps);

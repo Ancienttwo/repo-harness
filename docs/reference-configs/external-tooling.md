@@ -215,7 +215,12 @@ For Bot and human notification setup, see [Herdr notify](herdr-notify.md).
 
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Rebase before the final full test run.
-- Run the full test suite once on the final rebased head before merge.
+- The merge gate is typecheck plus affected tests. Run `bash scripts/check-ci.sh affected --base origin/main` locally.
+- Run the full suite for dependency changes in `bun.lock` or `package.json`, large changes across modules, releases, and the daily run.
+- Run `bun run test:full` once on the final rebased head when full coverage is required.
+- `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
+- Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.
+- Tests with port 0 and an isolated HOME can run in parallel.
 - For a baseline comparison, run only the test files that failed.
 - Run long tasks in the background.
 - Wait for the completion notice, or check at intervals of 5 to 10 minutes.
@@ -224,7 +229,7 @@ For Bot and human notification setup, see [Herdr notify](herdr-notify.md).
 - Limit each artifact to two review rounds.
 - Ask the user to decide before a third review round.
 - Before commit, remove debug writes to `/tmp` and other debug instrumentation.
-- Before commit, get a cross-model read-only review when tests and implementation change together.
+- Get one cross-model read-only review when tests and implementation change together. The reviewer checks that assertions still test the required behavior.
 
 Known flaky test: `tests/herdr-task-lifecycle.test.ts`, "MCP goals use visible persistent Herdr peers, redact history and clean success and timeout panes", can fail with `task_agent_ambiguous_launch`. Record this failure as known flaky. Do not skip the test or weaken its assertions. Do not treat this signature as a new failure.
 
