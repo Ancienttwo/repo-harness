@@ -434,6 +434,9 @@ describe("sprint-backlog helper", () => {
       expect(existsSync(join(cwd, ".ai/harness/sprint/claims"))).toBe(false);
 
       const plan = readFileSync(join(cwd, planPath), "utf-8");
+      for (const field of ["P1 map:", "P2 trace:", "P3 decision rationale:"]) {
+        expect(plan).not.toContain(field);
+      }
       expect(plan).toContain("> **Status**: Approved");
       expect(plan).toContain("> **Planning Source**: repo-harness-sprint");
       expect(plan).toContain(`> **Source Ref**: sprint:${sprintPath}#task-a`);
