@@ -23,11 +23,9 @@ const currentCheck = {
 } as const;
 
 describe("Verification Plan schema", () => {
-  test("canonical source and installed templates emit a valid Verification Plan", () => {
+  test("downstream contract template emits a valid explicit Verification Plan", () => {
     const root = resolve(import.meta.dir, "../..");
     const source = readFileSync(resolve(root, "assets/templates/contract.template.md"), "utf8");
-    const installed = readFileSync(resolve(root, ".claude/templates/contract.template.md"), "utf8");
-    expect(installed).toBe(source);
     const plan = parseVerificationPlanFromContractText(source.replaceAll("{{TASK_SLUG}}", "example"));
     expect(plan.checks).toEqual([]);
   });

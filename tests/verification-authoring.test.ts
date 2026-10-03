@@ -15,16 +15,15 @@ function oldContract(): string {
 }
 
 describe("verification-plan authoring cutover", () => {
-  test("ships one canonical executable block in both contract template projections", () => {
+  test("downstream contract template retains one optional executable block", () => {
     const asset = readFileSync(join(ROOT, "assets/templates/contract.template.md"), "utf-8");
-    const installed = readFileSync(join(ROOT, ".claude/templates/contract.template.md"), "utf-8");
 
     expect(asset).toContain("## Verification Plan");
     expect(asset).toContain('"protocol": 1');
     expect(asset).not.toContain("tests_pass:");
     expect(asset).not.toContain("commands_succeed:");
     expect(asset).not.toContain("criterion_reuse:");
-    expect(installed).toBe(asset);
+    // Self-host optional templates are independently maintained after #483.
 
     const planToTodo = readFileSync(join(ROOT, "scripts/plan-to-todo.sh"), "utf-8");
     const ensure = readFileSync(join(ROOT, "scripts/ensure-task-workflow.sh"), "utf-8");

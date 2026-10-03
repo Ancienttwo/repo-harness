@@ -5,28 +5,7 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { pathToFileURL } from 'url';
 
-// Edit-guard fixtures for the mutation-guard.ts (HRD-03; formerly
-// pre-edit-guard.sh) fail-closed default branch (2026-07-20 falsifier
-// resolution): any plan status outside the single authority --
-// .ai/harness/policy.json's active_plan.statuses array -- deterministically
-// blocks implementation edits, while every status in that array (including
-// Blocked/Review, added by owner decision) behaves exactly as before.
-// Covers: malformed, empty, unrecognized, each known-good status, and the
-// missing-authority case (policy.json lacks the array).
-//
-// Migrated from a direct `bash assets/hooks/pre-edit-guard.sh` spawn to
-// exercising the handler through `runHook()` (HRD-03 test migration):
-// `PreToolUse.edit` binds directly to the typed mutation-guard handler and
-// `runHook()` dispatches that handler unconditionally, so the fixture
-// repo below never needs `.ai/hooks` at all. `preEdit()` still spawns
-// exactly one subprocess per call -- a `bun -e` wrapper importing and
-// calling `runHook()` in-process -- purely so this test can observe real
-// host-visible fd1/fd2 output (`RunHookResult` itself carries no
-// stdout/stderr text; the previous single `bash` spawn served the same
-// "capture real process output" role). REPO_HARNESS_CLI /
-// REPO_HARNESS_HOOK_CLI are gone: the handler calls `resolveEffectiveState`
-// and `recordCircuitAttempt` in-process, so there is no CLI subprocess left
-// to point at.
+// Optional plan metadata cannot authorize or block ordinary edits.
 const ROOT = join(import.meta.dir, '..');
 const RUNTIME_MODULE = join(ROOT, 'src/cli/hook/runtime.ts');
 
@@ -118,179 +97,30 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
   });
 }
 
-describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved authority)', () => {
-  test('malformed status blocks with a structured reason naming the status and plan file', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-malformed-')));
-    try {
-      initRepo(cwd);
-      const plan = writeActivePlan(cwd, '!!broken!!');
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('!!broken!!');
-      expect(result.stderr).toContain(plan);
-      expect(result.stderr).toContain('not in the known-status authority');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('empty status blocks with a structured reason', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-empty-')));
-    try {
-      initRepo(cwd);
-      const plan = 'plans/plan-20260720-0000-gate-fixture.md';
-      // No "> **Status**:" line at all: get_plan_status returns "".
-      writeFileSync(join(cwd, plan), ['# Gate Fixture', ''].join('\n'));
-      writeFileSync(join(cwd, '.ai/harness/active-plan'), `${plan}\n`);
-      writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${cwd}\n`);
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain(plan);
-      expect(result.stderr).toContain('not in the known-status authority');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('unrecognized (but plausible-looking) status blocks -- not just literal garbage', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-unrecognized-')));
-    try {
-      initRepo(cwd);
-      const plan = writeActivePlan(cwd, 'InProgress');
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('InProgress');
-      expect(result.stderr).toContain(plan);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('casing variant of a known status is not byte-equal and blocks', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-casing-')));
-    try {
-      initRepo(cwd);
-      writeActivePlan(cwd, 'executing');
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('executing');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('missing plan file keeps the existing missing_artifact path unchanged', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-missing-plan-')));
-    try {
-      initRepo(cwd);
-      // Active-plan marker points at a plan file that does not exist.
-      writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-does-not-exist.md\n');
-      writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${cwd}\n`);
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('without an active plan');
-      expect(result.stderr).not.toContain('not in the known-status authority');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  describe('each known-good status', () => {
-    for (const status of KNOWN_STATUSES) {
-      test(`'${status}' behaves exactly as today`, () => {
-        const cwd = realpathSync(mkdtempSync(join(tmpdir(), `plan-status-known-${status.toLowerCase()}-`)));
-        try {
-          initRepo(cwd);
-          writeActivePlan(cwd, status);
-          const result = preEdit(cwd, 'src/feature.ts');
-          if (status === 'Draft' || status === 'Annotating') {
-            // Unchanged pre-existing behavior: still blocks, but via the
-            // original Draft/Annotating message, never the new
-            // "not in the known-status authority" reason.
-            expect(result.status).toBe(2);
-            expect(result.stderr).toContain('PlanStatusGuard');
-            expect(result.stderr).toContain(`plan status is ${status}`);
-            expect(result.stderr).not.toContain('not in the known-status authority');
-          } else {
-            // Every other known-good status passes through silently, same
-            // as before this package: no PlanStatusGuard block at all.
-            expect(result.status).toBe(0);
-            expect(result.stdout).not.toContain('PlanStatusGuard');
-            expect(result.stderr).not.toContain('PlanStatusGuard');
-          }
-        } finally {
-          rmSync(cwd, { recursive: true, force: true });
-        }
-      }, 30_000);
-    }
-  });
-
-  test('missing active_plan.statuses array is itself a fail-closed authority-unavailable condition', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-no-authority-')));
-    try {
-      initRepo(cwd, { withStatusesArray: false });
-      // Even a status that would otherwise be perfectly legitimate (Executing)
-      // must still block when the authority itself cannot be read: an
-      // unavailable authority is not "nothing to check against".
-      const plan = writeActivePlan(cwd, 'Executing');
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('policy.json');
-      expect(result.stderr).toContain('active_plan.statuses');
-      expect(result.stderr).not.toContain('not in the known-status authority');
-      expect(result.stderr).not.toContain(plan);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('missing active_plan.lifecycle projection is fail-closed even when the known-status array exists', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-no-lifecycle-')));
-    try {
-      initRepo(cwd, { withLifecycle: false });
-      writeActivePlan(cwd, 'Executing');
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('lifecycle');
-      expect(result.stderr).toContain('policy.json');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('missing policy.json entirely is also fail-closed', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-no-policy-file-')));
-    try {
-      initRepo(cwd, { withStatusesArray: false });
-      rmSync(join(cwd, '.ai/harness/policy.json'));
-      writeActivePlan(cwd, 'Executing');
-      const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('PlanStatusGuard');
-      expect(result.stderr).toContain('policy.json');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test('advice mode reports the same unrecognized status without hard-blocking', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-advice-')));
-    try {
-      initRepo(cwd);
-      writeActivePlan(cwd, 'InProgress');
-      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_EDIT_PLAN_GATE: 'advice' });
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain('PlanStatusGuard');
-      expect(result.stdout).toContain('Advisory');
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
+describe('ordinary edits are independent of optional plan status', () => {
+  for (const status of [...KNOWN_STATUSES, '!!broken!!', '', 'InProgress', 'executing']) {
+    test(`${JSON.stringify(status)} does not become an edit permission`, () => {
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-advisory-')));
+      try {
+        initRepo(cwd); writeActivePlan(cwd, status);
+        const result = preEdit(cwd, 'src/feature.ts');
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout + result.stderr).not.toContain('PlanStatusGuard');
+      } finally { rmSync(cwd, { recursive: true, force: true }); }
+    });
+  }
+  for (const missing of ['plan', 'statuses', 'lifecycle', 'policy'] as const) {
+    test(`missing ${missing} does not block ordinary edits`, () => {
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-missing-')));
+      try {
+        initRepo(cwd, { withStatusesArray: missing !== 'statuses', withLifecycle: missing !== 'lifecycle' });
+        const path = writeActivePlan(cwd, 'Executing');
+        if (missing === 'plan') rmSync(join(cwd, path));
+        if (missing === 'policy') rmSync(join(cwd, '.ai/harness/policy.json'));
+        const result = preEdit(cwd, 'src/feature.ts');
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout + result.stderr).not.toContain('PlanStatusGuard');
+      } finally { rmSync(cwd, { recursive: true, force: true }); }
+    });
+  }
 });

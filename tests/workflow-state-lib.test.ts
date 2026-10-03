@@ -220,27 +220,14 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("verify-sprint treats review Markdown as an AcceptanceReceipt projection only", () => {
-    const helper = readFileSync(
-      join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
-      "utf-8"
-    );
-
-    expect(helper).not.toContain("Recommendation\\*\\*:[[:space:]]*pass");
-    expect(helper).toContain("Review artifact is available for deterministic AcceptanceReceipt projection.");
-    expect(helper).toContain('acceptance-receipt.ts" project');
-  });
-
-  test("verify-sprint scopes source-authority hook resolution to review subjects", () => {
-    for (const path of [
-      join(ROOT, "scripts", "verify-sprint.sh"),
-      join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
-    ]) {
-      const helper = readFileSync(path, "utf-8");
-      expect(helper).toContain('HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" "$callback" "$@"');
-      expect(helper).toContain('workflow_source_authority_call workflow_current_review_subject_value');
-      expect(helper).toContain('acceptance-receipt.ts" verify --contract "$contract_file"');
-      expect(helper).not.toContain('export HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT"');
+  test("explicit verification does not consume review prose or create acceptance receipts", () => {
+    for (const path of ["scripts/verify-sprint.sh", "assets/templates/helpers/verify-sprint.sh"]) {
+      const helper = readFileSync(join(ROOT, path), "utf-8");
+      expect(helper).not.toContain('acceptance-receipt.ts');
+      expect(helper).not.toContain('workflow_current_review_subject_value');
+      expect(helper).toContain('"$BUN_BIN" run check:type');
+      expect(helper).toContain('"$SCRIPT_DIR/merge-gate.ts" run --base "$base"');
+      expect(helper).toContain('choose local execution or provider evidence consumption');
     }
   });
 

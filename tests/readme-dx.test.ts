@@ -166,8 +166,8 @@ describe("README DX contract", () => {
     expect(readme).toContain("Agent reads first");
     expect(readme).toContain("Human reviews first");
     expect(zhReadme).toContain("## 审查产出");
-    expect(flow).toContain("Agent reads first");
-    expect(flow).toContain("Human reviews first");
+    expect(flow).toContain("Ordinary tasks live in the PR description");
+    expect(flow).toContain("Reviewers and closeout consume the same evidence");
     expect(readme).toContain("external verification manifests");
     expect(readme).toContain("manual convention today");
     expect(readme).toMatch(/not an automatic\s+`repo-harness check` gate/);

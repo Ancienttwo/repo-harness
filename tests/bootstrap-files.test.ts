@@ -154,8 +154,12 @@ describe("Bootstrap Script Contracts", () => {
         expect(read(file)).toContain(`## ${section}\n`);
       }
     }
-    const sharedRules = (content: string) => content.split(/\n## (?:Claude Code|Codex)\n/)[0];
+    // Publication authorization can be stricter for a host without replacing
+    // the standalone sibling's other shared rules or host guidance.
+    const sharedRules = (content: string) => content.split(/\n## (?:Claude Code|Codex)\n/)[0]!
+      .split('\n').filter(line => !line.includes('squash-merge')).join('\n');
     expect(sharedRules(claude)).toBe(sharedRules(agents));
+    expect(agents).toContain('current task explicitly authorizes main publication');
     expect(claude).toContain("## Claude Code");
     expect(claude).toContain("~/.claude/settings.json");
     expect(agents).toContain("## Codex");

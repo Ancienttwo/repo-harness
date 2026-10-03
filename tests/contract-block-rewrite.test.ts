@@ -79,36 +79,6 @@ function runShellSyncEvent(cwd: string, requestFile: string) {
   });
 }
 
-// Run the real replace_contract_block function extracted from
-// context-contract-sync.sh against a source file, returning {status, output}.
-function runShellReplace(sourceContent: string): { status: number | null; output: string | null; stderr: string } {
-  const dir = mkdtempSync(join(tmpdir(), "replace-block-"));
-  try {
-    const src = join(dir, "source.md");
-    const out = join(dir, "out.md");
-    const block = join(dir, "block.md");
-    writeFileSync(src, sourceContent);
-    writeFileSync(
-      block,
-      ["<!-- BEGIN ARCHITECTURE CONTRACT -->", "NEW BLOCK", "<!-- END ARCHITECTURE CONTRACT -->", ""].join("\n"),
-    );
-    const script = [
-      `fn_src="$(sed -n '/^replace_contract_block() {/,/^}$/p' "$1")"`,
-      `[ -n "$fn_src" ] || { echo "failed to extract function" >&2; exit 99; }`,
-      `eval "$fn_src"`,
-      `replace_contract_block "$2" "$3" "$4"`,
-    ].join("\n");
-    const res = spawnSync("bash", ["-c", script, "_", SYNC_SCRIPT, src, out, block], { encoding: "utf-8" });
-    return {
-      status: res.status,
-      output: existsSync(out) && res.status === 0 ? readFileSync(out, "utf-8") : null,
-      stderr: res.stderr,
-    };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 describe("contract block rewrite hardening", () => {
   test("TS sync refuses to rewrite when END marker is missing and leaves files untouched", () => {
     const original = [
@@ -178,41 +148,21 @@ describe("contract block rewrite hardening", () => {
     }
   }, 30_000);
 
-  test("shell replace_contract_block aborts on missing END marker instead of eating content to EOF", () => {
-    const res = runShellReplace(
-      ["intro", "<!-- BEGIN ARCHITECTURE CONTRACT -->", "old", "", "tail content that must survive", ""].join("\n"),
-    );
-    expect(res.status).not.toBe(0);
-    expect(res.stderr).toContain("unbalanced ARCHITECTURE CONTRACT markers");
-  }, 30_000);
+  test.each([
+    ['missing END', ['intro', '<!-- BEGIN ARCHITECTURE CONTRACT -->', 'old', 'human tail'].join('\n')],
+    ['reversed markers', ['<!-- END ARCHITECTURE CONTRACT -->', 'human', '<!-- BEGIN ARCHITECTURE CONTRACT -->'].join('\n')],
+    ['balanced markers', ['intro', '<!-- BEGIN ARCHITECTURE CONTRACT -->', 'old', '<!-- END ARCHITECTURE CONTRACT -->', 'outro'].join('\n')],
+  ])('observation-only shell sync preserves %s and does not create a sibling contract', (_name, original) => {
+    const cwd = makeFixture(original!);
+    try {
+      const result = runShellSyncEvent(cwd, 'none');
+      expect(result.status).toBe(0);
+      expect(readFileSync(join(cwd, 'apps/web/AGENTS.md'), 'utf8')).toBe(original!);
+      expect(existsSync(join(cwd, 'apps/web/CLAUDE.md'))).toBe(false);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
 
-  test("shell replace_contract_block aborts when END precedes BEGIN", () => {
-    const res = runShellReplace(
-      ["<!-- END ARCHITECTURE CONTRACT -->", "x", "<!-- BEGIN ARCHITECTURE CONTRACT -->", ""].join("\n"),
-    );
-    expect(res.status).not.toBe(0);
-  }, 30_000);
-
-  test("shell replace_contract_block replaces balanced block and keeps surrounding content", () => {
-    const res = runShellReplace(
-      [
-        "intro",
-        "<!-- BEGIN ARCHITECTURE CONTRACT -->   ",
-        "old",
-        "<!-- END ARCHITECTURE CONTRACT -->",
-        "outro",
-        "",
-      ].join("\n"),
-    );
-    expect(res.status).toBe(0);
-    expect(res.output).toContain("intro");
-    expect(res.output).toContain("NEW BLOCK");
-    expect(res.output).toContain("outro");
-    expect(res.output).not.toContain("old\n");
-    expect(res.output?.match(/<!-- BEGIN ARCHITECTURE CONTRACT -->/g)?.length).toBe(1);
-  }, 30_000);
-
-  test("shell fallback renders no pending request when the event request has been archived", () => {
+  test("shell observation does not rewrite agent context for an archived request", () => {
     const cwd = mkdtempSync(join(tmpdir(), "context-sync-shell-fallback-"));
     const requestFile = "docs/architecture/requests/apps-web.md";
     try {
@@ -232,7 +182,7 @@ describe("contract block rewrite hardening", () => {
       const res = runShellSyncEvent(cwd, requestFile);
       expect(res.status).toBe(0);
       const agents = readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8");
-      expect(agents).toContain("Pending architecture request: `(none)`");
+      expect(agents).toBe("# Web Context\n");
       expect(agents).not.toContain(`Pending architecture request: \`${requestFile}\``);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

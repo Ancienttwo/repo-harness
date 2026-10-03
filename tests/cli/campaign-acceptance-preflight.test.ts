@@ -48,10 +48,10 @@ test('canonical metadata preflight accepts future outputs without execution, sta
 for (const [name, metadata] of [
   ['missing', ''], ['malformed', evidence.replace('not_applicable', 'optional')],
   ['duplicate', evidence.replace('  benchmark: not_applicable', '  benchmark: not_applicable\n  benchmark: not_applicable')],
-]) test(`campaign admission rejects ${name} benchmark declaration before dispatch`, () => {
+]) test(`campaign admission does not require retired ${name} benchmark declaration`, () => {
   const f = fixture(metadata);
   try {
-    expect(() => runCampaignPlanningPreflight(f.repo, 'task.contract.md')).toThrow(/benchmark|Evidence Requirements/);
+    expect(runCampaignPlanningPreflight(f.repo, 'task.contract.md').ok).toBe(true);
     expect(existsSync(join(f.repo, 'command-ran'))).toBe(false);
     expect(readFileSync(join(f.repo, 'task.contract.md'), 'utf8')).toBe(f.text);
   } finally { f.cleanup(); }
@@ -71,7 +71,7 @@ for (const args of [['--report-file', 'acceptance.json'], ['--force-expensive-re
     try {
       const result = helper(f.repo, args);
       expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain('--preflight cannot');
+      expect(result.stderr).toContain('unsupported argument');
       expect(existsSync(join(f.repo, 'acceptance.json'))).toBe(false);
       expect(existsSync(join(f.repo, 'command-ran'))).toBe(false);
     } finally { f.cleanup(); }
@@ -82,7 +82,7 @@ for (const missing of ['file', 'declaration']) test(`campaign admission rejects 
   try {
     if (missing === 'file') rmSync(join(f.repo, 'task.review.md'));
     else writeFileSync(join(f.repo, 'task.contract.md'), f.text.replace('> **Review File**: task.review.md', ''));
-    expect(() => runCampaignPlanningPreflight(f.repo, 'task.contract.md')).toThrow(/review artifact/);
+    expect(() => runCampaignPlanningPreflight(f.repo, 'task.contract.md')).toThrow(/Review File input is missing|ENOENT|input must be a regular file/);
     expect(existsSync(join(f.repo, 'command-ran'))).toBe(false);
   } finally { f.cleanup(); }
 });
@@ -92,7 +92,7 @@ test('metadata preflight rejects a symlinked review artifact outside the reposit
   try {
     rmSync(join(f.repo, 'task.review.md'));
     symlinkSync(join(other.repo, 'task.review.md'), join(f.repo, 'task.review.md'));
-    expect(() => runCampaignPlanningPreflight(f.repo, 'task.contract.md')).toThrow(/review artifact/);
+    expect(() => runCampaignPlanningPreflight(f.repo, 'task.contract.md')).toThrow(/Review File input is missing|ENOENT|input must be a regular file/);
     expect(existsSync(join(f.repo, 'command-ran'))).toBe(false);
   } finally { f.cleanup(); other.cleanup(); }
 });

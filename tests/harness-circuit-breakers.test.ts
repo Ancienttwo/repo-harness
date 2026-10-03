@@ -372,7 +372,7 @@ describe('workflow circuit breakers', () => {
     }
   }));
 
-  test('real hook callers block guard, subagent, and repair attempts over their limits', () => withRepo((cwd) => {
+  test('private guards and repair caps block while authorized subagent starts remain observational', () => withRepo((cwd) => {
     const env = {
       ...process.env,
       HOOK_REPO_ROOT: cwd,
@@ -400,8 +400,9 @@ describe('workflow circuit breakers', () => {
     }));
     for (let index = 1; index <= 3; index += 1) {
       const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
-      expect(result.exitCode).toBe(index < 3 ? 0 : 2);
-      if (index === 3) expect(result.stderr).toContain('"limit":2');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('[repo-harness:subagent-context]');
+      if (index === 3) expect(readCircuitState(cwd).entries.subagent.count).toBe(3);
     }
 
     rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
@@ -414,8 +415,8 @@ describe('workflow circuit breakers', () => {
     writeFileSync(join(cwd, 'tasks/contracts/20260713-0100-risk.contract.md'), '> **Risk**: high\n');
     for (let index = 1; index <= 4; index += 1) {
       const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
-      expect(result.exitCode).toBe(index < 4 ? 0 : 2);
-      if (index === 4) expect(result.stderr).toContain('"limit":3');
+      expect(result.exitCode).toBe(0);
+      if (index === 4) expect(readCircuitState(cwd).entries.subagent.count).toBe(4);
     }
 
     rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
@@ -430,63 +431,18 @@ describe('workflow circuit breakers', () => {
     }
   }), 30_000);
 
-  test('review and default-zero cross-model caps execute in the prompt runtime', () => withRepo((cwd) => {
-    const root = join(import.meta.dir, '..');
-    mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
-    mkdirSync(join(cwd, 'docs'), { recursive: true });
-    writeFileSync(join(cwd, 'docs/spec.md'), '# Spec\n');
-    writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
-      state_version: 'sha256:state',
-      workflow_profile: 'routine',
-    }));
-    expect(spawnSync('git', ['init', '-b', 'main'], { cwd }).status).toBe(0);
-    expect(spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd }).status).toBe(0);
-    expect(spawnSync('git', ['config', 'user.name', 'Test'], { cwd }).status).toBe(0);
-    expect(spawnSync('git', ['add', '.'], { cwd }).status).toBe(0);
-    expect(spawnSync('git', ['commit', '-m', 'fixture'], { cwd }).status).toBe(0);
-    const env = {
-      ...process.env,
-      HOOK_REPO_ROOT: cwd,
-    };
-    const first = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
-    expect(first.exitCode).toBe(0);
-    expect(first.stdout).toContain('[WazaRoute] Review/release intent detected.');
-    expect(first.stderr).toContain('"guard":"CrossModelLimit"');
-    expect(first.stderr).toContain('"limit":0');
-    expect(first.stderr).not.toContain('claude-review');
-
-    const second = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
-    expect(second.exitCode).toBe(0);
-    expect(second.stdout).not.toContain('[WazaRoute] Review/release intent detected.');
-    expect(second.stderr).toContain('"guard":"ReviewLimit"');
-    expect(second.stderr).toContain('"limit":1');
-
-    rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
-    writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
-      state_version: 'sha256:strict-state',
-      workflow_profile: 'high',
-    }));
-    mkdirSync(join(cwd, 'plans'), { recursive: true });
-    writeFileSync(join(cwd, 'plans/plan-20260713-0200-strict.md'), '# Plan\n\n> **Status**: Executing\n');
-    writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-20260713-0200-strict.md');
-    writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${realpathSync(cwd)}\n`);
-    mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
-    writeFileSync(join(cwd, 'tasks/contracts/20260713-0200-strict.contract.md'), [
-      '> **Workflow Profile**: high',
-      '> **Risk**: high',
-      '',
-    ].join('\n'));
-    const strictFirst = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
-    expect(strictFirst.exitCode).toBe(0);
-    expect(strictFirst.stdout).toContain('[WazaRoute] Review/release intent detected.');
-    expect(strictFirst.stdout).toContain('[CrossReview]');
-    const strictSecond = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
-    expect(strictSecond.stdout).toContain('[WazaRoute] Review/release intent detected.');
-    expect(strictSecond.stderr).toContain('"guard":"CrossModelLimit"');
-    expect(strictSecond.stderr).toContain('"limit":1');
-    const strictThird = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
-    expect(strictThird.stdout).not.toContain('[WazaRoute] Review/release intent detected.');
-    expect(strictThird.stderr).toContain('"guard":"ReviewLimit"');
-    expect(strictThird.stderr).toContain('"limit":2');
+  test('repeated review prompts give advice without consuming review or consult circuits', () => withRepo((cwd) => {
+    for (const profile of ['routine', 'high']) {
+      mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
+      writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({ workflow_profile: profile }));
+      for (let index = 0; index < 3; index += 1) {
+        const result = runPromptHandler({ repoRoot: cwd, input: '{"prompt":"/check"}' });
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('[ReviewAdvice]');
+        expect(result.stdout).toContain('[OperationBoundaries]');
+        expect(result.stderr).toBe('');
+      }
+      expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+    }
   }), 30_000);
 });

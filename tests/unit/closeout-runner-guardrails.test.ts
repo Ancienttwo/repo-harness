@@ -770,12 +770,14 @@ describe('closeout runner guardrails', () => {
     expect(existsSync(descendantSentinel)).toBe(false);
   }, 10_000);
 
-  test('ship delegates sprint verification exclusively to contract-worktree finish', () => {
+  test('closeout consumes the merge gate without rerunning local verification', () => {
     const ship = readFileSync(join(ROOT, 'scripts/ship-worktrees.sh'), 'utf-8');
     const finish = readFileSync(join(ROOT, 'scripts/contract-worktree.sh'), 'utf-8');
 
     expect(ship).not.toContain('run_cmd bash "$helper_dir/verify-sprint.sh"');
-    expect(finish.match(/bash "\$helper_dir\/verify-sprint\.sh"/g) ?? []).toHaveLength(1);
+    expect(finish).not.toContain('bash "$helper_dir/verify-sprint.sh"');
+    expect(finish).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
+    expect(ship).toContain('"$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha');
   });
 
   test('source and packaged ship helpers stay byte-identical', () => {

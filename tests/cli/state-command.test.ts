@@ -28,7 +28,7 @@ function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState
     workflow_profile: 'high',
     requested_workflow_profile: 'high',
     risk_floor: 'routine',
-    profile_reasons: ['explicit-override:raise:strict'],
+    profile_reasons: ['explicit-override:raise:high'],
     profile_signals: null,
     allowed_paths: ['src/'],
     next_action: 'implement adapter convergence',
@@ -112,7 +112,7 @@ describe('resolveStateCommand', () => {
   test('keeps field output, blocker suppression, and unknown-field exit semantics', () => {
     expect(run(effectiveState(), { field: 'workflow_profile' })).toEqual({
       exitCode: 0,
-      stdout: 'strict\n',
+      stdout: 'high\n',
       stderr: '',
     });
     expect(run(effectiveState(), { field: 'blockers' })).toEqual({

@@ -5,7 +5,7 @@
   "cli_stderr": "",
   "field": {
     "exit": 0,
-    "stdout": "lite\n",
+    "stdout": "routine\n",
     "stderr": ""
   },
   "state": {
@@ -16,18 +16,18 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:f5a3c1f0fe5500cdd78614cc9d6067db2f97c9be62ac2c4eaa757a343c259ad5",
-    "evidence_revision": "sha256:91534084cf775e755e7214290ec89415552665e3b3ad5cf4d572c227ffae9d8d",
+    "subject_revision": "sha256:d47a6db34690d8f06c48754bcfebc48cd85231cd31268fedf43f67222a3afd2e",
+    "evidence_revision": "sha256:eeaf5a36bc4014c12dbc3478d21cc308c709e6f1d79710e28c1b56b82061220c",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:962805f932cd41bc81b88363258371b1a0f0b1544a85828c264311079096d490",
+    "progress_token": "sha256:e4fa30527226b6d72a0fad83c466ca28f350abe054ad92fd78c72024c962efdb",
     "authoritative_plan": null,
     "contract": null,
     "task_profile": null,
-    "workflow_profile": "lite",
+    "workflow_profile": "routine",
     "requested_workflow_profile": null,
-    "risk_floor": "lite",
+    "risk_floor": "routine",
     "profile_reasons": [
-      "risk-floor:lite:local-low-risk",
+      "risk-floor:routine:local-change",
       "capability:registry:absent"
     ],
     "profile_signals": {
@@ -40,7 +40,7 @@
     },
     "allowed_paths": [],
     "next_action": null,
-    "guidance": "brief -> edit -> targeted test; no workflow artifacts are required for the currently observed scope. User-requested planning is allowed. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
+    "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
       "checks",
@@ -102,17 +102,10 @@
     "readiness": {
       "ok": true,
       "allowedToEdit": {
-        "decision": "block",
-        "reasons": [
-          "required_safe_path_missing",
-          "required_destructive_action_boundary_missing"
-        ]
+        "decision": "allow"
       },
       "allowedToStop": {
-        "decision": "block",
-        "reasons": [
-          "required_recovery_state_missing"
-        ]
+        "decision": "allow"
       },
       "readyToShip": {
         "decision": "block",
@@ -125,31 +118,20 @@
           {
             "key": "safe_path",
             "status": "required",
-            "satisfied": false
-          },
-          {
-            "key": "worktree_boundary",
-            "status": "required",
             "satisfied": true
-          },
-          {
-            "key": "destructive_action_boundary",
-            "status": "required",
-            "satisfied": false
           }
         ],
-        "stop": [
-          {
-            "key": "durable_recovery_state",
-            "status": "required",
-            "satisfied": false
-          }
-        ],
+        "stop": [],
         "ship": [
           {
             "key": "subject_bound_targeted_evidence",
             "status": "required",
             "satisfied": false
+          },
+          {
+            "key": "candidate_revision_precondition",
+            "status": "required",
+            "satisfied": true
           }
         ]
       },

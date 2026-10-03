@@ -86,18 +86,16 @@ describe("Claude Code hook protocol compliance", () => {
   //   1. exit with code 2
   //   2. write a human-readable [Guard] reason + fix to stderr
 
-  test("worktree-guard: block path uses exit 2 with reason on stderr", () => {
+  test("worktree marker does not block ordinary edits", () => {
     const cwd = tmpWorkspace("hook-proto-worktree");
     try {
       initGitRepo(cwd);
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/.require-worktree"), "1\n");
 
-      const res = runEditHandler(cwd, {});
-      expect(res.status).toBe(2);
-      expect(res.stderr).toContain("[WorktreeGuard]");
-      expect(res.stderr).toContain("Primary working tree detected");
-      expect(res.stderr).toContain("linked worktree");
+      const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } });
+      expect(res.status).toBe(0);
+      expect(res.stderr).not.toContain("[WorktreeGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -131,7 +129,7 @@ describe("Claude Code hook protocol compliance", () => {
     }
   }, 30_000);
 
-  test("pre-edit-guard: ContractScopeGuard uses exit 2 with reason on stderr", () => {
+  test("pre-edit-guard: contract scope deviation is advisory", () => {
     // This is the exact regression that surfaced as
     // "PreToolUse:Edit hook error / Failed with non-blocking status code: No stderr output".
     const cwd = tmpWorkspace("hook-proto-contract-scope");
@@ -162,16 +160,17 @@ describe("Claude Code hook protocol compliance", () => {
       );
 
       const res = runEditHandler(cwd, { tool_input: { file_path: "README.md" } });
-      expect(res.status).toBe(2);
-      expect(res.stderr).toContain("[ContractScopeGuard]");
-      expect(res.stderr).toContain("outside");
-      expect(res.stderr).toContain("allowed_paths");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[ContractScopeGuard] Advisory:");
+      expect(res.stdout).toContain("outside");
+      expect(res.stdout).toContain("include the scope deviation in the PR");
+      expect(res.stderr).toBe("");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("pre-edit-guard: PlanTransitionGuard uses exit 2 with reason on stderr", () => {
+  test("pre-edit-guard: plan transition does not gate ordinary edits", () => {
     const cwd = tmpWorkspace("hook-proto-plan-transition");
     try {
       initGitRepo(cwd);
@@ -188,14 +187,14 @@ describe("Claude Code hook protocol compliance", () => {
             "# Plan: demo\n\n> **Status**: Approved\n\n## Annotations\n<!-- [NOTE]: add detail -->\n",
         },
       });
-      expect(res.status).toBe(2);
-      expect(res.stderr).toContain("[PlanTransitionGuard]");
+      expect(res.status).toBe(0);
+      expect(res.stderr).not.toContain("[PlanTransitionGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("pre-edit profile resolution fails closed with exit 2 and remediation", () => {
+  test("corrupt profile authority remains diagnosed without blocking ordinary edits", () => {
     const cwd = tmpWorkspace("hook-proto-plan-status");
     try {
       initGitRepo(cwd);
@@ -208,22 +207,13 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
 
-      // Prompt layer is advisory for plan status; the edit-layer plan gate is
-      // the blocking enforcement point.
+      // Ordinary prompt/edit routes observe workflow state without gating on it.
       const promptRes = runPromptHandler({ repoRoot: cwd, input: JSON.stringify({ user_message: "/execute" }) });
       expect(promptRes.exitCode).toBe(0);
-      expect(promptRes.stdout).toContain("[PlanStatusGuard]");
+      expect(promptRes.stdout).toContain("[OperationBoundaries]");
 
-      // HRD-03: the old failing-resolver-subprocess-substitution mechanism
-      // (REPO_HARNESS_CLI pointed at a script that exits 1) cannot occur
-      // in-process -- there is no subprocess CLI lookup left to degrade
-      // (see runtime-profile-enforcement.test.ts's retired fake-CLI tests
-      // for the same reasoning). Retargeted to a real fail-closed
-      // resolution instead (a declared-but-corrupt capability registry,
-      // the same technique runtime-profile-enforcement.test.ts's
-      // "a declared-but-corrupt capability registry blocks..." test uses):
-      // the assertions below -- exit 2, "[WorkflowProfileGuard]" on stderr
-      // -- are unchanged from the original test.
+      // Real malformed capability authority remains visible in Effective State
+      // and edit advice; it cannot become an ordinary edit permission gate.
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/policy.json"),
@@ -232,14 +222,15 @@ describe("Claude Code hook protocol compliance", () => {
       writeFileSync(join(cwd, ".ai/context/capabilities.json"), "{not json");
 
       const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } }, { profile: 'routine' });
-      expect(res.status).toBe(2);
-      expect(res.stderr).toContain("[WorkflowProfileGuard]");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[WorkflowObservation]");
+      expect(res.stdout).toContain("capability_registry");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("prompt-guard: ContractGuard uses exit 2 with reason on stderr", () => {
+  test("ordinary completion prompt bypasses task-contract ceremony", () => {
     const cwd = tmpWorkspace("hook-proto-contract-missing");
     try {
       initGitRepo(cwd);
@@ -264,9 +255,9 @@ describe("Claude Code hook protocol compliance", () => {
       writeActivePlan(cwd, "plans/plan-20260528-1400-demo.md");
 
       const res = runPromptHandler({ repoRoot: cwd, input: JSON.stringify({ user_message: "done" }) });
-      expect(res.exitCode).toBe(2);
-      expect(res.stderr).toContain("[ContractGuard]");
-      expect(res.stderr).toContain("Missing task contract");
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toBe("");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -331,7 +322,7 @@ describe("Claude Code hook protocol compliance", () => {
       const res = runEditHandler(cwd, { tool_input: { file_path: outsidePath } });
       expect(res.status).toBe(0);
       expect(res.stderr).not.toContain("[ContractScopeGuard]");
-      expect(res.stdout).not.toContain("[ContractScopeGuard]");
+      expect(res.stdout).not.toContain("\"guard\":\"ContractScopeGuard\"");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(outsideRoot, { recursive: true, force: true });
@@ -394,13 +385,13 @@ describe("Claude Code hook protocol compliance", () => {
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/.require-worktree"), "1\n");
 
-      const res = runEditHandler(cwd, {});
+      const res = runEditHandler(cwd, { tool_input: { file_path: "_ops/private.env" } });
       expect(res.status).toBe(2);
       // stderr keeps the human-readable diagnostic (this is what Claude / the user reads).
-      expect(res.stderr).toContain("[WorktreeGuard]");
+      expect(res.stderr).toContain("[OpsPrivateGuard]");
       // stdout still emits the structured telemetry JSON (existing trace/log consumers depend on it).
       expect(res.stdout).toContain('"failure_class":"state_violation"');
-      expect(res.stdout).toContain('"guard":"WorktreeGuard"');
+      expect(res.stdout).toContain('"guard":"OpsPrivateGuard"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -778,14 +778,9 @@ describe("checks-materializer: no-independent-authoring", () => {
     // exec bit), so the local byte-equality restatement is gone.
   });
 
-  // Residual finding 2b (orchestrator ruling): mutation-observed.ts's own
-  // continuous contract-verification cascade was a THIRD, previously
-  // unnamed direct-authoring path for checks/latest.json (verify-contract.sh
-  // --report-file defaulted to the acceptance checks_file). Proven directly
-  // here -- not by exclusion from the grep sweep above -- that a real
-  // qualifying edit's contract-verification target never resolves to the
-  // acceptance-evidence path.
-  test("mutation-observed.ts's continuous-verification report target is never the acceptance checks_file", () => {
+  // Ordinary edits no longer schedule contract verification. Retain the
+  // no-independent-authoring invariant at the actual mutation handler.
+  test("ordinary mutation never schedules contract verification or authors acceptance checks", () => {
     const cwd = mkdtempSync(join(tmpdir(), "materializer-mutation-observed-redirect-"));
     try {
       execFileSync("git", ["init", "-q", "-b", "main"], { cwd });
@@ -834,12 +829,11 @@ describe("checks-materializer: no-independent-authoring", () => {
       expect(result.exitCode).toBe(0);
 
       const events = readPendingPostEditEvents(cwd);
-      expect(events.length).toBe(1);
-      expect(events[0]!.dirty["contract-verification"]).toBe(true);
-      const target = events[0]!.payload.contract_verification;
-      expect(target).toBeDefined();
-      expect(target!.checks_file).not.toBe(".ai/harness/checks/latest.json");
-      expect(target!.checks_file).toBe(".ai/harness/checks/contract-verify.latest.json");
+      for (const event of events) {
+        expect(event.dirty["contract-verification"]).toBe(false);
+        expect(event.payload.contract_verification).toBeUndefined();
+      }
+      expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -15,8 +15,6 @@ const CI_PATH = join(ROOT, ".github/workflows/ci.yml");
 const SCRIPT_PATH = join(ROOT, "scripts/check-agent-tooling.sh");
 const SEED_PATHS = [
   join(ROOT, "scripts/lib/project-init-lib.sh"),
-  join(ROOT, "scripts/ensure-task-workflow.sh"),
-  join(ROOT, "assets/templates/helpers/ensure-task-workflow.sh"),
 ];
 
 function readPolicy() {
@@ -24,11 +22,12 @@ function readPolicy() {
 }
 
 function herdrInstallStep() {
-  const workflow = readFileSync(CI_PATH, "utf8");
-  const start = workflow.indexOf("      - name: Install pinned Herdr runtime\n");
-  expect(start).toBeGreaterThanOrEqual(0);
-  const next = workflow.indexOf("\n      - name: ", start + 1);
-  return workflow.slice(start, next === -1 ? undefined : next);
+  const workflow = Bun.YAML.parse(readFileSync(CI_PATH, "utf8")) as {
+    jobs: { test: { steps: Array<{ name?: string; run?: string }> } };
+  };
+  const step = workflow.jobs.test.steps.find(entry => entry.name === 'Install pinned Herdr runtime');
+  expect(step?.run).toBeDefined();
+  return step!.run!;
 }
 
 describe("herdr runtime pin has one source of truth", () => {

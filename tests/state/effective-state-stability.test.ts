@@ -37,10 +37,9 @@ import type { EffectiveState } from '../../src/core/state/types';
 // This guard proves both falsifier directions named in the task contract
 // (tasks/contracts/20260723-0620-hook-guard-stability.contract.md):
 //   (a) churn confined to a non-authority source must not abort resolution
-//       or surface as the unresolvable-profile block.
-//   (b) a genuine plan-contract conflict (the artifact-parsers
-//       planContractRelationshipConflicts shape) must still block with
-//       today's exact WorkflowProfileGuard message and exit code.
+//       or lose its resolved profile.
+//   (b) a genuine plan-contract conflict remains a state blocker and an edit
+//       observation, without gating ordinary edits.
 //
 // On unfixed code, direction (a) is expected to be RED (the resolution
 // throws under sustained non-authority churn, so `failure` is non-null and
@@ -177,7 +176,7 @@ describe('Effective State stability contract: authority-only partition (hook-gua
     }
   }, 15_000);
 
-  test('a genuine plan-contract conflict still blocks with the exact WorkflowProfileGuard message and exit code', () => {
+  test('a genuine plan-contract conflict remains diagnosed while ordinary edits continue', () => {
     const fixture = createEffectiveStateFixture();
     try {
       // artifact-parsers' planContractRelationshipConflicts shape: the
@@ -185,8 +184,8 @@ describe('Effective State stability contract: authority-only partition (hook-gua
       // plan path, so resolveEffectiveState pushes
       // 'contract_plan_relationship' into conflictingSources, which
       // projectEffectiveState turns into the hard blocker
-      // 'conflict:contract_plan_relationship'. This is a genuinely blocked
-      // resolution (no throw at all) and must stay byte-identical.
+      // 'conflict:contract_plan_relationship'. State keeps the exact blocker;
+      // the ordinary edit adapter reports it as advice.
       const current = readFileSync(join(fixture.cwd, CONTRACT), 'utf-8');
       writeFixture(fixture.cwd, CONTRACT, current.replace(
         /^> \*\*Plan\*\*: .*$/m,
@@ -220,9 +219,9 @@ describe('Effective State stability contract: authority-only partition (hook-gua
         env: {},
       });
 
-      expect(result.exitCode).toBe(2);
-      expect(result.stdout).toContain('[WorkflowProfileGuard] Unable to resolve a deterministic workflow profile for src/feature.ts');
-      expect(result.stderr).toContain('[WorkflowProfileGuard] Deterministic workflow profile resolution failed for src/feature.ts.');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('[WorkflowObservation] conflict:contract_plan_relationship; edit may continue.');
+      expect(result.stderr).toBe('');
     } finally {
       fixture.cleanup();
     }

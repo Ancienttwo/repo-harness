@@ -571,7 +571,7 @@ describe('one slice, two hosts, identical bytes', () => {
     expect(secondPrompt.match(/\[repo-harness:return-channel\]/g)?.length).toBe(1);
   });
 
-  test('SendUserMessage keeps its deny semantics and carries no slice', () => {
+  test('SendUserMessage records return-channel guidance and carries no slice or permission decision', () => {
     const deny = runSubagentHandler({
       event: 'PreToolUse',
       repoRoot: fixture.worktree,
@@ -579,10 +579,11 @@ describe('one slice, two hosts, identical bytes', () => {
       input: JSON.stringify({ tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } }),
     });
     expect(deny.stdout).not.toContain(BOARD_SLICE_MARKER);
-    const decision = (JSON.parse(deny.stdout) as {
-      hookSpecificOutput: { permissionDecision: string };
-    }).hookSpecificOutput.permissionDecision;
-    expect(decision).toBe('deny');
+    const output = (JSON.parse(deny.stdout) as {
+      hookSpecificOutput: { permissionDecision?: string; additionalContext: string };
+    }).hookSpecificOutput;
+    expect(output.permissionDecision).toBeUndefined();
+    expect(output.additionalContext).toContain('full report in final text');
 
     const mainLoop = runSubagentHandler({
       event: 'PreToolUse',
@@ -694,18 +695,19 @@ describe('the lease gate stays inert unless the unit is verifiably sprint-bound'
 // Armed refusals: one case per step, each with its own reason token
 // ---------------------------------------------------------------------------
 
-describe('once armed, every step fails closed with its own reason token', () => {
+describe('once armed, lease anomalies remain advisory with their own reason token', () => {
   let fixture: Fixture;
   beforeEach(() => { fixture = buildFixture(); armFixture(fixture); });
   afterEach(() => fixture.cleanup());
 
-  function expectRefusal(result: ReturnType<typeof edit>, token: string): void {
-    expect(result.exitCode).toBe(2);
+  function expectLeaseObservation(result: ReturnType<typeof edit>, token: string): void {
+    expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`[LeaseOwnershipGuard] ${token}:`);
-    const record = JSON.parse(result.stdout.trim().split('\n').at(-1)!) as Record<string, unknown>;
+    const record = result.stdout.split('\n').filter(line => line.startsWith('{'))
+      .map(line => JSON.parse(line) as Record<string, unknown>).find(entry => entry.guard === 'LeaseOwnershipGuard')!;
     expect(record.guard).toBe('LeaseOwnershipGuard');
     expect(record.failure_class).toBe('contract_failure');
-    expect(record.action).toBe('block');
+    expect(record.action).toBe('advisory');
   }
 
   test('step 1 -- two tokens name the same unit: lease_claim_token_ambiguous', () => {
@@ -716,36 +718,36 @@ describe('once armed, every step fails closed with its own reason token', () => 
       unitRef: PLAN_PATH,
     });
     const result = edit(fixture.worktree);
-    expectRefusal(result, 'lease_claim_token_ambiguous');
-    // Ambiguity is refused before any collection: there is nothing to validate.
+    expectLeaseObservation(result, 'lease_claim_token_ambiguous');
+    // Ambiguity is recorded before collection: there is nothing to validate.
     expect(collectCalls).toBe(0);
   });
 
   test('step 2 -- no readable owner record: lease_owner_unreadable', () => {
     rmSync(join(coordinationRoot(fixture.primary), 'leases', fixture.ownTaskId), { recursive: true, force: true });
-    expectRefusal(edit(fixture.worktree), 'lease_owner_unreadable');
+    expectLeaseObservation(edit(fixture.worktree), 'lease_owner_unreadable');
   });
 
   test('step 2 -- the claim moved: lease_owner_claim_mismatch', () => {
     writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-taken-over', generation: 2 }));
     const result = edit(fixture.worktree);
-    expectRefusal(result, 'lease_owner_claim_mismatch');
-    expect(result.stderr).toContain('claim-taken-over');
+    expectLeaseObservation(result, 'lease_owner_claim_mismatch');
+    expect(result.stdout).toContain('claim-taken-over');
   });
 
   test('step 3 -- the lease is not bound: lease_state_not_bound', () => {
     writeLease(fixture, ownerRecord(fixture, { state: 'reserving', execution_worktree: null, branch: null }));
-    expectRefusal(edit(fixture.worktree), 'lease_state_not_bound');
+    expectLeaseObservation(edit(fixture.worktree), 'lease_state_not_bound');
   });
 
   test('step 4 -- bound to a different worktree: lease_owner_tree_mismatch', () => {
     writeLease(fixture, ownerRecord(fixture, { execution_worktree: join(fixture.primary, '..', 'other-tree') }));
-    expectRefusal(edit(fixture.worktree), 'lease_owner_tree_mismatch');
+    expectLeaseObservation(edit(fixture.worktree), 'lease_owner_tree_mismatch');
   });
 
   test('step 4 -- bound to a different branch: lease_owner_tree_mismatch', () => {
     writeLease(fixture, ownerRecord(fixture, { branch: 'codex/some-other-branch' }));
-    expectRefusal(edit(fixture.worktree), 'lease_owner_tree_mismatch');
+    expectLeaseObservation(edit(fixture.worktree), 'lease_owner_tree_mismatch');
   });
 
   test('step 5 -- the canonical definition drifted: lease_task_revision_drifted', () => {
@@ -759,22 +761,22 @@ describe('once armed, every step fails closed with its own reason token', () => 
         acceptanceCell: 'the acceptance line this row used to carry',
       }),
     }));
-    expectRefusal(edit(fixture.worktree), 'lease_task_revision_drifted');
+    expectLeaseObservation(edit(fixture.worktree), 'lease_task_revision_drifted');
   });
 
-  test('an armed collection failure fails closed rather than passing quietly', () => {
+  test('an armed collection failure is recorded without blocking the edit', () => {
     collectThrows = 'coordination state unreadable';
     const result = edit(fixture.worktree);
-    expectRefusal(result, 'lease_state_unreadable');
+    expectLeaseObservation(result, 'lease_state_unreadable');
     expect(collectCalls).toBe(1);
   });
 
-  test('an armed tree with no active sprint marker fails closed', () => {
+  test('an armed tree with no active sprint marker records an advisory', () => {
     rmSync(join(fixture.worktree, '.ai/harness/sprint/active-sprint'), { force: true });
-    expectRefusal(edit(fixture.worktree), 'lease_sprint_unresolvable');
+    expectLeaseObservation(edit(fixture.worktree), 'lease_sprint_unresolvable');
   });
 
-  test('the refusal precedes the Effective State resolution', () => {
+  test('a lease anomaly does not prevent Effective State resolution', () => {
     writeLease(fixture, ownerRecord(fixture, { claim_id: 'claim-taken-over' }));
     let resolutions = 0;
     const result = runMutationGuard({
@@ -782,7 +784,7 @@ describe('once armed, every step fails closed with its own reason token', () => 
       input: JSON.stringify({ tool_input: { file_path: 'src/feature.ts' } }),
       env: {},
     });
-    expect(result.exitCode).toBe(2);
-    expect(resolutions).toBe(0);
+    expect(result.exitCode).toBe(0);
+    expect(resolutions).toBe(1);
   });
 });

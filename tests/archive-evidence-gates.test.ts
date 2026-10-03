@@ -351,18 +351,7 @@ describe("archive evidence gates", () => {
     }
   });
 
-  test("contract-worktree does not mask Sprint backlog projection failures", () => {
-    const source = readFileSync(join(ROOT, "scripts/contract-worktree.sh"), "utf-8");
-    expect(source).toContain('backfill_sprint_backlog "$active_plan"');
-    expect(source).not.toContain('backfill_sprint_backlog "$active_plan" || true');
-    expect(source).toContain("Sprint backlog back-fill failed");
-    expect(source).toContain("finish is incomplete");
-    expect(source).toContain("finish_transaction_begin");
-    expect(source).toContain("finish_transaction_abort");
-    expect(source).toContain("restored live workflow artifacts");
-  });
-
-  test("contract-worktree restores live workflow state after backfill failure and a retry succeeds", () => {
+  test("contract-worktree no-merge finish preserves live artifacts and does not invoke retired backfill", () => {
     withTempRepo("contract-worktree-transaction", (container) => {
       const primary = join(container, "primary");
       const linked = join(container, "linked");
@@ -518,22 +507,24 @@ describe("archive evidence gates", () => {
       const planBefore = readFileSync(join(linked, plan), "utf-8");
       const tasksBefore = readFileSync(join(linked, "tasks/current.md"), "utf-8");
       const sprintBefore = readFileSync(join(linked, sprint), "utf-8");
-      const failed = run("scripts/contract-worktree.sh", ["finish", "--no-merge"], linked, {
+      const finished = run("scripts/contract-worktree.sh", ["finish", "--no-merge"], linked, {
         SPRINT_BACKFILL_FAIL: "1",
       });
-      expect(failed.status).toBe(1);
-      expect(failed.stderr).toContain("injected sprint backfill failure");
-      expect(failed.stderr).toContain("restored live workflow artifacts");
+      expect(finished.status, `${finished.stdout}\n${finished.stderr}`).toBe(0);
+      expect(finished.stdout).toContain("no main merge or additional verification was performed");
+      expect(finished.stderr).not.toContain("injected sprint backfill failure");
       expect(readFileSync(join(linked, plan), "utf-8")).toBe(planBefore);
       expect(readFileSync(join(linked, "tasks/current.md"), "utf-8")).toBe(tasksBefore);
       expect(readFileSync(join(linked, sprint), "utf-8")).toBe(sprintBefore);
       expect(existsSync(join(linked, "plans/archive/plan-20260711-1200-demo.md"))).toBe(false);
 
+      const committedHead = runProcess("git", ["rev-parse", "HEAD"], linked).stdout.trim();
       const retry = run("scripts/contract-worktree.sh", ["finish", "--no-merge"], linked);
       expect(retry.status).toBe(0);
-      expect(existsSync(join(linked, plan))).toBe(false);
-      expect(existsSync(join(linked, "plans/archive/plan-20260711-1200-demo.md"))).toBe(true);
-      expect(readFileSync(join(linked, sprint), "utf-8")).toContain("| retry | passed |");
+      expect(existsSync(join(linked, plan))).toBe(true);
+      expect(existsSync(join(linked, "plans/archive/plan-20260711-1200-demo.md"))).toBe(false);
+      expect(readFileSync(join(linked, sprint), "utf-8")).toBe(sprintBefore);
+      expect(runProcess("git", ["rev-parse", "HEAD"], linked).stdout.trim()).toBe(committedHead);
     });
   }, 15_000);
 
