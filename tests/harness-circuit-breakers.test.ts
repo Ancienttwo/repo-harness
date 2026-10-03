@@ -43,7 +43,7 @@ function editHandlerResult(cwd: string, filePath: string): { status: number | nu
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
     kind: 'guard', guard: 'scope', reason: 'outside allowed paths', pathOrAction: 'src/secret.ts',
-    progressToken: 'sha256:progress', fingerprint: 'sha256:guard', profile: 'lite', ...overrides,
+    progressToken: 'sha256:progress', fingerprint: 'sha256:guard', profile: 'routine', ...overrides,
   };
 }
 
@@ -189,10 +189,10 @@ describe('workflow circuit breakers', () => {
   }));
 
   test('profile caps match review, subagent, repair, and consult contracts', () => {
-    expect(circuitLimit(attempt({ kind: 'review', profile: 'lite' }))).toBe(1);
-    expect(circuitLimit(attempt({ kind: 'review', profile: 'strict' }))).toBe(2);
-    expect(circuitLimit(attempt({ kind: 'subagent', profile: 'standard' }))).toBe(2);
-    expect(circuitLimit(attempt({ kind: 'subagent', profile: 'strict', explicitHighRiskContract: true }))).toBe(3);
+    expect(circuitLimit(attempt({ kind: 'review', profile: 'routine' }))).toBe(1);
+    expect(circuitLimit(attempt({ kind: 'review', profile: 'high' }))).toBe(2);
+    expect(circuitLimit(attempt({ kind: 'subagent', profile: 'routine' }))).toBe(2);
+    expect(circuitLimit(attempt({ kind: 'subagent', profile: 'high', explicitHighRiskContract: true }))).toBe(3);
     expect(circuitLimit(attempt({ kind: 'repair' }))).toBe(2);
     expect(circuitLimit(attempt({ kind: 'cross-model-consult' }))).toBe(0);
     expect(circuitLimit(attempt({ kind: 'cross-model-consult', riskTriggeredConsult: true }))).toBe(1);
@@ -201,9 +201,9 @@ describe('workflow circuit breakers', () => {
   });
 
   test('keeps independent runtime counters per circuit kind', () => withRepo((cwd) => {
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'review', profile: 'lite' })).allowed).toBe(true);
+    expect(recordCircuitAttempt(cwd, attempt({ kind: 'review', profile: 'routine' })).allowed).toBe(true);
     expect(recordCircuitAttempt(cwd, attempt({ kind: 'subagent' })).allowed).toBe(true);
-    expect(recordCircuitAttempt(cwd, attempt({ kind: 'review', profile: 'lite' }))).toMatchObject({
+    expect(recordCircuitAttempt(cwd, attempt({ kind: 'review', profile: 'routine' }))).toMatchObject({
       allowed: false,
       repeat_count: 2,
       limit: 1,
@@ -396,7 +396,7 @@ describe('workflow circuit breakers', () => {
     mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
     writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
       state_version: 'sha256:state',
-      workflow_profile: 'standard',
+      workflow_profile: 'routine',
     }));
     for (let index = 1; index <= 3; index += 1) {
       const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
@@ -407,7 +407,7 @@ describe('workflow circuit breakers', () => {
     rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
     writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
       state_version: 'sha256:strict-state',
-      workflow_profile: 'strict',
+      workflow_profile: 'high',
     }));
     writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-20260713-0100-risk.md');
     mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
@@ -422,7 +422,7 @@ describe('workflow circuit breakers', () => {
     for (let index = 1; index <= 3; index += 1) {
       const result = runCommandObserved({
         repoRoot: cwd,
-        env: { ...env, REPO_HARNESS_WORKFLOW_PROFILE: 'standard' },
+        env: { ...env, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
         input: JSON.stringify({ tool_input: { command: 'bun test' }, tool_output: 'FAIL test', exit_code: 1 }),
       });
       expect(result.exitCode).toBe(index < 3 ? 0 : 2);
@@ -437,7 +437,7 @@ describe('workflow circuit breakers', () => {
     writeFileSync(join(cwd, 'docs/spec.md'), '# Spec\n');
     writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
       state_version: 'sha256:state',
-      workflow_profile: 'standard',
+      workflow_profile: 'routine',
     }));
     expect(spawnSync('git', ['init', '-b', 'main'], { cwd }).status).toBe(0);
     expect(spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd }).status).toBe(0);
@@ -464,7 +464,7 @@ describe('workflow circuit breakers', () => {
     rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
     writeFileSync(join(cwd, '.ai/harness/state/effective.json'), JSON.stringify({
       state_version: 'sha256:strict-state',
-      workflow_profile: 'strict',
+      workflow_profile: 'high',
     }));
     mkdirSync(join(cwd, 'plans'), { recursive: true });
     writeFileSync(join(cwd, 'plans/plan-20260713-0200-strict.md'), '# Plan\n\n> **Status**: Executing\n');
@@ -472,7 +472,7 @@ describe('workflow circuit breakers', () => {
     writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${realpathSync(cwd)}\n`);
     mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
     writeFileSync(join(cwd, 'tasks/contracts/20260713-0200-strict.contract.md'), [
-      '> **Workflow Profile**: strict',
+      '> **Workflow Profile**: high',
       '> **Risk**: high',
       '',
     ].join('\n'));

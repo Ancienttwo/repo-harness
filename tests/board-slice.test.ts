@@ -279,7 +279,7 @@ function collectorFor(repoRoot: string, onResolve?: () => void): MutationGuardCo
         return resolveEffectiveState(repoRoot, Date.now(), {
           targetPaths,
           operationKind: 'edit',
-          explicitOverride: 'lite',
+          explicitOverride: 'routine',
         });
       } catch {
         return null;

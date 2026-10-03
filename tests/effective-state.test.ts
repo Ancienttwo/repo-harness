@@ -143,8 +143,8 @@ describe('effective state resolver', () => {
       const state = resolveEffectiveState(cwd);
       expect(state.allowed_paths).toEqual(['src/', 'tests/effective-state.test.ts']);
       expect(state.workflow_profile).toBeNull();
-      expect(state.risk_floor).toBe('strict');
-      expect(state.profile_reasons).toContain('risk-floor:strict:signals-unavailable');
+      expect(state.risk_floor).toBe('high');
+      expect(state.profile_reasons).toContain('risk-floor:high:signals-unavailable');
       expect(state.blockers).toContain('workflow_profile:invalid_risk_input');
       expect(state.phase).toBe('blocked');
     });
@@ -191,7 +191,7 @@ describe('effective state resolver', () => {
     });
   }, 30_000);
 
-  test('blocks approved or executing work under Strict when its contract is missing', () => {
+  test('high-risk work needs no contract stage approval', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
       // Strict's separate_contract requirement is unconditionally required
@@ -200,12 +200,12 @@ describe('effective state resolver', () => {
       const state = resolveFixtureState(cwd, Date.now(), {
         targetPaths: ['src/feature.ts'],
         operationKind: 'feature',
-        explicitOverride: 'strict',
+        explicitOverride: 'high',
       });
-      expect(state.workflow_profile).toBe('strict');
-      expect(state.phase).toBe('blocked');
-      expect(state.blockers).toContain('missing_contract');
-      expect(state.next_action).toBe('resolve blockers');
+      expect(state.workflow_profile).toBe('high');
+      expect(state.phase).toBe('executing');
+      expect(state.blockers).not.toContain('missing_contract');
+      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
     });
   }, 30_000);
 
@@ -217,7 +217,7 @@ describe('effective state resolver', () => {
       // separate_contract requirement defaults to not_required, so the
       // profile-aware decision no longer pushes missing_contract.
       const state = resolveFixtureState(cwd);
-      expect(state.workflow_profile).toBe('standard');
+      expect(state.workflow_profile).toBe('routine');
       expect(state.blockers).not.toContain('missing_contract');
       expect(state.phase).not.toBe('blocked');
     });
@@ -233,13 +233,13 @@ describe('effective state resolver', () => {
         targetPaths: ['src/feature.ts'],
         operationKind: 'edit',
       });
-      expect(state.workflow_profile).toBe('lite');
+      expect(state.workflow_profile).toBe('routine');
       expect(state.blockers).not.toContain('missing_contract');
       expect(state.phase).not.toBe('blocked');
     });
   }, 30_000);
 
-  test('fails closed with missing_contract when the workflow profile cannot be resolved', () => {
+  test('rejects a below-floor profile without inventing a missing-contract blocker', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
       // Requesting Lite while real signals (operationKind: 'feature') compute
@@ -248,12 +248,12 @@ describe('effective state resolver', () => {
       // profile-aware missing_contract decision must fail closed on any
       // unresolved profile, not just the "signals unavailable" case.
       const state = resolveFixtureState(cwd, Date.now(), {
-        targetPaths: ['src/feature.ts'],
+        targetPaths: ['src/security/policy.ts'],
         operationKind: 'feature',
-        explicitOverride: 'lite',
+        explicitOverride: 'routine',
       });
       expect(state.workflow_profile).toBeNull();
-      expect(state.blockers).toContain('missing_contract');
+      expect(state.blockers).not.toContain('missing_contract');
       expect(state.phase).toBe('blocked');
     });
   }, 30_000);
@@ -355,7 +355,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
         expect(state.profile_signals?.capabilityCount).toBe(1);
         expect(state.profile_signals?.crossCapability).toBe(false);
-        expect(state.risk_floor).toBe('lite');
+        expect(state.risk_floor).toBe('routine');
       });
     }, 30_000);
 
@@ -373,7 +373,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).not.toContain('capability:unmapped:1');
         expect(state.profile_signals?.capabilityCount).toBe(1);
         expect(state.profile_signals?.crossCapability).toBe(false);
-        expect(state.risk_floor).toBe('lite');
+        expect(state.risk_floor).toBe('routine');
       });
     }, 30_000);
 
@@ -585,7 +585,7 @@ describe('effective state resolver', () => {
           operationKind: 'edit',
         });
         expect(state.profile_reasons).toContain('capability:unmapped:1');
-        expect(state.risk_floor).toBe('standard');
+        expect(state.risk_floor).toBe('high');
         expect(state.blockers).not.toContain('capability_registry:invalid');
       });
     }, 30_000);

@@ -25,6 +25,7 @@ export type MergeReadinessBlockerCode =
   | 'base_moved_since_verification'
   | 'review_subject_mismatch'
   | 'verification_evidence_stale'
+  | 'rollback_tags_pending'
   | 'checks_failed'
   | 'checks_pending'
   | 'acceptance_missing'
@@ -50,28 +51,25 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly head_sha: string;
   readonly base_sha: string;
   readonly review_decision: string | null;
-  readonly unresolved_thread_count: number;
+  readonly unresolved_thread_count: number | null;
+  readonly rollback_tags: 'not_active' | 'ready' | 'pending';
   readonly checks: readonly {
+    readonly name: string;
     readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
   }[];
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING';
 }
 
-export interface MergeReadinessInputV1 {
-  readonly receipt: PublicationReceiptV1;
-  readonly lease_is_reviewing: boolean;
-  readonly pointer_matches_receipt: boolean;
-  readonly lease_matches_receipt: boolean;
-  readonly canonical_task_matches_receipt: boolean;
-  /** The local merge-seal proof's head, never the caller cwd's current HEAD. */
-  readonly local_proof_head_matches_receipt: boolean;
-  readonly review_subject_matches_receipt: boolean;
-  readonly verification_evidence_matches_receipt: boolean;
-  readonly local_evidence_fresh: boolean;
-  readonly acceptance: MergeReadinessAcceptance;
+export interface PullRequestMergeReadinessInput {
+  readonly expected_head_sha: string;
+  readonly expected_base_sha: string;
   readonly integration_mode: MergeReadinessIntegrationMode;
   readonly observation: MergeReadinessObservation;
   readonly provider: ProviderMergeReadinessFactsV1 | null;
+}
+
+export interface MergeReadinessInputV1 extends Omit<PullRequestMergeReadinessInput, 'expected_head_sha' | 'expected_base_sha'> {
+  readonly receipt: PublicationReceiptV1;
 }
 
 export interface MergeReadinessV1 {
@@ -88,19 +86,20 @@ export interface MergeReadinessV1 {
 }
 
 const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttentionOwner>> = {
-  receipt_unavailable: 'user',
-  publication_claim_mismatch: 'user',
-  publication_pointer_mismatch: 'user',
-  lease_not_reviewing: 'user',
+  receipt_unavailable: 'agent',
+  publication_claim_mismatch: 'agent',
+  publication_pointer_mismatch: 'agent',
+  lease_not_reviewing: 'agent',
   provider_unavailable: 'external',
   provider_data_incomplete: 'external',
   changed_during_read: 'external',
-  pr_not_open: 'user',
-  draft: 'user',
+  pr_not_open: 'agent',
+  draft: 'agent',
   head_moved: 'agent',
-  base_moved_since_verification: 'user',
+  base_moved_since_verification: 'agent',
   review_subject_mismatch: 'agent',
   verification_evidence_stale: 'agent',
+  rollback_tags_pending: 'agent',
   checks_failed: 'agent',
   checks_pending: 'external',
   acceptance_missing: 'agent',
@@ -109,7 +108,7 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   unresolved_threads: 'agent',
   not_mergeable: 'agent',
   task_revision_mismatch: 'agent',
-  already_integrated: 'user',
+  already_integrated: 'agent',
 };
 
 function push(blockers: MergeReadinessBlockerV1[], code: MergeReadinessBlockerCode): void {
@@ -129,50 +128,45 @@ function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): Me
  * performs no I/O and intentionally emits all applicable blockers in a stable
  * order so output remains usable for routing and tests.
  */
-export function projectMergeReadiness(input: MergeReadinessInputV1): MergeReadinessV1 {
+export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): Omit<MergeReadinessV1, 'protocol' | 'kind' | 'publication_id'> {
   const blockers: MergeReadinessBlockerV1[] = [];
-  if (!input.lease_is_reviewing) push(blockers, 'lease_not_reviewing');
-  if (!input.pointer_matches_receipt) push(blockers, 'publication_pointer_mismatch');
-  if (!input.lease_matches_receipt) push(blockers, 'publication_claim_mismatch');
-  if (!input.canonical_task_matches_receipt) push(blockers, 'task_revision_mismatch');
-  if (!input.local_proof_head_matches_receipt) push(blockers, 'head_moved');
-  if (!input.review_subject_matches_receipt) push(blockers, 'review_subject_mismatch');
-  if (!input.verification_evidence_matches_receipt || !input.local_evidence_fresh) push(blockers, 'verification_evidence_stale');
-  if (input.acceptance === 'missing') push(blockers, 'acceptance_missing');
+  const validSha = (value: string) => /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
+  if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
   if (input.integration_mode === 'ancestor' || input.integration_mode === 'absorbed') push(blockers, 'already_integrated');
   if (input.integration_mode === 'unavailable') push(blockers, 'provider_data_incomplete');
-
-  if (input.observation === 'provider_unavailable') {
-    push(blockers, 'provider_unavailable');
-  } else if (input.observation === 'provider_data_incomplete') {
-    push(blockers, 'provider_data_incomplete');
-  } else if (input.observation === 'changed_during_read') {
-    push(blockers, 'changed_during_read');
-  } else if (input.provider === null) {
-    push(blockers, 'provider_unavailable');
-  } else {
+  if (input.observation === 'provider_unavailable') push(blockers, 'provider_unavailable');
+  else if (input.observation === 'provider_data_incomplete') push(blockers, 'provider_data_incomplete');
+  else if (input.observation === 'changed_during_read') push(blockers, 'changed_during_read');
+  else if (input.provider === null) push(blockers, 'provider_unavailable');
+  else {
     const provider = input.provider;
     if (provider.state !== 'OPEN') push(blockers, 'pr_not_open');
     if (provider.is_draft) push(blockers, 'draft');
-    if (provider.head_sha !== input.receipt.head_sha) push(blockers, 'head_moved');
-    if (provider.base_sha !== input.receipt.base_sha) push(blockers, 'base_moved_since_verification');
-    if (provider.review_decision === 'CHANGES_REQUESTED') push(blockers, 'changes_requested');
-    else if (provider.review_decision === 'REVIEW_REQUIRED') push(blockers, 'required_reviews_missing');
-    if (provider.unresolved_thread_count > 0) push(blockers, 'unresolved_threads');
-    if (provider.checks.some((check) => check.bucket === 'pending')) push(blockers, 'checks_pending');
-    if (provider.checks.some((check) => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
+    if (provider.head_sha !== input.expected_head_sha) push(blockers, 'head_moved');
+    if (provider.base_sha !== input.expected_base_sha) push(blockers, 'base_moved_since_verification');
+    if (provider.rollback_tags === 'pending') push(blockers, 'rollback_tags_pending');
+    else if (!['not_active', 'ready'].includes(provider.rollback_tags)) push(blockers, 'provider_data_incomplete');
+    // Hosted Required / CI owns execution. Review/thread/lease artifacts are observations, not merge permits.
+    if (!provider.checks.some(check => check.name === 'Required / CI')) push(blockers, 'provider_data_incomplete');
+    if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
+    if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
     if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');
   }
+  return Object.freeze({
+    ready: blockers.length === 0,
+    expected_head_sha: input.expected_head_sha,
+    expected_base_sha: input.expected_base_sha,
+    integration_mode: input.integration_mode,
+    attention_owner: verdictAttentionOwner(blockers),
+    blockers: Object.freeze(blockers),
+  });
+}
 
+export function projectMergeReadiness(input: MergeReadinessInputV1): MergeReadinessV1 {
   return Object.freeze({
     protocol: MERGE_READINESS_PROTOCOL,
     kind: MERGE_READINESS_KIND,
     publication_id: input.receipt.publication_id,
-    ready: blockers.length === 0,
-    expected_head_sha: input.receipt.head_sha,
-    expected_base_sha: input.receipt.base_sha,
-    integration_mode: input.integration_mode,
-    attention_owner: verdictAttentionOwner(blockers),
-    blockers: Object.freeze(blockers),
+    ...projectPullRequestMergeReadiness({ ...input, expected_head_sha: input.receipt.head_sha, expected_base_sha: input.receipt.base_sha }),
   });
 }

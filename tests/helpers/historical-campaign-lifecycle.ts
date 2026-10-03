@@ -85,7 +85,7 @@ export async function historicalPlanningFixture(twoEngineers = false, requiredRe
   const profile = JSON.parse(readFileSync(join(import.meta.dir, '../../agents/engineers/profiles/verification-evals-checks.json'), 'utf8'));
   profile.engineer_id = `engineer:${capability}`; profile.capability_id = capability; profile.sop_ref = 'agents/engineers/sops/fixture.md'; profile.max_active_claims = 2;
   for (const directory of ['agents/engineers/profiles', 'agents/engineers/sops', '.ai/harness/sprint', '.claude/templates', 'tasks/contracts', 'tasks/reviews', 'tasks/evidence']) mkdirSync(join(f.root, directory), { recursive: true });
-  cpSync(join(import.meta.dir, '../../.claude/templates/contract.template.md'), join(f.root, '.claude/templates/contract.template.md'));
+  cpSync(join(import.meta.dir, '../../assets/templates/contract.template.md'), join(f.root, '.claude/templates/contract.template.md'));
   writeFileSync(join(f.root, 'agents/engineers/profiles/fixture.json'), JSON.stringify(profile));
   writeFileSync(join(f.root, profile.sop_ref), '# Fixture Engineer');
   writeFileSync(join(f.root, '.ai/harness/sprint/active-sprint'), sprint);

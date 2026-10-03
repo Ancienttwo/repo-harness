@@ -101,7 +101,7 @@ function resolveStateDirect(cwd: string, targetPaths: readonly string[], extraAr
 }
 
 describe('risk-based runtime profile enforcement', () => {
-  test('Lite allows brief-edit-test flow without Plan or Contract', () => {
+  test('Routine edit needs no plan or contract', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-lite-')));
     try {
       initRepo(cwd);
@@ -112,23 +112,23 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('test-name risk signals do not promote edits to strict while auth directories still do', () => {
+  test('Test names do not establish risk; auth directories select high without blocking repair', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-test-name-')));
     try {
       initRepo(cwd);
       const testPath = 'apps/web/e2e/anonymous-research-auth.spec.ts';
       expect(resolveStateDirect(cwd, [testPath]).json).toMatchObject({
-        workflow_profile: 'lite', profile_signals: { strictCategories: [] },
+        workflow_profile: 'routine', profile_signals: { strictCategories: [] },
       });
       expect(preEdit(cwd, testPath).status).toBe(0);
       expect(resolveStateDirect(cwd, [...FOUR_NORMAL_FILES, testPath]).json).toMatchObject({
-        workflow_profile: 'standard', profile_signals: { targetPathCount: 5, strictCategories: [] },
+        workflow_profile: 'high', profile_signals: { targetPathCount: 5, strictCategories: [] },
       });
       const authPath = 'src/auth/login.test.ts';
       expect(resolveStateDirect(cwd, [authPath]).json).toMatchObject({
-        workflow_profile: 'strict', profile_signals: { strictCategories: ['auth'] },
+        workflow_profile: 'high', profile_signals: { strictCategories: ['auth'] },
       });
-      expect(preEdit(cwd, authPath).status).toBe(2);
+      expect(preEdit(cwd, authPath).status).toBe(0);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -166,19 +166,19 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('Standard requires a plan but not the Strict contract/worktree chain', () => {
+  test('Routine edit ignores missing workflow artifacts', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-standard-')));
     try {
       initRepo(cwd);
       writeFileSync(join(cwd, 'docs.spec.tmp'), '');
-      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_WORKFLOW_PROFILE: 'standard' });
-      expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
+      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' });
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('action\":\"block');
       expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('Strict high-risk paths fail closed without a contract and pass in an isolated contract worktree', () => {
+  test('High-risk edits permit both missing contracts and isolated contract worktrees', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'profile-strict-')));
     const base = join(root, 'base');
     const worktree = join(root, 'worktree');
@@ -213,11 +213,11 @@ describe('risk-based runtime profile enforcement', () => {
       writeFileSync(join(worktree, '.ai/harness/active-worktree'), `${realpathSync(worktree)}\n`);
 
       const missing = preEdit(worktree, 'src/auth/session.ts');
-      expect(missing.status).toBe(2);
-      expect(missing.stderr).toContain('StrictContractGuard');
+      expect(missing.status).toBe(0);
+      expect(missing.stderr).not.toContain('StrictContractGuard');
 
       writeFileSync(join(worktree, contract), [
-        '# Contract', '', '> **Status**: Active', `> **Plan**: ${plan}`, '> **Workflow Profile**: strict', '',
+        '# Contract', '', '> **Status**: Active', `> **Plan**: ${plan}`, '> **Workflow Profile**: high', '',
         '## Allowed Paths', '```yaml', 'allowed_paths:', '  - src/auth/', '```', '',
       ].join('\n'));
       const allowed = preEdit(worktree, 'src/auth/session.ts');
@@ -226,7 +226,7 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('Codex apply_patch expands every target path and blocks high-risk or private writes', () => {
+  test('Codex apply_patch permits authorized high-risk edits and refuses private targets', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-apply-patch-')));
     try {
       initRepo(cwd);
@@ -236,8 +236,8 @@ describe('risk-based runtime profile enforcement', () => {
         '+select 1;',
         '*** End Patch',
       ].join('\n'));
-      expect(migration.status).toBe(2);
-      expect(migration.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
+      expect(migration.status).toBe(0);
+      expect(migration.stdout).not.toContain('action\":\"block');
 
       // _ops/secret.txt is listed first: OpsPrivateGuard is a pure path match
       // evaluated before workflow-profile resolution, so checking it first keeps
@@ -257,13 +257,13 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('release workflows under .github remain Strict implementation surfaces', () => {
+  test('Release workflow authoring is high risk and does not publish anything', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-github-release-')));
     try {
       initRepo(cwd);
       const result = preEdit(cwd, '.github/workflows/release.yml');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 });
@@ -280,18 +280,18 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('b) a single apply_patch touching 4 normal implementation files resolves standard and trips the plan gate by default', () => {
+  test('b) four implementation paths select high review risk and remain editable', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-standard-')));
     try {
       initRepo(cwd);
       const result = preApplyPatch(cwd, patchFromFiles(FOUR_NORMAL_FILES));
-      expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('action\":\"block');
       expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('c) a patch spanning two capability prefixes resolves standard via the cross-capability signal', () => {
+  test('c) cross-capability edits select high risk without a planning gate', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-capability-')));
     try {
       initRepo(cwd);
@@ -330,8 +330,8 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         ],
       }));
       const result = preApplyPatch(cwd, patchFromFiles(['src/module-a/a.ts', 'src/module-b/b.ts']));
-      expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('action\":\"block');
       expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
@@ -344,17 +344,17 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         'src/delta.ts', 'src/alpha.ts', 'src/beta.ts', 'src/gamma.ts', 'src/alpha.ts',
       ];
       const result = preApplyPatch(cwd, patchFromFiles(reorderedWithDuplicate));
-      expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('action\":\"block');
       expect(result.stderr).not.toContain('StrictContractGuard');
 
       const direct = resolveStateDirect(cwd, reorderedWithDuplicate);
       expect(direct.json.profile_signals?.targetPathCount).toBe(4);
-      expect(direct.json.workflow_profile).toBe('standard');
+      expect(direct.json.workflow_profile).toBe('high');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('e) a batch containing one strict-category path promotes every implementation path in the batch to strict', () => {
+  test('e) high-risk batch edits need no contract', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-strict-leak-')));
     try {
       initRepo(cwd);
@@ -390,25 +390,25 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
         '+select 1;',
         '*** End Patch',
       ].join('\n'));
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('StrictContractGuard');
-      expect(result.stderr).toContain('Strict workflow edit to src/plain1.ts has no active contract.');
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain('StrictContractGuard');
+      expect(result.stdout).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('f) a 4-file batch requesting an explicit lite override is rejected below the deterministic risk floor', () => {
+  test('f) below-floor risk is recorded while the local edit can continue', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-below-floor-')));
     try {
       initRepo(cwd);
       const result = preApplyPatch(
         cwd,
         patchFromFiles(FOUR_NORMAL_FILES),
-        { REPO_HARNESS_WORKFLOW_PROFILE: 'lite' },
+        { REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
       );
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('WorkflowProfileGuard');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('WorkflowObservation');
 
-      const direct = resolveStateDirect(cwd, FOUR_NORMAL_FILES, ['--profile', 'lite']);
+      const direct = resolveStateDirect(cwd, FOUR_NORMAL_FILES, ['--profile', 'routine']);
       expect(direct.json.workflow_profile).toBeNull();
       expect(direct.json.blockers).toContain('workflow_profile:profile_below_risk_floor');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -422,7 +422,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       initRepo(cwd);
       const docs = ['docs/a.md', 'docs/b.md', 'docs/c.md', 'docs/d.md'];
       const direct = resolveStateDirect(cwd, docs);
-      expect(direct.json.workflow_profile).toBe('lite');
+      expect(direct.json.workflow_profile).toBe('routine');
       expect(direct.json.profile_signals?.targetPathCount).toBe(0);
       expect(direct.json.blockers).toEqual([]);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -434,7 +434,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       initRepo(cwd);
       const mixed = ['docs/a.md', 'docs/b.md', 'docs/c.md', 'src/only.ts'];
       const direct = resolveStateDirect(cwd, mixed);
-      expect(direct.json.workflow_profile).toBe('lite');
+      expect(direct.json.workflow_profile).toBe('routine');
       expect(direct.json.profile_signals?.targetPathCount).toBe(1);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
@@ -446,7 +446,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       const mixed = ['docs/a.md', 'tasks/todos.md', 'plans/plan-fixture.md', ...FOUR_NORMAL_FILES];
       const direct = resolveStateDirect(cwd, mixed);
       expect(direct.json.profile_signals?.targetPathCount).toBe(4);
-      expect(direct.json.workflow_profile).toBe('standard');
+      expect(direct.json.workflow_profile).toBe('high');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -455,7 +455,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
     try {
       initRepo(cwd);
       const direct = resolveStateDirect(cwd, ['deploy/sql/0001_demo.sql']);
-      expect(direct.json.workflow_profile).toBe('strict');
+      expect(direct.json.workflow_profile).toBe('high');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -480,7 +480,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
     try {
       initRepo(cwd);
       const direct = resolveStateDirect(cwd, ['docs/auth/runbook.md', 'src/plain.ts']);
-      expect(direct.json.workflow_profile).toBe('strict');
+      expect(direct.json.workflow_profile).toBe('high');
       expect(direct.json.profile_signals?.targetPathCount).toBe(1);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
@@ -502,15 +502,15 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
     try {
       initRepo(cwd);
       const direct = resolveStateDirect(cwd, ['deploy/notes.md']);
-      expect(direct.json.workflow_profile).toBe('strict');
+      expect(direct.json.workflow_profile).toBe('high');
       expect(direct.json.profile_signals?.targetPathCount).toBe(0);
       expect(direct.json.profile_signals?.strictCategories).toEqual(['deploy']);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 });
 
-describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap regression, external acceptance)', () => {
-  test('a declared-but-corrupt capability registry blocks an otherwise-lite edit instead of silently passing through', () => {
+describe('Canonical risk failures remain visible without preventing local repair', () => {
+  test('Invalid capability registry is reported and can be repaired', () => {
     // Verifies the C1 fail-closed blocker (capability_registry:invalid)
     // actually reaches pre-edit-guard.sh's enforcement: before this fix the
     // guard captured stdout without checking $?, so a corrupt registry's
@@ -527,13 +527,13 @@ describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap
       writeFileSync(join(cwd, '.ai/context/capabilities.json'), '{not json');
 
       const before = resolveStateDirect(cwd, ['src/feature.ts']);
-      expect(before.json.workflow_profile).toBe('lite');
+      expect(before.json.workflow_profile).toBe('routine');
       expect(before.json.blockers).toContain('capability_registry:invalid');
       expect(before.status).toBe(1);
 
       const result = preEdit(cwd, 'src/feature.ts');
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('WorkflowProfileGuard');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('WorkflowObservation');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 

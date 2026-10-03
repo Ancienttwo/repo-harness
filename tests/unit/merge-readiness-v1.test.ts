@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   projectMergeReadiness,
+  projectPullRequestMergeReadiness,
   type MergeReadinessInputV1,
 } from '../../src/core/publication/merge-readiness';
 import { buildPublicationReceipt } from '../../src/core/publication/publication-receipt';
@@ -33,15 +34,6 @@ const receipt = buildPublicationReceipt({
 function readyInput(): MergeReadinessInputV1 {
   return {
     receipt,
-    lease_is_reviewing: true,
-    pointer_matches_receipt: true,
-    lease_matches_receipt: true,
-    canonical_task_matches_receipt: true,
-    local_proof_head_matches_receipt: true,
-    review_subject_matches_receipt: true,
-    verification_evidence_matches_receipt: true,
-    local_evidence_fresh: true,
-    acceptance: 'pass',
     integration_mode: 'unmerged',
     observation: 'stable',
     provider: {
@@ -51,7 +43,8 @@ function readyInput(): MergeReadinessInputV1 {
       base_sha: BASE,
       review_decision: null,
       unresolved_thread_count: 0,
-      checks: [{ bucket: 'pass' }],
+      rollback_tags: 'not_active',
+      checks: [{ name: 'Required / CI', bucket: 'pass' }],
       mergeable: 'MERGEABLE',
     },
   };
@@ -75,15 +68,6 @@ describe('MergeReadinessV1', () => {
   test('always preserves receipt fences and deterministically routes aggregate blockers', () => {
     const verdict = projectMergeReadiness({
       ...readyInput(),
-      lease_is_reviewing: false,
-      pointer_matches_receipt: false,
-      lease_matches_receipt: false,
-      canonical_task_matches_receipt: false,
-      local_proof_head_matches_receipt: false,
-      review_subject_matches_receipt: false,
-      verification_evidence_matches_receipt: false,
-      local_evidence_fresh: false,
-      acceptance: 'missing',
       integration_mode: 'absorbed',
       provider: {
         ...readyInput().provider!,
@@ -93,7 +77,7 @@ describe('MergeReadinessV1', () => {
         base_sha: 'e'.repeat(40),
         review_decision: 'CHANGES_REQUESTED',
         unresolved_thread_count: 1,
-        checks: [{ bucket: 'pending' }, { bucket: 'skipping' }],
+        checks: [{ name: 'Required / CI', bucket: 'pending' }, { name: 'Required / CI', bucket: 'skipping' }],
         mergeable: 'CONFLICTING',
       },
     });
@@ -101,22 +85,13 @@ describe('MergeReadinessV1', () => {
     expect(verdict.ready).toBe(false);
     expect(verdict.expected_head_sha).toBe(HEAD);
     expect(verdict.expected_base_sha).toBe(BASE);
-    expect(verdict.attention_owner).toBe('user');
+    expect(verdict.attention_owner).toBe('agent');
     expect(verdict.blockers.map((blocker) => blocker.code)).toEqual([
-      'lease_not_reviewing',
-      'publication_pointer_mismatch',
-      'publication_claim_mismatch',
-      'task_revision_mismatch',
-      'head_moved',
-      'review_subject_mismatch',
-      'verification_evidence_stale',
-      'acceptance_missing',
       'already_integrated',
       'pr_not_open',
       'draft',
+      'head_moved',
       'base_moved_since_verification',
-      'changes_requested',
-      'unresolved_threads',
       'checks_pending',
       'checks_failed',
       'not_mergeable',
@@ -148,7 +123,7 @@ describe('MergeReadinessV1', () => {
       ...readyInput(),
       provider: {
         ...readyInput().provider!,
-        checks: [{ bucket: 'pass' }, { bucket: 'cancel' }],
+        checks: [{ name: 'Required / CI', bucket: 'pass' }, { name: 'Required / CI', bucket: 'cancel' }],
         review_decision: 'REVIEW_REQUIRED',
       },
     });
@@ -156,7 +131,6 @@ describe('MergeReadinessV1', () => {
     expect(verdict.ready).toBe(false);
     expect(verdict.attention_owner).toBe('agent');
     expect(verdict.blockers).toEqual([
-      { code: 'required_reviews_missing', attention_owner: 'external' },
       { code: 'checks_failed', attention_owner: 'agent' },
     ]);
   });
@@ -168,6 +142,11 @@ test.each(['head_sha','base_sha'] as const)('an otherwise green Publication lose
   expect(verdict.ready).toBe(false);
   expect(verdict.blockers.map(b=>b.code)).toEqual([field==='head_sha'?'head_moved':'base_moved_since_verification']);
 });
-test('finishing an Agent run without a reviewing Publication cannot establish readiness',()=>{
-  expect(projectMergeReadiness({...readyInput(),lease_is_reviewing:false,pointer_matches_receipt:false}).ready).toBe(false);
+test('ordinary PR readiness needs no receipt, lease, review or acceptance artifact', () => {
+  const { provider, integration_mode, observation } = readyInput();
+  const input = { provider: { ...provider!, review_decision: 'CHANGES_REQUESTED', unresolved_thread_count: 4 }, integration_mode, observation,
+    expected_head_sha: HEAD, expected_base_sha: BASE };
+  expect(projectPullRequestMergeReadiness(input).ready).toBe(true);
+  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [] } }).ready).toBe(false);
+  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [{ name: 'fake-green', bucket: 'pass' }] } }).ready).toBe(false);
 });

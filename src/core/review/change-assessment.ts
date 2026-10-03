@@ -393,7 +393,7 @@ export function validateChangeAssessment(value: unknown): ChangeAssessment {
   if (typeof assessment.target_revision !== 'string' || !/^[0-9a-f]{40,64}$/.test(assessment.target_revision)) {
     throw new Error('change assessment target_revision is invalid');
   }
-  if (!['lite', 'standard', 'strict'].includes(String(assessment.workflow_profile))) {
+  if (!['routine', 'high'].includes(String(assessment.workflow_profile))) {
     throw new Error('change assessment workflow_profile is invalid');
   }
   if (!Array.isArray(assessment.subject_paths) || !Array.isArray(assessment.selected_paths) || !isStringArray(assessment.subject_paths) || !isStringArray(assessment.selected_paths)) {

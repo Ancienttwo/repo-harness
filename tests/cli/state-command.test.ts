@@ -25,9 +25,9 @@ function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState
       plan: 'plans/plan-example.md',
     },
     task_profile: 'code-change',
-    workflow_profile: 'strict',
-    requested_workflow_profile: 'strict',
-    risk_floor: 'standard',
+    workflow_profile: 'high',
+    requested_workflow_profile: 'high',
+    risk_floor: 'routine',
     profile_reasons: ['explicit-override:raise:strict'],
     profile_signals: null,
     allowed_paths: ['src/'],
@@ -95,14 +95,14 @@ describe('resolveStateCommand', () => {
       expect(risk).toEqual({
         targetPaths: ['src/feature.ts'],
         operationKind: 'feature',
-        explicitOverride: 'strict',
+        explicitOverride: 'high',
       });
       return effectiveState();
     };
     const outcome = resolveStateCommand({
       targetPath: ['src/feature.ts'],
       operation: 'feature',
-      profile: 'strict',
+      profile: 'high',
     }, { repoRoot: '/fixture', nowMs: 42, resolve });
 
     expect(outcome.exitCode).toBe(0);

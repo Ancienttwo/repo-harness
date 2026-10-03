@@ -1,6 +1,6 @@
 # 一个 PR 拆完 + 兜底机制
 
-> 状态：实施提案；本次只提交本文件和 [inventory.md](inventory.md)，未改门禁代码/策略、host配置、锁、CI或架构模型，未授权本次执行生产操作或删除worktree。分类依据是Aimpact 05:14批准的四道硬门禁标准，代码基线 `cc1fc8ee`。本文件不伪装为已执行的contract或AcceptanceReceipt。
+> 状态：#483 源码实施完成，等待用户审阅Draft。当前请求已批准代码与SOP精简，global prompts最后备份再改；PR保持Draft，不合并、不发布、不执行生产操作或清理其他worktree。分类依据是Aimpact 05:14批准的四道硬门禁标准，代码基线 `cc1fc8ee`。本文件不伪装为已执行的contract或AcceptanceReceipt。
 
 ## 目标与完成条件
 
@@ -28,7 +28,7 @@
 | publication / closeout | `scripts/merge-gate.ts`、`scripts/{contract-worktree,ship-worktrees,archive-workflow}.sh`；`src/core/publication/merge-readiness.ts` | R07–R10简化main自动检查消费、tag+日报；archive/drift自动恢复不前置审批 | immutable PR/head/base、target clean、CAS、泄漏检测、已发生effect不重复执行 |
 | locks / Lease | `src/effects/locking/exclusive-directory-lock.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/state/coordination-lease-{store,reclaim}.ts`；closeout journal | L01–L10自动reclaim/reconcile与有界资源调度；删除手工解锁仪式 | atomic writer、token/generation/inode fences、live owner保护、exact effect阶段 |
 | install / MCP / browser / security | `src/effects/fs-transaction.ts`、`src/cli/mcp/`、`src/cli/chatgpt-browser/`、`src/effects/review/review-isolation.ts` | 权限/secret scan归H03；安装原子事务保持；能力不可用只报告该能力 | path confinement、认证授权、prompt egress秘密保护、rollback digest，禁止为提速fail-open |
-| projections / instructions | `scripts/`authoring→`assets/templates/helpers/`；`assets/hooks/`；`assets/reference-configs/`→`docs/reference-configs/`；root agent docs/policy | 一次更新并跑projection drift；tasks投影/architecture语义反映最终行为 | authoring来源单一；不得手改生成文档绕过model/provider |
+| projections / instructions | `scripts/`作为packaged helper唯一执行authority（下游`assets/templates`冻结）；`assets/hooks/`；`assets/reference-configs/`→`docs/reference-configs/`；root agent docs/policy | 一次更新并跑projection drift；tasks投影/architecture语义反映最终行为 | authoring来源单一；不得手改生成文档绕过model/provider |
 
 本inventory检查了9个eval fixture package根、capability list与semantic文档，当前umbrella不需要因package数量被拆成9个能力。旧cross-review semantic selector属于p4 owner的迁移面，本PR仅在真实责任改变时通过archctx ChangeSet/projection更新必要模型；不因盘点而增节点。
 
@@ -50,7 +50,7 @@
 2. **先实现兜底再移除阻断。** 用现成check executor/records让merge消费者只读；CI加每日全量与失败dispatch；锁内exact reclaim；合并后tag/日报与回滚fixture。不是发布几个半拆版本：这些与删除都留在同一PR，最终一起验证。
 3. **同PR移除流程闸。** 删除inventory标“删除”的enforce owner及对应必填工件/alias；“降级”项返回typed observation，不能保留隐藏的nonzero/`decision:block`或required-review approval。scope、type/test、secret、path、写入权限/互斥保留为四个边界组成或runtime不变量。更新protected helper与readiness，不用`--skip-*`绕旧gate作为永久实现。
 4. **迁移现有活状态。** 删除的是实现/阻断规则，不是证据、dirty worktree或未合并branch。已存在grant/receipt/log作为历史事实保留；active review/closeout按真实phase完成或停下该effect，不重发外部merge/push。仅显式one-shot迁移，失败不合成missing authority，不留steady-state兼容parser。campaign drain与旧eval删除不扩大到本PR。
-5. **投影与说明一次完成。** 生成helpers/hooks/reference投影；model责任改变才通过archctx plan/apply和projection同步；更新root agent instructions、policy以及tasks状态，归档fulfilled artifacts。不能只把policy设off而让installed runtime或另一个host继续enforce。
+5. **投影与说明一次完成。** 保留冻结的下游templates，packaged helper直接执行scripts；同步reference投影；model责任改变才通过archctx plan/apply和projection同步；更新root agent instructions、policy以及tasks状态，归档fulfilled artifacts。不能只把policy设off而让installed runtime或另一个host继续enforce。
 6. **冻结最终候选并验证一次。** 唯一执行owner跑typecheck+影响面测试，输出canonical证据；merge/review/finish只验身份与结果。下面acceptance scenarios覆盖跨模块联动；当前旧required checks仍以适用政策执行一次，PR同时更新其未来执行职责。没有全量double-run，日测workflow以短真实fixture证明调度/聚合，不拿dry-run冒充真实全量效果。
 7. **模型合main，保留可回滚切面。** exact checks绿且无冲突由模型squash merge；PR包含tag/日报路径。涉及H03设置的精确更改及H04生产执行分别遵守用户批。此次docs Draft不在此步自行Ready/merge/发布。
 
@@ -131,3 +131,11 @@ git revert --no-edit gate-cutover-pr-<PR>-after
 | p4并行删除产生消费者冲突 | rebase最新main、按实际剩余源码迁移；不触碰其独立删除面，不加兼容alias |
 
 不做新agent平台、generalized policy DSL、跨项目服务、通用日志系统、自动生产发布、清空historical evidence或清理其他人的worktree。新实现文件只在现有owner不能承载实际effect时加入，并说明至少一个真实消费者与不可替代责任；依赖优先Bun/Node标准库和已有包，不引入新依赖来包装Git/CI/锁。
+
+## 当前实施边界
+
+按补充保留archctx文档/model，skill文件只出表不修改；p4已先merge origin/main。当前验证采用所选typecheck与受影响tests，无Gatekeeper/13项或全量。锁回收仅限取得充分proof的POSIX注册组和有完整runtime/parent证据的Lease；unknown/Windows缺proof不强解锁。实现没有新依赖；新增CI reporter workflow/script与其真实Git/issue失败fixture各有明确consumer，未建立第二验证引擎或调度服务。Global prompt备份、diff和最终head/测试结果在交付时记录。
+
+## 当前验证记录
+
+本地最终 typecheck 已通过；主线程所选16个行为/安全文件为122pass/0fail。影响面补查发现的旧archive/lifecycle断言已迁移；保留真实crash/CAS/无重复外部effect断言的完整closeout-journal文件为24pass/0fail。旧失败日志保留为调查过程，不算当前通过。锁、Lease、CI报告、可信provider与tag读回使用真实进程/Git和隔离API fixtures验证，未执行远端daily、生产或原生Windows。

@@ -14,6 +14,8 @@ import {
   observeProviderReadinessIdentity,
   resolveFleetReadiness,
   resolvePublicationReadiness,
+  productionMergeReadinessCollector,
+  collectPullRequestMergeReadiness,
   type FleetReadinessCollector,
   type MergeReadinessCollector,
   type PublicationReadinessInput,
@@ -69,29 +71,14 @@ const providerFacts = {
   base_sha: BASE,
   review_decision: null,
   unresolved_thread_count: 0,
+  rollback_tags: 'not_active' as const,
   // Keep the fixture literal narrow: production validates provider buckets
   // before passing them into the pure projection.
-  checks: [{ bucket: 'pass' as const }],
+  checks: [{ name: 'Required / CI', bucket: 'pass' as const }],
   mergeable: 'MERGEABLE' as const,
 };
 
-const localSnapshot = {
-  token: 'sha256:' + '7'.repeat(64),
-  // The projection consumes the already-fenced booleans. The full lease
-  // record is intentionally private to the effect's production collector.
-  lease: null,
-  lease_is_reviewing: true,
-  pointer_matches_receipt: true,
-  lease_matches_receipt: true,
-  canonical_task_matches_receipt: true,
-  local_proof_head_matches_receipt: true,
-  review_subject_matches_receipt: true,
-  verification_evidence_matches_receipt: true,
-  local_evidence_fresh: true,
-  acceptance: 'pass' as const,
-};
-
-function fakeGh(hasNextPage = false): NonNullable<PublicationReadinessInput['gh_runner']> {
+function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_runner']> {
   const pr = {
     number: receipt.pr_number,
     url: receipt.pr_url,
@@ -109,9 +96,11 @@ function fakeGh(hasNextPage = false): NonNullable<PublicationReadinessInput['gh_
     const command = `${args[0]} ${args[1]}`;
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
-    if (command === 'pr checks') return { status: 8, stdout: JSON.stringify([{ bucket: 'pending' }]) };
-    if (command === 'api graphql') {
-      return { status: 0, stdout: JSON.stringify({ data: { node: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage }, nodes: [{ isResolved: false }] } } } } }) };
+    if (command === 'pr checks') return { status: 8, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pending', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
+    if (args[0] === 'api' && args[1]?.includes('/contents/.github/workflows/ci-report.yml')) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
+    if (command === 'api repos/example/repo-harness/actions/runs/123') {
+      return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
+        pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: wrongBase ? '9'.repeat(40) : BASE } }] }) };
     }
     return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
   };
@@ -125,7 +114,6 @@ const input: PublicationReadinessInput = {
 function collector(overrides: Partial<MergeReadinessCollector> = {}): MergeReadinessCollector {
   return {
     resolve_receipt: () => receipt,
-    collect_local: () => localSnapshot,
     observe_identity: () => providerIdentity,
     observe_facts: () => providerFacts,
     classify_integration: () => 'unmerged',
@@ -181,6 +169,13 @@ describe('MergeReadinessV1 effect', () => {
       'identity', `facts:${HEAD}`, 'identity',
       'identity', `facts:${HEAD}`, 'identity',
     ]);
+  });
+
+  test('review/body observations cannot churn the actual PR/head/base merge fence', () => {
+    let reads = 0;
+    const verdict = resolvePublicationReadiness(input, collector({ observe_identity: () => ({ ...providerIdentity,
+      body: `description observation ${reads++}`, review_decision: reads % 2 ? 'REVIEW_REQUIRED' : 'APPROVED' }) }));
+    expect(verdict.ready).toBe(true); expect(reads).toBe(2);
   });
 
   test('reports changed_during_read after the bounded second torn round and preserves receipt fences', () => {
@@ -258,13 +253,13 @@ describe('MergeReadinessV1 effect', () => {
     expect(writes).toEqual(['marker mismatch observed', 'provider identity']);
   });
 
-  test('production fake-gh adapter accepts pending exit 8 and exhaustively reads review threads', () => {
+  test('production fake-gh adapter accepts pending exit 8 and binds trusted CI to exact head/base', () => {
     const effectInput = { ...input, gh_runner: fakeGh() };
     const identity = observeProviderReadinessIdentity(receipt, effectInput);
     const facts = observeProviderReadinessFacts(identity, receipt, effectInput);
     expect(identity.head_sha).toBe(HEAD);
-    expect(facts.checks).toEqual([{ bucket: 'pending' }]);
-    expect(facts.unresolved_thread_count).toBe(1);
+    expect(facts.checks).toEqual([{ name: 'Required / CI', bucket: 'pending' }]);
+    expect(facts.unresolved_thread_count).toBeNull();
   });
 
   test('abortable provider adapter shares the synchronous parser and fails closed before a provider child starts', async () => {
@@ -276,7 +271,7 @@ describe('MergeReadinessV1 effect', () => {
     const identity = await observeProviderReadinessIdentityAbortable(receipt, asyncInput);
     const facts = await observeProviderReadinessFactsAbortable(identity, receipt, asyncInput);
     expect(identity.head_sha).toBe(HEAD);
-    expect(facts.checks).toEqual([{ bucket: 'pending' }]);
+    expect(facts.checks).toEqual([{ name: 'Required / CI', bucket: 'pending' }]);
 
     const controller = new AbortController();
     controller.abort();
@@ -284,7 +279,7 @@ describe('MergeReadinessV1 effect', () => {
       .rejects.toMatchObject({ code: 'provider_unavailable' });
   });
 
-  test('production fake-gh adapter fails closed when review-thread pagination is not exhausted', () => {
+  test('production fake-gh adapter fails closed for CI from a different base', () => {
     const effectInput = { ...input, gh_runner: fakeGh(true) };
     const identity = observeProviderReadinessIdentity(receipt, effectInput);
     expect(() => observeProviderReadinessFacts(identity, receipt, effectInput)).toThrow(MergeReadinessError);
@@ -317,88 +312,73 @@ describe('MergeReadinessV1 effect', () => {
   });
 });
 
-// Real local evidence is required here: a static boolean snapshot cannot expose
-// contract edits excluded from the semantic implementation subject.
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { productionMergeReadinessCollector } from '../../src/effects/publication/merge-readiness';
-import { publicationSha256 } from '../../src/core/publication/publication-receipt';
-import { createEffectiveStateFixture, EFFECTIVE_STATE_SCENARIOS, CONTRACT, PLAN, writeFixture } from '../state/effective-state-fixture';
-import { resolveEffectiveStateReadOnly } from '../../src/effects/state/resolve-effective-state';
-import { bindLeaseRecord, beginLeaseCompletionRecord, buildLeaseOwnerRecord, deriveTaskRevision, enterReviewingLeaseRecord } from '../../src/core/state/coordination-identity';
-import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
-import { acceptanceReceiptPath, acceptanceVerificationObservationPath, authorityFingerprint, writeAcceptanceVerificationObservation, type AcceptanceReceipt } from '../../scripts/acceptance-receipt';
-import { classifyFleetBoardPlacement } from '../../src/core/fleet/board';
-
-function withLocalAcceptance(run: (f: { root: string; observe: () => ReturnType<typeof resolvePublicationReadiness>; observationPath: string; receiptPath: string }) => void) {
-  const f=createEffectiveStateFixture();
-  const authorityHome=mkdtempSync(join(tmpdir(),'readiness-acceptance-home-'));
-  try {
-    const git=(...args:string[])=>execFileSync('git',args,{cwd:f.cwd,encoding:'utf8'}).trim();
-    const sprint='plans/sprints/readiness.sprint.md';
-    const title='verify current contract authority';
-    const revision=deriveTaskRevision({taskId:TASK_ID,taskCell:title,modeCell:'inline',acceptanceCell:'reject stale acceptance'});
-    writeFixture(f.cwd,sprint,`# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${TASK_ID} | [ ] | ${title} | inline | reject stale acceptance | (pending) |\n`);
-    writeFixture(f.cwd,'.ai/harness/policy.json',JSON.stringify({worktree_strategy:{review_base:'main',merge_back:{target:'main'}}}));
-    git('add','.');git('commit','-m','canonical task');
-    const base=git('rev-parse','HEAD');git('switch','-c','codex/readiness');
-    writeFixture(f.cwd,'src/feature.ts','export const value=1;\n');git('add','.');git('commit','-m','candidate');
-    const head=git('rev-parse','HEAD');
-    const now=Date.now();
-    EFFECTIVE_STATE_SCENARIOS.find(s=>s.name==='executing-fresh-evidence')!.setup!(f.cwd,now);
-    const effective=resolveEffectiveStateReadOnly(f.cwd,now);
-    expect(effective.checks.freshness).toBe('fresh');
-    const acceptance:AcceptanceReceipt={protocol:2,kind:'repo-harness-acceptance-receipt',repository_root:f.cwd,
-      contract_file:CONTRACT,contract_sha256:authorityFingerprint(readFileSync(join(f.cwd,CONTRACT),'utf8')),
-      goal_file:PLAN,goal_sha256:authorityFingerprint(readFileSync(join(f.cwd,PLAN),'utf8')),
-      verification_file:'.ai/harness/checks/latest.json',verification_evidence_sha256:'sha256:'+'6'.repeat(64),benchmark_evidence_sha256:'sha256:'+'7'.repeat(64),
-      subject_sha256:effective.review.recorded_subject_sha256!,subject_scope:'normalized-final-content',target_ref:'main',target_revision:base,
-      reviewed_paths:['src/feature.ts'],disposition:'external_pass',expected_reviewer:'Codex',reviewer:'Codex',source:'generic-review',request_id:'fixture-request',context_sha256:'sha256:'+'1'.repeat(64),result_sha256:'sha256:'+'2'.repeat(64),actual_harness:'codex',actual_role:'deep-reasoner',actual_model:'fixture-model',actor:null,
-      summary:'Controlled acceptance observation fixture',findings:[],waiver_grant_sha256:null,issued_at:new Date(now).toISOString()};
-    const receiptPath=acceptanceReceiptPath(f.cwd,authorityHome,true);
-    writeFileSync(receiptPath,JSON.stringify(acceptance));
-    writeAcceptanceVerificationObservation({root:f.cwd,authorityHome,receipt:acceptance,archiveProjectionSha256:null});
-    const sealPath=join(authorityHome,'seal.json');
-    writeFileSync(sealPath,JSON.stringify({head_sha:head,base_sha:base,acceptance_receipt_sha256:publicationSha256(readFileSync(receiptPath))}));
-    const publication=buildPublicationReceipt({...receipt,repo_id:resolveRepoIdentity(f.cwd),task_revision:revision,head_sha:head,base_sha:base,tree_sha:git('rev-parse','HEAD^{tree}'),
-      review_subject_sha256:acceptance.subject_sha256,verification_evidence_sha256:publicationSha256(readFileSync(join(f.cwd,'.ai/harness/checks/latest.json'))),merge_seal_sha256:publicationSha256(readFileSync(sealPath))});
-    const owner=buildLeaseOwnerRecord({claimId:CLAIM_ID,taskId:TASK_ID,taskRevision:revision,sprintPath:sprint,targetRef:'main',generation:1,sessionId:'readiness-session',sourceWorktree:f.cwd});
-    const bound=bindLeaseRecord(owner,{claimId:CLAIM_ID,executionWorktree:f.cwd,branch:'codex/readiness',unitRef:PLAN});if(!bound.ok)throw Error(bound.error);
-    const completing=beginLeaseCompletionRecord(bound.record,{claimId:CLAIM_ID,executionWorktree:f.cwd,finishTransactionKey:null});if(!completing.ok)throw Error(completing.error);
-    const reviewing=enterReviewingLeaseRecord(completing.record,{claimId:CLAIM_ID,publication:{publication_id:publication.publication_id,receipt_sha256:publicationReceiptDigest(publication),head_sha:head,ship_transaction_key:'readiness-fixture'}});if(!reviewing.ok)throw Error(reviewing.error);
-    createLeaseDirectory(f.cwd,TASK_ID);writeLeaseOwnerDurably(f.cwd,TASK_ID,reviewing.record);
-    const observe=()=>resolvePublicationReadiness({repo_root:f.cwd,publication_id:publication.publication_id,merge_seal_path:sealPath,authority_home:authorityHome,now_ms:now},collector({resolve_receipt:()=>publication,collect_local:productionMergeReadinessCollector.collect_local,
-      observe_identity:()=>({...providerIdentity,head_sha:head,base_sha:base}),observe_facts:()=>({...providerFacts,head_sha:head,base_sha:base})}));
-    expect(observe().ready).toBe(true);
-    run({root:f.cwd,observe,receiptPath,observationPath:acceptanceVerificationObservationPath(f.cwd,authorityHome,CONTRACT,acceptance.contract_sha256)});
-  } finally {
-    f.cleanup();rmSync(authorityHome,{recursive:true,force:true});
-  }
-}
-
-test.each(['contract','goal','missing observation','malformed observation','receipt replacement'] as const)('production local readiness invalidates %s after a genuinely ready observation', change=>{
-  withLocalAcceptance(f=>{
-    if(change==='contract')writeFileSync(join(f.root,CONTRACT),readFileSync(join(f.root,CONTRACT),'utf8').replace('  - src/','  - docs/'));
-    if(change==='goal')writeFileSync(join(f.root,PLAN),readFileSync(join(f.root,PLAN),'utf8')+'\nChanged acceptance goal.\n');
-    if(change==='missing observation')rmSync(f.observationPath);
-    if(change==='malformed observation')writeFileSync(f.observationPath,'{}');
-    if(change==='receipt replacement')writeFileSync(f.receiptPath,'{}');
-    const before=execFileSync('git',['status','--porcelain'],{cwd:f.root,encoding:'utf8'});
-    const verdict=f.observe();
-    expect(verdict.ready).toBe(false);
-    expect(verdict.blockers.map(b=>b.code)).toContain('acceptance_missing');
-    expect(verdict.blockers.map(b=>b.code)).toContain('verification_evidence_stale');
-    expect(execFileSync('git',['status','--porcelain'],{cwd:f.root,encoding:'utf8'})).toBe(before);
-    expect(classifyFleetBoardPlacement({error:null,task_state:'pending',lease_state:'reviewing',current_publication:{publication_id:verdict.publication_id,head_sha:verdict.expected_head_sha},merge_readiness:verdict} as Parameters<typeof classifyFleetBoardPlacement>[0])).toEqual({kind:'column',column:'in_review'});
-  });
+test('production read-only collector has no local lease/review/artifact collector', () => {
+  expect(Object.keys(productionMergeReadinessCollector).sort()).toEqual([
+    'classify_integration', 'observe_facts', 'observe_identity', 'resolve_receipt',
+  ]);
 });
 
-test('canonical lifecycle normalization preserves a current accepted contract',()=>{
-  withLocalAcceptance(f=>{
-    writeFileSync(join(f.root,CONTRACT),readFileSync(join(f.root,CONTRACT),'utf8').replace('**Status**: Active','**Status**: Fulfilled'));
-    expect(f.observe().ready).toBe(true);
-  });
+test('ordinary PR consumer uses trusted CI head/base once and needs no local artifact or marker', () => {
+  const source = fakeGh(); let ciCalls = 0;
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    const observed = source(args);
+    if (args[0] === 'pr' && args[1] === 'view') return { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), body: 'Ordinary PR goal/change/verification/risk/rollback' }) };
+    if (args[0] === 'pr' && args[1] === 'checks') { ciCalls++; return { status: 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) }; }
+    if (args[0] === 'api' && args[1]?.includes('/actions/runs/')) return { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), status: 'completed', conclusion: 'success' }) };
+    return observed;
+  };
+  const verdict = collectPullRequestMergeReadiness({ repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
+    expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
+  expect(verdict.ready).toBe(true); expect(ciCalls).toBe(1);
+  expect('publication_id' in verdict).toBe(false);
+  const moved = collectPullRequestMergeReadiness({ repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
+    expected_head_sha: HEAD, expected_base_sha: '9'.repeat(40), gh_runner });
+  expect(moved.blockers.map(blocker => blocker.code)).toContain('base_moved_since_verification');
+});
+
+// The readback decoder consumes actual annotated Git objects; it never scans or gates older history.
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+test('reporter activation fences only the current merged parent and decodes real before/after annotations', () => {
+  const root = mkdtempSync(join(tmpdir(), 'readiness-tags-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  try {
+    git('init', '-qb', 'main'); git('config', 'user.name', 'Tag readback fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
+    writeFileSync(join(root, 'feature'), 'before'); git('add', '.'); git('commit', '-qm', 'untagged pre-cutover history'); const before = git('rev-parse', 'HEAD');
+    writeFileSync(join(root, 'feature'), 'after'); git('add', '.'); git('commit', '-qm', 'squashed reporter cutover'); const base = git('rev-parse', 'HEAD');
+    git('tag', '-a', 'gate-cutover-pr-17-before', before, '-m', 'before'); git('tag', '-a', 'gate-cutover-pr-17-after', base, '-m', 'after');
+    const identity = { ...providerIdentity, base_sha: base }; const requests: string[] = []; let active = true; let forbidden = false; let malformedTag = false;
+    const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+      const path = args[1] ?? ''; requests.push(args.join(' '));
+      const json = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
+      if (args[0] === 'pr') return json([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]);
+      if (path.includes('/actions/runs/123')) return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success', pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: base } }] });
+      if (path.includes('/contents/')) return forbidden ? json({ status: '403', message: 'Forbidden' }, 1) : active ? json({ type: 'file', path: '.github/workflows/ci-report.yml', sha: '8'.repeat(40) }) : json({ status: '404' }, 1);
+      if (path.includes(`/commits/${base}/pulls`)) return json([{ number: 17, merged_at: '2026-10-03T00:00:00Z', merge_commit_sha: base, base: { ref: 'main' } }]);
+      if (path.includes(`/git/commits/${base}`)) return json({ sha: base, parents: [{ sha: before }] });
+      if (path.includes('/git/ref/tags/')) {
+        if (malformedTag) return json({ object: [] });
+        const name = path.split('/').at(-1)!;
+        if (spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/tags/${name}`], { cwd: root }).status !== 0) return json({ status: '404' }, 1);
+        return json({ object: { type: git('cat-file', '-t', `refs/tags/${name}`), sha: git('rev-parse', `refs/tags/${name}`) } });
+      }
+      if (path.includes('/git/tags/')) {
+        const text = git('cat-file', '-p', path.split('/').at(-1)!);
+        return json({ tag: text.split('\n').find(line => line.startsWith('tag '))!.slice(4), object: { type: 'commit', sha: text.split('\n')[0]!.slice(7) } });
+      }
+      throw Error(`Unexpected provider call: ${args.join(' ')}`);
+    };
+    const read = () => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner });
+    expect(read().rollback_tags).toBe('ready');
+    malformedTag = true; expect(() => read()).toThrow('rollback tag object must be an object'); malformedTag = false;
+    expect(new Set(requests.filter(path => path.includes('/commits/') && path.includes('/pulls')))).toEqual(new Set([`api repos/example/repo-harness/commits/${base}/pulls?per_page=100`]));
+    expect(requests.some(path => path.includes('state=closed'))).toBe(false);
+    git('tag', '-d', 'gate-cutover-pr-17-after'); expect(read().rollback_tags).toBe('pending');
+    git('tag', '-a', 'gate-cutover-pr-17-after', before, '-m', 'conflict'); expect(read().rollback_tags).toBe('pending');
+    active = false; requests.length = 0; expect(read().rollback_tags).toBe('not_active'); expect(requests.some(path => path.includes('/pulls'))).toBe(false);
+    forbidden = true; expect(() => read()).toThrow('rollback reporter activation unavailable');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

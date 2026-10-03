@@ -2,302 +2,186 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-  workflow_dispatch:
+    types: [opened, synchronize]
   push:
-    branches:
-      - main
+    branches: [main]
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Daily snapshots finish even when main moves; PR candidates supersede old runs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   selection:
     name: Select test coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       mode: ${{ steps.select.outputs.mode }}
+      sha: ${{ steps.select.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - name: Select coverage from the complete Git diff
-        id: select
+      - id: select
         run: bun scripts/select-ci-coverage.ts
+      - uses: actions/upload-artifact@v4
+        if: steps.select.outputs.mode == 'affected'
+        with:
+          name: affected-tests
+          path: .ci-affected-tests.json
+          if-no-files-found: error
 
-  governance:
-    name: Governance
+  verify:
+    name: Typecheck and affected tests
+    needs: selection
+    if: needs.selection.outputs.mode == 'affected'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.selection.outputs.sha }}
           fetch-depth: 0
-
-      - name: Configure git identity
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Install shell dependencies
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list /etc/apt/sources.list.d/google-chrome*.sources
-          sudo apt-get update
-          sudo apt-get install -y jq rsync
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - run: sudo apt-get update && sudo apt-get install -y jq rsync
+      - run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - uses: actions/download-artifact@v4
+        with:
+          name: affected-tests
+      - run: bash scripts/check-ci.sh affected
 
-      - name: Resolve workflow evidence diff
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_PARENT_SHA: ${{ github.event.before }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "REPO_HARNESS_DIFF_BASE=$PR_BASE_SHA" >> "$GITHUB_ENV"
-            echo "REPO_HARNESS_DIFF_MODE=merge-base" >> "$GITHUB_ENV"
-          elif [ "$EVENT_NAME" = "push" ]; then
-            echo "REPO_HARNESS_DIFF_BASE=$PUSH_PARENT_SHA" >> "$GITHUB_ENV"
-            echo "REPO_HARNESS_DIFF_MODE=direct" >> "$GITHUB_ENV"
-          else
-            echo "REPO_HARNESS_DIFF_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
-            echo "REPO_HARNESS_DIFF_MODE=direct" >> "$GITHUB_ENV"
-          fi
-
-      - name: Governance gate
-        run: bash scripts/check-ci.sh governance
-
-      - name: Diff hygiene
-        run: git diff --check
+  governance:
+    name: Daily governance
+    needs: selection
+    if: needs.selection.outputs.mode == 'daily'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      REPO_HARNESS_DIFF_BASE: ${{ needs.selection.outputs.sha }}
+      REPO_HARNESS_DIFF_MODE: direct
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: sudo apt-get update && sudo apt-get install -y jq rsync
+      - run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - run: bash scripts/check-ci.sh governance
 
   test:
+    name: Daily full tests and package
     needs: selection
-    if: needs.selection.outputs.mode == 'full'
-    name: Test
+    if: needs.selection.outputs.mode == 'daily'
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     env:
-      BUN_TEST_MAX_CONCURRENCY: "1"
-      BUN_TEST_TIMEOUT_MS: "180000"
-      BUN_TEST_ISOLATE_FILES: "1"
-      BUN_TEST_JOBS: "4"
+      BUN_TEST_MAX_CONCURRENCY: '1'
+      BUN_TEST_TIMEOUT_MS: '60000'
+      BUN_TEST_ISOLATE_FILES: '1'
+      BUN_TEST_JOBS: '4'
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.selection.outputs.sha }}
           fetch-depth: 0
-
-      - name: Configure git identity
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Install shell dependencies
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome*.list /etc/apt/sources.list.d/google-chrome*.sources
-          sudo apt-get update
-          sudo apt-get install -y jq rsync
-
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: sudo apt-get update && sudo apt-get install -y jq rsync
+      - run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: Install pinned Herdr runtime
         run: |
           set -euo pipefail
-          pin=".ai/harness/policy.json"
+          pin='.ai/harness/policy.json'
           version="$(jq -er '.external_tooling.herdr.min_version' "$pin")"
           url="$(jq -er '.external_tooling.herdr.release_assets["linux-x86_64"].url' "$pin")"
           sha256="$(jq -er '.external_tooling.herdr.release_assets["linux-x86_64"].sha256' "$pin")"
           curl --fail --location --retry 3 "$url" --output "$RUNNER_TEMP/herdr"
           echo "$sha256  $RUNNER_TEMP/herdr" | sha256sum --check
           sudo install -m 755 "$RUNNER_TEMP/herdr" /usr/local/bin/herdr
-          herdr --version
           test "$(herdr --version)" = "herdr $version"
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-
-      - name: Resolve workflow evidence diff
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_PARENT_SHA: ${{ github.event.before }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "REPO_HARNESS_DIFF_BASE=$PR_BASE_SHA" >> "$GITHUB_ENV"
-            echo "REPO_HARNESS_DIFF_MODE=merge-base" >> "$GITHUB_ENV"
-          elif [ "$EVENT_NAME" = "push" ]; then
-            echo "REPO_HARNESS_DIFF_BASE=$PUSH_PARENT_SHA" >> "$GITHUB_ENV"
-            echo "REPO_HARNESS_DIFF_MODE=direct" >> "$GITHUB_ENV"
-          else
-            echo "REPO_HARNESS_DIFF_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
-            echo "REPO_HARNESS_DIFF_MODE=direct" >> "$GITHUB_ENV"
-          fi
-
-      - name: Functional and package tests
-        run: bash scripts/check-ci.sh functional
+      - run: bash scripts/check-ci.sh functional
 
   mcp-path-matrix:
+    name: Daily MCP path matrix (${{ matrix.os }})
     needs: selection
-    if: needs.selection.outputs.mode == 'full'
-    name: MCP path matrix (${{ matrix.os }})
+    if: needs.selection.outputs.mode == 'daily'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: MCP path security, protected helper, and checkpoint durability platform tests
-        env:
-          REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: "1"
-        run: >-
-          bun test --timeout 180000 --max-concurrency 1
-          tests/cli/mcp-workspaces.test.ts
-          tests/cli/mcp-reader-tools.test.ts
-          tests/cli/mcp-policy.test.ts
-          tests/cli/mcp-http.test.ts
-          tests/cli/mcp-oauth.test.ts
-          tests/cli/mcp-stdio.test.ts
-          tests/effects/fleet-collector-process.test.ts
-          tests/effects/operator-task-diff.test.ts
-          tests/effects/operator-task-context.test.ts
-          tests/effects/operator-task-activity.test.ts
-          tests/effects/task-inbox.test.ts
-          tests/effects/task-reply.test.ts
-          tests/effects/task-inbox-layout-migration.test.ts
-          tests/cli/windows-protected-helper-runtime-smoke.test.ts
-          tests/evidence-checkpoint.test.ts
-
-  documentation:
-    name: Documentation assertions
-    runs-on: ubuntu-latest
-    needs: selection
-    if: needs.selection.outputs.mode == 'docs'
+        # Linux is already covered by the daily full-test owner.
+        os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Configure git identity
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ref: ${{ needs.selection.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
-      - name: Check documentation coverage projection
-        run: bun test tests/ci-documentation-consumers.test.ts --timeout 60000
-      - name: Check documentation consumers
-        run: |
-          BUN_TEST_ISOLATE_FILES=1
-          BUN_TEST_TIMEOUT_MS=180000
-          BUN_TEST_MAX_CONCURRENCY=1
-          BUN_TEST_JOBS=4
-          BUN_TEST_FILES="tests/action-command-skills.test.ts
-          tests/architecture-projection-e2e.test.ts
-          tests/architecture-projection-provider.test.ts
-          tests/archive-evidence-gates.test.ts
-          tests/characterization/repair-campaign-authority-freeze.test.ts
-          tests/cli/documentation-contracts.test.ts
-          tests/cli/global-runtime-init.test.ts
-          tests/cli/mcp-reader-tools.test.ts
-          tests/cli/mcp-setup.test.ts
-          tests/create-project-dirs.runtime.test.ts
-          tests/evidence-residue-scan.test.ts
-          tests/install-scripts.test.ts
-          tests/migration-script.test.ts
-          tests/readme-dx.test.ts
-          tests/retired-planning-provider.test.ts
-          tests/skill-surface/retired-names-scan.test.ts
-          tests/unit/collaboration-admission.test.ts
-          tests/unit/collaboration-authority-baseline.test.ts
-          tests/unit/issue-282-automation-budget-prd-drift.test.ts
-          tests/unit/me1b-engineering-overlay.test.ts
-          tests/unit/verifier-evidence-lifecycle-cutover.test.ts
-          tests/workflow-contract.test.ts"
-          source scripts/lib/ci-run-tests.sh
-          run_bun_tests
+      - env:
+          REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: '1'
+        run: >-
+          bun test --timeout 60000 --max-concurrency 1
+          tests/cli/mcp-workspaces.test.ts tests/cli/mcp-reader-tools.test.ts
+          tests/cli/mcp-policy.test.ts tests/cli/mcp-http.test.ts tests/cli/mcp-oauth.test.ts
+          tests/cli/mcp-stdio.test.ts tests/effects/fleet-collector-process.test.ts
+          tests/effects/operator-task-diff.test.ts tests/effects/operator-task-context.test.ts
+          tests/effects/operator-task-activity.test.ts tests/effects/task-inbox.test.ts
+          tests/effects/task-reply.test.ts tests/effects/task-inbox-layout-migration.test.ts
+          tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts
 
-  # Stable aggregate context for branch protection. Binding protection to the
-  # individual jobs means the matrix OS list is part of the protection rule:
-  # add or rename an OS and the required contexts silently reference check runs
-  # that never report again. Protection requires only this job.
   required:
     name: Required / CI
+    if: always() && github.event_name == 'pull_request'
+    needs: [selection, verify]
     runs-on: ubuntu-latest
-    # Must run even when a dependency fails, otherwise a failed run leaves this
-    # context skipped and the required check never reports at all.
-    if: always()
-    needs:
-      - selection
-      - documentation
-      - governance
-      - test
-      - mcp-path-matrix
     steps:
-      - name: Assert selected coverage succeeded
+      - name: Consume the single candidate verification
         env:
           SELECTION_RESULT: ${{ needs.selection.result }}
           COVERAGE_MODE: ${{ needs.selection.outputs.mode }}
-          GOVERNANCE_RESULT: ${{ needs.governance.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-          MATRIX_RESULT: ${{ needs.mcp-path-matrix.result }}
-          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
-          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
         run: |
-          echo "selection=$SELECTION_RESULT mode=$COVERAGE_MODE governance=$GOVERNANCE_RESULT test=$TEST_RESULT matrix=$MATRIX_RESULT documentation=$DOCUMENTATION_RESULT"
-          [ "$SELECTION_RESULT" = success ] && [ "$GOVERNANCE_RESULT" = success ] || exit 1
-          # Draft deferral must never become a mergeable success, even if a
-          # selector accidentally emits another mode. Ready triggers a new run.
-          [ "$IS_DRAFT" = false ] || exit 1
-          case "$COVERAGE_MODE" in
-            full)
-              [ "$TEST_RESULT" = success ] && [ "$MATRIX_RESULT" = success ] && [ "$DOCUMENTATION_RESULT" = skipped ]
-              ;;
-            docs)
-              [ "$DOCUMENTATION_RESULT" = success ] && [ "$TEST_RESULT" = skipped ] && [ "$MATRIX_RESULT" = skipped ]
-              ;;
-            *)
-              echo "Coverage is deferred or invalid; this run cannot authorize merge."
-              exit 1
-              ;;
-          esac
+          [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ]

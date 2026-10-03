@@ -21,7 +21,7 @@ function fixture(): string {
 }
 
 function env(root: string, host: 'claude' | 'codex' = 'claude'): NodeJS.ProcessEnv {
-  return { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: host, REPO_HARNESS_WORKFLOW_PROFILE: 'lite' };
+  return { ...process.env, HOOK_REPO_ROOT: root, HOOK_HOST: host, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' };
 }
 
 describe('hook runtime typed dispatch', () => {

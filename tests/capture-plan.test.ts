@@ -1,421 +1,51 @@
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync
-} from "fs";
-import { join } from "path";
-
-import { copyHelpers, installCanonicalContractTemplate } from "./helpers/helper-script-fixture";
-import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
-
-setDefaultTimeout(30000);
-
-describe("capture-plan helper integration", () => {
-  test("capture-plan should save planning output as an active plan artifact", () => {
-    const cwd = tmpWorkspace("helper-capture-plan");
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, ".ai/harness/planning"), { recursive: true });
-      copyHelpers(cwd);
-      writeFileSync(join(cwd, ".ai/harness/planning/pending.json"), JSON.stringify({ version: 1, kind: "waza-think", prompt_slug: "passive-plan" }) + "\n");
-      writeFileSync(
-        join(cwd, "captured.md"),
-        [
-          "## Approved design summary",
-          "- Building: passive plan capture",
-          "- Verification: run helper tests",
-          "",
-          "## Task Breakdown",
-          "- [ ] Add capture helper",
-          "- [ ] Update routing docs",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--slug",
-        "passive-plan",
-        "--title",
-        "Passive Plan",
-        "--source",
-        "waza-think",
-        "--orchestration-kind",
-        "waza-think",
-        "--source-ref",
-        "thread://plan-discussion",
-        "--route",
-        "waza:think",
-        "--body-file",
-        "captured.md",
-      ], cwd);
-
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("Captured plan:");
-
-      const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-passive-plan\.md$/.test(name));
-      expect(plans.length).toBe(1);
-      const artifactStem = plans[0].replace(/^plan-/, "").replace(/\.md$/, "");
-      const planPath = join(cwd, "plans", plans[0]);
-      const plan = readFileSync(planPath, "utf-8");
-      expect(plan).toContain("> **Status**: Draft");
-      expect(plan).toContain("> **Planning Source**: waza-think");
-      expect(plan).toContain("> **Orchestration Kind**: waza-think");
-      expect(plan).toContain("> **Source Ref**: thread://plan-discussion");
-      expect(plan).toContain("> **Artifact Level**: work-package");
-      expect(plan).toContain("> **Promotion Reason**: (required before projection)");
-      expect(plan).toContain("- Selected route: waza:think");
-      expect(plan).toContain("- Source ref: thread://plan-discussion");
-      expect(plan).toContain("## Workflow Inventory");
-      expect(plan).toContain("- Active plan: `plans/");
-      expect(plan).toContain("repo-harness run contract-worktree start --plan");
-      expect(plan).toContain("## Evidence Contract");
-      expect(plan).toContain("## Promotion Gate");
-      expect(plan).toContain("Why not checklist row");
-      expect(plan).toContain(`tasks/contracts/${artifactStem}.contract.md`);
-      expect(plan).toContain("## Captured Planning Output");
-      expect(plan).toContain("- [ ] Add capture helper");
-      expect(readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
-      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
-      expect(readFileSync(join(cwd, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(cwd);
-      expect(existsSync(join(cwd, ".ai/harness/planning/pending.json"))).toBe(false);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("capture-plan should name transient plan artifacts from the task title", () => {
-    const cwd = tmpWorkspace("helper-capture-transient-artifact-name");
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      copyHelpers(cwd);
-      writeFileSync(
-        join(cwd, "captured.md"),
-        [
-          "## Approved design summary",
-          "- Building: batch digest repository",
-          "- Verification: helper tests",
-          "",
-          "## Task Breakdown",
-          "- [ ] Add repository path",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--slug",
-        "think-plan-224448",
-        "--title",
-        "Batch Digest Repository",
-        "--source",
-        "waza-think",
-        "--body-file",
-        "captured.md",
-      ], cwd);
-
-      expect(res.status).toBe(0);
-      const planName = readdirSync(join(cwd, "plans")).find((name) =>
-        /^plan-\d{8}-\d{4}-think-plan-224448\.md$/.test(name)
-      );
-      expect(planName).toBeDefined();
-      const timestampStem = planName!.match(/^plan-(\d{8}-\d{4})-/)![1];
-      const semanticStem = `${timestampStem}-batch-digest-repository`;
-      const transientStem = planName!.replace(/^plan-/, "").replace(/\.md$/, "");
-      const plan = readFileSync(join(cwd, "plans", planName!), "utf-8");
-      expect(plan).toContain(`tasks/contracts/${semanticStem}.contract.md`);
-      expect(plan).toContain(`tasks/reviews/${semanticStem}.review.md`);
-      expect(plan).toContain(`tasks/notes/${semanticStem}.notes.md`);
-      expect(plan).not.toContain(`tasks/contracts/${transientStem}.contract.md`);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("capture-plan checklist-row appends to the active plan without durable projection", () => {
-    const cwd = tmpWorkspace("helper-capture-plan-checklist-row");
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-      copyHelpers(cwd);
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-1500-active.md"),
-        [
-          "# Plan: active",
-          "",
-          "> **Status**: Executing",
-          "> **Artifact Level**: work-package",
-          "> **Promotion Reason**: worktree_boundary",
-          "> **Verification Boundary**: bun test",
-          "> **Rollback Surface**: revert active branch",
-          "",
-          "## Task Breakdown",
-          "- [ ] Existing row",
-        ].join("\n")
-      );
-      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260304-1500-active.md");
-      writeFileSync(
-        join(cwd, "captured.md"),
-        [
-          "## Approved design summary",
-          "- Building: checklist-only row",
-          "",
-          "## Task Breakdown",
-          "- [ ] Add a row-level check",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--artifact-level",
-        "checklist-row",
-        "--slug",
-        "row-only",
-        "--title",
-        "Row Only",
-        "--body-file",
-        "captured.md",
-      ], cwd);
-
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("Appended checklist row(s)");
-      const planNames = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-row-only/.test(name));
-      expect(planNames).toHaveLength(0);
-      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
-      const activePlan = readFileSync(join(cwd, "plans/plan-20260304-1500-active.md"), "utf-8");
-      expect(activePlan).toContain("- [ ] Existing row");
-      expect(activePlan).toContain("- [ ] Add a row-level check");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("capture-plan checklist-row rejects active plans without Task Breakdown", () => {
-    const cwd = tmpWorkspace("helper-capture-plan-checklist-row-missing-breakdown");
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-      copyHelpers(cwd);
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-1500-active.md"),
-        [
-          "# Plan: active",
-          "",
-          "> **Status**: Executing",
-          "> **Artifact Level**: work-package",
-        ].join("\n")
-      );
-      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260304-1500-active.md");
-      writeFileSync(
-        join(cwd, "captured.md"),
-        [
-          "## Task Breakdown",
-          "- [ ] Add a row-level check",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--artifact-level",
-        "checklist-row",
-        "--slug",
-        "row-only",
-        "--title",
-        "Row Only",
-        "--body-file",
-        "captured.md",
-      ], cwd);
-
-      expect(res.status).toBe(1);
-      expect(res.stderr).toContain("Active plan lacks ## Task Breakdown");
-      const activePlan = readFileSync(join(cwd, "plans/plan-20260304-1500-active.md"), "utf-8");
-      expect(activePlan).not.toContain("- [ ] Add a row-level check");
-      expect(readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-row-only/.test(name))).toHaveLength(0);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("capture-plan should execute an already approved plan through plan-to-todo", () => {
-    const cwd = tmpWorkspace("helper-capture-plan-execute");
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      copyHelpers(cwd);
-      installCanonicalContractTemplate(cwd);
-      writeFileSync(
-        join(cwd, "approved.md"),
-        [
-          "## Approved design summary",
-          "- Building: approved capture",
-          "- Verification: sprint verification",
-          "",
-          "## Task Breakdown",
-          "- [ ] Implement approved capture",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--slug",
-        "approved-capture",
-        "--title",
-        "Approved Capture",
-        "--status",
-        "Approved",
-        "--promotion-reason",
-        "verification_boundary",
-        "--execute",
-        "--body-file",
-        "approved.md",
-      ], cwd);
-
-      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
-      expect(res.stdout).toContain("Captured plan:");
-      expect(res.stdout).toContain("Prepared sprint artifacts");
-      const todo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
-      expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("**Status**: Backlog");
-      expect(todo).not.toContain("- [ ] Implement approved capture");
-      const planName = readdirSync(join(cwd, "plans")).find((name) => /^plan-\d{8}-\d{4}-approved-capture\.md$/.test(name));
-      expect(planName).toBeDefined();
-      const artifactStem = planName!.replace(/^plan-/, "").replace(/\.md$/, "");
-      expect(existsSync(join(cwd, `tasks/contracts/${artifactStem}.contract.md`))).toBe(true);
-      expect(existsSync(join(cwd, `tasks/reviews/${artifactStem}.review.md`))).toBe(true);
-      expect(existsSync(join(cwd, `tasks/notes/${artifactStem}.notes.md`))).toBe(true);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("capture-plan execute should require a concrete promotion reason", () => {
-    const cwd = tmpWorkspace("helper-capture-plan-execute-missing-reason");
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      copyHelpers(cwd);
-      writeFileSync(
-        join(cwd, "approved.md"),
-        [
-          "## Approved design summary",
-          "- Building: approved capture",
-          "",
-          "## Task Breakdown",
-          "- [ ] Implement approved capture",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--slug",
-        "approved-capture",
-        "--title",
-        "Approved Capture",
-        "--status",
-        "Approved",
-        "--execute",
-        "--body-file",
-        "approved.md",
-      ], cwd);
-
-      expect(res.status).toBe(1);
-      expect(res.stderr).toContain("--execute with --artifact-level work-package requires a concrete --promotion-reason");
-      expect(readdirSync(join(cwd, "plans"))).toHaveLength(0);
-
-      const placeholder = run("bash", [
-        "scripts/capture-plan.sh",
-        "--slug",
-        "approved-capture",
-        "--title",
-        "Approved Capture",
-        "--status",
-        "Approved",
-        "--promotion-reason",
-        "TBD",
-        "--execute",
-        "--body-file",
-        "approved.md",
-      ], cwd);
-
-      expect(placeholder.status).toBe(1);
-      expect(placeholder.stderr).toContain("--execute with --artifact-level work-package requires a concrete --promotion-reason");
-      expect(readdirSync(join(cwd, "plans"))).toHaveLength(0);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("capture-plan execute transfers active markers to the linked worktree", () => {
-    const cwd = tmpWorkspace("helper-capture-worktree-transfer");
-    const worktreePath = `${cwd}-wt-transfer-markers`;
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, "tasks"), { recursive: true });
-      copyHelpers(cwd);
-      installCanonicalContractTemplate(cwd);
-      writeFileSync(
-        join(cwd, ".ai/harness/policy.json"),
-        JSON.stringify(
-          {
-            worktree_strategy: {
-              auto_for_contract_tasks: true,
-              branch_prefix: "codex/",
-              base_branch: "main",
-            },
-          },
-          null,
-          2
-        ) + "\n"
-      );
-      initGitRepo(cwd);
-      commitAll(cwd, "init workflow");
-      writeFileSync(
-        join(cwd, "approved.md"),
-        [
-          "## Approved design summary",
-          "- Building: worktree marker transfer",
-          "- Verification: helper tests",
-          "",
-          "## Task Breakdown",
-          "- [ ] Transfer markers",
-        ].join("\n")
-      );
-
-      const res = run("bash", [
-        "scripts/capture-plan.sh",
-        "--slug",
-        "transfer-markers",
-        "--title",
-        "Transfer Markers",
-        "--status",
-        "Approved",
-        "--promotion-reason",
-        "worktree_boundary",
-        "--execute",
-        "--body-file",
-        "approved.md",
-      ], cwd);
-
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[ContractWorktree] Created worktree");
-      expect(existsSync(worktreePath)).toBe(true);
-      expect(existsSync(join(cwd, ".ai/harness/active-plan"))).toBe(false);
-      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/harness/active-worktree"))).toBe(false);
-
-      const linkedPlans = readdirSync(join(worktreePath, "plans")).filter((name) =>
-        /^plan-\d{8}-\d{4}-transfer-markers\.md$/.test(name)
-      );
-      expect(linkedPlans).toHaveLength(1);
-      expect(existsSync(join(cwd, "plans", linkedPlans[0]))).toBe(false);
-      expect(readFileSync(join(worktreePath, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${linkedPlans[0]}`);
-      expect(existsSync(join(worktreePath, ".claude/.active-plan"))).toBe(false);
-      expect(readFileSync(join(worktreePath, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(realpathSync(worktreePath));
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
+import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const source = join(import.meta.dir, '..', 'scripts');
+function fixture(run: (repo: string, invoke: (helper: string, args?: string[], body?: string) => ReturnType<typeof spawnSync>) => void) {
+  const repo = mkdtempSync(join(tmpdir(), 'capture-reference-'));
+  expect(spawnSync('git', ['init', '-q', repo]).status).toBe(0);
+  try { run(repo, (helper, args = [], body = '') => spawnSync('bash', [join(source, helper), ...args], {
+    cwd: repo, env: { ...process.env, REPO_HARNESS_TARGET_REPO_ROOT: repo }, input: body, encoding: 'utf8', timeout: 10000,
+  })); } finally { rmSync(repo, { recursive: true, force: true }); }
+}
+describe('optional planning references', () => {
+  test('capture preserves the requested text without projecting execution or approval artifacts', () => fixture((repo, invoke) => {
+    const body = '## Goal\nOne change\n## Scope\nowned paths\n## Verify\ntargeted tests\n## Rollback\nrevert\n';
+    expect(invoke('capture-plan.sh', ['--slug', 'bounded'], body).status).toBe(0);
+    expect(readFileSync(join(repo, 'plans/bounded.md'), 'utf8')).toBe(body);
+    expect(existsSync(join(repo, 'tasks'))).toBe(false);
+    expect(existsSync(join(repo, '.ai/harness/active-plan'))).toBe(false);
+    const readback = invoke('plan-to-todo.sh', ['--plan', 'plans/bounded.md']);
+    expect(readback.status).toBe(0);
+    expect(readback.stdout).toBe(body);
+    expect(existsSync(join(repo, 'tasks'))).toBe(false);
+  }));
+  test('capture refuses existing work and retired ceremony flags without writes', () => fixture((repo, invoke) => {
+    expect(invoke('capture-plan.sh', ['--slug', 'same'], 'original').status).toBe(0);
+    expect(invoke('capture-plan.sh', ['--slug', 'same'], 'replacement').status).not.toBe(0);
+    expect(readFileSync(join(repo, 'plans/same.md'), 'utf8')).toBe('original');
+    expect(invoke('capture-plan.sh', ['--slug', 'new', '--promotion-reason', 'merge_boundary'], 'body').status).toBe(2);
+    expect(existsSync(join(repo, 'plans/new.md'))).toBe(false);
+  }));
+  test('capture rejects traversal and symlink destinations', () => fixture((repo, invoke) => {
+    expect(invoke('capture-plan.sh', ['--slug', '../outside'], 'body').status).not.toBe(0);
+    mkdirSync(join(repo, 'other'));
+    symlinkSync(join(repo, 'other'), join(repo, 'plans'));
+    expect(invoke('capture-plan.sh', ['--slug', 'escape'], 'body').status).not.toBe(0);
+    expect(existsSync(join(repo, 'other/escape.md'))).toBe(false);
+  }));
+  test('ensure prepares only bounded runtime recovery space and refuses unsafe ancestors', () => fixture((repo, invoke) => {
+    expect(invoke('ensure-task-workflow.sh').status).toBe(0);
+    expect(existsSync(join(repo, '.ai/harness/handoff'))).toBe(true);
+    expect(existsSync(join(repo, 'tasks/workstreams'))).toBe(false);
+    expect(existsSync(join(repo, '.claude/templates/contract.template.md'))).toBe(false);
+    rmSync(join(repo, '.ai/harness'), { recursive: true });
+    mkdirSync(join(repo, 'outside'));
+    symlinkSync(join(repo, 'outside'), join(repo, '.ai/harness'));
+    expect(invoke('ensure-task-workflow.sh').status).not.toBe(0);
+    expect(existsSync(join(repo, 'outside/handoff'))).toBe(false);
+  }));
 });

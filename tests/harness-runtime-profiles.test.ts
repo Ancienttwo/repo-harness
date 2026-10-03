@@ -16,44 +16,43 @@ describe('workflow runtime profile risk floor', () => {
       }),
     ).toMatchObject({
       ok: true,
-      profile: 'lite',
-      riskFloor: 'lite',
-      reasons: ['risk-floor:lite:local-low-risk'],
+      profile: 'routine',
+      riskFloor: 'routine',
+      reasons: ['risk-floor:routine:local-change'],
     });
   });
 
   test.each([
-    ['ordinary feature', { operationKind: 'feature' }, 'risk-floor:standard:feature'],
     [
       'medium path scope',
       { targetPaths: ['src/a.ts', 'src/b.ts', 'tests/a.test.ts', 'tests/b.test.ts'] },
-      'risk-floor:standard:medium-scope',
+      'risk-floor:high:large-change',
     ],
     [
       'capability ids',
       { capabilityIds: ['workflow-state', 'workflow-hooks'] },
-      'risk-floor:standard:cross-capability',
+      'risk-floor:high:cross-capability',
     ],
     [
       'declared capability count',
       { capabilityIds: ['workflow-state'], capabilityCount: 2 },
-      'risk-floor:standard:cross-capability',
+      'risk-floor:high:cross-capability',
     ],
     [
       'cross-capability operation',
       { operationKind: 'cross-capability' },
-      'risk-floor:standard:cross-capability',
+      'risk-floor:high:cross-capability',
     ],
     [
       'multi-file operation',
       { operationKind: 'multi-file' },
-      'risk-floor:standard:medium-scope',
+      'risk-floor:high:large-change',
     ],
   ] as const)('raises %s to standard', (_label, input, reason) => {
     expect(resolveWorkflowProfile(input)).toMatchObject({
       ok: true,
-      profile: 'standard',
-      riskFloor: 'standard',
+      profile: 'high',
+      riskFloor: 'high',
       reasons: [reason],
     });
   });
@@ -73,9 +72,9 @@ describe('workflow runtime profile risk floor', () => {
   test.each(strictOperationCases)('makes %s operations strict', (operationKind, category) => {
     expect(resolveWorkflowProfile({ operationKind })).toMatchObject({
       ok: true,
-      profile: 'strict',
-      riskFloor: 'strict',
-      reasons: [`risk-floor:strict:${category}`],
+      profile: 'high',
+      riskFloor: 'high',
+      reasons: [`risk-floor:high:${category}`],
     });
   });
 
@@ -90,8 +89,8 @@ describe('workflow runtime profile risk floor', () => {
     ['public API', 'src/api/v1/users.ts', 'public-api'],
   ] as const)('makes the %s target path strict', (_label, targetPath, category) => {
     const result = resolveWorkflowProfile({ targetPaths: [targetPath] });
-    expect(result).toMatchObject({ ok: true, profile: 'strict', riskFloor: 'strict' });
-    expect(result.reasons).toContain(`risk-floor:strict:${category}`);
+    expect(result).toMatchObject({ ok: true, profile: 'high', riskFloor: 'high' });
+    expect(result.reasons).toContain(`risk-floor:high:${category}`);
   });
 
   test.each([
@@ -107,16 +106,16 @@ describe('workflow runtime profile risk floor', () => {
     'tests\\anonymous-auth.spec.ts',
   ])('test basename does not establish a strict boundary: %s', (path) => {
     expect(resolveWorkflowProfile({ targetPaths: [path] })).toMatchObject({
-      ok: true, profile: 'lite', signals: { targetPathCount: 1, strictCategories: [] },
+      ok: true, profile: 'routine', signals: { targetPathCount: 1, strictCategories: [] },
     });
     expect(resolveWorkflowProfile({ targetPaths: ['src/home.ts'], strictScanPaths: [path] }))
-      .toMatchObject({ ok: true, profile: 'lite' });
+      .toMatchObject({ ok: true, profile: 'routine' });
   });
 
   test('test names do not suppress independent strict signals or medium scope', () => {
     const targetPaths = ['apps/web/e2e/anonymous-research-auth.spec.ts', 'src/home.ts', 'src/locale.ts', 'src/messages.ts'];
     expect(resolveWorkflowProfile({ targetPaths })).toMatchObject({
-      ok: true, profile: 'standard', signals: { targetPathCount: 4, strictCategories: [] },
+      ok: true, profile: 'high', signals: { targetPathCount: 4, strictCategories: [] },
     });
     for (const input of [
       { targetPaths, operationKind: 'auth' as const },
@@ -127,9 +126,9 @@ describe('workflow runtime profile risk floor', () => {
       { targetPaths: ['tests/security/login.spec.ts'] },
       { targetPaths: ['tests/auth.spec.json'] },
       { targetPaths: ['tests/auth.ts'] },
-      { targetPaths: ['src/auth/session.test.ts'], explicitOverride: 'lite' as const },
+      { targetPaths: ['src/auth/session.test.ts'], explicitOverride: 'routine' as const },
     ]) {
-      expect(resolveWorkflowProfile(input).riskFloor).toBe('strict');
+      expect(resolveWorkflowProfile(input).riskFloor).toBe('high');
     }
   });
 
@@ -164,8 +163,8 @@ describe('workflow runtime profile risk floor', () => {
       strictScanPaths: ['docs/auth/runbook.md', 'src/plain.ts'],
       operationKind: 'edit',
     });
-    expect(result).toMatchObject({ ok: true, profile: 'strict', riskFloor: 'strict' });
-    expect(result.reasons).toContain('risk-floor:strict:auth');
+    expect(result).toMatchObject({ ok: true, profile: 'high', riskFloor: 'high' });
+    expect(result.reasons).toContain('risk-floor:high:auth');
     if (!result.ok) throw new Error('expected an ok resolution');
     // Medium-scope/targetPathCount still reflect only the filtered set (1),
     // not the wider strict-scan set (2) -- strictScanPaths widens strict
@@ -176,45 +175,45 @@ describe('workflow runtime profile risk floor', () => {
   test('strictScanPaths is additive: omitting it keeps targetPaths-only strict detection unchanged', () => {
     expect(resolveWorkflowProfile({ targetPaths: ['src/plain.ts'], operationKind: 'edit' })).toMatchObject({
       ok: true,
-      profile: 'lite',
-      riskFloor: 'lite',
+      profile: 'routine',
+      riskFloor: 'routine',
     });
   });
 
   test('applies the same deterministic risk signals to capability ids', () => {
     expect(resolveWorkflowProfile({ capabilityIds: ['apps-web-oauth'] })).toMatchObject({
       ok: true,
-      profile: 'strict',
-      riskFloor: 'strict',
-      reasons: ['risk-floor:strict:auth'],
+      profile: 'high',
+      riskFloor: 'high',
+      reasons: ['risk-floor:high:auth'],
     });
   });
 
   test('allows an explicit override to raise or equal the risk floor', () => {
-    expect(resolveWorkflowProfile({ targetPaths: ['src/local.ts'], operationKind: 'edit', explicitOverride: 'strict' })).toMatchObject({
+    expect(resolveWorkflowProfile({ targetPaths: ['src/local.ts'], operationKind: 'edit', explicitOverride: 'high' })).toMatchObject({
       ok: true,
-      profile: 'strict',
-      riskFloor: 'lite',
-      reasons: ['risk-floor:lite:local-low-risk', 'explicit-override:raise:strict'],
+      profile: 'high',
+      riskFloor: 'routine',
+      reasons: ['risk-floor:routine:local-change', 'explicit-override:raise:high'],
     });
-    expect(resolveWorkflowProfile({ operationKind: 'feature', explicitOverride: 'standard' })).toMatchObject({
+    expect(resolveWorkflowProfile({ operationKind: 'feature', explicitOverride: 'routine' })).toMatchObject({
       ok: true,
-      profile: 'standard',
-      riskFloor: 'standard',
-      reasons: ['risk-floor:standard:feature', 'explicit-override:equal:standard'],
+      profile: 'routine',
+      riskFloor: 'routine',
+      reasons: ['risk-floor:routine:local-change', 'explicit-override:equal:routine'],
     });
   });
 
   test('fails closed when an explicit override lowers the deterministic floor', () => {
     expect(
-      resolveWorkflowProfile({ targetPaths: ['src/auth/login.ts'], explicitOverride: 'lite' }),
+      resolveWorkflowProfile({ targetPaths: ['src/auth/login.ts'], explicitOverride: 'routine' }),
     ).toEqual({
       ok: false,
       code: 'PROFILE_BELOW_RISK_FLOOR',
-      message: 'explicit profile lite is below deterministic risk floor strict',
-      requestedProfile: 'lite',
-      riskFloor: 'strict',
-      reasons: ['risk-floor:strict:auth'],
+      message: 'explicit profile routine is below deterministic risk floor high',
+      requestedProfile: 'routine',
+      riskFloor: 'high',
+      reasons: ['risk-floor:high:auth'],
     });
   });
 
@@ -227,8 +226,8 @@ describe('workflow runtime profile risk floor', () => {
 
     expect(resolveWorkflowProfile(input)).toMatchObject({
       ok: true,
-      profile: 'lite',
-      riskFloor: 'lite',
+      profile: 'routine',
+      riskFloor: 'routine',
     });
   });
 
@@ -246,20 +245,20 @@ describe('workflow runtime profile risk floor', () => {
     expect(first).toMatchObject({
       ok: true,
       reasons: [
-        'risk-floor:strict:auth',
-        'risk-floor:strict:payment',
-        'risk-floor:strict:schema',
+        'risk-floor:high:auth',
+        'risk-floor:high:payment',
+        'risk-floor:high:schema',
       ],
     });
   });
 
   test('fails closed for an invalid runtime capability count', () => {
-    expect(resolveWorkflowProfile({ capabilityCount: -1, explicitOverride: 'lite' })).toEqual({
+    expect(resolveWorkflowProfile({ capabilityCount: -1, explicitOverride: 'routine' })).toEqual({
       ok: false,
       code: 'INVALID_RISK_INPUT',
       message: 'capabilityCount must be a non-negative integer',
-      requestedProfile: 'lite',
-      riskFloor: 'strict',
+      requestedProfile: 'routine',
+      riskFloor: 'high',
       reasons: ['risk-floor:invalid-capability-count'],
     });
   });
@@ -268,18 +267,18 @@ describe('workflow runtime profile risk floor', () => {
     expect(resolveWorkflowProfile({})).toMatchObject({
       ok: false,
       code: 'INVALID_RISK_INPUT',
-      riskFloor: 'strict',
-      reasons: ['risk-floor:strict:signals-unavailable'],
+      riskFloor: 'high',
+      reasons: ['risk-floor:high:signals-unavailable'],
     });
     expect(resolveWorkflowProfile({ operationKind: 'edit' })).toMatchObject({
       ok: false,
       code: 'INVALID_RISK_INPUT',
-      riskFloor: 'strict',
+      riskFloor: 'high',
     });
-    expect(resolveWorkflowProfile({ operationKind: 'edit', explicitOverride: 'strict' })).toMatchObject({
+    expect(resolveWorkflowProfile({ operationKind: 'edit', explicitOverride: 'high' })).toMatchObject({
       ok: true,
-      profile: 'strict',
-      riskFloor: 'strict',
+      profile: 'high',
+      riskFloor: 'high',
     });
   });
 

@@ -883,7 +883,7 @@ describe('durable architecture projection orchestration', () => {
     expect(first[0]?.actions[0]?.outputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
-  test('typed refresh authority runs canonical sync actions even when architecture-queue reports no drift card', () => {
+  test('explicit architecture refresh records provider facts without automatic queues or context writes', () => {
     const f = fixture();
     const bin = join(dirname(f.repoRoot), 'refresh-bin');
     const calls = join(dirname(f.repoRoot), 'refresh-calls.txt');
@@ -903,19 +903,11 @@ describe('durable architecture projection orchestration', () => {
     const [receipt] = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/index.ts'], {
       env: { ...process.env, PATH: bin, AXR6_REFRESH_CALLS: calls },
     });
-    expect(receipt?.actions.map((action) => action.action)).toEqual([
-      'architecture-queue',
-      'context-contract-sync',
-      'capability-context-request',
-    ]);
-    expect(readFileSync(calls, 'utf8').trim().split('\n')).toEqual([
-      'run architecture-queue record --file src/index.ts',
-      'run context-contract-sync sync-latest',
-      'capability-context request --from-latest-architecture-event',
-    ]);
+    expect(receipt?.actions).toEqual([]);
+    expect(existsSync(calls)).toBe(false);
   });
 
-  test('default refresh runner checkpoints each successful action before the next deadline check', () => {
+  test('default refresh produces a fact receipt without per-edit work even when no execution budget remains', () => {
     const f = fixture();
     const bin = join(dirname(f.repoRoot), 'checkpoint-bin');
     mkdirSync(bin, { recursive: true });
@@ -933,30 +925,11 @@ describe('durable architecture projection orchestration', () => {
       resultingDigests: { modelDigest: digest('c'), sourceTreeDigest: digest('d'), flowProofDigest: digest('e'), projectionDigest: digest('f') },
       projectionReceiptDigest: digest('0'),
     };
-    let clockReads = 0;
-    expect(() => consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], {
-      env: { ...process.env, PATH: bin },
-      // deadlineMs minus the virtual now is handed to spawnSync as a REAL
-      // wall-clock kill timer; keep the derived budget generous so a loaded
-      // machine cannot SIGTERM the fake action before the second clock read.
-      deadlineMs: 30_000,
-      nowMs: () => clockReads++ === 0 ? 0 : 60_000,
-    })).toThrow('timeout before canonical action');
-    const progressPath = join(f.repoRoot, '.ai/harness/architecture-projection/refresh-progress', `${signal.signalId.replace(/^sha256:/, '')}.json`);
-    expect(JSON.parse(readFileSync(progressPath, 'utf8')).actions.map((entry: { actionKey: string }) => entry.actionKey)).toEqual(['architecture-queue:src/a.ts']);
-    let resumedFrom: string[] = [];
-    const [receipt] = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], {
-      run: (_root, _signal, _paths, _env, completed) => {
-        resumedFrom = [...completed];
-        return [
-          { actionKey: 'architecture-queue:src/b.ts', action: 'architecture-queue', status: 0, stdout: '', stderr: '' },
-          { actionKey: 'context-contract-sync', action: 'context-contract-sync', status: 0, stdout: '', stderr: '' },
-          { actionKey: 'capability-context-request', action: 'capability-context-request', status: 0, stdout: '', stderr: '' },
-        ];
-      },
-    });
-    expect(resumedFrom).toEqual(['architecture-queue:src/a.ts']);
-    expect(receipt?.actions).toHaveLength(4);
+    const [receipt] = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts'], { deadlineMs: 1, nowMs: () => 2 });
+    expect(receipt?.actions).toEqual([]);
+    expect(existsSync(join(f.repoRoot, 'tasks/workstreams'))).toBe(false);
+    expect(readFileSync(join(f.repoRoot, 'AGENTS.md'), 'utf8')).toBe('# agents\n');
+    expect(readFileSync(join(f.repoRoot, 'CLAUDE.md'), 'utf8')).toBe('# claude\n');
   });
 
   test('refresh retry resumes after the last durable action progress record', () => {

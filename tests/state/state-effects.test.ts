@@ -28,6 +28,7 @@ import {
   type StateCacheWriteEffects,
 } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
+import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import {
   commitStateVersionAfter,
   currentStateVersion,
@@ -57,7 +58,7 @@ describe('Effective State content revision', () => {
 });
 
 describe('Effective State lock effects', () => {
-  test('a malformed stale lock is reclaimed only when its filename PID is dead', () => {
+  test('a malformed stale lock remains unknown even when its filename PID is dead', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const lockPath = join(fixture.cwd, '.ai/harness/state/effective.lock');
@@ -68,8 +69,9 @@ describe('Effective State lock effects', () => {
       }, '{malformed');
       const old = new Date(Date.now() - 60_000);
       utimesSync(ownerPath, old, old);
-      expect(resolveFixtureState(fixture.cwd).phase).toBe('executing');
-      expect(existsSync(lockPath)).toBe(false);
+      expect(() => acquireExclusiveDirectoryLock(fixture.cwd, '.ai/harness/state/effective.lock', { waitTimeoutMs: 1 })).toThrow('timed out');
+      expect(readFileSync(ownerPath, 'utf-8')).toBe('{malformed');
+      expect(existsSync(lockPath)).toBe(true);
     } finally {
       fixture.cleanup();
     }

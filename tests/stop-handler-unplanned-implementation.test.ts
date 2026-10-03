@@ -36,7 +36,7 @@ function gitFixture(): string {
 
 function canonicalState(): EffectiveState {
   return {
-    workflow_profile: 'standard',
+    workflow_profile: 'routine',
     review: { path: null, freshness: 'missing', recommendation: null, recorded_subject_sha256: null, recorded_target_revision: null },
     readiness: {
       ok: true,
@@ -73,9 +73,8 @@ describe('Stop advisory for implementation changes with no active plan', () => {
     const result = runStopHandler({ collector: collector(cwd) });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain('[PlanStatusGuard] 1 implementation path(s) changed with no active plan');
-    expect(result.stderr).toContain('src/thing.ts');
-    expect(result.stderr).toContain('capture-plan');
+    expect(result.stdout).toBe('');
+    expect(result.stderr).not.toContain('capture-plan');
 
     const records = readFileSync(join(cwd, EVIDENCE), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
     expect(records).toHaveLength(1);

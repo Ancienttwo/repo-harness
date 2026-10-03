@@ -106,7 +106,7 @@ export function createEffectiveStateFixture(
     '> **Status**: Active',
     `> **Plan**: ${PLAN}`,
     '> **Task Profile**: code-change',
-    '> **Workflow Profile**: standard',
+    '> **Workflow Profile**: routine',
     `> **Review File**: \`${REVIEW}\``,
     '',
     '## Allowed Paths',
@@ -352,7 +352,7 @@ export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
   },
   {
     name: 'explicit-strict-without-path-signals',
-    risk: { explicitOverride: 'strict' },
+    risk: { explicitOverride: 'high' },
     setup: (cwd) => replaceContractProfile(cwd, 'strict'),
   },
 ];

@@ -304,6 +304,7 @@ const MERGE_BLOCKERS = [
   'base_moved_since_verification',
   'review_subject_mismatch',
   'verification_evidence_stale',
+  'rollback_tags_pending',
   'checks_failed',
   'checks_pending',
   'acceptance_missing',

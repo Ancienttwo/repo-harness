@@ -62,12 +62,12 @@ usage() {
 Usage:
   scripts/ship-worktrees.sh [--target <branch>] [--remote <name>] [--slug <slug>] [--ready] [--dry-run]
   scripts/ship-worktrees.sh --local-merge [--target <branch>] [--slug <slug>] [--dry-run]
-  scripts/ship-worktrees.sh --cleanup-merged [--target <branch>] [--slug <slug>] [--discard-scaffold-only] [--dry-run]
+  scripts/ship-worktrees.sh --cleanup-merged [--target <branch>] [--slug <slug>] [--dry-run]
   scripts/ship-worktrees.sh --recover <inspect|abort|reconcile> [--key <transaction-key>]
 
-Default mode validates finished contract worktrees, commits them through
-contract-worktree finish --no-merge, pushes their codex/* branches, and opens
-draft PRs. It does not fast-forward main by default.
+Default mode commits the authorized branch diff, scans it for private data,
+pushes its frozen head and opens a Draft PR. Workflow artifacts are optional.
+Existing managed lease writers retain their exact ownership fencing. It does not fast-forward main by default.
 USAGE_EOF
 }
 
@@ -150,7 +150,7 @@ fail() {
 # workflow state. It records operation progress only -- Effective State and its
 # collectors must never read it.
 #
-# Phases: prepared -> implementation_committed -> gate_sealed -> lifecycle_applied
+# Phases: prepared -> implementation_committed -> candidate_frozen -> lifecycle_applied
 #      -> lifecycle_committed -> merged|pushed -> pr_observed -> complete
 # Each phase is persisted via temp file + fsync + atomic rename before the caller
 # may treat that phase's effect as committed. There is no auto-resume: re-entry
@@ -542,32 +542,26 @@ closeout_journal_report() {
 # Restores the pre-closeout snapshot recorded in the journal. Safe from a fresh
 # process: the path index and the original HEAD both live on disk.
 closeout_journal_restore_snapshot() {
-  local dir="$1"
-  local index_file="$dir/snapshot/paths.tsv"
-  local -a rows=()
-  local row index path existed original_head count
-  [[ -f "$index_file" ]] || return 1
-  while IFS= read -r row; do
-    [[ -n "$row" ]] || continue
-    rows+=("$row")
-  done < "$index_file"
-  for ((count = ${#rows[@]} - 1; count >= 0; count--)); do
-    row="${rows[$count]}"
-    index="${row%%$'\t'*}"
-    path="${row#*$'\t'}"
-    existed="${path#*$'\t'}"
-    path="${path%%$'\t'*}"
-    rm -rf "$path"
-    if [[ "$existed" == "1" ]]; then
-      mkdir -p "$(dirname "$path")"
-      cp -Rp "$dir/snapshot/$index/value" "$path"
-    fi
-  done
+  local dir="$1" index_file="$1/snapshot/paths.tsv"
+  local original_head owned_head expected_branch current_branch current_head
+  [[ -f "$index_file" && ! -L "$index_file" ]] || { echo "recovery: snapshot index unavailable; work preserved" >&2; return 1; }
+  [[ ! -s "$index_file" ]] || { echo "recovery: legacy artifact snapshot requires explicit migration; work preserved" >&2; return 1; }
+  expected_branch="$(closeout_journal_field "$dir/meta.json" branch)"
+  current_branch="$(git symbolic-ref -q HEAD)" || { echo "recovery: detached or unknown branch; work preserved" >&2; return 1; }
+  [[ -n "$expected_branch" && "$current_branch" == "refs/heads/$expected_branch" ]] || { echo "recovery: branch differs from journal; work preserved" >&2; return 1; }
   original_head="$(closeout_journal_field "$dir/meta.json" original_head)"
-  if [[ -n "$original_head" ]] && [[ "$(git rev-parse HEAD)" != "$original_head" ]]; then
-    git reset --mixed "$original_head"
-  fi
+  [[ "$original_head" =~ ^[a-f0-9]{40,64}$ ]] || { echo "recovery: original head unavailable; work preserved" >&2; return 1; }
+  current_head="$(git rev-parse HEAD)"
+  [[ "$current_head" != "$original_head" ]] || return 0
+  owned_head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  [[ "$owned_head" =~ ^[a-f0-9]{40,64}$ && "$current_head" == "$owned_head" ]] || { echo "recovery: head differs from owned commit; work preserved" >&2; return 1; }
+  [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || { echo "recovery: new dirty or untracked work requires a user decision; work preserved" >&2; return 1; }
+  git update-ref "$current_branch" "$original_head" "$owned_head" || return 1
+  # Change only the index/ref. The authorized implementation contents survive
+  # as an uncommitted diff; user files are never restored from a folder snapshot.
+  git read-tree "$original_head"
 }
+
 
 ship_transaction_dir=""
 ship_transaction_active=0
@@ -620,17 +614,14 @@ ship_transaction_begin() {
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
   base_sha="$(git rev-parse "$gate_base_ref^{commit}")"
   original_head="$(git rev-parse HEAD)"
-  plan="$(active_plan_or_empty)"
-  contract="$(ship_active_contract_or_empty)"
-  key="$(closeout_journal_derive_key \
-    "repo=$(closeout_journal_root)" \
-    "worktree=$closeout_journal_worktree" \
-    "operation=ship" \
-    "plan=$plan" \
-    "contract=$contract" \
-    "original_head=$original_head" \
-    "target_branch=$TARGET_BRANCH" \
-    "base_sha=$base_sha")"
+  plan=""
+  contract=""
+  key="$("$BUN_BIN" -e '
+const p=require("path"),{pathToFileURL}=require("url");
+const {deriveShipJournalKey}=await import(pathToFileURL(p.join(process.argv[1],"..","src","effects","publication","publication-lifecycle.ts")).href);
+const [,dir,root,repo,worktree,branch,remote,publication_mode,claim_id,claim_task_id,claim_generation,claim_task_revision,original_head,target_branch,base_sha,git]=process.argv;
+process.stdout.write(deriveShipJournalKey(root,{repo,worktree,branch,remote,publication_mode,claim_id,claim_task_id,claim_generation,claim_task_revision,original_head,target_branch,base_sha},git));
+' "$helper_dir" "$REPO_ROOT" "$(closeout_journal_root)" "$closeout_journal_worktree" "$branch" "$REMOTE_NAME" "$publication_mode" "$publication_claim_id" "$publication_task_id" "$publication_generation" "$publication_task_revision" "$original_head" "$TARGET_BRANCH" "$base_sha" "$GIT_BIN")"
   closeout_claim_bind_journal "$key"
   closeout_journal_begin "ship" "$key" \
     "branch=$branch" \
@@ -640,7 +631,12 @@ ship_transaction_begin() {
     "target_branch=$TARGET_BRANCH" \
     "base_ref=$gate_base_ref" \
     "base_sha=$base_sha" \
-    "remote=$REMOTE_NAME" || begin_status=$?
+    "remote=$REMOTE_NAME" \
+    "publication_mode=$publication_mode" \
+    "claim_id=$publication_claim_id" \
+    "claim_task_id=$publication_task_id" \
+    "claim_generation=$publication_generation" \
+    "claim_task_revision=$publication_task_revision" || begin_status=$?
   case "$begin_status" in
     0) ;;
     2)
@@ -665,12 +661,6 @@ ship_transaction_begin() {
   ship_transaction_paths=()
   ship_transaction_existed=()
   trap ship_transaction_on_exit EXIT
-  ship_transaction_snapshot "plans"
-  ship_transaction_snapshot "tasks"
-  ship_transaction_snapshot ".ai/harness/active-plan"
-  ship_transaction_snapshot ".ai/harness/active-worktree"
-  ship_transaction_snapshot ".ai/harness/sprint"
-  ship_transaction_snapshot ".claude/.plan-state"
   ship_transaction_write_index
   closeout_journal_record "$closeout_journal_dir" in_progress prepared "$original_head"
 }
@@ -694,7 +684,13 @@ ship_transaction_abort() {
   local index path
   [[ "$ship_transaction_active" -eq 1 ]] || return 0
   if [[ -n "$ship_transaction_original_head" ]] && [[ "$(git rev-parse HEAD)" != "$ship_transaction_original_head" ]]; then
-    git reset --mixed "$ship_transaction_original_head"
+    local current_head owned_head branch_ref
+    current_head="$(git rev-parse HEAD)"
+    owned_head="$(closeout_journal_phase_ref "$closeout_journal_dir" implementation_committed)"
+    [[ "$current_head" == "$owned_head" ]] || { echo "ship: branch moved outside this transaction; preserve work and journal" >&2; return 1; }
+    branch_ref="$(git symbolic-ref HEAD)"
+    git update-ref "$branch_ref" "$ship_transaction_original_head" "$owned_head" || return 1
+    git read-tree "$ship_transaction_original_head" || return 1
   fi
   for ((index = ${#ship_transaction_paths[@]} - 1; index >= 0; index--)); do
     path="${ship_transaction_paths[$index]}"
@@ -730,7 +726,11 @@ ship_transaction_on_exit() {
   local status=$?
   trap - EXIT
   if [[ "$ship_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
-    ship_transaction_abort || status=1
+    if closeout_ship_effect_landed "$closeout_journal_dir"; then
+      echo "ship-worktrees: push already landed; retain journal and reconcile without pushing again" >&2
+    else
+      ship_transaction_abort || status=1
+    fi
   fi
   exit "$status"
 }
@@ -808,67 +808,14 @@ fail_dirty_merged_worktree() {
   echo "ship-worktrees: dirty paths:" >&2
   print_dirty_paths "$path"
 
-  non_scaffold="$(non_scaffold_dirty_paths "$path")"
-  if [[ -z "$non_scaffold" ]]; then
-    echo "ship-worktrees: if these are generated plan/contract/review/notes scaffold only, rerun with --discard-scaffold-only." >&2
-  else
-    echo "ship-worktrees: --discard-scaffold-only is blocked by non-scaffold paths:" >&2
-    printf '%s\n' "$non_scaffold" | sed 's/^/  - /' >&2
-  fi
+  echo "ship-worktrees: work is preserved; deletion requires the user decision." >&2
   return 1
 }
 
-discard_scaffold_dirty_paths() {
-  local worktree="$1" path
-  local tracked_paths=()
-  local untracked_paths=()
-
-  while IFS= read -r path; do
-    [[ -n "$path" ]] || continue
-    if git -C "$worktree" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
-      tracked_paths+=("$path")
-    else
-      untracked_paths+=("$path")
-    fi
-  done < <(dirty_paths_for_worktree "$worktree")
-
-  if [[ "${#tracked_paths[@]}" -gt 0 ]]; then
-    run_cmd git -C "$worktree" reset -- "${tracked_paths[@]}"
-    run_cmd git -C "$worktree" checkout -- "${tracked_paths[@]}"
-  fi
-
-  for path in ${untracked_paths[@]+"${untracked_paths[@]}"}; do
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      echo "[Ship] would remove scaffold file: $worktree/$path"
-    else
-      rm -f "$worktree/$path"
-    fi
-  done
-
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "[Ship] Would discard scaffold-only changes in $worktree"
-  else
-    echo "[Ship] Discarded scaffold-only changes in $worktree"
-  fi
-}
-
 guard_dirty_merged_worktree() {
-  local branch="$1" path="$2" non_scaffold
+  local branch="$1" path="$2"
   [[ -z "$(git -C "$path" status --porcelain=v1 --untracked-files=all)" ]] && return 0
-
-  if [[ "$DISCARD_SCAFFOLD_ONLY" -eq 0 ]]; then
-    fail_dirty_merged_worktree "$branch" "$path"
-    return 1
-  fi
-
-  non_scaffold="$(non_scaffold_dirty_paths "$path")"
-  if [[ -n "$non_scaffold" ]]; then
-    echo "ship-worktrees: refusing --discard-scaffold-only for dirty merged linked worktree with non-scaffold paths: $branch at $path" >&2
-    printf '%s\n' "$non_scaffold" | sed 's/^/  - /' >&2
-    return 1
-  fi
-
-  discard_scaffold_dirty_paths "$path"
+  fail_dirty_merged_worktree "$branch" "$path"
 }
 
 active_plan_or_empty() {
@@ -888,37 +835,10 @@ active_slug_or_empty() {
   plan_slug_from_path "$active_plan"
 }
 
-require_finish_ready() {
-  local contract_file="" review_file=""
-
-  [[ -x "$helper_dir/contract-worktree.sh" ]] || fail "packaged contract-worktree helper is missing or not executable"
-
-  load_workflow_state
-  if declare -F workflow_active_contract >/dev/null 2>&1; then
-    contract_file="$(workflow_active_contract 2>/dev/null || true)"
-  fi
-  if declare -F workflow_active_review >/dev/null 2>&1; then
-    review_file="$(workflow_active_review 2>/dev/null || true)"
-  fi
-  [[ -n "$contract_file" && -f "$contract_file" ]] || fail "active sprint contract is missing"
-  [[ -n "$review_file" && -f "$review_file" ]] || fail "active sprint review is missing"
-
-  [[ -f "$helper_dir/acceptance-receipt.ts" ]] || fail "AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts"
-  is_trusted_executable "$BUN_BIN" || fail "AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run"
-  REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
-    --contract "$contract_file" --verification ".ai/harness/checks/latest.json" >/dev/null \
-    || fail "active AcceptanceReceipt is missing, rejected, or stale"
-
-}
-
 finish_contract_worktree() {
-  local merge_mode="$1" gate_base_ref="${2:-$TARGET_BRANCH}"
-  require_finish_ready
-  if [[ "$merge_mode" == "local" ]]; then
-    run_cmd bash "$helper_dir/contract-worktree.sh" finish --target "$TARGET_BRANCH"
-  else
-    run_cmd bash "$helper_dir/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH" --gate-base "$gate_base_ref"
-  fi
+  local merge_mode="$1"
+  [[ "$merge_mode" == "local" ]] || fail "PR preparation does not use contract-worktree finish"
+  run_cmd bash "$helper_dir/contract-worktree.sh" finish --target "$TARGET_BRANCH"
 }
 
 verify_merge_gate_before_ship() {
@@ -969,15 +889,11 @@ pr_title_for_branch() {
 pr_body_for_branch() {
   local branch="$1"
   cat <<EOF_BODY
-Automated repo-harness ship for \`${branch}\`.
-
-Checks:
-- Waza /check review artifact recommends pass.
-- A typed AcceptanceReceipt records external pass or the contract-authorized user waiver.
-- \`contract-worktree finish --no-merge\` ran the sole sprint verification.
-- \`merge-gate\` sealed the exact base/head/full diff locally without another provider call.
-
-This PR intentionally does not merge \`${TARGET_BRANCH}\` locally.
+Goal: prepare \`$branch\` for review and automated main checks.
+Change: publish the current branch without workflow-stage artifacts.
+Verification: not claimed by this PR preparation; main consumes Required / CI on the exact head/base.
+Risk: assess the actual diff; request review for large/security/permission changes or uncertainty.
+Rollback: revert the squash merge commit after integration.
 EOF_BODY
 }
 
@@ -999,7 +915,7 @@ create_or_report_pr() {
   gh_bin="${REPO_HARNESS_GH_BIN:-gh}"
   command -v "$gh_bin" >/dev/null 2>&1 || fail "gh is required for default PR ship mode"
 
-  existing="$("$gh_bin" pr list --base "$TARGET_BRANCH" --head "$branch" --json url --jq '.[0].url // ""' 2>/dev/null || true)"
+  existing="$("$gh_bin" pr list --base "$TARGET_BRANCH" --head "$branch" --json url --jq '.[0].url // ""')" || fail "PR observation unavailable; no create was attempted"
   if [[ -n "$existing" ]]; then
     echo "[Ship] PR already exists for $branch: $existing"
     return 0
@@ -1020,10 +936,11 @@ create_or_report_pr() {
   if output="$("$gh_bin" "${args[@]}" 2>&1)"; then
     [[ -z "$output" ]] || printf '%s\n' "$output"
     return 0
+  else
+    status=$?
   fi
 
-  status=$?
-  existing="$("$gh_bin" pr list --base "$TARGET_BRANCH" --head "$branch" --json url --jq '.[0].url // ""' 2>/dev/null || true)"
+  existing="$("$gh_bin" pr list --base "$TARGET_BRANCH" --head "$branch" --json url --jq '.[0].url // ""')" || fail "PR observation unavailable; no create was attempted"
   if [[ -n "$existing" ]]; then
     echo "[Ship] PR already exists for $branch after create failure: $existing"
     return 0
@@ -1037,6 +954,8 @@ create_or_report_pr() {
 # common-dir lease owner record before it reads task_revision or generation.
 publication_claim_id=""
 publication_task_id=""
+publication_generation=""
+publication_task_revision=""
 publication_journal_payload=""
 publication_create_intent=""
 publication_create_intent_journal=""
@@ -1050,16 +969,30 @@ resolve_publication_claim_token() {
   publication_token_file=""
   marker="$(policy_get '.sprints.active_marker_file' '.ai/harness/sprint/active-sprint')"
   dir="$(dirname "$marker")/claims"
-  [[ -d "$dir" ]] || return 1
+  [[ ! -L "$dir" ]] || return 1
+  if [[ ! -e "$dir" ]]; then return 2; fi
+  [[ -d "$dir" && -r "$dir" && -x "$dir" ]] || return 1
   for token in "$dir"/*.claim; do
+    [[ ! -L "$token" ]] || return 1
     [[ -f "$token" ]] || continue
     [[ -z "$publication_token_file" ]] || return 1
     publication_token_file="$token"
   done
-  [[ -n "$publication_token_file" ]] || return 1
+  [[ -n "$publication_token_file" ]] || return 2
   publication_claim_id="$(sed -n 's/^claim_id=//p' "$publication_token_file" | head -1)"
   publication_task_id="$(sed -n 's/^task_id=//p' "$publication_token_file" | head -1)"
   [[ -n "$publication_claim_id" && -n "$publication_task_id" ]]
+}
+
+read_publication_claim_identity() {
+  local identity
+  identity="$("$BUN_BIN" -e '
+const p=require("path"),{pathToFileURL}=require("url");
+const {readShipClaimIdentity}=await import(pathToFileURL(p.join(process.argv[1],"..","src","effects","publication","publication-lifecycle.ts")).href);
+process.stdout.write(JSON.stringify(readShipClaimIdentity({repo_root:process.argv[2],task_id:process.argv[3],claim_id:process.argv[4],branch:process.argv[5],target_ref:process.argv[6]})));
+' "$helper_dir" "$REPO_ROOT" "$publication_task_id" "$publication_claim_id" "$(current_branch)" "$TARGET_BRANCH")" || fail "live claim identity/binding unavailable"
+  publication_generation="$(printf '%s' "$identity" | jq -r '.generation | tostring')"
+  publication_task_revision="$(printf '%s' "$identity" | jq -r '.task_revision')"
 }
 
 publication_cli() {
@@ -1225,41 +1158,71 @@ enter_publication_reviewing() {
   printf '%s\n' "$output"
 }
 
+observe_plain_pr() {
+  local branch="$1" expected_head="$2" expected_base="$3" result
+  result="$("${REPO_HARNESS_GH_BIN:-gh}" pr view "$branch" --json number,url,headRefName,baseRefName,headRefOid,baseRefOid)" || fail "PR readback unavailable; push may have landed, retain journal"
+  printf '%s' "$result" | jq -e --arg branch "$branch" --arg target "$TARGET_BRANCH" --arg head "$expected_head" --arg base "$expected_base" '
+    type == "object" and (.number | type == "number") and .number > 0 and (.url | type == "string")
+    and .headRefName == $branch and .baseRefName == $target and .headRefOid == $head and .baseRefOid == $base
+  ' >/dev/null || fail "PR identity/head/base changed; retain journal for recovery"
+  publication_journal_payload="$(printf '%s' "$result" | jq -c '{kind:"branch-pr-observation",pr_number:.number,url,head_sha:.headRefOid,base_sha:.baseRefOid}')"
+}
+
 ship_linked_pr() {
   local branch gate_base_ref verified_sha
   branch="$(current_branch)"
   [[ -n "$branch" ]] || fail "detached HEAD is not supported"
   [[ "$branch" != "$TARGET_BRANCH" ]] || fail "refusing to ship target branch as linked worktree"
-  case "$branch" in
-    "$BRANCH_PREFIX"*) ;;
-    *) fail "linked ship expects branch prefix $BRANCH_PREFIX, got $branch" ;;
-  esac
 
   refresh_target_base
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
+  local claim_status=0
+  resolve_publication_claim_token || claim_status=$?
+  [[ "$claim_status" -eq 0 || "$claim_status" -eq 2 ]] || fail "invalid or ambiguous claim token; publication refused"
+  if [[ "$claim_status" -eq 0 ]]; then
+    read_publication_claim_identity
+    # A managed lease owns this writer, so use its existing fenced closeout.
+    # The same finish implementation has no planning/acceptance ceremony.
+    run_cmd bash "$helper_dir/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH"
+  fi
+  publication_mode=branch
+  [[ "$claim_status" -ne 0 ]] || publication_mode=lease
   local begin_status=0
   ship_transaction_begin || begin_status=$?
   [[ "$begin_status" -ne 2 ]] || return 0
-  finish_contract_worktree "pr" "$gate_base_ref"
-  refresh_target_base
-  verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"
-  verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
-  ship_transaction_phase gate_sealed "$verified_sha"
-  push_branch "$branch" "$verified_sha"
-  ship_transaction_phase pushed "$verified_sha"
-  ship_transaction_commit
+  if [[ -n "$(git status --porcelain=v1 --untracked-files=all)" ]]; then
+    run_cmd git add -A
+    run_cmd git commit -m "feat: prepare ${branch}"
+  fi
+  verified_sha="$(git rev-parse HEAD)"
+  ship_transaction_phase implementation_committed "$verified_sha"
   if [[ "$DRY_RUN" -eq 0 ]]; then
+    [[ "$(git rev-parse "$gate_base_ref^{commit}")" == "$(closeout_journal_field "$closeout_journal_dir/meta.json" base_sha)" ]] || fail "base changed before push"
+    local scanned_head
+    scanned_head="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$gate_base_ref" --format sha)" || fail "candidate security scan failed"
+    [[ "$scanned_head" == "$verified_sha" ]] || fail "candidate changed during security scan"
+  fi
+  ship_transaction_phase candidate_frozen "$verified_sha"
+  if [[ "$DRY_RUN" -eq 0 && "$claim_status" -eq 0 ]]; then
     prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
     if [[ -n "$publication_create_intent" ]]; then
       ship_transaction_phase publication_create_intent "$verified_sha" "$publication_create_intent"
       publication_create_intent_journal="$closeout_journal_dir/status.json"
     fi
   fi
+  ship_transaction_phase push_started "$verified_sha"
+  push_branch "$branch" "$verified_sha"
+  ship_transaction_phase pushed "$verified_sha"
+  ship_transaction_commit
+  ship_transaction_phase pr_create_started "$verified_sha"
   create_or_report_pr "$branch"
-  if [[ "$DRY_RUN" -eq 0 ]]; then
+  if [[ "$DRY_RUN" -eq 0 && "$claim_status" -eq 0 ]]; then
     ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
     ship_transaction_phase pr_observed "$verified_sha" "$publication_journal_payload"
     enter_publication_reviewing || fail "publication review entry failed (publication_incomplete)"
+  elif [[ "$DRY_RUN" -eq 0 ]]; then
+    observe_plain_pr "$branch" "$verified_sha" "$(closeout_journal_field "$closeout_journal_dir/meta.json" base_sha)"
+    ship_transaction_phase pr_observed "$verified_sha" "$publication_journal_payload"
   fi
   ship_transaction_complete "$verified_sha"
 }
@@ -1273,40 +1236,19 @@ ship_linked_local_merge() {
 }
 
 ship_primary_dirty_pr() {
-  local status active_slug active_plan base_slug branch message gate_base_ref verified_sha
+  local status branch
   status="$(git status --porcelain=v1 --untracked-files=all)"
   [[ -n "$status" ]] || return 0
-
   [[ "$(current_branch)" == "$TARGET_BRANCH" ]] || fail "main closeout must start from $TARGET_BRANCH"
-  active_slug="$(active_slug_or_empty)"
-  base_slug="${SLUG_OVERRIDE:-$active_slug}"
-  [[ -n "$base_slug" ]] || fail "main worktree has changes; pass --slug or keep an active plan so ship can name the closeout branch"
-  base_slug="$(normalize_slug "$base_slug")"
-  branch="${BRANCH_PREFIX}${base_slug}-main-closeout"
-  message="chore(ship): close out ${base_slug}"
-  active_plan="$(active_plan_or_empty)"
-
-  if git show-ref --verify --quiet "refs/heads/$branch"; then
-    fail "closeout branch already exists: $branch"
-  fi
-
-  refresh_target_base
-  gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
-  if merge_gate_required "$gate_base_ref" && [[ -z "$active_plan" || ! -f "$active_plan" ]]; then
-    fail "target base requires merge gate but dirty-main closeout has no active goal plan; use a contract worktree"
+  [[ -n "$SLUG_OVERRIDE" ]] || fail "dirty main needs --slug to name its PR branch; work is preserved"
+  branch="${BRANCH_PREFIX}${SLUG_OVERRIDE}-main-closeout"
+  ! git show-ref --verify --quiet "refs/heads/$branch" || fail "closeout branch already exists: $branch"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[Ship] Would create $branch, commit the authorized diff, push and open a Draft PR; no check result claimed."
+    return 0
   fi
   run_cmd git switch -c "$branch"
-  run_cmd git add -A
-  run_cmd git commit -m "$message"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    verified_sha="$(git rev-parse HEAD)"
-  else
-    refresh_target_base
-    verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"
-    verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
-  fi
-  push_branch "$branch" "$verified_sha"
-  create_or_report_pr "$branch"
+  ship_linked_pr
 }
 
 ship_primary_pr() {
@@ -1425,14 +1367,17 @@ cleanup_merged() {
 # refuses on true, `--recover reconcile` refuses on false, so the window between
 # the push and its phase record cannot defeat either rule.
 closeout_ship_effect_landed() {
-  local dir="$1" verified remote branch
+  local dir="$1" verified remote branch observed
   closeout_journal_has_phase "$dir" pushed && return 0
-  verified="$(closeout_journal_phase_ref "$dir" gate_sealed)"
-  [[ -n "$verified" ]] || return 1
+  closeout_journal_has_phase "$dir" push_started || return 1
+  verified="$(closeout_journal_phase_ref "$dir" candidate_frozen)"
+  [[ "$verified" =~ ^[a-f0-9]{40,64}$ ]] || fail "push intent has no exact candidate; journal retained"
   remote="$(closeout_journal_field "$dir/meta.json" remote)"
   branch="$(closeout_journal_field "$dir/meta.json" branch)"
-  [[ -n "$remote" && -n "$branch" ]] || return 1
-  [[ "$(git ls-remote "$remote" "refs/heads/$branch" 2>/dev/null | awk 'NR==1{print $1}')" == "$verified" ]]
+  [[ -n "$remote" && -n "$branch" ]] || fail "push intent metadata incomplete; journal retained"
+  observed="$(git ls-remote "$remote" "refs/heads/$branch")" || fail "push result unavailable; journal retained for reconciliation"
+  [[ -n "$observed" ]] || return 1
+  [[ "${observed%%[[:space:]]*}" == "$verified" ]] || fail "remote branch differs from push intent; journal retained without replay"
 }
 
 closeout_ship_select() {
@@ -1499,6 +1444,11 @@ recover_ship() {
   closeout_journal_key_value="$(closeout_journal_field "$dir/meta.json" key)"
   status="$(closeout_journal_status "$dir")"
   last_phase="$(closeout_journal_last_phase "$dir")"
+  if [[ "$action" != "inspect" ]]; then
+    local known_mode
+    known_mode="$(closeout_journal_field "$dir/meta.json" publication_mode)"
+    [[ "$known_mode" == "branch" || "$known_mode" == "lease" ]] || fail "legacy/unknown journal requires explicit migration; no publication mode inferred"
+  fi
   branch="$(closeout_journal_field "$dir/meta.json" branch)"
 
   case "$action" in
@@ -1538,8 +1488,32 @@ recover_ship() {
       # -- and it never rolls the remote back.
       closeout_ship_effect_landed "$dir" \
         || fail "no landed push to reconcile (last phase: $last_phase); run '--recover abort' instead"
-      verified="$(closeout_journal_phase_ref "$dir" gate_sealed)"
+      verified="$(closeout_journal_phase_ref "$dir" candidate_frozen)"
       closeout_journal_has_phase "$dir" pushed || closeout_journal_record "$dir" in_progress pushed "$verified"
+      local recorded_mode
+      recorded_mode="$(closeout_journal_field "$dir/meta.json" publication_mode)"
+      if [[ "$recorded_mode" == "branch" ]]; then
+        local current_claim_status=0
+        resolve_publication_claim_token || current_claim_status=$?
+        [[ "$current_claim_status" -eq 2 ]] || fail "branch recovery found a managed or invalid claim; retain journal"
+        create_or_report_pr "$branch"
+        observe_plain_pr "$branch" "$verified" "$(closeout_journal_field "$dir/meta.json" base_sha)"
+        if ! closeout_journal_has_phase "$dir" pr_observed; then
+          closeout_journal_record "$dir" in_progress pr_observed "$verified" "$publication_journal_payload"
+        fi
+        closeout_journal_record "$dir" complete complete "$verified"
+        rm -rf "$dir/snapshot"
+        closeout_claim_release
+        echo "[Ship] Reconciled ordinary PR from existing push; no push or receipt was replayed: $dir"
+        return 0
+      fi
+      [[ "$recorded_mode" == "lease" ]] || fail "legacy or unknown publication mode requires explicit journal migration; no identity inferred"
+      resolve_publication_claim_token || fail "live claim token unavailable during recovery"
+      read_publication_claim_identity
+      [[ "$(closeout_journal_field "$dir/meta.json" claim_id)" == "$publication_claim_id"
+        && "$(closeout_journal_field "$dir/meta.json" claim_task_id)" == "$publication_task_id"
+        && "$(closeout_journal_field "$dir/meta.json" claim_generation)" == "$publication_generation"
+        && "$(closeout_journal_field "$dir/meta.json" claim_task_revision)" == "$publication_task_revision" ]] || fail "claim identity changed; refusing wrong-claim journal replay"
       if ! closeout_journal_has_phase "$dir" pr_observed; then
         if closeout_journal_has_phase "$dir" publication_create_intent; then
           load_publication_create_intent "$dir" || fail "journal publication create intent is invalid (publication_incomplete)"
@@ -1627,8 +1601,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --discard-scaffold-only)
-      DISCARD_SCAFFOLD_ONLY=1
-      shift
+      fail "--discard-scaffold-only was removed; dirty work requires a user decision"
       ;;
     --help|-h)
       usage
@@ -1646,7 +1619,7 @@ BRANCH_PREFIX="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
 
 case "$MODE" in
   pr)
-    if is_linked_worktree; then
+    if [[ "$(current_branch)" != "$TARGET_BRANCH" ]]; then
       ship_linked_pr
     else
       ship_primary_pr

@@ -105,17 +105,14 @@ export const EXECUTION_BOUNDARY_MARKER = '[repo-harness:execution-boundary/v1]';
  * makes composed-stack occurrence counting deterministic.
  */
 const EXECUTION_BOUNDARY_BLOCK = [
-  `${EXECUTION_BOUNDARY_MARKER} Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.`,
-  '',
-  'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
-  '',
-  'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
-  '',
-  'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
+  `${EXECUTION_BOUNDARY_MARKER} Execution boundary: implement exactly the parent brief Goal/Scope/Verify/Rollback. Treat absent requirements as forbidden design space, not as permission to improve.`,
+  'Unrequested extras are forbidden. Do not add features, integrations, migrations, compatibility, fallback behavior, telemetry, cleanup, refactors, abstractions, docs, or polish beyond that Scope.',
+  'This clause grants no write permissions. Follow the original host-granted role and permissions.',
+  'Report useful out-of-scope findings to the parent. If the Goal requires a missing decision or broader Scope, identify it before proceeding.',
 ].join('\n');
-const READ_ONLY_SCOPE_NOTE = 'Read-only scope: inspect, verify, and report against the active contract. Do not implement, edit files, or run write commands; hand any required change back to the parent.';
+const READ_ONLY_SCOPE_NOTE = 'Read-only scope: inspect, verify, and report against the parent brief. Do not implement, edit files, or run write commands; hand any required change back to the parent.';
 const CONTRACT_ACTIVE_STATUS = /^> \*\*Status\*\*:\s*(Active|Ready|Executing)\s*$/mi;
-const CONTRACT_STRICT_OR_HIGH_RISK = /^> \*\*(Workflow Profile|Risk)\*\*:\s*(strict|high)\s*$/mi;
+const CONTRACT_HIGH_RISK = /^> \*\*(Workflow Profile|Risk)\*\*:\s*(high)\s*$/mi;
 const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
 const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_STATE_RELATIVE}/native-role-routing.lock`;
 const MAX_NATIVE_ROLE_OBSERVATIONS = 32;
@@ -365,8 +362,7 @@ function runReturnChannel(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     return result(`${JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: 'subagent-return-channel-guard: SendUserMessage from a spawned subagent does not reach the caller Agent tool result. Put the full report in final text and end the subagent turn.',
+        additionalContext: 'subagent-return-channel-guard: SendUserMessage does not reach the caller Agent tool result. Put the full report in final text.',
       },
     })}\n`);
   }
@@ -382,10 +378,10 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
   try {
     const policy = policyDelegation(repoRoot);
     const activeContract = activeContractPath(repoRoot);
-    const strictContract = Boolean(activeContract && /^> \*\*Workflow Profile\*\*:\s*strict\s*$/mi.test(activeContract.content));
+    const highRiskContract = Boolean(activeContract && /^> \*\*Workflow Profile\*\*:\s*high\s*$/mi.test(activeContract.content));
     const defaultMax = Number.isInteger(policy.max_agents) ? policy.max_agents as number : 2;
-    const strictMax = Number.isInteger(policy.strict_max_agents) ? policy.strict_max_agents as number : 3;
-    const maxAgents = strictContract ? Math.min(strictMax, 3) : Math.min(defaultMax, 2);
+    const highRiskMax = Number.isInteger(policy.high_max_agents) ? policy.high_max_agents as number : 3;
+    const maxAgents = highRiskContract ? Math.min(highRiskMax, 3) : Math.min(defaultMax, 2);
     const maxDepth = Number.isInteger(policy.max_depth) ? policy.max_depth as number : 1;
     const preferredRunners = ['subagent'];
     const scope = delegationScope(input, env);
@@ -444,7 +440,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '- Close completed native agents.',
       '- Do not spawn for a trivial or strictly sequential task.',
       '- A role label in the dispatch message does not prove selection. Only official SubagentStart agent_type/model evidence can verify the installed custom-agent profile.',
-      '- If SubagentStart records unavailable, mismatch, invalid, or unverified routing, fail closed and report the status; do not claim role routing and do not select an alternate runner.',
+      '- If SubagentStart records unavailable, mismatch, invalid, or unverified routing, record and report the status; do not claim verified role routing or expand host permissions.',
     ];
     const permissionContext = [
       '[repo-harness:delegation]',
@@ -467,7 +463,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '',
       `The current user turn is the execution authority. The active task contract (${activeContract?.contract}) constrains the implementation scope authorized by the current turn, but does not by itself authorize resuming prior implementation or completing Exit Criteria.`,
       '',
-      'Runner authority: Codex native spawn_agent with the exact installed agent_type. The custom-agent TOML remains the persona/model configuration source; the live SubagentStart event is the runtime identity/model observation. If native agent_type selection or matching evidence is unavailable, fail closed and report it. Do not dispatch the fleet role through an App thread, codex-exec, the main thread, or another runner.',
+      'Runner authority: Codex native spawn_agent with the exact installed agent_type. The custom-agent TOML remains the persona/model configuration source; the live SubagentStart event is the runtime identity/model observation. If matching evidence is unavailable, record routing as unverified. If native agent_type selection is unavailable, report that capability as unavailable. Do not dispatch the fleet role through an App thread, codex-exec, the main thread, or another runner.',
       '',
       'If this task contains at least two independent, bounded workstreams, dispatch per the contract before doing the corresponding work in the parent; otherwise run it sequentially.',
       '',
@@ -740,8 +736,8 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   let contractContent = '';
   if (contractRef && existsSync(join(repoRoot, contractRef.contract))) {
     try { contractContent = readFileSync(join(repoRoot, contractRef.contract), 'utf8'); } catch { contractContent = ''; }
-    if (CONTRACT_STRICT_OR_HIGH_RISK.test(contractContent)) {
-      profile = 'strict';
+    if (CONTRACT_HIGH_RISK.test(contractContent)) {
+      profile = 'high';
       explicitHighRisk = true;
     }
   }
@@ -749,9 +745,9 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     ? contractRef?.contract ?? ''
     : '';
   const progressToken = typeof effective?.progress_token === 'string' && effective.progress_token ? effective.progress_token : 'unknown';
-  const normalizedProfile: WorkflowProfile = profile === 'lite' || profile === 'strict' ? profile : 'standard';
+  const normalizedProfile: WorkflowProfile = profile === 'routine' || profile === 'high' ? profile : 'routine';
   try {
-    const decision = recordCircuitAttempt(repoRoot, {
+    recordCircuitAttempt(repoRoot, {
       kind: 'subagent',
       guard: 'SubagentLimit',
       reason: 'bounded subagent spawn cap',
@@ -764,9 +760,8 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
       userRequestedConsult: false,
       strongBoundary: false,
     });
-    if (!decision.allowed) return result('', `${JSON.stringify(decision)}\n`, 2);
   } catch {
-    return result('', '', 2);
+    // Observation failure cannot suppress an authorized spawn.
   }
 
   const observedRouting = nativeRoleRoutingEvidence(repoRoot, input, env, now);
@@ -814,13 +809,9 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   }
 
   const contextRouting = nativeRoleRouting;
-  // Scope decision table. The implementation boundary is authority over an
-  // authorized edit, so it is rendered only when both halves are known: a
-  // resolved active contract and a verified writable child. A read-only child
-  // gets the inverse note, and an unresolved contract or unverified routing
-  // gets neither -- an instruction to "implement exactly the Goal" with no
-  // resolved Goal is a fabricated reference.
-  const scopeMode: SandboxMode | null = activeContract && contextRouting.status === 'verified'
+  // Permission observation controls scope constraints. A parent brief needs
+  // no workflow artifact; unknown routing never fabricates a writable grant.
+  const scopeMode: SandboxMode | null = contextRouting.status === 'verified'
     ? contextRouting.sandbox_mode
     : null;
   const context = appendLongCommandGuardrail([
@@ -832,7 +823,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
           `[repo-harness:native-role-routing] ${contextRouting.status}: ${contextRouting.reason}`,
           contextRouting.status === 'verified'
             ? 'Custom-agent model routing is verified for this child; reasoning-effort routing remains unverified because SubagentStart does not expose it.'
-            : 'Do not claim custom-agent model or reasoning-effort routing. Return this routing status to the parent and fail closed; no alternate fleet runner is authorized.',
+            : 'Do not claim custom-agent model or reasoning-effort routing. Return this routing status to the parent. Continue only within the host-granted role and permissions.',
           '',
         ]
       : []),
@@ -878,11 +869,11 @@ function runStopQuality(repoRoot: string, input: JsonObject, env: NodeJS.Process
   const scopeKey = [sessionIdentity ? sanitize(sessionIdentity) : 'unscoped-session', subagentIdentity ? sanitize(subagentIdentity) : 'unscoped-subagent', reportHash].join(':');
   try {
     const state = readJson(statePath);
-    if (state?.last_blocked_key === scopeKey) return result();
+    if (state?.last_observed_key === scopeKey) return result();
     writeJson(statePath, {
       version: 1,
-      last_blocked_key: scopeKey,
-      last_blocked_hash: reportHash,
+      last_observed_key: scopeKey,
+      last_observed_hash: reportHash,
       scope: {
         session: sessionIdentity ? sanitize(sessionIdentity) : '',
         subagent: subagentIdentity ? sanitize(subagentIdentity) : '',
@@ -893,8 +884,7 @@ function runStopQuality(repoRoot: string, input: JsonObject, env: NodeJS.Process
     return result();
   }
   return result(`${JSON.stringify({
-    decision: 'block',
-    reason: `[SubagentQualityGate] ${reason} Continue the subagent once and return a complete final response with: files and symbols inspected, evidence, risks or uncertainty, tests or commands run when relevant, and recommended parent action. Do not claim overall task completion.`,
+    hookSpecificOutput: { hookEventName: 'SubagentStop', additionalContext: `[SubagentQuality] ${reason} Record the report gap; return a complete final response with: files and symbols inspected, evidence, risks or uncertainty, tests or commands run when relevant, and recommended parent action. Do not claim overall task completion.` },
   })}\n`);
 }
 

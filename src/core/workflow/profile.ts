@@ -1,5 +1,5 @@
 /** Pure deterministic workflow-risk policy. */
-export type WorkflowProfile = 'lite' | 'standard' | 'strict';
+export type WorkflowProfile = 'routine' | 'high';
 
 export type WorkflowOperationKind =
   | 'inspect'
@@ -46,7 +46,7 @@ export interface WorkflowProfileSignals {
   crossCapability: boolean;
 }
 
-const WORKFLOW_PROFILES = new Set<WorkflowProfile>(['lite', 'standard', 'strict']);
+const WORKFLOW_PROFILES = new Set<WorkflowProfile>(['routine', 'high']);
 const OPERATION_KINDS = new Set<WorkflowOperationKind>([
   'inspect', 'edit', 'bugfix', 'feature', 'multi-file', 'cross-capability',
   'auth', 'payment', 'security', 'schema', 'migration', 'deploy', 'release',
@@ -83,11 +83,7 @@ export type StrictRiskCategory =
   | 'public-api'
   | 'destructive';
 
-const PROFILE_RANK: Readonly<Record<WorkflowProfile, number>> = {
-  lite: 0,
-  standard: 1,
-  strict: 2,
-};
+const PROFILE_RANK: Readonly<Record<WorkflowProfile, number>> = { routine: 0, high: 1 };
 
 const STRICT_OPERATION_CATEGORIES: Readonly<Partial<Record<WorkflowOperationKind, StrictRiskCategory>>> = {
   auth: 'auth',
@@ -194,7 +190,7 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
       code: 'INVALID_RISK_INPUT',
       message: `unknown operationKind: ${runtimeOperationKind}`,
       requestedProfile: null,
-      riskFloor: 'strict',
+      riskFloor: 'high',
       reasons: ['risk-floor:invalid-operation-kind'],
     };
   }
@@ -204,7 +200,7 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
       code: 'INVALID_RISK_INPUT',
       message: `unknown explicit profile: ${runtimeOverride}`,
       requestedProfile: null,
-      riskFloor: 'strict',
+      riskFloor: 'high',
       reasons: ['risk-floor:invalid-explicit-profile'],
     };
   }
@@ -214,12 +210,12 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
     input.capabilityCount === undefined &&
     (runtimeOperationKind === undefined || runtimeOperationKind === 'edit' || runtimeOperationKind === 'bugfix')
   ) {
-    if (runtimeOverride === 'strict') {
+    if (runtimeOverride === 'high') {
       return {
         ok: true,
-        profile: 'strict',
-        riskFloor: 'strict',
-        reasons: ['risk-floor:strict:signals-unavailable', 'explicit-override:equal:strict'],
+        profile: 'high',
+        riskFloor: 'high',
+        reasons: ['risk-floor:high:signals-unavailable', 'explicit-override:equal:high'],
         signals: {
           targetPathCount: 0,
           capabilityCount: 0,
@@ -235,8 +231,8 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
       code: 'INVALID_RISK_INPUT',
       message: 'deterministic risk signals are unavailable',
       requestedProfile: (runtimeOverride as WorkflowProfile | undefined) ?? null,
-      riskFloor: 'strict',
-      reasons: ['risk-floor:strict:signals-unavailable'],
+      riskFloor: 'high',
+      reasons: ['risk-floor:high:signals-unavailable'],
     };
   }
   const operationKind = (runtimeOperationKind as WorkflowOperationKind | undefined) ?? 'edit';
@@ -248,7 +244,7 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
       code: 'INVALID_RISK_INPUT',
       message: 'capabilityCount must be a non-negative integer',
       requestedProfile: input.explicitOverride ?? null,
-      riskFloor: 'strict',
+      riskFloor: 'high',
       reasons: ['risk-floor:invalid-capability-count'],
     };
   }
@@ -264,23 +260,17 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
   const crossCapability = capabilityCount > 1 || operationKind === 'cross-capability';
   const mediumScope = targetPaths.length >= MEDIUM_TARGET_PATH_COUNT || operationKind === 'multi-file';
 
-  let riskFloor: WorkflowProfile = 'lite';
+  let riskFloor: WorkflowProfile = 'routine';
   const reasons: string[] = [];
 
   if (strictCategories.length > 0) {
-    riskFloor = 'strict';
-    reasons.push(...strictCategories.map((category) => `risk-floor:strict:${category}`));
-  } else if (crossCapability) {
-    riskFloor = 'standard';
-    reasons.push('risk-floor:standard:cross-capability');
-  } else if (operationKind === 'feature') {
-    riskFloor = 'standard';
-    reasons.push('risk-floor:standard:feature');
-  } else if (mediumScope) {
-    riskFloor = 'standard';
-    reasons.push('risk-floor:standard:medium-scope');
+    riskFloor = 'high';
+    reasons.push(...strictCategories.map((category) => `risk-floor:high:${category}`));
+  } else if (crossCapability || mediumScope) {
+    riskFloor = 'high';
+    reasons.push(crossCapability ? 'risk-floor:high:cross-capability' : 'risk-floor:high:large-change');
   } else {
-    reasons.push('risk-floor:lite:local-low-risk');
+    reasons.push('risk-floor:routine:local-change');
   }
 
   if (

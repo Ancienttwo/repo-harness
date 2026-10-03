@@ -42,19 +42,11 @@ describe('documentation consumer discovery', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('workflow whole-file documentation coverage is exactly the discovered projection', async () => {
+  test('documentation consumers remain available to affected verification', async () => {
     const files = await discoverDocumentationConsumers(ROOT);
+    expect(files).toContain('tests/cli/documentation-contracts.test.ts');
     const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
-    const command = workflow.jobs.documentation.steps.find((step: any) => step.name === 'Check documentation consumers')?.run;
-    expect(typeof command).toBe('string');
-    expect(command).not.toMatch(/(?:^|\s)(?:-t|--test-name-pattern)(?:\s|=)/);
-    expect([...command.matchAll(/tests\/[\w/.-]+\.test\.tsx?/g)].map(match => match[0]).sort()).toEqual(files);
-    for (const regression of [
-      'tests/action-command-skills.test.ts', 'tests/archive-evidence-gates.test.ts',
-      'tests/characterization/repair-campaign-authority-freeze.test.ts', 'tests/cli/documentation-contracts.test.ts',
-      'tests/cli/mcp-setup.test.ts', 'tests/evidence-residue-scan.test.ts', 'tests/readme-dx.test.ts', 'tests/retired-planning-provider.test.ts',
-      'tests/skill-surface/retired-names-scan.test.ts', 'tests/unit/collaboration-admission.test.ts',
-      'tests/unit/collaboration-authority-baseline.test.ts', 'tests/unit/issue-282-automation-budget-prd-drift.test.ts',
-    ]) expect(files).toContain(regression);
+    expect(workflow.jobs.verify.steps.some((step: any) => step.run === 'bash scripts/check-ci.sh affected')).toBe(true);
+    expect(workflow.jobs.documentation).toBeUndefined();
   }, 60_000);
 });

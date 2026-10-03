@@ -1,40 +1,4 @@
-/**
- * Pure operation-readiness evaluator for Lite/Standard/Strict x
- * edit/stop/ship.
- *
- * `evaluateReadiness` is the single typed authority LSC-06 establishes for
- * the row acceptance: it consumes `profile`, the already-resolved
- * `ArtifactRequirementPolicy.resolve()` decision for each of edit/stop/ship,
- * and caller-observed evidence facts, and returns exactly five surfaces --
- * `allowedToEdit`, `allowedToStop`, `readyToShip`, `requirements`, and
- * `nextAction` -- whose semantics reproduce the nine frozen
- * `approved_target_delta` records in
- * `tests/state/fixtures/loop-semantics/characterization.json`. See
- * `tasks/notes/20260718-2239-lsc-06-operation-readiness-evaluator.notes.md`
- * for the per-cell delta -> semantics derivation.
- *
- * This module performs no fs/process/env/network access and imports only
- * types from `./profile` and `./artifact-requirement-policy`. It consumes
- * `resolve()` decisions verbatim -- it does not re-derive or duplicate the
- * `ARTIFACT_REQUIREMENT_MATRIX`. The Effective State projector is the shared
- * consumer; hook adapters read its projected `readiness` result verbatim.
- *
- * Design note -- why `operation` is part of the input even though
- * `allowedToEdit`/`allowedToStop`/`readyToShip` are always all three
- * computed together: the frozen `strict.stop.not-ready-to-ship-still-allows`
- * cell requires `allowedToStop=allow` and `readyToShip=block` from the SAME
- * evaluation, with `nextAction=null` (the delta's own `next_action` is
- * `'stop'`, i.e. the trivial "proceed" case) even though `readyToShip` is
- * blocked. A caller-scoped `nextAction` selector is the only way to keep
- * that cell's `nextAction=null` while still letting the `lite.ship` /
- * `standard.ship` / `strict.ship` cells (where the SAME kind of
- * ship-readiness gap is the very thing being asked about) surface a typed
- * `nextAction`. `allowedToEdit`, `allowedToStop`, `readyToShip`, and
- * `requirements` are unaffected by `operation` -- only `nextAction`'s scope
- * depends on it, so a Stop consumer can read `readyToShip` off the same
- * result without a second call and without `nextAction` leaking ship-only
- * remediation into a Stop response.
- */
+/** Safe edit paths, advisory Stop, and exact publication evidence. */
 import type { WorkflowProfile } from './profile';
 import type {
   ArtifactRequirementDecision,
@@ -150,12 +114,12 @@ export interface OperationReadinessEvidence {
   /** Approved planning artifact exists; open execution tasks do not prevent editing. */
   readonly approvedWorkPackage?: boolean;
   readonly satisfiedRequirements: readonly ArtifactRequirementKey[];
-  /** Non-empty forces `block` on every gate (edit/stop/ship alike). */
+  /** Publication refuses observed blockers; only unsafe_edit_path can refuse an edit. */
   readonly hardBlockers?: readonly string[];
   /**
    * A failed candidate may be repaired only when Effective State has already
    * proved that every requested edit target is canonically repo-contained and
-   * allowed by the active contract. Stop and ship remain hard-blocked.
+   * allowed by the active contract. Recorded repair facts do not introduce an edit or Stop stage gate.
    */
   readonly checksFailedRepairAuthorized?: boolean;
   readonly artifactRepairAuthorized?: boolean;
@@ -199,7 +163,7 @@ export interface OperationReadinessError {
 
 export type EvaluateReadinessResult = OperationReadinessResult | OperationReadinessError;
 
-const KNOWN_PROFILES: ReadonlySet<string> = new Set<WorkflowProfile>(['lite', 'standard', 'strict']);
+const KNOWN_PROFILES: ReadonlySet<string> = new Set<WorkflowProfile>(['routine', 'high']);
 const KNOWN_OPERATIONS: ReadonlySet<string> = new Set<ArtifactRequirementOperation>(['edit', 'stop', 'ship']);
 
 function validateRequirementResult(
@@ -293,11 +257,7 @@ export function evaluateReadiness(input: EvaluateReadinessInput): EvaluateReadin
   const satisfied = new Set(input.evidence.satisfiedRequirements);
   const hardBlockers = input.evidence.hardBlockers ?? [];
   const hardBlocked = hardBlockers.length > 0;
-  const editHardBlocked = hardBlockers.some((blocker) => (
-    blocker === 'checks_artifact_invalid'
-      ? input.evidence.artifactRepairAuthorized !== true
-      : blocker !== 'checks_failed' || input.evidence.checksFailedRepairAuthorized !== true
-  ));
+  const editHardBlocked = hardBlockers.some((blocker) => blocker === 'unsafe_edit_path');
 
   const editSatisfied = new Set(satisfied);
   if (input.evidence.approvedWorkPackage === true) {
@@ -308,7 +268,7 @@ export function evaluateReadiness(input: EvaluateReadinessInput): EvaluateReadin
   const shipStatuses = statusesFor(ship.requirements, satisfied);
 
   const allowedToEdit = decisionFor(editStatuses, editHardBlocked);
-  const allowedToStop = decisionFor(stopStatuses, hardBlocked);
+  const allowedToStop: OperationReadinessDecision = { decision: 'allow' };
   const readyToShip = decisionFor(shipStatuses, hardBlocked);
 
   const scoped = input.operation === 'edit'

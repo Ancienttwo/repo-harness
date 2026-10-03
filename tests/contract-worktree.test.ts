@@ -15,13 +15,11 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixtur
 setDefaultTimeout(30000);
 
 describe("contract-worktree helper integration", () => {
-  test("contract-worktree finish runs architecture freshness before sprint verification", () => {
+  test("finish has no architecture/verification/archive stage prerequisite", () => {
     const script = readFileSync(join(ROOT, "scripts/contract-worktree.sh"), "utf-8");
-    expect(script).toContain("check_architecture_freshness");
-    expect(script.indexOf('check_architecture_freshness "$target_branch"')).toBeGreaterThan(-1);
-    expect(script.indexOf('check_architecture_freshness "$target_branch"')).toBeLessThan(
-      script.indexOf('bash "$helper_dir/verify-sprint.sh"'),
-    );
+    expect(script).not.toContain('check_architecture_freshness "$target_branch"');
+    expect(script).not.toContain('bash "$helper_dir/verify-sprint.sh"');
+    expect(script).not.toContain('archive_finished_workflow "$active_plan"');
   });
 
   test("contract-worktree cleanup should dry-run then remove merged worktree, branch, and metadata", () => {

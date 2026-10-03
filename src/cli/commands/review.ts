@@ -26,7 +26,7 @@ export function buildReviewCommand(): Command {
               const location = reviewLocation(opts.repo, opts.contract);
               const decision = recordCircuitAttempt(location.root, { kind: 'semantic-review', guard: 'one-semantic-review-per-work-package',
                 reason: 'persistent generic review admission', pathOrAction: 'review:session', progressToken: location.contract,
-                fingerprint: location.contract, profile: 'standard', strongBoundary: true });
+                fingerprint: location.contract, profile: 'high', strongBoundary: true });
               if (!decision.allowed) throw new Error('review_session_budget_exhausted; do not start another reviewer');
             } });
           if (result.status === 'rejected') process.exitCode = 1;

@@ -1,190 +1,24 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import {
-  resolve,
-  type ArtifactRequirementKey,
-  type ArtifactRequirementOperation,
-  type ArtifactRequirementResolveInput,
-} from '../../src/core/workflow/artifact-requirement-policy';
-import {
-  evaluateReadiness,
-  type EvaluateReadinessInput,
-  type EvaluateReadinessResult,
-} from '../../src/core/workflow/operation-readiness';
-import type { WorkflowProfile } from '../../src/core/workflow/profile';
-import { readArchitectureProjectionPolicy } from '../../src/core/architecture/projection';
+import { resolve, type ArtifactRequirementKey } from '../../src/core/workflow/artifact-requirement-policy';
+import { evaluateReadiness } from '../../src/core/workflow/operation-readiness';
 
-const FIXTURE_PATH = join(import.meta.dir, 'fixtures/loop-semantics/operation-readiness.json');
-const CHARACTERIZATION_PATH = join(import.meta.dir, 'fixtures/loop-semantics/characterization.json');
-
-interface RawResolveInput {
-  readonly profile: string;
-  readonly operation: string;
-  readonly risk?: string;
-  readonly policy?: { readonly require?: readonly string[] };
-}
-
-interface RawEvidence {
-  readonly satisfiedRequirements: readonly string[];
-  readonly hardBlockers?: readonly string[];
-}
-
-interface RawCaseInput {
-  readonly profile: string;
-  readonly operation: string;
-  readonly requirements: {
-    readonly edit: RawResolveInput;
-    readonly stop: RawResolveInput;
-    readonly ship: RawResolveInput;
-  };
-  readonly evidence: RawEvidence;
-}
-
-interface RawCase {
-  readonly name: string;
-  readonly input: RawCaseInput;
-  readonly expected: EvaluateReadinessResult;
-}
-
-interface Fixture {
-  readonly schema: string;
-  readonly positive_cases: readonly RawCase[];
-  readonly negative_cases: readonly RawCase[];
-}
-
-interface CharacterizationFixture {
-  readonly cells: readonly { readonly name: string }[];
-}
-
-const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8')) as Fixture;
-const characterization = JSON.parse(readFileSync(CHARACTERIZATION_PATH, 'utf-8')) as CharacterizationFixture;
-
-// The fixture stores plain strings (JSON has no notion of the module's
-// literal-union types); this boundary is the one place those strings become
-// the typed resolve() input, exactly like a real caller would construct it.
-function toResolveInput(raw: RawResolveInput): ArtifactRequirementResolveInput {
-  const input: {
-    profile: WorkflowProfile;
-    operation: ArtifactRequirementOperation;
-    risk?: WorkflowProfile;
-    policy?: { require?: readonly ArtifactRequirementKey[] };
-  } = {
-    profile: raw.profile as WorkflowProfile,
-    operation: raw.operation as ArtifactRequirementOperation,
-  };
-  if (raw.risk !== undefined) input.risk = raw.risk as WorkflowProfile;
-  if (raw.policy !== undefined) {
-    input.policy = { require: raw.policy.require as readonly ArtifactRequirementKey[] | undefined };
-  }
-  return input;
-}
-
-// Each of edit/stop/ship is resolved through the real ArtifactRequirementPolicy.resolve(),
-// exactly like a real caller assembling evaluateReadiness's input -- this fixture never
-// hand-authors a resolve() output shape, so it cannot drift from that module's own contract.
-function toEvaluateReadinessInput(raw: RawCaseInput): EvaluateReadinessInput {
-  return {
-    profile: raw.profile as WorkflowProfile,
-    operation: raw.operation as ArtifactRequirementOperation,
-    requirements: {
-      edit: resolve(toResolveInput(raw.requirements.edit)),
-      stop: resolve(toResolveInput(raw.requirements.stop)),
-      ship: resolve(toResolveInput(raw.requirements.ship)),
-    },
-    evidence: {
-      satisfiedRequirements: raw.evidence.satisfiedRequirements as readonly ArtifactRequirementKey[],
-      ...(raw.evidence.hardBlockers !== undefined ? { hardBlockers: raw.evidence.hardBlockers } : {}),
-    },
-  };
-}
-
-describe('evaluateReadiness fixture-driven matrix', () => {
-  test('architecture projection policy keeps provider and apply orthogonal and fail-closed', () => {
-    expect(readArchitectureProjectionPolicy({ architecture: {
-      projection_provider: 'archctx',
-      projection_apply: 'manual',
-      projection_failure_gate: 'strict',
-      projection_version: '0.6.1',
-      projection_timeout_ms: 120000,
-    } })).toEqual({ provider: 'archctx', applyMode: 'manual', failureGate: 'strict', requiredVersion: '0.6.1', timeoutMs: 120000 });
-    expect(readArchitectureProjectionPolicy({ architecture: {
-      projection_provider: 'disabled',
-      projection_apply: 'disabled',
-      projection_failure_gate: 'misspelled-inactive-value',
-      projection_timeout_ms: -1,
-    } })).toEqual({ provider: 'disabled', applyMode: 'disabled', failureGate: 'advisory', requiredVersion: '0.6.1', timeoutMs: 120000 });
-    expect(() => readArchitectureProjectionPolicy({ architecture: {
-      projection_provider: 'disabled',
-      projection_apply: 'automatic',
-    } })).toThrow('projection_apply must be disabled');
-    expect(readArchitectureProjectionPolicy({ architecture: {
-      projection_provider: 'archctx',
-      projection_apply: 'automatic',
-      projection_version: '0.6.1',
-      projection_timeout_ms: 300000,
-    } })).toEqual({ provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.6.1', timeoutMs: 300000 });
-    expect(() => readArchitectureProjectionPolicy({ architecture: {
-      projection_provider: 'archctx',
-      projection_apply: 'automatic',
-      projection_version: '0.6.1',
-      projection_timeout_ms: 600001,
-    } })).toThrow('projection_timeout_ms must be 1000..600000');
-  });
-  test('fixture declares exactly the nine frozen characterization cells with no duplicates', () => {
-    expect(fixture.positive_cases).toHaveLength(9);
-    const fixtureNames = new Set(fixture.positive_cases.map((testCase) => testCase.name));
-    expect(fixtureNames.size).toBe(9);
-    const frozenNames = new Set(characterization.cells.map((cell) => cell.name));
-    expect(frozenNames.size).toBe(9);
-    expect(fixtureNames).toEqual(frozenNames);
-  });
-
-  describe('positive cases (all nine profile x operation cells)', () => {
-    for (const testCase of fixture.positive_cases) {
-      test(testCase.name, () => {
-        expect(evaluateReadiness(toEvaluateReadinessInput(testCase.input))).toEqual(testCase.expected);
-      });
-    }
-  });
-
-  describe('negative cases (requirement-unsatisfied variants, stop/ship independence, invalid input rejection)', () => {
-    for (const testCase of fixture.negative_cases) {
-      test(testCase.name, () => {
-        expect(evaluateReadiness(toEvaluateReadinessInput(testCase.input))).toEqual(testCase.expected);
-      });
-    }
-  });
-
-  test('contract-authorized checks_failed repair opens edit only', () => {
-    const requirements = {
-      edit: resolve({ profile: 'standard', operation: 'edit' }),
-      stop: resolve({ profile: 'standard', operation: 'stop' }),
-      ship: resolve({ profile: 'standard', operation: 'ship' }),
-    } as const;
-    const satisfiedRequirements: ArtifactRequirementKey[] = [];
-    for (const result of Object.values(requirements)) {
-      if (result.ok) {
-        for (const requirement of result.requirements) satisfiedRequirements.push(requirement.key);
-      }
-    }
-
-    const result = evaluateReadiness({
-      profile: 'standard',
-      operation: 'edit',
-      requirements,
-      evidence: {
-        satisfiedRequirements,
-        hardBlockers: ['checks_failed'],
-        checksFailedRepairAuthorized: true,
-      },
+describe('readiness separates edit/Stop from publication', () => {
+  for (const profile of ['routine', 'high'] as const) {
+    const requirements = { edit: resolve({profile,operation:'edit'}),stop:resolve({profile,operation:'stop'}),ship:resolve({profile,operation:'ship'}) };
+    test(`${profile}: missing artifacts or failed checks never trap repair or Stop`, () => {
+      const result = evaluateReadiness({profile,operation:'stop',requirements,evidence:{satisfiedRequirements:['safe_path'],hardBlockers:['checks_failed']}});
+      expect(result).toMatchObject({ok:true,allowedToEdit:{decision:'allow'},allowedToStop:{decision:'allow'},readyToShip:{decision:'block'}});
     });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.allowedToEdit).toEqual({ decision: 'allow' });
-      expect(result.allowedToStop).toEqual({ decision: 'block', reasons: ['hard_blocker_present'] });
-      expect(result.readyToShip).toEqual({ decision: 'block', reasons: ['hard_blocker_present'] });
-    }
+    test(`${profile}: unsafe edits fail and publication consumes exact evidence`, () => {
+      expect(evaluateReadiness({profile,operation:'edit',requirements,evidence:{satisfiedRequirements:[]}}))
+        .toMatchObject({ok:true,allowedToEdit:{decision:'block',reasons:['required_safe_path_missing']},allowedToStop:{decision:'allow'}});
+      const evidence: ArtifactRequirementKey[]=['safe_path','subject_bound_targeted_evidence','candidate_revision_precondition'];
+      expect(evaluateReadiness({profile,operation:'ship',requirements,evidence:{satisfiedRequirements:evidence}}))
+        .toMatchObject({ok:true,readyToShip:{decision:'allow'}});
+    });
+  }
+  test('malformed/mismatched authoritative decisions are not synthesized', () => {
+    expect(evaluateReadiness({profile:'routine',operation:'edit',requirements:{edit:resolve({profile:'high',operation:'edit'}),stop:resolve({profile:'routine',operation:'stop'}),ship:resolve({profile:'routine',operation:'ship'})},evidence:{satisfiedRequirements:[]}}))
+      .toMatchObject({ok:false,code:'REQUIREMENT_MISMATCH'});
   });
 });

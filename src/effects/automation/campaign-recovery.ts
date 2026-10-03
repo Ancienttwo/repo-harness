@@ -1,4 +1,4 @@
-import { readAutomationUsageForResult } from './budget-store';
+import { readAutomationUsageForResult, readAutomationBudgetStatus } from './budget-store';
 import { canonicalMessageDigest, canonicalMessageBytes } from '../../core/messages/mechanics';
 import { campaignRuntimeRecordKey, type CampaignCodexInvocation } from '../../core/automation/campaign-runtime';
 import type { LeaseOwnerRecord } from '../../core/state/coordination-identity';
@@ -190,6 +190,34 @@ export function recoverCampaignDispatch(input: {
   // must not retain the group journal lock needed by another recovery caller.
   const settledFinal = settleRecoveredCampaignWorkerFinal(selector, input.env);
   return { ...recovered, final: settledFinal, disposition: settledFinal ? 'settled_final' as const : 'reconciliation_required' as const };
+}
+
+/** Ordinary retries may consume already-retired, proven orphans; never retire or launch a provider here. */
+export function recoverRetiredCampaignDispatchIfEligible(input: Parameters<typeof recoverCampaignDispatch>[0]) {
+  const context = readCampaignWorkerHandoff(input.selector);
+  const { root, intent, selector } = context;
+  assertRecoveryParent(context, input);
+  const final = readPlanningRecord<CampaignWorkerFinal>(root, intent, key(selector.dispatch_id, 'final'));
+  if (!readPlanningRecord(root, intent, key(selector.dispatch_id, 'retired')) || !final) return null;
+  const budget = readAutomationBudgetStatus(root, final.reservation.automation_run_id, input.env);
+  if (budget.stop_receipt !== null || budget.current.state !== 'active') return null;
+  const recovery = readPlanningRecord<RecoveryIntent>(root, intent, key(selector.dispatch_id, 'recovery-intent'));
+  if (recovery) {
+    const receipt = validateLeaseReclaimEligibility(JSON.parse(recovery.receipt_json));
+    const previous = context.handoff.acquired.envelope;
+    const expiresAt = Date.parse(receipt.expires_at);
+    const observedAt = (input.now ?? (() => new Date()))().getTime();
+    if (receipt.classification !== 'reclaimable' || receipt.task_id !== previous.task_id
+      || receipt.task_revision !== previous.task_revision || receipt.claim_id !== previous.claim_id
+      || receipt.lease_generation !== previous.generation
+      || !Number.isFinite(expiresAt) || !Number.isFinite(observedAt) || expiresAt > observedAt) return null;
+    return recoverCampaignDispatch(input);
+  }
+  const eligibility = observeCampaignReclaimEligibility(input);
+  if (eligibility.classification !== 'reclaimable') return null;
+  // The existing consumer rechecks all evidence under the Task lock, and owns
+  // exact-generation rebind/actor publication and budget settlement recovery.
+  return recoverCampaignDispatch(input);
 }
 
 /** Async daemon observation is outside the short planning/Task locks. Revalidate before settlement. */

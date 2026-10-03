@@ -28,7 +28,7 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
       '> **Status**: Active',
       `> **Plan**: ${PLAN}`,
       '> **Task Profile**: code-change',
-      '> **Workflow Profile**: standard',
+      '> **Workflow Profile**: routine',
       '## Allowed Paths',
       '```yaml',
       'allowed_paths:',
@@ -39,8 +39,8 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     unsafeEditTargetPathCount: 0,
     riskResolution: {
       ok: true,
-      profile: 'standard',
-      riskFloor: 'standard',
+      profile: 'routine',
+      riskFloor: 'routine',
       reasons: ['risk-floor:standard:feature'],
       signals: {
         targetPathCount: 1,
@@ -106,7 +106,7 @@ describe('pure Effective State projection', () => {
     expect(before.readiness?.ok && before.readiness.allowedToEdit.decision).toBe('allow');
     const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityRegistryInvalid: true }));
     expect(invalidAuthority.blockers).toContain('capability_registry:invalid');
-    expect(invalidAuthority.readiness?.ok && invalidAuthority.readiness.allowedToEdit.decision).toBe('block');
+    expect(invalidAuthority.readiness?.ok && invalidAuthority.readiness.allowedToEdit.decision).toBe('allow');
   });
 
   test('approved work can be edited before tasks finish, but cannot ship', () => {
@@ -115,24 +115,24 @@ describe('pure Effective State projection', () => {
       expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
       expect(state.readiness?.ok && state.readiness.readyToShip.decision).toBe('block');
       if (state.readiness?.ok) {
-        expect(state.readiness.requirements.ship.find(r => r.key === 'complete_approved_work_package')?.satisfied).toBe(false);
+        expect(state.readiness.requirements.ship.some(r => r.key === 'complete_approved_work_package')).toBe(false);
       }
     }
   });
 
-  test('missing plan content or approval never authorizes editing', () => {
+  test('missing plan content or approval does not block authorized editing', () => {
     for (const overrides of [{ planStatus: 'draft' as const }, { planText: null }, { planText: '' }]) {
       const state = projectEffectiveState(input(overrides));
-      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('block');
+      expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
     }
   });
 
-  test('ship requires completed tasks even with fresh evidence', () => {
+  test('ship consumes evidence without requiring task-checkbox completion', () => {
     const evidence = {
       reviewSubject: { available: true, reviewSubjectSha256: SUBJECT, targetRevision: TARGET, targetOverlapCount: 0 },
       checksText: JSON.stringify({ status: 'pass', active_plan: PLAN, review_subject_sha256: SUBJECT }),
     };
-    for (const [planText, expected] of [['# Plan\n- [ ] implement\n', 'block'], ['# Plan\n- [x] implement\n', 'allow']] as const) {
+    for (const [planText, expected] of [['# Plan\n- [ ] implement\n', 'allow'], ['# Plan\n- [x] implement\n', 'allow']] as const) {
       const state = projectEffectiveState(input({ ...evidence, planText }));
       expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
       expect(state.readiness?.ok && state.readiness.readyToShip.decision).toBe(expected);
@@ -143,8 +143,8 @@ describe('pure Effective State projection', () => {
     const state = projectEffectiveState(input());
     expect(state.phase).toBe('executing');
     expect(state.next_action).toBe('run parity tests');
-    expect(state.workflow_profile).toBe('standard');
-    expect(state.guidance).toContain('at most one active plan artifact');
+    expect(state.workflow_profile).toBe('routine');
+    expect(state.guidance).toContain('verify typecheck and affected tests once');
     expect(state.contract).toEqual({ path: CONTRACT, status: 'Active', plan: PLAN });
     expect(state.allowed_paths).toEqual(['src/']);
   });
@@ -205,7 +205,7 @@ describe('pure Effective State projection', () => {
         code: 'INVALID_RISK_INPUT',
         message: 'missing signals',
         requestedProfile: null,
-        riskFloor: 'strict',
+        riskFloor: 'high',
         reasons: ['risk-floor:strict:signals-unavailable'],
       },
       capabilityRegistryInvalid: true,
@@ -217,7 +217,6 @@ describe('pure Effective State projection', () => {
     expect(state.blockers).toEqual([
       'conflict:worktree_owner',
       'conflict:worktree_owner',
-      'missing_contract',
       'workflow_profile:invalid_risk_input',
       'capability_registry:invalid',
     ]);
@@ -344,7 +343,7 @@ describe('pure Effective State projection', () => {
   });
 
   test('covers lite and strict profile guidance branches', () => {
-    for (const profile of ['lite', 'strict'] as const) {
+    for (const profile of ['routine', 'high'] as const) {
       const base = input().riskResolution;
       if (!base.ok) throw new Error('fixture risk resolution must be valid');
       const state = projectEffectiveState(input({
@@ -352,9 +351,9 @@ describe('pure Effective State projection', () => {
         contractOverride: profile,
       }));
       expect(state.workflow_profile).toBe(profile);
-      expect(state.guidance).toContain(profile === 'lite'
-        ? 'no workflow artifacts are required for the currently observed scope. User-requested planning is allowed'
-        : 'full envelope: plan, contract, notes, and checks as required');
+      expect(state.guidance).toContain(profile === 'routine'
+        ? 'Implement the authorized scope'
+        : 'consult a reviewer');
       expect(state.guidance).toContain('Current edit-time requirements supersede earlier snapshot guidance');
     }
   });
@@ -399,7 +398,7 @@ describe('pure Effective State projection', () => {
         code: 'INVALID_RISK_INPUT',
         message: 'missing signals',
         requestedProfile: null,
-        riskFloor: 'strict',
+        riskFloor: 'high',
         reasons: ['risk-floor:strict:signals-unavailable'],
       },
     }));
@@ -472,7 +471,7 @@ describe('state-snapshot compatibility projection', () => {
 });
 
 
-test('verifier missing_artifact is blocked separately from contract test failures', () => {
+test('verifier missing_artifact is observed and keeps publication unverified', () => {
   const state = projectEffectiveState(input({
     checksText: JSON.stringify({status:'fail',active_plan:PLAN,review_subject_sha256:SUBJECT,failure_class:'missing_artifact'}),
     reviewSubject:{available:true,reviewSubjectSha256:SUBJECT,targetRevision:TARGET,targetOverlapCount:0},
@@ -480,5 +479,6 @@ test('verifier missing_artifact is blocked separately from contract test failure
   }));
   expect(state.blockers).toContain('checks_artifact_invalid');
   expect(state.blockers).not.toContain('checks_failed');
-  expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('block');
+  expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
+  expect(state.readiness?.ok && state.readiness.readyToShip.decision).toBe('block');
 });

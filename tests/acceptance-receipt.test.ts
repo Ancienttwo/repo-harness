@@ -136,7 +136,7 @@ function stableJson(value: unknown): string {
 function changeAssessmentEvidence(subject: ReturnType<typeof buildReviewSubject>): Record<string, unknown> {
   const assessment = assessChange({
     subject,
-    workflowProfile: 'lite',
+    workflowProfile: 'routine',
     strictCategories: [],
     patternNoveltyPaths: [],
     declaredOracles: [],
@@ -409,7 +409,7 @@ describe('AcceptanceReceipt', () => {
     expect(subject.status).toBe('ok');
     const forgedAssessment = assessChange({
       subject,
-      workflowProfile: 'standard',
+      workflowProfile: 'routine',
       strictCategories: [],
       patternNoveltyPaths: [],
       declaredOracles: [],

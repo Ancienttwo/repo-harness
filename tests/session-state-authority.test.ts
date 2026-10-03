@@ -38,7 +38,7 @@ function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
     phase: 'executing',
     state_version: 7,
     state_revision: `sha256:${'a'.repeat(64)}`,
-    workflow_profile: 'strict',
+    workflow_profile: 'high',
     next_action: 'continue',
     guidance: null,
     blockers: [],
@@ -90,7 +90,7 @@ function captureHealthyBaseline(): Record<string, unknown> {
     writeAt(root, contract, [
       '# Task Contract: session-state-baseline', '', '> **Status**: Active',
       `> **Plan**: ${plan}`, '> **Task Profile**: code-change',
-      '> **Workflow Profile**: standard', `> **Review File**: \`${review}\``,
+      '> **Workflow Profile**: routine', `> **Review File**: \`${review}\``,
       '', '## Allowed Paths', '', '```yaml', 'allowed_paths:',
       '  - src/baseline.ts', '```', '',
     ].join('\n'));

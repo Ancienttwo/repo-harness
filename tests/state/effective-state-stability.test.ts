@@ -170,9 +170,8 @@ describe('Effective State stability contract: authority-only partition (hook-gua
       // workflow profile.
       expect(failure).toBeNull();
       expect(resolved?.blockers ?? []).toEqual([]);
-      expect(resolved?.workflow_profile === 'lite'
-        || resolved?.workflow_profile === 'standard'
-        || resolved?.workflow_profile === 'strict').toBe(true);
+      expect(resolved?.workflow_profile === 'routine'
+        || resolved?.workflow_profile === 'high').toBe(true);
     } finally {
       fixture.cleanup();
     }

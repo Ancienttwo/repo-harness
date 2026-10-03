@@ -68,7 +68,7 @@ describe('HRD-09 typed runtime characterization', () => {
             HOOK_HOST: fixture.host,
             HOOK_SESSION_ID: 'characterization-session',
             HOOK_RUN_ID: 'characterization-run',
-            REPO_HARNESS_WORKFLOW_PROFILE: 'lite',
+            REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
           },
         });
         expect(result.handler).toBe(route.handler);

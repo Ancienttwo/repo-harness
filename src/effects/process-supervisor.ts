@@ -3,7 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Writable } from 'stream';
-import { acquireExpensiveRunLock } from './expensive-run-lock';
+import { acquireExpensiveRunLock, type ExpensiveRunLockHandle } from './expensive-run-lock';
 import { PROCESS_GROUP_LAUNCHER_FLAG } from './process-group-launcher';
 
 export const PROCESS_SUPERVISOR_TERMINATION_GRACE_MS = 500;
@@ -236,7 +236,7 @@ function collectBounded(
   });
 }
 
-async function superviseTarget(options: SupervisorOptions): Promise<number> {
+async function superviseTarget(options: SupervisorOptions, expensiveLock: ExpensiveRunLockHandle | null): Promise<number> {
   if (!parentIsAlive(options.parentPid)) throw new Error('helper caller exited before supervised process start');
   const launcherResultPath = `${options.metadataPath}.launcher.json`;
   const child = spawn(process.execPath, [
@@ -251,6 +251,7 @@ async function superviseTarget(options: SupervisorOptions): Promise<number> {
   });
   const startBarrier = child.stdio[3];
   if (!child.pid || !(startBarrier instanceof Writable)) {
+    if (child.pid && expensiveLock !== null) preserveExpensiveRunLock = true;
     throw new Error('process group launcher did not expose a start barrier');
   }
   const stdout = collectBounded(child.stdout, options.captureBytes);
@@ -268,17 +269,27 @@ async function superviseTarget(options: SupervisorOptions): Promise<number> {
       resolve({ code, signal, error: null });
     });
   });
-  publishResult(options.metadataPath, {
-    status: 1,
-    signal: null,
-    timedOut: false,
-    interruptedBy: null,
-    parentLost: false,
-    spawnError: 'process supervisor did not publish a completion receipt',
-    completed: false,
-    processGroupPid: child.pid,
-  });
-  startBarrier.end('start\n');
+  try {
+    // The real handle supplies the owner nonce; callers cannot supply a JSON proof.
+    // Persist the actual launcher PGID before any target crosses the start barrier.
+    if (process.platform !== 'win32') expensiveLock?.registerProcessGroup(child.pid);
+    publishResult(options.metadataPath, {
+      status: 1,
+      signal: null,
+      timedOut: false,
+      interruptedBy: null,
+      parentLost: false,
+      spawnError: 'process supervisor did not publish a completion receipt',
+      completed: false,
+      processGroupPid: child.pid,
+    });
+    startBarrier.end('start\n');
+  } catch (error) {
+    startBarrier.destroy();
+    if (expensiveLock !== null) preserveExpensiveRunLock = true;
+    try { signalProcessGroup(child, 'SIGKILL', options.taskkillBin); } catch { /* Unknown remains closed. */ }
+    throw error;
+  }
   let cleanupComplete = false;
   const processGroupCompletion = completion.then(async (result) => {
     await waitForProcessGroupQuiescence(child, () => cleanupComplete);
@@ -445,12 +456,12 @@ async function supervise(options: SupervisorOptions): Promise<number> {
       });
       return 1;
     }
-    return await superviseTarget({ ...options, timeoutMs: remainingMs });
+    return await superviseTarget({ ...options, timeoutMs: remainingMs }, expensiveLock);
   } finally {
     // Never release while a superviseTarget() exception left the process
     // group's fate unconfirmed (see preserveExpensiveRunLock above): the
-    // token intentionally remains for manual recovery instead of reopening
-    // the lane onto a possibly-still-live group.
+    // token remains until a later acquisition can prove the registered group
+    // drained, instead of reopening the lane onto a possibly-still-live group.
     if (!preserveExpensiveRunLock) expensiveLock?.release();
   }
 }

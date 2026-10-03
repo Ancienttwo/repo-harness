@@ -195,14 +195,14 @@ describe('mutation-observed: journal schema', () => {
 });
 
 describe('mutation-observed: dirty-bit derivation', () => {
-  test('context and capability are unconditionally true, and no architecture bit is written', () => {
+  test('context is recorded; no automatic capability projection is requested', () => {
     const cwd = tmpWorkspace('mo-arch-bits');
     try {
       initRepo(cwd);
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/unrelated.ts') });
       const [event] = pendingEvents(cwd);
       expect(event.dirty.context).toBe(true);
-      expect(event.dirty.capability).toBe(true);
+      expect(event.dirty.capability).toBe(false);
       // The architecture changed set is git-derived at Stop
       // (src/cli/hook/architecture-drift.ts); the journal carries no
       // architecture datum for any consumer to read.
@@ -253,7 +253,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     }
   }, 30_000);
 
-  test('contract-verification is true only when the active contract\'s exit_criteria references the edited path', () => {
+  test('edits referencing old exit criteria do not enqueue contract verification', () => {
     const cwd = tmpWorkspace('mo-contract-bit');
     try {
       initRepo(cwd);
@@ -268,17 +268,8 @@ describe('mutation-observed: dirty-bit derivation', () => {
       const events = pendingEvents(cwd);
       const targetEvent = events.find((e) => e.changed_paths.includes('src/target.ts'))!;
       const otherEvent = events.find((e) => e.changed_paths.includes('src/other.ts'))!;
-      expect(targetEvent.dirty['contract-verification']).toBe(true);
-      // EPC-05 orchestrator ruling (residual 2b): the continuous-verification
-      // report target is now a dedicated file, deliberately distinct from
-      // the acceptance-evidence path the checks-materializer exclusively
-      // authors -- see mutation-observed.ts's CONTRACT_VERIFICATION_REPORT_RELATIVE
-      // doc comment for the full rationale (last-writer-wins shadow
-      // authority this closes).
-      expect(targetEvent.payload.contract_verification).toEqual({
-        contract_file: contractPath,
-        checks_file: '.ai/harness/checks/contract-verify.latest.json',
-      });
+      expect(targetEvent.dirty['contract-verification']).toBe(false);
+      expect(targetEvent.payload.contract_verification).toBeUndefined();
       expect(otherEvent.dirty['contract-verification']).toBe(false);
       expect(otherEvent.payload.contract_verification).toBeUndefined();
     } finally {
@@ -447,7 +438,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
       runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
       let [event] = pendingEvents(cwd);
       expect(event.dirty.checkpoint).toBe(true);
-      expect(event.dirty['contract-verification']).toBe(true);
+      expect(event.dirty['contract-verification']).toBe(false);
       expect(event.dirty['minimal-change']).toBe(false);
 
       // Second edit to the SAME path, same session, now with minimal-change
@@ -461,7 +452,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
       runMutationObserved({ collector, input: editPayload('tasks/todos.md'), env });
       [event] = pendingEvents(cwd);
       expect(event.dirty.checkpoint).toBe(true);
-      expect(event.dirty['contract-verification']).toBe(true);
+      expect(event.dirty['contract-verification']).toBe(false);
       expect(event.dirty['minimal-change']).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -522,9 +513,7 @@ describe('mutation-observed: crash-replay', () => {
       const env = { ...process.env, REPO_HARNESS_CLI: cli, HOOK_SESSION_ID: 'reader-only' };
       runMutationObserved({ collector: collectorFor(cwd, planPath), input: editPayload(contractPath), env });
       consumePendingPostEditEvents(cwd, env);
-      const calls = readFileSync(join(cwd, 'calls.jsonl'), 'utf-8').trim().split('\n').map((line) => JSON.parse(line) as string[]);
-      expect(calls.some((args) => args[1] === 'verify-contract')).toBe(false);
-      expect(calls.some((args) => args[1] === 'verification-plan' && args[2] === 'evaluate')).toBe(true);
+      expect(existsSync(join(cwd, 'calls.jsonl'))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

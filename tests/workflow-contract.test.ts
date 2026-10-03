@@ -76,32 +76,22 @@ describe("workflow contract manifest", () => {
     }
   });
 
-  test("execution boundary canonical sentence stays identical across its constant sources", () => {
-    // One owner per delegated runner path: the standalone contract-run worker
-    // prompt, the MCP task-goal document, and the Codex native-child task packet
-    // (SubagentStart context). The generated agent fleet TOML is no longer a
-    // source -- the persona owns role identity only, and the native child gets the
-    // clause exactly once from the task packet. This asserts the first sentence
-    // never drifts between the three remaining owners.
-    const canonicalSentence =
-      "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.";
-    const sources = [
-      "scripts/contract-run.ts",
-      "src/cli/mcp/tools.ts",
-      "src/cli/hook/subagent-handler.ts",
-    ];
-    for (const relPath of sources) {
-      const content = readFileSync(join(ROOT, relPath), "utf-8");
-      expect(content).toContain(canonicalSentence);
+  test("each real delegated runner owns one boundary for its own brief protocol", () => {
+    const envelope="Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.";
+    const parentBrief="Execution boundary: implement exactly the parent brief Goal/Scope/Verify/Rollback.";
+    for(const [path,sentence] of [["scripts/contract-run.ts",envelope],["src/cli/mcp/tools.ts",envelope],["src/cli/hook/subagent-handler.ts",parentBrief]]) {
+      const content=readFileSync(join(ROOT,path),"utf8");
+      expect(content.split(sentence).length-1).toBe(1);
     }
-    for (const relPath of ["scripts/install-agent-fleet.sh", "assets/templates/helpers/install-agent-fleet.sh"]) {
-      expect(readFileSync(join(ROOT, relPath), "utf-8")).not.toContain(canonicalSentence);
+    for(const path of ["scripts/install-agent-fleet.sh","assets/templates/helpers/install-agent-fleet.sh"]) {
+      const content=readFileSync(join(ROOT,path),"utf8");
+      expect(content).not.toContain(envelope);expect(content).not.toContain(parentBrief);
     }
   });
 
   test("helper inventory should come from the workflow contract", () => {
     const contract = loadWorkflowContract(join(ROOT, "assets/workflow-contract.v1.json"));
-    expect(contract.helpers.runtimeDirectory).toBe("package:assets/templates/helpers");
+    expect(contract.helpers.runtimeDirectory).toBe("package:scripts");
     expect(contract.helpers.runtimeSource).toBe("package");
     expect(Object.hasOwn(contract.helpers, "compatibilityDirectory")).toBe(false);
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");

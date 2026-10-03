@@ -1,0 +1,77 @@
+name: CI report and recovery
+
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-report-${{ github.event.workflow_run.id || 'daily-watchdog' }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    # Never execute PR code in a privileged workflow_run context. Only fixed
+    # main push/daily runs produce tags or repair issues; PR checks remain read-only.
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event.workflow_run.event)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Read provider facts, recover tags, dispatch failures and write report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/report-ci.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-report-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: .ci-report/
+          if-no-files-found: error
+
+  watchdog:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Detect daily full validation that never started or exceeded its deadline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/report-ci.ts --watchdog
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-watchdog-${{ github.run_id }}
+          path: .ci-report/
+          if-no-files-found: error

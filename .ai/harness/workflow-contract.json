@@ -92,7 +92,7 @@
     "evidenceKind": "cutover_closure"
   },
   "helpers": {
-    "runtimeDirectory": "package:assets/templates/helpers",
+    "runtimeDirectory": "package:scripts",
     "scripts": [
       "new-spec.sh",
       "new-sprint.sh",
@@ -217,7 +217,7 @@
       "recovery-view-cli": "Materialize the handoff/resume recovery views (and optionally the Codex-global packet) from the last-published checkpoint plus live workflow context",
       "contract-worktree-runtime": "Bind Git-owned task worktrees to Herdr and close recorded runtime before checkout cleanup"
     },
-    "dir": "package:assets/templates/helpers",
+    "dir": "package:scripts",
     "runtimeSource": "package"
   },
   "artifacts": {

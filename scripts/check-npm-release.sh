@@ -40,6 +40,6 @@ if [[ "$MODE" == "prepublish" ]]; then
   exit 0
 fi
 
-bash scripts/check-ci.sh
+bash scripts/check-ci.sh all
 
 echo "[release] OK: npm package gate passed."

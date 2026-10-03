@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Hosted CI invokes independent lanes; local and release callers run both.
-lane="${1:-all}"
-if [[ "$#" -gt 1 ]] || [[ "$lane" != all && "$lane" != governance && "$lane" != functional ]]; then
-  echo "Usage: scripts/check-ci.sh [all|governance|functional]" >&2
+# PR CI verifies one candidate; daily and release callers explicitly select the full lanes.
+lane="${1:-affected}"
+if [[ "$#" -gt 1 ]] || [[ "$lane" != all && "$lane" != governance && "$lane" != functional && "$lane" != affected ]]; then
+  echo "Usage: scripts/check-ci.sh [affected|all|governance|functional]" >&2
   exit 2
 fi
 
@@ -19,6 +19,24 @@ source "$ROOT/scripts/lib/ci-run-tests.sh"
 
 echo "[ci] install"
 bun install --frozen-lockfile
+
+if [[ "$lane" == affected ]]; then
+  echo "[ci] typecheck"
+  bun run check:type
+  echo "[ci] affected tests"
+  BUN_TEST_FILES="$(bun -e 'const files = JSON.parse(await Bun.file(".ci-affected-tests.json").text()); if (!Array.isArray(files) || new Set(files).size !== files.length || files.some(f => typeof f !== "string" || !/^tests\/[\w/.-]+\.test\.tsx?$/.test(f) || f.split("/").includes(".."))) throw Error("Invalid affected tests"); console.log(files.join("\n"));')"
+  if [[ -n "$BUN_TEST_FILES" ]]; then
+    BUN_TEST_ISOLATE_FILES=1
+    BUN_TEST_TIMEOUT_MS=60000
+    BUN_TEST_MAX_CONCURRENCY=1
+    BUN_TEST_JOBS="${BUN_TEST_JOBS:-4}"
+    run_bun_tests
+  else
+    echo "[ci] No executable consumers changed; typecheck completed."
+  fi
+  echo "[ci] OK"
+  exit 0
+fi
 
 if [[ "$lane" != functional ]]; then
   echo "[ci] typecheck"
@@ -36,9 +54,6 @@ if [[ "$lane" != functional ]]; then
   echo "[ci] reference-configs projection"
   bun run check:reference-configs
 
-  echo "[ci] route eval (TS arm)"
-  bun run check:route-eval
-
   echo "[ci] workflow checks"
   bash scripts/check-deploy-sql-order.sh
   echo "[ci] context files"
@@ -52,12 +67,6 @@ if [[ "$lane" != functional ]]; then
   fi
   bash scripts/check-task-sync.sh
 
-  if [[ -f scripts/prepare-handoff.sh ]]; then
-    REPO_HARNESS_SKIP_RESUME_REFRESH=1 bash scripts/prepare-handoff.sh "ci gate" >/dev/null
-  fi
-  if [[ -f scripts/codex-handoff-resume.sh ]]; then
-    bash scripts/codex-handoff-resume.sh --cwd . --reason "ci gate" >/dev/null
-  fi
   bash scripts/check-task-workflow.sh --strict
 
   echo "[ci] repository inspection"
@@ -76,8 +85,7 @@ if [[ "$lane" != governance ]]; then
   echo "[ci] tests"
   run_bun_tests
 
-  echo "[ci] package dry-run"
-  npm pack --dry-run --json >/dev/null
+  echo "[ci] package/install smoke (one shared tarball)"
   bash scripts/check-tarball-install-smoke.sh
 
 fi

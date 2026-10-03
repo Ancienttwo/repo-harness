@@ -1,6 +1,6 @@
 # repo-harness 门禁盘点与分类
 
-> 状态：文档提案，未改任何 gate/check/guard/lock、策略或 architecture model。任务依据：Aimpact 05:14 批准的文档盘点；观察日期 2026-10-03（Asia/Singapore）。源码基线 `cc1fc8ee8eaec3f52c0eb0636b53133f7162b105`，分支 `codex/gate-audit`。实施见 [PLAN.md](PLAN.md)。
+> 状态：#483 源码实施完成、Draft待用户审阅；历史盘点基线保持不变，下面的实施摘要区分已改代码与运行限制。任务依据：Aimpact 05:14 批准的文档盘点；观察日期 2026-10-03（Asia/Singapore）。源码基线 `cc1fc8ee8eaec3f52c0eb0636b53133f7162b105`，分支 `codex/gate-audit`。实施见 [PLAN.md](PLAN.md)。
 
 ## 结论与统计口径
 
@@ -13,6 +13,19 @@
 “真问题次数”只计能证明某次实际工作被阻止且发现真实风险的独立事件；修复commit、red测试、负面fixture、缺工件等待与拒绝次数均不自动算收益。`无证据` 表示无法给出可信次数，不是零次，也不是从未有用。同一个事件影响几个控制时只给一处主归属，其他指向它，不能加总成多次。
 
 “平均卡多久”需要同一次阻断到解除的配对时间戳；command duration、hook elapsed、锁timeout上限与 CI job wall-time分别报告，不能冒称用户等待均值。缓存不是全量日志；没有完整样本时不推算终身总数。
+
+## 实施摘要（#483）
+
+- 已先同步main中p4/#484的退休结果；本PR不重做其旧cross-review三文件删除，不修改其Grok OAR或旧eval实现，skill仅在`/tmp/483-skill-inventory.md`只读盘点。
+- 原生edit/Stop/Done与closeout取消plan→contract→review→notes许可链、promotion/Evidence Contract与promote/archive前置；scope/lease/复杂度诊断只记录。旧eval仍使用的pure历史分类数据保留，不进入native prompt许可。
+- 风险仅`routine/high`；path/private-area、实际sandbox和共享token/generation/CAS约束保留。Main consumer读可信GitHub Required/CI与head/base，不能靠policy关闭；branch push保留秘密扫描。
+- PR只跑typecheck+受影响测试；daily固定main快照做全量，失败/取消/超时/未启动产生去重修复任务与日报。合并后的真实annotated before/after tags与revert命令由reporter发布；尚未在远端启用/执行这份Draft的工作流。
+- Packaged helpers唯一执行权威改为现有`package:scripts`；两个workflow manifests一致。`assets/templates`和`assets/partials*`原样保留为下游scaffold输入，既不同步修改也不做runtime fallback。
+- archctx模型和架构文档保留；每次edit的drift队列、workstream sync与自动写agent capability块取消。历史工件260项逐字节归档，证据链接指向保留原件，不伪称历史状态完成。
+- POSIX昂贵锁在target start barrier前记录host/token/PGID；只有原owner死亡且整组进程确实drained才自动回收。已retired/expired、final与runtime证据充分并带真实parent的Lease走原恢复事务；重复调用幂等、不重发provider。
+- 限制：Windows、未注册PGID的旧benchmark orphan、缺完整producer事实的generic Lease保持unknown；未取得proof不能强制解锁。尚不声称本机已跑native Windows、远端daily或registry/生产验证。
+
+4/67/18是89个控制族的迁移分类，不是“89个现场实验全通过”；历史真问题次数与等待均值仍沿用下面有边界的证据口径。
 
 ## P1：权威与架构边界
 
@@ -99,7 +112,7 @@
 | G23 | SessionStart / post-edit / post-bash / trace / inbox — [src/cli/hook/route-registry.ts](../../../src/cli/hook/route-registry.ts) | 缺context、drift、test观察、peer内容污染 | 无证据 | 无证据 | 降级为只记录 | 12 route tuples逐一覆盖；observational routes不误称hard gates |
 | G24 | artifact matrix / operation readiness (edit,stop,ship) — [src/core/workflow/artifact-requirement-policy.ts](../../../src/core/workflow/artifact-requirement-policy.ts) | 不同profile漏required artifacts | 无证据 | 无证据 | 删除 | 删除步骤齐套矩阵的阻断语义，统一四个边界；避免hook/CLI/MCP各自判定 |
 | R01 | gatekeeper 独立验收步骤 — [agents/fleet/gatekeeper.md](../../../agents/fleet/gatekeeper.md) | 漏回归、过度设计、技术债 | ≥3次已观察审阅修正轮次（E01–E03） | 无证据 | 降级为只记录 | 按需调用；消费同一证据，无强制每改动PASS及复跑 |
-| R02 | 旧 cross-model / direct Codex cross-review — [src/effects/review/cross-review-runner.ts](../../../src/effects/review/cross-review-runner.ts) | 同模型盲点与跨模型意见漏收 | 无证据；E04有独立审阅finding，未证明来自此旧runner | 无证据 | 删除 | 拆除中：独立p4/retire PR持有；本次不修改或重做它的删除 |
+| R02 | 旧 cross-model / direct Codex cross-review — [src/effects/review/cross-review-runner.ts](https://github.com/Ancienttwo/repo-harness/blob/cc1fc8ee8eaec3f52c0eb0636b53133f7162b105/src/effects/review/cross-review-runner.ts) | 同模型盲点与跨模型意见漏收 | 无证据；E04有独立审阅finding，未证明来自此旧runner | 无证据 | 删除 | 拆除中：独立p4/retire PR持有；本次不修改或重做它的删除 |
 | R03 | generic OAR review / Seatbelt round — [src/effects/review/generic-review.ts](../../../src/effects/review/generic-review.ts) | reviewer污染owner、runtime未准备、结果不属于subject | 无证据 | 无证据 | 降级为只记录 | 大改动/安全权限/模型没把握才触发；sandbox权限边界归H03 |
 | R04 | AcceptanceReceipt / external acceptance / manual evidence — [scripts/acceptance-receipt.ts](../../../scripts/acceptance-receipt.ts) | 假验收、错subject、未观察manual criteria | 无证据 | 无证据 | 降级为只记录 | 有review则保留typed事实；无review低风险由check证据合并；去掉必填外审/waiver |
 | R05 | verify-contract bounded command/evidence gates — [scripts/verify-contract.sh](../../../scripts/verify-contract.sh) | 超时、越界执行、bench生产冒充消费、缺criterion | 无证据 | 无证据 | 降级为只记录 | 保留deadline/隔离与可信check数据；唯一执行者验证一次，其余消费 |
@@ -141,12 +154,12 @@
 
 | 事件 | 来源与具体观察 | 主归属 / 计数 | 时间证据 |
 |---|---|---|---|
-| E01 | [release review](../../../tasks/reviews/20260910-0127-release-0-19-0.review.md)，48–53行：gatekeeper FAIL抓到不存在CLI subgroup/verb、越界duration示例、两处版本错误；五项都修正后重核 | R01：1次审阅失败轮次，5个finding不是5次gate | 无证据 |
-| E02 | [fixture-consolidation review](../../../tasks/reviews/20260912-1647-test-fixture-consolidation.review.md)，11–19行：gatekeeper指出越scope改`tasks/todos.md`，已撤销 | R01：1次实际scope修正；不是hook G08的拦截证明 | 无证据 |
-| E03 | [generic-review Slice E review](../../../tasks/reviews/20260930-1827-herdr-generic-review-slice-e.review.md)，100–106行：记录Gatekeeper FAIL correction，包括旧caller未迁移的ship blocker、receipt消费者/tamper断言；当时仍Pending/fail | R01：1次失败修正轮次；不冒称当时已完成独立acceptance | 无证据 |
-| E04 | [BRC342–351 review](../../../tasks/reviews/20260908-0233-brc-issues-342-351.review.md)，15–24行：architecture/security初审发现immutable temporary-ref identity并修正；另一次architecture-state guard首轮fail，proof reconcile后通过；typed external-pass投影46行以后 | 独立审阅1条确证finding，不证明旧cross-review runner/跨供应商身份；C09主计1次状态漂移捕获，与产品defect分开 | receipt issued-at仅证明验收时刻，无阻断/解除配对 |
-| E05 | [planning-lock notes](../../../tasks/notes/20261002-1758-brc10-planning-lock-timeout.notes.md)，45–58行；修复[1d3c2f01](https://github.com/Ancienttwo/repo-harness/commit/1d3c2f017fa867cfbaf3cd61873395b4945e6f04)。两个OS caller执行真实production recovery，group锁含慢settlement令peer超5s；修后相同generation | L05：1个确证root-cause复现；来自测试，不算门禁防住用户风险次数。review100–107行未声称独立acceptance | observed lock hold6092ms，settlement1514ms；修后3970/3029ms，均非用户等待均值 |
-| E06 | [campaign retry notes](../../../tasks/notes/20260910-2258-campaign-preparation-retry.notes.md)，35–36行：node_modules archctx0.5.9，pin0.5.10；安装刷新后通过 | 环境stale导致一次假红，不能记C09拦住产品bug | 无证据 |
+| E01 | [release review](../../../tasks/archive/gate-audit-20261003/reviews/20260910-0127-release-0-19-0.review.md)，48–53行：gatekeeper FAIL抓到不存在CLI subgroup/verb、越界duration示例、两处版本错误；五项都修正后重核 | R01：1次审阅失败轮次，5个finding不是5次gate | 无证据 |
+| E02 | [fixture-consolidation review](../../../tasks/archive/gate-audit-20261003/reviews/20260912-1647-test-fixture-consolidation.review.md)，11–19行：gatekeeper指出越scope改`tasks/todos.md`，已撤销 | R01：1次实际scope修正；不是hook G08的拦截证明 | 无证据 |
+| E03 | [generic-review Slice E review](../../../tasks/archive/gate-audit-20261003/reviews/20260930-1827-herdr-generic-review-slice-e.review.md)，100–106行：记录Gatekeeper FAIL correction，包括旧caller未迁移的ship blocker、receipt消费者/tamper断言；当时仍Pending/fail | R01：1次失败修正轮次；不冒称当时已完成独立acceptance | 无证据 |
+| E04 | [BRC342–351 review](../../../tasks/archive/gate-audit-20261003/reviews/20260908-0233-brc-issues-342-351.review.md)，15–24行：architecture/security初审发现immutable temporary-ref identity并修正；另一次architecture-state guard首轮fail，proof reconcile后通过；typed external-pass投影46行以后 | 独立审阅1条确证finding，不证明旧cross-review runner/跨供应商身份；C09主计1次状态漂移捕获，与产品defect分开 | receipt issued-at仅证明验收时刻，无阻断/解除配对 |
+| E05 | [planning-lock notes](../../../tasks/archive/gate-audit-20261003/notes/20261002-1758-brc10-planning-lock-timeout.notes.md)，45–58行；修复[1d3c2f01](https://github.com/Ancienttwo/repo-harness/commit/1d3c2f017fa867cfbaf3cd61873395b4945e6f04)。两个OS caller执行真实production recovery，group锁含慢settlement令peer超5s；修后相同generation | L05：1个确证root-cause复现；来自测试，不算门禁防住用户风险次数。review100–107行未声称独立acceptance | observed lock hold6092ms，settlement1514ms；修后3970/3029ms，均非用户等待均值 |
+| E06 | [campaign retry notes](../../../tasks/archive/gate-audit-20261003/notes/20260910-2258-campaign-preparation-retry.notes.md)，35–36行：node_modules archctx0.5.9，pin0.5.10；安装刷新后通过 | 环境stale导致一次假红，不能记C09拦住产品bug | 无证据 |
 | E07 | [b456121a](https://github.com/Ancienttwo/repo-harness/commit/b456121ac2e950700c20c8744132c54a74a626fb)（issue196/PR197）：ship cleanup仅ancestry，拒识squash-absorbed，downstream积累100+目录；改用[共享merge predicate](../../../scripts/worktree-merge-lib.sh) | H02的假阴性历史缺陷，说明保留单一正确predicate；不当作安全删除guard防住真问题 | 无证据 |
 | E08 | [execution-boundary research](../../researches/20260905-review-boundary-repairs.md)，末节：state-boundaries观察3个EFFECTS_REVERSE_IMPORT，修后0；新criterion消费此guard | C02的静态缺陷证据；未找到该gate实际阻止哪一次主线effect的记录，表中仍无可信拦截次数 | 无证据 |
 

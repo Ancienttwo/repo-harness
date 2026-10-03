@@ -1,7 +1,8 @@
 /**
  * Mutation guard — HRD-03 in-process decision handler for `PreToolUse.edit`.
  *
- * Ports the complete decision surface of the retired
+ * Preserves path/private boundaries; workflow stages are advisory.
+ * Historical implementation ported the decision surface of the retired
  * `assets/hooks/worktree-guard.sh` and `assets/hooks/pre-edit-guard.sh`
  * scripts into one in-process handler consuming the HRD-02 collector, with
  * byte-identical decisions, reason tokens, message text, exit codes,
@@ -23,7 +24,6 @@ import { basename, dirname, join, posix, win32 } from 'path';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { recordCircuitAttempt, type CircuitAttempt } from './circuit-breaker';
-import { isWorkflowSurfacePath } from '../../effects/review/diff-fingerprint';
 import {
   canonicalRepoRelativePath,
   fileExists,
@@ -82,8 +82,6 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
   };
 
   try {
-    runWorktreeGuard(ctx);
-
     const applyPatchCommand = stringAt(payload, ['tool_input', 'command']);
     let targetPaths: readonly string[];
     let writePayloadFor: (filePath: string) => string;
@@ -180,63 +178,6 @@ function outRaw(ctx: Ctx, text: string): void {
 
 function exit(code: number): never {
   throw new GuardExit(code);
-}
-
-// ---------------------------------------------------------------------------
-// MainLoopDispatchGuard: opt-in orchestrator/subagent edit split (Claude host)
-// ---------------------------------------------------------------------------
-
-/**
- * Source-file extensions the orchestrator must not hand-edit while the guard
- * is armed. Markdown/JSON/YAML/TOML/text and anything else stays writable so
- * plans, docs, and config remain a main-loop surface.
- */
-const MAIN_LOOP_CODE_EXTENSIONS = new Set([
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'cts', 'mts',
-  'py', 'rb', 'go', 'rs', 'java', 'kt', 'kts', 'swift',
-  'c', 'h', 'm', 'mm', 'cc', 'cpp', 'cxx', 'hpp', 'cs',
-  'sh', 'bash', 'zsh', 'fish', 'ps1', 'psm1',
-  'sql', 'vue', 'svelte', 'astro', 'php', 'lua', 'zig',
-  'scala', 'groovy', 'pl', 'css', 'scss', 'less', 'sass', 'html', 'htm',
-]);
-
-function isMainLoopCodePath(filePath: string): boolean {
-  const name = basename(filePath);
-  const dot = name.lastIndexOf('.');
-  if (dot <= 0) return false;
-  return MAIN_LOOP_CODE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
-}
-
-/**
- * Opt-in only: armed by `REPO_HARNESS_MAIN_LOOP_EDIT_GUARD=1|true` on the
- * Claude host. Claude Code stamps `agent_id` (and for `--agent` sessions
- * `agent_type`) onto the PreToolUse payload only when the tool call fires
- * inside a subagent, so an absent pair identifies the orchestrator thread.
- * Deliberately independent of plan state, spec presence, and workflow-profile
- * resolution: the dispatch instruction must land before any plan advisory.
- */
-function mainLoopDispatchGuard(ctx: Ctx, filePath: string): void {
-  const flag = ctx.env.REPO_HARNESS_MAIN_LOOP_EDIT_GUARD;
-  if (flag !== '1' && flag !== 'true') return;
-  if (ctx.env.HOOK_HOST !== 'claude') return;
-
-  const subagent = firstNonEmpty([
-    stringAt(ctx.payload, ['agent_id']),
-    stringAt(ctx.payload, ['agent_type']),
-  ]);
-  if (subagent) return;
-
-  if (!isMainLoopCodePath(filePath)) return;
-
-  out(ctx, `[MainLoopDispatchGuard] Main-loop source edit blocked: ${filePath}`);
-  structuredError(
-    ctx,
-    'MainLoopDispatchGuard',
-    `Main-loop source edit blocked: ${filePath}. The orchestrator does not hand-edit code files.`,
-    'Dispatch this implementation to an execution subagent (fast-worker / deep-worker); diagnosis stays in the main loop. Operator off-switch: unset REPO_HARNESS_MAIN_LOOP_EDIT_GUARD.',
-    'state_violation',
-  );
-  exit(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,45 +384,13 @@ function leaseOwnershipGuard(ctx: Ctx, filePath: string): void {
     decision.reason,
     decision.fix,
     'contract_failure',
+    'advisory',
   );
-  exit(2);
 }
 
 // ---------------------------------------------------------------------------
 // worktree-guard.sh port
 // ---------------------------------------------------------------------------
-
-const REQUIRE_WORKTREE_MARKER = '.claude/.require-worktree';
-
-/**
- * `runHook()` has already confirmed the event is running inside a resolved
- * git repository before a handler can be reached, so the old script's
- * `git rev-parse --is-inside-work-tree` guard (exit 0 "Not a git repository")
- * is unreachable dead code here and is deliberately not ported -- see notes.
- */
-function runWorktreeGuard(ctx: Ctx): void {
-  const gitDir = resolveGitDir(ctx.repoRoot);
-
-  if (gitDir.includes('.git/worktrees/')) return;
-
-  if (fileExists(ctx.repoRoot, REQUIRE_WORKTREE_MARKER)) {
-    out(ctx, `[WorktreeGuard] Mutation blocked: primary working tree detected (${gitDir}).`);
-    out(ctx, `  Enforcement marker found: ${REQUIRE_WORKTREE_MARKER}`);
-    out(ctx, '  Use a linked worktree for write operations.');
-    out(ctx, '  Example: git worktree add ../<repo>-wt-<branch> -b <branch>');
-    structuredError(
-      ctx,
-      'WorktreeGuard',
-      `Primary working tree detected at ${gitDir} while ${REQUIRE_WORKTREE_MARKER} is present.`,
-      'Create and switch to a linked worktree before retrying the write operation.',
-      'state_violation',
-    );
-    exit(2);
-  }
-
-  out(ctx, `[WorktreeGuard] Warning: primary working tree detected (${gitDir}).`);
-  out(ctx, `  To enforce linked worktrees, create ${REQUIRE_WORKTREE_MARKER}`);
-}
 
 function resolveGitDir(repoRoot: string): string {
   try {
@@ -517,7 +426,7 @@ function runPerPathGuards(
   ctx: Ctx,
   filePath: string,
   allTargetPaths: readonly string[],
-  writePayload: string,
+  _writePayload: string,
 ): void {
   if (isRepoScopedPath(filePath) && canonicalRepoRelativePath(ctx.repoRoot, filePath) !== filePath) {
     out(ctx, `[RepoScopeGuard] Unsafe or out-of-repository target: ${filePath}`);
@@ -561,125 +470,22 @@ function runPerPathGuards(
     out(ctx, '  Follow operations.deploy_sql in .ai/harness/policy.json when configured; otherwise keep SQL directly under deploy/sql/ with 4-digit ascending prefixes.');
   }
 
-  mainLoopDispatchGuard(ctx, filePath);
-
   leaseOwnershipGuard(ctx, filePath);
 
-  // ---- resolve_effective_state: the ONE Effective State resolution -------
-  let effective: EffectiveState | null;
+  // Workflow artifacts are observations, never edit permissions.
+  let effective: EffectiveState | null = null;
   try {
     effective = ctx.collector.getPreEditEffectiveState(allTargetPaths);
-  } catch {
-    // Residual instability after the wrapper's bounded retry (runtime.ts):
-    // concurrent workflow-state writes never settled. Distinct fail-closed
-    // diagnostic, never the collapsed "resolution failed" banner below --
-    // still fails closed, no fail-open path.
-    out(ctx, `[WorkflowResolutionUnstableGuard] Workflow resolution stayed unstable for ${filePath} after bounded retries.`);
-    structuredError(
-      ctx,
-      'WorkflowResolutionUnstableGuard',
-      `Concurrent workflow-state writes kept resolution unstable for ${filePath}; bounded retries were exhausted.`,
-      'Retry the edit once concurrent workflow-state writes settle.',
-      'state_violation',
-    );
-    exit(2);
+  } catch (error) {
+    out(ctx, `[WorkflowObservation] State unavailable: ${describeError(error)}; edit may continue.`);
   }
-  ctx.resolvedProfileHint = effective?.workflow_profile ?? ctx.resolvedProfileHint;
-
-  // Effective State owns both the contract snapshot and the operation-
-  // readiness decision. The guard consumes those resolved values without a
-  // second filesystem read that could disagree under concurrent edits.
-  const activeContract = effective?.contract?.path ?? null;
-  const contractAuthorizesTarget = Boolean(
-    activeContract
-      && effective
-      && contractAllowsPath(activeContract, effective.allowed_paths, filePath),
-  );
-  const workflowProfile = workflowProfileOrNull(effective);
-  if (!effective || !workflowProfile) {
-    out(ctx, `[WorkflowProfileGuard] Unable to resolve a deterministic workflow profile for ${filePath}`);
-    structuredError(
-      ctx,
-      'WorkflowProfileGuard',
-      `Deterministic workflow profile resolution failed for ${filePath}.`,
-      `Run repo-harness state resolve --json --target-path '${filePath}' --operation edit and resolve its blockers.`,
-      'state_violation',
-    );
-    exit(2);
+  ctx.resolvedProfileHint = effective?.workflow_profile ?? null;
+  const activeContract = effective?.contract?.path;
+  if (activeContract && !contractAllowsPath(activeContract, effective!.allowed_paths, filePath)) {
+    out(ctx, `[ContractScopeGuard] Advisory: ${filePath} is outside ${activeContract}; include the scope deviation in the PR.`);
   }
-
-  // ---- contract_scope: active contract + allowed-paths gate --------------
-  if (isRepoScopedPath(filePath) && activeContract) {
-    if (!contractAuthorizesTarget) {
-      out(ctx, `[ContractScopeGuard] ${filePath} is outside the active sprint contract: ${activeContract}`);
-      structuredError(
-        ctx,
-        'ContractScopeGuard',
-        `${filePath} is outside the allowed_paths declared in ${activeContract}.`,
-        'Update the sprint contract allowed_paths or keep edits within the approved scope.',
-        'contract_failure',
-      );
-      exit(2);
-    }
-  }
-
-  // ---- plan_gate -----------------------------------------------------------
-  runEditPlanGate(ctx, filePath, effective);
-
-  // ---- strict_contract / strict_worktree ----------------------------------
-  if (workflowProfile === 'strict' && isRepoScopedPath(filePath) && !isWorkflowSurfacePath(filePath)) {
-    if (!activeContract || !fileExists(ctx.repoRoot, activeContract)) {
-      out(ctx, `[StrictContractGuard] Strict profile requires an active contract for ${filePath}`);
-      structuredError(
-        ctx,
-        'StrictContractGuard',
-        `Strict workflow edit to ${filePath} has no active contract.`,
-        'Create the plan/contract worktree with repo-harness run plan-to-todo before editing.',
-        'missing_artifact',
-      );
-      exit(2);
-    }
-    const isolation = effective?.readiness?.ok
-      ? effective.readiness.requirements.edit.find((entry) => entry.key === 'isolated_contract_worktree')
-      : null;
-    if (!isolation?.satisfied) {
-      out(ctx, `[StrictWorktreeGuard] Strict profile requires an isolated contract worktree for ${filePath}`);
-      structuredError(
-        ctx,
-        'StrictWorktreeGuard',
-        `Strict workflow edit to ${filePath} requires a linked worktree owned by the active contract.`,
-        'Start or enter the contract worktree before editing high-risk implementation paths.',
-        'state_violation',
-      );
-      exit(2);
-    }
-  }
-
-  // ---- PlanTransitionGuard -------------------------------------------------
-  if (/^plans\/plan-.*\.md$/.test(filePath) && (fileExists(ctx.repoRoot, filePath) || writePayload)) {
-    const currentStatus = fileExists(ctx.repoRoot, filePath)
-      ? extractStatusFromText(readText(ctx.repoRoot, filePath) ?? '')
-      : '';
-    const nextStatus = extractStatusFromText(writePayload);
-
-    if (currentStatus && nextStatus && currentStatus !== nextStatus) {
-      const noteCount = writePayload.includes('[NOTE]:')
-        ? countOccurrences(writePayload, '[NOTE]:')
-        : (fileExists(ctx.repoRoot, filePath) ? countOccurrences(readText(ctx.repoRoot, filePath) ?? '', '[NOTE]:') : 0);
-
-      const transitionError = validatePlanTransition(ctx.repoRoot, currentStatus, nextStatus, noteCount);
-      if (transitionError) {
-        out(ctx, `[PlanTransitionGuard] ${transitionError}`);
-        structuredError(
-          ctx,
-          'PlanTransitionGuard',
-          transitionError,
-          'Respect the Draft -> Annotating -> Approved flow and resolve required [NOTE]: annotations before changing status.',
-          'state_violation',
-        );
-        exit(2);
-      }
-    }
+  if (effective?.blockers.length) {
+    out(ctx, `[WorkflowObservation] ${effective.blockers.join(', ')}; edit may continue.`);
   }
 
   // ---- AssetLayer advisory --------------------------------------------------
@@ -721,263 +527,8 @@ function applyPatchScopeGuard(ctx: Ctx): never {
   exit(2);
 }
 
-// Named to avoid scripts/check-state-boundaries.ts's CLI_AUTHORITY_NAME
-// heuristic (any src/cli/* declaration matching /^(?:...|resolve).*WorkflowProfile$/i
-// is flagged as a suspected authority reimplementation): this is a thin,
-// four-line projection over an ALREADY-RESOLVED EffectiveState field, the
-// same shape as state.ts's own `resolveStateCommand` --field projection, not
-// a second workflow-profile resolver.
-function workflowProfileOrNull(effective: EffectiveState | null): WorkflowProfile | null {
-  if (!effective) return null;
-  // A blocked resolution's field value is not trustworthy: callers must key
-  // off blockers, not a possibly-still-populated value (mirrors state.ts's
-  // `--field` projection, which suppresses stdout whenever blockers exist).
-  // Effective State's shared readiness projection owns the sole repair
-  // exception; the hook never re-derives contract or blocker semantics.
-  if (effective.blockers.length > 0) {
-    const readiness = effective.readiness;
-    if (!readiness?.ok || readiness.allowedToEdit.decision !== 'allow') return null;
-  }
-  const profile = effective.workflow_profile;
-  return profile === 'lite' || profile === 'standard' || profile === 'strict' ? profile : null;
-}
-
-// ---------------------------------------------------------------------------
-// run_edit_plan_gate port
-// ---------------------------------------------------------------------------
-
-function editPlanGateMode(ctx: Ctx): string {
-  const explicit = ctx.env.REPO_HARNESS_EDIT_PLAN_GATE;
-  if (explicit) return explicit;
-  return policyGet(ctx.repoRoot, ['guards', 'edit_plan_gate'], 'enforce');
-}
-
-function runEditPlanGate(ctx: Ctx, filePath: string, effective: EffectiveState): void {
-  const workflowProfile = effective.workflow_profile;
-  const mode = editPlanGateMode(ctx);
-  if (mode === 'off') return;
-  if (!isRepoScopedPath(filePath)) return;
-  if (isWorkflowSurfacePath(filePath)) return;
-  if (workflowProfile === 'lite') return;
-
-  if (!fileExists(ctx.repoRoot, 'docs/spec.md')) {
-    out(ctx, `[SpecGuard] Implementation edit without docs/spec.md: ${filePath}`);
-    if (mode === 'advice') {
-      out(ctx, '[SpecGuard] Advisory: run repo-harness run new-spec and capture stable product intent.');
-    } else {
-      structuredError(
-        ctx,
-        'SpecGuard',
-        `Implementation edit to ${filePath} without docs/spec.md.`,
-        'Run repo-harness run new-spec and capture stable product intent before implementing.',
-        'missing_artifact',
-      );
-      exit(2);
-    }
-  }
-
-  const gatePlan = getActivePlan(ctx);
-  if (!gatePlan || !fileExists(ctx.repoRoot, gatePlan)) {
-    const reason = `Implementation edit to ${filePath} without an active plan; current workflow profile: ${workflowProfile}. Reasons: ${effective.profile_reasons.join(', ')}. State revision: ${effective.state_revision}. Earlier session guidance is a snapshot; current edit-time requirements apply.`;
-    const fix = `Capture the approved planning output with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved${workflowProfile === 'strict' ? ' --execute' : ''}.`;
-    out(ctx, `[PlanStatusGuard] ${reason}`);
-    if (mode === 'advice') {
-      out(ctx, `[PlanStatusGuard] Advisory: ${fix}`);
-    } else {
-      structuredError(
-        ctx,
-        'PlanStatusGuard',
-        reason,
-        fix,
-        'missing_artifact',
-      );
-      exit(2);
-    }
-    return;
-  }
-
-  const gateStatus = extractStatusFromText(readText(ctx.repoRoot, gatePlan) ?? '');
-  const statusPolicy = loadPlanStatusPolicy(ctx.repoRoot);
-
-  if (!statusPolicy) {
-    out(ctx, `[PlanStatusGuard] Plan-status authority unavailable (.ai/harness/policy.json active_plan lifecycle is missing, malformed, or unreadable); implementation edit: ${filePath}`);
-    if (mode === 'advice') {
-      out(ctx, '[PlanStatusGuard] Advisory: restore active_plan.statuses and active_plan.lifecycle in .ai/harness/policy.json before implementation.');
-    } else {
-      structuredError(
-        ctx,
-        'PlanStatusGuard',
-        `Implementation edit to ${filePath} could not be checked against plan-status authority: .ai/harness/policy.json has no valid active_plan lifecycle projection.`,
-        'Restore active_plan.statuses and active_plan.lifecycle in .ai/harness/policy.json before implementation.',
-        'missing_artifact',
-      );
-      exit(2);
-    }
-    return;
-  }
-
-  if (!statusPolicy.statuses.includes(gateStatus)) {
-    out(ctx, `[PlanStatusGuard] Plan status '${gateStatus}' in ${gatePlan} is not in the known-status authority; implementation edit: ${filePath}`);
-    if (mode === 'advice') {
-      out(ctx, `[PlanStatusGuard] Advisory: fix the plan Status header in ${gatePlan}, or add '${gateStatus}' to active_plan.statuses and its lifecycle projection if it is legitimate.`);
-    } else {
-      structuredError(
-        ctx,
-        'PlanStatusGuard',
-        `Implementation edit to ${filePath} while plan status '${gateStatus}' in ${gatePlan} is not in the known-status authority (.ai/harness/policy.json active_plan.statuses).`,
-        `Fix the plan Status header in ${gatePlan}, or update the policy-owned lifecycle if '${gateStatus}' is legitimate.`,
-        'state_violation',
-      );
-      exit(2);
-    }
-    return;
-  }
-
-  if (statusPolicy.preApprovalStatuses.includes(gateStatus)) {
-    out(ctx, `[PlanStatusGuard] Plan status is '${gateStatus}' in ${gatePlan}; implementation edit: ${filePath}`);
-    if (mode === 'advice') {
-      out(ctx, '[PlanStatusGuard] Advisory: complete the annotation cycle and move the plan to Approved before implementation.');
-    } else {
-      structuredError(
-        ctx,
-        'PlanStatusGuard',
-        `Implementation edit to ${filePath} while plan status is ${gateStatus} in ${gatePlan}.`,
-        'Complete the annotation cycle and move the plan to Approved before implementation.',
-        'state_violation',
-      );
-      exit(2);
-    }
-    return;
-  }
-
-}
-
-interface PlanStatusPolicy {
-  readonly statuses: readonly string[];
-  readonly preApprovalStatuses: readonly string[];
-  readonly draft: string;
-  readonly annotationEnd: string;
-  readonly approved: string;
-  readonly executing: string;
-  readonly terminalStatuses: readonly string[];
-}
-
-function loadPlanStatusPolicy(repoRoot: string): PlanStatusPolicy | null {
-  const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (!raw) return null;
-  try {
-    const policy = JSON.parse(raw) as {
-      active_plan?: {
-        statuses?: unknown;
-        lifecycle?: {
-          annotation_end?: unknown;
-          approved?: unknown;
-          executing?: unknown;
-          terminal_start?: unknown;
-        };
-      };
-    };
-    const values = policy.active_plan?.statuses;
-    const lifecycle = policy.active_plan?.lifecycle;
-    if (!Array.isArray(values) || values.length === 0 || !lifecycle) return null;
-    if (!values.every((value): value is string => typeof value === 'string' && value.trim().length > 0)) return null;
-    const statuses = [...values];
-    if (new Set(statuses).size !== statuses.length) return null;
-    const annotationEnd = lifecycle.annotation_end;
-    const approved = lifecycle.approved;
-    const executing = lifecycle.executing;
-    const terminalStart = lifecycle.terminal_start;
-    if (![annotationEnd, approved, executing, terminalStart].every((value) => typeof value === 'string')) return null;
-    const annotationIndex = statuses.indexOf(annotationEnd as string);
-    const approvedIndex = statuses.indexOf(approved as string);
-    const executingIndex = statuses.indexOf(executing as string);
-    const terminalIndex = statuses.indexOf(terminalStart as string);
-    if (
-      annotationIndex < 1
-      || approvedIndex !== annotationIndex + 1
-      || executingIndex !== approvedIndex + 1
-      || terminalIndex <= executingIndex
-    ) return null;
-    return {
-      statuses,
-      preApprovalStatuses: statuses.slice(0, approvedIndex),
-      draft: statuses[0]!,
-      annotationEnd: annotationEnd as string,
-      approved: approved as string,
-      executing: executing as string,
-      terminalStatuses: statuses.slice(terminalIndex),
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Plan / contract filesystem authorities (mirror lib/workflow-state.sh)
-// ---------------------------------------------------------------------------
-
-/** get_active_plan(): raw marker text, gated on worktree-ownership match and target-file existence. */
-function getActivePlan(ctx: Ctx): string | null {
-  const ownership = ctx.collector.getWorktreeOwnership();
-  const matchesCwd = ownership.owner === null || ownership.ownedByCurrent;
-  if (!matchesCwd) return null;
-  const marker = ctx.collector.getActivePlanMarker();
-  if (!marker) return null;
-  return fileExists(ctx.repoRoot, marker) ? marker : null;
-}
-
-/** workflow_is_linked_worktree(): git's own worktree structure, independent of the repo-harness active-worktree marker. */
 function isLinkedWorktree(repoRoot: string): boolean {
   return resolveGitDir(repoRoot).includes('.git/worktrees/');
-}
-
-// ---------------------------------------------------------------------------
-// validate_plan_transition() port
-// ---------------------------------------------------------------------------
-
-function validatePlanTransition(repoRoot: string, currentStatus: string, nextStatus: string, noteCount: number): string | null {
-  const policy = loadPlanStatusPolicy(repoRoot);
-  if (!policy) return 'Plan-status authority is unavailable or malformed.';
-  if (!policy.statuses.includes(currentStatus) || !policy.statuses.includes(nextStatus)) {
-    return `Unknown plan status transition ${currentStatus} -> ${nextStatus}.`;
-  }
-  const { draft, annotationEnd, approved, executing } = policy;
-  const key = `${currentStatus}:${nextStatus}`;
-  switch (key) {
-    case `${draft}:${annotationEnd}`:
-      return noteCount < 1 ? `${draft} -> ${annotationEnd} requires at least one [NOTE]: annotation.` : null;
-    case `${annotationEnd}:${approved}`:
-      return noteCount > 0 ? `${annotationEnd} -> ${approved} requires all [NOTE]: annotations to be resolved.` : null;
-  }
-  if (currentStatus === annotationEnd && nextStatus === draft) return null;
-  if (policy.preApprovalStatuses.includes(currentStatus) && (nextStatus === approved || nextStatus === executing)) {
-    return `Status jump ${currentStatus} -> ${nextStatus} skips required workflow gates.`;
-  }
-  if ((currentStatus === approved || currentStatus === executing)
-    && (policy.preApprovalStatuses.includes(nextStatus) || (currentStatus === executing && nextStatus === approved))) {
-    return `Backward transition ${currentStatus} -> ${nextStatus} is not allowed.`;
-  }
-  return null;
-}
-
-function extractStatusFromText(text: string): string {
-  for (const line of text.split('\n')) {
-    const marker = '**Status**:';
-    if (!line.includes(marker)) continue;
-    const idx = line.lastIndexOf(marker);
-    return line.slice(idx + marker.length).replace(/\r/g, '').trim();
-  }
-  return '';
-}
-
-function countOccurrences(text: string, needle: string): number {
-  let count = 0;
-  let index = text.indexOf(needle);
-  while (index !== -1) {
-    count += 1;
-    index = text.indexOf(needle, index + needle.length);
-  }
-  return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,7 +783,7 @@ function structuredError(
     if (!profile && typeof cache.workflow_profile === 'string') profile = cache.workflow_profile;
   }
   const normalizedProfile: WorkflowProfile =
-    profile === 'lite' || profile === 'standard' || profile === 'strict' ? profile : 'strict';
+    profile === 'routine' || profile === 'high' ? profile : 'high';
 
   const attempt: CircuitAttempt = {
     kind: 'guard',

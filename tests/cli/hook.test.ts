@@ -26,7 +26,7 @@ function env(root: string, host: 'claude' | 'codex' = 'claude'): NodeJS.ProcessE
     HOOK_HOST: host,
     HOOK_SESSION_ID: 'test-session',
     HOOK_RUN_ID: 'test-run',
-    REPO_HARNESS_WORKFLOW_PROFILE: 'lite',
+    REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
   };
 }
 
@@ -121,7 +121,7 @@ describe('typed hook runtime', () => {
       const moduleUrl = new URL('../../src/cli/hook/runtime.ts', import.meta.url).href;
       const script = [
         `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
-        `runHook({ event: 'Stop', routeId: 'default', cwd: ${JSON.stringify(root)}, input: JSON.stringify({ stop_hook_active: false }), env: { ...process.env, HOOK_REPO_ROOT: ${JSON.stringify(root)}, HOOK_HOST: 'codex', REPO_HARNESS_WORKFLOW_PROFILE: 'lite' } });`,
+        `runHook({ event: 'Stop', routeId: 'default', cwd: ${JSON.stringify(root)}, input: JSON.stringify({ stop_hook_active: false }), env: { ...process.env, HOOK_REPO_ROOT: ${JSON.stringify(root)}, HOOK_HOST: 'codex', REPO_HARNESS_WORKFLOW_PROFILE: 'routine' } });`,
       ].join('\n');
       const result = spawnSync(process.execPath, ['-e', script], { cwd: root, encoding: 'utf8' });
       expect(result.status).toBe(0);

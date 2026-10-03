@@ -20,13 +20,13 @@ import { join } from "path";
 import { commitAll, initGitRepo, run, sandboxEnv } from "./repo-fixture";
 
 export const ROOT = join(import.meta.dir, "../..");
-export const HELPER_DIR = join(ROOT, "assets/templates/helpers");
+export const HELPER_DIR = join(ROOT, "scripts");
 export const TEMPLATE_DIR = join(ROOT, "assets/templates");
 export const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
 // The repository resolver imports the canonical core. Its packaged projection
 // is intentionally standalone and is source-hash/drift checked separately.
-export const INTENTIONALLY_DIVERGENT = ["capability-resolver.ts", "recovery-view-cli.ts"];
+export const INTENTIONALLY_DIVERGENT: string[] = [];
 
 // Match the fixture's shell permission setup without starting a login shell.
 export function makeShellScriptsExecutable(directory: string): void {

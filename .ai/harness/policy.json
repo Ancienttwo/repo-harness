@@ -119,7 +119,7 @@
     "events_file": ".ai/harness/events.jsonl",
     "architecture_events_file": ".ai/harness/architecture/events.jsonl",
     "runs_dir": ".ai/harness/runs",
-    "helper_runtime_dir": "package:assets/templates/helpers",
+    "helper_runtime_dir": "package:scripts",
     "helper_source": "package"
   },
   "architecture": {
@@ -132,7 +132,7 @@
     "diagram_skill": "mermaid",
     "diagram_skill_source": "~/.codex/skills/mermaid",
     "vendoring_policy": "do-not-vendor-diagram-skill-assets",
-    "freshness_gate": "strict",
+    "freshness_gate": "advisory",
     "gate_min_severity": "medium",
     "pending_card_scope": "capability",
     "pending_block_begin": "<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->",
@@ -140,7 +140,7 @@
     "queue_script": "repo-harness run architecture-queue",
     "contract_block_begin": "<!-- BEGIN ARCHITECTURE CONTRACT -->",
     "contract_block_end": "<!-- END ARCHITECTURE CONTRACT -->",
-    "rule": "hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams"
+    "rule": "Architecture documents and the archctx model are on-demand references; update real responsibility changes explicitly. Hooks do not queue per-edit drift, sync workstreams or author agent-context blocks."
   },
   "refactor": {
     "mode": "off",
@@ -177,9 +177,9 @@
   "workstreams": {
     "dir": "tasks/workstreams",
     "scope": "capability",
-    "projection": "local-contract-active-pointer-and-current-slice",
+    "projection": "off",
     "todo_projection": "tasks/todos.md",
-    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; local contracts only project pointers"
+    "rule": "Historical workstream projections are archived. Ordinary progress and verification live in the PR description."
   },
   "information_lifecycle": {
     "notes": {
@@ -201,7 +201,7 @@
         ".ai/harness/policy.json",
         ".ai/harness/workflow-contract.json",
         ".ai/hooks/",
-        "package:assets/templates/helpers",
+        "package:scripts",
         "docs/reference-configs/"
       ],
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
@@ -230,26 +230,18 @@
   },
   "plan_capture": {
     "script": "repo-harness run capture-plan",
-    "sources": [
-      "codex-plan-mode",
-      "waza-think",
-      "repo-harness-plan",
-      "repo-harness-sprint"
-    ],
-    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through repo-harness run plan-to-todo; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown, while contract rows may expand with $think before capture/execution"
+    "rule": "Planning capture is optional and creates one reference only; no artifact-level, promotion, Evidence Contract, approval or automatic contract projection."
   },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",
     "source_of_truth": "transient host planning bridge only; plans/ and .ai/harness/active-plan remain authoritative"
   },
   "guards": {
-    "edit_plan_gate": "enforce",
+    "edit_plan_gate": "off",
     "edit_plan_gate_modes": [
-      "enforce",
-      "advice",
       "off"
     ],
-    "rule": "pre-edit-guard blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
+    "rule": "Ordinary editing has no plan/contract approval permit. Path and permission safety remain runtime invariants."
   },
   "collaboration": {
     "mode": "off"
@@ -269,10 +261,12 @@
     "max_depth": 1,
     "allow_parallel_writers": false,
     "state_file": ".ai/harness/delegation/latest.json",
-    "preferred_runners": ["subagent"],
-    "brief_source": "tasks/contracts/<stem>.contract.md",
+    "preferred_runners": [
+      "subagent"
+    ],
+    "brief_source": ".claude/templates/delegation-brief.template.md",
     "runner_rule": "the active task contract is the authoritative execution brief. Claude uses its native subagent surface. Codex uses native spawn_agent with the exact installed agent_type and fork_turns=none; official SubagentStart agent_type/model fields are the runtime observation. Missing, default, mismatched, invalid, or unverified native routing fails closed without an alternate fleet runner. Reasoning effort remains configured_unverified until Codex exposes an official runtime field.",
-    "rule": "UserPromptSubmit.delegation injects bounded delegation context only for the typed /delegate or /parallel command. Natural-language inference and SessionStart standing authorization are not delegation authorities."
+    "rule": "The bot chooses scope/worker by risk; the worker receives Goal, Scope, Verify and Rollback and loads concrete techniques on demand."
   },
   "sidecar_research": {
     "default": true,
@@ -323,7 +317,7 @@
   },
   "worktree_strategy": {
     "auto_on_conflict": true,
-    "auto_for_contract_tasks": true,
+    "auto_for_contract_tasks": false,
     "branch_prefix": "codex/",
     "base_branch": "main",
     "review_base": "origin/main",
@@ -337,7 +331,7 @@
       "existing_changes_unrelated_but_would_block_review",
       "task_requires_clean_validation_surface"
     ],
-    "validation_route": "waza:check",
+    "validation_route": "typecheck-and-affected-tests",
     "merge_back": {
       "target": "main",
       "requires_clean_check": true,
@@ -346,7 +340,7 @@
   },
   "merge_gate": {
     "enabled": true,
-    "rule": "the protected installed helper ignores caller source, helper, HOME, PATH, interpreter, and workflow-library overrides; it reads enablement from the exact target base commit, verifies the single host-owned AcceptanceReceipt, and writes a provider-free local seal bound to repository root, exact target base SHA, candidate head SHA, full-diff fingerprint, AcceptanceReceipt fingerprint, and helper fingerprint; semantic changes or overlapping target movement invalidate acceptance, while declared lifecycle-only changes and non-overlapping target movement require only a new local seal; missing, malformed, rejected, or stale receipts and seals fail closed"
+    "rule": "The installed helper consumes exact GitHub PR head/base and current trusted Required / CI results, scans credential/private paths and seals the immutable candidate. No external review, waiver, plan or AcceptanceReceipt is an ordinary merge permit."
   },
   "upgrade": {
     "strategy_version": 1,
@@ -556,15 +550,22 @@
   },
   "circuit_breakers": {
     "guard_repeat": 2,
-    "review": { "lite": 1, "standard": 1, "strict": 2 },
+    "review": {
+      "lite": 1,
+      "standard": 1,
+      "strict": 2
+    },
     "semantic_reviews_per_work_package": 1,
-    "subagents": { "default": 2, "strict_explicit_contract": 3 },
+    "subagents": {
+      "default": 2,
+      "strict_explicit_contract": 3
+    },
     "repair_loops": 2,
     "cross_model_consults_default": 0
   },
   "enforcement": {
-    "worktree_guard": "warn-by-default",
-    "verification_gate": "contract-and-review",
-    "completion_requires_checks": true
+    "worktree_guard": "advisory",
+    "verification_gate": "main-automatic-checks",
+    "completion_requires_checks": false
   }
 }

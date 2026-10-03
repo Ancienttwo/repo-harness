@@ -50,6 +50,7 @@ import {
 } from './publication-receipt';
 import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
 import { readLease, removeLease, withTaskLock, writeLeaseOwnerDurably } from '../state/coordination-lease-store';
+import { readClaimTokenForTask } from '../state/coordination-claim-token';
 
 const LINEAGE_RELATIVE_PATH = 'repo-harness/publications/v1/lineage';
 const INTEGRATION_RELATIVE_PATH = 'repo-harness/publications/v1/integration';
@@ -74,12 +75,16 @@ type ShipJournalStatus = 'in_progress' | 'complete';
 
 interface ShipJournalProof {
   readonly evidence: PublicationJournalEvidenceV1;
+  readonly claim_id: string;
+  readonly claim_task_id: string;
+  readonly claim_generation: string;
+  readonly claim_task_revision: string;
   readonly worktree: string;
   readonly branch: string;
   readonly target_branch: string;
   readonly base_ref: string;
   readonly base_sha: string;
-  readonly gate_sealed_head: string;
+  readonly candidate_frozen_head: string;
   readonly pushed_head: string;
   readonly pr_observed_head: string;
 }
@@ -119,27 +124,49 @@ function exactShipJournalPath(repoRoot: string, expectedKey: string, suppliedSta
   return expected;
 }
 
-function deriveShipJournalKey(repoRoot: string, meta: Record<string, unknown>, gitBin?: string): string {
-  const fields = [
-    `repo=${requiredString(meta.repo, 'ship journal metadata repo')}`,
-    `worktree=${requiredString(meta.worktree, 'ship journal metadata worktree')}`,
-    'operation=ship',
-    `plan=${stringValue(meta.plan, 'ship journal metadata plan')}`,
-    `contract=${stringValue(meta.contract, 'ship journal metadata contract')}`,
-    `original_head=${requiredString(meta.original_head, 'ship journal metadata original_head')}`,
-    `target_branch=${requiredString(meta.target_branch, 'ship journal metadata target_branch')}`,
-    `base_sha=${requiredString(meta.base_sha, 'ship journal metadata base_sha')}`,
-  ];
-  try {
-    return execFileSync(gitBin ?? 'git', ['hash-object', '--stdin'], {
-      cwd: repoRoot,
-      input: `${fields.join('\n')}\n`,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (error) {
-    throw failure('publication_incomplete', 'cannot derive ship journal key from metadata', error);
+/** Real shared-plane identity; a local token is only its locator. */
+export function readShipClaimIdentity(input: {
+  repo_root: string; task_id: string; claim_id: string; branch: string; target_ref: string;
+}): { claim_id: string; task_id: string; generation: number; task_revision: string } {
+  return withTaskLock(input.repo_root, input.task_id, () => {
+    const record = readLease(input.repo_root, input.task_id).record;
+    const token = readClaimTokenForTask(input.repo_root, input.task_id);
+    if (!record || token.outcome !== 'found' || record.claim_id !== input.claim_id
+      || token.token.claim_id !== record.claim_id || token.token.task_id !== record.task_id
+      || token.token.unit_ref !== record.unit_ref || record.target_ref !== input.target_ref
+      || record.branch !== input.branch || !sameRealpath(record.execution_worktree ?? '', input.repo_root)
+      || !['bound', 'completing', 'reviewing'].includes(record.state)) {
+      throw failure('publication_claim_mismatch', 'claim token, live owner, worktree, branch or target binding differs');
+    }
+    const canonical = readCanonicalSprint(input.repo_root, { targetRef: record.target_ref, sprintPath: record.sprint_path });
+    if (!canonical.ok) throw failure('publication_claim_mismatch', canonical.error);
+    const task = lookupCanonicalTask({ repoIdentity: resolveRepoIdentity(input.repo_root), sprintPath: record.sprint_path, sprintText: canonical.text }, record.task_id);
+    if (!task.ok || task.task.task_revision !== record.task_revision) {
+      throw failure('publication_claim_mismatch', 'claim task revision differs from canonical');
+    }
+    return Object.freeze({ claim_id: record.claim_id, task_id: record.task_id, generation: record.generation, task_revision: record.task_revision });
+  });
+}
+
+/** One key owner for shell publication producers and the locked journal reader. */
+export function deriveShipJournalKey(repoRoot: string, meta: Record<string, unknown>, gitBin?: string): string {
+  const mode = stringValue(meta.publication_mode, 'ship journal publication mode');
+  const claim = ['claim_id', 'claim_task_id', 'claim_generation', 'claim_task_revision'].map(name => stringValue(meta[name], `ship journal ${name}`));
+  if (mode !== 'branch' && mode !== 'lease') throw failure('publication_incomplete', 'unknown ship publication mode');
+  if (mode === 'branch' ? claim.some(value => value !== '') : claim.some(value => value === '')) {
+    throw failure('publication_incomplete', 'publication mode and claim identity disagree');
   }
+  const fields = [
+    requiredString(meta.repo, 'ship journal metadata repo'),
+    requiredString(meta.worktree, 'ship journal metadata worktree'),
+    'ship', mode, requiredString(meta.branch, 'ship journal branch'), requiredString(meta.remote, 'ship journal remote'), ...claim,
+    requiredString(meta.original_head, 'ship journal metadata original_head'),
+    requiredString(meta.target_branch, 'ship journal metadata target_branch'),
+    requiredString(meta.base_sha, 'ship journal metadata base_sha'),
+  ];
+  return execFileSync(gitBin ?? 'git', ['hash-object', '--stdin'], {
+    cwd: repoRoot, input: `${JSON.stringify(fields)}\n`, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
 }
 
 function phaseRecords(status: Record<string, unknown>, name: string): Record<string, unknown>[] {
@@ -192,7 +219,7 @@ function readShipJournalProof(
   if (!sameRealpath(requiredString(meta.repo, 'ship journal metadata repo'), join(commonDir, 'repo-harness/transactions'))) {
     throw failure('publication_incomplete', 'ship journal metadata repo is not this clone transaction root');
   }
-  const gate = exactlyOnePhase(status, 'gate_sealed');
+  const gate = exactlyOnePhase(status, 'candidate_frozen');
   const pushed = exactlyOnePhase(status, 'pushed');
   const observed = exactlyOnePhase(status, 'pr_observed');
   const complete = phaseRecords(status, 'complete');
@@ -205,12 +232,16 @@ function readShipJournalProof(
   try {
     return {
       evidence: validatePublicationJournalEvidence(observed.publication),
+      claim_id: requiredString(meta.claim_id, 'ship journal claim_id'),
+      claim_task_id: requiredString(meta.claim_task_id, 'ship journal claim_task_id'),
+      claim_generation: requiredString(meta.claim_generation, 'ship journal claim_generation'),
+      claim_task_revision: requiredString(meta.claim_task_revision, 'ship journal claim_task_revision'),
       worktree: requiredString(meta.worktree, 'ship journal metadata worktree'),
       branch: requiredString(meta.branch, 'ship journal metadata branch'),
       target_branch: requiredString(meta.target_branch, 'ship journal metadata target_branch'),
       base_ref: requiredString(meta.base_ref, 'ship journal metadata base_ref'),
       base_sha: requiredString(meta.base_sha, 'ship journal metadata base_sha'),
-      gate_sealed_head: requiredString(gate.ref, 'ship journal gate_sealed ref'),
+      candidate_frozen_head: requiredString(gate.ref, 'ship journal candidate_frozen ref'),
       pushed_head: requiredString(pushed.ref, 'ship journal pushed ref'),
       pr_observed_head: requiredString(observed.ref, 'ship journal pr_observed ref'),
     };
@@ -231,6 +262,10 @@ function assertReceiptMatchesEvidence(receipt: PublicationReceiptV1, evidence: P
 }
 
 function assertShipJournalContext(proof: ShipJournalProof, record: LeaseOwnerRecord, receipt: PublicationReceiptV1): void {
+  if (proof.claim_id !== record.claim_id || proof.claim_task_id !== record.task_id
+    || proof.claim_generation !== String(record.generation) || proof.claim_task_revision !== record.task_revision) {
+    throw failure('publication_claim_mismatch', 'ship journal identity differs from the live claim generation/revision');
+  }
   if (!sameRealpath(proof.worktree, record.execution_worktree ?? '')) {
     throw failure('publication_claim_mismatch', 'ship journal worktree does not match lease execution worktree');
   }
@@ -240,7 +275,7 @@ function assertShipJournalContext(proof: ShipJournalProof, record: LeaseOwnerRec
     || !proof.base_ref.endsWith(`/${receipt.target_ref}`)) {
     throw failure('publication_claim_mismatch', 'ship journal metadata does not match receipt and lease');
   }
-  if (proof.gate_sealed_head !== receipt.head_sha
+  if (proof.candidate_frozen_head !== receipt.head_sha
     || proof.pushed_head !== receipt.head_sha
     || proof.pr_observed_head !== receipt.head_sha) {
     throw failure('publication_pointer_mismatch', 'ship journal phases do not name the receipt head');

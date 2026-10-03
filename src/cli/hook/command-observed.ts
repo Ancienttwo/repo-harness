@@ -119,9 +119,9 @@ function offsetTimestamp(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${sign}${pad(Math.floor(minutes / 60))}${pad(minutes % 60)}`;
 }
 
-function workflowProfile(env: NodeJS.ProcessEnv): 'lite' | 'standard' | 'strict' {
+function workflowProfile(env: NodeJS.ProcessEnv): 'routine' | 'high' {
   const profile = env.REPO_HARNESS_WORKFLOW_PROFILE;
-  return profile === 'lite' || profile === 'strict' ? profile : 'standard';
+  return profile === 'routine' || profile === 'high' ? profile : 'routine';
 }
 
 function progressToken(repoRoot: string, fsApi: CommandObservedFs): string {

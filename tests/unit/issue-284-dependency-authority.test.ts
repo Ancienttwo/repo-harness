@@ -628,7 +628,7 @@ function recordChecks(root: string): void {
   if (reviewSubject.status !== 'ok') throw new Error('record fixture subject must be ok');
   const assessment = assessChange({
     subject: reviewSubject,
-    workflowProfile: 'lite',
+    workflowProfile: 'routine',
     strictCategories: [],
     patternNoveltyPaths: [],
     declaredOracles: [],
