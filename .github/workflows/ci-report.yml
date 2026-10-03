@@ -45,6 +45,7 @@ jobs:
         with:
           name: daily-report-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
           path: .ci-report/
+          include-hidden-files: true
           if-no-files-found: error
 
   watchdog:
@@ -74,4 +75,5 @@ jobs:
         with:
           name: daily-watchdog-${{ github.run_id }}
           path: .ci-report/
+          include-hidden-files: true
           if-no-files-found: error

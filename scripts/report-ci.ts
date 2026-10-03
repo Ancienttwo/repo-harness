@@ -35,10 +35,13 @@ async function githubPages(api: GitHubAPI, path: string, field?: string): Promis
   }
   throw new Error(`Provider pagination limit reached: ${path}`);
 }
-async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
+async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string, unresolvedPR?: number): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
   const marker = `<!-- ${key} -->`;
+  // Existing open issues remain the authority, including those emitted with a run-bound marker.
+  const priorMarker = unresolvedPR === undefined ? null : new RegExp(`<!-- ci-repair:[1-9]\\d*:[1-9]\\d*:tags-pr-${unresolvedPR} -->`);
   const issues = await githubPages(api, `${root}/issues?state=all`);
-  const existing = issues.find(issue => !issue.pull_request && typeof issue.body === 'string' && issue.body.includes(marker));
+  const existing = issues.find(issue => !issue.pull_request && (unresolvedPR === undefined || issue.state === 'open')
+    && typeof issue.body === 'string' && (issue.body.includes(marker) || priorMarker?.test(issue.body)));
   if (existing) {
     if (typeof existing.html_url !== 'string') throw new Error('Existing repair issue has no provider URL');
     return { issue_url: existing.html_url, delivery: 'reused' };
@@ -62,12 +65,12 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
   const headSha = run.head_sha;
   const report: CIReport = { run_id: runId, run_attempt: run.run_attempt, sha: run.head_sha,
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
-  const repair = async (identity: string, detail: string): Promise<void> => {
-    const key = `ci-repair:${run.id}:${run.run_attempt}:${identity}`;
+  const repair = async (identity: string, detail: string, unresolvedPR?: number): Promise<void> => {
+    const key = unresolvedPR === undefined ? `ci-repair:${run.id}:${run.run_attempt}:${identity}` : `ci-repair:tags-pr-${unresolvedPR}`;
     try {
       const task = await ensureRepairIssue(api, root, key,
         `[CI repair] ${safeText(identity)} @ ${headSha.slice(0, 12)}`,
-        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\nInvestigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions. Credentials/permissions and production operations require user approval.`);
+        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\nInvestigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions. Credentials/permissions and production operations require user approval.`, unresolvedPR);
       report.repairs.push({ key, ...task });
     } catch (error) {
       // The artifact is the pending delivery record. An HTTP refusal never becomes a fake dispatch success.
@@ -135,7 +138,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
         report.merges.push({ pr: pr.number, before, after, before_tag: beforeTag, after_tag: afterTag, rollback: `git revert --no-edit ${afterTag}` });
       } catch (error) {
         report.errors.push(`Tag recovery pending for PR #${pr.number}: ${message(error)}`);
-        await repair(`tags-pr-${pr.number}`, 'Recover exact before/after annotated tags. Never repeat the already completed merge or force a conflicting tag.');
+        await repair(`tags-pr-${pr.number}`, 'Recover exact before/after annotated tags. Never repeat the already completed merge or force a conflicting tag.', pr.number);
       }
     }
   } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge/tag report.'); }
@@ -201,7 +204,15 @@ if (import.meta.main) {
       method, headers: { Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GH_TOKEN!}`, 'X-GitHub-Api-Version': '2022-11-28' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new CIReportError(response.status, `GitHub ${method} ${path}: HTTP ${response.status}`);
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      let providerMessage = isRecord(payload) && typeof payload.message === 'string' ? payload.message : '';
+      const token = process.env.GH_TOKEN;
+      if (token) providerMessage = providerMessage.split(token).join('[REDACTED]');
+      providerMessage = safeText(providerMessage.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '[REDACTED]')
+        .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]'));
+      throw new CIReportError(response.status, `GitHub ${method} ${path}: HTTP ${response.status}${providerMessage ? `: ${providerMessage}` : ''}`);
+    }
     return response.json();
   };
   mkdirSync('.ci-report', { recursive: true });
