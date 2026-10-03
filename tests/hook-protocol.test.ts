@@ -231,7 +231,7 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeFileSync(join(cwd, ".ai/context/capabilities.json"), "{not json");
 
-      const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } }, { profile: "standard" });
+      const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } }, { profile: 'routine' });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[WorkflowProfileGuard]");
     } finally {

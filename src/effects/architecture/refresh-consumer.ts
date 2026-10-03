@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import type { ArchitectureRefreshSignalV1, Sha256Digest } from '../../core/architecture/projection';
 import { ARCHITECTURE_PROJECTION_RUNTIME_ROOT } from './projection-jobs';
 
@@ -92,64 +91,12 @@ export function consumeArchitectureRefreshSignals(
   return receipts;
 }
 
-function runDefaultActions(
-  repoRoot: string,
-  _signal: ArchitectureRefreshSignalV1,
-  changedPaths: readonly string[],
-  env: NodeJS.ProcessEnv,
-  completedActionKeys: ReadonlySet<string>,
-  deadlineMs?: number,
-  nowMs?: () => number,
-  onActionCompleted?: (result: ArchitectureRefreshActionResult) => void,
-): ArchitectureRefreshActionResult[] {
-  const results: ArchitectureRefreshActionResult[] = [];
-  for (const path of [...new Set(changedPaths)].sort()) {
-    const actionKey = `architecture-queue:${path}`;
-    if (completedActionKeys.has(actionKey)) continue;
-    const result = runCli(repoRoot, env, ['run', 'architecture-queue', 'record', '--file', path], remainingRefreshTimeout(deadlineMs, nowMs));
-    const completed = { actionKey, action: 'architecture-queue' as const, ...result };
-    results.push(completed);
-    if (result.status !== 0) return results;
-    onActionCompleted?.(completed);
-  }
-  if (!completedActionKeys.has('context-contract-sync')) {
-    const sync = runCli(repoRoot, env, ['run', 'context-contract-sync', 'sync-latest'], remainingRefreshTimeout(deadlineMs, nowMs));
-    const completed = { actionKey: 'context-contract-sync', action: 'context-contract-sync' as const, ...sync };
-    results.push(completed);
-    if (sync.status !== 0) return results;
-    onActionCompleted?.(completed);
-  }
-  if (!completedActionKeys.has('capability-context-request')) {
-    const capability = runCli(repoRoot, env, ['capability-context', 'request', '--from-latest-architecture-event'], remainingRefreshTimeout(deadlineMs, nowMs));
-    const completed = { actionKey: 'capability-context-request', action: 'capability-context-request' as const, ...capability };
-    results.push(completed);
-    if (capability.status === 0) onActionCompleted?.(completed);
-  }
-  return results;
-}
+// Architecture refreshes are explicit provider facts. They do not schedule
+// per-edit drift or author agent-context blocks and workstream pointers.
+function runDefaultActions(): ArchitectureRefreshActionResult[] { return []; }
 
-function runCli(repoRoot: string, env: NodeJS.ProcessEnv, args: string[], timeoutMs: number): { status: number; stdout: string; stderr: string } {
-  const cli = env.REPO_HARNESS_CLI;
-  const command = cli ? (env.REPO_HARNESS_BUN ?? process.execPath) : 'repo-harness';
-  const commandArgs = cli ? [cli, ...args] : args;
-  const result = spawnSync(command, commandArgs, { cwd: repoRoot, env, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
-  return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? result.error?.message ?? '' };
-}
-
-function remainingRefreshTimeout(deadlineMs?: number, nowMs: () => number = Date.now): number {
-  if (deadlineMs === undefined) return 30_000;
-  const remaining = Math.floor(deadlineMs - nowMs());
-  if (remaining <= 0) throw new Error('architecture refresh timeout before canonical action');
-  return Math.min(30_000, remaining);
-}
-
-function receiptPath(repoRoot: string, signalId: string): string {
-  return join(repoRoot, REFRESH_RECEIPTS, `${signalId.replace(/^sha256:/, '')}.json`);
-}
-
-function refreshProgressPath(repoRoot: string, signalId: string): string {
-  return join(repoRoot, REFRESH_PROGRESS, `${signalId.replace(/^sha256:/, '')}.json`);
-}
+function receiptPath(repoRoot: string, signalId: string): string { return join(repoRoot, REFRESH_RECEIPTS, `${signalId.replace(/^sha256:/, '')}.json`); }
+function refreshProgressPath(repoRoot: string, signalId: string): string { return join(repoRoot, REFRESH_PROGRESS, `${signalId.replace(/^sha256:/, '')}.json`); }
 
 function readRefreshProgress(path: string): ArchitectureRefreshReceiptV1['actions'] {
   if (!existsSync(path)) return [];

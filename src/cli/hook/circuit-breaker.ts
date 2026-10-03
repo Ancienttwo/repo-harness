@@ -68,9 +68,9 @@ const LOCK_TIMEOUT_MS = 2_000;
 export function circuitLimit(attempt: CircuitAttempt): number {
   switch (attempt.kind) {
     case 'guard': return 2;
-    case 'review': return attempt.profile === 'strict' ? 2 : 1;
+    case 'review': return attempt.profile === 'high' ? 2 : 1;
     case 'semantic-review': return 1;
-    case 'subagent': return attempt.profile === 'strict' && attempt.explicitHighRiskContract ? 3 : 2;
+    case 'subagent': return attempt.profile === 'high' && attempt.explicitHighRiskContract ? 3 : 2;
     case 'repair': return 2;
     // Stop's minimal_change enforce gate: at most two blocks per report
     // fingerprint before the gate releases with a warning.
@@ -183,7 +183,7 @@ export function recordCircuitAttempt(
   if (!isCircuitKind(attempt.kind)) {
     throw new Error(`invalid circuit kind: ${String(attempt.kind)}`);
   }
-  if (!['lite', 'standard', 'strict'].includes(attempt.profile)) {
+  if (!['routine', 'high'].includes(attempt.profile)) {
     throw new Error(`invalid workflow profile: ${String(attempt.profile)}`);
   }
   for (const [field, value] of Object.entries({

@@ -190,7 +190,8 @@ function main(): void {
   if (mode === "check" && drift.length > 0) {
     for (const item of drift) process.stderr.write(`[helpers] ${item}\n`);
     process.stderr.write("[helpers] Edit scripts/<helper>, then run bun run sync:helpers.\n");
-    process.exit(1);
+    process.stdout.write("[helpers] downstream template drift recorded; executable helpers use package:scripts.\n");
+    return;
   }
 
   if (mode === "write" && blockedDrift.length > 0) {

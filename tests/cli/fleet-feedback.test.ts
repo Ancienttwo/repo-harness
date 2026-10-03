@@ -1,3 +1,4 @@
+import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
 import {
@@ -450,25 +451,14 @@ function prepareCompletionPublication(subject: Fixture) {
     branch: source.branch,
     plan: '',
     contract: '',
+    remote: 'origin', publication_mode: 'lease', claim_id:completion.claim_id, claim_task_id:completion.task_id,
+    claim_generation:String(completion.generation), claim_task_revision:completion.task_revision,
     original_head: completionHead,
     target_branch: source.target_ref,
     base_ref: 'refs/remotes/origin/main',
     base_sha: source.base_sha,
   };
-  const shipTransactionKey = execFileSync('git', ['hash-object', '--stdin'], {
-    cwd: subject.root,
-    input: [
-      `repo=${metadata.repo}`,
-      `worktree=${metadata.worktree}`,
-      'operation=ship',
-      'plan=',
-      'contract=',
-      `original_head=${metadata.original_head}`,
-      `target_branch=${metadata.target_branch}`,
-      `base_sha=${metadata.base_sha}`,
-    ].join('\n') + '\n',
-    encoding: 'utf8',
-  }).trim();
+  const shipTransactionKey = deriveShipJournalKey(subject.root,metadata);
   const journalDirectory = join(transactionRoot, 'ship', shipTransactionKey);
   mkdirSync(journalDirectory, { recursive: true });
   writeFileSync(join(journalDirectory, 'meta.json'), JSON.stringify({ key: shipTransactionKey, ...metadata }) + '\n');
@@ -477,7 +467,7 @@ function prepareCompletionPublication(subject: Fixture) {
     key: shipTransactionKey,
     status: 'complete',
     phases: [
-      { phase: 'gate_sealed', ref: completion.head_sha },
+      { phase: 'candidate_frozen', ref: completion.head_sha },
       { phase: 'pushed', ref: completion.head_sha },
       { phase: 'pr_observed', ref: completion.head_sha, publication: publicationJournalEvidence(completion) },
       { phase: 'complete', ref: completion.head_sha },

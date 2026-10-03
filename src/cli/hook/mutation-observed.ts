@@ -47,13 +47,12 @@ import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { collectMinimalChangeSignals } from './minimal-change-signals';
 import { canonicalRepoRelativePath, fileExists, readText } from '../../effects/state/collect-state-inputs';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
-import { PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS, runProcess } from '../../effects/process-runner';
+import { runProcess } from '../../effects/process-runner';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
   artifactStemFromPlan,
   markdownHeader,
   planSlugFromPath,
-  stripWrappingQuotes,
 } from '../../core/state/artifact-parsers';
 
 // ---------------------------------------------------------------------------
@@ -110,14 +109,13 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
   const advisory = renderFirstPrinciplesAdvisory(repoRoot, filePath);
   if (advisory) out.push(advisory);
 
-  const contractTarget = resolveContractVerificationTarget(opts.collector, repoRoot, filePath);
   const policy = loadMinimalChangePolicy(repoRoot);
   const minimalChangeEnabled = policy.mode !== 'off' && policy.post_edit_observer;
 
   const dirty: PostEditJournalDirtyBits = {
-    'contract-verification': contractTarget !== null,
+    'contract-verification': false,
     context: true,
-    capability: true,
+    capability: false,
     'minimal-change': minimalChangeEnabled,
     checkpoint: isCheckpointPath(filePath),
   };
@@ -127,7 +125,6 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
     filePath,
     subjectRevision: currentGitRevision(repoRoot),
     dirty,
-    contractTarget,
     minimalChangeInfo: minimalChangeEnabled ? { path: filePath, baseRef: 'HEAD' } : null,
   });
   if (journalPath) opts.observeJournalWrite?.(journalPath);
@@ -313,125 +310,6 @@ function renderFirstPrinciplesAdvisory(repoRoot: string, filePath: string): stri
 }
 
 // ---------------------------------------------------------------------------
-// Plan / contract filesystem authorities (mirror lib/workflow-state.sh,
-// verbatim re-ports of mutation-guard.ts's private helpers -- that file is
-// outside this package's Allowed Paths).
-// ---------------------------------------------------------------------------
-
-function getActivePlan(collector: MutationObservedCollector, repoRoot: string): string | null {
-  const ownership = collector.getWorktreeOwnership();
-  const matchesCwd = ownership.owner === null || ownership.ownedByCurrent;
-  if (!matchesCwd) return null;
-  const marker = collector.getActivePlanMarker();
-  if (!marker) return null;
-  return fileExists(repoRoot, marker) ? marker : null;
-}
-
-/** `derive_contract_path()` port -- explicit declared path, else stem/legacy-slug fallback. */
-function getActiveContractPath(repoRoot: string, activePlan: string): string | null {
-  const planText = readText(repoRoot, activePlan);
-
-  const explicit = (planText && (
-    markdownHeader(planText, 'Task Contract') ?? markdownHeader(planText, 'Sprint Contract')
-  )) || null;
-  if (explicit) return explicit;
-
-  const stem = artifactStemFromPlan(activePlan, planText);
-  const slug = planSlugFromPath(activePlan);
-  if (!stem || !slug) return null;
-
-  const preferred = `tasks/contracts/${stem}.contract.md`;
-  const legacy = `tasks/contracts/${slug}.contract.md`;
-  return (fileExists(repoRoot, preferred) || !fileExists(repoRoot, legacy)) ? preferred : legacy;
-}
-
-// ---------------------------------------------------------------------------
-// contract_references_path() port (assets/hooks/lib/workflow-state.sh:1003).
-// NOT mutation-guard.ts's contractAllowsPath (a different check over a
-// different YAML section -- see notes file "Design Decisions" for the
-// side-by-side verification). Scans the contract's `exit_criteria` YAML
-// block's files_exist/files_contain/files_not_exist/
-// files_not_contain sections for a literal path match.
-// ---------------------------------------------------------------------------
-
-const CONTRACT_REFERENCES_SECTION_HEADERS = new Set([
-  'files_exist:', 'files_contain:', 'files_not_exist:', 'files_not_contain:',
-]);
-const CONTRACT_REFERENCES_LIST_SECTIONS = new Set(['files_exist', 'files_not_exist']);
-const CONTRACT_REFERENCES_PATH_SECTIONS = new Set(['files_contain', 'files_not_contain']);
-
-function extractFirstYamlBlock(text: string): string {
-  const lines = text.split('\n');
-  let inBlock = false;
-  const collected: string[] = [];
-  for (const line of lines) {
-    if (!inBlock && /^```yaml\s*$/.test(line)) {
-      inBlock = true;
-      continue;
-    }
-    if (inBlock && /^```\s*$/.test(line)) break;
-    if (inBlock) collected.push(line);
-  }
-  return collected.join('\n');
-}
-
-function contractReferencesPath(contractText: string, contractFile: string, filePath: string): boolean {
-  if (filePath === contractFile) return true;
-  try {
-    const plan = parseVerificationPlanFromContractText(contractText);
-    if (plan.checks.some((check) => check.kind === 'package_test' && check.path === filePath)) return true;
-  } catch {
-    // Invalid plans need a read-only evaluation so the diagnostic stays visible.
-    return true;
-  }
-  const yamlBlock = extractFirstYamlBlock(contractText);
-  let section = '';
-  for (const rawLine of yamlBlock.split('\n')) {
-    const trimmed = rawLine.trim();
-    if (!trimmed) continue;
-
-    if (CONTRACT_REFERENCES_SECTION_HEADERS.has(trimmed)) {
-      section = trimmed.slice(0, -1);
-      continue;
-    }
-
-    if (CONTRACT_REFERENCES_LIST_SECTIONS.has(section)) {
-      const match = /^-\s*(.+)$/.exec(trimmed);
-      if (match && stripWrappingQuotes(match[1]) === filePath) return true;
-    } else if (CONTRACT_REFERENCES_PATH_SECTIONS.has(section)) {
-      const dashMatch = /^-\s*path:\s*(.+)$/.exec(trimmed);
-      const plainMatch = dashMatch ? null : /^path:\s*(.+)$/.exec(trimmed);
-      const captured = dashMatch?.[1] ?? plainMatch?.[1];
-      if (captured && stripWrappingQuotes(captured) === filePath) return true;
-    }
-  }
-  return false;
-}
-
-interface ContractVerificationTarget {
-  readonly contractFile: string;
-  readonly checksFile: string;
-}
-
-/** Read-only contract telemetry stays separate from authoritative checks/latest. */
-const CONTRACT_VERIFICATION_REPORT_RELATIVE = '.ai/harness/checks/contract-verify.latest.json';
-
-/** `run_continuous_contract_verification()`'s guard (post-edit-guard.sh:31-47), ported condition-for-condition. */
-function resolveContractVerificationTarget(
-  collector: MutationObservedCollector,
-  repoRoot: string,
-  filePath: string,
-): ContractVerificationTarget | null {
-  const activePlan = getActivePlan(collector, repoRoot);
-  if (!activePlan) return null;
-  const contractFile = getActiveContractPath(repoRoot, activePlan);
-  if (!contractFile || !fileExists(repoRoot, contractFile)) return null;
-  const contractText = readText(repoRoot, contractFile);
-  if (!contractText || !contractReferencesPath(contractText, contractFile, filePath)) return null;
-  return { contractFile, checksFile: CONTRACT_VERIFICATION_REPORT_RELATIVE };
-}
-
-// ---------------------------------------------------------------------------
 // checkpoint dirty bit: post-edit-guard.sh:162-168's `case "$FILE_PATH"`
 // gate for the (retired) task-handoff regeneration.
 // ---------------------------------------------------------------------------
@@ -589,7 +467,6 @@ interface WriteJournalEventInput {
   readonly filePath: string;
   readonly subjectRevision: string | null;
   readonly dirty: PostEditJournalDirtyBits;
-  readonly contractTarget: ContractVerificationTarget | null;
   readonly minimalChangeInfo: { readonly path: string; readonly baseRef: string } | null;
 }
 
@@ -638,9 +515,7 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
     subject_revision: input.subjectRevision ?? existing?.subject_revision ?? null,
     dirty,
     payload: {
-      contract_verification: input.contractTarget
-        ? { contract_file: input.contractTarget.contractFile, checks_file: input.contractTarget.checksFile }
-        : existing?.payload.contract_verification,
+      contract_verification: existing?.payload.contract_verification,
       minimal_change: input.minimalChangeInfo
         ? { path: input.minimalChangeInfo.path, base_ref: input.minimalChangeInfo.baseRef }
         : existing?.payload.minimal_change,
@@ -886,29 +761,6 @@ export function processArchitectureCascade(
 }
 
 /** Evaluate the current plan without starting missing verification commands. */
-function processContractVerification(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  contractFile: string,
-  checksFilePath: string,
-  timeoutMs: number,
-): { status: number; stderr: string; timedOut: boolean } | null {
-  if (!repoHarnessRunnerAvailable(env)) return null;
-  try {
-    mkdirSync(dirname(join(repoRoot, checksFilePath)), { recursive: true });
-  } catch {
-    /* best-effort */
-  }
-  const result = runRepoHarnessHelper(
-    repoRoot,
-    env,
-    'verification-plan',
-    ['evaluate', '--repo', repoRoot, '--contract', contractFile, '--report-file', checksFilePath],
-    timeoutMs,
-  );
-  return { status: result.status, stderr: result.stderr, timedOut: result.timedOut };
-}
-
 /** `minimal_change_hook_entry signals --phase post-edit` port -- calls the
  * SAME `collectMinimalChangeSignals()` function `minimal-change-observer.sh`
  * called (via minimal-change-cli.ts), just deferred to Stop time using the
@@ -1003,31 +855,11 @@ export function consumePendingPostEditEvents(
       const eventFailures: string[] = [];
       const deadlineElapsed = remainingMs <= 0;
       const hasDeferredEffect = Boolean(
-        (event.dirty['contract-verification'] && event.payload.contract_verification)
-        || (event.dirty['minimal-change'] && event.payload.minimal_change),
+        event.dirty['minimal-change'] && event.payload.minimal_change,
       );
       if (deadlineElapsed && hasDeferredEffect) {
         // No effect was attempted; preserve its durable trigger for the next pass.
         break;
-      } else if (event.dirty['contract-verification'] && event.payload.contract_verification) {
-        const targetTimeoutMs = Math.min(helperTimeoutMs, remainingMs - PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS);
-        if (targetTimeoutMs < 1) {
-          break;
-        } else {
-          const verification = processContractVerification(
-            repoRoot,
-            env,
-            event.payload.contract_verification.contract_file,
-            event.payload.contract_verification.checks_file,
-            targetTimeoutMs,
-          );
-          if (verification && verification.status !== 0) {
-            const detail = verification.timedOut
-              ? `contract verification timed out after ${targetTimeoutMs}ms`
-              : `contract verification exited ${verification.status}${verification.stderr.trim() ? `: ${verification.stderr.trim().slice(0, 300)}` : ''}`;
-            eventFailures.push(detail);
-          }
-        }
       }
       if (!deadlineElapsed && event.dirty['minimal-change'] && event.payload.minimal_change) {
         const minimalChange = processMinimalChangeDeferred(

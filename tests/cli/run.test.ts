@@ -86,7 +86,7 @@ describe("run command", () => {
 
       expect(resolved?.source).toBe("package");
       expect(resolved?.fileName).toBe("check-task-workflow.sh");
-      expect(resolved?.path).toContain("assets/templates/helpers/check-task-workflow.sh");
+      expect(resolved?.path).toContain("scripts/check-task-workflow.sh");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -127,7 +127,7 @@ describe("run command", () => {
         chmodSync(helperPath, 0o755);
         const resolved = resolveHelper(fileName, tmp, { REPO_HARNESS_SOURCE_ROOT: sourceRoot });
         expect(resolved?.source).toBe("package");
-        expect(resolved?.path).toContain("assets/templates/helpers/");
+        expect(resolved?.path).toContain("scripts/");
       }
 
       const fakeBin = join(tmp, "fake-bin");
@@ -370,7 +370,7 @@ describe("run command", () => {
       const resolved = resolveHelper("check-task-workflow", tmp, packageRuntimeEnv());
 
       expect(resolved?.source).toBe("package");
-      expect(resolved?.path).toContain("assets/templates/helpers/check-task-workflow.sh");
+      expect(resolved?.path).toContain("scripts/check-task-workflow.sh");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -495,11 +495,8 @@ describe("run command", () => {
       expect(existsSync(join(tmp, "tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md"))).toBe(true);
       expect(existsSync(join(tmp, "scripts/capability-resolver.ts"))).toBe(false);
 
-      const agents = readFileSync(join(tmp, "apps/extension/AGENTS.md"), "utf-8");
-      const claude = readFileSync(join(tmp, "apps/extension/CLAUDE.md"), "utf-8");
-      expect(agents).toBe(claude);
-      expect(agents).toContain("Manual extension rule.");
-      expect(agents).toContain("`tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md`");
+      expect(readFileSync(join(tmp, "apps/extension/AGENTS.md"), "utf8")).toBe("# Extension Contract\n\nManual extension rule.\n");
+      expect(existsSync(join(tmp, "apps/extension/CLAUDE.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -112,7 +112,7 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
     env: {
       ...process.env,
       HOOK_REPO_ROOT: cwd,
-      REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+      REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
       ...extraEnv,
     },
   });

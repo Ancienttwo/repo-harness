@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
 import { publicationJournalEvidence } from '../../src/effects/publication/publication-receipt';
 import {
   abandonPublication,
+  deriveShipJournalKey,
+  readShipClaimIdentity,
   enterPublicationReviewing,
   inspectLegacyPublication,
   migrateLegacyPublication,
@@ -16,11 +18,12 @@ import {
 } from '../../src/effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../src/core/publication/publication-lifecycle';
 import { preparePublicationReceipt, ensurePublicationReceipt } from '../../src/effects/publication/publication-receipt';
-import { beginLeaseCompletionRecord, bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { abortLeaseCompletionRecord, beginLeaseCompletionRecord, bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision, stealLeaseRecord } from '../../src/core/state/coordination-identity';
 import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
+import { writeClaimTokenForBoundLease } from '../../src/effects/state/coordination-claim-token';
 
 const CLAIM = 'claim-lifecycle';
 const SUBJECT = `sha256:${'3'.repeat(64)}`;
@@ -45,24 +48,15 @@ interface Fixture {
 }
 
 function deriveShipKey(root: string, transactionRoot: string, originalHead: string, baseSha: string): string {
-  return execFileSync('git', ['hash-object', '--stdin'], {
-    cwd: root,
-    input: [
-      `repo=${transactionRoot}`,
-      `worktree=${root}`,
-      'operation=ship',
-      'plan=',
-      'contract=',
-      `original_head=${originalHead}`,
-      'target_branch=main',
-      `base_sha=${baseSha}`,
-    ].join('\n') + '\n',
-    encoding: 'utf-8',
-  }).trim();
+  const identity=readShipClaimIdentity({repo_root:root,task_id:fixtureTaskId(TASK_CELL),claim_id:CLAIM,branch:'codex/lifecycle',target_ref:'main'});
+  return deriveShipJournalKey(root,{
+    repo:transactionRoot,worktree:root,branch:'codex/lifecycle',remote:'origin',publication_mode:'lease',claim_id:identity.claim_id,claim_task_id:identity.task_id,
+    claim_generation:String(identity.generation),claim_task_revision:identity.task_revision,original_head:originalHead,target_branch:'main',base_sha:baseSha,
+  });
 }
 
 function installFixture(): Fixture {
-  const root = mkdtempSync(join(tmpdir(), 'repo-harness-publication-lifecycle-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-publication-lifecycle-')));
   git(root, 'init', '-b', 'main');
   git(root, 'config', 'user.name', 'Lifecycle Test');
   git(root, 'config', 'user.email', 'lifecycle@test.invalid');
@@ -95,6 +89,8 @@ function installFixture(): Fixture {
   const completing = beginLeaseCompletionRecord(bound.record, { claimId: CLAIM, executionWorktree: root, finishTransactionKey: 'finish/lifecycle' });
   if (!completing.ok) throw new Error(completing.error);
   if (!createLeaseDirectory(root, taskId)) throw new Error('lease election failed');
+  writeLeaseOwnerDurably(root, taskId, bound.record);
+  writeClaimTokenForBoundLease(root,{task_id:taskId,claim_id:CLAIM,worktree:root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
   writeLeaseOwnerDurably(root, taskId, completing.record);
   const seal = join(root, 'seal.json');
   writeFileSync(seal, JSON.stringify({ protocol: 1, kind: 'repo-harness-merge-seal', base_sha: base, head_sha: head, acceptance_subject_sha256: SUBJECT }) + '\n');
@@ -120,6 +116,7 @@ function installFixture(): Fixture {
     operation: 'ship', key: shipKey, repo: transactionRoot, worktree: root,
     branch: 'codex/lifecycle', plan: '', contract: '', original_head: head,
     target_branch: 'main', base_ref: 'refs/remotes/origin/main', base_sha: base,
+    remote:'origin',publication_mode:'lease',claim_id:CLAIM,claim_task_id:taskId,claim_generation:'1',claim_task_revision:revision,
   }) + '\n');
   return { root, taskId, revision, head, gh, body, seal, checks, journal, shipKey };
 }
@@ -140,7 +137,7 @@ function createReceiptAndJournal(fixture: Fixture) {
   if (prepared.create_intent === null) throw new Error('fixture expected creation intent');
   writeFileSync(fixture.journal, JSON.stringify({
     operation: 'ship', key: fixture.shipKey, status: 'in_progress', phases: [
-      { phase: 'gate_sealed', ref: fixture.head },
+      { phase: 'candidate_frozen', ref: fixture.head },
       { phase: 'pushed', ref: fixture.head },
       { phase: 'publication_create_intent', publication: prepared },
     ],
@@ -148,7 +145,7 @@ function createReceiptAndJournal(fixture: Fixture) {
   process.env.GH_PR_EXISTS = '1';
   const ensured = ensurePublicationReceipt({ ...input, create_intent: prepared.create_intent, create_intent_journal_path: fixture.journal });
   writeFileSync(fixture.journal, JSON.stringify({ operation: 'ship', key: fixture.shipKey, status: 'in_progress', phases: [
-    { phase: 'gate_sealed', ref: fixture.head },
+    { phase: 'candidate_frozen', ref: fixture.head },
     { phase: 'pushed', ref: fixture.head },
     { phase: 'publication_create_intent', publication: prepared },
     { phase: 'pr_observed', ref: fixture.head, publication: publicationJournalEvidence(ensured.receipt) },
@@ -311,3 +308,22 @@ describe('task-locked publication lifecycle', () => {
     expect(unattributable.classification).toBe('legacy_unattributable');
   }));
 });
+
+test('two real claims at the same head/base produce distinct journals and stale token replay is refused',()=>withFixture((fixture)=>{
+  const first=readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:CLAIM,branch:'codex/lifecycle',target_ref:'main'});
+  const owned=readLease(fixture.root,fixture.taskId).record!;
+  const closed=abortLeaseCompletionRecord(owned,{claimId:CLAIM,executionWorktree:fixture.root});if(!closed.ok)throw Error(closed.error);
+  const stolen=stealLeaseRecord(closed.record,{expectedClaimId:CLAIM,newClaimId:'claim-lifecycle-second',reason:'fixture handover',sessionId:'session-two',sourceWorktree:fixture.root});if(!stolen.ok)throw Error(stolen.error);
+  const rebound=bindLeaseRecord(stolen.record,{claimId:'claim-lifecycle-second',executionWorktree:fixture.root,branch:'codex/lifecycle',unitRef:'plans/plan-lifecycle.md'});if(!rebound.ok)throw Error(rebound.error);
+  writeLeaseOwnerDurably(fixture.root,fixture.taskId,rebound.record);
+  writeClaimTokenForBoundLease(fixture.root,{task_id:fixture.taskId,claim_id:rebound.record.claim_id,worktree:fixture.root,sprint:SPRINT_PATH,task:TASK_CELL,unit_ref:'plans/plan-lifecycle.md'});
+  const second=readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:rebound.record.claim_id,branch:'codex/lifecycle',target_ref:'main'});
+  const transactionRoot=join(resolveGitCommonDirectory(fixture.root),'repo-harness/transactions');
+  const meta=(identity:typeof first)=>({repo:transactionRoot,worktree:fixture.root,branch:'codex/lifecycle',remote:'origin',publication_mode:'lease',claim_id:identity.claim_id,claim_task_id:identity.task_id,claim_generation:String(identity.generation),claim_task_revision:identity.task_revision,original_head:fixture.head,target_branch:'main',base_sha:git(fixture.root,'rev-parse','main')});
+  const key1=deriveShipJournalKey(fixture.root,meta(first)),key2=deriveShipJournalKey(fixture.root,meta(second));
+  expect(key1).not.toBe(key2);expect(first.generation).toBe(1);expect(second.generation).toBe(2);
+  for(const key of [key1,key2]){const dir=join(transactionRoot,'ship',key);mkdirSync(dir,{recursive:true});writeFileSync(join(dir,'claim-fixture.json'),JSON.stringify({key}));}
+  expect(existsSync(join(transactionRoot,'ship',key1,'claim-fixture.json'))).toBe(true);
+  expect(existsSync(join(transactionRoot,'ship',key2,'claim-fixture.json'))).toBe(true);
+  expect(()=>readShipClaimIdentity({repo_root:fixture.root,task_id:fixture.taskId,claim_id:CLAIM,branch:'codex/lifecycle',target_ref:'main'})).toThrow('claim token, live owner');
+}));

@@ -614,7 +614,7 @@ function resolveEffectiveStateUnlocked(
   });
 
   const worktreeOwnerIsCurrent = Boolean(owner && safeRealpath(owner) === currentWorktree);
-  const strictProfile = riskResolution.ok && riskResolution.profile === 'strict';
+  const strictProfile = riskResolution.ok && riskResolution.profile === 'high';
   // Ownership alone also matches the primary checkout. Resolve Git isolation
   // here and bind it to the authority revision consumed by the edit guard.
   let isolatedContractWorktree = false;

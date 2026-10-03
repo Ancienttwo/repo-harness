@@ -1,3 +1,4 @@
+/** Historical read-only classifier for the separately owned eval surface. Native prompt handling does not consume this ceremony table or authorize effects from it. */
 export const PROMPT_GUARD_INTENTS = Object.freeze([
   'done',
   'planning_start',

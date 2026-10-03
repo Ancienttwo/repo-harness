@@ -137,154 +137,25 @@ function seedReceipt(root: string, value: ProjectionResultV1): void {
   }, null, 2)}\n`);
 }
 
-function drainResult(overrides: Partial<ArchitectureProjectionDrainResultV1> = {}): ArchitectureProjectionDrainResultV1 {
-  return {
-    schemaVersion: 'repo-harness.architecture-projection-drain/v1',
-    status: 'succeeded',
-    jobId: JOB_ID,
-    sourceEventIds: ['drift-c50aae832b3d997cfdf323e3'],
-    resultStatus: 'applied',
-    error: null,
-    acknowledgeSourceEvents: true,
-    queue: {
-      schemaVersion: 'repo-harness.architecture-projection-queue-state/v1',
-      pending: 0, running: 0, receipts: 1, deadLetters: 0,
-      oldestPendingJobId: null, oldestDeadLetterJobId: null,
-    },
-    ...overrides,
-  };
-}
-
-function canonicalState(): EffectiveState {
-  return {
-    workflow_profile: 'standard',
-    review: { path: null, freshness: 'missing', recommendation: null, recorded_subject_sha256: null, recorded_target_revision: null },
-    readiness: {
-      ok: true,
-      allowedToEdit: { decision: 'allow' },
-      allowedToStop: { decision: 'allow' },
-      readyToShip: { decision: 'allow' },
-      requirements: { edit: [], stop: [], ship: [] },
-      nextAction: null,
-    },
-  } as unknown as EffectiveState;
-}
-
-function stop(root: string, drain: ArchitectureProjectionDrainResultV1) {
-  return runStopHandler({
-    collector: {
-      getRepoRoot: () => root,
-      getWorktreeOwnership: () => ({ owner: null, ownedByCurrent: false }),
-      getActivePlanMarker: () => null,
-      getStopEffectiveState: () => canonicalState(),
-    },
-    env: { ...process.env, HOME: join(root, '.ai/harness/test-home'), HOOK_RUN_ID: 'restamp-publication' },
-    dependencies: { drainArchitectureProjection: () => drain },
-  });
-}
-
-describe('Stop-time restamp auto-publication', () => {
-  test('publishes a digest-only restamp and leaves the checkout clean', () => {
-    const root = fixture();
-    seedReceipt(root, RESTAMP);
-    const base = git(root, ['rev-parse', 'HEAD']);
-
-    const result = stop(root, drainResult());
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe('');
-    expect(status(root)).toBe('');
-    expect(git(root, ['rev-parse', 'HEAD^'])).toBe(base);
-    expect(git(root, ['log', '-1', '--format=%s'])).toBe(RESTAMP_COMMIT_SUBJECT);
-    expect(git(root, ['log', '-1', '--format=%B'])).toContain(`Architecture-Projection-Restamp: ${RESTAMP.receiptDigest}`);
-    expect(result.stderr).toContain(`[ArchitectureProjection] published restamp ${git(root, ['rev-parse', 'HEAD'])}.`);
-    // The cursor stays where the drain left it; publication is not a third writer.
-    expect(readArchitectureDriftCursor(root)?.head_sha).toBe(base);
-  });
-
-  test('never auto-commits a semantic projection delta', () => {
-    const root = fixture();
-    seedReceipt(root, SEMANTIC);
-    const base = git(root, ['rev-parse', 'HEAD']);
-
-    const result = stop(root, drainResult());
-
-    expect(result.exitCode).toBe(0);
-    expect(git(root, ['rev-parse', 'HEAD'])).toBe(base);
-    expect(status(root)).toBe(` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
-    expect(result.stderr).not.toContain('published restamp');
-    expect(result.stderr).not.toContain('restamp publication');
-  });
-
-  test('exits 0 with one advisory on every skip and fault path', () => {
-    const skipped = fixture();
-    seedReceipt(skipped, RESTAMP);
-    git(skipped, ['config', 'commit.gpgsign', 'true']);
-    const skippedHead = git(skipped, ['rev-parse', 'HEAD']);
-    const skippedResult = stop(skipped, drainResult());
-    expect(skippedResult.exitCode).toBe(0);
-    expect(skippedResult.stdout).toBe('');
-    expect(git(skipped, ['rev-parse', 'HEAD'])).toBe(skippedHead);
-    expect(skippedResult.stderr.split('\n').filter((line) => line.includes('restamp publication'))).toEqual([
-      '[ArchitectureProjection] restamp publication skipped: commit-gpgsign-enabled.',
-    ]);
-
-    const faulted = fixture();
-    mkdirSync(join(faulted, '.ai/harness/architecture-projection/receipts'), { recursive: true });
-    writeFileSync(join(faulted, `.ai/harness/architecture-projection/receipts/${JOB_ID}.json`), '{ corrupt receipt\n');
-    const faultedResult = stop(faulted, drainResult());
-    expect(faultedResult.exitCode).toBe(0);
-    expect(faultedResult.stdout).toBe('');
-    expect(faultedResult.stderr).toContain('[ArchitectureProjection] restamp publication failed:');
-    expect(status(faulted)).toBe(` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
-
-    const inert = fixture();
-    const inertResult = stop(inert, drainResult({ status: 'idle', resultStatus: null }));
-    expect(inertResult.exitCode).toBe(0);
-    expect(inertResult.stderr).not.toContain('restamp publication');
-  });
-
-  test('leaves the strict projection failure gate criteria untouched', () => {
-    const strictPolicy = { architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'strict' } };
-
-    // A publication fault under strict never blocks: it is not a drain failure.
-    const faulted = fixture(strictPolicy);
-    mkdirSync(join(faulted, '.ai/harness/architecture-projection/receipts'), { recursive: true });
-    writeFileSync(join(faulted, `.ai/harness/architecture-projection/receipts/${JOB_ID}.json`), '{ corrupt receipt\n');
-    const faultedResult = stop(faulted, drainResult());
-    expect(faultedResult.exitCode).toBe(0);
-    expect(faultedResult.stdout).toBe('');
-    expect(faultedResult.stderr).toContain('restamp publication failed:');
-
-    // The pre-existing criteria still block exactly what they blocked before.
-    const failing = fixture(strictPolicy);
-    const failingResult = stop(failing, drainResult({ status: 'retry-pending', resultStatus: null, error: 'projection failed', acknowledgeSourceEvents: false }));
-    expect(failingResult.exitCode).toBe(0);
-    expect(JSON.parse(failingResult.stdout).decision).toBe('block');
-    expect(failingResult.stdout).toContain('Strict projection failure gate blocked Stop');
-  });
-
-  test('converges: the published restamp keeps the next drain idle without a provider run', () => {
-    const root = fixture({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic' } });
-    seedReceipt(root, RESTAMP);
-
-    expect(stop(root, drainResult()).exitCode).toBe(0);
-    expect(status(root)).toBe('');
-
-    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.6.1', timeoutMs: 120_000 };
-    const changedSet = computeArchitectureDriftChangedSet(root);
-    expect(changedSet.paths).toEqual([ARCHITECTURE_PROJECTION_MANIFEST_PATH]);
-    const event = architectureDriftSourceEvent(changedSet);
-    expect(event).not.toBeNull();
-
-    const second = drainArchitectureProjectionJobs(root, {
-      policy,
-      sourceEvents: [event!],
-      run: () => { throw new Error('archctx must not run for an all-owned changed set'); },
+describe('Stop never publishes architecture projections automatically', () => {
+  for (const failureGate of ['advisory', 'strict']) {
+    test(`existing ${failureGate} queue/receipt stays available for explicit provider commands`, () => {
+      const root = fixture({ architecture: { projection_failure_gate: failureGate } });
+      const base = git(root, ['rev-parse', 'HEAD']);
+      seedReceipt(root, RESTAMP);
+      const result = runStopHandler({
+        collector: {
+          getRepoRoot: () => root,
+          getWorktreeOwnership: () => ({owner:null,ownedByCurrent:false}),
+          getActivePlanMarker: () => null,
+          getStopEffectiveState: () => null,
+        },
+        env: { ...process.env, HOME: join(root, '.ai/harness/test-home') },
+      });
+      expect(result.exitCode).toBe(0); expect(result.stdout).toBe('');
+      expect(git(root, ['rev-parse', 'HEAD'])).toBe(base);
+      expect(status(root)).toBe(` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+      expect(readArchitectureDriftCursor(root)).toBeNull();
     });
-
-    expect(second.status).toBe('idle');
-    expect(second.acknowledgeSourceEvents).toBe(true);
-    expect(second.queue.pending).toBe(0);
-  });
+  }
 });

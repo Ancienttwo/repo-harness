@@ -23,7 +23,7 @@ function failed(cwd: string, failureClass = 'missing_artifact') {
   return checks;
 }
 function readiness(cwd: string, targetPaths = [CONTRACT]) {
-  const state = resolveEffectiveState(cwd, Date.now(), {targetPaths,operationKind:'edit',explicitOverride:'standard'});
+  const state = resolveEffectiveState(cwd, Date.now(), {targetPaths,operationKind:'edit',explicitOverride:'routine'});
   if (!state.readiness?.ok) throw new Error('fixture readiness unavailable');
   return state.readiness;
 }
@@ -43,7 +43,7 @@ test('real CLI audits an immutable receipt, restricts repair to contract, and ke
     input: JSON.stringify({tool_input:{file_path:path}}), env: {},
     collector: createStateInputCollector({
       event:'PreToolUse', repoRoot:cwd, resolveSessionEffectiveState:()=>null,
-      resolvePreEditEffectiveState:(targetPaths: readonly string[])=>resolveEffectiveState(cwd, Date.now(), {targetPaths,operationKind:'edit',explicitOverride:'standard'}),
+      resolvePreEditEffectiveState:(targetPaths: readonly string[])=>resolveEffectiveState(cwd, Date.now(), {targetPaths,operationKind:'edit',explicitOverride:'routine'}),
     }),
   });
   expect(guard(CONTRACT).exitCode).toBe(0);

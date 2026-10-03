@@ -379,11 +379,7 @@ describe("sessionStartMainContent — capability/architecture queues", () => {
       ];
       writeFileSync(join(repoRoot, ".ai/harness/capability-context/requests.jsonl"), `${lines.join("\n")}\n`);
       const content = sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
-      expect(content).toContain("# Capability Context Queue");
-      expect(content).toContain("Pending capability context requests detected (2)");
-      expect(content).toContain("- cap-a <- `src/a.ts`");
-      expect(content).toContain("- cap-b <- `src/b.ts`");
-      expect(content).not.toContain("cap-z");
+      expect(content).toBeNull();
     });
   });
 
@@ -401,12 +397,7 @@ describe("sessionStartMainContent — capability/architecture queues", () => {
         "> **Status**: Resolved\n> **Detected**: 2026-07-19T00:00:00+0000\n",
       );
       const content = sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
-      expect(content).toContain("# Architecture Queue");
-      expect(content).toContain("Checkpoint due: 1 capabilities have pending architecture drift");
-      expect(content).toMatch(/oldest \d+d/);
-      expect(content).toContain("repo-harness run architecture-queue status");
-      // Thinned to a checkpoint nudge: no fenced command block.
-      expect(content).not.toContain("```bash\nrepo-harness run architecture-queue status");
+      expect(content).toBeNull();
     });
   });
 });
@@ -1297,12 +1288,10 @@ describe('architecture model guidance', () => {
     execFileSync('git', ['add', '--', `${prefix}/package.json`], { cwd: repo });
   }
 
-  test('normal SessionStart surfaces empty model even without drift requests and never writes nodes', () => fixture((repo, env) => {
+  test('normal SessionStart leaves architecture on demand and never writes nodes', () => fixture((repo, env) => {
     const section = sessionStartMainSection(freshCollector(repo), env, Date.now());
-    expect(section?.content).toContain('No capability nodes are declared');
-    expect(section?.content).toContain('repo-harness-architecture');
-    expect(section?.content).toContain('archctx plan/apply');
-    expect(section?.actionable).toBe(true);
+    expect(section).toBeNull();
+    expect(architectureModelGuidanceContext(repo, env)).toContain('No capability nodes are declared');
     expect(readdirSync(join(repo, '.archcontext/model/nodes'))).toEqual([]);
     expect(existsSync(join(repo, 'docs/architecture/requests'))).toBe(false);
   }));
@@ -1345,7 +1334,7 @@ describe('architecture model guidance', () => {
     const diagnostics: Array<{ provider_id: string }> = [];
     const content = sessionStartMainContent(freshCollector(repo), env, Date.now(), (diagnostic) => diagnostics.push(diagnostic));
     expect(content ?? '').not.toContain('No capability nodes');
-    expect(diagnostics.some((diagnostic) => diagnostic.provider_id === 'architecture-model-guidance')).toBe(true);
+    expect(diagnostics.some((diagnostic) => diagnostic.provider_id === 'architecture-model-guidance')).toBe(false);
     writeFileSync(join(env.HOME!, '.repo-harness/config.json'), '{');
     expect(() => architectureModelGuidanceContext(repo, env)).toThrow();
   }));

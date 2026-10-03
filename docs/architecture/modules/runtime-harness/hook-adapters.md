@@ -313,3 +313,7 @@ bash scripts/check-task-workflow.sh --strict
 ## 6. Workstream
 
 - `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`
+
+## Gate audit cutover
+
+The event route registry remains the host adapter authority. Ordinary edits and Stop no longer require plan, contract, review or archive stages. Risk has two values, `routine` and `high`; high risk selects focused safety coverage and optional independent review. Path/private-area checks and shared-store token fencing remain enforced. Hooks observe architecture on demand and never queue per-edit drift or write capability blocks into agent instructions. Main publication consumes trusted current CI facts; host permission changes, unsafe deletion and production effects retain their explicit authorization boundaries.

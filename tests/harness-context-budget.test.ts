@@ -105,7 +105,7 @@ describe('global SessionStart context budget', () => {
       phase: 'executing',
       state_version: 9,
       state_revision: 'sha256:state',
-      workflow_profile: 'strict',
+      workflow_profile: 'high',
       next_action: 'fix the failed checks',
       blockers,
       allowed_paths: allowedPaths,

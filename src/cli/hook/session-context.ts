@@ -1353,9 +1353,6 @@ export function sessionStartMainContent(
   rotateSessionStartEventLogs(repoRoot);
 
   let context = safely('resume', observeDiagnostic, () => resumeBlock(repoRoot, collector) || null) ?? '';
-  context = appendBlock(context, safely('capability-context-pending', observeDiagnostic, () => capabilityContextPendingContext(repoRoot)));
-  context = appendBlock(context, safely('architecture-queue-pending', observeDiagnostic, () => architectureQueuePendingContext(repoRoot, nowMs)));
-  context = appendBlock(context, safely('architecture-model-guidance', observeDiagnostic, () => architectureModelGuidanceContext(repoRoot, env)));
   context = appendBlock(context, safely('pending-plan-capture', observeDiagnostic, () => pendingPlanCaptureContext(repoRoot, collector, nowMs)));
   context = appendBlock(context, safely('current-status-snapshot', observeDiagnostic, () => currentStatusSnapshotContext(repoRoot)));
   context = appendBlock(context, safely('active-sprint', observeDiagnostic, () => activeSprintContext(repoRoot)));

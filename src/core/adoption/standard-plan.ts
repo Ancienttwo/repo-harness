@@ -349,7 +349,7 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       policy_file: ".ai/harness/policy.json",
       checks_file: ".ai/harness/checks/latest.json",
       handoff_file: ".ai/harness/handoff/current.md",
-      helper_runtime_dir: "package:assets/templates/helpers",
+      helper_runtime_dir: "package:scripts",
       helper_source: "package",
     },
     agent_runtime: {

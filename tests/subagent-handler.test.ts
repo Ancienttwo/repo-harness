@@ -12,7 +12,7 @@ import {
 
 const REPO_ROOT = join(import.meta.dir, '..');
 const BOUNDARY_MARKER = EXECUTION_BOUNDARY_MARKER;
-const BOUNDARY_SENTENCE = 'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.';
+const BOUNDARY_SENTENCE = 'Execution boundary: implement exactly the parent brief Goal/Scope/Verify/Rollback.';
 
 function tempRepo(): string {
   return mkdtempSync(join(tmpdir(), 'repo-harness-subagent-handler-'));
@@ -213,7 +213,8 @@ describe('typed subagent hook handlers', () => {
         repoRoot,
         input: JSON.stringify({ tool_name: 'SendUserMessage', agent_id: 'agent-a', tool_input: { message: 'report' } }),
       });
-      expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).permissionDecision).toBe('deny');
+      expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).permissionDecision).toBeUndefined();
+      expect((jsonResult(deny.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext).toContain('final text');
 
       const mainLoop = runSubagentHandler({
         event: 'PreToolUse',
@@ -257,7 +258,7 @@ describe('typed subagent hook handlers', () => {
       expect(context).toContain('Spawn no more than 2 agents.');
       expect(context).toContain('active task contract (tasks/contracts/test.contract.md)');
       expect(context).toContain('Runner authority: Codex native spawn_agent with the exact installed agent_type.');
-      expect(context).toContain('If native agent_type selection or matching evidence is unavailable, fail closed');
+      expect(context).toContain('If matching evidence is unavailable, record routing as unverified');
       expect(context).toContain('- Call native spawn_agent with the requested installed agent_type and fork_turns="none"');
       expect(context).toContain('Reasoning effort is configured_unverified');
       expect(context).not.toContain('codex_app__create_thread');
@@ -591,7 +592,7 @@ describe('typed subagent hook handlers', () => {
       mkdirSync(stateDir, { recursive: true });
       const startWithProgress = (sessionId: string, index: number) => {
         writeFileSync(join(stateDir, 'effective.json'), JSON.stringify({
-          workflow_profile: 'standard',
+          workflow_profile: 'routine',
           progress_token: `progress-${sessionId}-${index}`,
         }));
         return startSubagent(repoRoot, {
@@ -712,8 +713,8 @@ describe('typed subagent hook handlers', () => {
         now: () => new Date('2026-07-21T12:02:00.000Z'),
       });
       expect(thin.exitCode).toBe(0);
-      expect((jsonResult(thin.stdout).reason as string)).toContain('[SubagentQualityGate]');
-      expect((jsonResult(thin.stdout).decision as string)).toBe('block');
+      expect(((jsonResult(thin.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string)).toContain('[SubagentQuality]');
+      expect(jsonResult(thin.stdout).decision).toBeUndefined();
 
       const repeated = runSubagentHandler({
         event: 'SubagentStop',
@@ -729,7 +730,7 @@ describe('typed subagent hook handlers', () => {
         env: codexEnv(),
         input: JSON.stringify({ session_id: 'session-a', subagent_id: 'agent-b', final_message: 'looks good' }),
       });
-      expect((jsonResult(differentSubagent.stdout).decision as string)).toBe('block');
+      expect(jsonResult(differentSubagent.stdout).decision).toBeUndefined();
 
       const differentSession = runSubagentHandler({
         event: 'SubagentStop',
@@ -737,7 +738,7 @@ describe('typed subagent hook handlers', () => {
         env: codexEnv(),
         input: JSON.stringify({ session_id: 'session-b', subagent_id: 'agent-a', final_message: 'looks good' }),
       });
-      expect((jsonResult(differentSession.stdout).decision as string)).toBe('block');
+      expect(jsonResult(differentSession.stdout).decision).toBeUndefined();
 
       const unresolvedError = runSubagentHandler({
         event: 'SubagentStop',
@@ -749,7 +750,7 @@ describe('typed subagent hook handlers', () => {
           final_message: 'The investigation failed with a timeout while reading the repository. The operation failed again and the requested mapping remains blocked without any further explanation or parent action.',
         }),
       });
-      expect((jsonResult(unresolvedError.stdout).reason as string)).toContain('unresolved error');
+      expect(((jsonResult(unresolvedError.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext as string)).toContain('unresolved error');
 
       const recursiveStop = runSubagentHandler({
         event: 'SubagentStop',
@@ -848,14 +849,14 @@ describe('typed subagent hook handlers', () => {
       }
     });
 
-    test('no active contract: zero boundary and no fabricated contract reference', () => {
+    test('no active contract: writable child receives exactly one boundary from its parent brief', () => {
       const repoRoot = tempRepo();
       const home = tempRepo();
       try {
         const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-6.1-sol', codexEnv({ HOME: home }));
         expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
-        expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(0);
-        expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(0);
+        expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(1);
+        expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(1);
         expect(stack.startContext).not.toContain('Read the active repo-harness contract');
         expect(stack.startContext).not.toContain('Read-only scope:');
         expect(stack.startContext).toContain('Stay within the assigned role and permission scope.');
@@ -864,6 +865,16 @@ describe('typed subagent hook handlers', () => {
         rmSync(repoRoot, { recursive: true, force: true });
         rmSync(home, { recursive: true, force: true });
       }
+    });
+
+    test('no active contract: verified read-only child has no write boundary or fabricated contract', () => {
+      const repoRoot=tempRepo(), home=tempRepo();
+      try {
+        const stack=composedChildStack(repoRoot,'explorer','gpt-6-luna',codexEnv({HOME:home}));
+        expect(occurrences(stack.composed,BOUNDARY_MARKER)).toBe(0);
+        expect(stack.startContext).toContain('Read-only scope:');
+        expect(stack.startContext).not.toContain('Read the active repo-harness contract');
+      } finally { rmSync(repoRoot,{recursive:true,force:true});rmSync(home,{recursive:true,force:true}); }
     });
 
     test('unverified routing on a writable persona: fail-closed notice, zero boundary', () => {

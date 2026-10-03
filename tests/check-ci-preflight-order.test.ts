@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(import.meta.dir, "..");
 
-test("CI stops at task-sync before starting bun test", () => {
+test("daily governance records failure without authorizing PR coverage", () => {
   const bin = mkdtempSync(join(tmpdir(), "rh-ci-preflight-bin-"));
   const testLog = join(bin, "bun-test.log");
   try {
@@ -17,7 +17,7 @@ test("CI stops at task-sync before starting bun test", () => {
       spawnSync("chmod", ["+x", join(bin, name)]);
     }
 
-    const result = spawnSync("/bin/bash", ["scripts/check-ci.sh"], {
+    const result = spawnSync("/bin/bash", ["scripts/check-ci.sh", "governance"], {
       cwd: ROOT,
       encoding: "utf-8",
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },

@@ -1,12 +1,9 @@
-import { createHash } from 'crypto';
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 
 import {
   projectMergeReadiness,
-  type MergeReadinessAcceptance,
+  projectPullRequestMergeReadiness,
   type MergeReadinessIntegrationMode,
   type MergeReadinessObservation,
   type MergeReadinessV1,
@@ -15,16 +12,10 @@ import {
 import {
   decodePublicationMarker,
   publicationReceiptDigest,
-  publicationSha256,
   type PublicationReceiptV1,
 } from '../../core/publication/publication-receipt';
-import type { LeaseOwnerRecord } from '../../core/state/coordination-identity';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { readLease } from '../state/coordination-lease-store';
 import { resolveBoard } from '../state/resolve-board';
-import { acceptanceReceiptPath, authorityFingerprint, readAcceptanceVerificationObservation } from '../../../scripts/acceptance-receipt';
-import { resolveInsideRepo } from '../path-safety';
-import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { PublicationReceiptError, readPublicationReceiptCache } from './publication-receipt';
 
 export type MergeReadinessErrorCode =
@@ -116,32 +107,15 @@ async function terminateProviderChild(child: ReturnType<typeof spawn>): Promise<
   }
 }
 
-interface LocalReadinessSnapshot {
-  readonly token: string;
-  readonly lease: LeaseOwnerRecord | null;
-  readonly lease_is_reviewing: boolean;
-  readonly pointer_matches_receipt: boolean;
-  readonly lease_matches_receipt: boolean;
-  readonly canonical_task_matches_receipt: boolean;
-  readonly local_proof_head_matches_receipt: boolean;
-  readonly review_subject_matches_receipt: boolean;
-  readonly verification_evidence_matches_receipt: boolean;
-  readonly local_evidence_fresh: boolean;
-  readonly acceptance: MergeReadinessAcceptance;
-}
-
 export interface MergeReadinessRound {
-  readonly local_before: LocalReadinessSnapshot;
   readonly identity_before: ProviderIdentity;
   readonly facts: ProviderMergeReadinessFactsV1;
   readonly integration_mode: MergeReadinessIntegrationMode;
   readonly identity_after: ProviderIdentity;
-  readonly local_after: LocalReadinessSnapshot;
 }
 
 export interface MergeReadinessCollector {
   readonly resolve_receipt: (input: PublicationReadinessInput) => PublicationReceiptV1;
-  readonly collect_local: (receipt: PublicationReceiptV1, input: PublicationReadinessInput) => LocalReadinessSnapshot;
   readonly observe_identity: (receipt: PublicationReceiptV1, input: PublicationReadinessInput) => ProviderIdentity;
   readonly observe_facts: (identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput) => ProviderMergeReadinessFactsV1;
   readonly classify_integration: (identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput) => MergeReadinessIntegrationMode;
@@ -261,15 +235,16 @@ async function ghAbortable(
 }
 
 function identityBytes(identity: ProviderIdentity): string {
-  return JSON.stringify(identity);
+  const { body: _body, review_decision: _reviewDecision, ...fences } = identity;
+  return JSON.stringify(fences);
 }
 
-function parseProviderReadinessIdentity(receipt: PublicationReceiptV1, repoValue: unknown, prValue: unknown): ProviderIdentity {
+function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, prValue: unknown): ProviderIdentity {
   const repo = object(repoValue, 'provider repository');
   const pr = object(prValue, 'provider PR');
   const number = pr.number;
-  if (!Number.isInteger(number) || number !== receipt.pr_number) {
-    throw new MergeReadinessError('publication_claim_mismatch', 'provider PR number does not match the publication receipt');
+  if (!Number.isInteger(number) || number !== prNumber) {
+    throw new MergeReadinessError('publication_claim_mismatch', 'provider PR number does not match the requested PR');
   }
   if (typeof pr.isDraft !== 'boolean') throw new MergeReadinessError('provider_data_incomplete', 'provider PR isDraft is invalid');
   if (!['OPEN', 'CLOSED', 'MERGED'].includes(String(pr.state))) {
@@ -296,6 +271,11 @@ function parseProviderReadinessIdentity(receipt: PublicationReceiptV1, repoValue
     review_decision: pr.reviewDecision as string | null,
     mergeable: pr.mergeable,
   });
+  return identity;
+}
+
+function parseProviderReadinessIdentity(receipt: PublicationReceiptV1, repoValue: unknown, prValue: unknown): ProviderIdentity {
+  const identity = parseProviderPullRequestIdentity(receipt.pr_number, repoValue, prValue);
   if (identity.provider_repo_id !== receipt.provider_repo_id
     || identity.pr_url !== receipt.pr_url
     || identity.head_ref !== receipt.branch
@@ -337,9 +317,8 @@ export async function observeProviderReadinessIdentityAbortable(
 
 function parseProviderReadinessFacts(
   identity: ProviderIdentity,
-  receipt: PublicationReceiptV1,
   checksValue: unknown,
-  graphValue: unknown,
+  rollbackTags: ProviderMergeReadinessFactsV1['rollback_tags'],
 ): ProviderMergeReadinessFactsV1 {
   if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
   const checks = checksValue.map((entry) => {
@@ -347,171 +326,136 @@ function parseProviderReadinessFacts(
     if (!['pass', 'fail', 'pending', 'skipping', 'cancel'].includes(String(check.bucket))) {
       throw new MergeReadinessError('provider_data_incomplete', 'provider required check bucket is unknown');
     }
-    return Object.freeze({ bucket: check.bucket as 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' });
+    return Object.freeze({ name: string(check.name, 'provider required check name'), bucket: check.bucket as 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' });
   });
-  const graph = object(graphValue, 'provider GraphQL result');
-  const data = object(graph.data, 'provider GraphQL data');
-  const node = object(data.node, 'provider repository node');
-  const pr = object(node.pullRequest, 'provider pull request node');
-  const threads = object(pr.reviewThreads, 'provider review threads');
-  const pageInfo = object(threads.pageInfo, 'provider review thread pageInfo');
-  if (pageInfo.hasNextPage !== false || !Array.isArray(threads.nodes)) {
-    throw new MergeReadinessError('provider_data_incomplete', 'provider review threads were not exhaustively observed');
-  }
-  let unresolved = 0;
-  for (const entry of threads.nodes) {
-    const thread = object(entry, 'provider review thread');
-    if (typeof thread.isResolved !== 'boolean') throw new MergeReadinessError('provider_data_incomplete', 'provider review thread isResolved is invalid');
-    if (!thread.isResolved) unresolved += 1;
-  }
   return Object.freeze({
     state: identity.state,
     is_draft: identity.is_draft,
     head_sha: identity.head_sha,
     base_sha: identity.base_sha,
     review_decision: identity.review_decision,
-    unresolved_thread_count: unresolved,
+    unresolved_thread_count: null,
+    rollback_tags: rollbackTags,
     checks: Object.freeze(checks),
     mergeable: identity.mergeable,
   });
 }
 
-export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
+function requiredCIRunPath(identity: ProviderIdentity, checksValue: unknown): string {
+  if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'required CI checks unavailable');
+  const required = checksValue.filter(check => check?.name === 'Required / CI');
+  if (required.length !== 1) throw new MergeReadinessError('provider_data_incomplete', 'exactly one Required / CI check is required');
+  let url: URL;
+  try { url = new URL(required[0].link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required CI check URL unavailable'); }
+  const segments = url.pathname.split('/').filter(Boolean);
+  const [owner, repo] = identity.repo_name_with_owner.split('/');
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || segments.length !== 7
+    || segments[0] !== owner || segments[1] !== repo || segments[2] !== 'actions'
+    || segments[3] !== 'runs' || segments[5] !== 'job' || !/^\d+$/.test(segments[4]!) || !/^\d+$/.test(segments[6]!)) {
+    throw new MergeReadinessError('provider_data_incomplete', 'required CI is not a repository Actions check');
+  }
+  return `repos/${identity.repo_name_with_owner}/actions/runs/${segments[4]}`;
+}
+function validateRequiredCIRun(identity: ProviderIdentity, value: unknown, checks: unknown): void {
+  const run = object(value, 'required CI run');
+  if (run.path !== '.github/workflows/ci.yml' || run.event !== 'pull_request' || run.head_sha !== identity.head_sha
+    || !Array.isArray(run.pull_requests) || !run.pull_requests.some(pr => pr?.number === identity.pr_number
+      && pr.head?.sha === identity.head_sha && pr.base?.sha === identity.base_sha)) {
+    throw new MergeReadinessError('provider_data_incomplete', 'required CI does not bind this PR/head/base');
+  }
+  const required = (checks as { name: string; bucket: string }[]).find(check => check.name === 'Required / CI')!;
+  if (required.bucket === 'pass' && (run.status !== 'completed' || run.conclusion !== 'success')) {
+    throw new MergeReadinessError('provider_data_incomplete', 'green required check has no successful trusted CI run');
+  }
+}
+
+/** One read protocol for synchronous and abortable consumers; no history scan or tag write. */
+function* rollbackTagBoundary(identity: ProviderIdentity): Generator<string, ProviderMergeReadinessFactsV1['rollback_tags'], unknown> {
+  const root = `repos/${identity.repo_name_with_owner}`;
+  const activation = object(yield `${root}/contents/.github/workflows/ci-report.yml?ref=${identity.base_sha}`, 'rollback reporter activation');
+  if (activation.status === '404') return 'not_active';
+  if (activation.type !== 'file' || activation.path !== '.github/workflows/ci-report.yml' || !/^[0-9a-f]{40}$/.test(String(activation.sha))) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation unavailable');
+  }
+  const associations = yield `${root}/commits/${identity.base_sha}/pulls?per_page=100`;
+  if (!Array.isArray(associations) || associations.length >= 100) throw new MergeReadinessError('provider_data_incomplete', 'parent PR associations incomplete');
+  const merged = associations.filter(pr => pr?.merged_at && pr.base?.ref === 'main' && pr.merge_commit_sha === identity.base_sha);
+  if (merged.length !== 1 || !Number.isInteger(merged[0].number) || merged[0].number < 1) {
+    throw new MergeReadinessError('provider_data_incomplete', 'activated reporter parent is not an exact single merged PR');
+  }
+  const commit = object(yield `${root}/git/commits/${identity.base_sha}`, 'main parent commit');
+  if (commit.sha !== identity.base_sha || !Array.isArray(commit.parents) || commit.parents.length !== 1 || !/^[0-9a-f]{40}$/.test(String(commit.parents[0]?.sha))) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single squash boundary');
+  }
+  for (const [phase, sha] of [['before', commit.parents[0].sha], ['after', identity.base_sha]]) {
+    const name = `gate-cutover-pr-${merged[0].number}-${phase}`;
+    const ref = object(yield `${root}/git/ref/tags/${name}`, 'rollback tag ref');
+    if (ref.status === '404') return 'pending';
+    if (ref.status) throw new MergeReadinessError('provider_unavailable', `rollback tag ref HTTP ${ref.status}`);
+    const tagObject = object(ref.object, 'rollback tag object');
+    if (typeof tagObject.type !== 'string' || typeof tagObject.sha !== 'string' || !/^[0-9a-f]{40}$/.test(tagObject.sha)) throw new MergeReadinessError('provider_data_incomplete', 'rollback tag ref incomplete');
+    if (tagObject.type !== 'tag') return 'pending';
+    const annotation = object(yield `${root}/git/tags/${tagObject.sha}`, 'rollback tag annotation');
+    if (annotation.status === '404') return 'pending';
+    if (annotation.status) throw new MergeReadinessError('provider_unavailable', `rollback tag annotation HTTP ${annotation.status}`);
+    const target = object(annotation.object, 'rollback tag target');
+    if (typeof annotation.tag !== 'string' || typeof target.type !== 'string' || typeof target.sha !== 'string' || !/^[0-9a-f]{40}$/.test(target.sha)) throw new MergeReadinessError('provider_data_incomplete', 'rollback tag annotation incomplete');
+    if (annotation.tag !== name || target.type !== 'commit' || target.sha !== sha) return 'pending';
+  }
+  return 'ready';
+}
+
+export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PublicationReceiptV1, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
   const checks = gh(input, [
-    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'bucket',
+    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
-  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){... on Repository{pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved}}}}}}';
-  const graph = gh(input, [
-    'api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${receipt.pr_number}`,
-  ]);
-  return parseProviderReadinessFacts(identity, receipt, checks, graph);
+  validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, checks)]), checks);
+  const boundary = rollbackTagBoundary(identity);
+  let request = boundary.next();
+  while (!request.done) request = boundary.next(gh(input, ['api', request.value], [0, 1]));
+  return parseProviderReadinessFacts(identity, checks, request.value);
 }
 
 export async function observeProviderReadinessFactsAbortable(
   identity: ProviderIdentity,
-  receipt: PublicationReceiptV1,
+  receipt: Pick<PublicationReceiptV1, 'pr_number'>,
   input: AbortablePublicationReadinessInput,
 ): Promise<ProviderMergeReadinessFactsV1> {
   const checks = await ghAbortable(input, [
-    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'bucket',
+    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
-  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){... on Repository{pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved}}}}}}';
-  const graph = await ghAbortable(input, [
-    'api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${receipt.pr_number}`,
-  ]);
-  return parseProviderReadinessFacts(identity, receipt, checks, graph);
+  validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, checks)]), checks);
+  const boundary = rollbackTagBoundary(identity);
+  let request = boundary.next();
+  while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], [0, 1]));
+  return parseProviderReadinessFacts(identity, checks, request.value);
 }
 
-function mergeSealPath(worktree: string, requested?: string): string {
-  if (requested) return requested;
-  const repositoryId = createHash('sha256').update(realpathSync(worktree)).digest('hex');
-  return join(homedir(), '.repo-harness', 'gates', repositoryId, 'merge-seal.latest.json');
-}
-
-function readOptional(path: string): Buffer | null {
-  try { return readFileSync(path); } catch { return null; }
-}
-
-/** Consume the acceptance authority's verified observation; GET never reruns its policy. */
-function currentAcceptance(
-  worktree: string | null,
-  effective: ReturnType<typeof resolveEffectiveStateReadOnly> | null,
-  receipt: PublicationReceiptV1,
-  seal: Record<string, unknown> | null,
-  authorityHome: string,
-): { readonly acceptance: MergeReadinessAcceptance; readonly token: string | null } {
-  const missing = { acceptance: 'missing', token: null } as const;
-  if (worktree === null || !effective?.contract || !effective.authoritative_plan) return missing;
-  try {
-    const readAuthority = (path: string): string => {
-      const resolved = resolveInsideRepo(worktree, path);
-      if (!resolved.ok || !resolved.path || !lstatSync(resolved.path).isFile()
-        || realpathSync(resolved.path) !== resolved.path) throw new Error('Acceptance authority is unavailable');
-      return readFileSync(resolved.path, 'utf8');
-    };
-    const observation = readAcceptanceVerificationObservation(worktree, authorityHome,
-      effective.contract.path, authorityFingerprint(readAuthority(effective.contract.path)));
-    if (observation === null) return missing;
-    const acceptanceBytes = readOptional(acceptanceReceiptPath(worktree, authorityHome));
-    const acceptanceHash = acceptanceBytes === null ? null : publicationSha256(acceptanceBytes);
-    const token = publicationSha256(JSON.stringify([observation.observation_id, acceptanceHash]));
-    if (observation.goal_file !== effective.authoritative_plan.path
-      || observation.goal_sha256 !== authorityFingerprint(readAuthority(observation.goal_file))
-      || observation.target_ref !== receipt.target_ref || observation.target_revision !== receipt.base_sha
-      || observation.subject_sha256 !== receipt.review_subject_sha256
-      || observation.acceptance_receipt_sha256 !== acceptanceHash
-      || seal?.acceptance_receipt_sha256 !== acceptanceHash
-      || !['external_pass', 'user_waiver'].includes(observation.disposition)) return { acceptance: 'missing', token };
-    return { acceptance: observation.disposition === 'user_waiver' ? 'waived' : 'pass', token };
-  } catch { return missing; }
-}
-
-function collectLocal(receipt: PublicationReceiptV1, input: PublicationReadinessInput): LocalReadinessSnapshot {
-  const lease = readLease(input.repo_root, receipt.task_id);
-  const record = lease.record;
-  const reviewing = record !== null && record.state === 'reviewing' && 'current_publication' in record;
-  const pointer = reviewing ? record.current_publication : null;
-  const worktree = record?.execution_worktree && existsSync(record.execution_worktree)
-    ? record.execution_worktree
-    : null;
-  let effective: ReturnType<typeof resolveEffectiveStateReadOnly> | null = null;
-  if (worktree !== null) {
-    try { effective = resolveEffectiveStateReadOnly(worktree, input.now_ms ?? Date.now()); } catch { effective = null; }
-  }
-  const checksPath = worktree === null ? null : input.checks_path ?? join(worktree, '.ai/harness/checks/latest.json');
-  const checksRaw = checksPath === null ? null : readOptional(checksPath);
-  const sealPath = worktree === null ? null : mergeSealPath(worktree, input.merge_seal_path ?? process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH);
-  const sealRaw = sealPath === null ? null : readOptional(sealPath);
-  let seal: Record<string, unknown> | null = null;
-  try { seal = sealRaw ? object(JSON.parse(sealRaw.toString('utf-8')), 'merge seal') : null; } catch { seal = null; }
-  let canonicalMatches = false;
-  let boardRevision = '';
-  if (record) {
-    try {
-      const board = resolveBoard(input.repo_root, {
-        sprintPath: record.sprint_path,
-        targetRef: record.target_ref,
-        nowMs: input.now_ms ?? Date.now(),
-      });
-      const card = board.cards.find((candidate) => candidate.task_id === receipt.task_id);
-      canonicalMatches = board.snapshot_consistency === 'stable' && card?.task_revision === receipt.task_revision;
-      boardRevision = board.revisions.board;
-    } catch { canonicalMatches = false; }
-  }
-  const sourceHashes = effective ? effective.source_hashes : {};
-  const acceptance = currentAcceptance(worktree, effective, receipt, seal, input.authority_home ?? homedir());
-  return Object.freeze({
-    token: publicationSha256(Buffer.from(JSON.stringify({
-      lease: lease.raw,
-      checks: checksRaw?.toString('base64') ?? null,
-      seal: sealRaw?.toString('base64') ?? null,
-      sourceHashes,
-      acceptance: acceptance.token,
-      boardRevision,
-    }))),
-    lease: record,
-    lease_is_reviewing: reviewing,
-    pointer_matches_receipt: pointer !== null
-      && pointer.publication_id === receipt.publication_id
-      && pointer.receipt_sha256 === publicationReceiptDigest(receipt)
-      && pointer.head_sha === receipt.head_sha,
-    lease_matches_receipt: record !== null
-      && record.claim_id === receipt.claim_id
-      && record.generation === receipt.generation
-      && record.task_revision === receipt.task_revision,
-    canonical_task_matches_receipt: canonicalMatches,
-    local_proof_head_matches_receipt: sealRaw !== null
-      && publicationSha256(sealRaw) === receipt.merge_seal_sha256
-      && seal?.head_sha === receipt.head_sha
-      && seal?.base_sha === receipt.base_sha,
-    review_subject_matches_receipt: effective?.review.recorded_subject_sha256 === receipt.review_subject_sha256,
-    verification_evidence_matches_receipt: checksRaw !== null && publicationSha256(checksRaw) === receipt.verification_evidence_sha256,
-    local_evidence_fresh: acceptance.acceptance !== 'missing' && effective !== null
-      && effective.review.freshness === 'fresh'
-      && effective.checks.freshness === 'fresh'
-      && effective.checks.status === 'pass',
-    acceptance: acceptance.acceptance,
+/** Ordinary main PRs consume the same provider/check decoder as fleet publications, without a receipt or Lease. */
+export function collectPullRequestMergeReadiness(
+  input: PublicationReadinessInput & { readonly pr_number: number; readonly expected_head_sha: string; readonly expected_base_sha: string },
+): ReturnType<typeof projectPullRequestMergeReadiness> {
+  if (!Number.isInteger(input.pr_number) || input.pr_number < 1) throw new MergeReadinessError('provider_data_incomplete', 'pr_number must be positive');
+  const observe = () => parseProviderPullRequestIdentity(input.pr_number,
+    gh(input, ['repo', 'view', '--json', 'id,nameWithOwner']),
+    gh(input, ['pr', 'view', String(input.pr_number), '--json', 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,mergeable']));
+  const project = (provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation) => projectPullRequestMergeReadiness({
+    expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
+    integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider,
   });
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const before = observe();
+      if (before.base_ref !== 'main') throw new MergeReadinessError('provider_data_incomplete', 'automatic code merge target must be main');
+      const facts = observeProviderReadinessFacts(before, input, input);
+      const after = observe();
+      if (identityBytes(before) === identityBytes(after)) return project(facts, 'stable');
+    }
+    return project(null, 'changed_during_read');
+  } catch (error) {
+    if (!(error instanceof MergeReadinessError) || !['provider_unavailable', 'provider_data_incomplete'].includes(error.code)) throw error;
+    return project(null, error.code as 'provider_unavailable' | 'provider_data_incomplete');
+  }
 }
 
 function classifyIntegration(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput): MergeReadinessIntegrationMode {
@@ -567,25 +511,14 @@ function resolveReceipt(input: PublicationReadinessInput): PublicationReceiptV1 
 
 export const productionMergeReadinessCollector: MergeReadinessCollector = Object.freeze({
   resolve_receipt: resolveReceipt,
-  collect_local: collectLocal,
   observe_identity: observeProviderReadinessIdentity,
   observe_facts: observeProviderReadinessFacts,
   classify_integration: classifyIntegration,
 });
 
 function projectRound(receipt: PublicationReceiptV1, round: MergeReadinessRound, observation: MergeReadinessObservation): MergeReadinessV1 {
-  const local = round.local_before;
   return projectMergeReadiness({
     receipt,
-    lease_is_reviewing: local.lease_is_reviewing,
-    pointer_matches_receipt: local.pointer_matches_receipt,
-    lease_matches_receipt: local.lease_matches_receipt,
-    canonical_task_matches_receipt: local.canonical_task_matches_receipt,
-    local_proof_head_matches_receipt: local.local_proof_head_matches_receipt,
-    review_subject_matches_receipt: local.review_subject_matches_receipt,
-    verification_evidence_matches_receipt: local.verification_evidence_matches_receipt,
-    local_evidence_fresh: local.local_evidence_fresh,
-    acceptance: local.acceptance,
     integration_mode: round.integration_mode,
     observation,
     provider: observation === 'stable' ? round.facts : null,
@@ -593,7 +526,6 @@ function projectRound(receipt: PublicationReceiptV1, round: MergeReadinessRound,
 }
 
 function collectRound(receipt: PublicationReceiptV1, input: PublicationReadinessInput, collector: MergeReadinessCollector): MergeReadinessRound {
-  const localBefore = collector.collect_local(receipt, input);
   let identityBefore: ProviderIdentity;
   let facts: ProviderMergeReadinessFactsV1;
   let identityAfter: ProviderIdentity;
@@ -611,25 +543,20 @@ function collectRound(receipt: PublicationReceiptV1, input: PublicationReadiness
     if (error instanceof MergeReadinessError) throw error;
     throw new MergeReadinessError('provider_unavailable', 'provider readiness identity confirmation failed', error);
   }
-  const localAfter = collector.collect_local(receipt, input);
   return Object.freeze({
-    local_before: localBefore,
     identity_before: identityBefore,
     facts,
     integration_mode: integrationMode,
     identity_after: identityAfter,
-    local_after: localAfter,
   });
 }
 
 function roundStable(round: MergeReadinessRound): boolean {
-  return round.local_before.token === round.local_after.token
-    && identityBytes(round.identity_before) === identityBytes(round.identity_after);
+  return identityBytes(round.identity_before) === identityBytes(round.identity_after);
 }
 
 function unavailableReadiness(
   receipt: PublicationReceiptV1,
-  local: LocalReadinessSnapshot,
   observation: Extract<MergeReadinessObservation, 'provider_unavailable' | 'provider_data_incomplete'>,
 ): MergeReadinessV1 {
   const identity: ProviderIdentity = {
@@ -639,12 +566,10 @@ function unavailableReadiness(
     review_decision: null, mergeable: 'CONFLICTING',
   };
   return projectRound(receipt, {
-    local_before: local,
-    local_after: local,
     identity_before: identity,
     identity_after: identity,
     facts: { state: 'UNKNOWN', is_draft: false, head_sha: receipt.head_sha, base_sha: receipt.base_sha,
-      review_decision: null, unresolved_thread_count: 0, checks: [], mergeable: 'CONFLICTING' },
+      review_decision: null, unresolved_thread_count: null, rollback_tags: 'pending', checks: [], mergeable: 'CONFLICTING' },
     integration_mode: 'unavailable',
   }, observation);
 }
@@ -664,7 +589,7 @@ export function resolvePublicationReadiness(
   } catch (error) {
     if (!(error instanceof MergeReadinessError)
       || (error.code !== 'provider_unavailable' && error.code !== 'provider_data_incomplete')) throw error;
-    return unavailableReadiness(receipt, latest?.local_before ?? collector.collect_local(receipt, input), error.code);
+    return unavailableReadiness(receipt, error.code);
   }
 }
 
@@ -672,19 +597,15 @@ async function collectAbortableRound(
   receipt: PublicationReceiptV1,
   input: AbortablePublicationReadinessInput,
 ): Promise<MergeReadinessRound> {
-  const localBefore = collectLocal(receipt, input);
   const identityBefore = await observeProviderReadinessIdentityAbortable(receipt, input);
   const facts = await observeProviderReadinessFactsAbortable(identityBefore, receipt, input);
   const integrationMode = classifyIntegration(identityBefore, receipt, input);
   const identityAfter = await observeProviderReadinessIdentityAbortable(receipt, input);
-  const localAfter = collectLocal(receipt, input);
   return Object.freeze({
-    local_before: localBefore,
     identity_before: identityBefore,
     facts,
     integration_mode: integrationMode,
     identity_after: identityAfter,
-    local_after: localAfter,
   });
 }
 
@@ -710,7 +631,7 @@ export async function resolvePublicationReadinessAbortable(
   } catch (error) {
     if (!(error instanceof MergeReadinessError)
       || (error.code !== 'provider_unavailable' && error.code !== 'provider_data_incomplete')) throw error;
-    return unavailableReadiness(receipt, latest?.local_before ?? collectLocal(receipt, input), error.code);
+    return unavailableReadiness(receipt, error.code);
   }
 }
 

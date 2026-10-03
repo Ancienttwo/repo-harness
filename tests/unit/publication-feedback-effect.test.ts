@@ -1,3 +1,4 @@
+import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -349,20 +350,7 @@ function repairOffer(fixture: RepairFixture) {
 
 function deriveCompletedShipKey(root: string, receipt: RepairFixture['receipt'], originalHead: string): string {
   const transactionRoot = join(resolveGitCommonDirectory(root), 'repo-harness', 'transactions');
-  return execFileSync('git', ['hash-object', '--stdin'], {
-    cwd: root,
-    input: [
-      `repo=${transactionRoot}`,
-      `worktree=${root}`,
-      'operation=ship',
-      'plan=',
-      'contract=',
-      `original_head=${originalHead}`,
-      `target_branch=${receipt.target_ref}`,
-      `base_sha=${receipt.base_sha}`,
-    ].join('\n') + '\n',
-    encoding: 'utf-8',
-  }).trim();
+  return deriveShipJournalKey(root,{repo:transactionRoot,worktree:root,branch:receipt.branch,remote:'origin',publication_mode:'lease',claim_id:receipt.claim_id,claim_task_id:receipt.task_id,claim_generation:String(receipt.generation),claim_task_revision:receipt.task_revision,original_head:originalHead,target_branch:receipt.target_ref,base_sha:receipt.base_sha});
 }
 
 function writeCompletedShipJournal(
@@ -377,12 +365,13 @@ function writeCompletedShipJournal(
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, 'meta.json'), JSON.stringify({
     operation: 'ship', key: shipKey, repo: transactionRoot, worktree: root, branch: receipt.branch,
+    remote:'origin',publication_mode:'lease',claim_id:receipt.claim_id,claim_task_id:receipt.task_id,claim_generation:String(receipt.generation),claim_task_revision:receipt.task_revision,
     plan: '', contract: '', original_head: originalHead, target_branch: receipt.target_ref,
     base_ref: `refs/remotes/origin/${receipt.target_ref}`, base_sha: receipt.base_sha,
   }) + '\n');
   writeFileSync(join(directory, 'status.json'), JSON.stringify({
     operation: 'ship', key: shipKey, status, phases: [
-      { phase: 'gate_sealed', ref: receipt.head_sha },
+      { phase: 'candidate_frozen', ref: receipt.head_sha },
       { phase: 'pushed', ref: receipt.head_sha },
       { phase: 'pr_observed', ref: receipt.head_sha, publication: publicationJournalEvidence(receipt) },
       ...(status === 'complete' ? [{ phase: 'complete', ref: receipt.head_sha }] : []),

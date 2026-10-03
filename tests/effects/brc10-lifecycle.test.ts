@@ -13,19 +13,31 @@ import { bindCampaignWorker, readCompletedCampaignWorker } from '../../src/effec
 import { retireCampaignDispatch, observeCampaignReclaimEligibility, recoverCampaignDispatch } from '../../src/effects/automation/campaign-recovery';
 import { ensureCampaignAuthoringBudget, readAutomationBudgetStatus } from '../../src/effects/automation/budget-store';
 import { readLease } from '../../src/effects/state/coordination-lease-store';
-import { readLeaseLiveness } from '../../src/effects/state/coordination-lease-liveness-store';
+import { readLeaseLiveness, readLeaseReclaimEligibility, renewLeaseLiveness } from '../../src/effects/state/coordination-lease-liveness-store';
 import { readClaimTokenForTask } from '../../src/effects/state/coordination-claim-token';
 import { readClaimActorReceipt } from '../../src/effects/engineers/claim-actor-store';
 
 const roots: string[] = [];
+let previousAccountHome: string | undefined;
+let accountHomeChanged = false;
 const templates = fixtureTemplate(historicalPlanningFixture);
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  if (accountHomeChanged) {
+    if (previousAccountHome === undefined) delete process.env.REPO_HARNESS_HOME;
+    else process.env.REPO_HARNESS_HOME = previousAccountHome;
+    accountHomeChanged = false;
+  }
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 afterAll(() => templates.dispose());
 async function acquired() {
   const f = await templates.materialize(); roots.push(f.root, f.home);
   const result = installHistoricalBoundDispatch(f);
   if (!('worker_handoff' in result) || !result.worker_handoff || !result.envelope) throw new Error(JSON.stringify(result));
   roots.push(result.envelope.worktree_path);
+  // Container journals and spawned CLI readers use the same disposable account.
+  previousAccountHome = process.env.REPO_HARNESS_HOME; accountHomeChanged = true;
+  process.env.REPO_HARNESS_HOME = f.home;
   const input = { selector: result.worker_handoff, host: f.executeInput.host, session_id: f.executeInput.session_id, env: f.env };
   return { ...f, historical: result, envelope: result.envelope, input };
 }
@@ -128,6 +140,19 @@ test('detached command effects remain ineligible for reclaim after provider comp
     const instant = new Date(Date.now() + 60_000); const now = () => instant;
     expect(observeCampaignReclaimEligibility({ ...f.input, env, now }).evidence.runtime_effect_inactive).toBeNull();
     expect(() => recoverCampaignDispatch({ ...f.input, env, now })).toThrow('not reclaimable');
+    const renewal = readLeaseLiveness(f.root, f.envelope.task_id);
+    renewLeaseLiveness({ repo_root: f.root, owner: readLease(f.root, f.envelope.task_id).record!, policy: renewal.policy,
+      owner_id: renewal.renewal.owner_id, observed_at: new Date().toISOString(), requested_ttl_ms: renewal.policy.renewal_interval_ms,
+      binding_generation: renewal.renewal.binding_generation, runtime_effect_id: renewal.renewal.runtime_effect_id,
+      expected_current_sha256: renewal.current.current_sha256 });
+    await Bun.sleep(renewal.policy.renewal_interval_ms + 50);
+    const denied = spawnSync(process.execPath, [join(import.meta.dir, '../../scripts/contract-run.ts'), 'run',
+      '--repo', f.envelope.worktree_path, '--contract', f.envelope.plan.contract_path, '--campaign-handoff', 'selector.json',
+      '--campaign-parent-host', f.input.host, '--campaign-parent-session', f.input.session_id,
+      '--campaign-provider', 'codex-exec', '--json'], { env, encoding: 'utf8', timeout: 10000 });
+    // Historical final replay may report pass, but unknown effects never authorize a rebind.
+    expect(denied.status, denied.stderr).toBe(0);
+    expect(JSON.parse(denied.stdout).campaign_recovery).toBeUndefined();
     expect(readLease(f.root, f.envelope.task_id).record!.generation).toBe(f.envelope.generation);
   } finally {
     try { process.kill(Number(readFileSync(join(f.envelope.worktree_path, 'detached.pid'), 'utf8')), 'SIGKILL'); } catch { /* Fixture descendant may already have exited. */ }
@@ -229,6 +254,57 @@ async function runHistoricalProvider(f: Awaited<ReturnType<typeof acquired>>, en
   }
   return installHistoricalFinal(f, f.historical, attempt, 'final.json', settle, { status: verdict, failure_class: verdict === 'pass' ? null : 'contract_failed' });
 }
+
+test('run automatically recovers only an already-retired proven orphan with its exact parent and final', async () => {
+  const f = await acquired(); const env = installProviderFixture(f);
+  await runHistoricalProvider(f, env, 'pass', false);
+  const worktree = f.envelope.worktree_path;
+  writeFileSync(join(worktree, 'automatic-selector.json'), JSON.stringify(f.input.selector));
+  const spawned = join(worktree, 'unexpected-provider-spawn');
+  writeFileSync(join(env.PATH!.split(':')[0]!, 'codex'), `#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(spawned)}, 'unexpected'); process.exit(27);\n`);
+  const args = [join(import.meta.dir, '../../scripts/contract-run.ts'), 'run', '--repo', worktree,
+    '--contract', f.envelope.plan.contract_path, '--campaign-handoff', 'automatic-selector.json',
+    '--campaign-parent-host', f.input.host, '--campaign-parent-session', f.input.session_id,
+    '--campaign-provider', 'codex-exec', '--json'];
+  const before = readLease(f.root, f.envelope.task_id).record!;
+  const notRetired = spawnSync(process.execPath, args, { env, encoding: 'utf8', timeout: 10000 });
+  expect(notRetired.status, notRetired.stderr).toBe(0);
+  expect(JSON.parse(notRetired.stdout).campaign_recovery).toBeUndefined();
+  expect(readLease(f.root, f.envelope.task_id).record).toEqual(before);
+  expect(existsSync(spawned)).toBe(false);
+  retireCampaignDispatch(f.input);
+  const liveness = readLeaseLiveness(f.root, f.envelope.task_id);
+  renewLeaseLiveness({ repo_root: f.root, owner: before, policy: liveness.policy,
+    owner_id: liveness.renewal.owner_id, observed_at: new Date().toISOString(),
+    requested_ttl_ms: liveness.policy.renewal_interval_ms,
+    binding_generation: liveness.renewal.binding_generation, runtime_effect_id: liveness.renewal.runtime_effect_id,
+    expected_current_sha256: liveness.current.current_sha256 });
+  await Bun.sleep(liveness.policy.renewal_interval_ms + 50);
+  const wrong = args.map(value => value === f.input.session_id ? 'unrelated-parent' : value);
+  const denied = spawnSync(process.execPath, wrong, { env, encoding: 'utf8', timeout: 10000 });
+  expect(denied.status).not.toBe(0);
+  expect(denied.stderr).toContain('authorized local parent');
+  expect(readLease(f.root, f.envelope.task_id).record).toEqual(before);
+  const eligible = observeCampaignReclaimEligibility({ ...f.input, env });
+  expect(eligible.classification, JSON.stringify(eligible.evidence)).toBe('reclaimable');
+  const budgetState = readAutomationBudgetStatus(f.root, ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env }).budget.automation_run_id, env);
+  expect(budgetState.current.state).toBe('active');
+  expect(budgetState.stop_receipt).toBeNull();
+  const result = spawnSync(process.execPath, args, { env, encoding: 'utf8', timeout: 10000 });
+  expect(result.status, result.stderr).toBe(0);
+  const manifest = JSON.parse(result.stdout);
+  expect(manifest.campaign_recovery, JSON.stringify({ status: manifest.status, eligibility: readLeaseReclaimEligibility(f.root, f.envelope.task_id) })).toBeDefined();
+  expect(manifest.campaign_recovery.disposition).toBe('settled_final');
+  expect(manifest.failure_class).toBeNull();
+  const owner = readLease(f.root, f.envelope.task_id).record!;
+  expect(owner.generation).toBe(before.generation + 1);
+  expect(readClaimActorReceipt(f.root, owner.task_id, owner.claim_id)).toEqual(manifest.campaign_recovery.receipt);
+  expect(readClaimTokenForTask(worktree, owner.task_id)).toMatchObject({ outcome: 'found', token: { claim_id: owner.claim_id } });
+  const replay = spawnSync(process.execPath, args, { env, encoding: 'utf8', timeout: 10000 });
+  expect(replay.status, replay.stderr).toBe(0);
+  expect(readLease(f.root, f.envelope.task_id).record).toEqual(owner);
+  expect(existsSync(spawned)).toBe(false);
+}, 60000);
 
 test('two OS callers settle the historical final under one recovered generation', async () => {
   const f = await acquired(); const env = installProviderFixture(f);

@@ -286,10 +286,10 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       ].join('\n'));
       writeFixture(fixture.cwd, '.ai/harness/workflow-contract.json', '{}\n');
       const nowMs = Date.now();
-      const risk: EffectiveStateRiskInput = { explicitOverride: 'strict' };
+      const risk: EffectiveStateRiskInput = { explicitOverride: 'high' };
 
       const authority = resolveEffectiveState(fixture.cwd, nowMs, risk);
-      expect(authority.workflow_profile).toBe('strict');
+      expect(authority.workflow_profile).toBe('high');
       expect(authority.blockers).toEqual([]);
       expect(authority.readiness?.ok).toBe(true);
       const readiness = authority.readiness as OperationReadinessResult;
@@ -322,7 +322,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
         cwd: fixture.cwd,
         input: JSON.stringify({ stop_hook_active: false, last_assistant_message: '' }),
         encoding: 'utf-8',
-        env: { ...process.env, HOOK_HOST: 'claude', REPO_HARNESS_WORKFLOW_PROFILE: 'strict' },
+        env: { ...process.env, HOOK_HOST: 'claude', REPO_HARNESS_WORKFLOW_PROFILE: 'high' },
       });
       expect(hook.status).toBe(0);
       expect(hook.stdout).not.toContain('"decision":"block"');

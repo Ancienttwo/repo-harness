@@ -214,7 +214,7 @@ describe('run-identity acceptance probe: SessionStart -> PostToolUse.bash', () =
         HOOK_REPO_ROOT: root,
         HOOK_HOST: 'claude',
         HOOK_SESSION_ID: 'run-identity-acceptance-session',
-        REPO_HARNESS_WORKFLOW_PROFILE: 'lite',
+        REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
         // Deliberately absent: HOOK_RUN_ID / CODEX_RUN_ID / CLAUDE_RUN_ID.
         // Omitting every upstream run-identity source forces the mint path,
         // so this probe actually exercises SessionStart's minting rather

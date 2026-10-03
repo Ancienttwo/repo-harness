@@ -1,23 +1,4 @@
-/**
- * Pure artifact-requirement policy matrix for Lite/Standard/Strict x
- * edit/stop/ship.
- *
- * This module is the single source of truth for which ceremony artifacts
- * (contract, worktree, review, evidence, ...) each workflow profile
- * requires for each operation. Every requirement key and per-cell value
- * derives 1:1 from the nine approved `target_delta` records frozen by
- * LSC-01 in `tests/state/fixtures/loop-semantics/characterization.json`;
- * see `tasks/notes/20260718-1405-lsc-02-artifact-requirement-policy.notes.md`
- * for the record -> key derivation.
- *
- * LSC-03 wired this module's `resolve()` into `projectEffectiveState`
- * (`src/core/state/project-effective-state.ts`) for Standard work-package
- * contract-policy parity; LSC-04..08 cut PreEdit, Stop, ship, and adapter
- * consumers over one package at a time. This module performs no
- * fs/process/env/network access and imports only the `WorkflowProfile` type
- * from `./profile`. It does not reuse or extend `WorkflowOperationKind`,
- * which is a different (risk-signal) axis with no `stop`/`ship` member.
- */
+/** Actual operation boundaries; workflow-stage artifacts never grant edit/Stop permission. */
 import type { WorkflowProfile } from './profile';
 
 /**
@@ -54,8 +35,8 @@ export interface ArtifactRequirementEntry {
 }
 
 /**
- * Exhaustive Lite/Standard/Strict x edit/stop/ship matrix. The mapped type
- * over `WorkflowProfile` and `ArtifactRequirementOperation` forces all nine
+ * Exhaustive routine/high × edit/stop/ship policy. The mapped type
+ * over `WorkflowProfile` and `ArtifactRequirementOperation` forces all six
  * cells to be present at compile time -- totality is enforced by types, not
  * by a runtime default.
  */
@@ -65,67 +46,29 @@ export type ArtifactRequirementMatrix = {
   };
 };
 
-/**
- * The literal policy matrix. Derivation (per cell, per key) is recorded in
- * `tasks/notes/20260718-1405-lsc-02-artifact-requirement-policy.notes.md`.
- *
- * Lite carries only baseline safety/evidence keys (no ceremony artifacts).
- * Standard requires a complete approved work package; its `separate_contract`
- * (and, for ship, `external_acceptance`) default to not_required but may be
- * raised by risk or explicit policy. Strict is the maximal fail-closed
- * envelope: every key it names is unconditionally required.
- */
+/** Both risk levels share the same effect boundaries; risk selects review, not ceremony. */
 export const ARTIFACT_REQUIREMENT_MATRIX: ArtifactRequirementMatrix = {
-  lite: {
-    edit: [
-      { key: 'safe_path', defaultStatus: 'required' },
-      { key: 'worktree_boundary', defaultStatus: 'required' },
-      { key: 'destructive_action_boundary', defaultStatus: 'required' },
-    ],
-    stop: [
-      { key: 'durable_recovery_state', defaultStatus: 'required' },
-    ],
+  routine: {
+    edit: [{ key: 'safe_path', defaultStatus: 'required' }],
+    stop: [],
     ship: [
       { key: 'subject_bound_targeted_evidence', defaultStatus: 'required' },
+      { key: 'candidate_revision_precondition', defaultStatus: 'required' },
     ],
   },
-  standard: {
-    edit: [
-      { key: 'complete_approved_work_package', defaultStatus: 'required' },
-      { key: 'separate_contract', defaultStatus: 'not_required' },
-    ],
-    stop: [
-      { key: 'durable_recovery_state', defaultStatus: 'required' },
-    ],
+  high: {
+    edit: [{ key: 'safe_path', defaultStatus: 'required' }],
+    stop: [],
     ship: [
-      { key: 'complete_approved_work_package', defaultStatus: 'required' },
       { key: 'subject_bound_targeted_evidence', defaultStatus: 'required' },
-      { key: 'separate_contract', defaultStatus: 'not_required' },
-      { key: 'external_acceptance', defaultStatus: 'not_required' },
-    ],
-  },
-  strict: {
-    edit: [
-      { key: 'separate_contract', defaultStatus: 'required' },
-      { key: 'isolated_contract_worktree', defaultStatus: 'required' },
-    ],
-    stop: [
-      { key: 'durable_recovery_state', defaultStatus: 'required' },
-    ],
-    ship: [
-      { key: 'separate_contract', defaultStatus: 'required' },
-      { key: 'isolated_contract_worktree', defaultStatus: 'required' },
-      { key: 'fresh_review', defaultStatus: 'required' },
-      { key: 'external_acceptance', defaultStatus: 'required' },
-      { key: 'fresh_checks', defaultStatus: 'required' },
       { key: 'candidate_revision_precondition', defaultStatus: 'required' },
     ],
   },
 };
 
 const KNOWN_PROFILES: ReadonlySet<string> = new Set(Object.keys(ARTIFACT_REQUIREMENT_MATRIX));
-const KNOWN_OPERATIONS: ReadonlySet<string> = new Set(Object.keys(ARTIFACT_REQUIREMENT_MATRIX.lite));
-const PROFILE_RANK: Readonly<Record<WorkflowProfile, number>> = { lite: 0, standard: 1, strict: 2 };
+const KNOWN_OPERATIONS: ReadonlySet<string> = new Set(Object.keys(ARTIFACT_REQUIREMENT_MATRIX.routine));
+const PROFILE_RANK: Readonly<Record<WorkflowProfile, number>> = { routine: 0, high: 1 };
 /**
  * Derived from `ARTIFACT_REQUIREMENT_MATRIX` itself (every requirement key
  * appears in at least one cell), so this stays the single source of truth
@@ -147,7 +90,7 @@ export interface ArtifactRequirementResolveInput {
   readonly operation: ArtifactRequirementOperation;
   /**
    * An independently computed risk signal, ranked on the same
-   * lite < standard < strict scale as `profile`. When `risk` outranks
+   * routine < high scale as `profile`. When `risk` outranks
    * `profile`, every not_required entry in the resolved cell is raised to
    * required. Omit when no distinct risk signal is available.
    */

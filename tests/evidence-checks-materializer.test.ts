@@ -479,7 +479,7 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
       const oracle = { id: "published-package-runtime-readback", kind: "runtime_readback" as const, paths: ["*"] };
       const assessment = assessChange({
         subject,
-        workflowProfile: "strict",
+        workflowProfile: 'high',
         strictCategories: ["release"],
         patternNoveltyPaths: [],
         declaredOracles: [oracle],

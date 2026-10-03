@@ -24,9 +24,8 @@ import type {
 } from './types';
 
 const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
-  lite: 'brief -> edit -> targeted test; no workflow artifacts are required for the currently observed scope. User-requested planning is allowed',
-  standard: 'at most one active plan artifact; no contract, notes, or todos scaffolding beyond it',
-  strict: 'full envelope: plan, contract, notes, and checks as required',
+  routine: 'Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR',
+  high: 'Use the same verification evidence; consult a reviewer for large changes, security/permissions, or uncertainty',
 };
 
 export interface EffectiveStateReviewSubject {
@@ -249,30 +248,6 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   const workflowProfile = input.riskResolution.ok ? input.riskResolution.profile : null;
 
   const blockers = conflictingSources.map((source) => `conflict:${source}`);
-  if (
-    input.planPath &&
-    (input.planStatus === 'approved' || input.planStatus === 'executing') &&
-    !input.contractText
-  ) {
-    // Fail closed by default (unresolvable profile keeps blocking); only a
-    // resolved cell that marks `separate_contract` required overrides that.
-    // Standard's not_required cell and Lite's absent entry both leave this
-    // false, which is how the Standard collapse into missing_contract
-    // disappears without any consumer-specific branch here or in the policy
-    // module itself.
-    let separateContractRequired = true;
-    if (workflowProfile) {
-      const contractPolicy = resolveArtifactRequirement({ profile: workflowProfile, operation: 'edit' });
-      separateContractRequired = contractPolicy.ok
-        ? contractPolicy.requirements.some(
-            (requirement) => requirement.key === 'separate_contract' && requirement.status === 'required',
-          )
-        : true;
-    }
-    if (separateContractRequired) {
-      blockers.push('missing_contract');
-    }
-  }
   if (checksFreshness === 'fresh' && checksStatus && checksStatus !== 'pass') {
     blockers.push(failureClass === 'missing_artifact' ? 'checks_artifact_invalid' : 'checks_failed');
   }
@@ -329,6 +304,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   const readiness: EvaluateReadinessResult | null = workflowProfile
     ? (() => {
         const satisfiedRequirements: ArtifactRequirementKey[] = [];
+        if (input.unsafeEditTargetPathCount === 0) satisfiedRequirements.push('safe_path');
         if (input.contractText) satisfiedRequirements.push('separate_contract');
         if (input.worktreeOwnerIsCurrent) satisfiedRequirements.push('worktree_boundary');
         if (input.isolatedContractWorktree) satisfiedRequirements.push('isolated_contract_worktree');

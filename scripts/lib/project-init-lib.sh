@@ -1548,7 +1548,7 @@ pi_write_harness_policy() {
     "events_file": ".ai/harness/events.jsonl",
     "architecture_events_file": ".ai/harness/architecture/events.jsonl",
     "runs_dir": ".ai/harness/runs",
-    "helper_runtime_dir": "package:assets/templates/helpers",
+    "helper_runtime_dir": "package:scripts",
     "helper_source": "package"
   },
   "architecture": {
@@ -1601,7 +1601,7 @@ pi_write_harness_policy() {
       "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
     },
     "assets": {
-      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "package:assets/templates/helpers", "docs/reference-configs/"],
+      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "package:scripts", "docs/reference-configs/"],
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
     },
     "memory": {

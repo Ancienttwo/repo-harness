@@ -85,6 +85,8 @@ export interface ExclusiveDirectoryLockOptions {
   readonly reclaimStaleEmptyDirectory?: boolean;
   readonly reclaimStaleOwner?: boolean;
   readonly waitTimeoutMs?: number;
+  /** Protocol-specific proof required in addition to an exact dead owner. */
+  readonly canReclaimStaleOwner?: (owner: ExclusiveDirectoryLockOwner, record: Readonly<Record<string, unknown>>) => boolean;
   /**
    * Called once for each stale lock this acquisition reclaimed.
    *
@@ -303,6 +305,7 @@ export function readExclusiveDirectoryLockOwner(
 function reclaimStaleLockDirectory(
   location: LockLocation,
   reclaimStaleEmptyDirectory: boolean,
+  canReclaimStaleOwner: ExclusiveDirectoryLockOptions['canReclaimStaleOwner'],
 ): boolean {
   assertLockAncestors(location);
   let observedDirectoryIdentity: FileIdentity;
@@ -349,26 +352,28 @@ function reclaimStaleLockDirectory(
   const observedOwnerPath = join(location.lockPath, entry);
   let reclaim = false;
   let observedOwnerIdentity: FileIdentity;
-  let observedOwnerMtimeMs: number;
   try {
     const observedOwner = lstatSync(observedOwnerPath);
     if (!observedOwner.isFile()) return false;
     observedOwnerIdentity = fileIdentity(observedOwner);
-    observedOwnerMtimeMs = observedOwner.mtimeMs;
   } catch {
     return false;
   }
+  let observedBytes: string;
+  let ownerRecord: Record<string, unknown>;
+  const owner = { lockPath: location.lockPath, pid: observedToken.pid, token: observedToken.token };
   try {
-    const raw = readFileSync(observedOwnerPath, 'utf-8');
-    const lock = JSON.parse(raw) as { pid?: unknown; created_at?: unknown; token?: unknown };
-    const pid = typeof lock.pid === 'number' ? lock.pid : null;
-    const token = typeof lock.token === 'string' ? lock.token : null;
-    reclaim = token === observedToken.token
-      && pid === observedToken.pid
-      && !ownerIsAlive(observedToken.pid);
+    observedBytes = readFileSync(observedOwnerPath, 'utf-8');
+    const parsed: unknown = JSON.parse(observedBytes);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    ownerRecord = parsed as Record<string, unknown>;
+    reclaim = ownerRecord.token === observedToken.token
+      && ownerRecord.pid === observedToken.pid
+      && !ownerIsAlive(observedToken.pid)
+      && (!canReclaimStaleOwner || canReclaimStaleOwner(owner, ownerRecord) === true);
   } catch {
-    reclaim = Date.now() - observedOwnerMtimeMs > LOCK_STALE_MS
-      && !ownerIsAlive(observedToken.pid);
+    // A filename and elapsed time cannot authenticate a malformed owner record.
+    return false;
   }
   if (!reclaim) return false;
 
@@ -379,7 +384,12 @@ function reclaimStaleLockDirectory(
     if (!currentDirectory.isDirectory()
       || !sameFileIdentity(fileIdentity(currentDirectory), observedDirectoryIdentity)
       || !currentOwner.isFile()
-      || !sameFileIdentity(fileIdentity(currentOwner), observedOwnerIdentity)) return false;
+      || !sameFileIdentity(fileIdentity(currentOwner), observedOwnerIdentity)
+      || readdirSync(location.lockPath).length !== 1
+      || readdirSync(location.lockPath)[0] !== entry
+      || readFileSync(observedOwnerPath, 'utf-8') !== observedBytes
+      || ownerIsAlive(observedToken.pid)
+      || (canReclaimStaleOwner && canReclaimStaleOwner(owner, ownerRecord) !== true)) return false;
     // Delete only the exact observed token. A legitimate new owner always has
     // a different UUID filename, so its token makes rmdir fail closed.
     unlinkSync(observedOwnerPath);
@@ -422,13 +432,13 @@ export function acquireExclusiveDirectoryLock(
         throw pathError;
       }
       if (options.reclaimStaleOwner !== false
-        && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true)) {
+        && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true, options.canReclaimStaleOwner)) {
         options.onStaleReclaim?.(location.lockPath);
       }
       if (Date.now() >= deadline) {
         throw new ExclusiveLockContentionError(
           `timed out waiting for exclusive lock ${location.lockPath}; `
-          + 'verify the owner is not live before manual cleanup',
+          + 'owner liveness or safe automatic recovery could not be proven',
           location.lockPath,
           'timeout',
         );

@@ -1,421 +1,63 @@
-import { recordFixtureAcceptance } from './helpers/repo-fixture';
-import { ROOT as scriptROOT } from "./helpers/helper-script-fixture";
-import { run } from "./helpers/repo-fixture";
-
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createHash } from 'crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { dirname, join } from 'path';
-import { acceptanceAuthorityFingerprint, acceptanceReceiptPath, recordAcceptance, sealArchiveProjection, verifyAcceptance } from '../scripts/acceptance-receipt';
-import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
-import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
-import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
-
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const ROOT = join(import.meta.dir, '..');
-const SCRIPT = join(ROOT, 'scripts', 'merge-gate.ts');
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true });
-});
-
-
-function git(cwd: string, ...args: string[]): string {
-  const result = run('git', args, cwd);
-  expect(result.status, result.stderr).toBe(0);
-  return result.stdout.trim();
+const SCRIPT = join(ROOT, 'scripts/merge-gate.ts');
+const roots: string[] = [];
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+function git(root: string, ...args: string[]) {
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(r.stderr); return r.stdout.trim();
 }
-
-function commit(cwd: string, message: string): void {
-  git(cwd, 'add', '-A');
-  git(cwd, 'commit', '-m', message);
+function fixture(disabled = false) {
+  const root = mkdtempSync(join(tmpdir(), 'automatic-merge-gate-')); roots.push(root);
+  git(root, 'init', '-b', 'main'); git(root, 'config', 'user.name', 'Gate Test'); git(root, 'config', 'user.email', 'gate@example.invalid');
+  mkdirSync(join(root, '.ai/harness'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ merge_gate: { enabled: !disabled } }));
+  writeFileSync(join(root, 'base.txt'), 'base'); git(root, 'add', '-A'); git(root, 'commit', '-m', 'base');
+  git(root, 'switch', '-c', 'codex/test'); writeFileSync(join(root, 'feature.txt'), 'feature');
+  git(root, 'add', '-A'); git(root, 'commit', '-m', 'candidate');
+  return root;
 }
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+function invoke(root: string, command: string, rest: string[] = []) {
+  return spawnSync(process.execPath, [SCRIPT, command, '--base', 'main', ...rest], { cwd: root, encoding: 'utf8', timeout: 10000 });
 }
-
-function changeAssessmentEvidence(cwd: string): Record<string, unknown> {
-  const prepared = prepareChangeAssessment({ repoRoot: cwd, contractPath: 'tasks/contracts/demo.contract.md' });
-  if (prepared.assessment.status !== 'ready' || !prepared.packet || prepared.packet.status !== 'ready') {
-    throw new Error('fixture Change Assessment must be ready');
-  }
-  const basis = {
-    schema: 'repo-harness-change-assessment-evidence.v1',
-    status: 'pass',
-    assessment: prepared.assessment,
-    selection_packet: prepared.packet,
-  };
-  return { ...basis, evidence_sha256: `sha256:${createHash('sha256').update(stableJson(basis)).digest('hex')}` };
-}
-
-async function makeFixture(seedCandidate?: (cwd: string) => void) {
-  const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-merge-seal-repo-'));
-  const home = mkdtempSync(join(tmpdir(), 'repo-harness-merge-seal-home-'));
-  tempDirs.push(cwd, home);
-  git(cwd, 'init', '-b', 'main');
-  git(cwd, 'config', 'user.name', 'Merge Seal Test');
-  git(cwd, 'config', 'user.email', 'merge-seal@test.local');
-  mkdirSync(join(cwd, '.ai', 'harness', 'checks'), { recursive: true });
-  mkdirSync(join(cwd, 'plans'), { recursive: true });
-  mkdirSync(join(cwd, 'tasks', 'contracts'), { recursive: true });
-  mkdirSync(join(cwd, 'tasks', 'reviews'), { recursive: true });
-  writeFileSync(join(cwd, '.gitignore'), '.ai/harness/checks/\n');
-  writeFileSync(join(cwd, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
-    worktree_strategy: { review_base: 'main' },
-    merge_gate: { enabled: true, rule: 'fixture' },
-  }, null, 2)}\n`);
-  writeFileSync(join(cwd, 'base.txt'), 'base\n');
-  commit(cwd, 'base');
-  git(cwd, 'checkout', '-b', 'codex/demo');
-  writeFileSync(join(cwd, 'feature.txt'), 'candidate\n');
-  writeFileSync(join(cwd, 'plans', 'plan-demo.md'), '# Plan: demo\n\n> **Status**: Executing\n');
-  writeFileSync(join(cwd, 'tasks', 'contracts', 'demo.contract.md'), [
-    '# Task Contract: demo',
-    '',
-    '> **Status**: Active',
-    '> **Plan**: plans/plan-demo.md',
-    '> **Owner**: kito',
-    '',
-    '## Acceptance Policy',
-    '',
-    '```json',
-    '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
-    '```',
-    '',
-    '## Change Assessment',
-    '',
-    '```json',
-    '{"protocol":1,"oracles":[]}',
-    '```',
-    '',
-    '## Verification Plan',
-    '',
-    '```json',
-    '{"protocol":1,"checks":[]}',
-    '```',
-    '',
-  ].join('\n'));
-  writeFileSync(join(cwd, 'tasks', 'reviews', 'demo.review.md'), '# Review\n\n> **Recommendation**: pass\n');
-  // Seeded before the candidate commit so the acceptance receipt covers the
-  // same subject the gate scans: a later commit would fail on staleness first
-  // and never reach the leak scan.
-  seedCandidate?.(cwd);
-  commit(cwd, 'candidate');
-  const subject = buildReviewSubject(cwd, { targetRef: 'main' });
-  const execution_evaluation = executeVerificationContract({
-    repoRoot: cwd,
-    contractPath: 'tasks/contracts/demo.contract.md',
+describe('main automatic check boundary', () => {
+  test('old policy switch cannot disable main checks and ordinary fingerprint needs no plan or receipt', () => {
+    const root = fixture(true);
+    const observed = invoke(root, 'fingerprint', ['--format', 'required']);
+    expect(observed.status).toBe(0); expect(observed.stdout.trim()).toBe('true');
+    const refused = invoke(root, 'run');
+    expect(refused.status).not.toBe(0); expect(refused.stderr).toContain('GitHub PR readback unavailable');
+    expect(existsSync(join(root, 'tasks'))).toBe(false);
   });
-  expect(execution_evaluation.passed).toBe(true);
-  writeFileSync(join(cwd, '.ai', 'harness', 'checks', 'latest.json'), `${JSON.stringify({
-    schema: 'repo-harness-run-trace.v1',
-    source: 'verify-sprint',
-    status: 'pass',
-    exit_code: 0,
-    active_plan: 'plans/plan-demo.md',
-    review_subject_sha256: subject.review_subject_sha256,
-    benchmark_evidence: { status: 'not_applicable', report_sha256: 'not-applicable' },
-    commands: [{ name: 'verify-sprint', status: 'pass', exit_code: 0 }],
-    guards: [
-      { name: 'contract', status: 'pass' },
-      { name: 'review', status: 'pass' },
-      { name: 'allowed_paths', status: 'pass' },
-      { name: 'change_assessment', status: 'pass' },
-    ],
-    contract: { file: 'tasks/contracts/demo.contract.md', execution_evaluation },
-    review: { file: 'tasks/reviews/demo.review.md' },
-    change_assessment: changeAssessmentEvidence(cwd),
-  }, null, 2)}\n`);
-
-  const providerCalls = join(home, 'provider-calls');
-  writeFileSync(providerCalls, '1\n');
-  await recordFixtureAcceptance({
-    root: cwd,
-    authorityHome: home,
-    contract: 'tasks/contracts/demo.contract.md',
-    verification: '.ai/harness/checks/latest.json',
-    disposition: 'external_pass',
-    reviewer: 'Claude',
-    source: 'generic-review',
-    actor: null,
-    summary: 'the sole semantic reviewer accepted the candidate',
-    findings: [],
+  test('credential scan rejects before push and never prints matched bytes', () => {
+    const root = fixture(); const secret = ['ghp_', 'A'.repeat(36)].join('');
+    writeFileSync(join(root, 'feature.txt'), secret); git(root, 'add', '-A'); git(root, 'commit', '-m', 'unsafe candidate');
+    const r = invoke(root, 'fingerprint');
+    expect(r.status).not.toBe(0); expect(r.stderr).toContain('github-personal-token');
+    expect(r.stderr).not.toContain(secret); expect(r.stdout).not.toContain(secret);
   });
-  const harness = join(home, 'merge-gate-harness.ts');
-  writeFileSync(harness, `import { runMergeGateCli } from ${JSON.stringify(SCRIPT)};\nawait runMergeGateCli(process.argv.slice(2), ${JSON.stringify(home)});\n`);
-  return { cwd, home, harness, providerCalls };
-}
-
-function archiveAcceptedFixture(cwd: string, home: string, apply = true): Record<string, string> {
-  const livePlan = 'plans/plan-demo.md';
-  const liveContract = 'tasks/contracts/demo.contract.md';
-  const liveReview = 'tasks/reviews/demo.review.md';
-  const archivedPlan = 'plans/archive/plan-demo.md';
-  const archivedContract = 'tasks/archive/contract-20260904-demo.md';
-  const archivedReview = 'tasks/archive/review-20260904-demo.md';
-  const projection = [
-    `> **Archive Projection V1**: \`${livePlan}\` => \`${archivedPlan}\``,
-    `> **Archive Projection V1**: \`${liveContract}\` => \`${archivedContract}\``,
-    `> **Archive Projection V1**: \`${liveReview}\` => \`${archivedReview}\``,
-  ];
-  const envelope = (lifecycle: 'plan' | 'contract' | 'review') => [
-    '> **Archived**: 2026-09-04 09:45',
-    `> **Related Plan**: ${archivedPlan}`,
-    '> **Outcome**: Completed',
-    `> **Lifecycle**: ${lifecycle}`,
-    '> **Parent Run ID**: merge-gate-archive-fixture',
-    ...projection,
-    '',
-  ];
-
-  const archivedPlanContent = [
-    ...envelope('plan'),
-    readFileSync(join(cwd, livePlan), 'utf-8')
-      .replace('> **Status**: Executing', '> **Status**: Archived')
-      .replaceAll(livePlan, archivedPlan)
-      .replaceAll(liveContract, archivedContract),
-  ].join('\n');
-  const archivedContractContent = [
-    ...envelope('contract'),
-    readFileSync(join(cwd, liveContract), 'utf-8')
-      .replaceAll(livePlan, archivedPlan)
-      .replaceAll(liveContract, archivedContract),
-  ].join('\n');
-  const archivedReviewContent = [
-    ...envelope('review'),
-    readFileSync(join(cwd, liveReview), 'utf-8')
-      .replaceAll(livePlan, archivedPlan)
-      .replaceAll(liveReview, archivedReview),
-  ].join('\n');
-  const destinations = {
-    [archivedPlan]: `sha256:${createHash('sha256').update(archivedPlanContent).digest('hex')}`,
-    [archivedContract]: `sha256:${createHash('sha256').update(archivedContractContent).digest('hex')}`,
-    [archivedReview]: `sha256:${createHash('sha256').update(archivedReviewContent).digest('hex')}`,
-  };
-  if (!apply) return destinations;
-
-  mkdirSync(join(cwd, 'plans', 'archive'), { recursive: true });
-  mkdirSync(join(cwd, 'tasks', 'archive'), { recursive: true });
-  writeFileSync(join(cwd, archivedPlan), archivedPlanContent);
-  writeFileSync(join(cwd, archivedContract), archivedContractContent);
-  writeFileSync(join(cwd, archivedReview), archivedReviewContent);
-  rmSync(join(cwd, livePlan));
-  rmSync(join(cwd, liveContract));
-  rmSync(join(cwd, liveReview));
-  commit(cwd, 'archive accepted workflow');
-  sealArchiveProjection({ root: cwd, authorityHome: home, contract: archivedContract });
-  return destinations;
-}
-
-describe('provider-free merge seal', () => {
-  test('consumes the one AcceptanceReceipt and binds exact base/head/full diff locally', async () => {
-    const fixture = await makeFixture();
-    const required = run('bun', [fixture.harness, 'fingerprint', '--base', 'main', '--format', 'required'], fixture.cwd);
-    expect(required.status, required.stderr).toBe(0);
-    expect(required.stdout.trim()).toBe('true');
-    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'json'], fixture.cwd);
-    expect(sealed.status, sealed.stderr).toBe(0);
-    expect(JSON.parse(sealed.stdout).required).toBe(true);
-    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-
-    const sealPath = join(dirname(acceptanceReceiptPath(fixture.cwd, fixture.home)), 'merge-seal.latest.json');
-    const seal = JSON.parse(readFileSync(sealPath, 'utf-8'));
-    expect(seal.kind).toBe('repo-harness-merge-seal');
-    expect(seal.base_sha).toBe(git(fixture.cwd, 'rev-parse', 'main'));
-    expect(seal.head_sha).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
-    expect(seal.diff_fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(seal).not.toHaveProperty('runner');
-    expect(seal).not.toHaveProperty('agent');
-
-    const verified = run('bun', [fixture.harness, 'verify', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(verified.status, verified.stderr).toBe(0);
-    expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
-    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  }, 30_000);
-
-  test('review-only head movement needs only reseal; semantic movement invalidates acceptance', async () => {
-    const fixture = await makeFixture();
-    expect(run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd).status).toBe(0);
-    writeFileSync(join(fixture.cwd, 'tasks', 'reviews', 'demo.review.md'), '# Review\n\nprojection changed\n');
-    commit(fixture.cwd, 'review projection');
-    const staleSeal = run('bun', [fixture.harness, 'verify', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(staleSeal.status).not.toBe(0);
-    expect(staleSeal.stderr).toContain('merge seal head_sha is stale');
-    expect(run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd).status).toBe(0);
-
-    writeFileSync(join(fixture.cwd, 'feature.txt'), 'semantic movement\n');
-    commit(fixture.cwd, 'semantic movement');
-    const invalid = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(invalid.status).not.toBe(0);
-    expect(invalid.stderr).toContain('semantic subject is stale');
-    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  }, 30_000);
-
-  test('both non-overlapping and overlapping target movement require current integration evidence while preserving the historical receipt', async () => {
-    const fixture = await makeFixture();
-    git(fixture.cwd, 'checkout', 'main');
-    writeFileSync(join(fixture.cwd, 'other.txt'), 'target advanced\n');
-    commit(fixture.cwd, 'advance base');
-    git(fixture.cwd, 'checkout', 'codex/demo');
-    expect((await verifyAcceptance({ root: fixture.cwd, authorityHome: fixture.home })).disposition).toBe('external_pass');
-    const resealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(resealed.status).not.toBe(0);
-    expect(resealed.stderr).toContain('current integration evidence is required');
-    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-
-    const overlap = await makeFixture();
-    git(overlap.cwd, 'checkout', 'main');
-    writeFileSync(join(overlap.cwd, 'feature.txt'), 'target overlap\n');
-    commit(overlap.cwd, 'advance overlapping base');
-    git(overlap.cwd, 'checkout', 'codex/demo');
-    expect((await verifyAcceptance({ root: overlap.cwd, authorityHome: overlap.home })).disposition).toBe('external_pass');
-    const overlapReseal = run('bun', [overlap.harness, 'run', '--base', 'main', '--format', 'sha'], overlap.cwd);
-    expect(overlapReseal.status).not.toBe(0);
-    expect(overlapReseal.stderr).toContain('current integration evidence is required');
-    expect(readFileSync(overlap.providerCalls, 'utf-8').trim()).toBe('1');
-  }, 30_000);
-
-  test('post-freeze lifecycle commit verifies against the sealed head without another provider call', async () => {
-    const fixture = await makeFixture();
-    const sealed = run('bun', [
-      fixture.harness,
-      'run',
-      '--base', 'main',
-      '--allow-post-freeze', 'tasks/todos.md',
-      '--format', 'sha',
-    ], fixture.cwd);
-    expect(sealed.status, sealed.stderr).toBe(0);
-
-    mkdirSync(join(fixture.cwd, 'tasks'), { recursive: true });
-    writeFileSync(join(fixture.cwd, 'tasks', 'todos.md'), '# Todos\n\nlifecycle projection\n');
-    commit(fixture.cwd, 'archive lifecycle projection');
-
-    const verified = run('bun', [fixture.harness, 'verify', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(verified.status, verified.stderr).toBe(0);
-    expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
-    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  }, 30_000);
-
-  test('post-freeze archive projection preserves the already sealed acceptance authority', async () => {
-    const fixture = await makeFixture();
-    const beforeArchive = acceptanceAuthorityFingerprint(fixture.cwd, fixture.home);
-    const destinations = archiveAcceptedFixture(fixture.cwd, fixture.home, false);
-    const sealed = run('bun', [
-      fixture.harness,
-      'run',
-      '--base', 'main',
-      '--allow-post-freeze', 'plans/plan-demo.md',
-      '--allow-post-freeze', 'plans/archive/plan-demo.md',
-      '--allow-post-freeze', 'tasks/contracts/demo.contract.md',
-      '--allow-post-freeze', 'tasks/archive/contract-20260904-demo.md',
-      '--allow-post-freeze', 'tasks/reviews/demo.review.md',
-      '--allow-post-freeze', 'tasks/archive/review-20260904-demo.md',
-      '--expect-post-freeze-destination', `plans/archive/plan-demo.md=${destinations['plans/archive/plan-demo.md']}`,
-      '--expect-post-freeze-destination', `tasks/archive/contract-20260904-demo.md=${destinations['tasks/archive/contract-20260904-demo.md']}`,
-      '--expect-post-freeze-destination', `tasks/archive/review-20260904-demo.md=${destinations['tasks/archive/review-20260904-demo.md']}`,
-      '--format', 'sha',
-    ], fixture.cwd);
-    expect(sealed.status, sealed.stderr).toBe(0);
-    const sealPath = join(dirname(acceptanceReceiptPath(fixture.cwd, fixture.home)), 'merge-seal.latest.json');
-    const frozenSeal = JSON.parse(readFileSync(sealPath, 'utf-8')) as { acceptance_receipt_sha256: string };
-    expect(frozenSeal.acceptance_receipt_sha256).toBe(beforeArchive);
-
-    archiveAcceptedFixture(fixture.cwd, fixture.home);
-    const afterArchive = acceptanceAuthorityFingerprint(fixture.cwd, fixture.home);
-    expect(afterArchive).not.toBe(beforeArchive);
-    expect(frozenSeal.acceptance_receipt_sha256).not.toBe(afterArchive);
-
-    const verified = run('bun', [fixture.harness, 'verify', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(verified.status, verified.stderr).toBe(0);
-    expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
-    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  }, 30_000);
-});
-
-/**
- * The seeded credential is assembled at runtime: a literal token shape in this
- * file would be an added line in this repository's own merge candidate and
- * would trip the very scan under test.
- */
-describe('merge candidate leak scan', () => {
-  const FAKE_AWS_KEY = `AKIA${'A'.repeat(16)}`;
-
-  function sealFile(cwd: string, home: string): string {
-    return join(dirname(acceptanceReceiptPath(cwd, home)), 'merge-seal.latest.json');
-  }
-
-  test('an added credential line fails the run before any seal is written', async () => {
-    const fixture = await makeFixture((cwd) => {
-      writeFileSync(join(cwd, 'feature.txt'), `candidate\nAWS_ACCESS_KEY_ID=${FAKE_AWS_KEY}\n`);
-    });
-    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(sealed.status).not.toBe(0);
-    expect(sealed.stderr).toContain('leak scan blocked the merge candidate');
-    expect(sealed.stderr).toContain('aws-access-key-id');
-    expect(sealed.stderr).toContain('feature.txt');
-    expect(sealed.stderr).not.toContain(FAKE_AWS_KEY);
-    expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(false);
-  }, 30_000);
-
-  test('a candidate free of leak patterns still seals', async () => {
-    const fixture = await makeFixture();
-    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(sealed.status, sealed.stderr).toBe(0);
-    expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(true);
-  }, 30_000);
-
-  test('a changed file under _ops/ fails the run before any seal is written', async () => {
-    const fixture = await makeFixture((cwd) => {
-      mkdirSync(join(cwd, '_ops'), { recursive: true });
-      writeFileSync(join(cwd, '_ops', 'provider-state.json'), '{"local":true}\n');
-    });
-    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(sealed.status).not.toBe(0);
-    expect(sealed.stderr).toContain('leak scan blocked the merge candidate');
-    expect(sealed.stderr).toContain('local-ops-path');
-    expect(sealed.stderr).toContain('_ops/provider-state.json');
-    expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(false);
-  }, 30_000);
-});
-
-describe("merge-gate helper integration", () => {
-  test("provider-free merge seal runs after the candidate commit and is reverified before merge or push", () => {
-    const contract = readFileSync(join(scriptROOT, "scripts/contract-worktree.sh"), "utf-8");
-    const ship = readFileSync(join(scriptROOT, "scripts/ship-worktrees.sh"), "utf-8");
-    expect(contract.indexOf('git commit -m "$commit_message"')).toBeLessThan(
-      contract.indexOf('run_merge_gate "$gate_base_ref" "$post_freeze_manifest"'),
-    );
-    const publicationCommitIndex = contract.indexOf('publication_sha="$(git commit-tree "$publication_tree"');
-    const publicationPreparedIndex = contract.indexOf('finish_transaction_phase publication_prepared "$publication_sha"');
-    const publicationMergeIndex = contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"');
-    const publicationMergedIndex = contract.indexOf('finish_transaction_phase merged "$publication_sha"');
-    for (const index of [publicationCommitIndex, publicationPreparedIndex, publicationMergeIndex, publicationMergedIndex]) {
-      expect(index).toBeGreaterThanOrEqual(0);
-    }
-    expect(contract.indexOf('verify_merge_gate_seal "$gate_base_ref"')).toBeLessThan(publicationCommitIndex);
-    expect(publicationPreparedIndex).toBeLessThan(publicationMergeIndex);
-    expect(publicationMergeIndex).toBeLessThan(publicationMergedIndex);
-    expect(contract).toContain('if [[ "$commit_gpgsign" == "true" ]]; then');
-    expect(contract).toContain('-m "Source-Worktree-Head: $verified_sha" -S)');
-    expect(contract).toContain('local merge gate base must equal target branch $target_branch');
-    expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
-      ship.indexOf('push_branch "$branch" "$verified_sha"'),
-    );
-    expect(ship.indexOf('verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
-      ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"'),
-    );
-    expect(ship.indexOf("\n  ship_transaction_begin\n")).toBeLessThan(
-      ship.indexOf('finish_contract_worktree "pr" "$gate_base_ref"'),
-    );
-    expect(ship.indexOf('push_branch "$branch" "$verified_sha"')).toBeLessThan(
-      ship.indexOf("\n  ship_transaction_commit\n"),
-    );
-    expect(ship).toContain('git push "$REMOTE_NAME" "$verified_sha:refs/heads/$branch"');
-    expect(ship).toContain('+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH');
+  test('dirty candidate is refused before provider readback without erasing work', () => {
+    const root = fixture(); writeFileSync(join(root, 'work.txt'), 'keep');
+    const r = invoke(root, 'run');
+    expect(r.status).not.toBe(0); expect(r.stderr).toContain('candidate worktree is dirty');
+    expect(existsSync(join(root, 'work.txt'))).toBe(true);
+  });
+  test('post-freeze lifecycle exceptions are not a second authority', () => {
+    const r = invoke(fixture(), 'run', ['--allow-post-freeze', 'tasks/current.md']);
+    expect(r.status).not.toBe(0); expect(r.stderr).toContain('unknown argument');
+  });
+  test('candidate-owned helper cannot authorize its own merge', () => {
+    const root = fixture(); mkdirSync(join(root, 'scripts'));
+    copyFileSync(SCRIPT, join(root, 'scripts/merge-gate.ts'));
+    copyFileSync(join(ROOT, 'scripts/acceptance-receipt.ts'), join(root, 'scripts/acceptance-receipt.ts'));
+    symlinkSync(join(ROOT, 'src'), join(root, 'src'), 'dir');
+    symlinkSync(join(ROOT, 'node_modules'), join(root, 'node_modules'), 'dir');
+    git(root, 'add', '-A'); git(root, 'commit', '-m', 'candidate helper');
+    const r = spawnSync(process.execPath, [join(root, 'scripts/merge-gate.ts'), 'run', '--base', 'main'], { cwd: root, encoding: 'utf8', timeout: 10000 });
+    expect(r.status).not.toBe(0); expect(r.stderr).toContain('installed repo-harness helper runtime');
   });
 });

@@ -233,7 +233,7 @@ export function buildStateCommand(): Command {
     .requiredOption('--json', 'Output the effective state as JSON')
     .option('--target-path <path...>', 'Concrete target path(s) for deterministic risk resolution')
     .option('--operation <kind>', 'Deterministic operation kind')
-    .option('--profile <profile>', 'Explicit workflow profile override; may only raise the risk floor')
+    .option('--profile <profile>', 'Explicit routine or high risk override; may only raise the risk floor')
     .option(
       '--field <name>',
       'Print only this top-level field of the resolved state (e.g. workflow_profile) instead of the full JSON document; a pure output projection, the resolver is unchanged',

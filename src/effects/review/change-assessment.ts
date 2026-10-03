@@ -86,7 +86,7 @@ export function collectPatternNoveltyPaths(repoRoot: string, subject: ReviewSubj
 }
 
 function profileFor(paths: readonly string[]): { readonly workflowProfile: WorkflowProfile; readonly strictCategories: readonly StrictRiskCategory[] } {
-  if (paths.length === 0) return { workflowProfile: 'lite', strictCategories: [] };
+  if (paths.length === 0) return { workflowProfile: 'routine', strictCategories: [] };
   const profile = resolveWorkflowProfile({ targetPaths: paths, strictScanPaths: paths, operationKind: 'edit' });
   if (!profile.ok) throw new Error(`workflow profile is unavailable: ${profile.message}`);
   return { workflowProfile: profile.profile, strictCategories: profile.signals.strictCategories };

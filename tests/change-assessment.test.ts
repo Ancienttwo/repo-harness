@@ -45,7 +45,7 @@ function subject(paths = ['src/example.ts']): AssessmentSubject {
 
 function readyAssessment(paths = ['src/example.ts']) {
   const result = assessChange({
-    subject: subject(paths), workflowProfile: 'lite', strictCategories: [], patternNoveltyPaths: [], declaredOracles: [],
+    subject: subject(paths), workflowProfile: 'routine', strictCategories: [], patternNoveltyPaths: [], declaredOracles: [],
   });
   if (result.status !== 'ready') throw new Error('fixture assessment must be ready');
   return result;
@@ -77,27 +77,27 @@ function fixture(): string {
 describe('ChangeAssessment v1', () => {
   test('is a final-subject pure function with closed, monotonic reason routing', () => {
     const authority = assessChange({
-      subject: subject(), workflowProfile: 'strict', strictCategories: ['security'], patternNoveltyPaths: [],
+      subject: subject(), workflowProfile: 'high', strictCategories: ['security'], patternNoveltyPaths: [],
       declaredOracles: [{ id: 'deterministic', kind: 'deterministic_test', paths: ['*'] }],
     });
     expect(authority.status).toBe('ready');
     expect(requireReady(authority).reasons.map((entry) => entry.code)).toEqual(['authority_change']);
 
     const irreversible = assessChange({
-      subject: subject(), workflowProfile: 'strict', strictCategories: ['migration'], patternNoveltyPaths: [],
+      subject: subject(), workflowProfile: 'high', strictCategories: ['migration'], patternNoveltyPaths: [],
       declaredOracles: [{ id: 'runtime', kind: 'runtime_readback', paths: ['*'] }],
     });
     expect(irreversible.status).toBe('ready');
     expect(requireReady(irreversible).reasons.map((entry) => entry.code)).toEqual(['irreversible_effect']);
 
     const novelty = assessChange({
-      subject: subject(), workflowProfile: 'lite', strictCategories: [], patternNoveltyPaths: ['src/example.ts'],
+      subject: subject(), workflowProfile: 'routine', strictCategories: [], patternNoveltyPaths: ['src/example.ts'],
       declaredOracles: [{ id: 'deterministic', kind: 'deterministic_test', paths: ['src/example.ts'] }],
     });
     expect(requireReady(novelty).reasons.map((entry) => entry.code)).toEqual(['pattern_novelty']);
 
     const oracleGap = assessChange({
-      subject: subject(), workflowProfile: 'strict', strictCategories: ['auth'], patternNoveltyPaths: [], declaredOracles: [],
+      subject: subject(), workflowProfile: 'high', strictCategories: ['auth'], patternNoveltyPaths: [], declaredOracles: [],
     });
     expect(oracleGap.status).toBe('blocked');
     expect(requireReady(oracleGap).reasons.map((entry) => entry.code)).toEqual(['authority_change', 'oracle_gap']);
@@ -122,7 +122,7 @@ describe('ChangeAssessment v1', () => {
   test('fails closed for a degraded subject and missing policy base', () => {
     const degraded = assessChange({
       subject: { ...subject(), status: 'unknown', reason: 'git observation failed' },
-      workflowProfile: 'lite', strictCategories: [], patternNoveltyPaths: [], declaredOracles: [],
+      workflowProfile: 'routine', strictCategories: [], patternNoveltyPaths: [], declaredOracles: [],
     });
     expect(degraded).toMatchObject({ status: 'degraded', code: 'subject_unavailable' });
 
@@ -135,7 +135,7 @@ describe('ChangeAssessment v1', () => {
   test('requires an allowed oracle kind to cover every path of every risk reason', () => {
     const paths = ['src/left.ts', 'src/right.ts'];
     const partial = assessChange({
-      subject: subject(paths), workflowProfile: 'strict', strictCategories: ['auth'], patternNoveltyPaths: [],
+      subject: subject(paths), workflowProfile: 'high', strictCategories: ['auth'], patternNoveltyPaths: [],
       declaredOracles: [{ id: 'left-only', kind: 'deterministic_test', paths: ['src/left.ts'] }],
     });
     expect(partial.status).toBe('blocked');
@@ -145,7 +145,7 @@ describe('ChangeAssessment v1', () => {
     ]));
 
     const novelty = assessChange({
-      subject: subject(paths), workflowProfile: 'lite', strictCategories: [], patternNoveltyPaths: paths,
+      subject: subject(paths), workflowProfile: 'routine', strictCategories: [], patternNoveltyPaths: paths,
       declaredOracles: [{ id: 'left-only', kind: 'deterministic_test', paths: ['src/left.ts'] }],
     });
     expect(novelty.status).toBe('blocked');

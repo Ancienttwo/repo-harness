@@ -14,87 +14,40 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixtur
 setDefaultTimeout(30000);
 
 describe("ship-worktrees helper integration", () => {
-  test("ship-worktrees should put dirty main closeout on a PR branch", () => {
-    const cwd = tmpWorkspace("helper-ship-main-closeout");
-    const remotePath = `${cwd}-remote.git`;
-    const fakeBin = `${cwd}-fake-bin`;
-    const ghLog = `${cwd}-gh.log`;
-    try {
-      copyHelpers(cwd);
-      initGitRepo(cwd);
-      writeFileSync(join(cwd, "README.md"), "# demo\n");
-      commitAll(cwd, "init main closeout");
-      expect(run("git", ["init", "--bare", remotePath], cwd).status).toBe(0);
-      expect(run("git", ["remote", "add", "origin", remotePath], cwd).status).toBe(0);
-      expect(run("git", ["push", "-u", "origin", "main"], cwd).status).toBe(0);
-
-      mkdirSync(fakeBin, { recursive: true });
-      writeFileSync(
-        join(fakeBin, "gh"),
-        [
-          "#!/bin/sh",
-          "echo \"$@\" >> \"$GH_LOG\"",
-          "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then exit 0; fi",
-          "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"create\" ]; then echo \"https://example.test/pr/2\"; exit 0; fi",
-          "exit 1",
-        ].join("\n") + "\n"
-      );
-      expect(run("chmod", ["+x", join(fakeBin, "gh")], cwd).status).toBe(0);
-
-      writeFileSync(join(cwd, "main-dirty.txt"), "closeout\n");
-      const ship = run("bash", ["scripts/ship-worktrees.sh", "--slug", "demo"], cwd, {
-        GH_LOG: ghLog,
-        PATH: `${fakeBin}:${process.env.PATH}`,
-        REPO_HARNESS_BASH_BIN: "/bin/bash",
-        REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
-        REPO_HARNESS_GH_BIN: join(fakeBin, "gh"),
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-      });
-      expect(ship.status).toBe(0);
-      expect(run("git", ["branch", "--show-current"], cwd).stdout.trim()).toBe("codex/demo-main-closeout");
-      expect(run("git", ["show", "main:main-dirty.txt"], cwd).status).not.toBe(0);
-      expect(run("git", ["ls-remote", "--heads", "origin", "codex/demo-main-closeout"], cwd).stdout).toContain("refs/heads/codex/demo-main-closeout");
-      expect(readFileSync(ghLog, "utf-8")).toContain("pr create --base main --head codex/demo-main-closeout");
-    } finally {
-      rmSync(remotePath, { recursive: true, force: true });
-      rmSync(fakeBin, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 15000);
-
-  test("ship-worktrees rejects gated dirty-main closeout without a goal before branch mutation", () => {
-    const cwd = tmpWorkspace("helper-ship-main-gated-no-goal");
-    const remotePath = `${cwd}-remote.git`;
-    try {
-      copyHelpers(cwd);
-      initGitRepo(cwd);
-      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/policy.json"), `${JSON.stringify({ merge_gate: { enabled: true, rule: "fixture" } }, null, 2)}\n`);
-      writeFileSync(join(cwd, "README.md"), "# gated demo\n");
-      commitAll(cwd, "init gated main closeout");
-      expect(run("git", ["init", "--bare", remotePath], cwd).status).toBe(0);
-      expect(run("git", ["remote", "add", "origin", remotePath], cwd).status).toBe(0);
-      expect(run("git", ["push", "-u", "origin", "main"], cwd).status).toBe(0);
-
-      writeFileSync(join(cwd, "main-dirty.txt"), "closeout\n");
-      const ship = run("bash", ["scripts/ship-worktrees.sh", "--slug", "demo"], cwd, {
-        REPO_HARNESS_BASH_BIN: "/bin/bash",
-        REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
-        REPO_HARNESS_HELPER_SOURCE_PATH: join(HELPER_DIR, "ship-worktrees.sh"),
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-      });
-      expect(ship.status).toBe(1);
-      expect(ship.stderr).toContain("has no active goal plan; use a contract worktree");
-      expect(run("git", ["branch", "--show-current"], cwd).stdout.trim()).toBe("main");
-      expect(existsSync(join(cwd, "main-dirty.txt"))).toBe(true);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo-main-closeout"], cwd).status).not.toBe(0);
-    } finally {
-      rmSync(remotePath, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 15000);
+  test("ordinary branch opens a Draft PR without workflow artifacts", () => withPlainShipFixture((fixture) => {
+    expect(run("git", ["switch", "-c", "feature/plain"], fixture.cwd).status).toBe(0);
+    writeFileSync(join(fixture.cwd,"change.txt"),"ordinary change\n");
+    const result=fixture.ship([]);
+    expect(result.status,`${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(run("git",["ls-remote","origin","refs/heads/feature/plain"],fixture.cwd).stdout).toContain("refs/heads/feature/plain");
+    expect(readFileSync(fixture.log,"utf8")).toContain("pr create");
+    expect(existsSync(join(fixture.cwd,"tasks/contracts"))).toBe(false);
+    expect(existsSync(join(fixture.cwd,".ai/harness/checks/latest.json"))).toBe(false);
+  }));
+  test("dirty main opens its named PR branch without a workflow plan", () => withPlainShipFixture((fixture) => {
+    writeFileSync(join(fixture.cwd,"main-change.txt"),"main change\n");
+    const result=fixture.ship(["--slug","plain"]);
+    expect(result.status,`${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(run("git",["branch","--show-current"],fixture.cwd).stdout.trim()).toBe("codex/plain-main-closeout");
+    expect(run("git",["show","main:main-change.txt"],fixture.cwd).status).not.toBe(0);
+  }));
+  test("unknown PR readback preserves the push and recovery never creates twice", () => withPlainShipFixture((fixture) => {
+    expect(run("git",["switch","-c","feature/recover"],fixture.cwd).status).toBe(0);
+    writeFileSync(join(fixture.cwd,"change.txt"),"recover change\n");
+    expect(fixture.ship([],{PR_READBACK_FAIL:"1"}).status).not.toBe(0);
+    const before=run("git",["ls-remote","origin","refs/heads/feature/recover"],fixture.cwd).stdout;
+    expect(before).not.toBe("");
+    const recovery=fixture.ship(["--recover","reconcile"]);
+    expect(recovery.status,`${recovery.stdout}\n${recovery.stderr}`).toBe(0);
+    expect(run("git",["ls-remote","origin","refs/heads/feature/recover"],fixture.cwd).stdout).toBe(before);
+    expect(readFileSync(fixture.log,"utf8").split("\n").filter(line=>line.startsWith("pr create "))).toHaveLength(1);
+  }));
+  test("credential scan refuses push before PR creation", () => withPlainShipFixture((fixture) => {
+    expect(run("git",["switch","-c","feature/private"],fixture.cwd).status).toBe(0);
+    writeFileSync(join(fixture.cwd,"credential.txt"),["_auth", "Token", "=fixture-value\n"].join(""));
+    expect(fixture.ship([]).status).not.toBe(0);
+    expect(run("git",["ls-remote","origin","refs/heads/feature/private"],fixture.cwd).stdout).toBe("");
+  }));
 
   test("ship-worktrees cleanup-merged should refuse dirty merged source worktree", () => {
     const cwd = tmpWorkspace("helper-ship-cleanup-dirty-merged");
@@ -168,7 +121,7 @@ describe("ship-worktrees helper integration", () => {
     }
   }, 15000);
 
-  test("ship-worktrees cleanup-merged can discard scaffold-only dirty merged worktree", () => {
+  test("scaffold-only dirt is preserved despite the retired discard flag", () => {
     const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-discard");
     const worktreePath = `${cwd}-wt-demo`;
     try {
@@ -198,13 +151,9 @@ describe("ship-worktrees helper integration", () => {
         ["scripts/ship-worktrees.sh", "--cleanup-merged", "--discard-scaffold-only", "--target", "main"],
         cwd
       );
-      expect(cleanup.status).toBe(0);
-      expect(cleanup.stdout).toContain("Discarded scaffold-only changes");
-      expect(cleanup.stdout).toContain("Removed worktree");
-      expect(cleanup.stdout).toContain("Deleted branch: codex/demo");
-      expect(existsSync(worktreePath)).toBe(false);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
-      expect(existsSync(join(cwd, ".ai/harness/worktrees/demo.json"))).toBe(false);
+      expect(cleanup.status).not.toBe(0);
+      expect(cleanup.stderr).toContain("dirty work requires a user decision");
+      expect(existsSync(worktreePath)).toBe(true);
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
       rmSync(worktreePath, { recursive: true, force: true });
@@ -212,7 +161,7 @@ describe("ship-worktrees helper integration", () => {
     }
   }, 15000);
 
-  test("ship-worktrees cleanup-merged can discard scaffold-only dirty merged worktree with no untracked paths", () => {
+  test("scaffold-only tracked dirt is preserved despite the retired discard flag", () => {
     const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-tracked-only");
     const worktreePath = `${cwd}-wt-demo`;
     try {
@@ -245,13 +194,9 @@ describe("ship-worktrees helper integration", () => {
         cwd
       );
       expect(cleanup.stderr).not.toContain("unbound variable");
-      expect(cleanup.status).toBe(0);
-      expect(cleanup.stdout).toContain("Discarded scaffold-only changes");
-      expect(cleanup.stdout).toContain("Removed worktree");
-      expect(cleanup.stdout).toContain("Deleted branch: codex/demo");
-      expect(existsSync(worktreePath)).toBe(false);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
-      expect(existsSync(join(cwd, ".ai/harness/worktrees/demo.json"))).toBe(false);
+      expect(cleanup.status).not.toBe(0);
+      expect(cleanup.stderr).toContain("dirty work requires a user decision");
+      expect(existsSync(worktreePath)).toBe(true);
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
       rmSync(worktreePath, { recursive: true, force: true });
@@ -259,7 +204,7 @@ describe("ship-worktrees helper integration", () => {
     }
   }, 15000);
 
-  test("ship-worktrees cleanup-merged should require explicit scaffold discard flag", () => {
+  test("dirty cleanup requires a user decision and preserves all files", () => {
     const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-no-flag");
     const worktreePath = `${cwd}-wt-demo`;
     try {
@@ -280,7 +225,7 @@ describe("ship-worktrees helper integration", () => {
       const cleanup = run("bash", ["scripts/ship-worktrees.sh", "--cleanup-merged", "--target", "main"], cwd);
       expect(cleanup.status).toBe(1);
       expect(cleanup.stderr).toContain("dirty merged linked worktree");
-      expect(cleanup.stderr).toContain("--discard-scaffold-only");
+      expect(cleanup.stderr).toContain("user decision");
       expect(existsSync(join(worktreePath, "tasks/todos.md"))).toBe(true);
       expect(readFileSync(join(worktreePath, "tasks/todos.md"), "utf8")).toContain("generated scaffold");
       expect(existsSync(worktreePath)).toBe(true);
@@ -292,3 +237,34 @@ describe("ship-worktrees helper integration", () => {
     }
   }, 15000);
 });
+
+function withPlainShipFixture(work:(fixture:{cwd:string;log:string;ship:(args:string[],extra?:NodeJS.ProcessEnv)=>ReturnType<typeof run>})=>void):void {
+  const cwd=tmpWorkspace('plain-ship'); const remote=`${cwd}-remote.git`; const fakeBin=`${cwd}-provider`;
+  const log=`${cwd}-provider.log`;const store=`${cwd}-pr.json`;
+  try {
+    copyHelpers(cwd);initGitRepo(cwd);
+    writeFileSync(join(cwd,'README.md'),'# fixture\n');
+    writeFileSync(join(cwd,'.gitignore'),'.ai/harness/\nnode_modules/\n');
+    mkdirSync(join(cwd,'.ai/harness'),{recursive:true});
+    writeFileSync(join(cwd,'.ai/harness/policy.json'),JSON.stringify({merge_gate:{enabled:true}}));
+    commitAll(cwd,'seed');
+    expect(run('git',['init','--bare',remote],cwd).status).toBe(0);
+    expect(run('git',['remote','add','origin',remote],cwd).status).toBe(0);
+    expect(run('git',['push','-u','origin','main'],cwd).status).toBe(0);
+    mkdirSync(fakeBin,{recursive:true});const gh=join(fakeBin,'gh');
+    writeFileSync(gh,[`#!${process.execPath}`,
+      'const fs=require("fs"),{execFileSync}=require("child_process");const a=process.argv.slice(2);fs.appendFileSync(process.env.GH_LOG,a.join(" ")+"\\n");',
+      'if(a[0]==="pr"&&a[1]==="list"){if(fs.existsSync(process.env.GH_STORE))console.log("https://example.test/pr/2");process.exit(0);}',
+      'if(a[0]==="pr"&&a[1]==="create"){fs.writeFileSync(process.env.GH_STORE,"created");console.log("https://example.test/pr/2");process.exit(0);}',
+      'if(a[0]==="pr"&&a[1]==="view"){if(process.env.PR_READBACK_FAIL==="1")process.exit(61);const git=(args)=>execFileSync("/usr/bin/git",args,{encoding:"utf8"}).trim();console.log(JSON.stringify({number:2,url:"https://example.test/pr/2",headRefName:git(["branch","--show-current"]),baseRefName:"main",headRefOid:git(["rev-parse","HEAD"]),baseRefOid:git(["rev-parse","origin/main"])}));process.exit(0);}',
+      'process.exit(1);',''].join('\n'));
+    expect(run('chmod',['+x',gh],cwd).status).toBe(0);
+    const ship=(args:string[],extra:NodeJS.ProcessEnv={})=>run('bash',['scripts/ship-worktrees.sh',...args],cwd,{
+      REPO_HARNESS_BASH_BIN:'/bin/bash',REPO_HARNESS_BUN_BIN:process.execPath,REPO_HARNESS_GIT_BIN:'/usr/bin/git',
+      REPO_HARNESS_GH_BIN:gh,REPO_HARNESS_WORKFLOW_STATE_LIB:join(ROOT,'assets/hooks/lib/workflow-state.sh'),GH_LOG:log,GH_STORE:store,...extra,
+    });
+    work({cwd,log,ship});
+  } finally {
+    for(const path of [cwd,remote,fakeBin,log,store])rmSync(path,{recursive:true,force:true});
+  }
+}

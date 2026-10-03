@@ -161,7 +161,7 @@ describe('HRD-09 terminal runtime migration', () => {
             HOOK_HOST: fixture.host,
             HOOK_SESSION_ID: 'hrd09-fixture',
             HOOK_RUN_ID: 'hrd09-fixture-run',
-            REPO_HARNESS_WORKFLOW_PROFILE: 'lite',
+            REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
             REPO_HARNESS_CLI: join(ROOT, 'src/cli/index.ts'),
           },
         });
