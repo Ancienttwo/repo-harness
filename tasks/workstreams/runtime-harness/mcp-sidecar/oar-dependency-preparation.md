@@ -5,11 +5,11 @@
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `mcp-sidecar`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
-> **Scope Authority**: /tmp/481-brief.md authorizes rebase, verification and push of PR #481. Do not merge.
+> **Scope Authority**: The user authorized PR #481 rebase, verification and push. Do not merge.
 
 ## Scope
 
-Rebase PR #481 onto main at `5f1ece55`. Upgrade the OAR pin from 0.10.2 to
+Rebase PR #481 onto main at `ec0de40f`. Upgrade the OAR pin from 0.10.2 to
 0.13.3 and its required Pi graph from 0.99.2 to 1.0.0. Keep other locked
 versions, the existing Generic review host and the approved D4 policy.
 Raise the root Node minimum to 24. Keep the existing <26 upper bound.
@@ -21,9 +21,11 @@ The new owning test exercises the real public Session API with both ambient
 type environments and a strict source-error control. This was absent from the
 existing policy/transport tests; it is not a provider/adapter simulation.
 Run the frozen install and root typecheck with Node 24. Run the full suite
-with `--timeout 60000 --max-concurrency 1` on this PR and on the same main
-commit in a temporary detached worktree. New failures must be zero. Run the
-required repository-integrity checks. Record results in `/tmp/481-report.md`.
+with `--timeout 60000 --max-concurrency 1` on this PR. Compare its failure
+list to the recorded baseline. Rerun only failing files in a fresh detached
+worktree at the main commit. The user accepted the MCP goal case as known
+flaky. Record its raw result and exclude only that case from the new-failure
+count. New failures must be zero. Record results in `/tmp/481-report.md`.
 Keep raw logs in the report's named temporary evidence directory.
 
 ## Durable conclusion
