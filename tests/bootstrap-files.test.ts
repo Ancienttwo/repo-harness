@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, lstatSync } from "fs";
 import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -127,9 +127,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(evaluator).toContain("Workspace-write is disposable-only");
 
     const routing = read("docs/reference-configs/agentic-development-flow.md");
-    expect(routing).toContain("host-native Explore");
-    expect(routing).toContain("Formal contract");
-    expect(routing).toContain("prompt inheritance");
+    expect(routing).toContain("Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty");
+    expect(routing).toContain("Ordinary work has no plan/contract/review/notes");
   });
 
   test("repo root should include routing docs and one typed hook implementation", () => {
@@ -148,17 +147,20 @@ describe("Bootstrap Script Contracts", () => {
     const claude = read("CLAUDE.md");
     const agents = read("AGENTS.md");
 
-    expect(claude).toContain("tasks/todos.md");
-    expect(claude).toContain(".ai/hooks/");
-    expect(claude).toContain("agentic-development-flow.md");
-    expect(claude).toContain("external-tooling.md");
-    expect(claude).toContain("geju");
-    expect(claude).not.toContain("gstack");
-    expect(claude).toContain("operations.deploy_sql");
-    expect(agents).toContain("tasks/todos.md");
-    expect(agents).toContain("bash scripts/check-task-workflow.sh --strict");
-    expect(agents).toContain("check-agent-tooling.sh --host both --check-updates");
-    expect(agents).toContain("operations.deploy_sql");
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      expect(lstatSync(join(ROOT, file)).isFile()).toBe(true);
+      expect(read(file)).not.toMatch(/^@(?:AGENTS|CLAUDE)\.md\s*$/m);
+      for (const section of ["Workflow", "Code Optimization Principles", "Testing", "Handoff"]) {
+        expect(read(file)).toContain(`## ${section}\n`);
+      }
+    }
+    const sharedRules = (content: string) => content.split(/\n## (?:Claude Code|Codex)\n/)[0];
+    expect(sharedRules(claude)).toBe(sharedRules(agents));
+    expect(claude).toContain("## Claude Code");
+    expect(claude).toContain("~/.claude/settings.json");
+    expect(agents).toContain("## Codex");
+    expect(agents).toContain("~/.codex/hooks.json");
+    expect(agents).toContain("~/.codex/skills");
   });
 
   test("repo package should expose workflow verification scripts", () => {
@@ -184,17 +186,17 @@ describe("Bootstrap Script Contracts", () => {
     expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
   });
 
-  test("ci gate should refresh handoff current before resume packet", () => {
+  test("ci gate verifies the candidate without creating routine handoff artifacts", () => {
     const ciGate = read("scripts/check-ci.sh");
     const bunfig = read("bunfig.toml");
     const prepare = 'REPO_HARNESS_SKIP_RESUME_REFRESH=1 bash scripts/prepare-handoff.sh "ci gate"';
     const resume = 'bash scripts/codex-handoff-resume.sh --cwd . --reason "ci gate"';
 
     expect(bunfig).toContain("maxConcurrency = 4");
-    expect(ciGate).toContain(prepare);
-    expect(ciGate).toContain(resume);
-    expect(ciGate.indexOf(prepare)).toBeLessThan(ciGate.indexOf(resume));
-    expect(ciGate.indexOf(resume)).toBeLessThan(ciGate.indexOf("bash scripts/check-task-workflow.sh --strict"));
+    expect(ciGate).not.toContain(prepare);
+    expect(ciGate).not.toContain(resume);
+    expect(ciGate).toContain("bun run check:type");
+    expect(ciGate).toContain("run_bun_tests");
   });
 
   test("ci workflow should run MCP path matrix across hosted operating systems", () => {
