@@ -134,6 +134,10 @@ describe("create-project-dirs scaffold parity", () => {
       expect(agents).toBe(readFileSync(join(cwd, "CLAUDE.md"), "utf-8"));
 
       const template = readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8");
+      expect(template).toBe(readFileSync(join(ROOT, "assets/templates/plan.template.md"), "utf-8"));
+      for (const field of ["P1 map:", "P2 trace:", "P3 decision rationale:"]) {
+        expect(template).not.toContain(field);
+      }
       expect(template).toContain("## Agentic Routing");
       expect(template).toContain("## Workflow Inventory");
       expect(template).toContain("Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree");

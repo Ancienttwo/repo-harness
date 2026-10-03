@@ -34,6 +34,9 @@ describe("new-plan helper integration", () => {
       const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-my-feature\.md$/.test(name));
       expect(plans.length).toBe(1);
       const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+      for (const field of ["P1 map:", "P2 trace:", "P3 decision rationale:"]) {
+        expect(plan).not.toContain(field);
+      }
       expect(plan).toContain("## Workflow Inventory");
       expect(plan).toContain("## Promotion Gate");
       expect(plan).toContain("> **Artifact Level**: work-package");
@@ -44,6 +47,25 @@ describe("new-plan helper integration", () => {
       expect(plan).toContain("repo-harness run plan-to-todo --plan");
       expect(plan).toContain(".ai/harness/active-worktree");
       expect(existsSync(join(cwd, "docs/plan.md"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("new-plan creates the same template without 3P fields when no local template exists", () => {
+    const cwd = tmpWorkspace("helper-new-plan-template");
+    try {
+      copyHelpers(cwd);
+      const res = run("bash", ["scripts/new-plan.sh", "--slug", "fallback"], cwd);
+      expect(res.status).toBe(0);
+      const canonical = readFileSync(join(TEMPLATE_DIR, "plan.template.md"), "utf-8");
+      expect(readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8")).toBe(canonical);
+      const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-fallback\.md$/.test(name));
+      expect(plans.length).toBe(1);
+      const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+      for (const field of ["P1 map:", "P2 trace:", "P3 decision rationale:"]) {
+        expect(plan).not.toContain(field);
+      }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
