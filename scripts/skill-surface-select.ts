@@ -60,6 +60,13 @@ function loadCatalog(): SkillSurfaceCatalog {
 
 async function main(argv: readonly string[]): Promise<void> {
   const [subcommand, ...rest] = argv;
+  if (subcommand === "remove-dangling-links") {
+    const { removeOwnedDanglingSkillLinks } = await import("../src/effects/skill-tree-integrity");
+    for (const link of removeOwnedDanglingSkillLinks(join(SCRIPT_DIR, ".."), rest)) {
+      console.log(`[sync-installed] removed dangling skill symlink: ${link}`);
+    }
+    return;
+  }
   if (subcommand === "managed-tree-hash") {
     // Single authority for installed-copy ownership hashes: the shell sync
     // script's owner markers and the TS installer must hash identically.
@@ -128,7 +135,7 @@ async function main(argv: readonly string[]): Promise<void> {
     for (const name of placements.codex) console.log(`codex ${name}`);
     return;
   }
-  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected audience-sources|facades|profile-projection|facade-sources|external-skills|host-placements|managed-tree-hash`);
+  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected audience-sources|facades|profile-projection|facade-sources|external-skills|host-placements|managed-tree-hash|remove-dangling-links`);
 }
 
 await main(process.argv.slice(2));

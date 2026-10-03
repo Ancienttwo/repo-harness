@@ -70,6 +70,7 @@ import {
   type CandidateReconciliationReceipt,
 } from './runtime/candidate-reconciliation';
 import { windowsProtectedHelperConfigPath } from '../effects/runtime/protected-helper-platform';
+import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
 import {
   applyInstallProfile,
   beginInstallHostTransaction,
@@ -426,12 +427,22 @@ async function runGlobalRuntimeBootstrap(
     ? planLegacyInstallProfileMigration(profile)
     : planInstallProfile(profile, currentProfile);
   if (rawOpts.dryRun === true) {
-    if (rawOpts.json === true) console.log(JSON.stringify(profilePlan, null, 2));
+    const home = process.env.HOME ?? homedir();
+    const codexRoot = process.env.CODEX_SKILLS_ROOT || join(home, '.codex', 'skills');
+    const claudeRoot = process.env.CLAUDE_SKILLS_ROOT
+      || (process.env.CODEX_SKILLS_ROOT ? '' : join(home, '.claude', 'skills'));
+    const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
+      join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
+      [codexRoot, claudeRoot],
+      true,
+    );
+    if (rawOpts.json === true) console.log(JSON.stringify({ ...profilePlan, removedDanglingSkillLinks }, null, 2));
     else {
       console.log(`[profile] requested=${profile} current=${currentProfile?.profile ?? 'none'}`);
       console.log(`[profile] install=${profilePlan.install.join(',') || '(none)'}`);
       console.log(`[profile] skip=${profilePlan.skip.join(',') || '(none)'}`);
       console.log(`[profile] remove=${profilePlan.remove.join(',') || '(none)'}`);
+      for (const link of removedDanglingSkillLinks) console.log(`[sync-installed] would remove dangling skill symlink: ${link}`);
     }
     process.exit(0);
   }

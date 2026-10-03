@@ -59,6 +59,42 @@ function writeReadyOfficialCodexPluginCli(home: string): string {
 }
 
 describe('install command (Phase 1B)', () => {
+  test('dry-run reports owned dangling links without changing host files', () => {
+    withTempHome((home) => {
+      const ownedTarget = path.join(ROOT, 'assets/skill-commands/retired-symlink-test');
+      expect(fs.existsSync(ownedTarget)).toBe(false);
+      const foreignTarget = path.join(home, 'Waza', 'think');
+      fs.symlinkSync(path.join(home, 'missing-volume'), path.dirname(foreignTarget));
+      const roots = ['.codex', '.claude'].map((host) => path.join(home, host, 'skills'));
+      for (const root of roots) {
+        fs.mkdirSync(root, { recursive: true });
+        fs.symlinkSync(ownedTarget, path.join(root, 'repo-harness-plan.bak'));
+        fs.symlinkSync(foreignTarget, path.join(root, 'think'));
+      }
+      for (const json of [false, true]) {
+        const result = spawnSync(process.execPath, [CLI, 'install', '--dry-run', ...(json ? ['--json'] : [])], {
+          cwd: ROOT, encoding: 'utf-8',
+          env: { ...process.env, HOME: home, CODEX_SKILLS_ROOT: '', CLAUDE_SKILLS_ROOT: '' },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        for (const root of roots) {
+          const link = path.join(root, 'repo-harness-plan.bak');
+          if (json) expect(JSON.parse(result.stdout).removedDanglingSkillLinks).toContain(link);
+          else expect(result.stdout).toContain(`would remove dangling skill symlink: ${link}`);
+          const foreignLink = path.join(root, 'think');
+          if (json) expect(JSON.parse(result.stdout).removedDanglingSkillLinks).not.toContain(foreignLink);
+          else expect(result.stdout).not.toContain(foreignLink);
+          expect(fs.readdirSync(root).sort()).toEqual(['repo-harness-plan.bak', 'think']);
+          expect(fs.readlinkSync(link)).toBe(ownedTarget);
+          expect(fs.readlinkSync(path.join(root, 'think'))).toBe(foreignTarget);
+        }
+        expect(fs.existsSync(path.join(home, '.repo-harness'))).toBe(false);
+        expect(fs.readdirSync(path.join(home, '.codex'))).toEqual(['skills']);
+        expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['skills']);
+      }
+    });
+  }, 30_000);
+
   test('install profiles bound host route inventory', () => {
     withTempHome((home) => {
       runInstall({ target: 'codex', location: 'global', profile: 'minimal' });
