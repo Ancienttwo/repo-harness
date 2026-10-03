@@ -34,7 +34,7 @@
   },
   "engines": {
     "bun": ">=1.4.0",
-    "node": ">=22.22 <26"
+    "node": ">=24 <26"
   },
   "scripts": {
     "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",
@@ -90,7 +90,7 @@
     "vite": "^8.3.1"
   },
   "dependencies": {
-    "@botiverse/oar": "0.10.2",
+    "@botiverse/oar": "0.13.3",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "archctx": "0.6.1",
     "archctx-contracts": "0.6.1",
