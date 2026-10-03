@@ -349,12 +349,15 @@ describe("run-skill-evals execution", () => {
     cpSync(join(ROOT, "assets", "templates", "helpers"), join(disposableRepo, "assets", "templates", "helpers"), {
       recursive: true,
     });
-    const verifyScript = join(disposableRepo, "assets", "templates", "helpers", "verify-contract.sh");
-    const realVerifyScript = join(disposableRepo, "assets", "templates", "helpers", "verify-contract-real.sh");
+    // The grading process consumes the explicit package execution owner, not
+    // retired shell verifier flags. Keep its complete import tree disposable.
+    for (const dir of ['scripts', 'src']) cpSync(join(ROOT, dir), join(disposableRepo, dir), { recursive: true });
+    const verifyScript = join(disposableRepo, "scripts", "verification-plan.ts");
+    const realVerifyScript = join(disposableRepo, "scripts", "verification-plan-real.ts");
     cpSync(verifyScript, realVerifyScript);
     writeExecutable(
       verifyScript,
-      `#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s|%s\\n" "$HOME" "\${REPO_HARNESS_SOURCE_ROOT:-}" > "$EVAL_GRADER_ENV_PROOF"\nexec "$(dirname "$0")/verify-contract-real.sh" "$@"\n`,
+      `#!/usr/bin/env bun\nimport { writeFileSync } from 'node:fs';\nimport { spawnSync } from 'node:child_process';\nimport { fileURLToPath } from 'node:url';\nwriteFileSync(process.env.EVAL_GRADER_ENV_PROOF!, process.env.HOME + '|' + (process.env.REPO_HARNESS_SOURCE_ROOT ?? '') + '\\n');\nconst result = spawnSync(process.execPath, [fileURLToPath(new URL('./verification-plan-real.ts', import.meta.url)), ...process.argv.slice(2)], { stdio: 'inherit' });\nprocess.exit(result.status ?? 1);\n`,
     );
     const hooksDir = join(disposableBoundary, "git-hooks");
     mkdirSync(hooksDir, { recursive: true });
@@ -828,6 +831,43 @@ printf 'not-json\\n'
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  }, 30_000);
+
+  test.each(['required-file', 'required-pattern', 'forbidden-file', 'forbidden-pattern', 'invalid-pattern'])('file grading fails closed for %s even when commands pass', scenario => {
+    const dir = tempPath('grader-file-predicate');
+    mkdirSync(join(dir, 'bin'));
+    const stubs = createStubCommands(join(dir, 'bin'));
+    const evalsPath = join(dir, 'evals.json');
+    const configPath = join(dir, 'benchmark.config.json');
+    writeEvalManifest(evalsPath, 'skill', ['true']);
+    const manifest = JSON.parse(readFileSync(evalsPath, 'utf8'));
+    const entry = manifest.evals[0];
+    if (scenario === 'required-file') entry.graders.files_exist = ['missing-required.txt'];
+    if (scenario === 'required-pattern') entry.graders.files_contain = [{ path: 'final-response.md', pattern: 'IMPOSSIBLE_MATCH_487' }];
+    if (scenario === 'forbidden-file') entry.anti_graders = { files_not_exist: ['final-response.md'] };
+    if (scenario === 'forbidden-pattern') entry.anti_graders = { files_not_contain: [{ path: 'final-response.md', pattern: 'skill' }] };
+    if (scenario === 'invalid-pattern') entry.anti_graders = { files_not_contain: [{ path: 'final-response.md', pattern: '[' }] };
+    writeFileSync(evalsPath, JSON.stringify(manifest));
+    writeFileSync(configPath, JSON.stringify({
+      workspaceRoot: join(dir, 'workspace'), summaryPath: join(dir, 'summary.md'),
+      agents: { claude: { command: stubs.claude, args: [] }, codex: { command: stubs.codex, args: [] } },
+      profiles: { with_skill: { skillPath: ROOT }, without_skill: {} },
+    }));
+    try {
+      const report = runSkillEvals({ repoRoot: ROOT, configPath, evalsPath, agent: 'claude', profile: 'with_skill',
+        evalFilters: ['repair-agents-task-sync'], now: new Date('2026-03-06T01:02:03Z') });
+      const record = report.records[0]!;
+      expect(record.agentStatus).toBe('success');
+      expect(record.graderStatus).toBe('failed');
+      expect(record.status).toBe('failed');
+      expect(record.graderSummary.failed).toBeGreaterThan(0);
+      const execution = JSON.parse(readFileSync(record.graderReportPath!, 'utf8'));
+      expect(execution.kind).toBe('verification_execution_report');
+      expect(execution.passed).toBe(false);
+      const passingCommand = execution.results.find((result: { command: string }) => result.command.endsWith(' -c true'));
+      expect(passingCommand).toMatchObject({ passed: true, exit_code: 0, execution: 'executed' });
+      expect(passingCommand.run_file).toMatch(/^\.ai\/harness\/runs\/verification-.*\.json$/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 30_000);
 
   test("records agent process failures without crashing the full report generation", () => {
