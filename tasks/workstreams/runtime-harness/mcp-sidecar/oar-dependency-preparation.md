@@ -1,31 +1,30 @@
 # Workstream: OAR dependency preparation
 
 > **Status**: completed
-> **Substantive Change SHA256**: `sha256:a619ba1044c5b5415a2bedcbcb5dcc182e11c0dd040135df32e7fd1fcea20ede`
 > **Capability ID**: `runtime-harness-mcp-sidecar`
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `mcp-sidecar`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
-> **Scope Authority**: Explicit OAR 0.13.3 and D4 decisions, followed by user authorization to create and merge an independent PR
+> **Scope Authority**: /tmp/481-brief.md authorizes rebase, verification and push of PR #481. Do not merge.
 
 ## Scope
 
-From main at `f831c581`, add the exact OAR 0.13.3 dependency and resolved Pi 1.0
-graph, preserve prior locked versions, and apply the approved D4 type-checking
-policy. Align the root Node minimum to 24 for the required dependency while
-retaining the existing <26 upper bound. The latest create-and-merge instruction releases the earlier LOCAL-only
-publication boundary for this independent preparation slice. #476 remains
-separate; its review/isolation implementation is not copied or merged here.
-#473's admission commit and D's unmerged ancestry are excluded from this branch.
+Rebase PR #481 onto main at `5f1ece55`. Upgrade the OAR pin from 0.10.2 to
+0.13.3 and its required Pi graph from 0.99.2 to 1.0.0. Keep other locked
+versions, the existing Generic review host and the approved D4 policy.
+Raise the root Node minimum to 24. Keep the existing <26 upper bound.
+Push only `codex/oar-0133-bump`. Do not merge.
 
 ## Verification boundary
 
 The new owning test exercises the real public Session API with both ambient
 type environments and a strict source-error control. This was absent from the
 existing policy/transport tests; it is not a provider/adapter simulation.
-Dependency graph, public import/lifecycle, root typecheck, package smoke and
-required repository-integrity evidence are recorded under the ignored
-`.ai/harness/runs/oar-bump/` directory. Canonical diff binding is recorded below.
+Run the frozen install and root typecheck with Node 24. Run the full suite
+with `--timeout 60000 --max-concurrency 1` on this PR and on the same main
+commit in a temporary detached worktree. New failures must be zero. Run the
+required repository-integrity checks. Record results in `/tmp/481-report.md`.
+Keep raw logs in the report's named temporary evidence directory.
 
 ## Durable conclusion
 
@@ -36,6 +35,6 @@ needed. The new test file owns an independently meaningful declaration
 boundary, this workstream satisfies task sync, and the research document keeps
 the reusable configuration conclusion at a human reading entrypoint.
 
-Actual CLI/provider integration and security capabilities remain separate and
-unverified. No unrelated runtime, source or release-version changes; Node metadata is
-aligned only to the new required package boundary.
+The existing CLI/provider integration stays on main's implementation. Live
+provider acceptance remains outside this dependency upgrade. No runtime code
+or release version changes are needed.

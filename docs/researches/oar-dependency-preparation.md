@@ -1,9 +1,8 @@
 # OAR dependency preparation
 
-Pin `@botiverse/oar` to 0.13.3 for subsequent provider integration through its
-public runtime and Session APIs. This published version depends on Pi
-coding-agent and Pi AI 1.0.0. The package is not a live worker: this change adds
-no production import, adapter/parser, permission policy or provider launch.
+Upgrade `@botiverse/oar` from 0.10.2 to the exact 0.13.3 pin. This version
+requires Pi coding-agent and Pi AI 1.0.0. Main already has the Generic review
+host. This change keeps its code, isolation policy and build configuration.
 
 ## Runtime and package boundary
 
@@ -11,7 +10,8 @@ OAR owns ACP framing, provider control, typed events and turn/disposal behavior.
 Future applications must consume those existing APIs instead of parsing vendor
 CLI output. Pi's RpcClient is Pi-specific; it must not be rewritten as a Grok
 ACP client. The root manifest pins the OAR version; bun.lock owns the exact
-transitive graph. No existing package versions or declarations are upgraded.
+transitive graph. The required Pi packages move from 0.99.2 to 1.0.0. Other
+locked package versions and root dependency declarations stay unchanged.
 
 OAR requires Node >=24. Use Node 24 for an OAR host and for the public consumer
 checks. The root Node engine range is aligned to `>=24 <26`, preserving the existing
@@ -21,8 +21,9 @@ dependency is upgraded by this metadata change.
 
 ## D4 declaration checking decision
 
-Aimpact explicitly selected `skipLibCheck: true`, as in E2 D4. Root source and
-tests keep `strict: true`. All `.d.ts` bodies are unchecked, including local
+Main already uses the approved D4 setting, `skipLibCheck: true`. This upgrade
+keeps that setting. Root source and tests keep `strict: true`. All `.d.ts`
+bodies are unchecked, including local
 `src/operator-web/styles.d.ts` and SDK/transitive declarations; their exported
 types still constrain application usage. This is an accepted checking boundary,
 not a repair or certification of those declaration bodies.
@@ -46,9 +47,8 @@ It invokes only the compiler, never the consumer Session or a provider. The
 existing root typecheck and integrity checks remain required. No broad model
 canary is needed to validate a dependency/type-policy preparation slice.
 
-Read-only containment, Result publication, model identity, resume, blocked
-interaction and owned process cleanup still belong to a subsequent runtime
-integration and its real proof surfaces. The library's automatic permission
-approval is not an outer sandbox. No such capabilities are declared verified
-by adding this dependency, and no Generic review/Receipt implementation is
-included here.
+The existing Generic review host uses OAR's public APIs and a separate child
+isolation policy. The library's automatic permission approval is not an outer
+sandbox. Dependency and declaration checks do not prove live provider turns,
+Result publication or model identity. Those claims require their real runtime
+evidence.
