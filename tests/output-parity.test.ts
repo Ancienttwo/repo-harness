@@ -229,15 +229,16 @@ describe("Output Quality Gates", () => {
     expect(agents.toLowerCase()).not.toContain("gstack");
     expect(agents).toContain("repo-harness run check-agent-tooling --host both --check-updates");
     expect(agents).toContain("repo-harness run check-task-sync");
-    expect(agents).toContain("repo-harness run check-task-workflow --strict");
+    expect(agents).not.toContain("repo-harness run check-task-workflow --strict");
     for (const output of [claude, agents]) {
+      expect(output).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
       expect(output).toContain("Run the declared Verification Plan checks once and record their actual results");
-    expect(output).not.toContain("verify-sprint --prepare-acceptance");
+      expect(output).not.toContain("verify-sprint --prepare-acceptance");
       expect(output).toContain("`repo-harness run verify-sprint`");
       expect(output).not.toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
     }
     expect(agents).toContain(".ai/harness/checks/latest.json");
-    expect(agents).toContain("new plans/plan-{timestamp}-{slug}.md");
+    expect(agents).toContain("Create a plan file for follow-up work only when the plan rule requires one");
     expect(claude).toContain(".ai/harness/active-plan");
     expect(claude).toContain(".ai/harness/active-worktree");
     expect(claude).not.toContain(".claude/.active-plan");

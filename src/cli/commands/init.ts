@@ -904,8 +904,8 @@ export function runInit(
         ),
       );
     }
-    const verifyStep = runProcess("bun", [join(REPO_ROOT, "src/cli/index.ts"), "run", "check-task-workflow", "--strict"], repoRoot, verifyEnv);
-    steps.push(withStepName(verifyStep, "verify repo harness", "repo-harness run check-task-workflow --strict"));
+    const verifyStep = runProcess("bun", [join(REPO_ROOT, "src/cli/index.ts"), "run", "check-context-files"], repoRoot, verifyEnv);
+    steps.push(withStepName(verifyStep, "verify repo harness", "repo-harness run check-context-files"));
   } else {
     steps.push({ step: "verify repo harness", status: "skipped" });
   }

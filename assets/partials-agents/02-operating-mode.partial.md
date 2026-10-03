@@ -10,7 +10,7 @@
 - Do not implement until the user explicitly asks to implement.
 - Stable product truth: `docs/spec.md`.
 - Research reports: `docs/researches/`.
-- Deferred-goal ledger: `tasks/todos.md` (active execution stays in the plan's `## Task Breakdown`).
+- Deferred-goal ledger: `tasks/todos.md`.
 - Task contract done gate: `tasks/contracts/` (legacy name: sprint contract).
 - Evaluator verdicts: `tasks/reviews/`.
 - Implementation notes: `tasks/notes/`.
@@ -35,10 +35,10 @@
 - External tooling reference: `docs/reference-configs/agentic-development-flow.md` for routing details, `docs/reference-configs/external-tooling.md` for install/update guidance.
 - Waza runtime boundary: Codex reads `~/.codex/skills`; `~/.agents/skills` is only skills CLI staging/cache and must be copied into Codex with verification after updates.
 - Environment check: `repo-harness run check-agent-tooling --host both --check-updates`.
-- After substantive repo changes, run `repo-harness run check-task-sync` and `repo-harness run check-task-workflow --strict`.
+- After substantive repo changes, run `repo-harness run check-task-sync`.
 - Primary worktree warns by default; enforce via `.claude/.require-worktree`.
-- Contract-level execution is worktree-first: `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree when policy enables it, and `repo-harness run contract-worktree finish` merges back only after Waza `/check` and sprint verification pass.
-- After Codex Plan mode, Waza `/think`, or `repo-harness-check` produces a decision-complete work-package plan, capture it with `repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` only when `Artifact Level: work-package` and the Promotion Gate are concrete; if implementation is already approved, capture with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute` or run `repo-harness run plan-to-todo --plan <active-plan>`. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`; checklist-row captures should use `--artifact-level checklist-row` and must not expand into plan -> contract -> review -> notes.
+- When the task explicitly requires a contract, execution is worktree-first: `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree when policy enables it, and `repo-harness run contract-worktree finish` merges back only after Waza `/check` and sprint verification pass.
+- When the task requires a plan file and Codex Plan mode, Waza `/think`, or `repo-harness-check` produces a decision-complete work-package plan, capture it with `repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` only when `Artifact Level: work-package` and the Promotion Gate are concrete; if implementation is already approved, capture with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute` or run `repo-harness run plan-to-todo --plan <active-plan>`. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`; checklist-row captures should use `--artifact-level checklist-row` and must not expand into plan -> contract -> review -> notes.
 - If repo state conflicts with the task, use an isolated `codex/<task-slug>` worktree, validate with Waza `/check`, and merge back to `main` without unrelated dirty changes.
 
 ---

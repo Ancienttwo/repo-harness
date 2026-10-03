@@ -8,7 +8,7 @@ PLAN_LOOP:
   RECOVERY: {{RECOVERY_PROFILE}}
   STATE: {{STATE_PROFILE}}
   CONTEXT: {{CONTEXT_PROFILE}}
-  PHASES: research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
+  PHASES: for explicit plans, research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
   RESEARCH_DIR: docs/researches/
   SPEC_FILE: docs/spec.md
   PLAN_DIR: plans/
@@ -27,7 +27,7 @@ PLAN_LOOP:
   RUNS_DIR: .ai/harness/runs/
   LESSONS_FILE: tasks/lessons.md
   CONTEXT_MAP: .ai/context/context-map.json
-  ANNOTATION_GUARD: do not implement until plan Status is "Approved"
+  ANNOTATION_GUARD: when the task uses a plan, do not implement until plan Status is "Approved"
   CONTRACT_GUARD: do not mark done until contract exit criteria pass and review recommends pass
   EXECUTION_CONTEXT: contract-level work starts in a linked codex/<slug> worktree when policy enables it; primary worktree warning by default; enforce via .claude/.require-worktree
   CONTRACT_WORKTREE_FINISH: run Waza /check, fill the review artifact from that verdict, then repo-harness run contract-worktree finish
@@ -47,10 +47,10 @@ PLAN_LOOP:
 ### Task Management Protocol
 
 Core rules (canonical source: see Workflow Orchestration section below):
-- `docs/spec.md` is product truth; `plans/` is execution truth.
-- `tasks/contracts/`, `tasks/reviews/`, and `tasks/notes/` are done gates; hooks are accelerators only.
+- `docs/spec.md` is product truth; an explicit plan is execution truth for its task.
+- For an explicit contract, `tasks/contracts/`, `tasks/reviews/`, and `tasks/notes/` are done gates; hooks are accelerators only.
 - Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner.
-- Require plan/contract workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path.
+- When the task requires a plan file, fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.
 

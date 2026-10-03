@@ -532,7 +532,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
       expect(pkg.scripts["check:architecture-sync"]).toBe("repo-harness run check-architecture-sync");
       expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
-      expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow --strict");
+      expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
       expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
       expect(existsSync(join(cwd, "scripts/contract-worktree.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/ship-worktrees.sh"))).toBe(false);
