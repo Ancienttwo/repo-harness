@@ -202,6 +202,12 @@ advisory for the environment check and fail-closed at skill runtime:
 `obsidian-memory` stops and reports rather than hand-writing its own Markdown
 dialect. This repo does not vendor either skill body.
 
+## Herdr Dispatch
+
+- Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
+- Route all cross-model dispatch and review through herdr panes (OAR runs the worker, herdr owns panes and visibility); never start direct subprocesses or hand-written CLI calls.
+- When a PR changes both test assertions and implementation code, dispatch its read-only review to the other model via herdr when available; otherwise run a read-only self-review in a separate same-model pane.
+
 ## Detect Safely
 
 Use `repo-harness run check-agent-tooling` for a read-only tooling report.

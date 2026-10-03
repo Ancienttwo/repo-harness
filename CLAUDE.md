@@ -3,11 +3,14 @@
 ## Workflow
 - Keep root CLAUDE.md and AGENTS.md as standalone regular files; repeat shared rules in both and keep host-specific guidance separate.
 - Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
+- Write output text (docs, PR descriptions, commit messages, reports) in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice, approved-dictionary words; write Chinese output the same way, with short sentences and one idea per sentence.
 - Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
 - Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.
 - Once automated checks pass, a model may squash-merge unless the user says otherwise; tag the publication and record `git revert <squash-commit>` plus the daily report.
 - Automatically delete only merged, clean worktrees/branches; ask the user for every other deletion. Credentials/permissions (including confirmation bypass) and release/production operations require user approval.
 - Use gatekeeper/cross-model review for large changes, security/permissions, or unresolved model uncertainty; ordinary steps record diagnostics without approval loops.
+- Model division and cross-model dispatch/review follow [Herdr Dispatch](docs/reference-configs/external-tooling.md#herdr-dispatch).
+- When one PR changes both test assertions and implementation code, run one read-only review focused on tests bent to fit a bug (on-demand, not a restored gate; dispatch per the herdr guide).
 - `.archcontext/model/` owns architecture boundaries; read `docs/architecture/` on demand and update only real responsibility changes. Architecture diagnostics do not block work or author nested agent instructions.
 - Preserve `agents/fleet/`, release checklists and downstream `assets/templates` / `assets/partials*`. Keep `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json` aligned.
 - `_ops/` is ignored private operations state: never commit or agent-edit it. `_ref/` is an ignored reference cache; cite influential revisions. Follow deploy SQL policy, otherwise use ascending 4-digit files under `deploy/sql/`.
@@ -18,6 +21,8 @@
 - Do not add steady-state compatibility code, dual authority, semantic fallbacks, aliases or shadow parsers; one-shot migrations fail closed and remove the retired path.
 - Share components only for observed reuse or a cross-module invariant. Use an existing workspace only for independently meaningful consumers; do not convert this single-package repo without that boundary.
 - Prefer platform/standard-library features, then installed dependencies, and the smallest direct implementation; shrink obsolete code before adding layers.
+- Never satisfy a requirement with a substitute that only looks compliant (mocks, hard-coded values, images posing as the real thing); say what cannot be done and flag the deviation in the PR.
+- Self-review before committing: remove dead code, empty branches and debug leftovers, and split functions by responsibility instead of one large block.
 
 ## Testing
 - Run `bun run check:type` plus tests covering the changed behavior once after the implementation is stable.
@@ -29,6 +34,7 @@
 - Run the full suite daily; a failure opens an automatic repair task and appears in the daily report.
 - Isolate mutable HOME, repositories and process state; use real synchronization signals and preserve complete failure output.
 - Report failed, timed-out, incomplete or omitted coverage explicitly; do not manufacture receipts, waiver files or pre-fix logs.
+- Never modify or delete test assertions just to make tests pass; justify every necessary test change item by item in the PR description.
 
 ## Handoff
 - Create a checkpoint only when context/session rollover or unresolved work needs it; ordinary completion stays in the PR description.
