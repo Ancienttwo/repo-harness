@@ -55,7 +55,8 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain("Do not ask the user for spawn confirmation");
     expect(output).toContain("repo-harness run check-task-sync");
     expect(output).toContain("repo-harness run check-task-workflow --strict");
-    expect(output).toContain("repo-harness run verify-sprint --prepare-acceptance");
+    expect(output).toContain("Run the declared Verification Plan checks once and record their actual results");
+    expect(output).not.toContain("verify-sprint --prepare-acceptance");
     expect(output).toContain("bounded follow-up edits");
     expect(output).not.toContain("before any done/completed response");
     expect(output).toContain("Which workflow artifacts were updated");
