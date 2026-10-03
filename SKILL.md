@@ -1,29 +1,25 @@
 ---
 name: repo-harness
-description: Route explicit repo-harness setup, planning, execution, verification, and handoff actions through deterministic repository state.
-when_to_use: "Use for explicit repo-harness commands or an active repo-harness task; do not use for ordinary questions, explanations, workflow discussion, quoted reports, or general product work."
+description: Route explicit repo-harness commands and active harness work. Exclude ordinary questions, quoted reports, and general product work.
+when_to_use: "repo-harness"
 ---
 
 # repo-harness
 
-Use only for an explicit repo-harness action or an active task. Ordinary questions, reviews, explanations, plan discussion, and quoted historical text bypass it.
+Bot entrypoint. Resolve scope, worker ownership and the authorized outcome.
+Use `repo-harness state resolve --json` when active harness state is needed.
+Treat the returned state as authority; load only the files it names.
 
-Start with:
+1. **setup** — bind the mode and target repo, then assign `repo-harness-setup`.
+2. **plan** — use `repo-harness-check` for scoped design or plan review.
+   Use `repo-harness-product` only for requested PRD, Sprint or Goal work.
+3. **execute** — assign a bounded brief and owning paths. Load worker techniques
+   from `repo-harness-test` or `repo-harness-architecture` only when needed.
+   Use `repo-harness-ship` for explicitly authorized publication.
+4. **verify** — use `repo-harness-check` to assess recorded checks and risk.
+5. **handoff** — read `references/handoff.md` only when work must resume later.
 
-```bash
-repo-harness state resolve --json
-```
-
-Treat that JSON as the state authority; read Plan, Contract, checks, handoff, or architecture files only when it points to them.
-
-## Actions
-
-1. **setup** — install, init, migrate, repair, or scaffold the harness. Use `repo-harness-setup`; inspect first with `repo-harness init --repo . --dry-run`, or run `repo-harness docs show harness-overview` when detail is needed.
-2. **plan** — create or capture a decision-complete plan. Use `repo-harness-plan`; run `repo-harness docs show agentic-development-flow` for promotion boundaries.
-3. **execute** — continue the active task via its resolved profile and allowed paths: Lite (brief → edit → test), Standard (plan → edit → verify → one review), Strict (Contract/worktree/checks/external-acceptance).
-4. **verify** — run targeted tests and the profile-required gates. Use `repo-harness-check`; never infer provider-owned evidence.
-5. **handoff** — refresh compact recovery state via `repo-harness run prepare-codex-handoff`/`codex-handoff-resume`; see `references/handoff.md`. Inject references and deltas, not full copies.
-
-Safety boundaries (scope, worktree ownership, secrets, destructive commands, high-risk paths, checks freshness, review fingerprints) are deterministic and fail closed; a profile override may raise, never lower, the risk floor.
-
-Command catalogs, scaffold presets, migration, deployment, hook debugging, and other integrations load on demand.
+Keep main publication, deletion, credentials/permissions and release/production
+within their separate authorization boundaries. Ordinary work needs scoped
+changes, verification and a PR description. Load architecture or command details
+only when the task needs them.

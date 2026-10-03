@@ -76,28 +76,28 @@
       "lang": "zh",
       "kind": "positive",
       "prompt": "这个新功能想法有点复杂，先帮我出一份靠谱的执行方案吧。",
-      "expected_route": "repo-harness-plan"
+      "expected_route": "repo-harness-check"
     },
     {
       "id": "pos-plan-review-zh",
       "lang": "zh",
       "kind": "positive",
       "prompt": "帮我把这份草稿方案过一遍，看看设计上有没有漏洞。",
-      "expected_route": "repo-harness-plan"
+      "expected_route": "repo-harness-check"
     },
     {
       "id": "pos-plan-create-en",
       "lang": "en",
       "kind": "positive",
       "prompt": "Turn this rough idea into a proper, decision-complete plan before anyone touches code.",
-      "expected_route": "repo-harness-plan"
+      "expected_route": "repo-harness-check"
     },
     {
       "id": "pos-plan-review-en",
       "lang": "en",
       "kind": "positive",
       "prompt": "Take a pass over this draft plan and flag anything that isn't decision-complete yet.",
-      "expected_route": "repo-harness-plan"
+      "expected_route": "repo-harness-check"
     },
     {
       "id": "pos-product-prd-zh",

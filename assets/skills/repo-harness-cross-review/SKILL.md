@@ -6,7 +6,7 @@ when_to_use: "cross review, second opinion, outside voice, codex review, indepen
 
 # repo-harness-cross-review
 
-Canonical routing guidance for the existing generic review domain. Runtime
+Bot entrypoint. Canonical routing guidance for the existing generic review domain. Runtime
 ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 `src/effects/terminal/task-session.ts`; the Skill does not implement a provider.
 

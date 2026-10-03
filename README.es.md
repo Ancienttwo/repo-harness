@@ -611,14 +611,25 @@ host mientras el CLI y los hooks poseen la ejecución.
 | --- | --- |
 | `repo-harness` | Skill router raíz, sincronizado sin condición en todo profile |
 | `repo-harness-setup` | Modos init, migrate, upgrade, repair, scaffold y capability-configuration; router-only |
-| `repo-harness-plan` | Crea un plan decision-complete, o revisa uno existente |
 | `repo-harness-product` | Modos PRD, Sprint y Goal para el product planning de upper-layer |
-| `repo-harness-check` | Checks de workflow y release, más una referencia de deploy-readiness |
+| `repo-harness-check` | Definir el plan. Revisar el plan. Verificar los resultados registrados. |
 | `repo-harness-ship` | Valida worktrees terminados, hace push de branches y abre PRs |
 | `repo-harness-architecture` | Docs de architecture, drift requests y diagramas sin un refresh completo del harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Consultas de Oracle browser/GPT Pro, setup del MCP Connector y bridge handoff; solo setup explícito |
+| `auto-campaign` | Bot: ejecutar un campaign autorizado de forma explícita. |
+| `obsidian-memory` | Bot: leer o guardar memoria por solicitud explícita. |
+| `repo-harness-test` | Worker: pruebas del código fuente y fixtures reales. |
 | `merge-gate` (externo) | Gate final de exact-candidate; repo-harness no distribuye ningún Skill de merge-gate — ver [external tooling](docs/reference-configs/external-tooling.md) |
+
+Los Bot skills definen el alcance, la delegación y las decisiones. Los Worker skills ejecutan los pasos.
+
+Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
+`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-chatgpt`. Worker: `repo-harness-setup`,
+`repo-harness-test`, and `repo-harness-architecture`.
+`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` requieren una invocación explícita.
+Las tareas comunes usan un brief corto y la descripción del PR. PRD, Sprint y Goal sirven para el trabajo de producto solicitado.
 
 La cadena de planning está deliberadamente organizada en capas:
 

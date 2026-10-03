@@ -110,12 +110,14 @@ describe("Bootstrap Script Contracts", () => {
 
     expect(existsSync(join(ROOT, "agents/fleet/explore.md"))).toBe(false);
     const rootCause = read("agents/fleet/root-cause-prover.md");
-    for (const field of ["root_cause", "repro", "regression_guard", "pre_fix_failure_artifact"]) {
+    for (const field of ["root_cause", "repro", "regression_guard"]) {
       expect(rootCause).toContain(field);
     }
     expect(rootCause).toContain("DIAGNOSIS: CONFIRMED");
     expect(rootCause).toContain("Never edit production source");
     expect(rootCause).toContain("pipeline is forbidden");
+    expect(rootCause).toContain("Record command, exit code and full failure output");
+    expect(rootCause).not.toContain("PRE_FIX_EXIT=");
 
     const evaluator = read("agents/fleet/harness-evaluator.md");
     expect(evaluator).toContain("EVAL: PASS");

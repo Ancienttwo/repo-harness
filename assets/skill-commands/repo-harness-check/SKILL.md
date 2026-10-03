@@ -1,47 +1,31 @@
 ---
 name: repo-harness-check
-description: Verification entrypoint for repo-harness workflow readiness. Runs workflow gates, task sync, contract checks, inspector, and migration dry-run before merge or release.
-when_to_use: "repo-harness-check, check agentic workflow, verify harness, pre-merge workflow check, release readiness, validate tasks-first contract"
+description: Plan scoped harness work, review a plan, or assess recorded checks and risk. Do not execute implementation or publish by default.
+when_to_use: "repo-harness-check"
 ---
 
 # repo-harness-check
 
-Use this command when the user asks whether the harness, migration, or release surface is ready.
+Bot entrypoint for planning and verification decisions.
+Confirm the repo, scope, subject revision and worker ownership.
 
-## Protocol
+## Mode Selection
 
-1. Confirm the repo path and report dirty-worktree boundaries.
-2. Read the canonical required-check list from the target repo's root agent context (`CLAUDE.md` for Claude, `AGENTS.md` for Codex) `## Required Checks` section, then apply its scope conditions and run the applicable commands through the global/package helper runtime. This self-host source repo may also use root `scripts/` for source-only maintenance commands. Use focused checks by default; a conditional full-suite command is not an unconditional requirement. Consume current canonical acceptance evidence for already-satisfied expensive criteria. After a bounded follow-up edit, have the parent retain the baseline full-run identity and revise final criteria to focused delta checks when no explicit full-suite requirement or uncovered integration risk remains; never relabel a baseline pass as current-subject full evidence. If `## Required Checks` is missing or empty, report that as the first blocking finding instead of substituting a default list.
-3. Run advisory readiness when available:
-   - `repo-harness run check-agent-tooling --host both --json`
-4. Treat missing CodeGraph or missing Codex `health`/`check`/`mermaid` as hard failures.
-5. Treat Waza staging drift as a yellow readiness flag; report the fix or acceptance reason without failing the repo gate.
-6. Report skill eval authority when release/readiness evidence depends on skill
-   effectiveness:
-   - authoritative: non-dry-run `bun run benchmark:skills --eval <slug>` with
-     `full_test_count > 0`, `dry_run_ratio <= 30%`, and graders reported
-   - non-authoritative: dry-run-heavy or all-dry-run evidence
-   - unavailable: no current eval evidence; report the benchmark command needed
-7. Summarize pass/fail evidence, yellow flags, eval authority metrics, and the next blocking command if any.
-
-## Delegation Brief Evidence
-
-A file-coupled `contract-run` worker prepares executable evidence through `verify-sprint --prepare-acceptance`. Inspect the immutable run artifact and its current subject, contract, target revision, toolchain context, and per-criterion results. Valid executed and exact-context reused passes count. Return missing, stale, or failed criteria to the canonical runner; do not independently launch the same suite or accept transcript assertions as evidence.
-
-## Root Cause Evidence Review
-
-For a `bugfix` contract, confirm `## Root Cause Evidence` states a testable `root_cause`, a working `repro`, a `regression_guard` that also appears under `exit_criteria.tests_pass`, and a `pre_fix_failure_artifact` showing a non-zero `PRE_FIX_EXIT=` line for that guard, not a passing run. Also check whether `task_profile` was mislabeled or left out entirely: an omitted `task_profile` defaults to legacy pass-through (non-bugfix) by design, so confirm that default is actually correct here rather than an evasion of the gate.
-
-## Failure Modes
-
-- If any required workflow gate fails, report the first blocking command and stop the readiness claim.
-- If advisory tooling times out, report advisory evidence as unavailable instead of passing it.
-- If eval evidence is missing or all dry-run, mark it non-authoritative or unavailable for skill effectiveness and name the repair command.
+- Create a plan only when a design decision needs it: `references/create.md`.
+- Review an existing plan: `references/review.md`.
+- Assess verification: consume commands, results, revision and environment.
+  Ask the worker for missing checks from the target repo's agent instructions.
+- Deployment readiness: `references/deploy-readiness.md`.
 
 ## Boundaries
 
-- Does not mutate repo files by default.
-- Does not silently ignore CodeGraph readiness failures, advisory tooling hangs, or skipped checks.
-- Does not claim skill-effectiveness authority from dry-run benchmark output.
-- Does not claim release readiness if source repo and installed runtime copy are out of sync.
-- Does not maintain its own copy of the required-check list; the target repo's root `## Required Checks` section is the single source of truth.
+Ordinary tasks do not require an Approved plan or a contract file.
+Reuse passing evidence only for its recorded subject. Run delta checks after edits.
+Report failed, stale, timed-out or omitted coverage. Missing optional tooling is
+a diagnostic. Use independent review for large changes, security/permissions,
+or unresolved uncertainty. Review does not authorize implementation or publication.
+
+For skill-effectiveness claims, require full_test_count > 0, dry_run_ratio <= 30%,
+and graders reported. Mark non-authoritative: dry-run-heavy or all-dry-run evidence.
+Mark unavailable: no current eval evidence.
+Does not claim skill-effectiveness authority from dry-run benchmark output.

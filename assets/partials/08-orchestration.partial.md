@@ -44,7 +44,7 @@
 - Define per-sprint contract files in `tasks/contracts/`.
 - Verify contract exit criteria before claiming completion.
 - Require the matching Waza `/check` review and current subject-bound verification evidence before claiming contract completion; consume existing valid evidence rather than rerunning it before each response.
-- Prepare executable acceptance once through `repo-harness run verify-sprint --prepare-acceptance`; use `repo-harness run verify-sprint` for finalization.
+- Run the declared Verification Plan checks once and record their actual results; use `repo-harness run verify-sprint` for finalization.
 
 ### 7. Balanced Elegance
 - Redesign hacky non-trivial fixes before shipping.

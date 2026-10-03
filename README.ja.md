@@ -603,14 +603,25 @@ Canonical な rule-owner package は `assets/skills/` と
 | --- | --- |
 | `repo-harness` | root router Skill。すべての profile に無条件で同期されます |
 | `repo-harness-setup` | init、migrate、upgrade、repair、scaffold、capability-configuration の各 mode。router-only です |
-| `repo-harness-plan` | decision-complete な plan を作成する、または既存の plan を review します |
 | `repo-harness-product` | 上位層の product planning のための PRD・Sprint・Goal の各 mode |
-| `repo-harness-check` | workflow と release の checks、および deploy-readiness reference |
+| `repo-harness-check` | 作業範囲を計画する。計画を確認する。記録した検証結果を確認する。 |
 | `repo-harness-ship` | 完了した worktree を検証し、branch を push し、PR を開きます |
 | `repo-harness-architecture` | harness 全体の refresh を伴わない architecture docs、drift request、diagram |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup、bridge handoff。explicit setup 限定 |
+| `auto-campaign` | Bot：明示的に承認した campaign を一回実行する。 |
+| `obsidian-memory` | Bot：明示的な依頼で記憶を読む、または保存する。 |
+| `repo-harness-test` | Worker：ソースのテストと実際の fixture。 |
 | `merge-gate`(external) | exact-candidate な final gate。repo-harness は merge-gate Skill を同梱しません — [external tooling](docs/reference-configs/external-tooling.md) を参照 |
+
+Bot skills は範囲、委任、承認を決めます。Worker skills は作業を実行します。
+
+Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
+`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-chatgpt`. Worker: `repo-harness-setup`,
+`repo-harness-test`, and `repo-harness-architecture`.
+`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` は明示的な呼び出しが必要です。
+通常の作業には短い brief と PR の説明を使います。PRD、Sprint、Goal は依頼された製品作業に使います。
 
 planning chain は意図的に層を分けています。
 

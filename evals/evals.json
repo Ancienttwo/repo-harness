@@ -556,9 +556,9 @@
     },
     {
       "id": 13,
-      "slug": "route-repo-harness-plan",
+      "slug": "route-repo-harness-check",
       "prompt": "Plan how we should change the repo-harness workflow command surface, but do not edit files yet.",
-      "expected_output": "Routes the request to repo-harness-plan, inspects repo state, produces a decision-complete plan, and names the next action command without mutating files.",
+      "expected_output": "Routes the request to repo-harness-check, inspects repo state, produces a decision-complete plan, and names the next action command without mutating files.",
       "files": [
         "evals/fixtures/audit-drift"
       ],
@@ -569,7 +569,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-plan"
+            "pattern": "repo-harness-check"
           },
           {
             "path": "final-response.md",
@@ -597,9 +597,9 @@
     },
     {
       "id": 14,
-      "slug": "route-repo-harness-plan-review-mode",
+      "slug": "route-repo-harness-check-review-mode",
       "prompt": "Review this existing repo-harness plan for product, engineering, design, and DevEx issues before implementation.",
-      "expected_output": "Routes the request to repo-harness-plan's review mode, reads the plan, selects review dimensions, reports blocking issues first, and does not implement by default.",
+      "expected_output": "Routes the request to repo-harness-check's review mode, reads the plan, selects review dimensions, reports blocking issues first, and does not implement by default.",
       "files": [
         "evals/fixtures/audit-drift"
       ],
@@ -610,7 +610,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-plan"
+            "pattern": "repo-harness-check"
           },
           {
             "path": "final-response.md",
@@ -627,7 +627,7 @@
         ]
       },
       "expectations": [
-        "Treats review as plan-stage critique within repo-harness-plan, not a separate skill.",
+        "Treats review as plan-stage critique within repo-harness-check, not a separate skill.",
         "Covers product, engineering, design, and DevEx when relevant.",
         "Keeps implementation separate from review."
       ]
@@ -1044,7 +1044,7 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-product's sprint mode instead of its PRD or Goal modes, or the separate repo-harness-plan skill.",
+        "Routes the request to repo-harness-product's sprint mode instead of its PRD or Goal modes, or the separate repo-harness-check skill.",
         "Keeps tasks/todos.md as the deferred-goal ledger and places the backlog in plans/sprints/.",
         "Requires a concrete acceptance line per backlog row before Approved status.",
         "Executes each backlog task through the existing plan -> contract -> worktree gates."

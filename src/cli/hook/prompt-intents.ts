@@ -475,7 +475,7 @@ export type PendingOrchestrationKind =
   | 'waza-think'
   | 'dynamic-workflow'
   | 'codex-plan'
-  | 'repo-harness-plan';
+  | 'repo-harness-check';
 
 export function derivePendingOrchestrationKind(ctx: PromptIntentContext): PendingOrchestrationKind {
   if (re(String.raw`(/think|[$]think|\[[$]think\]|waza[\s/-]*think)`).test(ctx.text)) {
@@ -487,7 +487,7 @@ export function derivePendingOrchestrationKind(ctx: PromptIntentContext): Pendin
   if (re(String.raw`codex[\s-]*plan`).test(ctx.text)) {
     return 'codex-plan';
   }
-  return 'repo-harness-plan';
+  return 'repo-harness-check';
 }
 
 const AGENTIC_PACKAGING = re(

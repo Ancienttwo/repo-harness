@@ -606,14 +606,25 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 | --- | --- |
 | `repo-harness` | Skill routeur racine, synchronisé sans condition sur chaque profile |
 | `repo-harness-setup` | Modes init, migrate, upgrade, repair, scaffold et capability-configuration ; router-only |
-| `repo-harness-plan` | Crée un plan decision-complete, ou revoit un plan existant |
 | `repo-harness-product` | Modes PRD, Sprint et Goal pour le product planning upper-layer |
-| `repo-harness-check` | Checks workflow et release, plus une référence deploy-readiness |
+| `repo-harness-check` | Planifier le travail. Revoir le plan. Vérifier les résultats enregistrés. |
 | `repo-harness-ship` | Valide les worktrees terminés, push les branches et ouvre les PRs |
 | `repo-harness-architecture` | Docs d'architecture, drift requests et diagrammes sans rafraîchissement complet du harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Consults Oracle browser/GPT Pro, setup du Connecteur MCP et bridge handoff ; setup explicite uniquement |
+| `auto-campaign` | Bot : exécuter un campaign explicitement autorisé. |
+| `obsidian-memory` | Bot : lire ou écrire la mémoire sur demande explicite. |
+| `repo-harness-test` | Worker : tests du code source et fixtures réelles. |
 | `merge-gate` (externe) | Gate final exact-candidate ; repo-harness ne fournit aucun Skill merge-gate — voir [external tooling](docs/reference-configs/external-tooling.md) |
+
+Les Bot skills définissent le périmètre, la délégation et les décisions. Les Worker skills exécutent les étapes.
+
+Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
+`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-chatgpt`. Worker: `repo-harness-setup`,
+`repo-harness-test`, and `repo-harness-architecture`.
+`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` exigent une invocation explicite.
+Les tâches courantes utilisent un brief court et la description du PR. PRD, Sprint et Goal servent aux travaux produit demandés.
 
 La chaîne de planning est volontairement découpée en couches :
 

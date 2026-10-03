@@ -22,7 +22,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Root router Skill; canonical entrypoint synced unconditionally to both hosts regardless of install profile.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "repo-harness-setup",
@@ -39,27 +40,8 @@
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Canonical rule owner for installing, migrating, upgrading, repairing, scaffolding, and capability-configuring the repo-harness workflow in a repository. Router-only progressive load; never auto-discovered by a profile.",
-      "retirementCandidate": null
-    },
-    {
-      "name": "repo-harness-plan",
-      "kind": "facade",
-      "source": "assets/skills/repo-harness-plan",
-      "provider": null,
-      "hosts": [
-        "claude",
-        "codex"
-      ],
-      "profiles": [
-        "minimal",
-        "full"
-      ],
-      "discoverability": "profile-facade",
-      "component": "adaptive-workflow",
-      "requires": [],
-      "mutatesRepoByDefault": false,
-      "summary": "Interactive planning entrypoint for repo-local agentic development work: creates an approved plan before implementation, and reviews an existing plan across product, engineering, design, and DevEx dimensions.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "repo-harness-check",
@@ -78,8 +60,9 @@
       "component": "scope-worktree-check-guards",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Runs the repo-local harness verification gate and reports pre-merge or release readiness, including a deploy-readiness reference for deployment and operations configuration checks.",
-      "retirementCandidate": null
+      "summary": "Plan or review scoped work. Assess recorded verification and risk.",
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "repo-harness-test",
@@ -98,7 +81,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Testing router for the repo-harness source checkout: authoring and fixture selection, test execution and CI lane selection, the evidence a test refactor owes, and the test side of a contract Verification Plan. Routes to docs/reference-configs/sprint-contracts.md for policy and owns no policy of its own.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "repo-harness-product",
@@ -117,7 +101,8 @@
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Canonical rule owner for PRD drafting, Sprint planning/execution, and native Goal-session preparation from repo-harness planning artifacts.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "repo-harness-ship",
@@ -131,12 +116,13 @@
       "profiles": [
         "full"
       ],
-      "discoverability": "profile-facade",
+      "discoverability": "explicit-only",
       "component": "release-deployment-gates",
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Validates finished worktrees, commits through finish --no-merge, pushes branches, and creates GitHub PRs by default.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "repo-harness-architecture",
@@ -153,7 +139,8 @@
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Resolves architecture drift requests and updates architecture docs or diagrams without refreshing the harness. Router-only or explicit install; never implied by another profile.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "obsidian-memory",
@@ -168,7 +155,7 @@
         "minimal",
         "full"
       ],
-      "discoverability": "profile-facade",
+      "discoverability": "explicit-only",
       "component": "adaptive-workflow",
       "requires": [
         "obsidian-markdown",
@@ -176,7 +163,8 @@
       ],
       "mutatesRepoByDefault": false,
       "summary": "Cross-project long-term memory over the user's Obsidian brain vault: recall relevant notes before a task and persist distilled conclusions after it. Repo artifacts stay the source of truth; sync direction is repo -> brain. Explicitly invoked by the model or operator, never from hooks. Requires the runtime-referenced official obsidian-markdown and obsidian-cli skills.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "auto-campaign",
@@ -190,12 +178,13 @@
       "profiles": [
         "full"
       ],
-      "discoverability": "profile-facade",
+      "discoverability": "explicit-only",
       "component": "planning-integrations",
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Explicit conversational entrypoint for one bounded repair campaign turn using the standard grant budget; preserves runtime authority and stops for human merge.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "repo-harness-cross-review",
@@ -214,7 +203,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Persistent fleet deep-reasoner acceptance review in Herdr through the existing OAR host, request-bound file Result and generic-review Receipt; direct advisory runtime retired.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "merge-gate",
@@ -228,7 +218,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Classification-only entry for the full-profile discovery matrix's 'merge-gate on gatekeeper host' row. repo-harness ships no merge-gate SKILL.md and ships no runtime projection for it; empty hosts/profiles keep this entry non-selectable by every catalog selector. See docs/reference-configs/external-tooling.md for the authoritative statement that runtime setup installs no merge-gate skill.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "repo-harness-chatgpt",
@@ -245,7 +236,8 @@
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Canonical rule owner for repo-harness ChatGPT integration: Oracle-first browser/GPT Pro consult and continuation, MCP Connector setup, MCP bridge planning handoff, and Connector invocation read-back evidence. Additive only after an explicit ChatGPT setup action; never implied by either install profile.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "think",
@@ -264,7 +256,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza planning skill: turns rough ideas into approved, decision-complete plans. Fetched from tw93/Waza via bunx skills add.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "hunt",
@@ -283,7 +276,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza root-cause debugging skill. Fetched from tw93/Waza via bunx skills add.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "check",
@@ -302,7 +296,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza review/audit skill for diffs, PRs, and release readiness. Fetched from tw93/Waza via bunx skills add.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "bot"
     },
     {
       "name": "health",
@@ -321,7 +316,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza project-audit skill. Fetched from tw93/Waza via bunx skills add.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "mermaid",
@@ -340,7 +336,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Diagram-design skill. Fetched from BfdCampos/dotfiles via bunx skills add.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "reverse-skill-router",
@@ -358,7 +355,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in reverse-engineering and security-task router pack. Fetched from zhaoxuya520/reverse-skill via bunx skills add after independent authorization review.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "obsidian-markdown",
@@ -376,7 +374,8 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in official Obsidian Markdown authoring companion Skill. Pinned to kepano/obsidian-skills and verified before projection.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     },
     {
       "name": "obsidian-cli",
@@ -394,18 +393,17 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in official Obsidian CLI companion Skill. Does not install or require the Obsidian executable or desktop App.",
-      "retirementCandidate": null
+      "retirementCandidate": null,
+      "audience": "worker"
     }
   ],
   "expectedProjections": {
     "facadesByProfile": {
       "minimal": [
-        "repo-harness-plan",
         "repo-harness-check",
         "obsidian-memory"
       ],
       "full": [
-        "repo-harness-plan",
         "repo-harness-check",
         "repo-harness-test",
         "repo-harness-product",
@@ -477,8 +475,8 @@
     },
     {
       "name": "repo-harness-review",
-      "replacement": "repo-harness-plan",
-      "note": "Consolidated into repo-harness-plan's review reference; plan and review share the same non-mutating planning surface."
+      "replacement": "repo-harness-check",
+      "note": "Planning and plan review now use repo-harness-check."
     },
     {
       "name": "repo-harness-prd",
@@ -539,6 +537,11 @@
       "name": "claude-review",
       "replacement": "repo-harness-cross-review",
       "note": "Retired exclusive CLI/schema/host/session; use repo-harness review with fleet deep-reasoner task-agent. No alias; drain old sessions with the previous version and archive old receipts."
+    },
+    {
+      "name": "repo-harness-plan",
+      "replacement": "repo-harness-check",
+      "note": "Merged planning and verification decisions into one Bot entrypoint. No runtime alias."
     }
   ]
 }

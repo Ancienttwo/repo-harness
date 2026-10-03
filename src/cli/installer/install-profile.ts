@@ -401,8 +401,8 @@ function captureOwnedPath(
  *
  * Resolves the expected source path from the manifest-derived catalog
  * (facade-kind packages no longer all live under one fixed
- * assets/skill-commands/<name> parent -- e.g. repo-harness-plan sources from
- * assets/skills/repo-harness-plan) rather than assuming a fixed parent
+ * assets/skill-commands/<name> parent -- e.g. repo-harness-product sources from
+ * assets/skills/repo-harness-product) rather than assuming a fixed parent
  * directory. A name absent from the catalog's facade-kind packages (a fully
  * retired name, e.g. a stale repo-harness-handoff left over from an older
  * install) is never canonical.

@@ -570,28 +570,36 @@ ignored run-evidence surface — a manual convention today, not an automatic
 
 ## Skills
 
-Canonical rule-owner packages live under `assets/skills/` and
-`assets/skill-commands/`, keeping host skill discovery bounded while the CLI and
-hooks own execution.
+The manifest in `assets/skill-commands/manifest.json` owns skill names, source
+paths, audiences, profiles and invocation policy. Bot skills select scope,
+workers and acceptance decisions. Worker skills execute assigned steps.
+Both hosts keep the same skill names. Load only the selected technical reference.
+List the load groups with `bun scripts/skill-surface-select.ts audience-sources bot`
+or `bun scripts/skill-surface-select.ts audience-sources worker`. These groups
+control context loading. They do not add a host permission boundary.
 
-| Skill | Purpose |
-| --- | --- |
-| `repo-harness` | Root router Skill, synced unconditionally to every profile |
-| `repo-harness-setup` | Init, migrate, upgrade, repair, scaffold, and capability-configuration modes; router-only |
-| `repo-harness-plan` | Create a decision-complete plan, or review an existing one |
-| `repo-harness-product` | PRD, Sprint, and Goal modes for upper-layer product planning |
-| `repo-harness-check` | Workflow and release checks plus a deploy-readiness reference |
-| `repo-harness-ship` | Validate finished worktrees, push branches, and open PRs |
-| `repo-harness-architecture` | Architecture docs, drift requests, and diagrams without a full harness refresh |
-| `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
-| `repo-harness-chatgpt` | Oracle browser/GPT Pro consults, MCP Connector setup, and bridge handoff; explicit setup only |
-| `merge-gate` (external) | Exact-candidate final gate; repo-harness ships no merge-gate Skill — see [external tooling](docs/reference-configs/external-tooling.md) |
+| Skill | Group | Purpose |
+| --- | --- | --- |
+| `repo-harness` | Bot | Route explicit harness actions |
+| `repo-harness-check` | Bot | Plan scoped work, review plans, assess recorded checks |
+| `repo-harness-product` | Bot | Requested PRD, Sprint or Goal preparation |
+| `repo-harness-ship` | Bot | Explicit publication and cleanup decisions |
+| `auto-campaign` | Bot | One explicitly authorized campaign turn |
+| `obsidian-memory` | Bot | Explicit memory recall or persistence |
+| `repo-harness-cross-review` | Bot | Generic review; direct advisory runtime retired |
+| `repo-harness-chatgpt` | Bot | Explicit integration mode and advisory decisions |
+| `repo-harness-setup` | Worker | Assigned install, migration, repair or scaffold |
+| `repo-harness-test` | Worker | Source tests and real fixtures |
+| `repo-harness-architecture` | Worker | Assigned model, projection or diagram work |
 
-The planning chain is intentionally layered:
-
-```text
-idea -> PRD mode -> Sprint mode -> Goal mode
-```
+Planning is merged into `repo-harness-check`. No separate planning alias remains.
+`auto-campaign`, `obsidian-memory` and `repo-harness-ship` stay installed for their
+profiles. Both host switches prohibit implicit invocation.
+External runtime skills remain user-owned. `think`, `check` and `geju` guide Bot
+decisions. `hunt`, `health` and `mermaid` supply worker techniques. This change
+does not vendor or edit them. The seven fleet personas remain separate from skills.
+Ordinary tasks use a scoped brief and PR description. PRD/Sprint/Goal are optional
+product workflows. `merge-gate` is a CLI judge and has no packaged SKILL.md.
 
 `repo-harness init` is for an existing repo; `repo-harness-setup`'s scaffold mode
 creates a new project or module. `hooks-init`, `docs-init`, and

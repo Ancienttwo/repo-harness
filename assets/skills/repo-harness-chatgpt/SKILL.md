@@ -6,11 +6,9 @@ when_to_use: "repo-harness-chatgpt, ChatGPT Web consult, GPT Pro consult, GPT Pr
 
 # repo-harness-chatgpt
 
-Canonical rule owner for every repo-harness ChatGPT integration surface: Oracle
-browser consult, session continuation, MCP Connector/bridge setup and
-operation, and MCP invocation read-back evidence. Discoverable only after
-explicit ChatGPT setup; never implied by either install profile. Router-only:
-mode protocol lives under `references/`.
+Bot entrypoint. Select the explicitly requested integration mode.
+Assign only its technical reference to the worker. Require explicit setup;
+ChatGPT is never implied by either install profile.
 
 ## Mode Selection
 

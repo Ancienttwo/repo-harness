@@ -231,7 +231,8 @@ describe("Output Quality Gates", () => {
     expect(agents).toContain("repo-harness run check-task-sync");
     expect(agents).toContain("repo-harness run check-task-workflow --strict");
     for (const output of [claude, agents]) {
-      expect(output).toContain("repo-harness run verify-sprint --prepare-acceptance");
+      expect(output).toContain("Run the declared Verification Plan checks once and record their actual results");
+    expect(output).not.toContain("verify-sprint --prepare-acceptance");
       expect(output).toContain("`repo-harness run verify-sprint`");
       expect(output).not.toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
     }

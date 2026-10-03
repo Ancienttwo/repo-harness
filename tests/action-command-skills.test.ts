@@ -23,7 +23,6 @@ const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const TARGET_CANONICAL_PACKAGES = [
   "repo-harness",
   "repo-harness-setup",
-  "repo-harness-plan",
   "repo-harness-product",
   "repo-harness-check",
   "repo-harness-ship",
@@ -36,7 +35,6 @@ const TARGET_CANONICAL_PACKAGES = [
 const TARGET_FACADE_KIND_PACKAGES = [
   "auto-campaign",
   "repo-harness-setup",
-  "repo-harness-plan",
   "repo-harness-check",
   "repo-harness-product",
   "repo-harness-ship",
@@ -89,7 +87,7 @@ describe("repo-harness action command skills", () => {
     ]);
   });
 
-  test("manifest declares all 10 target canonical packages from the plan's target package table", () => {
+  test("manifest declares all kept target canonical packages from the plan's target package table", () => {
     const manifest = JSON.parse(readFileSync(join(COMMAND_ROOT, "manifest.json"), "utf-8"));
     const names = manifest.packages.map((entry: { name: string }) => entry.name);
     for (const pkg of TARGET_CANONICAL_PACKAGES) {
@@ -110,8 +108,8 @@ describe("repo-harness action command skills", () => {
       expect(frontmatter).toContain(`name: ${command}`);
       expect(frontmatter).toContain("description:");
       expect(frontmatter).toContain("when_to_use:");
-      expect(body).toContain("## Protocol");
-      expect(body).toContain("## Boundaries");
+      expect(body).toContain("entrypoint");
+      expect(body).toMatch(/(Boundaries|boundaries|scope)/);
     }
   });
 
@@ -127,41 +125,30 @@ describe("repo-harness action command skills", () => {
 
       expect(description.length).toBeGreaterThan(40);
       expect(description.length).toBeLessThanOrEqual(1024);
-      expect(whenToUse.split(",").length).toBeGreaterThanOrEqual(3);
-      expect(body).toContain("## Failure Modes");
-      expect(body).toMatch(/If .+(route|report|stop|verify|regenerate|archive|preserve)/);
-      expect(body).toMatch(/## Boundaries[\s\S]*(Does not|Do not|Never|Preserve|Delete only)/);
+      expect(whenToUse).toContain(command);
+      expect(body).toMatch(/(Report|Return|Preserve|Do not)/);
       expect(flagged).toEqual([]);
     }
-    expect(readCommand("repo-harness-ship")).toContain("CHECKPOINT");
+    expect(readCommand("repo-harness-ship")).toContain("An explicit no-merge instruction wins");
   });
 
-  test("plan and its review mode are non-mutating by default", () => {
-    const plan = readSkillPackage("repo-harness-plan");
-    const create = readReference("repo-harness-plan", "create.md");
-    expect(plan).toContain("Neither mode edits implementation files by default");
-    expect(readReference("repo-harness-plan", "review.md")).toContain("Does not edit files or implement the plan by default");
-    expect(create).toContain("repo-harness run capture-plan");
-    expect(create).toContain("invoke `geju` before a contract exists");
-    expect(create).toContain("parent agent then completes P1/P2/P3");
-    expect(create).toContain("compact calibration card");
-    expect(create).toContain("ask exactly 1 highest-information-gain question");
-    expect(create).toContain("Ask zero questions when repo evidence already resolves the decision");
-    expect(create).toContain("stop for the user's answer before producing the plan");
-    expect(create).toContain("[ASSUMED]");
-    expect(create).toContain("[UNKNOWN]");
-    expect(create).toContain("in non-interactive runs ask nothing");
-    expect(create.toLowerCase()).not.toContain("gstack");
-    expect(readReference("repo-harness-plan", "review.md").toLowerCase()).not.toContain("gstack");
-  });
-
-  test("plan's review mode covers product, engineering, design, and DevEx dimensions", () => {
-    const review = readReference("repo-harness-plan", "review.md");
-    expect(review).toContain("product");
-    expect(review).toContain("eng");
-    expect(review).toContain("design");
-    expect(review).toContain("devex");
-    expect(review).toContain("Report blocking issues first");
+  test("merged planning modes keep source evidence and read-only review", () => {
+    const plan = readCommand("repo-harness-check");
+    const create = readFileSync(join(COMMAND_ROOT, "repo-harness-check/references/create.md"), "utf-8");
+    const review = readFileSync(join(COMMAND_ROOT, "repo-harness-check/references/review.md"), "utf-8");
+    expect(plan).toContain("Ordinary tasks do not require an Approved plan");
+    expect(create).toContain("Trace one real path");
+    expect(create).toContain("capture-plan");
+    expect(create).toContain("A plan does not grant implementation approval");
+    expect(create).toContain("Do not edit implementation files in planning mode");
+    expect(create).toContain("existing task authorization");
+    expect(review).toContain("Keep review read-only");
+    expect(review).toContain("If no plan exists, report the missing input");
+    expect(review).toContain("If scope, checks or rollback are");
+    expect(review).toContain("Do not implement the plan");
+    for (const dimension of ["product", "design", "DevEx", "data flow", "verification", "rollback"]) {
+      expect(review).toContain(dimension);
+    }
   });
 
   test("the reusable-workflow packaging rubric survives as one root reference (autoplan's only surviving content)", () => {
@@ -176,16 +163,18 @@ describe("repo-harness action command skills", () => {
     expect(rubric).toContain("Prefer extending an existing skill");
   });
 
-  test("ship defaults to PR closeout and keeps local merge explicit", () => {
+  test("ship keeps publication boundaries and worker Git steps", () => {
     const ship = readCommand("repo-harness-ship");
-
-    expect(ship).toContain("repo-harness run ship-worktrees");
-    expect(ship).toContain("finish --no-merge");
-    expect(ship).toContain("gh pr create --base main --head codex/<slug>");
-    expect(ship).toContain("--local-merge");
-    expect(ship).toContain("--cleanup-merged");
-    expect(ship).toContain("Default mode creates PRs");
-    expect(ship).toContain("Does not run `git reset --hard`, `git clean`, or automatic stash");
+    const worker = readFileSync(join(COMMAND_ROOT, "repo-harness-ship/references/worker.md"), "utf-8");
+    expect(ship).toContain("Main publication, deletion, credentials/permissions and release/production");
+    expect(ship).toContain("An explicit no-merge instruction wins");
+    expect(ship).toContain("GitHub has no change request or unresolved review thread");
+    expect(worker).toContain("gh pr create");
+    expect(worker).toContain("--cleanup-merged --dry-run");
+    expect(worker).toContain("Never use reset, clean or stash");
+    expect(worker).toContain("Do not commit to or fast-forward main");
+    expect(worker).toContain("reuse it");
+    expect(worker).toContain("Do not publish when required checks or required review evidence are missing");
   });
 
   test("setup's init and scaffold modes keep existing-repo adoption separate from app scaffolding", () => {
@@ -195,6 +184,7 @@ describe("repo-harness action command skills", () => {
 
     expect(initMode).toContain("existing repository");
     expect(setup).toContain("Does not create an application stack from any mode except `scaffold`");
+    expect(setup).toContain("Use the Bot-assigned mode and target repo");
     expect(initMode).toContain("repo-harness init");
     expect(initMode).toContain("repo-harness init --repo <repo>");
     expect(scaffold).toContain("new project");
@@ -223,7 +213,7 @@ describe("repo-harness action command skills", () => {
   });
 
   test("architecture stays focused and root handoff reference stays scoped to handoff packet files", () => {
-    const architecture = readCommand("repo-harness-architecture");
+    const architecture = readFileSync(join(COMMAND_ROOT, "repo-harness-architecture/references/worker.md"), "utf-8");
     const handoff = readFileSync(join(ROOT, "references", "handoff.md"), "utf-8");
 
     expect(architecture).toContain("repo-harness run archive-architecture-request");
