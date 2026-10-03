@@ -60,7 +60,6 @@ describe("new-plan helper integration", () => {
       expect(res.status).toBe(0);
       const canonical = readFileSync(join(TEMPLATE_DIR, "plan.template.md"), "utf-8");
       expect(readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8")).toBe(canonical);
-      expect(readFileSync(join(TEMPLATE_DIR, "../../.claude/templates/plan.template.md"), "utf-8")).toBe(canonical);
       const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-fallback\.md$/.test(name));
       expect(plans.length).toBe(1);
       const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");

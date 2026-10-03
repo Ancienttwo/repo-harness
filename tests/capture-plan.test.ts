@@ -30,10 +30,14 @@ describe('optional planning references', () => {
     expect(invoke('capture-plan.sh', ['--slug', 'new', '--promotion-reason', 'merge_boundary'], 'body').status).toBe(2);
     expect(existsSync(join(repo, 'plans/new.md'))).toBe(false);
   }));
-  test('capture preserves user-written 3P evidence without adding template fields', () => fixture((repo, invoke) => {
-    const body = '## Decision\nP1 map: scripts own the runtime.\nP2 trace: stdin becomes a plan file.\nP3 decision rationale: preserve the input text.\n';
+  test('capture does not add fixed due diligence fields', () => fixture((repo, invoke) => {
+    const body = '## Goal\nCapture one bounded change.\n## Scope\nOwned paths only.\n## Verify\nRun affected tests.\n## Rollback\nRevert the change.\n';
     expect(invoke('capture-plan.sh', ['--slug', 'evidence', '--title', 'Evidence'], body).status).toBe(0);
-    expect(readFileSync(join(repo, 'plans/evidence.md'), 'utf8')).toBe(`# Evidence\n\n${body}`);
+    const plan = readFileSync(join(repo, 'plans/evidence.md'), 'utf8');
+    expect(plan).toBe(`# Evidence\n\n${body}`);
+    for (const field of ['P1 map:', 'P2 trace:', 'P3 decision rationale:']) {
+      expect(plan).not.toContain(field);
+    }
   }));
   test('capture rejects traversal and symlink destinations', () => fixture((repo, invoke) => {
     expect(invoke('capture-plan.sh', ['--slug', '../outside'], 'body').status).not.toBe(0);
