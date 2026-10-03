@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { dirname, join } from "path";
+import { dirname, join, relative } from "path";
 import { spawnSync } from "child_process";
+import { removeOwnedDanglingSkillLinks } from "../src/effects/skill-tree-integrity";
 
 const ROOT = join(import.meta.dir, "..");
 /**
@@ -43,6 +44,101 @@ function writeExecutable(filePath: string, content: string) {
 }
 
 describe("Codex installed copy sync", () => {
+  test("removes retired package dangling links and same-folder backups on both hosts", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-dangling-owned-"));
+    const source = join(tmp, "source");
+    const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
+    try {
+      seedSkillSurfaceRuntime(source);
+      const retired = join(source, "assets", "skill-commands", "repo-harness-plan");
+      const foreign = join(tmp, "Waza");
+      symlinkSync(join(tmp, "missing-volume"), foreign);
+      mkdirSync(retired, { recursive: true });
+      writeFileSync(join(retired, "SKILL.md"), "old skill\n");
+      for (const root of roots) {
+        mkdirSync(root);
+        symlinkSync(retired, join(root, "repo-harness-plan"));
+        symlinkSync(relative(root, retired), join(root, "repo-harness-plan.bak"));
+        symlinkSync(join(foreign, "think"), join(root, "think"));
+        symlinkSync("foreign-loop", join(root, "foreign-loop"));
+      }
+      rmSync(retired, { recursive: true });
+      const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8",
+        env: { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
+          REPO_HARNESS_INSTALL_PROFILE: "minimal", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      for (const root of roots) {
+        for (const name of ["repo-harness-plan", "repo-harness-plan.bak"]) {
+          const link = join(root, name);
+          expect(() => lstatSync(link)).toThrow();
+          expect(result.stdout).toContain(`removed dangling skill symlink: ${link}`);
+        }
+        expect(readlinkSync(join(root, "repo-harness"))).toBe(source);
+        expect(readlinkSync(join(root, "think"))).toBe(join(foreign, "think"));
+        expect(readlinkSync(join(root, "foreign-loop"))).toBe("foreign-loop");
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  for (const live of [false, true]) {
+    test(`refuses foreign ${live ? "live" : "dangling"} facade links without changing either host`, () => {
+      const tmp = mkdtempSync(join(tmpdir(), "repo-harness-dangling-foreign-"));
+      const source = join(tmp, "source");
+      const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
+      // A shared prefix must not prove package ownership.
+      const foreign = join(`${source}-foreign`, "repo-harness-plan");
+      try {
+        seedSkillSurfaceRuntime(source);
+        if (live) {
+          mkdirSync(foreign, { recursive: true });
+          writeFileSync(join(foreign, "SKILL.md"), "foreign skill\n");
+        }
+        for (const root of roots) {
+          mkdirSync(root);
+          symlinkSync(foreign, join(root, "repo-harness-plan"));
+          symlinkSync(foreign, join(root, "think"));
+        }
+        const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+          cwd: ROOT, encoding: "utf-8",
+          env: { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
+            REPO_HARNESS_INSTALL_PROFILE: "minimal", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain("symlink target is not the expected package source");
+        for (const root of roots) {
+          expect(readlinkSync(join(root, "repo-harness-plan"))).toBe(foreign);
+          expect(readlinkSync(join(root, "think"))).toBe(foreign);
+          expect(existsSync(join(root, "repo-harness"))).toBe(false);
+        }
+        if (live) expect(readFileSync(join(foreign, "SKILL.md"), "utf-8")).toBe("foreign skill\n");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }, 30_000);
+  }
+
+  test("does not delete a dangling link through a package ancestor that points outside", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-dangling-escape-"));
+    try {
+      const source = join(tmp, "source");
+      const root = join(tmp, "skills");
+      const foreign = join(tmp, "foreign");
+      mkdirSync(source); mkdirSync(root); mkdirSync(foreign);
+      symlinkSync(foreign, join(source, "escape"));
+      const target = join(source, "escape", "missing");
+      const link = join(root, "repo-harness-plan");
+      symlinkSync(target, link);
+      expect(removeOwnedDanglingSkillLinks(source, [root])).toEqual([]);
+      expect(readlinkSync(link)).toBe(target);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("registers each command facade as a standalone skill in copy mode", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-sync-${Date.now()}`);
     const source = join(tmp, "source");

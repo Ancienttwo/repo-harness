@@ -394,6 +394,8 @@ sync_command_facades() {
   echo "[sync-installed] command facades ($mode): $synced into $root"
 }
 
+bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" remove-dangling-links "$CODEX_SKILLS_ROOT" "$CLAUDE_SKILLS_ROOT"
+
 preflight_skill_root "$CODEX_SKILLS_ROOT"
 preflight_skill_root "$CLAUDE_SKILLS_ROOT"
 
