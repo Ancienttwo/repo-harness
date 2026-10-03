@@ -1,4 +1,5 @@
 # Sprint: {{SPRINT_TITLE}}
+Optional document: use this template only when the task calls for it. Ordinary work records Goal / Scope / Changes / Verification / Risk / Rollback in the PR description. This document is not a merge permit.
 
 > **Status**: Draft
 > **Slug**: {{SPRINT_SLUG}}
@@ -10,9 +11,9 @@
 > **Goal Mode**: incremental
 
 Program-level sprint container. The Source PRD summary and ordered backlog
-decompose product intent into ordered rows. Contract rows become task-contract
-slices after `$think` expansion; inline rows stay in the sprint backlog or
-active plan Task Breakdown.
+decompose product intent into ordered rows. Default to inline execution; select
+contract rows only for an explicitly requested contract workflow. Rows stay in
+the sprint backlog or an optional active plan Task Breakdown.
 `tasks/todos.md` stays the deferred-goal ledger and never carries this backlog.
 
 ## PRD
@@ -55,9 +56,10 @@ Summarize or link the upper-layer PRD here. Keep the full PRD in `plans/prds/`.
 
 ## Backlog
 
-Ordered execution queue; keep rows in dependency order. Mode `contract` runs
-the full plan -> contract -> worktree flow; `inline` allows primary-tree
-execution for small tasks. Every row needs a concrete acceptance line.
+Ordered execution queue; keep rows in dependency order. Mode `inline` executes
+within the current authorized task. Mode `contract` is an optional, explicitly
+selected workflow; use a worktree when actual concurrency or dirty-work conflicts
+require isolation. Every row needs a concrete verification outcome.
 
 The `ID` cell is the persisted, immutable task identity (64 lowercase hex
 characters). It is minted once when the row is created and must never be edited,
@@ -66,7 +68,7 @@ task.
 
 | # | ID | Status | Task | Mode | Acceptance | Plan |
 |---|----|--------|------|------|------------|------|
-| 1 | {{TASK_ID_1}} | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
+| 1 | {{TASK_ID_1}} | [ ] | {{SPRINT_SLUG}}-task-1 | inline | Replace with a machine-checkable acceptance line | (pending) |
 
 ## Execution Log
 

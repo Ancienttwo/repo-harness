@@ -1,4 +1,5 @@
 # Plan: {{TITLE}}
+Optional document: use this template only when the task calls for it. Ordinary work records Goal / Scope / Changes / Verification / Risk / Rollback in the PR description. This document is not a merge permit.
 
 > **Status**: Draft
 > **Created**: {{TIMESTAMP}}
@@ -22,7 +23,7 @@
   - P3 decision rationale:
 
 ## Workflow Inventory
-Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
+Record only artifacts selected for this task. Omit unused optional contract, review and notes entries; this inventory does not block ordinary implementation.
 
 - Active plan: `{{PLAN_FILE}}`
 - Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
@@ -33,7 +34,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
+- Execution isolation: use a worktree for actual concurrency or dirty-work conflicts. Use contract projection only when the task explicitly selects that workflow.
 
 ## Approach
 ### Strategy
@@ -58,7 +59,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Review file: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/{{ARTIFACT_STEM}}.contract.md --strict`
+- Verification command: `repo-harness run verify-sprint --test <affected-test-file>` (repeat `--test` for each selected existing test; omit it for a typecheck-only task).
 - Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff

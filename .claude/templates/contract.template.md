@@ -1,4 +1,5 @@
 # Task Contract: {{TASK_SLUG}}
+Optional document: use this template only when the task calls for it. Ordinary work records Goal / Scope / Changes / Verification / Risk / Rollback in the PR description. This document is not a merge permit.
 
 > **Status**: Active
 > **Plan**: {{PLAN_FILE}}
@@ -37,12 +38,12 @@ What observable evidence would prove this task's direction wrong, and the cheape
 
 ## Root Cause Evidence
 
-Required when Task Profile is `bugfix`; leave as-is otherwise.
+For bugfix work, record the observed cause and reproduction; leave as-is otherwise.
 
 - root_cause: one sentence naming file:line/condition (testable, not "a state issue").
 - repro: the command or UI path that reproduces the symptom.
-- regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear as a `package_test` check in Verification Plan).
-- pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
+- regression_guard: path to a test that fails on the unfixed code and passes after the fix.
+- pre_fix_failure_artifact: path to an actual pre-fix regression run, when one was captured; otherwise state that it was not captured. Never manufacture a pre-fix log.
 
 ## Workflow Inventory
 
@@ -53,18 +54,12 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+- Completion: run the selected repository checks, record their command/result/subject/environment and residual risk, then follow the current task's authorized publication scope. Do not create acceptance receipts or waivers to authorize an ordinary merge.
 
 ## Change Assessment
 
 ```json
 {"protocol":1,"oracles":[]}
-```
-
-## Acceptance Policy
-
-```json
-{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}
 ```
 
 ## Allowed Paths
@@ -126,9 +121,8 @@ delegation:
 ## Exit Criteria (Machine Verifiable)
 
 This block contains only non-executable artifact requirements. Define every
-executable check once in the canonical Verification Plan below. Each check must
-state its phase, cost, evidence policy, necessity, and input environment; a
-missing or malformed plan fails closed. Populate artifact requirements only
+executable check once in the canonical Verification Plan below. When using a Verification Plan, each selected check records
+its phase, cost, evidence policy, necessity, and input environment. Populate artifact requirements only
 for deliverables this task actually owns; do not create a spec, notes or report
 merely to fill this template.
 

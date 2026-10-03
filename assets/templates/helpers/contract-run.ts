@@ -110,6 +110,7 @@ function usage(): string {
     "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-runner-invocations <n>] [--runner <label>] [--effort <tier>] [--json]",
     "",
     "recover --campaign-handoff <file> --campaign-parent-host <codex|claude> --campaign-parent-session <id> fences and recovers the exact retained worktree without spawning a child.",
+    "run accepts the same paired parent identity to resume an already-retired, expired, evidence-proven orphan with a persisted final; recovery never launches another provider.",
     "--campaign-provider codex-exec uses the tracked Codex role profiles and records managed invocation evidence.",
     "--campaign-handoff <selector-json-file> binds run to an acquired campaign worker. The local parent supplies commands; exact ownership is checked before child execution.",
     "",
@@ -227,7 +228,11 @@ function parseArgs(argv: string[]): Options {
     }
     return opts;
   }
-  if (opts.campaignParentHost || opts.campaignParentSession) throw new CliError("contract-run: campaign parent identity is only used by recover", 2);
+  if (opts.campaignParentHost || opts.campaignParentSession) {
+    if (opts.mode !== "run" || !opts.campaignHandoff || !opts.campaignParentHost || !opts.campaignParentSession) {
+      throw new CliError("contract-run: automatic recovery requires run, campaign handoff and paired parent host/session", 2);
+    }
+  }
   if (!opts.contract) {
     throw new CliError("contract-run: --contract is required", 2);
   }
@@ -893,9 +898,20 @@ async function buildRun(opts: Options) {
   const campaignResultPath = join(runDir, "campaign-attempt-result.json");
   const packageRoot = basename(SCRIPT_DIR) === "helpers" && basename(dirname(SCRIPT_DIR)) === "templates" && basename(dirname(dirname(SCRIPT_DIR))) === "assets"
     ? resolve(SCRIPT_DIR, "../../..") : resolve(SCRIPT_DIR, "..");
-  const campaign = opts.campaignHandoff && briefPreflight.ok
+  const campaignSelector = opts.campaignHandoff && briefPreflight.ok
+    ? JSON.parse(readFileSync(repoPath(repo, opts.campaignHandoff), "utf8")) : null;
+  if (campaignSelector && opts.campaignParentHost && opts.campaignParentSession) {
+    const { recoverRetiredCampaignDispatchIfEligible } = await import(pathToFileURL(join(packageRoot, "src/effects/automation/campaign-recovery.ts")).href);
+    const recovered = recoverRetiredCampaignDispatchIfEligible({ selector: campaignSelector,
+      host: opts.campaignParentHost, session_id: opts.campaignParentSession, env: process.env });
+    if (recovered) return { manifest: { version: 1, kind: "repo-harness-contract-run",
+      status: recovered.final?.contract_run.status ?? "fail", contract: repoRelative(repo, contractPath),
+      failure_class: recovered.final ? recovered.final.contract_run.failure_class : "reconciliation_required",
+      campaign_attempt: recovered.final, campaign_recovery: recovered }, manifestPath: "" };
+  }
+  const campaign = campaignSelector
     ? (await import(pathToFileURL(join(packageRoot, "src/effects/automation/campaign-worker.ts")).href)).bindCampaignWorker({
-      selector: JSON.parse(readFileSync(repoPath(repo, opts.campaignHandoff), "utf8")), worktree: repo, contract: repoRelative(repo, contractPath),
+      selector: campaignSelector, worktree: repo, contract: repoRelative(repo, contractPath),
       worker_command: opts.workerCommand!, verifier_command: opts.verifierCommand!, provider: opts.campaignProvider, env: process.env,
     }) as ReturnType<typeof import("../src/effects/automation/campaign-worker").bindCampaignWorker>
     : null;

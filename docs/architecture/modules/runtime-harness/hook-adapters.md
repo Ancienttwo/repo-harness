@@ -312,7 +312,7 @@ bash scripts/check-task-workflow.sh --strict
 
 ## 6. Workstream
 
-- `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`
+- `tasks/archive/gate-audit-20261003/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`
 
 ## Gate audit cutover
 

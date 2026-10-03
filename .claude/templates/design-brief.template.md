@@ -1,4 +1,5 @@
 # Design Brief: {{TITLE}}
+Optional document: use this template only when the task calls for it. Ordinary work records Goal / Scope / Changes / Verification / Risk / Rollback in the PR description. This document is not a merge permit.
 
 > **Status**: Draft
 > **Slug**: {{SLUG}}
@@ -6,10 +7,9 @@
 > **Date**: {{TIMESTAMP}}
 
 <!--
-Design brief usage: produce this file as docs/design/DESIGN-{{SLUG}}.md before any
-frontend task_profile sprint or contract executes. Every item in the
-Confirmation Checklist needs an explicit human check before execution proceeds;
-this gate carries the same weight as plan approval. imagegen-type skills (for
+Design brief usage: when the task requests a design brief, save it as
+docs/design/DESIGN-{{SLUG}}.md. Human approval is needed only when the current
+task explicitly selects a design approval step. imagegen-type skills (for
 example `imagegen-frontend-web`, `design-taste-frontend`) may produce the
 Preview Attachment below, but they are optional enhancers, never a substitute
 for the checklist.
@@ -115,7 +115,7 @@ List concrete things this design must NOT do. Vague taste complaints ("it looks 
 
 ## Confirmation Checklist
 
-Every item must be checked before this brief unblocks sprint/contract execution.
+Check the applicable items when the task explicitly requests design approval; this checklist is not an ordinary sprint/contract completion gate.
 
 - [ ] Value proposition is clear
 - [ ] Primary reference is decided
