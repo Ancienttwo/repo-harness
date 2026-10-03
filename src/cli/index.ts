@@ -27,6 +27,7 @@ import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { buildTaskAgentCommand } from './commands/task-agent';
 import { buildToolsCommand } from './commands/tools';
+import { buildHerdrCommand } from './commands/herdr';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
 import { buildDocsCommand } from './commands/docs';
@@ -125,6 +126,7 @@ export const SUBCOMMANDS = [
   'run',
   'setup',
   'tools',
+  'herdr',
   'brain',
   'capability-context',
   'docs',
@@ -871,6 +873,7 @@ export function buildProgram(): Command {
     });
 
   program.addCommand(buildToolsCommand());
+  program.addCommand(buildHerdrCommand());
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
