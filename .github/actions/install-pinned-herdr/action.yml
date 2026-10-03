@@ -1,0 +1,16 @@
+name: Install pinned Herdr
+description: Install the checksum-verified CI runtime from the repository policy.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        pin='.ai/harness/policy.json'
+        version="$(jq -er '.external_tooling.herdr.min_version' "$pin")"
+        url="$(jq -er '.external_tooling.herdr.release_assets["linux-x86_64"].url' "$pin")"
+        sha256="$(jq -er '.external_tooling.herdr.release_assets["linux-x86_64"].sha256' "$pin")"
+        curl --fail --location --retry 3 "$url" --output "$RUNNER_TEMP/herdr"
+        echo "$sha256  $RUNNER_TEMP/herdr" | sha256sum --check
+        sudo install -m 755 "$RUNNER_TEMP/herdr" /usr/local/bin/herdr
+        test "$(herdr --version)" = "herdr $version"

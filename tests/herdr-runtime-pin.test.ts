@@ -22,12 +22,14 @@ function readPolicy() {
 }
 
 function herdrInstallStep() {
-  const workflow = Bun.YAML.parse(readFileSync(CI_PATH, "utf8")) as {
-    jobs: { test: { steps: Array<{ name?: string; run?: string }> } };
+  const action = Bun.YAML.parse(readFileSync(join(ROOT, '.github/actions/install-pinned-herdr/action.yml'), 'utf8')) as {
+    runs: { using: string; steps: Array<{ shell: string; run: string }> };
   };
-  const step = workflow.jobs.test.steps.find(entry => entry.name === 'Install pinned Herdr runtime');
-  expect(step?.run).toBeDefined();
-  return step!.run!;
+  expect(action.runs.using).toBe('composite');
+  expect(action.runs.steps).toHaveLength(1);
+  expect(action.runs.steps[0]!.shell).toBe('bash');
+  return action.runs.steps[0]!.run;
+
 }
 
 describe("herdr runtime pin has one source of truth", () => {
@@ -41,6 +43,13 @@ describe("herdr runtime pin has one source of truth", () => {
   });
 
   test("the CI install step reads the pin instead of restating it", () => {
+    const workflow = Bun.YAML.parse(readFileSync(CI_PATH, 'utf8')) as {
+      jobs: Record<string, { steps: Array<{ name?: string; uses?: string }> }>;
+    };
+    for (const job of ['verify', 'test']) {
+      expect(workflow.jobs[job]!.steps.some(step => step.name === 'Install pinned Herdr runtime'
+        && step.uses === './.github/actions/install-pinned-herdr')).toBe(true);
+    }
     const step = herdrInstallStep();
     expect(step).toContain(".ai/harness/policy.json");
     expect(step).toContain(".external_tooling.herdr.min_version");
