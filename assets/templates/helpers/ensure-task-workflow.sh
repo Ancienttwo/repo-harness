@@ -357,10 +357,6 @@ PRD_TEMPLATE_EOF
 ## Agentic Routing
 - Selected route:
 - Routing reason:
-- Due diligence:
-  - P1 map:
-  - P2 trace:
-  - P3 decision rationale:
 
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.

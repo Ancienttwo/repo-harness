@@ -383,10 +383,6 @@ cat > "$plan_file" <<PLAN_EOF
 - Selected route: ${route}
 - Routing reason: Captured from ${source_name} planning output.
 - Source ref: ${source_ref:-"(none)"}
-- Due diligence:
-  - P1 map: See captured planning output below.
-  - P2 trace: See captured planning output below.
-  - P3 decision rationale: See captured planning output below.
 
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
