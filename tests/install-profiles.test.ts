@@ -424,11 +424,11 @@ describe('install profiles', () => {
     const { source } = writeManagedHostSurfaces(env, 'minimal');
     const codexSkills = join(env.HOME!, '.codex', 'skills');
 
-    // Canonical control: repo-harness-plan is still shipped by the package
+    // Canonical control: repo-harness-check is still shipped by the package
     // (source gets it here, at its post-cutover assets/skills/ location), so
-    // it keeps the existing adaptive-workflow bucket.
-    writePath(join(source, 'assets', 'skills', 'repo-harness-plan', 'SKILL.md'), '# managed\n');
-    writeMarkedFacade(join(codexSkills, 'repo-harness-plan'), '# managed\n');
+    // it keeps the existing scope-worktree-check-guards bucket.
+    writePath(join(source, 'assets', 'skill-commands', 'repo-harness-check', 'SKILL.md'), '# managed\n');
+    writeMarkedFacade(join(codexSkills, 'repo-harness-check'), '# managed\n');
 
     // Retired: physically present on host (e.g. left over from a broader
     // sync), but the package no longer ships its source directory at all.
@@ -436,9 +436,9 @@ describe('install profiles', () => {
     writeMarkedFacade(retiredDest, '---\nname: repo-harness-retired-demo\n---\n');
 
     const applied = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
-    const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-plan'));
+    const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-check'));
     const retiredSurface = applied.state.ownership_manifest.find(({ path }) => path === retiredDest);
-    expect(planSurface?.components).toEqual(['adaptive-workflow']);
+    expect(planSurface?.components).toEqual(['scope-worktree-check-guards']);
     expect(retiredSurface).toBeDefined();
     expect(retiredSurface?.components).toEqual([]);
     expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
@@ -548,7 +548,7 @@ describe('install profiles', () => {
   test('mutation-path rollback coverage includes all four profile-gated facades on both hosts', () => withHome((env) => {
     const paths = installProfileHostMutationPaths(env);
     for (const host of ['.codex', '.claude']) {
-      for (const facade of ['repo-harness-plan', 'repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
+      for (const facade of ['repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
         expect(paths).toContain(join(env.HOME!, host, 'skills', facade));
       }
       expect(paths).toContain(join(env.HOME!, host, 'skills', 'reverse-skill-router'));
@@ -634,7 +634,7 @@ describe('install profiles', () => {
     writeFileSync(adapter, '{"partially":"mutated"}\n');
     writeFileSync(statePath, '{"next":"state"}\n');
     writeFileSync(lockPath, '{"next":"lock"}\n');
-    const created = join(env.HOME!, '.codex', 'skills', 'repo-harness-plan');
+    const created = join(env.HOME!, '.codex', 'skills', 'repo-harness-check');
     mkdirSync(created, { recursive: true });
     writeFileSync(join(created, 'SKILL.md'), '# partial\n');
     rollbackInstallHostTransaction(transaction);

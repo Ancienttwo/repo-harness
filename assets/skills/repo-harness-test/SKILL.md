@@ -1,32 +1,23 @@
 ---
 name: repo-harness-test
-description: Testing techniques for the repo-harness source checkout: fixtures, execution, refactor evidence and Verification Plans. Triggers include 寫測試, 加測試, 測試太慢, 重複測試, 全量測試, test fixture, 跑哪些測試, 測試文件, write tests, test plan, slow tests, full suite. Not a debugging entrypoint and not a review entrypoint.
-when_to_use: "repo-harness-test, 寫測試, 加測試, 測試太慢, 重複測試, 全量測試, test fixture, 跑哪些測試, 測試文件, write tests, test plan, slow tests, full suite"
+description: Write or select tests and real fixtures in the repo-harness source checkout. Exclude downstream projects, diagnosis, and acceptance decisions.
+when_to_use: "repo-harness-test"
 ---
 
 # repo-harness-test
 
-Router for testing work. Policy prose is owned elsewhere; this package carries
-only executable technique and the tools this repository actually ships.
+Worker entrypoint. Confirm this is the repo-harness source checkout.
 
 ## Mode Selection
 
-Confirm the target is the repo-harness source checkout before using these
-references. For downstream projects, use their own test commands, fixtures and
-CI; do not apply these source-only paths or lane assumptions.
-
-- About to write, extend, or name a test, or choosing a fixture -> `references/authoring.md`.
-- Choosing which tests to run, or finding where suite time goes -> `references/running.md`.
-- Moving, splitting, merging, or deleting tests, and owing proof that nothing was lost -> `references/refactor-evidence.md`.
-- Writing a contract's `Verification Plan`, or deciding which CI lane a change lands in -> `references/verification-plan.md`.
+- Extend tests and select real fixtures: `references/authoring.md`.
+- Select affected tests and inspect runtime cost: `references/running.md`.
+- Move or remove tests without losing coverage: `references/refactor-evidence.md`.
+- Assign checks to CI lanes: `references/verification-plan.md`.
 
 ## Boundaries
 
-- Testing policy authority is `docs/reference-configs/sprint-contracts.md`,
-  section `## Testing Policy and Artifact Standards`. This package restates
-  none of it and creates no second policy; when the two appear to disagree,
-  that section wins and this package is wrong.
-- Not for diagnosing a failure's root cause; that is `hunt`.
-- Not for reviewing a diff, PR, or release readiness; that is `check`.
-- Runs nothing on the user's behalf, writes no acceptance evidence, and never
-  edits a contract's recorded results.
+Follow the target repo's test instructions. Preserve assertions unless behavior
+changes require them. Do not fabricate pre-fix logs or acceptance results.
+Report command, result, revision, environment and incomplete coverage.
+Diagnosis belongs to `hunt`; acceptance decisions belong to the Bot.

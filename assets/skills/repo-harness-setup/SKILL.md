@@ -6,14 +6,15 @@ when_to_use: "repo-harness-setup, initialize existing repo, migrate legacy repo,
 
 # repo-harness-setup
 
-Canonical rule owner for init, migrate, upgrade, repair, scaffold, and
-capability configuration. Router-only: shared preflight, mode selection, and
-cross-mode boundaries. Mode protocol lives under `references/`.
+Worker entrypoint. Use the Bot-assigned mode and target repo.
+If either is missing, return the decision to the Bot.
+
+Load only the reference for the assigned mode.
 
 ## Shared Preflight
 
 1. Confirm the target repo path (`pwd`, or an explicit `--repo` argument).
-2. Run `bun scripts/inspect-project-state.ts --repo <repo> --format text` when available.
+2. Inspect the proposed changes with `repo-harness init --repo <repo> --dry-run`.
 
 ## Mode Selection
 
@@ -29,6 +30,6 @@ cross-mode boundaries. Mode protocol lives under `references/`.
 - Never write user-level (`HOME`) state from a repo-scoped mode; user-level setup is the separate `repo-harness update` command.
 - Preserve user-authored repo files unless the workflow contract owns the generated surface; remove only `ownership=known_generated` files.
 - Does not create an application stack from any mode except `scaffold`.
-- Does not expose internal helper scripts (`create-project-dirs`, direct `scripts/init-project.sh`, `hooks-init`, `docs-init`) as public commands.
+- Does not expose internal helper scripts (`create-project-dirs`, direct shell init adapters, `hooks-init`, `docs-init`) as public commands.
 - Does not infer capability prefixes from broad directory globs; always use explicit prefixes.
-- A request spanning more than one mode resolves in dependency order, re-running the shared preflight before each next mode.
+- Return a request spanning multiple modes to the Bot for scope and order.

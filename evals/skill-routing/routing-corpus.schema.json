@@ -64,11 +64,10 @@
         },
         "expected_route": {
           "type": "string",
-          "description": "One of the 10 target canonical package names, or \"none\" when no workflow should be invoked.",
+          "description": "One of the 9 target canonical package names, or \"none\" when no workflow should be invoked.",
           "enum": [
             "repo-harness",
             "repo-harness-setup",
-            "repo-harness-plan",
             "repo-harness-product",
             "repo-harness-check",
             "repo-harness-ship",

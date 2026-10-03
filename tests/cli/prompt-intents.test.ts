@@ -199,6 +199,7 @@ describe('prompt intent classifiers', () => {
     const c = ctx('/think 出一个登录重构方案');
     expect(isThinkPlanStartIntent(c)).toBe(true);
     expect(derivePendingOrchestrationKind(c)).toBe('waza-think');
+    expect(derivePendingOrchestrationKind(ctx('规划 harness 工作'))).toBe('repo-harness-check');
     expect(derivePlanStartSlug(c)).toMatch(/^[a-z0-9-]+$/);
     expect(deriveDoneOutcome(ctx('这个方案不做了，放弃'))).toBe('Abandoned');
     expect(deriveDoneOutcome(ctx('完成了'))).toBe('Completed');

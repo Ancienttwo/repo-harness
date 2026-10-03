@@ -10,7 +10,7 @@ transaction passes.
 
 | Profile | Codex hooks | Components and discovery |
 |---|---:|---|
-| `minimal` | 7 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-plan`, `repo-harness-check`, and the repo-owned `obsidian-memory` facade |
+| `minimal` | 7 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-check`, and the repo-owned `obsidian-memory` facade |
 | `full` | 11 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
 
 Fresh global installs and adapter-only installs both default to `full`.

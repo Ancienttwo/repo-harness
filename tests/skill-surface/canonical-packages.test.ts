@@ -62,14 +62,9 @@ const CANONICAL_PACKAGES: ReadonlyArray<{
     ],
   },
   {
-    // SSD-03 staged this directory as "repo-harness-plan-canonical" (its
-    // frontmatter already carried the eventual public name) to avoid
-    // colliding with the then-live assets/skill-commands/repo-harness-plan
-    // facade. SSD-06 renamed the directory to its final public name
-    // (`git mv`) and deleted the retiring facade in the same slice.
-    dir: "repo-harness-plan",
-    frontmatterName: "repo-harness-plan",
-    references: ["create.md", "review.md"],
+    dir: "repo-harness-check",
+    frontmatterName: "repo-harness-check",
+    references: ["create.md", "review.md", "deploy-readiness.md"],
   },
 ];
 
@@ -92,7 +87,7 @@ const DISSOLVED_REFERENCE_FILES = [
 const ROUTER_BODY_BYTE_LIMIT = 2048;
 
 function readSkill(dir: string): string {
-  return readFileSync(join(SKILLS_ROOT, dir, "SKILL.md"), "utf-8");
+  return readFileSync(join(dir === "repo-harness-check" ? join(ROOT, "assets", "skill-commands") : SKILLS_ROOT, dir, "SKILL.md"), "utf-8");
 }
 
 function frontmatterOf(body: string): string {
@@ -113,7 +108,7 @@ function allFilesUnder(dir: string): string[] {
 }
 
 const ALL_CANONICAL_FILES = [
-  ...CANONICAL_PACKAGES.flatMap((pkg) => allFilesUnder(join(SKILLS_ROOT, pkg.dir))),
+  ...CANONICAL_PACKAGES.flatMap((pkg) => allFilesUnder(join(pkg.dir === "repo-harness-check" ? join(ROOT, "assets", "skill-commands") : SKILLS_ROOT, pkg.dir))),
   ...DISSOLVED_REFERENCE_FILES,
 ];
 
@@ -131,7 +126,7 @@ describe("canonical packages: SKILL.md frontmatter and router size", () => {
     });
 
     test(`${pkg.dir}/SKILL.md is a compact router: <= ${ROUTER_BODY_BYTE_LIMIT} bytes, routing + boundaries only`, () => {
-      const path = join(SKILLS_ROOT, pkg.dir, "SKILL.md");
+      const path = join(pkg.dir === "repo-harness-check" ? join(ROOT, "assets", "skill-commands") : SKILLS_ROOT, pkg.dir, "SKILL.md");
       const byteSize = statSync(path).size;
       expect(byteSize).toBeLessThanOrEqual(ROUTER_BODY_BYTE_LIMIT);
 
@@ -152,13 +147,13 @@ describe("canonical packages: every reference file is reachable from its SKILL.m
       const body = readSkill(pkg.dir);
       for (const reference of pkg.references) {
         const relativePath = `references/${reference}`;
-        expect(existsSync(join(SKILLS_ROOT, pkg.dir, relativePath))).toBe(true);
+        expect(existsSync(join(pkg.dir === "repo-harness-check" ? join(ROOT, "assets", "skill-commands") : SKILLS_ROOT, pkg.dir, relativePath))).toBe(true);
         expect(body).toContain(relativePath);
       }
     });
 
     test(`${pkg.dir}: references/ contains no undeclared files`, () => {
-      const referencesDir = join(SKILLS_ROOT, pkg.dir, "references");
+      const referencesDir = join(pkg.dir === "repo-harness-check" ? join(ROOT, "assets", "skill-commands") : SKILLS_ROOT, pkg.dir, "references");
       const actual = readdirSync(referencesDir).sort();
       expect(actual).toEqual([...pkg.references].sort());
     });
@@ -252,7 +247,7 @@ describe("canonical packages: activation proof — present in manifest v2 and co
     for (const pkg of CANONICAL_PACKAGES) {
       const entry = catalog.packages.find((p) => p.name === pkg.frontmatterName);
       expect(entry).toBeDefined();
-      expect(entry?.source).toBe(`assets/skills/${pkg.dir}`);
+      expect(entry?.source).toBe(`assets/${pkg.dir === "repo-harness-check" ? "skill-commands" : "skills"}/${pkg.dir}`);
       expect(entry?.retirementCandidate).toBeNull();
     }
   });
@@ -263,9 +258,9 @@ describe("canonical packages: activation proof — present in manifest v2 and co
     }
   });
 
-  test("repo-harness-plan is discovered by both profiles", () => {
+  test("repo-harness-check is discovered by both profiles", () => {
     for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(catalog, profile)).toContain("repo-harness-plan");
+      expect(facadesForProfile(catalog, profile)).toContain("repo-harness-check");
     }
   });
 

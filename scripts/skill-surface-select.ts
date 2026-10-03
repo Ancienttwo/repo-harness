@@ -72,6 +72,16 @@ async function main(argv: readonly string[]): Promise<void> {
   const profileFlag = parseProfileFlag(rest);
   const catalog = loadCatalog();
 
+  if (subcommand === "audience-sources") {
+    const [audience] = rest;
+    if (rest.length !== 1 || (audience !== "bot" && audience !== "worker")) {
+      fail("audience-sources requires exactly one <bot|worker> argument");
+    }
+    for (const pkg of catalog.packages) {
+      if (pkg.audience === audience && pkg.source !== null) console.log(`${pkg.name}\t${pkg.source}`);
+    }
+    return;
+  }
   if (subcommand === "facades") {
     if (!isProfile(profileFlag)) fail(`facades requires --profile <${SKILL_SURFACE_PROFILES.join("|")}>`);
     for (const name of facadesForProfile(catalog, profileFlag)) console.log(name);
@@ -93,7 +103,7 @@ async function main(argv: readonly string[]): Promise<void> {
     // manifest-derived authority the shell sync script uses both to resolve
     // each selected facade's real source directory (which no longer lives
     // under one fixed assets/skill-commands/<name> parent -- e.g.
-    // repo-harness-plan now sources from assets/skills/repo-harness-plan) and
+    // repo-harness-product sources from assets/skills/repo-harness-product) and
     // to preflight/retire whatever repo-harness-* names it finds already
     // installed on a host, selected or not.
     for (const pkg of catalog.packages) {
@@ -118,7 +128,7 @@ async function main(argv: readonly string[]): Promise<void> {
     for (const name of placements.codex) console.log(`codex ${name}`);
     return;
   }
-  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|profile-projection|facade-sources|external-skills|host-placements|managed-tree-hash`);
+  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected audience-sources|facades|profile-projection|facade-sources|external-skills|host-placements|managed-tree-hash`);
 }
 
 await main(process.argv.slice(2));

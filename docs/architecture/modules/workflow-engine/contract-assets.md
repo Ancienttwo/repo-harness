@@ -140,7 +140,7 @@ regressions verify these separate boundaries.
 
 另有两处已由后续 slice 取代，历史段落本身未改写：
 
-- 旧文档头部与 P1 曾把 `assets/skills/merge-gate/` 列为 matched prefix 与权威文件。该目录在 HEAD **不存在**（`assets/skills/` 下只有 `claude-plan`、`repo-harness-chatgpt`、`repo-harness-cross-review`、`repo-harness-plan`、`repo-harness-product`、`repo-harness-setup`），`.ai/context/capabilities.json` 的 prefix 列表也已移除它。这与 2026-07-21 段落「former host-only merge-gate skill/agent ... are removed」一致。
+- 旧文档头部与 P1 曾把 `assets/skills/merge-gate/` 列为 matched prefix 与权威文件。该目录在 HEAD **不存在**（当前 Skill 来源由 `assets/skill-commands/manifest.json` 控制），`.ai/context/capabilities.json` 的 prefix 列表也已移除它。这与 2026-07-21 段落「former host-only merge-gate skill/agent ... are removed」一致。
 - 旧 P2 只描述了 shell 路线（`pi_install_workflow_contract` → `pi_write_harness_policy` → …）。这些函数在 `scripts/lib/project-init-lib.sh:917,1675` 仍然存在，但调用者只有 `scripts/create-project-dirs.sh:43` 与 `scripts/init-project.sh:69`，且这两个脚本**不在** `helpers.scripts` 契约清单里。`repo-harness init` 的实际 runtime path 是 §2.1 的 TS 事务模型。
 
 ### 2026-08-11 Codex Native Agent Policy Cutover

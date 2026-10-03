@@ -51,13 +51,13 @@ describe("Codex installed copy sync", () => {
 
     try {
       seedSkillSurfaceRuntime(source);
-      mkdirSync(join(source, "assets", "skills", "repo-harness-plan"), { recursive: true });
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
       mkdirSync(join(source, "evals"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });
 
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
-      writeFileSync(join(source, "assets", "skills", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "---\nname: repo-harness-check\n---\n");
       writeFileSync(join(source, "assets", "skill-version.json"), "{\"version\":\"test\"}\n");
       writeFileSync(join(source, "evals", "benchmark.md"), "local benchmark output\n");
       mkdirSync(join(source, ".ai", "harness", "checks"), { recursive: true });
@@ -83,7 +83,7 @@ describe("Codex installed copy sync", () => {
 
       expect(result.status).toBe(0);
       expect(existsSync(join(codexSkills, "repo-harness", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(codexSkills, "repo-harness", "assets", "skills", "repo-harness-plan", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(codexSkills, "repo-harness", "assets", "skill-commands", "repo-harness-check", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexSkills, "repo-harness", "evals", "benchmark.md"))).toBe(false);
       expect(existsSync(join(codexSkills, "repo-harness", ".ai", "harness", "checks", "latest.json"))).toBe(false);
       expect(existsSync(join(codexSkills, "repo-harness", ".ai", "harness", "checks", "minimal-change.latest.json"))).toBe(false);
@@ -98,8 +98,8 @@ describe("Codex installed copy sync", () => {
       expect(existsSync(join(claudeSkills, "repo-harness", ".claude", ".trace.jsonl"))).toBe(false);
       expect(existsSync(join(claudeSkills, "repo-harness", ".codex", "hooks.json"))).toBe(false);
       // Each facade is also registered as its own host skill (copy mode).
-      expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(claudeSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(codexSkills, "repo-harness-check", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(claudeSkills, "repo-harness-check", "SKILL.md"))).toBe(true);
       expect(result.stdout).toContain("command facades (copy)");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -114,12 +114,12 @@ describe("Codex installed copy sync", () => {
 
     try {
       seedSkillSurfaceRuntime(source);
-      mkdirSync(join(source, "assets", "skills", "repo-harness-plan"), { recursive: true });
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });
 
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
-      writeFileSync(join(source, "assets", "skills", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "---\nname: repo-harness-check\n---\n");
       writeFileSync(join(source, "assets", "skill-version.json"), "{\"version\":\"test\"}\n");
       writeFileSync(join(source, "README.md"), "source-backed runtime alias\n");
 
@@ -142,9 +142,9 @@ describe("Codex installed copy sync", () => {
       expect(existsSync(join(source, "SKILL.md"))).toBe(true);
 
       // Each facade is registered as its own source-backed symlink (link mode).
-      expect(lstatSync(join(codexSkills, "repo-harness-plan")).isSymbolicLink()).toBe(true);
-      expect(lstatSync(join(claudeSkills, "repo-harness-plan")).isSymbolicLink()).toBe(true);
-      expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
+      expect(lstatSync(join(codexSkills, "repo-harness-check")).isSymbolicLink()).toBe(true);
+      expect(lstatSync(join(claudeSkills, "repo-harness-check")).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(codexSkills, "repo-harness-check", "SKILL.md"))).toBe(true);
       expect(result.stdout).toContain("command facades (link)");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -237,10 +237,10 @@ describe("Codex installed copy sync", () => {
     const custom = join(codexSkills, "repo-harness-custom");
     try {
       seedSkillSurfaceRuntime(source);
-      mkdirSync(join(source, "assets", "skills", "repo-harness-plan"), { recursive: true });
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
       mkdirSync(custom, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "source\n");
-      writeFileSync(join(source, "assets", "skills", "repo-harness-plan", "SKILL.md"), "plan\n");
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "plan\n");
       writeFileSync(join(custom, "SKILL.md"), "user-authored\n");
 
       const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
@@ -315,7 +315,7 @@ describe("Codex installed copy sync", () => {
         mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
         writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
       }
-      for (const name of ["repo-harness-plan", "repo-harness-product"]) {
+      for (const name of ["repo-harness-check", "repo-harness-product"]) {
         mkdirSync(join(source, "assets", "skills", name), { recursive: true });
         writeFileSync(join(source, "assets", "skills", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
       }
@@ -339,7 +339,7 @@ describe("Codex installed copy sync", () => {
           },
         });
         expect(result.status).toBe(0);
-        expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(expectCoreFacades);
+        expect(existsSync(join(codexSkills, "repo-harness-check", "SKILL.md"))).toBe(expectCoreFacades);
         expect(existsSync(join(codexSkills, "repo-harness-product", "SKILL.md"))).toBe(expectProduct);
         expect(existsSync(join(codexSkills, "repo-harness-ship", "SKILL.md"))).toBe(expectShip);
       }
@@ -358,8 +358,8 @@ describe("Codex installed copy sync", () => {
       seedSkillSurfaceRuntime(source);
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
       writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "---\nname: repo-harness-check\n---\n");
-      mkdirSync(join(source, "assets", "skills", "repo-harness-plan"), { recursive: true });
-      writeFileSync(join(source, "assets", "skills", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "---\nname: repo-harness-check\n---\n");
       mkdirSync(productSource, { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });
@@ -394,7 +394,7 @@ describe("Codex installed copy sync", () => {
       expect(retire.stdout).toContain("retiring");
       expect(retire.stdout).toContain(productDest);
       // Selected, still-canonical facades on the same host are untouched.
-      expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(codexSkills, "repo-harness-check", "SKILL.md"))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -410,8 +410,8 @@ describe("Codex installed copy sync", () => {
       seedSkillSurfaceRuntime(source);
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
       writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "---\nname: repo-harness-check\n---\n");
-      mkdirSync(join(source, "assets", "skills", "repo-harness-plan"), { recursive: true });
-      writeFileSync(join(source, "assets", "skills", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-check"), { recursive: true });
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-check", "SKILL.md"), "---\nname: repo-harness-check\n---\n");
       mkdirSync(productSource, { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });

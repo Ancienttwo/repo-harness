@@ -207,14 +207,14 @@ export function schemaDriftIssues(canonicalRoutes: readonly string[]): string[] 
 // tests/skill-routing-eval.test.ts) exercise metrics/report-shape/hash-
 // binding/threshold-evaluation via the same stub with configurable behavior.
 //
-// No single profile/host run discovers all 10 canonical routes (see the
+// No single profile/host run discovers all canonical routes (see the
 // notes file's D5 entry), so each run's metrics/thresholds are scoped to
 // its OWN reachable route subset (RoutingRunRecord.excluded_unreachable,
 // RouteRecallStat.reachable) and its overall_pass is labeled PARTIAL
 // evidence, never package acceptance on its own (RoutingRunReport
 // .evidence_scope/.evidence_note). The `aggregate` subcommand
 // (buildAggregateReport, below) combines 2+ runs into the actual
-// package-acceptance signal across all 10 canonical routes.
+// package-acceptance signal across all canonical routes.
 // ============================================================================
 
 import { spawnSync } from "child_process";
@@ -802,7 +802,7 @@ export function computeRoutingMetrics(
  * percentage comparison.
  *
  * HIGH finding fix (SSD-07 phase A acceptance-gate): no single profile/host
- * run discovers all 10 canonical routes (see the notes file's D5 entry), so a
+ * run discovers all canonical routes (see the notes file's D5 entry), so a
  * route that is structurally unreachable this run (per_route_recall[route]
  * .reachable === false, denominator 0) is NOT gated here -- it cannot drag
  * down allRoutesPass/overall_pass. This makes a single run's overall_pass
@@ -854,7 +854,7 @@ export function evaluateThresholds(
  * OWN reachable route subset only (profile/host-gated) -- PARTIAL evidence,
  * never package acceptance on its own (see SINGLE_RUN_EVIDENCE_NOTE).
  * "aggregate_package_acceptance": buildAggregateReport's output, below --
- * overall_pass here IS the package acceptance signal (all 10 canonical
+ * overall_pass here IS the package acceptance signal (all canonical
  * routes evaluated, each from a run where it was actually reachable).
  */
 export type EvidenceScope = "single_run_partial" | "aggregate_package_acceptance";
@@ -902,7 +902,7 @@ export interface RoutingRunReport {
 // Aggregate subcommand (SSD-07 phase A HIGH-finding fix, layer 2): the plan's
 // acceptance line -- "Every canonical route meets its floor; aggregate
 // accuracy cannot hide a zero-recall route" -- cannot be evaluated from any
-// single run (no profile/host discovers all 10 routes). This consumes 2+
+// single run (no profile/host discovers all canonical routes). This consumes 2+
 // single-run reports, verifies they are comparable (identical corpus/manifest
 // sha256, fail closed otherwise), for each corpus case picks a record from a
 // run where its expected route was reachable (deterministic tie-break when
@@ -930,7 +930,7 @@ export const AGGREGATE_EVIDENCE_NOTE =
   "Package acceptance signal: overall_pass here evaluates all four plan " +
   "floors over the union of 2+ runs, with every canonical route scored from " +
   "a run where it was actually reachable. A zero-recall route cannot hide " +
-  "behind a flattering aggregate -- every one of the 10 canonical routes is " +
+  "behind a flattering aggregate -- every canonical route is " +
   "independently gated.";
 
 export interface AggregateRunReport {
@@ -1471,7 +1471,7 @@ function usage(): string {
     "activation against the plan's floors, and writes a report + .sha256",
     "sidecar to --report. --dry-run always uses a built-in stub provider (no",
     "real provider call, no network); the real mode requires an explicit",
-    "--provider claude|codex. No single profile/host discovers all 10 canonical",
+    "--provider claude|codex. No single profile/host discovers all canonical",
     "routes, so a route unreachable this run is excluded from top1/per-route",
     "denominators and not gated; overall_pass here is PARTIAL evidence over",
     "this run's reachable subset only, not package acceptance (see aggregate).",

@@ -152,10 +152,9 @@ const OUT_OF_SCOPE_RESIDUALS: Record<string, string> = {};
 // metadata" category, expressed per-package instead of centrally.
 const REFERENCE_PROVENANCE_DIR_PREFIXES = [
   "assets/skills/repo-harness-setup/references",
-  "assets/skills/repo-harness-plan/references",
+  "assets/skill-commands/repo-harness-check/references",
   "assets/skills/repo-harness-product/references",
   "assets/skills/repo-harness-chatgpt/references",
-  "assets/skill-commands/repo-harness-check/references",
 ];
 
 function allFiles(root: string): string[] {
@@ -174,6 +173,15 @@ function allFiles(root: string): string[] {
  * to more identifier/hyphen characters on either side (rejects homonyms
  * like `.repo-harness-migrate-backup` or `repo-harness-deploy-sql`, which a
  * plain substring scan would false-positive on). */
+// Recorded provider reports keep the old route vocabulary. They are evidence,
+// not an invocation catalog. Exempt only this retired name in these exact reports.
+const HISTORICAL_REPORTS = [
+  "evals/skill-routing/phase-b-attempt-outcome.json",
+  "evals/skill-routing/routing-aggregate.json",
+  "evals/skill-routing/routing-report-strict-claude.json",
+  "evals/skill-routing/routing-report-product-planning-claude.json",
+];
+
 const RETIREMENT_DIAGNOSTICS: Record<string, string[]> = {
   "claude-review": ["src/cli/index.ts", "src/effects/review/generic-review.ts"],
 };
@@ -223,6 +231,7 @@ describe("retired Skill package names: live-reference scan", () => {
       for (const name of RETIRED_NAMES) {
         // Only explicit upgrade refusal and legacy drain path detection; no runnable alias/reader.
         if (RETIREMENT_DIAGNOSTICS[name]?.includes(rel)) continue;
+        if (name === "repo-harness-plan" && HISTORICAL_REPORTS.includes(rel)) continue;
         if (hasLiveHit(content, name)) {
           violations.push(`${rel}: ${name}`);
         }

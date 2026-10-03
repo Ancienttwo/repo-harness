@@ -19,6 +19,7 @@ export type SkillSurfaceKind = (typeof SKILL_SURFACE_KINDS)[number];
 export const SKILL_SURFACE_DISCOVERABILITIES = [
   "always",
   "profile-facade",
+  "explicit-only",
   "cli-reference",
   "cross-model",
   "explicit-setup",
@@ -49,6 +50,7 @@ export interface SkillSurfaceRetiredPackage {
 export interface SkillSurfacePackage {
   readonly name: string;
   readonly kind: SkillSurfaceKind;
+  readonly audience: "bot" | "worker";
   readonly source: string | null;
   /** Upstream package spec (e.g. "tw93/Waza") for kind:"external" packages fetched via `bunx skills add`; null otherwise. */
   readonly provider: string | null;
@@ -339,6 +341,10 @@ function validatePackage(
     ));
   }
 
+  if (raw.audience !== "bot" && raw.audience !== "worker") {
+    diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.audience`, `${name}: audience must be bot or worker`));
+  }
+
   let retirementCandidate: SkillSurfaceRetirementCandidate | null = null;
   if (raw.retirementCandidate !== null && raw.retirementCandidate !== undefined) {
     if (!isRecord(raw.retirementCandidate)) {
@@ -372,6 +378,7 @@ function validatePackage(
 
   return {
     name,
+    audience: raw.audience as SkillSurfacePackage["audience"],
     kind: (raw.kind as SkillSurfaceKind) ?? "facade",
     source: (raw.source as string | null) ?? null,
     provider: typeof raw.provider === "string" ? raw.provider : null,

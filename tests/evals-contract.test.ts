@@ -51,7 +51,6 @@ describe("Skill eval assets", () => {
     for (const command of [
       "repo-harness",
       "repo-harness-setup",
-      "repo-harness-plan",
       "repo-harness-product",
       "repo-harness-check",
       "repo-harness-ship",
@@ -62,6 +61,12 @@ describe("Skill eval assets", () => {
     }
     expect(combined).toContain("existing repo");
     expect(combined).toContain("new project");
+  });
+
+  test("eval asset uses the merged planning owner", () => {
+    const combined = JSON.stringify(evals);
+    expect(combined).not.toContain("repo-harness-plan");
+    expect(combined).toContain("repo-harness-check");
   });
 
   test("eval asset covers shared .ai hook routing expectations", () => {

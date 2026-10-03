@@ -545,14 +545,25 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | --- | --- |
 | `repo-harness` | 根路由 Skill，无条件同步到每个 profile |
 | `repo-harness-setup` | Init、migrate、upgrade、repair、scaffold 和 capability-configuration 各 mode；仅 router-only |
-| `repo-harness-plan` | 创建一份 decision-complete plan，或者 review 已有的 plan |
 | `repo-harness-product` | 面向上层产品规划的 PRD、Sprint 和 Goal mode |
-| `repo-harness-check` | Workflow 和 release check，附带 deploy-readiness reference |
+| `repo-harness-check` | 制定范围明确的计划。审阅计划。核对检查证据。 |
 | `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
 | `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
+| `auto-campaign` | Bot：执行一次明确授权的 campaign。 |
+| `obsidian-memory` | Bot：明确请求后读取或写入记忆。 |
+| `repo-harness-test` | Worker：源码测试与真实 fixture。 |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
+
+Bot skills 负责范围、委派和验收。Worker skills 负责执行。
+
+Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
+`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-chatgpt`. Worker: `repo-harness-setup`,
+`repo-harness-test`, and `repo-harness-architecture`.
+`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` 必须显式调用。
+普通任务使用简短 brief 和 PR 描述。PRD、Sprint、Goal 用于明确请求的产品工作。
 
 规划链路刻意分层：
 

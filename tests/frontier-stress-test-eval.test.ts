@@ -10,7 +10,7 @@ const EVAL_ROOT = join(ROOT, "evals", "frontier-stress-test");
 describe("bounded frontier stress-test eval", () => {
   test("keeps the treatment outside the managed planning Skill", () => {
     const treatment = readFileSync(join(EVAL_ROOT, "treatment", "SKILL.md"), "utf8");
-    const managed = readFileSync(join(ROOT, "assets/skills/repo-harness-plan/SKILL.md"), "utf8");
+    const managed = readFileSync(join(ROOT, "assets/skill-commands/repo-harness-check/SKILL.md"), "utf8");
 
     expect(treatment).toContain("evaluation-only delta");
     expect(treatment).toContain("at most three frontier questions");
@@ -26,7 +26,7 @@ describe("bounded frontier stress-test eval", () => {
 
     for (const entry of manifest.evals) {
       expect(entry.files).toContain("evals/frontier-stress-test/common");
-      expect(entry.files).toContain("assets/skills/repo-harness-plan/references/create.md");
+      expect(entry.files).toContain("assets/skill-commands/repo-harness-check/references/create.md");
       expect(entry.graders.files_exist).toContain("final-response.md");
       expect(entry.graders.commands_succeed).toContain("git diff --cached --quiet HEAD --");
       expect(entry.anti_graders?.files_not_exist).toContain(".eval-agent-head-changed");

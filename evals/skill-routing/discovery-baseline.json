@@ -272,7 +272,6 @@
     "canonical_routes": [
       "repo-harness",
       "repo-harness-setup",
-      "repo-harness-plan",
       "repo-harness-product",
       "repo-harness-check",
       "repo-harness-ship",
@@ -316,7 +315,7 @@
       "explicit_chatgpt_setup": "Never implied by product-planning or any other profile; repo-harness-chatgpt is additive only after an explicit ChatGPT setup action.",
       "architecture": "Never implied by a profile; available only through the root router's progressive load or an explicit operator install."
     },
-    "source": "plans/plan-20260715-1140-skill-surface-discovery-convergence.md (\"Target discovery matrix\" and \"Target canonical packages\" sections)"
+    "source": "Current routing targets after planning merged into repo-harness-check. Historical source_inventory and recorded evidence remain unchanged."
   },
   "historical_evidence_ruling": {
     "source": "docs/researches/20260715-skill-surface-discovery-audit.md:60",
@@ -325,5 +324,5 @@
     "reason": "The line records neither the six file names nor a pinned subject SHA, so the result cannot be bound to a reproducible subject.",
     "disposition": "SSD relies on fresh deterministic gates (this slice's own tests plus the required-checks list) rather than reusing this cached number."
   },
-  "corpus_sha256": "17a8a2feba0d1dd309f318eab9eb3b95c6ed1d3acf4da75df136c6eedff051f9"
+  "corpus_sha256": "24197ec2668027783557ee802ca52bf2388cfa558b7be111ba4c292699d3429d"
 }

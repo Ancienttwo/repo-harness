@@ -81,7 +81,7 @@ done <<< "$PROFILE_PROJECTION"
 # Manifest-derived name -> source path for every facade-kind package,
 # regardless of profile. A facade's source directory is no longer guaranteed
 # to live under one fixed assets/skill-commands/<name> parent (e.g.
-# repo-harness-plan now sources from assets/skills/repo-harness-plan), so
+# repo-harness-product sources from assets/skills/repo-harness-product), so
 # every consumer below resolves the real source through this list instead of
 # assuming a fixed parent directory.
 if ! FACADE_SOURCES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facade-sources)"; then
