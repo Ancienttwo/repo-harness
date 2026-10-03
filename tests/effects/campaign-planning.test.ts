@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -14,9 +15,11 @@ import type { CampaignPlanningJob } from '../../src/core/automation/campaign-pla
 import { appendDevelopmentCampaignEvent, readDevelopmentCampaignStatus } from '../../src/effects/automation/development-campaign-store';
 import { issueBatchGroupStoreRoot } from '../../src/effects/automation/issue-batch-store';
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
+afterAll(() => templates.dispose());
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })));
 async function fixture(planningOnly = false) {
-  const f = await historicalPlanningFixture(false, false, undefined, true, {}, false, planningOnly);
+  const f = await templates.materialize(false, false, undefined, true, {}, false, planningOnly);
   roots.push(f.root, f.home);
   const authority = requireCampaignPlanningAuthority(f.root, f.intent, f.env);
   const task = authority.manifest.slots[0]!.task_id;

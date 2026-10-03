@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { readFileSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
@@ -17,12 +18,14 @@ import { readPlanningRecord, persistPlanningRecord, withCampaignPlanningLock } f
 import { validateFleetWorkEnvelope } from '../../src/effects/fleet/acquire';
 import { validateClaimActorReceiptLive } from '../../src/effects/engineers/claim-actor-store';
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
+afterAll(() => templates.dispose());
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })));
 const sprint = 'plans/sprints/repair.sprint.md';
 const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 test('new acquisition and repeated request refuse before budget, callback or Lease mutation', async () => {
-  const f = await historicalPlanningFixture(); roots.push(f.root, f.home);
+  const f = await templates.materialize(); roots.push(f.root, f.home);
   const budget = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env }).budget;
   const before = readAutomationBudgetStatus(f.root, budget.automation_run_id, f.env);
   let invoked = 0;
@@ -36,7 +39,7 @@ test('new acquisition and repeated request refuse before budget, callback or Lea
 });
 
 test('generic campaign claim actuator cannot bypass the readiness projection', async () => {
-  const f = await historicalPlanningFixture(); roots.push(f.root, f.home);
+  const f = await templates.materialize(); roots.push(f.root, f.home);
   const task = requireCampaignPlanningAuthority(f.root, f.intent, f.env).manifest.slots[0]!.task_id;
   let claims = 0;
   expect(() => withCampaignCapacity(f.root, task, 'main', f.env, () => { claims++; })).toThrow('trusted exact revision readback');
@@ -45,7 +48,7 @@ test('generic campaign claim actuator cannot bypass the readiness projection', a
 });
 
 test('historical bound envelope and actor remain valid without admitting another dispatch', async () => {
-  const f = await historicalPlanningFixture(); roots.push(f.root, f.home);
+  const f = await templates.materialize(); roots.push(f.root, f.home);
   const d = installHistoricalBoundDispatch(f);
   expect(() => validateFleetWorkEnvelope(f.root, d.envelope, f.env)).not.toThrow();
   expect(() => validateClaimActorReceiptLive(f.root, d.receipt, d.envelope)).not.toThrow();
@@ -55,7 +58,7 @@ test('historical bound envelope and actor remain valid without admitting another
 });
 
 test('two OS callers cannot allocate campaign Claims under the frozen admission boundary', async () => {
-  const f = await historicalPlanningFixture(true); roots.push(f.root, f.home);
+  const f = await templates.materialize(true); roots.push(f.root, f.home);
   const entry = join(import.meta.dir, '../../src/effects/automation/campaign-acquisition.ts');
   const children = [f.executeInput.authorization_id, f.secondAuthorization].map(authorization_id => Bun.spawn([process.execPath, '-e', `
     import { runCampaignAcquisition } from ${JSON.stringify(entry)};
@@ -67,7 +70,7 @@ test('two OS callers cannot allocate campaign Claims under the frozen admission 
 });
 
 test('real Engineer acquire-next skips a campaign with unavailable revision admission for later unrelated ready work', async () => {
-  const f = await historicalPlanningFixture(true); roots.push(f.root, f.home);
+  const f = await templates.materialize(true); roots.push(f.root, f.home);
   const taskId = 'e'.repeat(64);
   const task = 'Unrelated ready repair';
   const plan = 'plans/plan-unrelated.md';
@@ -98,7 +101,7 @@ test('real Engineer acquire-next skips a campaign with unavailable revision admi
   expect(readLease(f.root, campaignTask).record).toBeNull();
 });
 test('verified revision admits a real acquisition and worker binding while missing image refuses preparation', async () => {
-  const f = await historicalPlanningFixture(false, false, undefined, true, {}, false, false, true); roots.push(f.root, f.home);
+  const f = await templates.materialize(false, false, undefined, true, {}, false, false, true); roots.push(f.root, f.home);
   const inventory = inspectCampaignAcquisitionCutover(f.root, f.intent);
   migrateCampaignAcquisitionReceipts({ repo_root: f.root, intent: f.intent,
     expected_inventory_sha256: inventory.inventory_sha256, quiescence_evidence: 'fixture:all-old-producers-stopped' });
@@ -128,7 +131,7 @@ test('verified revision admits a real acquisition and worker binding while missi
 // These cases exercise the real outer record protocol with existing budget ports; lower campaign
 // authority/claim E2E remains covered by the real fixture above. No production selected caller is added.
 test('S2 outer identity conflicts before reserve/invoke; completed replay does not repay budget', async () => {
-  const f=await historicalPlanningFixture();roots.push(f.root,f.home);
+  const f=await templates.materialize();roots.push(f.root,f.home);
   const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
   migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:quiesced'});
   const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
@@ -181,7 +184,7 @@ test('S2 outer identity conflicts before reserve/invoke; completed replay does n
 });
 
 test('S2 outer unresolved effect and missing-result persistence never invoke twice', async () => {
-  const f=await historicalPlanningFixture();roots.push(f.root,f.home);
+  const f=await templates.materialize();roots.push(f.root,f.home);
   const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
   migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:quiesced'});
   const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
@@ -206,7 +209,7 @@ test('S2 outer unresolved effect and missing-result persistence never invoke twi
 });
 
 test.each(['completed','pending'] as const)('S2 legacy outer %s is fenced or stops cutover without spending', async state => {
-  const f=await historicalPlanningFixture();roots.push(f.root,f.home);
+  const f=await templates.materialize();roots.push(f.root,f.home);
   const cursor=canonicalMessageDigest({operation:'campaign-acquisition-budget',intent_sha256:f.intent.intent_sha256,key:f.executeInput.idempotency_key});
   const admissionKey=canonicalMessageDigest({cursor,part:'admission'}).slice(7),resultKey=canonicalMessageDigest({cursor,part:'result'}).slice(7);
   const principal=resolveEngineerPrincipal({repo_root:f.root,authorization_id:f.executeInput.authorization_id,env:f.env});
@@ -244,7 +247,7 @@ test.each(['completed','pending'] as const)('S2 legacy outer %s is fenced or sto
 
 
 async function s3Fixture() {
-  const f=await historicalPlanningFixture(false,false,undefined,true,{},false,false,true);
+  const f=await templates.materialize(false,false,undefined,true,{},false,false,true);
   roots.push(f.root,f.home);
   const inventory=inspectCampaignAcquisitionCutover(f.root,f.intent);
   migrateCampaignAcquisitionReceipts({repo_root:f.root,intent:f.intent,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'fixture:old-producers-retired'});

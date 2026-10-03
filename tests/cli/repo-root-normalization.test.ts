@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { join, relative } from 'path';
 import { mkdtempSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
@@ -6,6 +7,8 @@ import { historicalPlanningFixture } from '../helpers/historical-campaign-lifecy
 import { runCampaignHeartbeatStep } from '../../src/cli/commands/campaign';
 
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
+afterAll(() => templates.dispose());
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 /**
@@ -20,7 +23,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
  * depend on which spelling the operator typed.
  */
 test('campaign step derives one repository identity from a relative and an absolute --repo', async () => {
-  const fixture = await historicalPlanningFixture(false, false, undefined, true, {}, false, true);
+  const fixture = await templates.materialize(false, false, undefined, true, {}, false, true);
   roots.push(fixture.root, fixture.home);
 
   const previousHome = process.env.REPO_HARNESS_HOME;

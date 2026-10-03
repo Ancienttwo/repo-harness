@@ -55,7 +55,7 @@ export async function createAdoptionRepository(mode: 'shadow' | 'active' = 'acti
       : createHash('sha256').update(execFileSync('git', ['show', `${revision}:${t.path}`], { cwd: root })).digest('hex'));
     return { sessionId: 'challenge', status: 'completed', output: JSON.stringify({ base_main_sha: revision, answers }), meta: campaignBrowserMetadata({ sessionId: 'challenge', sourceSessionId: 'initial', repoRoot: root, profileDir: home, profileDirectory: 'Profile 1' }) };
   } };
-  return { root, home, env, revisionObservation, intent: started.intent, authorization, input, deps, calls: () => calls };
+  return { root, home, env, revisionObservation, intent: started.intent, authorization, input, deps, calls: () => calls, resetCalls: () => { calls = 0; } };
 }
 
 /** Fake transport only; production observation decoder, reservation and settlement stay real. */

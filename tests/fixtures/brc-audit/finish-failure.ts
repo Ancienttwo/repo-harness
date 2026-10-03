@@ -5,13 +5,13 @@ import { join } from 'path';
 import { mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
 import { execFileSync, spawnSync } from 'child_process';
 mock.module('../../../src/effects/automation/campaign-revision-admission', () => ({ requireCampaignActiveAdmission() {} }));
-const { historicalPlanningFixture, installHistoricalBoundDispatch, prepareHistoricalCodexInvocation, modeledContainerTerminal } = await import('../../helpers/historical-campaign-lifecycle');
+const { installHistoricalBoundDispatch, prepareHistoricalCodexInvocation, modeledContainerTerminal } = await import('../../helpers/historical-campaign-lifecycle');
 const runtime = await import('../../../src/effects/automation/campaign-runtime');
 mock.module('../../../src/effects/automation/campaign-runtime', () => ({ ...runtime, prepareCampaignCodexInvocation: prepareHistoricalCodexInvocation }));
 const { bindCampaignWorker } = await import('../../../src/effects/automation/campaign-worker');
 const { readAutomationBudgetStatus } = await import('../../../src/effects/automation/budget-store');
 const { readTaskAutomationAttemptCurrent } = await import('../../../src/effects/engineers/automation-attempt-store');
-const f = await historicalPlanningFixture();
+const f: Parameters<typeof installHistoricalBoundDispatch>[0] = JSON.parse(readFileSync(0, 'utf8'));
 const acquired = installHistoricalBoundDispatch(f); const worktree = acquired.envelope.worktree_path;
 try {
   const profiles = join(f.root, '.codex/agents'); mkdirSync(profiles, { recursive: true });
