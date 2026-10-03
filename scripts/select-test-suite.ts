@@ -24,15 +24,16 @@ export const integrationFiles = new Set([
   'tests/continuation-conformance.test.ts',
 ]);
 
-// These tests mutate HOME or exercise the account-home boundary. Keep a serial tail.
+// Keep sensitive HOME cases and real process deadlines in the serial tail.
+// init and global-runtime-init use per-file processes and unique fixture HOME paths.
 // Port-literal tests already use port 0, browser URLs, or temporary config files.
 export const serialFiles = new Set([
-  'tests/cli/init.test.ts',
+  'tests/herdr-task-lifecycle.test.ts',
+  'tests/bounded-supervisor-audit.test.ts',
   'tests/cli/install.test.ts',
   'tests/cli/doctor.test.ts',
   'tests/cli/status.test.ts',
   'tests/cli/security.test.ts',
-  'tests/cli/global-runtime-init.test.ts',
   'tests/cli/global-runtime.test.ts',
   'tests/run-skill-evals.test.ts',
 ]);

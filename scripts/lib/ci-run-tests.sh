@@ -232,9 +232,18 @@ run_bun_tests() {
 # Direct use runs a complete suite. Sourcing keeps the caller's settings.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   set -euo pipefail
-  if [[ "$#" -gt 1 ]]; then echo "Usage: ci-run-tests.sh [core|integration|full]" >&2; exit 2; fi
-  cd "$(dirname "${BASH_SOURCE[0]}")/../.."
   BUN_TEST_SUITE="${1:-full}"
+  if [[ "$#" -gt 0 ]]; then shift; fi
+  if [[ "$#" -eq 2 && "$1" == --timeout && "$2" =~ ^[1-9][0-9]*$ ]]; then
+    BUN_TEST_TIMEOUT_MS="$2"
+    shift 2
+  fi
+  if [[ "$#" -gt 0 || ( "$BUN_TEST_SUITE" != core && "$BUN_TEST_SUITE" != integration && "$BUN_TEST_SUITE" != full ) ]]; then
+    echo "Usage: ci-run-tests.sh [core|integration|full] [--timeout <ms>]" >&2
+    exit 2
+  fi
+  cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+  bun run build:oar-review-host
   unset BUN_TEST_FILES
   BUN_TEST_ISOLATE_FILES=1
   BUN_TEST_SCHEDULE_FILES=1

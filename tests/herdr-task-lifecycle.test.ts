@@ -699,7 +699,7 @@ test('MCP goals use visible persistent Herdr peers, redact history and clean suc
   for (const kind of ['codex', 'claude']) {
     const fake = join(bin, kind);
     writeFileSync(fake, `#!${process.execPath}
-import {readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
+import {existsSync,readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
 const session=${JSON.stringify(session)};if(!/^task-proof-[0-9a-f]{16}$/.test(session))throw new Error('fixture only');
 const pane=process.env.HERDR_PANE_ID;let seq=0;
 const report=state=>{const r=spawnSync(${JSON.stringify(herdr)},['--session',session,'pane','report-agent',pane,'--source','fixture','--agent',${JSON.stringify(kind)},'--state',state,'--seq',String(++seq)],{env:process.env,encoding:'utf8'});if(r.status!==0)throw new Error(r.stderr);};
@@ -711,18 +711,24 @@ process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(inpu
  for(const line of lines){const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');if(!text.trim())continue;
  const ref=/^Read task request (.*); write its result only to /.exec(text)?.[1];if(!ref)throw new Error('unexpected prompt');
  const request=JSON.parse(readFileSync(ref,'utf8'));const context=readFileSync(request.context_ref,'utf8');
- const executeGoal=()=>{report('working');
+ const ack=${JSON.stringify(join(fixture,'working-observation'))};
+ const executeGoal=()=>{if(context.includes('Finish fixture goal'))writeFileSync(ack+'.armed',JSON.stringify({request_id:request.request_id,pid:process.pid,pane}));report('working');
  process.stdout.write('GOAL VISIBLE '+${JSON.stringify(kind)}+' Authorization: Bearer fixture-secret-token\\n');
- if(!context.includes('WAIT_FOREVER'))setTimeout(()=>{if(context.includes('WRITE_RESULT')){writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'fixture result'}));renameSync(request.result_ref+'.tmp',request.result_ref);}process.stdout.write('GOAL COMPLETE\\n');report('idle');},200);};
+ const finish=()=>{if(context.includes('WRITE_RESULT')){writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'fixture result'}));renameSync(request.result_ref+'.tmp',request.result_ref);}process.stdout.write('GOAL COMPLETE\\n');report('idle');};
+ if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack)){const observed=JSON.parse(readFileSync(ack,'utf8'));if(observed.request_id===request.request_id&&observed.pid===process.pid){clearInterval(timer);finish();}}},10);}
+ else if(!context.includes('WAIT_FOREVER'))setTimeout(finish,200);};
  if(context.includes('STARTUP_WORKING')){setTimeout(()=>report('idle'),500);setTimeout(executeGoal,1500);}
- else if(context.includes('EARLY_IDLE')){report('unknown');report('idle');if(!context.includes('IDLE_ONLY'))setTimeout(executeGoal,1000);}else setTimeout(executeGoal,500);
+ else if(context.includes('EARLY_IDLE')){report('unknown');report('idle');if(!context.includes('IDLE_ONLY'))setTimeout(executeGoal,1000);}
+ else if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack+'.baseline')){clearInterval(timer);executeGoal();}},10);}
+ else if(context.includes('WAIT_FOREVER'))executeGoal();
+ else setTimeout(executeGoal,500);
  }});
 `);
     chmodSync(fake,0o700);
   }
   const wrappedHerdr = join(bin, 'herdr');
   writeFileSync(wrappedHerdr, `#!${process.execPath}
-import {readFileSync} from 'fs';import {spawnSync} from 'child_process';
+import {existsSync,readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
 const args=process.argv.slice(2);
 if(args[2]==='agent' && args[3]==='prompt' && readFileSync(${JSON.stringify(goalPath)},'utf8').includes('STARTUP_WORKING')){
  const queried=spawnSync(${JSON.stringify(herdr)},[...args.slice(0,2),'agent','get',args[4]],{env:process.env,encoding:'utf8'});
@@ -730,7 +736,16 @@ if(args[2]==='agent' && args[3]==='prompt' && readFileSync(${JSON.stringify(goal
  const reported=spawnSync(${JSON.stringify(herdr)},[...args.slice(0,2),'pane','report-agent',agent.pane_id,'--source','fixture-delivery','--agent',agent.agent,'--state','working','--seq','1'],{env:process.env,encoding:'utf8'});
  if(reported.status!==0)throw new Error(reported.stderr);
 }
-const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,stdio:'inherit'});process.exit(result.status??1);
+const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,encoding:'utf8'});if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('Finish fixture goal')){
+ const prefix=${JSON.stringify(join(fixture,'working-observation'))};
+ if(args[2]==='agent'&&args[3]==='prompt'&&result.status===0){const ref=/^Read task request (.*); write its result only to /.exec(args[5])?.[1];writeFileSync(prefix+'.delivered',JSON.stringify(JSON.parse(readFileSync(ref,'utf8'))));}
+ if(args[2]==='agent'&&args[3]==='get'&&result.status===0&&existsSync(prefix+'.delivered')){
+  const current=JSON.parse(result.stdout).result.agent;
+  if(!existsSync(prefix+'.baseline'))writeFileSync(prefix+'.baseline',JSON.stringify(current));
+  else {const baseline=JSON.parse(readFileSync(prefix+'.baseline','utf8'));if(current.agent_status==='working'&&current.state_change_seq>baseline.state_change_seq&&existsSync(prefix+'.armed')){const armed=JSON.parse(readFileSync(prefix+'.armed','utf8'));const request=JSON.parse(readFileSync(prefix+'.delivered','utf8'));if(armed.request_id===request.request_id&&armed.pane===current.pane_id&&armed.pid===Number(readFileSync(${JSON.stringify(join(fixture,'codex.pid'))},'utf8'))){writeFileSync(prefix+'.tmp',JSON.stringify({...current,...armed}));renameSync(prefix+'.tmp',prefix);}}}
+ }
+}
+process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exit(result.status??1);
 `); chmodSync(wrappedHerdr,0o700);
   const savedPath = process.env.PATH;
   process.env.PATH = `${bin}:${savedPath}`;

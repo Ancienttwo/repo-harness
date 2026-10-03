@@ -118,6 +118,15 @@ function summaryEntries(output: string): string[] {
 }
 
 describe("ci isolate-mode test loop", () => {
+  test('suite entrypoint rejects invalid suite and timeout arguments before setup', () => {
+    for (const args of [['unknown'], ['core', '--timeout', '0'], ['full', '--timeout', 'bad'], ['core', '--timeout', '10', 'extra']]) {
+      const result = spawnSync('/bin/bash', [LIB_PATH, ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('Usage:');
+      expect(result.stdout).toBe('');
+    }
+  });
+
   test('core and integration retain the complete file inventory without overlap', () => {
     const files = discoverTestFiles(REPO_ROOT);
     const core = selectTestSuite('core', files);
@@ -277,17 +286,17 @@ describe("ci isolate-mode job pool", () => {
           await Bun.write(${JSON.stringify(finished)}, 'complete');
           expect(1).toBe(2);
         });`);
-      writeFileSync(join(root, 'tests/cli/init.test.ts'), `import { expect, test } from 'bun:test';
+      writeFileSync(join(root, 'tests/cli/install.test.ts'), `import { expect, test } from 'bun:test';
         test('serial tail', async () => {
           expect(await Bun.file(${JSON.stringify(finished)}).text()).toBe('complete');
         });`);
       const result = spawnSync('bash', ['-c', 'set -euo pipefail; source "$1"; run_bun_tests', 'tail', LIB_PATH], {
         cwd: root, encoding: 'utf8', env: gateEnv({ BUN_TEST_ISOLATE_FILES: '1', BUN_TEST_SCHEDULE_FILES: '1',
-          BUN_TEST_JOBS: '2', BUN_TEST_FILES: 'tests/cli/init.test.ts tests/parallel.test.ts' }),
+          BUN_TEST_JOBS: '2', BUN_TEST_FILES: 'tests/cli/install.test.ts tests/parallel.test.ts' }),
       });
       expect(result.status).toBe(1);
       expect(summaryEntries(result.stderr)).toEqual(['tests/parallel.test.ts (exit 1)']);
-      expect(outputBlocks(result.stdout).map(block => block.file)).toEqual(['tests/parallel.test.ts', 'tests/cli/init.test.ts']);
+      expect(outputBlocks(result.stdout).map(block => block.file)).toEqual(['tests/parallel.test.ts', 'tests/cli/install.test.ts']);
       expect(result.stdout + result.stderr).toContain('(pass) serial tail');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });

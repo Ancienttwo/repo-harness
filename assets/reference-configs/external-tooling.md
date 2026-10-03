@@ -219,7 +219,8 @@ For Bot and human notification setup, see [Herdr notify](herdr-notify.md).
 - Run the full suite for dependency changes in `bun.lock` or `package.json`, large changes across modules, releases, and the daily run.
 - Run `bun run test:full` once on the final rebased head when full coverage is required.
 - `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
-- Full runs use eight isolated file workers. Run files with shared ports or HOME access in the serial tail.
+- Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.
+- Tests with port 0 and an isolated HOME can run in parallel.
 - For a baseline comparison, run only the test files that failed.
 - Run long tasks in the background.
 - Wait for the completion notice, or check at intervals of 5 to 10 minutes.
