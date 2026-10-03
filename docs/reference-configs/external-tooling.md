@@ -207,6 +207,7 @@ dialect. This repo does not vendor either skill body.
 - Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
 - Route all cross-model dispatch and review through herdr panes (OAR runs the worker, herdr owns panes and visibility); never start direct subprocesses or hand-written CLI calls.
 - When a PR changes both test assertions and implementation code, dispatch its read-only review to the other model via herdr when available; otherwise run a read-only self-review in a separate same-model pane.
+- Pane layout: put at most 3 panes side by side in one tab. Stack at most 2 panes vertically in one column. When the tab is full, open a new tab.
 
 ### Test and Review Rules
 
