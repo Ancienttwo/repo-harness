@@ -340,7 +340,7 @@
   },
   "merge_gate": {
     "enabled": true,
-    "rule": "The installed helper consumes exact GitHub PR head/base and current trusted Required / CI results, scans credential/private paths and seals the immutable candidate. No external review, waiver, plan or AcceptanceReceipt is an ordinary merge permit."
+    "rule": "The installed helper consumes exact GitHub PR head/base and current trusted Required / CI results, refuses outstanding GitHub change requests or unresolved review threads, scans credential/private paths and seals the immutable candidate. No external review, waiver, plan or AcceptanceReceipt is an ordinary merge permit."
   },
   "upgrade": {
     "strategy_version": 1,

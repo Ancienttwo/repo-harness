@@ -146,7 +146,10 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (provider.base_sha !== input.expected_base_sha) push(blockers, 'base_moved_since_verification');
     if (provider.rollback_tags === 'pending') push(blockers, 'rollback_tags_pending');
     else if (!['not_active', 'ready'].includes(provider.rollback_tags)) push(blockers, 'provider_data_incomplete');
-    // Hosted Required / CI owns execution. Review/thread/lease artifacts are observations, not merge permits.
+    // GitHub owns review state; local review, lease and acceptance artifacts do not grant merge permission.
+    if (provider.review_decision === 'CHANGES_REQUESTED') push(blockers, 'changes_requested');
+    if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) push(blockers, 'provider_data_incomplete');
+    else if (provider.unresolved_thread_count! > 0) push(blockers, 'unresolved_threads');
     if (!provider.checks.some(check => check.name === 'Required / CI')) push(blockers, 'provider_data_incomplete');
     if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
     if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { MergeReadinessBlockerCode } from '../../src/core/publication/merge-readiness';
 
 import {
   buildPublicationReceipt,
@@ -97,6 +98,7 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
     if (command === 'pr checks') return { status: 8, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pending', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
+    if (command === 'api graphql') return { status: 0, stdout: JSON.stringify(reviewGraph()) };
     if (args[0] === 'api' && args[1]?.includes('/contents/.github/workflows/ci-report.yml')) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
     if (command === 'api repos/example/repo-harness/actions/runs/123') {
       return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
@@ -104,6 +106,14 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
     }
     return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
   };
+}
+
+function reviewGraph() {
+  return { data: { node: { id: receipt.provider_repo_id, pullRequest: {
+    number: receipt.pr_number, headRefOid: HEAD, baseRefOid: BASE, reviewDecision: null,
+    latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] as { state: string }[] },
+    reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] as { isResolved: boolean }[] },
+  } } } };
 }
 
 const input: PublicationReadinessInput = {
@@ -171,10 +181,10 @@ describe('MergeReadinessV1 effect', () => {
     ]);
   });
 
-  test('review/body observations cannot churn the actual PR/head/base merge fence', () => {
+  test('body observations cannot churn the actual PR/head/base merge fence', () => {
     let reads = 0;
     const verdict = resolvePublicationReadiness(input, collector({ observe_identity: () => ({ ...providerIdentity,
-      body: `description observation ${reads++}`, review_decision: reads % 2 ? 'REVIEW_REQUIRED' : 'APPROVED' }) }));
+      body: `description observation ${reads++}` }) }));
     expect(verdict.ready).toBe(true); expect(reads).toBe(2);
   });
 
@@ -259,7 +269,7 @@ describe('MergeReadinessV1 effect', () => {
     const facts = observeProviderReadinessFacts(identity, receipt, effectInput);
     expect(identity.head_sha).toBe(HEAD);
     expect(facts.checks).toEqual([{ name: 'Required / CI', bucket: 'pending' }]);
-    expect(facts.unresolved_thread_count).toBeNull();
+    expect(facts.unresolved_thread_count).toBe(0);
   });
 
   test('abortable provider adapter shares the synchronous parser and fails closed before a provider child starts', async () => {
@@ -336,6 +346,56 @@ test('ordinary PR consumer uses trusted CI head/base once and needs no local art
   expect(moved.blockers.map(blocker => blocker.code)).toContain('base_moved_since_verification');
 });
 
+test.each(['changes', 'threads', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('ordinary and abortable consumers enforce provider review state: %s', async scenario => {
+  const source = fakeGh();
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    const observed = source(args);
+    if (args[0] === 'pr' && args[1] === 'checks') return { status: 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
+    if (args[1]?.includes('/actions/runs/')) return { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), status: 'completed', conclusion: 'success' }) };
+    if (args[0] !== 'api' || args[1] !== 'graphql') return observed;
+    const graph = reviewGraph();
+    const pr = graph.data.node.pullRequest;
+    if (scenario === 'changes') pr.latestOpinionatedReviews.nodes = [{ state: 'CHANGES_REQUESTED' }];
+    if (scenario === 'dismissed') pr.latestOpinionatedReviews.nodes = [{ state: 'DISMISSED' }];
+    if (scenario === 'approved') pr.latestOpinionatedReviews.nodes = [{ state: 'APPROVED' }];
+    if (scenario === 'threads' || scenario === 'outdated-unresolved') pr.reviewThreads.nodes = [{ isResolved: false }];
+    if (scenario === 'outdated-unresolved') Object.assign(pr.reviewThreads.nodes[0]!, { isOutdated: true });
+    if (scenario === 'review-truncated') pr.latestOpinionatedReviews.pageInfo.hasNextPage = true;
+    if (scenario === 'threads-truncated') pr.reviewThreads.pageInfo.hasNextPage = true;
+    if (scenario === 'malformed') pr.latestOpinionatedReviews.nodes = [{ state: 'UNKNOWN' }];
+    if (scenario === 'wrong-head') pr.headRefOid = '9'.repeat(40);
+    if (scenario === 'wrong-pr') pr.number = 43;
+    if (scenario === 'wrong-repo') graph.data.node.id = 'R_other';
+    if (scenario === 'review-churn') Object.assign(pr, { reviewDecision: 'CHANGES_REQUESTED' });
+    if (scenario === 'graphql-error') Object.assign(graph, { errors: [{ message: 'partial response' }] });
+    if (scenario === 'unavailable') return { status: 1, stdout: '', stderr: 'provider unavailable' };
+    return { status: 0, stdout: JSON.stringify(graph) };
+  };
+  const verdict = collectPullRequestMergeReadiness({ repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
+    expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
+  const expected: MergeReadinessBlockerCode[] = scenario === 'changes' ? ['changes_requested']
+    : ['threads', 'outdated-unresolved'].includes(scenario) ? ['unresolved_threads']
+    : ['dismissed', 'approved'].includes(scenario) ? []
+    : [scenario === 'unavailable' ? 'provider_unavailable' : 'provider_data_incomplete'];
+  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(expected);
+  const asyncInput = { ...input, gh_runner_async: async (args: readonly string[]) => gh_runner(args) };
+  if (expected.some(code => code.startsWith('provider_'))) {
+    await expect(observeProviderReadinessFactsAbortable(providerIdentity, receipt, asyncInput)).rejects.toMatchObject({ code: expected[0] });
+  } else {
+    const facts = await observeProviderReadinessFactsAbortable(providerIdentity, receipt, asyncInput);
+    expect(facts.review_decision).toBe(scenario === 'changes' ? 'CHANGES_REQUESTED' : null);
+    expect(facts.unresolved_thread_count).toBe(expected[0] === 'unresolved_threads' ? 1 : 0);
+  }
+});
+
+test('review decision movement after facts prevents a green verdict', () => {
+  let reads = 0;
+  const verdict = resolvePublicationReadiness(input, collector({ observe_identity: () => ({ ...providerIdentity,
+    review_decision: ++reads % 2 ? null : 'CHANGES_REQUESTED' }) }));
+  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['changed_during_read']);
+  expect(reads).toBe(4);
+});
+
 // The readback decoder consumes actual annotated Git objects; it never scans or gates older history.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -354,6 +414,10 @@ test('reporter activation fences only the current merged parent and decodes real
     const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
       const path = args[1] ?? ''; requests.push(args.join(' '));
       const json = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
+      if (path === 'graphql') {
+        const graph = reviewGraph(); graph.data.node.pullRequest.baseRefOid = base;
+        return json(graph);
+      }
       if (args[0] === 'pr') return json([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]);
       if (path.includes('/actions/runs/123')) return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success', pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: base } }] });
       if (path.includes('/contents/')) return forbidden ? json({ status: '403', message: 'Forbidden' }, 1) : active ? json({ type: 'file', path: '.github/workflows/ci-report.yml', sha: '8'.repeat(40) }) : json({ status: '404' }, 1);
