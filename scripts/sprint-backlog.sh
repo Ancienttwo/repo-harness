@@ -40,15 +40,15 @@ Usage:
 
 Program-level sprint backlog helper. PRDs live in plans/prds/ as the upper
 planning layer; sprints live in plans/sprints/ as ordered execution backlogs.
-Contract backlog rows are expanded with $think before the existing plan ->
-contract -> worktree flow. Inline rows stay in the sprint backlog or active
-plan Task Breakdown. tasks/todos.md stays the deferred-goal ledger.
+Contract backlog rows name existing execution input in their canonical Plan
+cell before the explicit contract worktree flow. Inline rows execute directly
+in the current worktree. tasks/todos.md stays the deferred-goal ledger.
 
 start-task claims the named pending backlog row on the shared coordination
 plane before any capture runs. --task is required: preventing duplicate claims
 is not the same as proving two rows are safe to run in parallel, and the
 backlog carries no dependency or parallel-safety column, so there is no
-automatic claim-next. Contract rows can capture a thin plan seed. Inline rows
+automatic claim-next. Contract rows require a supplied execution plan. Inline rows
 should not create plan/contract/review artifacts.
 --sprint overrides the active-sprint marker (still confined to the sprints
 dir), which finish back-fill uses inside worktrees where the runtime marker
@@ -919,66 +919,15 @@ bind_claim() {
   fi
 }
 
-# Undo a reservation this call created after capture failed. Only the holder of
+# Undo only the reservation this call created after execution admission failed. Only the holder of
 # the same fencing token may do this, which is what release enforces.
 rollback_claim() {
   local claim_id="$1" output
   [[ -n "$claim_id" ]] || return 0
   if ! output="$(sprint_lease release --claim-id "$claim_id" 2>&1)"; then
     printf '%s\n' "$output" >&2
-    echo "sprint-backlog: the reservation survived a failed capture (claim $claim_id); run 'repo-harness sprint reconcile --task-id <id> --target-ref <branch>' to clear it" >&2
+    echo "sprint-backlog: the reservation survived failed execution admission (claim $claim_id); run 'repo-harness sprint reconcile --task-id <id> --target-ref <branch>' to clear it" >&2
   fi
-}
-
-# Fill only the Plan cell of one backlog row (status untouched); used by
-# start-task so the backlog shows in-flight work.
-set_row_plan_cell() {
-  local sprint_file="$1"
-  local target_index="$2"
-  local target_task="$3"
-  local plan_cell="$4"
-  local timestamp tmp_file
-  timestamp="$(date '+%Y-%m-%d %H:%M')"
-  tmp_file="$(mktemp)"
-  local schema
-  schema="$(backlog_schema "$sprint_file")"
-  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" -v schema="$schema" '
-    BEGIN { in_section = 0; rewritten = 0; off = (schema == 2) ? 1 : 0 }
-    /^> \*\*Updated\*\*:/ {
-      print "> **Updated**: " ts
-      next
-    }
-    /^## Backlog[[:space:]]*$/ { in_section = 1; print; next }
-    in_section && /^## / { in_section = 0 }
-    {
-      if (in_section && !rewritten && $0 ~ /^\|[[:space:]]*[0-9]+[[:space:]]*\|/) {
-        idx = $2; id = (schema == 2) ? $3 : ""
-        status = $(3 + off); task = $(4 + off); mode = $(5 + off); acceptance = $(6 + off)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", mode)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", acceptance)
-        if (idx == target && task == ENVIRON["TARGET_TASK"]) {
-          if (schema == 2) {
-            printf "| %s | %s | %s | %s | %s | %s | %s |\n", idx, id, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
-          } else {
-            printf "| %s | %s | %s | %s | %s | %s |\n", idx, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
-          }
-          rewritten = 1
-          next
-        }
-      }
-      print
-    }
-    END { exit rewritten ? 0 : 1 }
-  ' "$sprint_file" > "$tmp_file"; then
-    rm -f "$tmp_file"
-    echo "sprint-backlog: failed to update backlog plan cell (row not rewritten; check the table for malformed cells)" >&2
-    exit 1
-  fi
-  mv "$tmp_file" "$sprint_file"
 }
 
 cmd_start_task() {
@@ -1057,13 +1006,15 @@ cmd_start_task() {
     exit 1
   fi
 
-  # Claim before anything is captured, and against the canonical target ref
+  # Claim before execution admission, and against the canonical target ref
   # rather than this tree's copy: a worktree cut from an older commit must not
   # reserve work from its own stale backlog. The lease starts `reserving`
   # because the execution worktree does not exist yet.
-  local target_ref identity task_id task_revision claim_output claim_id
+  local target_ref canonical_commit identity task_id task_revision claim_output claim_id
   target_ref="$(coordination_target_ref)"
-  if ! identity="$(sprint_lease identify --task "$target_task" --target-ref "$target_ref" --sprint-path "$sprint_file" 2>&1)"; then
+  canonical_commit="$(git rev-parse "$target_ref")"
+  resolve_sprint_cli
+  if ! identity="$(sprint_lease identify --task "$target_task" --target-ref "$canonical_commit" --sprint-path "$sprint_file" 2>&1)"; then
     printf '%s\n' "$identity" >&2
     echo "sprint-backlog: cannot derive the coordination identity of '$target_task' from $target_ref" >&2
     exit 1
@@ -1092,48 +1043,29 @@ cmd_start_task() {
   fi
   echo "Claimed backlog task '$target_task' (row ${target_index}) as claim ${claim_id}"
 
-  [[ -f "$helper_dir/capture-plan.sh" ]] || {
-    release_backlog_lock
-    rollback_claim "$claim_id"
-    echo "sprint-backlog: packaged capture-plan helper not found" >&2
-    exit 1
-  }
-
-  # Do not hold the backlog lock across capture-plan: with --execute it can
-  # run git worktree setup for minutes and the stale-reclaim would hand the
-  # lock to a second writer.
   release_backlog_lock
-
-  local body_file capture_output plan_path
-  body_file="$(mktemp)"
+  # Read dispatch cells from the canonical commit, never mutable local edits.
+  local canonical_file plan_path contract_path capture_output
+  canonical_file="$(mktemp)"
+  if ! git show "${canonical_commit}:${sprint_file}" > "$canonical_file"; then
+    rm -f "$canonical_file"
+    rollback_claim "$claim_id"
+    exit 1
+  fi
+  local canonical_row
+  if ! canonical_row="$(backlog_rows "$canonical_file" | TASK_CELL="$target_task" awk -F '\t' '$3 == ENVIRON["TASK_CELL"] { print }')"; then
+    rm -f "$canonical_file"
+    rollback_claim "$claim_id"
+    exit 1
+  fi
+  target_index="$(printf '%s' "$canonical_row" | cut -f1)"
+  target_mode="$(printf '%s' "$canonical_row" | cut -f4)"
+  plan_path="$(printf '%s' "$canonical_row" | cut -f6 | tr -d '\140')"
+  rm -f "$canonical_file"
+  # Inline work is already explicit in the canonical row; it needs ownership,
+  # not another planning artifact or an active-plan marker.
   if [[ "$target_mode" == "inline" ]]; then
-    cat > "$body_file" <<BODY_EOF
-# Sprint Row: ${target_task}
-
-## Context
-
-- Sprint: \`${sprint_file}\`
-- Backlog row: ${target_index}
-- Mode: ${target_mode}
-- Keep this as a checklist row in the current active plan; do not promote it to a top-level plan, contract, review, or notes bundle.
-
-## Task Breakdown
-
-- [ ] Complete sprint row \`${target_task}\`: ${target_acceptance}
-BODY_EOF
-
-    capture_output="$(bash "$helper_dir/capture-plan.sh" --artifact-level checklist-row --slug "$target_task" --title "Sprint row: ${target_task}" --source repo-harness-sprint --orchestration-kind sprint-inline --source-ref "sprint:${sprint_file}#${target_task}" --body-file "$body_file" 2>&1)" || {
-      printf '%s\n' "$capture_output" >&2
-      rm -f "$body_file"
-      rollback_claim "$claim_id"
-      echo "sprint-backlog: checklist-row capture failed for inline task '$target_task'" >&2
-      exit 1
-    }
-    rm -f "$body_file"
-    printf '%s\n' "$capture_output"
-    # Inline work executes here, so this tree is the execution worktree and the
-    # bind can happen immediately.
-    if ! bind_claim "$claim_id" "$(pwd -P)" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD')" \
+    if ! bind_claim "$claim_id" "$(pwd -P)" "$(git rev-parse --abbrev-ref HEAD)" \
       "inline:${sprint_file}#${target_index}"; then
       rollback_claim "$claim_id"
       exit 1
@@ -1143,70 +1075,53 @@ BODY_EOF
       rollback_claim "$claim_id"
       exit 1
     fi
-    echo "Backlog row ${target_index} ('${target_task}') is inline; appended checklist row(s) to the active plan without plan/contract/review/notes projection."
+    echo "Backlog row ${target_index} ('${target_task}') is inline; bound the current worktree without planning artifacts."
     return 0
   fi
 
-  cat > "$body_file" <<BODY_EOF
-# Sprint Task: ${target_task}
-
-## Context
-
-- Sprint: \`${sprint_file}\`
-- Backlog row: ${target_index}
-- Mode: ${target_mode}
-- Read the sprint Source PRD and Architecture Notes before implementation.
-- The sprint row is a long-task waypoint, not a detailed implementation plan.
-
-## Goal
-
-Deliver backlog task \`${target_task}\` so that the acceptance line holds: ${target_acceptance}
-
-## Planning Expansion
-
-Before editing code, use \`\$think\` to expand this sprint row into a decision-complete implementation plan. The \`\$think\` pass should read the sprint file, preserve the acceptance line, name concrete files or commands, and produce the detailed \`plans/plan-*.md\` body that drives contract execution.
-
-## Task Breakdown
-
-- [ ] Run \`\$think\` for backlog task \`${target_task}\` using sprint \`${sprint_file}\` and acceptance: ${target_acceptance}
-- [ ] Capture the approved \`\$think\` output with \`repo-harness run capture-plan --source waza-think --source-ref sprint:${sprint_file}#${target_task}\`
-- [ ] Verify acceptance: ${target_acceptance}
-BODY_EOF
-
-  local -a capture_args
-  capture_args=(
-    --slug "$target_task"
-    --title "Sprint task: ${target_task}"
-    --status Approved
-    --artifact-level work-package
-    --source repo-harness-sprint
-    --orchestration-kind sprint-task
-    --source-ref "sprint:${sprint_file}#${target_task}"
-    --body-file "$body_file"
-  )
-  if [[ "$execute" -eq 1 ]]; then
-    capture_args+=(--promotion-reason worktree_boundary --execute)
+  case "$plan_path" in
+    plans/*.md) ;;
+    *) rollback_claim "$claim_id"; echo "sprint-backlog: supply an existing execution plan in the canonical Plan cell for '$target_task' before start-task" >&2; exit 1 ;;
+  esac
+  if [[ "$plan_path" == *..* || "$plan_path" == *"/./"* || -L "$plan_path" || ! -f "$plan_path"
+      || "$(cd "$(dirname "$plan_path")" && pwd -P)" != "$(pwd -P)/$(dirname "$plan_path")"
+      || "$(git ls-tree "$canonical_commit" -- "$plan_path" | cut -c1-6)" == "120000" ]] \
+    || ! git cat-file -e "${canonical_commit}:${plan_path}" 2>/dev/null \
+    || ! cmp -s "$plan_path" <(git show "${canonical_commit}:${plan_path}"); then
+    rollback_claim "$claim_id"
+    echo "sprint-backlog: execution plan must match a canonical regular plans file: $plan_path" >&2
+    exit 1
   fi
-
-  capture_output="$(bash "$helper_dir/capture-plan.sh" "${capture_args[@]}" 2>&1)" || {
-    printf '%s\n' "$capture_output" >&2
-    rm -f "$body_file"
+  local source_ref
+  source_ref="$(awk '/^> \*\*Source Ref\*\*:/ { sub(/^> \*\*Source Ref\*\*: */, ""); print; exit }' "$plan_path")"
+  contract_path="$(awk '/^> \*\*Task Contract\*\*:/ { sub(/^> \*\*Task Contract\*\*: */, ""); print; exit }' "$plan_path" | tr -d '\140')"
+  if [[ "$source_ref" != "sprint:${sprint_file}#${target_task}" || -z "$contract_path"
+      || "$contract_path" != tasks/contracts/*.md || "$contract_path" == *..* || "$contract_path" == *"/./"*
+      || -L "$contract_path" || ! -f "$contract_path"
+      || "$(cd "$(dirname "$contract_path")" && pwd -P)" != "$(pwd -P)/$(dirname "$contract_path")"
+      || "$(git ls-tree "$canonical_commit" -- "$contract_path" | cut -c1-6)" == "120000" ]] \
+    || ! git cat-file -e "${canonical_commit}:${contract_path}" 2>/dev/null \
+    || ! cmp -s "$contract_path" <(git show "${canonical_commit}:${contract_path}") \
+    || ! "${SPRINT_CLI_CMD[@]}" run contract-run preflight --repo "$(pwd -P)" --contract "$contract_path" --json; then
     rollback_claim "$claim_id"
-    echo "sprint-backlog: capture-plan failed for task '$target_task'" >&2
+    echo "sprint-backlog: supplied execution input is not executable for '$target_task'; the reservation was rolled back" >&2
     exit 1
-  }
-  rm -f "$body_file"
-  printf '%s\n' "$capture_output"
-
-  plan_path="$(printf '%s\n' "$capture_output" | sed -nE 's/^Captured plan: (.+)$/\1/p' | head -1)"
-  if [[ -z "$plan_path" ]]; then
-    rollback_claim "$claim_id"
-    echo "sprint-backlog: could not resolve captured plan path; the reservation was rolled back" >&2
-    exit 1
+  fi
+  echo "Selected execution plan: $plan_path"
+  capture_output=""
+  if [[ "$execute" -eq 1 ]]; then
+    if [[ ! -f "$helper_dir/contract-worktree.sh" ]] \
+      || ! capture_output="$(bash "$helper_dir/contract-worktree.sh" start --plan "$plan_path" --fresh --no-plan-to-todo 2>&1)"; then
+      printf '%s\n' "$capture_output" >&2
+      rollback_claim "$claim_id"
+      echo "sprint-backlog: execution worktree creation failed; the reservation was rolled back" >&2
+      exit 1
+    fi
+    printf '%s\n' "$capture_output"
   fi
 
   # Bind the reservation to the execution worktree once it exists. Without
-  # --execute (or with worktree creation disabled by policy) there is no
+  # --execute there is no
   # worktree to name, so the lease deliberately stays `reserving` with no
   # claim token. A token is a bound-worktree capability, never evidence that a
   # primary-tree reservation may execute or complete the contract row.
@@ -1215,6 +1130,22 @@ BODY_EOF
   worktree_branch="$(printf '%s\n' "$capture_output" | sed -nE 's/^\[ContractWorktree\] Branch: (.+)$/\1/p' | tail -1)"
   if [[ -n "$worktree_path" && -n "$worktree_branch" && -d "$worktree_path" ]]; then
     worktree_abs="$(cd "$worktree_path" && pwd -P)"
+    # Start must be fresh; before granting execution ownership, prove the
+    # destination consumes the same frozen input admitted in the source tree.
+    local execution_input
+    for execution_input in "$plan_path" "$contract_path"; do
+      if [[ ! -f "$worktree_abs/$execution_input" || -L "$worktree_abs/$execution_input"
+          || "$(cd "$worktree_abs/$(dirname "$execution_input")" && pwd -P)" != "$worktree_abs/$(dirname "$execution_input")" ]] \
+        || ! cmp -s "$worktree_abs/$execution_input" <(git show "${canonical_commit}:${execution_input}"); then
+        rollback_claim "$claim_id"
+        echo "sprint-backlog: execution worktree input does not match canonical admission: $execution_input; the reservation was rolled back" >&2
+        exit 1
+      fi
+    done
+    if ! (cd "$worktree_abs" && REPO_HARNESS_TARGET_REPO_ROOT="$worktree_abs" "${SPRINT_CLI_CMD[@]}" run switch-plan --plan "$plan_path"); then
+      rollback_claim "$claim_id"
+      exit 1
+    fi
     if ! bind_claim "$claim_id" "$worktree_abs" "$worktree_branch" "$plan_path"; then
       rollback_claim "$claim_id"
       exit 1
@@ -1227,11 +1158,9 @@ BODY_EOF
     echo "sprint-backlog: no execution worktree was created; claim ${claim_id} stays reserving without a token until 'repo-harness sprint bind' names one" >&2
   fi
 
-  # Contract mode: the plan moves into a worktree branched from HEAD, so
-  # writing the Plan cell here would dirty the primary tree and block the
-  # eventual --ff-only merge back. The finish back-fill writes the row
-  # (status + plan) atomically with the merged slice instead.
-  echo "Backlog row ${target_index} ('${target_task}') stays (pending); contract-worktree finish back-fills the Plan cell after merge."
+  # Selection preserves the supplied Plan cell; explicit completion owns its
+  # later rewrite inside the execution slice.
+  echo "Backlog row ${target_index} ('${target_task}') stays (pending); explicit complete-task owns its completion before publication."
 }
 
 [[ $# -gt 0 ]] || { usage >&2; exit 2; }

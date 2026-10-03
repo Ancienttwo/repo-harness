@@ -598,9 +598,9 @@ describe('reservations, crash windows, and reconcile', () => {
     expect(readLease(fixture.primary, identity.task_id).classification).toBe('available');
   }, 60_000);
 
-  test('start-task rolls its own reservation back when the capture cannot run', () => {
-    // The real shell path: the claim is taken, the capture helper is missing,
-    // and the reservation must not survive as a lease nobody can find.
+  test('start-task rolls its own reservation back when execution input is absent', () => {
+    // The real shell path claims the row, then refuses missing execution
+    // input. Its own reservation must not survive failed admission.
     const fixture = createFixture('sprint-start-rollback', false);
     mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
     writeFileSync(
@@ -616,7 +616,7 @@ describe('reservations, crash windows, and reconcile', () => {
       env: sandboxEnv(),
     });
     expect(start.status).toBe(1);
-    expect(start.stderr).toContain('packaged capture-plan helper not found');
+    expect(start.stderr).toContain('supply an existing execution plan');
     expect(start.stdout).toContain('Claimed backlog task');
     expect(readLease(fixture.primary, identity.task_id).classification).toBe('available');
   }, 60_000);
@@ -839,20 +839,12 @@ describe('completion transaction boundaries', () => {
     // is exactly what makes parallel execution impossible.
     const fixture = createFixture('sprint-sibling-complete');
     mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
-    for (const helper of ['sprint-backlog.sh', 'capture-plan.sh']) {
+    for (const helper of ['sprint-backlog.sh']) {
       copyFileSync(join(HELPER_DIR, helper), join(fixture.primary, 'scripts', helper));
       chmodSync(join(fixture.primary, 'scripts', helper), 0o755);
     }
 
-    // An inline row is captured as a checklist row into the active plan, so the
-    // fixture needs the plan that marker resolves to.
-    const activePlan = 'plans/plan-20260818-0000-active.md';
-    writeFileSync(
-      join(fixture.primary, activePlan),
-      ['# Plan: Active', '', '> **Status**: Executing', '', '## Task Breakdown', ''].join('\n'),
-    );
-    writeFileSync(join(fixture.primary, '.ai/harness/active-plan'), activePlan);
-
+    // Inline admission needs no planning marker or projection.
     const rowOne = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
     const before = identify(fixture.primary, ROW_ONE);
 
@@ -865,7 +857,7 @@ describe('completion transaction boundaries', () => {
     const start = shell(['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_TWO]);
     expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
     expect(start.stdout).toContain(`Claimed backlog task '${ROW_TWO}'`);
-    expect(start.stdout).toContain('appended checklist row(s) to the active plan');
+    expect(start.stdout).toContain('bound the current worktree without planning artifacts');
 
     const complete = shell(['scripts/sprint-backlog.sh', 'complete-task', '--task', ROW_TWO]);
     expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);

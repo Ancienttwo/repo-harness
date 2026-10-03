@@ -148,15 +148,10 @@ describe('attempt receipts are invisible to progress_token by two independent me
 });
 
 /**
- * A disposable repo-harness repository: real `sprint-backlog`, `capture-plan`,
- * `plan-to-todo`, `contract-worktree`, and `archive-workflow` helpers over an
- * Approved sprint with two contract rows.
- *
- * The gate helpers are stubbed exactly as `contract-worktree-closeout-journal`
- * stubs them (merge gate seals the current HEAD, acceptance receipt passes,
- * architecture freshness passes, verify-sprint emits the passing evidence
- * bundle its consumers read). Their internals are not what WP4 asserts; the
- * loop shape around them is, and each has its own suite.
+ * Real sprint claim/start/select/complete and contract-worktree publication over
+ * two authored execution inputs. Local verification executes real source tests.
+ * The provider boundary is an isolated merge-gate shim sealing the exact HEAD;
+ * the surrounding lease, publication, crash and recovery paths are real.
  */
 interface Fixture {
   readonly container: string;
@@ -167,18 +162,6 @@ interface Fixture {
   readonly driverLog: string;
   readonly gateLog: string;
 }
-
-const VERIFY_SPRINT_STUB = [
-  '#!/bin/bash',
-  '[[ -z "${CONFORMANCE_GATE_LOG:-}" ]] || printf \'verify-sprint %s\\n\' "$*" >> "$CONFORMANCE_GATE_LOG"',
-  '[[ "${1:-}" != "--prepare-acceptance" ]] || exit 0',
-  'contract="$(ls tasks/contracts/*.contract.md 2>/dev/null | head -1)"',
-  'review="$(ls tasks/reviews/*.review.md 2>/dev/null | head -1)"',
-  'mkdir -p .ai/harness/checks',
-  `printf '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"%s"},"review":{"file":"%s"},"benchmark_evidence":{"status":"not_applicable","report_sha256":"","benchmark_subject_sha256":""}}\\n' "$contract" "$review" > .ai/harness/checks/latest.json`,
-  'exit 0',
-  '',
-].join('\n');
 
 // The trusted-shim fault pattern from tests/contract-worktree-closeout-journal.ts:
 // every git call passes through to the real binary, except that the helper is
@@ -219,8 +202,8 @@ const SPRINT_TEXT = [
   '',
   '| # | ID | Status | Task | Mode | Acceptance | Plan |',
   '|---|----|--------|------|------|------------|------|',
-  `| 1 | ${fixtureTaskId('row-one')} | [ ] | row-one | contract | first slice lands | (pending) |`,
-  `| 2 | ${fixtureTaskId('row-two')} | [ ] | row-two | contract | second slice lands | (pending) |`,
+  `| 1 | ${fixtureTaskId('row-one')} | [ ] | row-one | contract | first slice lands | \`plans/plan-20260803-0000-row-one.md\` |`,
+  `| 2 | ${fixtureTaskId('row-two')} | [ ] | row-two | contract | second slice lands | \`plans/plan-20260803-0000-row-two.md\` |`,
   '',
   '## Execution Log',
   '',
@@ -263,27 +246,18 @@ function installFixture(container: string): Fixture {
   );
 
   writeFileSync(
-    join(primary, 'scripts/acceptance-receipt.ts'),
-    [
-      'import { appendFileSync } from "fs";',
-      'const log = process.env.CONFORMANCE_GATE_LOG;',
-      'if (!log) process.exit(2);',
-      'appendFileSync(log, `acceptance-receipt ${process.argv.slice(2).join(" ")}\\n`);',
-      'process.exit(0);',
-      '',
-    ].join('\n'),
-  );
-  writeFileSync(
     join(primary, 'scripts/merge-gate.ts'),
     [
-      'import { spawnSync } from "child_process";',
+      'import { spawnSync } from "child_process"; import { appendFileSync } from "fs";',
+      'if (process.env.CONFORMANCE_GATE_LOG) appendFileSync(process.env.CONFORMANCE_GATE_LOG, \"merge-gate run\\n\");',
+      'if (process.env.CONFORMANCE_REFUSE_GATE === \"1\") { process.stderr.write(\"provider fixture refused\\n\"); process.exit(73); }',
       'const head = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" }).stdout.trim();',
       'process.stdout.write(`${head}\\n`);',
       '',
     ].join('\n'),
   );
   writeExecutable(join(primary, 'scripts/check-architecture-sync.sh'), '#!/bin/bash\nexit 0\n');
-  writeExecutable(join(primary, 'scripts/verify-sprint.sh'), VERIFY_SPRINT_STUB);
+
   writeExecutable(
     join(primary, 'scripts/refresh-current-status.sh'),
     "#!/bin/bash\nprintf '# Current Status Snapshot\\n\\n> **Status**: Idle\\n' > tasks/current.md\n",
@@ -301,6 +275,29 @@ function installFixture(container: string): Fixture {
     }, null, 2)}\n`,
   );
   writeFileSync(join(primary, SPRINT), SPRINT_TEXT);
+  mkdirSync(join(primary, 'src'), { recursive: true });
+  mkdirSync(join(primary, 'tests'), { recursive: true });
+  writeFileSync(join(primary, 'package.json'), JSON.stringify({ scripts: { 'check:type': 'bun typecheck.ts' } }));
+  writeFileSync(join(primary, 'typecheck.ts'), 'import { readdirSync, readFileSync } from "fs"; for (const name of readdirSync("src").filter(name => name.endsWith(".ts"))) if (!/^export const [a-z_]+ = 1;\\n$/.test(readFileSync(`src/${name}`, "utf8"))) throw Error("invalid source: " + name);\n');
+  for (const row of ['row-one', 'row-two']) {
+    const plan = `plans/plan-20260803-0000-${row}.md`;
+    const contract = `tasks/contracts/${row}.contract.md`;
+    writeFileSync(join(primary, plan), [
+      `# Execution plan: ${row}`, '', '> **Status**: Approved',
+      `> **Source Ref**: sprint:${SPRINT}#${row}`, `> **Task Contract**: ${contract}`,
+      '', '## Task Breakdown', '', `- [ ] Implement src/${row}.ts exporting its named value.`, '',
+    ].join('\n'));
+    writeFileSync(join(primary, contract), [
+      `# Execution brief: ${row}`, '', '## Goal', '', `Ship src/${row}.ts with its named export equal to 1.`,
+      '', '## Why', '', 'The named source row must land through its own fenced sprint execution.',
+      '', '## Scope', '', `- In scope: src/${row}.ts and its execution plan checkbox.`,
+      '- Out of scope: other source rows and configuration.', '',
+      '## Allowed Paths', '', '```yaml', 'allowed_paths:', '  - src/', `  - ${plan}`, '```', '',
+      '## Exit Criteria', '', '```yaml', 'exit_criteria:', '  files_exist:', `    - src/${row}.ts`, '```', '',
+    ].join('\n'));
+    writeFileSync(join(primary, `tests/${row}.test.ts`), `import { expect, test } from "bun:test"; import { ${row.replaceAll('-', '_')} } from "../src/${row}"; test("${row} source outcome", () => expect(${row.replaceAll('-', '_')}).toBe(1));\n`);
+  }
+
   writeFileSync(join(primary, '.ai/harness/sprint/active-sprint'), `${SPRINT}\n`);
   writeFileSync(
     join(primary, 'tasks/todos.md'),
@@ -331,14 +328,10 @@ function installFixture(container: string): Fixture {
       '.ai/harness/worktrees/',
       '.ai/harness/sprint/',
       '.ai/harness/active-worktree',
+      '.ai/harness/active-plan',
       '',
     ].join('\n'),
   );
-  writeFileSync(
-    join(primary, '.ai/harness/checks/latest.json'),
-    '{"status":"pass","source":"verify-sprint","exit_code":0}\n',
-  );
-
   expect(git(primary, ['add', '-A']).status).toBe(0);
   expect(git(primary, ['commit', '-qm', 'fixture']).status).toBe(0);
 
@@ -515,8 +508,6 @@ function advanceSprintCommand(task: string): string {
 
 const HOST_COMMAND = {
   resolveState: 'repo-harness state resolve --json',
-  prepareAcceptance: 'repo-harness run verify-sprint --prepare-acceptance',
-  recordAcceptance: 'repo-harness run acceptance-receipt record',
   verifySprint: 'repo-harness run verify-sprint',
   finishMerge: 'repo-harness run contract-worktree finish --merge',
 } as const;
@@ -537,12 +528,8 @@ function executeHostCommand(fixture: Fixture, cwd: string, command: string): Run
   switch (command) {
     case HOST_COMMAND.resolveState:
       return run(process.execPath, [CLI, 'state', 'resolve', '--json'], cwd);
-    case HOST_COMMAND.prepareAcceptance:
-      return helper(cwd, 'scripts/verify-sprint.sh', ['--prepare-acceptance'], gateEnv);
-    case HOST_COMMAND.recordAcceptance:
-      return run(process.execPath, ['scripts/acceptance-receipt.ts', 'record'], cwd, gateEnv);
     case HOST_COMMAND.verifySprint:
-      return helper(cwd, 'scripts/verify-sprint.sh', [], gateEnv);
+      return helper(cwd, 'scripts/verify-sprint.sh', ['--test', `tests/${readFileSync(join(cwd, '.ai/harness/active-plan'), 'utf8').trim().includes('row-one') ? 'row-one' : 'row-two'}.test.ts`], gateEnv);
     case HOST_COMMAND.finishMerge:
       return helper(cwd, 'scripts/contract-worktree.sh', ['finish', '--merge'], gateEnv);
     default:
@@ -563,8 +550,6 @@ function planFromResolvedState(result: Run): string {
 function runCompletionGate(fixture: Fixture, cwd: string, envelope: ContinuationEnvelopeV1): void {
   expect(envelope.command).toBe(HOST_COMMAND.verifySprint);
   for (const command of [
-    HOST_COMMAND.prepareAcceptance,
-    HOST_COMMAND.recordAcceptance,
     envelope.command!,
   ]) {
     const result = executeHostCommand(fixture, cwd, command);
@@ -598,6 +583,8 @@ function completeBoundedUnit(worktree: string, planPath: string, marker: string)
   writeFileSync(join(worktree, `src/${marker}.ts`), `export const ${marker.replace(/-/g, '_')} = 1;\n`);
   const plan = readFileSync(join(worktree, planPath), 'utf-8');
   writeFileSync(join(worktree, planPath), plan.replace(/^- \[ \]/gm, '- [x]'));
+  const completion = helper(worktree, 'scripts/sprint-backlog.sh', ['complete-task', '--task', marker, '--sprint', SPRINT, '--plan', planPath, '--defer-lease-release']);
+  expect(completion.status, completion.stdout + completion.stderr).toBe(0);
   expect(git(worktree, ['add', '-A']).status).toBe(0);
   expect(git(worktree, ['commit', '-qm', `${marker} slice`]).status).toBe(0);
 }
@@ -608,6 +595,72 @@ function createdWorktree(stdout: string): string {
   expect(match, `advance_sprint output did not name a worktree:\n${stdout}`).not.toBeNull();
   return match![1]!;
 }
+
+describe('fresh sprint execution input admission', () => {
+  for (const fault of ['dirty-plan', 'stale-contract', 'missing-contract'] as const) {
+    test(`refuses an existing worktree with ${fault} without overwriting or claiming it`, () => {
+      withTempDir('sprint-existing-execution-input', container => {
+        const { primary } = installFixture(container);
+        const existing = join(container, 'existing-user-worktree');
+        expect(git(primary, ['worktree', 'add', '-b', 'codex/row-one', existing]).status).toBe(0);
+        const plan = join(existing, 'plans/plan-20260803-0000-row-one.md');
+        const contract = join(existing, 'tasks/contracts/row-one.contract.md');
+        if (fault === 'dirty-plan') writeFileSync(plan, readFileSync(plan, 'utf8') + '\nUser work to preserve\n');
+        if (fault === 'stale-contract') writeFileSync(contract, '# Existing user contract revision\n');
+        if (fault === 'missing-contract') rmSync(contract);
+        const beforePlan = readFileSync(plan, 'utf8');
+        const beforeContract = existsSync(contract) ? readFileSync(contract, 'utf8') : null;
+        const beforeTopology = git(primary, ['worktree', 'list', '--porcelain']).stdout;
+        const beforeStatus = git(existing, ['status', '--porcelain']).stdout;
+        const result = helper(primary, 'scripts/sprint-backlog.sh', ['start-task', '--task', 'row-one', '--execute']);
+        expect(result.status, result.stdout + result.stderr).toBe(1);
+        expect(result.stderr).toContain('--fresh refuses');
+        expect(result.stdout).toContain("Claimed backlog task 'row-one'");
+        expect(readFileSync(plan, 'utf8')).toBe(beforePlan);
+        expect(existsSync(contract) ? readFileSync(contract, 'utf8') : null).toBe(beforeContract);
+        expect(git(existing, ['status', '--porcelain']).stdout).toBe(beforeStatus);
+        expect(git(primary, ['worktree', 'list', '--porcelain']).stdout).toBe(beforeTopology);
+        expect(readLease(primary, fixtureTaskId('row-one')).record).toBeNull();
+        for (const tree of [primary, existing]) {
+          expect(existsSync(join(tree, '.ai/harness/sprint/claims', `${fixtureTaskId('row-one')}.claim`))).toBe(false);
+          expect(existsSync(join(tree, '.ai/harness/active-plan'))).toBe(false);
+        }
+      });
+    }, 30_000);
+  }
+  for (const fault of ['stale', 'missing'] as const) {
+    test(`refuses a fresh worktree whose actual contract is ${fault} before selection or bind`, () => {
+      withTempDir('sprint-fresh-execution-input', container => {
+        const { primary } = installFixture(container);
+        const contractPath = 'tasks/contracts/row-one.contract.md';
+        const canonicalContract = readFileSync(join(primary, contractPath), 'utf8');
+        expect(git(primary, ['switch', '-c', 'source-head-with-different-input']).status).toBe(0);
+        if (fault === 'missing') expect(git(primary, ['rm', contractPath]).status).toBe(0);
+        else writeFileSync(join(primary, contractPath), '# Stale contract on source HEAD\n');
+        expect(git(primary, ['add', '-A']).status).toBe(0);
+        expect(git(primary, ['commit', '-m', 'different source HEAD contract']).status).toBe(0);
+        // The primary input passes canonical preflight, while a worktree from
+        // HEAD would inherit different bytes. Destination validation owns this.
+        writeFileSync(join(primary, contractPath), canonicalContract);
+        const beforeHead = git(primary, ['rev-parse', 'HEAD']).stdout;
+        const beforeStatus = git(primary, ['status', '--porcelain']).stdout;
+        const result = helper(primary, 'scripts/sprint-backlog.sh', ['start-task', '--task', 'row-one', '--execute']);
+        expect(result.status, result.stdout + result.stderr).toBe(1);
+        expect(result.stderr).toContain(`execution worktree input does not match canonical admission: ${contractPath}`);
+        const destination = createdWorktree(result.stdout);
+        expect(existsSync(destination)).toBe(true);
+        expect(readFileSync(join(primary, contractPath), 'utf8')).toBe(canonicalContract);
+        expect(git(primary, ['rev-parse', 'HEAD']).stdout).toBe(beforeHead);
+        expect(git(primary, ['status', '--porcelain']).stdout).toBe(beforeStatus);
+        expect(readLease(primary, fixtureTaskId('row-one')).record).toBeNull();
+        expect(existsSync(join(destination, '.ai/harness/active-plan'))).toBe(false);
+        expect(existsSync(join(destination, '.ai/harness/sprint/claims', `${fixtureTaskId('row-one')}.claim`))).toBe(false);
+        expect(existsSync(join(destination, contractPath)) ? readFileSync(join(destination, contractPath), 'utf8') : null)
+          .toBe(fault === 'missing' ? null : '# Stale contract on source HEAD\n');
+      });
+    }, 30_000);
+  }
+});
 
 describe('host Goal conformance: the full tick over a disposable repository', () => {
   test('a chat-memoryless driver completes two rows, survives a SIGKILLed closeout, stalls, and ends at complete', () => {
@@ -663,28 +716,22 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(actionableOne.unit_ref).toBe(planOne);
       expect(actionableOne.command).toBe(HOST_COMMAND.verifySprint);
 
-      // A normal pre-journal failure happens after the lease gate but before
-      // any publication can exist. The EXIT path must restore ownership to
-      // `bound` immediately, without requiring the crash-recovery surface.
-      const architectureCheck = join(worktreeOne, 'scripts/check-architecture-sync.sh');
-      writeExecutable(architectureCheck, '#!/bin/bash\nexit 73\n');
-      const rejectedFinish = helper(
-        worktreeOne,
-        'scripts/contract-worktree.sh',
-        ['finish', '--merge'],
-      );
-      expect(rejectedFinish.status).not.toBe(0);
-      expect(rejectedFinish.stdout).toContain('Restored sprint lease to bound after aborted completion');
-      expect(readLease(worktreeOne, taskId).record).toMatchObject({
-        state: 'bound',
-        claim_id: originalClaimId,
-        execution_worktree: worktreeOne,
-        finish_transaction_key: null,
+      // A real provider-gate refusal aborts the prepared journal and restores
+      // ownership to bound while the target branch remains unchanged.
+      const rejectedFinish = helper(worktreeOne, 'scripts/contract-worktree.sh', ['finish', '--merge'], {
+        CONFORMANCE_REFUSE_GATE: '1', CONFORMANCE_GATE_LOG: fixture.gateLog,
       });
-      writeExecutable(architectureCheck, '#!/bin/bash\nexit 0\n');
+      expect(rejectedFinish.status).not.toBe(0);
+      expect(rejectedFinish.stderr).toContain('provider fixture refused');
+      expect(readLease(worktreeOne, taskId).record).toMatchObject({
+        state: 'bound', claim_id: originalClaimId, execution_worktree: worktreeOne, finish_transaction_key: null,
+      });
+      expect(git(primary, ['rev-parse', 'main']).stdout.trim()).toBe(git(worktreeOne, ['merge-base', 'HEAD', 'main']).stdout.trim());
+      expect(journalDirs(fixture)).toHaveLength(1);
+      expect(journalStatus(journalDirs(fixture)[0]!).status).toBe('aborted');
 
       // Completion gate, then closeout -- and the closeout is SIGKILLed the
-      // moment the journal durably records `lifecycle_applied`.
+      // moment the journal durably records `publication_prepared`.
       const mainBeforeCrash = git(primary, ['rev-parse', 'main']).stdout.trim();
       runCompletionGate(fixture, worktreeOne, actionableOne);
       recordDriverCommand(fixture, HOST_COMMAND.finishMerge);
@@ -693,7 +740,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         worktreeOne,
         'scripts/contract-worktree.sh',
         ['finish', '--merge'],
-        'lifecycle_applied',
+        'publication_prepared',
       );
       expect(crashed.status).not.toBe(0);
 
@@ -702,7 +749,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       const journalDir = dirs[0]!;
       const crashedJournal = journalStatus(journalDir);
       expect(crashedJournal.status).toBe('in_progress');
-      expect(crashedJournal.phases[crashedJournal.phases.length - 1]).toBe('lifecycle_applied');
+      expect(crashedJournal.phases[crashedJournal.phases.length - 1]).toBe('publication_prepared');
       expect(crashedJournal.phases).not.toContain('complete');
       expect(readLease(worktreeOne, taskId).record?.state).toBe('completing');
       // Nothing external landed: main still points at the exact pre-crash
@@ -721,7 +768,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(inspect.status, `${inspect.stdout}\n${inspect.stderr}`).toBe(0);
       expect(inspect.stdout).toContain(journalDir);
       expect(inspect.stdout).toContain('status: in_progress');
-      expect(inspect.stdout).toContain('last phase: lifecycle_applied');
+      expect(inspect.stdout).toContain('last phase: publication_prepared');
       expect(inspect.stdout).toContain('snapshot present: yes');
 
       const abort = helper(worktreeOne, 'scripts/contract-worktree.sh', ['recover', 'abort']);
@@ -778,12 +825,15 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       const retry = executeHostCommand(fixture, worktreeOne, HOST_COMMAND.finishMerge);
       expect(retry.status, `${retry.stdout}\n${retry.stderr}`).toBe(0);
       expect(retry.stdout).toContain('Merged codex/row-one into main');
-      // The retry derives the same transaction key (same worktree, plan,
-      // contract, original HEAD, base), so it reuses the rolled-back entry
-      // rather than accumulating a second one.
-      expect(journalDirs(fixture)).toEqual([journalDir]);
-      expect(journalStatus(journalDir).status).toBe('complete');
-      expect(existsSync(join(journalDir, 'snapshot'))).toBe(false);
+      // A stolen claim is a new ownership generation, so the old journal
+      // remains aborted and the successful replacement has its own key.
+      const retryJournals = journalDirs(fixture);
+      expect(retryJournals).toHaveLength(2);
+      expect(retryJournals).toContain(journalDir);
+      expect(journalStatus(journalDir).status).toBe('aborted');
+      const completedJournal = retryJournals.find(path => path !== journalDir)!;
+      expect(journalStatus(completedJournal).status).toBe('complete');
+      expect(existsSync(join(completedJournal, 'snapshot'))).toBe(false);
 
       // --- Row 2, tick 4: back in the primary tree. ------------------------
       const secondRow = tick(primary);
@@ -885,12 +935,8 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(driverCommands).toEqual([
         advanceSprintCommand('row-one'),
         HOST_COMMAND.resolveState,
-        HOST_COMMAND.prepareAcceptance,
-        HOST_COMMAND.recordAcceptance,
         HOST_COMMAND.verifySprint,
         HOST_COMMAND.finishMerge,
-        HOST_COMMAND.prepareAcceptance,
-        HOST_COMMAND.recordAcceptance,
         HOST_COMMAND.verifySprint,
         HOST_COMMAND.finishMerge,
         advanceSprintCommand('row-two'),
@@ -898,36 +944,14 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         HOST_COMMAND.resolveState,
         HOST_COMMAND.resolveState,
         HOST_COMMAND.resolveState,
-        HOST_COMMAND.prepareAcceptance,
-        HOST_COMMAND.recordAcceptance,
         HOST_COMMAND.verifySprint,
         HOST_COMMAND.finishMerge,
       ]);
 
-      // The gate stubs record what the driver actually invoked, independent of
-      // the driver's own log: every completion gate ran prepare -> record ->
-      // verify in that order, once per closeout.
-      // Timestamped artifact stems are fixture-generated; the gate identity that
-      // matters is the row, so normalize the stem prefix away.
-      const gateCalls = readFileSync(fixture.gateLog, 'utf-8')
-        .trim()
-        .split('\n')
-        .map((line) => line.replace(/\d{8}-\d{4}-/g, ''));
-      const closeoutGate = (row: string): string[] => [
-        'verify-sprint --prepare-acceptance',
-        'acceptance-receipt record',
-        'verify-sprint ',
-        `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
-        'verify-sprint ',
-        `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
-        `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
-        'acceptance-receipt archive-projection-path',
-        `acceptance-receipt seal-archive-projection --contract tasks/archive/contract-${row}.md`,
-      ];
-      expect(gateCalls).toEqual([
-        ...closeoutGate('row-one'), // the SIGKILLed closeout
-        ...closeoutGate('row-one'), // the recovered rerun re-ran the same gate
-        ...closeoutGate('row-two'),
+      // Each real closeout consumes the provider gate once. The local
+      // verification above executes the selected fixture's actual source test.
+      expect(readFileSync(fixture.gateLog, 'utf8').trim().split('\n')).toEqual([
+        'merge-gate run', 'merge-gate run', 'merge-gate run', 'merge-gate run',
       ]);
 
       // The attempt ledger stayed ignored runtime evidence throughout: it never

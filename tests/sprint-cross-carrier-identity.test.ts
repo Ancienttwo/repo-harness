@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -199,26 +199,23 @@ describe('cross-carrier task identity', () => {
     }
   });
 
-  test('strict workflow validation rejects an uncommitted duplicate through the installable helper', () => {
-    const root = mkdtempSync(join(tmpdir(), 'strict-sprint-cross-carrier-'));
+  test('the materializer refuses an uncommitted proposed duplicate before publication', () => {
+    const root = mkdtempSync(join(tmpdir(), 'proposed-sprint-cross-carrier-'));
     fixtures.push(root);
-    mkdirSync(join(root, 'scripts'), { recursive: true });
-    mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+    git(root, ['init', '--quiet', '--initial-branch=main']);
+    git(root, ['config', 'user.email', 'identity@example.invalid']);
+    git(root, ['config', 'user.name', 'Identity Fixture']);
+    mkdirSync(join(root, SPRINT_DIR), { recursive: true });
     mkdirSync(join(root, '.ai/harness'), { recursive: true });
-    copyFileSync(join(ROOT, 'assets/templates/helpers/check-task-workflow.sh'), join(root, 'scripts/check-task-workflow.sh'));
-    writeFileSync(join(root, '.ai/harness/policy.json'), '{"sprints":{"dir":"plans/sprints"}}\n');
-    writeFileSync(join(root, 'plans/sprints/one.sprint.md'), sprint('Approved', TASK_ID, 'one'));
-    writeFileSync(join(root, 'plans/sprints/two.sprint.md'), sprint('Executing', TASK_ID, 'two'));
-    writeFileSync(
-      join(root, 'plans/sprints/malformed.sprint.md'),
-      sprint('Approved', fixtureTaskId('malformed status'), 'malformed').replace('> **Status**:', '**Status**:'),
-    );
-
-    const check = spawnSync('bash', ['scripts/check-task-workflow.sh', '--strict'], { cwd: root, encoding: 'utf8' });
-    expect(check.status).toBe(1);
-    expect(check.stdout).toContain(`duplicate live Sprint task id ${TASK_ID}`);
-    expect(check.stdout).toContain('plans/sprints/one.sprint.md');
-    expect(check.stdout).toContain('plans/sprints/two.sprint.md');
-    expect(check.stdout).toContain("Sprint is missing a '**Status**' line: plans/sprints/malformed.sprint.md");
+    writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ sprints: { dir: SPRINT_DIR } }));
+    writeFileSync(join(root, PRIMARY), sprint('Approved', TASK_ID, 'one'));
+    commit(root, 'one canonical carrier');
+    const proposed = sprint('Executing', TASK_ID, 'two');
+    writeFileSync(join(root, SIBLING), proposed);
+    expect(() => assertCanonicalSprintTaskIdsUniqueAtCommit(root, {
+      commit: git(root, ['rev-parse', 'HEAD']).trim(), sprintPath: SIBLING, sprintText: proposed,
+    })).toThrow(`task id ${TASK_ID}`);
+    expect(existsSync(leaseDirectory(root, TASK_ID))).toBe(false);
+    expect(git(root, ['ls-files', SIBLING]).trim()).toBe('');
   });
 });
