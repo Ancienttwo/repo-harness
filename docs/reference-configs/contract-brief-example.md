@@ -34,10 +34,10 @@ Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a 
 - Deferred-goal ledger: `tasks/todos.md`
 - Review file: `tasks/reviews/20260701-0930-check-task-sync-json-mode.review.md`
 - Notes file: `tasks/notes/20260701-0930-check-task-sync-json-mode.notes.md`
-- Checks file: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verify-sprint --prepare-acceptance` freezes passing contract evidence; one typed `AcceptanceReceipt` then records `external_pass` or a contract-allowed `user_waiver`, and final `verify-sprint` consumes it without rerunning tests.
+- Completion gate: `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` records real declared checks in the selected report; one typed `AcceptanceReceipt` then records `external_pass` or a contract-allowed `user_waiver`, and final `verify-sprint` consumes it without rerunning tests.
 
 ## Allowed Paths
 

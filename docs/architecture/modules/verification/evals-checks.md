@@ -93,7 +93,7 @@ authority; missing or malformed evidence fails closed.
 **必须守住的不变量：**
 
 1. **生产者/消费者单向分离。** profile benchmark 生产证据，bounded verifier 与 `verify-sprint` 只消费。`is_evidence_producer_command()`（`scripts/verify-contract.sh:512`）把这条边界写成执行前拒绝，而不是靠约定——否则收口 gate 会退化成无界 job runner。
-2. **evidence emitter 单一权威。** `scripts/emit-verify-evidence.ts` 是唯一 emitter；已安装 helper 按包布局解析它，缺失时 fail-closed 返回 cannot-bind，从不复制 emitter 或合成证据路径。
+2. **Execution evidence 单一权威。** `verification-plan execute` 记录实际检查。Native validator 校验 event、run、contract 和 snapshot。空计划或缺失证据不能通过。旧 emitter 和 materializer 已移除。
 3. **有界执行 + 进程组回收。** 每条契约命令跑在自己的 detached 进程组里，共享一个绝对截止点；force-kill 阶段寻址原始 PGID 而非当前 leader，堵住 TERM-resistant 后代的逃逸口。
 4. **昂贵通道串行化。** 权威 benchmark 在任何 run workspace/report 变更前取 Git-common-dir expensive-run lock 并跨 provider 生命周期持有；dry-run 与 regrade-only 不占该通道。owner 异常死亡时 token 不可回收，留给人工恢复而非自动重开通道。
 5. **非权威永远不能升格。** dry-run eval、无 `--execute` 的 benchmark、`--regrade-existing` 三者的输出形状允许存在，但不得被当作 effectiveness 证据；provider-owned 指标宁可留 null 也不估算。

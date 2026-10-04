@@ -185,7 +185,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/capability-context/");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
-    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
+    expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/checks/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
@@ -285,10 +285,39 @@ describe("workflow contract manifest", () => {
     }
   });
 
+
+  test("live runtime caches remain ignored and excluded from installed copies", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "runtime-cache-preservation-"));
+    const source = join(workspace, "source");
+    const destination = join(workspace, "installed");
+    const caches = [
+      "change-assessment.latest.json", "minimal-change.latest.json", "post-bash-latest.json",
+      "contract-verify.latest.json", "runtime-evidence-release.latest.json",
+    ].map((name) => `.ai/harness/checks/${name}`);
+    try {
+      mkdirSync(join(source, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(destination);
+      writeFileSync(join(source, ".gitignore"), readFileSync(join(ROOT, "assets/templates/runtime.gitignore")));
+      expect(spawnSync("git", ["init", "-q"], { cwd: source }).status).toBe(0);
+      for (const cache of caches) {
+        writeFileSync(join(source, cache), "private runtime cache fixture\n");
+        expect(spawnSync("git", ["check-ignore", "--no-index", "--", cache], { cwd: source }).status).toBe(0);
+      }
+      const contract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf8")) as { installedCopyExcludes: string[] };
+      const copied = spawnSync("rsync", ["-a", ...contract.installedCopyExcludes.map((pattern) => `--exclude=${pattern}`), `${source}/`, `${destination}/`], { encoding: "utf8" });
+      expect(copied.status).toBe(0);
+      expect(copied.stderr).toBe("");
+      for (const cache of caches) expect(existsSync(join(destination, cache))).toBe(false);
+      expect(existsSync(join(destination, ".gitignore"))).toBe(true);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   test("runtime harness artifacts should be ignored local state, not tracked deliverables", () => {
     const contract = loadWorkflowContract(join(ROOT, "assets/workflow-contract.v1.json"));
     const runtimeFiles = contract.artifacts.runtimeFiles ?? [];
-    expect(runtimeFiles).toContain(".ai/harness/checks/latest.json");
+    expect(runtimeFiles).not.toContain(".ai/harness/checks/latest.json");
     expect(runtimeFiles).toContain(".ai/harness/evidence/");
     expect(runtimeFiles).toContain(".ai/harness/active-plan");
     expect(runtimeFiles).toContain(".ai/harness/active-worktree");
@@ -318,7 +347,7 @@ describe("workflow contract manifest", () => {
     expect(gitignore).toContain("tasks/.current.md.tmp.*");
     expect(gitignore).toContain("tasks/current.md");
     expect(gitignore).toContain(".claude/.plan-state/");
-    expect(gitignore).toContain(".ai/harness/checks/latest.json");
+    expect(gitignore).not.toContain(".ai/harness/checks/latest.json");
     expect(gitignore).toContain(".ai/harness/evidence/");
     expect(gitignore).toContain(".ai/harness/state/");
     expect(gitignore).toContain(".ai/harness/checks/*.latest.json");

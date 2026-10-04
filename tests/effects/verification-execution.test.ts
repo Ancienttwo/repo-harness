@@ -5,6 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import type { JsonValue } from "../../src/core/evidence/types";
+import { appendEvidenceEvent, readAcceptedEvents } from "../../src/effects/evidence/event-log";
 import { buildEvidenceEvent } from "../../src/effects/evidence/event-writer";
 import {
   captureGitVirtualTreeSnapshot,
@@ -81,6 +82,7 @@ function projectReportThroughEvidenceWriter(
   repoRoot: string,
   report: ReturnType<typeof executeVerificationContract>,
 ): ReturnType<typeof executeVerificationContract> {
+  if (report.kind !== "verification_execution_report") throw new Error("fixture needs executed verification facts");
   const event = buildEvidenceEvent(repoRoot, {
     worktreeId: "verification-report-projection",
     eventType: "repository-integrity.result",
@@ -195,13 +197,65 @@ describe("verification execution lifecycle", () => {
     });
   }, 30_000);
 
-  test("an explicit empty executable plan evaluates as a bound vacuous pass", () => {
+  test("an empty executable plan is unavailable before snapshot and toolchain capture", () => {
     withRepo("verification-empty", (repoRoot, contractPath) => {
       writeFileSync(join(repoRoot, contractPath), contract({ protocol: 1, checks: [] }, "artifact-only contract"));
       const report = evaluateVerificationContract({ repoRoot, contractPath });
-      expect(report.status).toBe("passed");
+      expect(report.status).toBe("missing");
+      expect(report.passed).toBe(false);
       expect(report.results).toEqual([]);
-      expect(validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report }).valid).toBe(true);
+      expect(report.kind).toBe("verification_unavailable");
+      expect(() => validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report })).toThrow();
+      expect(executeVerificationContract({ repoRoot, contractPath, env: { PATH: "/missing" } })).toEqual(report);
+      expect(existsSync(join(repoRoot, ".ai/harness/evidence/events/log.jsonl"))).toBe(false);
+    });
+  });
+
+  test("missing plan returns typed missing but malformed and duplicate plans remain invalid", () => {
+    withRepo("verification-no-plan", (repoRoot, contractPath) => {
+      writeFileSync(join(repoRoot, contractPath), "# Contract\n");
+      const report = evaluateVerificationContract({ repoRoot, contractPath, env: { PATH: "/missing" } });
+      expect(report).toEqual({ kind: "verification_unavailable", status: "missing", passed: false, reason: "missing_plan", contract: contractPath, results: [] });
+      const reportFile = ".ai/harness/runs/no-plan.report.json";
+      expect(executeVerificationContract({ repoRoot, contractPath, reportFile })).toEqual(report);
+      expect(existsSync(join(repoRoot, reportFile))).toBe(false);
+      expect(existsSync(join(repoRoot, ".ai/harness/evidence/events/log.jsonl"))).toBe(false);
+      const evaluated = spawnSync("bun", [CLI, "evaluate", "--repo", repoRoot, "--contract", contractPath], { encoding: "utf8" });
+      expect(evaluated.status).toBe(1);
+      expect(JSON.parse(evaluated.stdout).reason).toBe("missing_plan");
+      const validate = spawnSync("bun", [CLI, "validate", "--repo", repoRoot, "--contract", contractPath], { encoding: "utf8" });
+      expect(validate.status).toBe(2);
+      writeFileSync(join(repoRoot, contractPath), "## Verification Plan\n\n" + String.fromCharCode(96).repeat(3) + "json\n{bad}\n" + String.fromCharCode(96).repeat(3) + "\n");
+      expect(() => evaluateVerificationContract({ repoRoot, contractPath })).toThrow("invalid JSON");
+      writeFileSync(join(repoRoot, contractPath), contract({ protocol: 1, checks: [] }) + contract({ protocol: 1, checks: [] }));
+      expect(() => evaluateVerificationContract({ repoRoot, contractPath })).toThrow("exactly one");
+    });
+  });
+
+  test("observed records cannot replace authoritative execution evidence", () => {
+    withRepo("verification-observed-not-authority", (repoRoot, contractPath, counterPath) => {
+      const env = { ...process.env, COUNTER_PATH: counterPath };
+      const report = executeVerificationContract({ repoRoot, contractPath, env });
+      const event = readAcceptedEvents(repoRoot).accepted.find(event => event.event_type === "verification_execution.result")!;
+      expect(event.trust_class).toBe("authoritative_machine");
+      const ledger = join(repoRoot, ".ai/harness/evidence/events/log.jsonl");
+      writeFileSync(ledger, readFileSync(ledger, "utf8").split("\n")[0]! + "\n");
+      appendEvidenceEvent(repoRoot, { worktreeId: event.worktree_id, eventType: event.event_type, producer: event.producer,
+        trustClass: "observed", correlationRunId: event.correlation_run_id, subjectIdentity: event.subject_identity,
+        payload: { kind: "json", value: event.payload! } });
+      expect(evaluateVerificationContract({ repoRoot, contractPath, env }).passed).toBe(false);
+      expect(() => validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report, env })).toThrow("immutable evidence");
+    });
+  });
+
+  test("old vacuous materialized passes refuse despite valid frozen tree and plan hashes", () => {
+    withRepo("verification-old-empty-report", (repoRoot, contractPath) => {
+      writeFileSync(join(repoRoot, contractPath), contract({ protocol: 1, checks: [] }));
+      const snapshot = captureGitVirtualTreeSnapshot(repoRoot);
+      expect(() => validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report: {
+        protocol: 1, kind: "verification_execution_report", status: "passed", passed: true,
+        target: { contract: contractPath, ...snapshot, plan_hash: "old-plan" }, results: [],
+      } })).toThrow("empty_plan");
     });
   });
 
@@ -313,6 +367,7 @@ describe("verification execution lifecycle", () => {
       const afterEmptyCommit = executeVerificationContract({ repoRoot, contractPath, env });
       expect(afterEmptyCommit.status).toBe("passed");
       expect(afterEmptyCommit.results[0]!.execution).toBe("reused");
+      if (first.kind !== "verification_execution_report" || afterEmptyCommit.kind !== "verification_execution_report") throw new Error("fixture requires non-empty execution");
       expect(afterEmptyCommit.target.head_commit).not.toBe(first.target.head_commit);
       expect(afterEmptyCommit.target.snapshot_hash).toBe(first.target.snapshot_hash);
       expect(validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report: afterEmptyCommit, env }).valid).toBe(true);
@@ -410,7 +465,7 @@ describe("verification execution lifecycle", () => {
         });
         expect(forcedFailure.status).toBe("failed");
         expect(forcedFailure.results[0]!.exit_code).toBe(7);
-        expect(evaluateVerificationContract({ repoRoot, contractPath, env }).status).toBe("missing");
+        expect(evaluateVerificationContract({ repoRoot, contractPath, env }).status).toBe("failed");
 
         const ordinary = executeVerificationContract({ repoRoot, contractPath, env });
         expect(ordinary.status).toBe("failed");
@@ -443,7 +498,7 @@ describe("verification execution lifecycle", () => {
         });
         expect(forcedTimeout.status).toBe("failed");
         expect(forcedTimeout.results[0]!.timed_out).toBe(true);
-        expect(evaluateVerificationContract({ repoRoot, contractPath, env }).status).toBe("missing");
+        expect(evaluateVerificationContract({ repoRoot, contractPath, env }).status).toBe("failed");
 
         const ordinary = executeVerificationContract({ repoRoot, contractPath, env });
         expect(ordinary.status).toBe("needs_verification_plan");
@@ -624,12 +679,12 @@ describe("verification execution lifecycle", () => {
       expect(validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, contractText, report, env }).valid).toBe(true);
       const archivedHeader = contractText.replace("# Task Contract: fixture", "# Task Contract: archived-fixture");
       expect(validateMaterializedVerificationExecutionReport({
-        repoRoot,
-        contractPath,
-        contractText: archivedHeader,
-        report,
-        env: { ...env, COUNTER_PATH: `${counterPath}-changed-after-run` },
+        repoRoot, contractPath, contractText, report,
+        env: { ...env, COUNTER_PATH: counterPath + "-changed-after-run" },
       }).valid).toBe(true);
+      expect(() => validateMaterializedVerificationExecutionReport({
+        repoRoot, contractPath, contractText: archivedHeader, report, env,
+      })).toThrow("immutable evidence");
       expect(() => validateMaterializedVerificationExecutionReport({
         repoRoot,
         contractPath,
@@ -810,7 +865,7 @@ ${path === secondBash ? 'if [ "$1" = --version ]; then sleep 5.1; fi\n' : ''}exe
       expect(failed.results[0]!.exit_code).toBe(7);
       expect(failed.results[0]!.failure_log_file).toBeString();
       expect(existsSync(join(repoRoot, failed.results[0]!.failure_log_file!))).toBe(true);
-      expect(evaluateVerificationContract({ repoRoot, contractPath }).status).toBe("missing");
+      expect(evaluateVerificationContract({ repoRoot, contractPath }).status).toBe("failed");
 
       const timed = { protocol: 1, checks: [commandCheck({ command: "sleep 2", cost: "normal", inputs: { env: [] } })] };
       writeFileSync(join(repoRoot, contractPath), contract(timed));
@@ -818,7 +873,7 @@ ${path === secondBash ? 'if [ "$1" = --version ]; then sleep 5.1; fi\n' : ''}exe
       expect(timeout.status).toBe("failed");
       expect(timeout.results[0]!.timed_out).toBe(true);
       expect(timeout.results[0]!.failure_log_file).toBeString();
-      expect(evaluateVerificationContract({ repoRoot, contractPath }).status).toBe("missing");
+      expect(evaluateVerificationContract({ repoRoot, contractPath }).status).toBe("failed");
       expect(counterPath).toBeString();
     });
   }, 30_000);

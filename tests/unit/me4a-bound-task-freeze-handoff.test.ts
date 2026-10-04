@@ -22,7 +22,7 @@ import {
 } from '../../src/effects/engineers/task-freeze-store';
 import { createLeaseDirectory, leaseOwnerPath, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { buildEngineerCommand } from '../../src/cli/commands/engineer';
-import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
+import { nativeVerificationPlan, seedNativeVerification } from '../state/effective-state-fixture';
 
 const ENGINEER = 'engineer:capability.verification.evals-checks';
 const BINDING = '11111111-1111-4111-8111-111111111111';
@@ -59,10 +59,16 @@ function fixture(): Fixture {
   mkdirSync(join(root, '.ai/harness/handoff'), { recursive: true });
   cpSync(join(process.cwd(), '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(process.cwd(), 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
-  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n');
+  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/evidence/\n.ai/harness/runs/\n');
   writeFileSync(join(root, 'README.md'), 'fixture\n');
-  writeFileSync(join(root, UNIT), '# Plan: canary\n');
-  writeFileSync(join(root, 'tasks/contracts/canary.contract.md'), '# Contract: canary\n');
+  writeFileSync(join(root, UNIT), '# Plan: canary\n> **Task Contract**: tasks/contracts/canary.contract.md\n');
+  writeFileSync(join(root, 'tasks/contracts/canary.contract.md'), [
+    '# Contract: canary', '> **Plan**: ' + UNIT, '',
+    '## Evidence Requirements', '', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
+    '## Change Assessment', '', '```json', '{"protocol":1,"oracles":[]}', '```', '',
+    '## Allowed Paths', '', '```yaml', 'allowed_paths:', '  - README.md', '```', '',
+    nativeVerificationPlan('README.md'),
+  ].join('\n'));
   writeFileSync(join(root, 'tasks/notes/canary.notes.md'), '# Notes\n\n## Open Questions\n\n- None.\n\n## Evidence Links\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), `${JSON.stringify({ worktree_strategy: { review_base: 'main' } })}\n`);
   git(root, ['add', '.']);
@@ -144,20 +150,7 @@ function fixture(): Fixture {
   writeFileSync(join(root, '.ai/harness/handoff/work-envelope.json'), `${JSON.stringify(envelope)}\n`);
   git(root, ['add', '.ai/harness/handoff/work-envelope.json']);
   git(root, ['commit', '-qm', 'persist exact work envelope']);
-  const reviewSubject = buildReviewSubject(root, { targetRef: 'main' });
-  if (reviewSubject.status !== 'ok') throw new Error(reviewSubject.reason);
-  writeFileSync(join(root, '.ai/harness/checks/latest.json'), `${JSON.stringify({
-    status: 'pass',
-    contract: { file: 'tasks/contracts/canary.contract.md' },
-    review_subject_sha256: reviewSubject.review_subject_sha256,
-    change_assessment: {
-      assessment: {
-        review_subject_sha256: reviewSubject.review_subject_sha256,
-        target_ref: reviewSubject.target_ref,
-        target_revision: reviewSubject.target_rev,
-      },
-    },
-  })}\n`);
+  seedNativeVerification(root, 'tasks/contracts/canary.contract.md');
   publishClaimActorReceipt(root, buildClaimActorReceipt({
     envelope,
     principal,
@@ -214,7 +207,6 @@ describe('ME-4A bound task freeze and handoff refusal', () => {
 
     writeFileSync(join(subject.root, 'README.md'), 'dirty\n');
     writeFileSync(join(subject.root, 'untracked.txt'), 'secret bytes are never carried\n');
-    writeFileSync(join(subject.root, '.ai/harness/checks/latest.json'), '{"status":"fail"}\n');
     writeFileSync(join(subject.root, 'tasks/notes/canary.notes.md'), '# Notes\n\n## Open Questions\n\n- hypothesis\n');
     const dirty = inspectBoundTask(subject.root, ENGINEER, {
       now: () => '2026-08-26T00:03:00.000Z',
@@ -248,6 +240,32 @@ describe('ME-4A bound task freeze and handoff refusal', () => {
     git(subject.root, ['commit', '-qm', 'unverified change']);
     const inspected = inspectBoundTask(subject.root, ENGINEER);
     expect(inspected.reasons).toEqual(['checks_unverified']);
+  });
+
+  test('empty and missing plans require a freeze without changing the Lease', () => {
+    for (const plan of ['', '\n## Verification Plan\n\n```json\n{"protocol":1,"checks":[]}\n```\n']) {
+      const subject = fixture();
+      const leaseBefore = readFileSync(subject.lease_path, 'utf8');
+      writeFileSync(join(subject.root, 'tasks/contracts/canary.contract.md'), '# Contract: canary\n> **Plan**: ' + UNIT + '\n' + plan);
+      git(subject.root, ['add', 'tasks/contracts/canary.contract.md']);
+      git(subject.root, ['commit', '-qm', 'incomplete plan']);
+      const inspected = inspectBoundTask(subject.root, ENGINEER);
+      expect(inspected.disposition).toBe('freeze_required');
+      expect(inspected.reasons).toEqual(['checks_unverified']);
+      expect(readFileSync(subject.lease_path, 'utf8')).toBe(leaseBefore);
+    }
+  });
+
+  test('direct assessment tampering invalidates a clean freeze', () => {
+    const subject = fixture();
+    const frozen = createTaskFreeze(subject.root, ENGINEER);
+    expect(frozen.disposition).toBe('clean_release_allowed');
+    const path = join(subject.root, '.ai/harness/checks/change-assessment.latest.json');
+    const assessment = JSON.parse(readFileSync(path, 'utf8'));
+    assessment.selection_packet.target_revision = '0'.repeat(40);
+    writeFileSync(path, JSON.stringify(assessment));
+    expect(inspectBoundTask(subject.root, ENGINEER).reasons).toEqual(['checks_unverified']);
+    expect(() => verifyTaskFreeze(subject.root, TASK, frozen.receipt.receipt_sha256)).toThrow('checks_state_sha256');
   });
 
   test('untracked filename inventory fences filesystem entry type', () => {

@@ -14,6 +14,7 @@ import {
   buildPublicationReceipt,
   publicationReceiptDigest,
   publicationSha256,
+  stablePublicationJson,
 } from '../../src/core/publication/publication-receipt';
 import {
   beginLeaseCompletionRecord,
@@ -33,8 +34,8 @@ import {
   readProductAcceptanceProjection,
 } from '../../src/effects/integration/product-acceptance';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { createLeaseDirectory, leaseOwnerPath, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
+import { readPublicationReceiptCache, writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
+import { createLeaseDirectory, leaseOwnerPath, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import type { AcceptanceReceipt } from '../../scripts/acceptance-receipt';
 
 const TASK_A = '1'.repeat(64);
@@ -82,8 +83,7 @@ function reviewingPublication(root: string, taskId: string, revision: string, he
     branch: 'main',
     head_sha: head,
     tree_sha: git(root, 'rev-parse', `${head}^{tree}`),
-    review_subject_sha256: SUBJECT,
-    verification_evidence_sha256: DIGEST,
+    candidate_diff_fingerprint: SUBJECT,
     merge_seal_sha256: DIGEST,
     provider: 'github',
     provider_repo_id: 'R_me4c_fixture',
@@ -190,6 +190,27 @@ afterEach(() => {
 });
 
 describe('ME-4C integration product acceptance', () => {
+
+  test('refuses an integration reference bound to an old receipt digest and retains history', () => {
+    const value = fixture();
+    const owner = readLease(value.root, TASK_A).record;
+    if (owner === null || owner.state !== 'reviewing' || owner.current_publication === null) throw new Error('fixture expected reviewing publication');
+    const receipt = readPublicationReceiptCache(value.root, owner.current_publication.publication_id);
+    if (receipt === null) throw new Error('fixture expected cached receipt');
+    const { candidate_diff_fingerprint, ...retained } = receipt;
+    const oldDigest = publicationSha256(stablePublicationJson({ ...retained, protocol: 1,
+      review_subject_sha256: SUBJECT, verification_evidence_sha256: DIGEST }));
+    writeLeaseOwnerDurably(value.root, TASK_A, { ...owner,
+      current_publication: { ...owner.current_publication, receipt_sha256: oldDigest } });
+    const leaseBefore = readFileSync(leaseOwnerPath(value.root, TASK_A), 'utf8');
+    const historicalEnvelope = readIntegrationEnvelope(value.root, value.envelope.envelope_sha256);
+    expectCode(() => createIntegrationEnvelope({ repo_root: value.root }, {
+      contract_sha256: value.contract.contract_sha256, base_sha: value.base, final_head_sha: value.finalHead,
+    }), 'publication_stale');
+    expect(readIntegrationEnvelope(value.root, value.envelope.envelope_sha256)).toEqual(historicalEnvelope);
+    expect(readFileSync(leaseOwnerPath(value.root, TASK_A), 'utf8')).toBe(leaseBefore);
+  });
+
   test('freezes two current publications and projects the existing AcceptanceReceipt without mutating leases', async () => {
     const value = fixture();
     expect(value.contract.required_work_packages.map((item) => item.work_package_id)).toEqual([TASK_A, TASK_B]);
@@ -208,7 +229,7 @@ describe('ME-4C integration product acceptance', () => {
       contract_sha256: DIGEST,
       goal_file: 'plans/plan-integration.md',
       goal_sha256: DIGEST,
-      verification_file: '.ai/harness/checks/latest.json',
+      verification_file: '.ai/harness/runs/fixture.json',
       verification_evidence_sha256: DIGEST,
       benchmark_evidence_sha256: '',
       subject_sha256: SUBJECT,
@@ -288,7 +309,7 @@ describe('ME-4C integration product acceptance', () => {
       contract_sha256: DIGEST,
       goal_file: 'plans/plan-integration.md',
       goal_sha256: DIGEST,
-      verification_file: '.ai/harness/checks/latest.json',
+      verification_file: '.ai/harness/runs/fixture.json',
       verification_evidence_sha256: DIGEST,
       benchmark_evidence_sha256: 'not-applicable',
       subject_sha256: SUBJECT,

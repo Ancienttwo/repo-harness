@@ -12,9 +12,10 @@ import {
 import {
   decodePublicationMarker,
   publicationReceiptDigest,
-  type PublicationReceiptV1,
+  type PublicationReceiptV2,
 } from '../../core/publication/publication-receipt';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
+import { readLease } from '../state/coordination-lease-store';
 import { resolveBoard } from '../state/resolve-board';
 import { PublicationReceiptError, readPublicationReceiptCache } from './publication-receipt';
 
@@ -38,7 +39,6 @@ export interface PublicationReadinessInput {
   readonly pr_number?: number;
   readonly gh_bin?: string;
   readonly git_bin?: string;
-  readonly checks_path?: string;
   readonly merge_seal_path?: string;
   /** Internal effect/test seam; HTTP callers never choose an authority store. */
   readonly authority_home?: string;
@@ -115,10 +115,10 @@ export interface MergeReadinessRound {
 }
 
 export interface MergeReadinessCollector {
-  readonly resolve_receipt: (input: PublicationReadinessInput) => PublicationReceiptV1;
-  readonly observe_identity: (receipt: PublicationReceiptV1, input: PublicationReadinessInput) => ProviderIdentity;
-  readonly observe_facts: (identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput) => ProviderMergeReadinessFactsV1;
-  readonly classify_integration: (identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput) => MergeReadinessIntegrationMode;
+  readonly resolve_receipt: (input: PublicationReadinessInput) => PublicationReceiptV2;
+  readonly observe_identity: (receipt: PublicationReceiptV2, input: PublicationReadinessInput) => ProviderIdentity;
+  readonly observe_facts: (identity: ProviderIdentity, receipt: PublicationReceiptV2, input: PublicationReadinessInput) => ProviderMergeReadinessFactsV1;
+  readonly classify_integration: (identity: ProviderIdentity, receipt: PublicationReceiptV2, input: PublicationReadinessInput) => MergeReadinessIntegrationMode;
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -274,7 +274,7 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
   return identity;
 }
 
-function parseProviderReadinessIdentity(receipt: PublicationReceiptV1, repoValue: unknown, prValue: unknown): ProviderIdentity {
+function parseProviderReadinessIdentity(receipt: PublicationReceiptV2, repoValue: unknown, prValue: unknown): ProviderIdentity {
   const identity = parseProviderPullRequestIdentity(receipt.pr_number, repoValue, prValue);
   if (identity.provider_repo_id !== receipt.provider_repo_id
     || identity.pr_url !== receipt.pr_url
@@ -282,7 +282,7 @@ function parseProviderReadinessIdentity(receipt: PublicationReceiptV1, repoValue
     || identity.base_ref !== receipt.target_ref) {
     throw new MergeReadinessError('publication_claim_mismatch', 'provider identity does not match the publication receipt');
   }
-  let marker: PublicationReceiptV1 | null;
+  let marker: PublicationReceiptV2 | null;
   try { marker = decodePublicationMarker(identity.body); } catch (error) {
     throw new MergeReadinessError('publication_claim_mismatch', 'provider publication marker is invalid', error);
   }
@@ -292,7 +292,7 @@ function parseProviderReadinessIdentity(receipt: PublicationReceiptV1, repoValue
   return identity;
 }
 
-export function observeProviderReadinessIdentity(receipt: PublicationReceiptV1, input: PublicationReadinessInput): ProviderIdentity {
+export function observeProviderReadinessIdentity(receipt: PublicationReceiptV2, input: PublicationReadinessInput): ProviderIdentity {
   return parseProviderReadinessIdentity(
     receipt,
     gh(input, ['repo', 'view', '--json', 'id,nameWithOwner']),
@@ -304,7 +304,7 @@ export function observeProviderReadinessIdentity(receipt: PublicationReceiptV1, 
 }
 
 export async function observeProviderReadinessIdentityAbortable(
-  receipt: PublicationReceiptV1,
+  receipt: PublicationReceiptV2,
   input: AbortablePublicationReadinessInput,
 ): Promise<ProviderIdentity> {
   const repo = await ghAbortable(input, ['repo', 'view', '--json', 'id,nameWithOwner']);
@@ -446,7 +446,7 @@ function* rollbackTagBoundary(identity: ProviderIdentity): Generator<string, Pro
   return 'ready';
 }
 
-export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PublicationReceiptV1, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
+export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PublicationReceiptV2, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
   const checks = gh(input, [
     'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
@@ -459,7 +459,7 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
 
 export async function observeProviderReadinessFactsAbortable(
   identity: ProviderIdentity,
-  receipt: Pick<PublicationReceiptV1, 'pr_number'>,
+  receipt: Pick<PublicationReceiptV2, 'pr_number'>,
   input: AbortablePublicationReadinessInput,
 ): Promise<ProviderMergeReadinessFactsV1> {
   const checks = await ghAbortable(input, [
@@ -499,7 +499,7 @@ export function collectPullRequestMergeReadiness(
   }
 }
 
-function classifyIntegration(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: PublicationReadinessInput): MergeReadinessIntegrationMode {
+function classifyIntegration(identity: ProviderIdentity, receipt: PublicationReceiptV2, input: PublicationReadinessInput): MergeReadinessIntegrationMode {
   const gitBin = input.git_bin ?? process.env.REPO_HARNESS_GIT_BIN ?? 'git';
   for (const oid of [identity.base_sha, receipt.head_sha]) {
     const objectCheck = spawnSync(gitBin, ['cat-file', '-e', `${oid}^{commit}`], { cwd: input.repo_root, encoding: 'utf-8' });
@@ -518,12 +518,31 @@ function classifyIntegration(identity: ProviderIdentity, receipt: PublicationRec
   return mode === 'ancestor' || mode === 'absorbed' || mode === 'unmerged' ? mode : 'unavailable';
 }
 
-function resolveReceipt(input: PublicationReadinessInput): PublicationReceiptV1 {
+function assertCurrentPublicationPointer(receipt: PublicationReceiptV2, input: PublicationReadinessInput): PublicationReceiptV2 {
+  const lease = readLease(input.repo_root, receipt.task_id);
+  const record = lease.record;
+  if (record === null) {
+    if (lease.classification !== 'available') throw new MergeReadinessError('receipt_unavailable', 'publication lease is unreadable');
+    return receipt;
+  }
+  if (!('current_publication' in record) || record.current_publication === null
+    || record.current_publication.publication_id !== receipt.publication_id) return receipt;
+  if (record.current_publication.receipt_sha256 !== publicationReceiptDigest(receipt)
+    || record.current_publication.head_sha !== receipt.head_sha
+    || record.claim_id !== receipt.claim_id || record.generation !== receipt.generation
+    || record.task_revision !== receipt.task_revision || record.target_ref !== receipt.target_ref
+    || record.branch !== receipt.branch) {
+    throw new MergeReadinessError('publication_pointer_mismatch', 'lease current_publication does not match the publication receipt');
+  }
+  return receipt;
+}
+
+function resolveReceipt(input: PublicationReadinessInput): PublicationReceiptV2 {
   if ((input.publication_id === undefined) === (input.pr_number === undefined)) {
     throw new MergeReadinessError('receipt_unavailable', 'exactly one of publication_id or pr_number is required');
   }
   if (input.publication_id) {
-    let receipt: PublicationReceiptV1 | null;
+    let receipt: PublicationReceiptV2 | null;
     try {
       receipt = readPublicationReceiptCache(input.repo_root, input.publication_id, input.git_bin ?? 'git');
     } catch (error) {
@@ -533,13 +552,13 @@ function resolveReceipt(input: PublicationReadinessInput): PublicationReceiptV1 
       throw new MergeReadinessError('receipt_unavailable', `publication receipt is unreadable: ${input.publication_id}`, error);
     }
     if (!receipt) throw new MergeReadinessError('receipt_unavailable', `publication receipt is unavailable: ${input.publication_id}`);
-    return receipt;
+    return assertCurrentPublicationPointer(receipt, input);
   }
   if (!Number.isInteger(input.pr_number) || input.pr_number! < 1) throw new MergeReadinessError('receipt_unavailable', 'pr_number must be positive');
   const repo = object(gh(input, ['repo', 'view', '--json', 'id']), 'provider repository');
   const pr = object(gh(input, ['pr', 'view', String(input.pr_number), '--json', 'number,body']), 'provider PR');
   if (pr.number !== input.pr_number) throw new MergeReadinessError('publication_claim_mismatch', 'provider PR number changed');
-  let receipt: PublicationReceiptV1 | null;
+  let receipt: PublicationReceiptV2 | null;
   try { receipt = decodePublicationMarker(typeof pr.body === 'string' ? pr.body : ''); } catch (error) {
     throw new MergeReadinessError('receipt_unavailable', 'provider publication marker is invalid', error);
   }
@@ -547,7 +566,7 @@ function resolveReceipt(input: PublicationReadinessInput): PublicationReceiptV1 
   if (receipt.provider_repo_id !== string(repo.id, 'provider repository id') || receipt.pr_number !== input.pr_number) {
     throw new MergeReadinessError('publication_claim_mismatch', 'provider marker identity does not match the selected PR');
   }
-  return receipt;
+  return assertCurrentPublicationPointer(receipt, input);
 }
 
 export const productionMergeReadinessCollector: MergeReadinessCollector = Object.freeze({
@@ -557,7 +576,7 @@ export const productionMergeReadinessCollector: MergeReadinessCollector = Object
   classify_integration: classifyIntegration,
 });
 
-function projectRound(receipt: PublicationReceiptV1, round: MergeReadinessRound, observation: MergeReadinessObservation): MergeReadinessV1 {
+function projectRound(receipt: PublicationReceiptV2, round: MergeReadinessRound, observation: MergeReadinessObservation): MergeReadinessV1 {
   return projectMergeReadiness({
     receipt,
     integration_mode: round.integration_mode,
@@ -566,7 +585,7 @@ function projectRound(receipt: PublicationReceiptV1, round: MergeReadinessRound,
   });
 }
 
-function collectRound(receipt: PublicationReceiptV1, input: PublicationReadinessInput, collector: MergeReadinessCollector): MergeReadinessRound {
+function collectRound(receipt: PublicationReceiptV2, input: PublicationReadinessInput, collector: MergeReadinessCollector): MergeReadinessRound {
   let identityBefore: ProviderIdentity;
   let facts: ProviderMergeReadinessFactsV1;
   let identityAfter: ProviderIdentity;
@@ -597,7 +616,7 @@ function roundStable(round: MergeReadinessRound): boolean {
 }
 
 function unavailableReadiness(
-  receipt: PublicationReceiptV1,
+  receipt: PublicationReceiptV2,
   observation: Extract<MergeReadinessObservation, 'provider_unavailable' | 'provider_data_incomplete'>,
 ): MergeReadinessV1 {
   const identity: ProviderIdentity = {
@@ -635,7 +654,7 @@ export function resolvePublicationReadiness(
 }
 
 async function collectAbortableRound(
-  receipt: PublicationReceiptV1,
+  receipt: PublicationReceiptV2,
   input: AbortablePublicationReadinessInput,
 ): Promise<MergeReadinessRound> {
   const identityBefore = await observeProviderReadinessIdentityAbortable(receipt, input);

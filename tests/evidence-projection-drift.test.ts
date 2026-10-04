@@ -2,8 +2,7 @@ import { commitAll, initGitRepo, run, withTempRepo } from "./helpers/repo-fixtur
 /**
  * EPC-09 Program closeout, Goal 1: cross-package projection-drift check.
  *
- * Every EPC-05/06/07/08 canonical projection (materialized checks/latest,
- * the EPC-06 checkpoint machine/human views, the EPC-07 recovery views,
+ * The remaining EPC-06/07/08 canonical projections (the checkpoint machine/human views, the EPC-07 recovery views,
  * tracked tasks/current.md) claims to be a deterministic recomputation from
  * declared sources (the evidence ledger, or -- for tasks/current.md -- the
  * repo's own tracked workflow artifacts). This suite recomputes each
@@ -15,11 +14,9 @@ import { commitAll, initGitRepo, run, withTempRepo } from "./helpers/repo-fixtur
  * never silently patched in this package.
  */
 import { describe, expect, test } from "bun:test";
-import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
-import { canonicalize } from "../src/core/evidence/canonical-json";
 import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
 import type { JsonValue, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import {
@@ -27,7 +24,6 @@ import {
   publishCheckpointFromLedger,
   resolveLastPublishedCheckpoint,
 } from "../src/effects/evidence/checkpoint-store";
-import { buildChecksLatestProjection, type MaterializeChecksLatestInput } from "../src/effects/evidence/checks-materializer";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
 import { materializeRecoveryViews } from "../src/effects/evidence/recovery-materializer";
@@ -95,9 +91,6 @@ function seedEvent(
 }
 
 
-function contentHashOf(consumerFacing: Record<string, unknown>): string {
-  return `sha256:${createHash("sha256").update(canonicalize(consumerFacing as any)).digest("hex")}`;
-}
 
 // ---------------------------------------------------------------------------
 // Checkpoint machine/human views (EPC-06)
@@ -211,204 +204,6 @@ describe("projection drift: recovery views (checkpoint -> handoff/resume)", () =
       expect(resultA.resume).toBe(resultB.resume);
     });
   });
-});
-
-// ---------------------------------------------------------------------------
-// Materialized checks/latest (EPC-05)
-// ---------------------------------------------------------------------------
-describe("projection drift: materialized checks/latest", () => {
-  test("fixture ledger: re-selecting via the pure builder from the same accepted set reproduces byte-identical output, and provenance.content_hash is self-consistent", () => {
-    withTempRepo("drift-checks-latest-fixture", (repoRoot) => {
-      mkdirSync(join(repoRoot, "tasks/contracts"), { recursive: true });
-      const contractPath = "tasks/contracts/drift-fixture.contract.md";
-      const contractText = "# Task Contract: fixture\n";
-      writeFileSync(join(repoRoot, contractPath), contractText);
-      seedGenesis(repoRoot);
-      seedEvent(repoRoot, {
-        contractHash: `sha256:${createHash("sha256").update(contractText).digest("hex")}`,
-        runTraceMarker: "checks-latest-drift",
-      });
-
-      const input: MaterializeChecksLatestInput = {
-        repoRoot,
-        contractPath,
-        worktreeId: "drift-fixture",
-        subjectHash: SUBJECT_A,
-        now: FIXED_NOW,
-      };
-
-      const { accepted: acceptedA } = readAcceptedEvents(repoRoot);
-      const projectionA = buildChecksLatestProjection(input, acceptedA, contractText);
-      const { accepted: acceptedB } = readAcceptedEvents(repoRoot);
-      const projectionB = buildChecksLatestProjection(input, acceptedB, contractText);
-
-      expect(JSON.stringify(projectionA)).toBe(JSON.stringify(projectionB));
-
-      const { provenance, ...consumerFacing } = projectionA;
-      expect(contentHashOf(consumerFacing)).toBe(provenance.content_hash);
-    });
-  });
-
-  test("this worktree's own live checks/latest.json, when it carries a real materialized projection, is provenance.content_hash self-consistent", () => {
-    const checksPath = join(REPO_ROOT, ".ai/harness/checks/latest.json");
-    if (!existsSync(checksPath)) return;
-    const raw = readFileSync(checksPath, "utf-8");
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (parsed === null || typeof parsed !== "object" || !("provenance" in parsed)) {
-      // A guarded only-if-absent `{}` seed (EPC-05 Finding 3, a non-ledger
-      // first-writer, accepted intermediate state) or otherwise non-
-      // materialized content -- not a projection this drift check applies
-      // to; nothing to recompute against.
-      return;
-    }
-    const { provenance, ...consumerFacing } = parsed as { provenance: { content_hash: string } };
-    expect(contentHashOf(consumerFacing)).toBe(provenance.content_hash);
-  });
-
-  // -------------------------------------------------------------------------
-  // The retired shell finalizer used to re-ingest materialized provenance.
-  // Preserve its hash falsifier at the current event/materializer boundary.
-  const VERIFY_SPRINT_PATH = join(REPO_ROOT, "scripts/verify-sprint.sh");
-
-  const OVERLAY_ARGS = {
-    reviewer: "Claude",
-    source: "generic-review",
-    disposition: "external_pass",
-    message: "recorded",
-  } as const;
-
-  /** A primitive immutable run trace with explicit guard results. */
-  function preparedRunTrace(contractPath: string): Record<string, JsonValue> {
-    return {
-      schema: "repo-harness-run-trace.v1",
-      source: "verify-sprint",
-      status: "pass",
-      exit_code: 0,
-      review_subject_sha256: SUBJECT_A,
-      lifecycle: { snapshot: ".ai/harness/runs/run-drift-overlay.json" },
-      contract: { file: contractPath, status: "pass" },
-      commands: [{
-        name: "bun test real-server-longpoll-stall-dedup",
-        command: "bun test real-server-longpoll-stall-dedup",
-        status: "pass",
-        exit_code: 0,
-      }],
-      guards: [
-        { name: "acceptance_receipt", status: "unsatisfied" },
-        { name: "allowed_paths_check", status: "pass" },
-      ],
-      next_step: "record acceptance",
-    };
-  }
-
-  function seedRunTraceEvent(repoRoot: string, contractHash: string, runTrace: JsonValue) {
-    return appendEvidenceEvent(repoRoot, {
-      worktreeId: "drift-fixture",
-      eventType: "verify_sprint.result",
-      trustClass: "authoritative_machine",
-      producer: "verify-sprint",
-      correlationRunId: `run-${Math.random().toString(36).slice(2)}`,
-      subjectIdentity: baseIdentity({ subject_hash: SUBJECT_A, contract_hash: contractHash }),
-      payload: {
-        kind: "json",
-        value: { status: "pass", counts: {}, run_snapshot_id: "run-drift-overlay", run_trace: runTrace },
-      },
-    });
-  }
-
-  test("ordinary verification has no receipt finalizer or projection re-ingestion path", () => {
-    const source = readFileSync(VERIFY_SPRINT_PATH, "utf-8");
-    expect(source).not.toContain("finalize_prepared_acceptance");
-    expect(source).not.toContain("prepared_run_file");
-    expect(source).not.toContain("finalized_checks");
-  });
-
-  test("repeated immutable run traces yield self-consistent checks while re-ingested provenance exposes drift", () => {
-    withTempRepo("drift-checks-latest-finalize-overlay", (repoRoot) => {
-      mkdirSync(join(repoRoot, "tasks/contracts"), { recursive: true });
-      const contractPath = "tasks/contracts/drift-overlay.contract.md";
-      const contractText = "# Task Contract: overlay fixture\n";
-      writeFileSync(join(repoRoot, contractPath), contractText);
-      const contractHash = `sha256:${createHash("sha256").update(contractText).digest("hex")}`;
-      seedGenesis(repoRoot);
-      const rawPrepared = preparedRunTrace(contractPath);
-      seedRunTraceEvent(repoRoot, contractHash, rawPrepared);
-      const rawPreparedPath = join(repoRoot, ".ai/harness/runs/run-drift-overlay.json");
-      mkdirSync(join(repoRoot, ".ai/harness/runs"), { recursive: true });
-      writeFileSync(rawPreparedPath, `${JSON.stringify(rawPrepared, null, 2)}\n`);
-
-      const input: MaterializeChecksLatestInput = {
-        repoRoot,
-        contractPath,
-        worktreeId: "drift-fixture",
-        subjectHash: SUBJECT_A,
-        now: FIXED_NOW,
-      };
-
-      // Materialize accepted immutable event content with real provenance.
-      const { accepted: acceptedPrepared } = readAcceptedEvents(repoRoot);
-      const prepared = buildChecksLatestProjection(input, acceptedPrepared, contractText);
-      const preparedPath = join(repoRoot, "prepared-checks.json");
-      writeFileSync(preparedPath, `${JSON.stringify(prepared, null, 2)}\n`);
-
-      // The automatic shell finalizer is retired. Exercise immutable event
-      // materialization directly, retaining the provenance drift falsifier.
-      const finalizedRunTrace: Record<string, JsonValue> = {
-        ...rawPrepared,
-        acceptance_receipt: { status: "pass", ...OVERLAY_ARGS },
-        guards: [
-          { name: "acceptance_receipt", status: "pass" },
-          { name: "allowed_paths_check", status: "pass" },
-        ],
-      };
-
-      // Explicit event content carries the accepted result.
-      expect(finalizedRunTrace.acceptance_receipt).toEqual({
-        status: "pass",
-        disposition: OVERLAY_ARGS.disposition,
-        reviewer: OVERLAY_ARGS.reviewer,
-        source: OVERLAY_ARGS.source,
-        message: OVERLAY_ARGS.message,
-      });
-      expect(finalizedRunTrace.guards).toEqual([
-        { name: "acceptance_receipt", status: "pass" },
-        { name: "allowed_paths_check", status: "pass" },
-      ]);
-      // ... and it hands back a run trace, not a projection.
-      expect("provenance" in finalizedRunTrace).toBe(false);
-
-      // Replay the immutable event through the materializer.
-      seedRunTraceEvent(repoRoot, contractHash, finalizedRunTrace as JsonValue);
-      const { accepted: acceptedFinal } = readAcceptedEvents(repoRoot);
-      const finalized = buildChecksLatestProjection(input, acceptedFinal, contractText);
-      const { provenance, ...consumerFacing } = finalized;
-      expect(consumerFacing.acceptance_receipt).toEqual(finalizedRunTrace.acceptance_receipt);
-      expect(consumerFacing.commands).toEqual(prepared.commands);
-      expect(contentHashOf(consumerFacing)).toBe(provenance.content_hash);
-
-      seedRunTraceEvent(repoRoot, contractHash, finalizedRunTrace as JsonValue);
-      const { accepted: acceptedRepeated } = readAcceptedEvents(repoRoot);
-      const repeated = buildChecksLatestProjection(input, acceptedRepeated, contractText);
-      expect(repeated.commands).toEqual(prepared.commands);
-
-      // Causality lock: the pre-fix shape -- the same immutable content with the
-      // previous materialization's provenance still embedded -- reproduces the
-      // exact defect, so this test cannot pass for an unrelated reason.
-      seedRunTraceEvent(repoRoot, contractHash, {
-        ...finalizedRunTrace,
-        provenance: prepared.provenance as unknown as JsonValue,
-      } as JsonValue);
-      const { accepted: acceptedDrifted } = readAcceptedEvents(repoRoot);
-      const drifted = buildChecksLatestProjection(input, acceptedDrifted, contractText);
-      const { provenance: driftedProvenance, ...driftedContent } = drifted;
-      expect(contentHashOf(driftedContent)).not.toBe(driftedProvenance.content_hash);
-    });
-  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------

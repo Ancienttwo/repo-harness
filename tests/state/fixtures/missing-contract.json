@@ -16,10 +16,10 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:d47a6db34690d8f06c48754bcfebc48cd85231cd31268fedf43f67222a3afd2e",
-    "evidence_revision": "sha256:7931659ff277877b792c1fbc967cf6549cff9584912d6e37d7d4d5d1e77c5d30",
+    "subject_revision": "sha256:afa31343edfe308451aeafc0517c8ee228a915d2cf4798bf391d2cc70e112ebc",
+    "evidence_revision": "sha256:<dynamic:evidence_revision>",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:4b913afb2f49d66cfd2f0166198145d2b253b90ce3c772547dc454648e319696",
+    "progress_token": "sha256:<dynamic:progress_token>",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -46,7 +46,6 @@
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
-      "checks",
       "review"
     ],
     "conflicting_sources": [],
@@ -54,7 +53,6 @@
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
       ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
-      ".ai/harness/checks/latest.json": "sha256:f241687e906c13ad0cb3baceee11b2aea9479712eb294fd93c50754d4aa63d78",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
@@ -64,7 +62,8 @@
       "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
       "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:f41ca543703e6ccb56ee06570274a16eb33ae10d06ff0f52f5d05f492512ed7e",
       "review_subject": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
-      "authority_revision": "sha256:<dynamic:authority_revision>"
+      "authority_revision": "sha256:<dynamic:authority_revision>",
+      "evidence_revision": "sha256:<dynamic:evidence_revision>"
     },
     "review": {
       "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
@@ -79,9 +78,11 @@
       "status": null
     },
     "checks": {
-      "path": ".ai/harness/checks/latest.json",
-      "freshness": "stale",
-      "status": "fail"
+      "path": null,
+      "freshness": "missing",
+      "status": null,
+      "reason": "missing_contract",
+      "result_refs": []
     },
     "active_sprint": {
       "path": null,

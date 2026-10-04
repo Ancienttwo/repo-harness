@@ -122,17 +122,6 @@ function projectRoutedEnvelope(
     reason,
   });
 
-  if (state.blockers.length === 1 && state.blockers[0] === 'checks_artifact_invalid'
-    && state.checks.freshness === 'fresh' && state.checks.failure_class === 'missing_artifact'
-    && plan && EXECUTABLE_PLAN_STATUS.has(plan.status) && state.contract
-    && !state.stale_sources.includes('active_plan_marker')) {
-    const authorized = state.checks.artifact_repair === 'authorized';
-    return envelope('continue_active_plan', state.contract.path,
-      authorized
-        ? `${CONTINUE_COMMAND} --target-path '${state.contract.path.replace(/'/g, "'\\''")}'`
-        : "repo-harness state repair-artifact --reason 'Repair verifier-declared missing_artifact in the active contract' --json",
-      authorized ? 'repair_active_contract_then_reverify' : 'artifact_repair_receipt_required');
-  }
   if (state.blockers.length > 0) {
     return envelope('halt', plan?.path ?? sprintPath, null, `blockers:${state.blockers.join(',')}`);
   }

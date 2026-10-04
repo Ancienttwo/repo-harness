@@ -4,7 +4,7 @@
 > **Plan**: {{PLAN_FILE}}
 > **Contract**: {{CONTRACT_FILE}}
 > **Notes File**: {{NOTES_FILE}}
-> **Checks File**: {{CHECKS_FILE}}
+> **Verification**: Select the native execution report explicitly.
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
 > **Review Rubric Version**: 2

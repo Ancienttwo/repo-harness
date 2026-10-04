@@ -5,7 +5,6 @@ import { isAbsolute, join, relative, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { markdownHeader } from '../../core/state/artifact-parsers';
 import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
@@ -173,7 +172,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (reviewerRepo === root || reviewerRepo === primary || taskRepository(reviewerRepo).repository_id !== taskRepository(root).repository_id) throw new Error('review_requires_dedicated_linked_checkout');
     const timeout = options.timeoutMs ?? REVIEW_TIMEOUT_MS;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > REVIEW_TIMEOUT_MS) throw new Error('review_invalid_timeout');
-    const context = await acceptanceContext({ root, contract, verification: options.verification ?? '.ai/harness/checks/latest.json' });
+    if (!options.verification) throw new Error('review_requires_explicit_verification_report');
+    const context = await acceptanceContext({ root, contract, verification: options.verification! });
     const identity = contextIdentity(context);
     let session: ReviewSession;
     if (existsSync(join(dir, 'session.json'))) {
@@ -257,7 +257,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const packetPath = join(inputDir, `packet-${round}.txt`);
     if (!existsSync(packetPath)) writeFileSync(packetPath, packet, { flag: 'wx', mode: 0o600 });
     else if (readFileSync(packetPath, 'utf8') !== packet) throw new Error('review_packet_changed_before_send');
-    const recheck = await acceptanceContext({ root, contract, verification: options.verification ?? '.ai/harness/checks/latest.json' });
+    const recheck = await acceptanceContext({ root, contract, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
     const before = [fingerprint(root), fingerprint(reviewerRepo)];
     lock.assertOwned();
@@ -285,14 +285,15 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const reviewResult = { ...output, findings };
     const reviewer = session.actual_harness === 'codex' ? 'Codex' : 'Claude';
     const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? userInfo().homedir, contract,
-      verification: options.verification ?? '.ai/harness/checks/latest.json', expectedContext: identity,
+      verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,
       summary: output.summary, findings, reviewResult });
     writeSessionArtifact(join(dir, `accepted-${round}.json`), { output, receipt });
-    const review = markdownHeader(context.contract.content, 'Review File');
-    if (review) projectAcceptance(resolve(root, review), receipt);
+    const projection = join(dir, 'acceptance.review.md');
+    if (!existsSync(projection)) writeFileSync(projection, '# Acceptance Review\n\n', { flag: 'wx', mode: 0o600 });
+    projectAcceptance(projection, receipt);
     return { status: output.verdict === 'PASS' ? 'accepted' : 'rejected', round, output, receipt,
-      requested_harness: session.requested_harness, actual_harness: session.actual_harness, fallback_reason: session.fallback_reason };
+      projection, requested_harness: session.requested_harness, actual_harness: session.actual_harness, fallback_reason: session.fallback_reason };
   } catch (error) {
     if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
     throw error;

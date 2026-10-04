@@ -49,7 +49,6 @@ if [[ -f "$workflow_state_lib" ]]; then
     echo "Review file: $(workflow_active_review || printf '(none)')"
     echo "Handoff: $(workflow_handoff_file)"
     echo "Resume packet: $(workflow_resume_packet_file)"
-    echo "Checks: $(workflow_checks_file)"
     exit 0
   fi
   workflow_write_handoff "$reason"
@@ -66,7 +65,6 @@ if [[ "$mode" == "status" ]]; then
   echo "Review file: (none)"
   echo "Handoff: .ai/harness/handoff/current.md"
   echo "Resume packet: .ai/harness/handoff/resume.md"
-  echo "Checks: .ai/harness/checks/latest.json"
   exit 0
 fi
 

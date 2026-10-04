@@ -64,8 +64,8 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
       targetRevision: null,
       targetOverlapCount: 0,
     },
-    checksPath: '.ai/harness/checks/latest.json',
-    checksText: null,
+    verification: { freshness: 'missing', status: null, reason: null, resultRefs: [] },
+    acceptance: { path: null, freshness: 'missing', disposition: null },
     sprintPath: null,
     sprintExists: false,
     activeWorktreePath: '.ai/harness/active-worktree',
@@ -130,7 +130,7 @@ describe('pure Effective State projection', () => {
   test('ship consumes evidence without requiring task-checkbox completion', () => {
     const evidence = {
       reviewSubject: { available: true, reviewSubjectSha256: SUBJECT, targetRevision: TARGET, targetOverlapCount: 0 },
-      checksText: JSON.stringify({ status: 'pass', active_plan: PLAN, review_subject_sha256: SUBJECT }),
+      verification: { freshness: 'fresh' as const, status: 'passed', reason: null, resultRefs: [] },
     };
     for (const [planText, expected] of [['# Plan\n- [ ] implement\n', 'allow'], ['# Plan\n- [x] implement\n', 'allow']] as const) {
       const state = projectEffectiveState(input({ ...evidence, planText }));
@@ -170,12 +170,8 @@ describe('pure Effective State projection', () => {
         targetRevision: TARGET,
         targetOverlapCount: 1,
       },
-      checksText: JSON.stringify({
-        status: 'pass',
-        active_plan: PLAN,
-        review_subject_sha256: SUBJECT,
-        acceptance_receipt: { status: 'pass', disposition: 'external_pass' },
-      }),
+      verification: { freshness: 'fresh', status: 'passed', reason: null, resultRefs: [] },
+      acceptance: { path: '/authority/acceptance.latest.json', freshness: 'fresh', disposition: 'external_pass' },
       sprintPath: 'plans/sprints/fixture.sprint.md',
       sprintExists: true,
       handoffText: handoff,
@@ -233,7 +229,7 @@ describe('pure Effective State projection', () => {
         targetRevision: TARGET,
         targetOverlapCount: 0,
       },
-      checksText: JSON.stringify({ status: 'fail', active_plan: PLAN, review_subject_sha256: SUBJECT }),
+      verification: { freshness: 'fresh', status: 'failed', reason: null, resultRefs: [] },
     }));
     expect(state.checks.freshness).toBe('fresh');
     expect(state.blockers).toContain('checks_failed');
@@ -245,11 +241,7 @@ describe('pure Effective State projection', () => {
         targetRevision: TARGET,
         targetOverlapCount: 0,
       },
-      checksText: JSON.stringify({
-        status: 'pass',
-        active_plan: PLAN,
-        review_subject_sha256: `sha256:${'0'.repeat(64)}`,
-      }),
+      verification: { freshness: 'stale', status: 'passed', reason: 'subject_mismatch', resultRefs: [] },
     }));
     expect(mismatched.checks.freshness).toBe('stale');
     expect(mismatched.stale_sources).toContain('checks');
@@ -319,7 +311,7 @@ describe('pure Effective State projection', () => {
     const stale = projectEffectiveState(input({
       reviewPath: 'tasks/reviews/stale.review.md',
       reviewText: '> **Reviewed Subject SHA256**: pending\n',
-      checksText: '{invalid',
+      verification: { freshness: 'stale', status: null, reason: 'invalid_evidence', resultRefs: [] },
       sprintPath: 'plans/sprints/missing.sprint.md',
       sprintExists: false,
       worktreeOwner: '/other',
@@ -468,17 +460,4 @@ describe('state-snapshot compatibility projection', () => {
     expect(stale.paths).toEqual({ active_plan: PLAN, contract: null });
     expect(stale.marker.problem).toBe('deleted');
   });
-});
-
-
-test('verifier missing_artifact is observed and keeps publication unverified', () => {
-  const state = projectEffectiveState(input({
-    checksText: JSON.stringify({status:'fail',active_plan:PLAN,review_subject_sha256:SUBJECT,failure_class:'missing_artifact'}),
-    reviewSubject:{available:true,reviewSubjectSha256:SUBJECT,targetRevision:TARGET,targetOverlapCount:0},
-    editTargetPaths:[CONTRACT],
-  }));
-  expect(state.blockers).toContain('checks_artifact_invalid');
-  expect(state.blockers).not.toContain('checks_failed');
-  expect(state.readiness?.ok && state.readiness.allowedToEdit.decision).toBe('allow');
-  expect(state.readiness?.ok && state.readiness.readyToShip.decision).toBe('block');
 });

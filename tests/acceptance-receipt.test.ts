@@ -2,21 +2,26 @@ import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from 
 import { readSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type TaskPaneBinding } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, relative, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
-import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
+import { executeVerificationContract, evaluateVerificationContract } from '../src/effects/evidence/verification-execution';
 import {
   acceptanceAuthorityFingerprint,
   acceptanceContext,
   authorityFingerprint,
   acceptanceReceiptPath,
+  acceptanceVerificationObservationPath,
   archiveProjectionReceiptPath,
   parseAcceptancePolicy,
+  acceptanceBenchmarkRequirement,
+  inspectAcceptanceEvidence,
+  inspectAcceptanceCurrentBinding,
   projectAcceptance,
   recordAcceptance,
   recordUserWaiverAcceptance,
@@ -33,7 +38,7 @@ test('provider expected-context fence rejects each stale identity without overwr
   const { root, home } = makeFixture();
   await externalPass(root, home);
   const before = readFileSync(acceptanceReceiptPath(root, home), 'utf8');
-  const context = await acceptanceContext({ root, contract: 'tasks/contracts/demo.contract.md', verification: '.ai/harness/checks/latest.json' });
+  const context = await acceptanceContext({ root, contract: 'tasks/contracts/demo.contract.md', verification: '.ai/harness/runs/acceptance.report.json' });
   const expected = {
     contract_sha256: authorityFingerprint(context.contract.content), goal_sha256: authorityFingerprint(context.goal.content),
     subject_sha256: context.subject.review_subject_sha256, verification_evidence_sha256: context.evidence.fingerprint,
@@ -41,7 +46,7 @@ test('provider expected-context fence rejects each stale identity without overwr
   };
   for (const field of Object.keys(expected)) {
     await expect(recordFixtureAcceptance({ root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json', disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
+      verification: '.ai/harness/runs/acceptance.report.json', disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
       actor: null, summary: 'Real provider opinion for a different context', findings: [], expectedContext: { ...expected, [field]: 'stale' },
     })).rejects.toThrow(`reviewed acceptance context is stale: ${field}`);
     expect(readFileSync(acceptanceReceiptPath(root, home), 'utf8')).toBe(before);
@@ -51,7 +56,7 @@ test('provider expected-context fence rejects each stale identity without overwr
 test('generic review Receipt is launcher-independent and rejects every added binding tamper', async () => {
   const { root, home } = makeFixture();
   const input = { root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md',
-    verification: '.ai/harness/checks/latest.json', disposition: 'external_pass' as const,
+    verification: '.ai/harness/runs/acceptance.report.json', disposition: 'external_pass' as const,
     reviewer: 'Claude', source: 'generic-review', actor: null,
     summary: '[fixture opinion] candidate accepted; no real model verdict', findings: [],
     now: () => new Date('2026-10-02T00:00:00.000Z') };
@@ -105,6 +110,8 @@ function contract(waiver: 'allowed' | 'forbidden' = 'allowed'): string {
     '> **Plan**: plans/plan-demo.md',
     '> **Owner**: kito',
     '',
+    '## Allowed Paths', '', '```yaml', 'allowed_paths:', '  - feature.txt', '  - plans/', '  - tasks/', '  - .ai/harness/policy.json', '```', '',
+    '## Evidence Requirements', '', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
     '## Acceptance Policy',
     '',
     '```json',
@@ -120,7 +127,7 @@ function contract(waiver: 'allowed' | 'forbidden' = 'allowed'): string {
     '## Verification Plan',
     '',
     '```json',
-    '{"protocol":1,"checks":[]}',
+    JSON.stringify({protocol:1,checks:[{id:'feature-content',kind:'command',command:"test \"$(wc -l < feature.txt | tr -d ' ')\" = 1 && LC_ALL=C grep -qx '[a-z][a-z 0-9]*' feature.txt",cwd:'.',phase:'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Validate the tracked candidate file.',inputs:{env:[]}}]}),
     '```',
     '',
   ].join('\n');
@@ -131,28 +138,6 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   const record = value as Record<string, unknown>;
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
-}
-
-function changeAssessmentEvidence(subject: ReturnType<typeof buildReviewSubject>): Record<string, unknown> {
-  const assessment = assessChange({
-    subject,
-    workflowProfile: 'routine',
-    strictCategories: [],
-    patternNoveltyPaths: [],
-    declaredOracles: [],
-  });
-  if (assessment.status !== 'ready') throw new Error('fixture assessment must be ready');
-  const selection_packet = buildReviewSelectionPacket(assessment);
-  const basis = {
-    schema: 'repo-harness-change-assessment-evidence.v1',
-    status: 'pass',
-    assessment,
-    selection_packet,
-  };
-  return {
-    ...basis,
-    evidence_sha256: `sha256:${createHash('sha256').update(stableJson(basis)).digest('hex')}`,
-  };
 }
 
 function changeAssessmentEnvelope(assessment: unknown, selection_packet: unknown): Record<string, unknown> {
@@ -169,40 +154,16 @@ function changeAssessmentEnvelope(assessment: unknown, selection_packet: unknown
 }
 
 function replaceChangeAssessment(root: string, next: Record<string, unknown>): void {
-  const path = join(root, '.ai', 'harness', 'checks', 'latest.json');
-  const checks = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
-  checks.change_assessment = next;
-  writeFileSync(path, `${JSON.stringify(checks, null, 2)}\n`);
+  writeFileSync(join(root, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify(next, null, 2) + '\n');
 }
 
 function writePassingChecks(root: string): void {
   const subject = buildReviewSubject(root, { targetRef: 'main' });
   expect(subject.status).toBe('ok');
-  const execution_evaluation = executeVerificationContract({
-    repoRoot: root,
-    contractPath: 'tasks/contracts/demo.contract.md',
-  });
-  expect(execution_evaluation.passed).toBe(true);
-  const checks = {
-    schema: 'repo-harness-run-trace.v1',
-    source: 'verify-sprint',
-    status: 'pass',
-    exit_code: 0,
-    active_plan: 'plans/plan-demo.md',
-    review_subject_sha256: subject.review_subject_sha256,
-    benchmark_evidence: { status: 'not_applicable', report_sha256: 'not-applicable' },
-    commands: [{ name: 'verify-sprint', status: 'pass', exit_code: 0 }],
-    guards: [
-      { name: 'contract', status: 'pass' },
-      { name: 'review', status: 'pass' },
-      { name: 'allowed_paths', status: 'pass' },
-      { name: 'change_assessment', status: 'pass' },
-    ],
-    contract: { file: 'tasks/contracts/demo.contract.md', execution_evaluation },
-    review: { file: 'tasks/reviews/demo.review.md' },
-    change_assessment: changeAssessmentEvidence(subject),
-  };
-  writeFileSync(join(root, '.ai', 'harness', 'checks', 'latest.json'), JSON.stringify(checks, null, 2) + '\n');
+  const report = executeVerificationContract({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md', reportFile: '.ai/harness/runs/acceptance.report.json' });
+  expect(report.passed).toBe(true);
+  const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+  replaceChangeAssessment(root, changeAssessmentEnvelope(prepared.assessment, prepared.packet));
 }
 
 function makeFixture(waiver: 'allowed' | 'forbidden' = 'allowed') {
@@ -213,10 +174,11 @@ function makeFixture(waiver: 'allowed' | 'forbidden' = 'allowed') {
   git(root, 'config', 'user.name', 'Acceptance Test');
   git(root, 'config', 'user.email', 'acceptance@test.local');
   mkdirSync(join(root, '.ai', 'harness', 'checks'), { recursive: true });
+  mkdirSync(join(root, '.ai', 'harness', 'runs'), { recursive: true });
   mkdirSync(join(root, 'plans'), { recursive: true });
   mkdirSync(join(root, 'tasks', 'contracts'), { recursive: true });
   mkdirSync(join(root, 'tasks', 'reviews'), { recursive: true });
-  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n');
+  writeFileSync(join(root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
   writeFileSync(join(root, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     worktree_strategy: { review_base: 'main' },
     merge_gate: { enabled: true, rule: 'fixture' },
@@ -238,7 +200,7 @@ async function externalPass(root: string, home: string) {
     root,
     authorityHome: home,
     contract: 'tasks/contracts/demo.contract.md',
-    verification: '.ai/harness/checks/latest.json',
+    verification: '.ai/harness/runs/acceptance.report.json',
     disposition: 'external_pass',
     reviewer: 'Claude',
     source: 'generic-review',
@@ -276,7 +238,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
       disposition: 'external_pass',
       reviewer: 'Codex',
       source: 'claude-review',
@@ -289,7 +251,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
       disposition: 'external_pass',
       reviewer: 'Codex',
       source: 'generic-review',
@@ -303,7 +265,7 @@ describe('AcceptanceReceipt', () => {
     await expect(verifyAcceptance({root,authorityHome:home})).rejects.toThrow('source is invalid');
   }, 30_000);
 
-  test('review projection changes do not invalidate acceptance, semantic changes do', async () => {
+  test('review projections preserve semantic subject but require fresh full-tree execution', async () => {
     const { root, home } = makeFixture();
     const receipt = await externalPass(root, home);
     const reviewPath = join(root, 'tasks', 'reviews', 'demo.review.md');
@@ -325,7 +287,7 @@ describe('AcceptanceReceipt', () => {
     expect(projection.match(/^## Acceptance Receipt Projection$/gm)).toHaveLength(1);
     expect(projection).not.toContain('> **Disposition**: unavailable');
     expect(projection).toContain('## Summary\n\n- pending');
-    expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
+    await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('verification evidence is stale');
 
     writeFileSync(join(root, 'feature.txt'), 'semantic change\n');
     await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('semantic subject is stale');
@@ -415,23 +377,23 @@ describe('AcceptanceReceipt', () => {
       declaredOracles: [],
     });
     if (forgedAssessment.status !== 'ready') throw new Error('fixture forged assessment must be ready');
-    const actual = JSON.parse(readFileSync(join(root, '.ai/harness/checks/latest.json'), 'utf8')).change_assessment.assessment;
+    const actual = JSON.parse(readFileSync(join(root, '.ai/harness/checks/change-assessment.latest.json'), 'utf8')).assessment;
     expect(forgedAssessment.assessment_sha256).not.toBe(actual.assessment_sha256);
     replaceChangeAssessment(root, changeAssessmentEnvelope(forgedAssessment, buildReviewSelectionPacket(forgedAssessment)));
     await expect(externalPass(root, home)).rejects.toThrow('does not match current base assessment');
 
     writePassingChecks(root);
     const baseReceipt = await externalPass(root, home);
-    const checks = JSON.parse(readFileSync(join(root, '.ai', 'harness', 'checks', 'latest.json'), 'utf-8')) as {
-      change_assessment: { assessment: unknown; selection_packet: Parameters<typeof applyReviewerDisagreement>[0] };
+    const checks = JSON.parse(readFileSync(join(root, '.ai/harness/checks/change-assessment.latest.json'), 'utf-8')) as {
+      assessment: unknown; selection_packet: Parameters<typeof applyReviewerDisagreement>[0];
     };
-    const overlay = applyReviewerDisagreement(checks.change_assessment.selection_packet, {
+    const overlay = applyReviewerDisagreement(checks.selection_packet, {
       review_subject_sha256: subject.review_subject_sha256,
       target_revision: subject.target_rev,
       paths: ['feature.txt'],
       summary: 'independent reviewer requires targeted human review',
     });
-    replaceChangeAssessment(root, changeAssessmentEnvelope(checks.change_assessment.assessment, overlay));
+    replaceChangeAssessment(root, changeAssessmentEnvelope(checks.assessment, overlay));
     await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('verification evidence is stale');
     const overlayReceipt = await externalPass(root, home);
     expect(overlayReceipt.verification_evidence_sha256).not.toBe(baseReceipt.verification_evidence_sha256);
@@ -452,7 +414,7 @@ describe('AcceptanceReceipt', () => {
       root: allowed.root,
       authorityHome: allowed.home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
     });
     expect(grant.scope).toBe('contract-authority');
     expect(receipt.disposition).toBe('user_waiver');
@@ -463,7 +425,7 @@ describe('AcceptanceReceipt', () => {
       root: allowed.root,
       authorityHome: allowed.home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
       disposition: 'user_waiver',
       reviewer: 'User',
       source: 'user-waiver',
@@ -495,7 +457,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
     });
 
     writeFileSync(join(root, 'feature.txt'), 'corrective semantic change\n');
@@ -504,7 +466,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
     })).rejects.toThrow('verification evidence is stale');
 
     writePassingChecks(root);
@@ -512,7 +474,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
     });
     expect(second.subject_sha256).not.toBe(first.subject_sha256);
     expect(second.waiver_grant_sha256).toBe(first.waiver_grant_sha256);
@@ -568,7 +530,7 @@ describe('AcceptanceReceipt', () => {
       root: waived.root,
       authorityHome: waived.home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
     });
     revokeUserWaiverGrant({ root: waived.root, authorityHome: waived.home });
     await expect(verifyAcceptance({ root: waived.root, authorityHome: waived.home })).rejects.toThrow('UserWaiverGrant is missing');
@@ -620,9 +582,9 @@ describe('AcceptanceReceipt', () => {
 
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
 
-    const checksPath = join(root, '.ai', 'harness', 'checks', 'latest.json');
+    const checksPath = join(root, '.ai', 'harness', 'runs', 'acceptance.report.json');
     const checks = JSON.parse(readFileSync(checksPath, 'utf-8'));
-    checks.contract.file = 'tasks/contracts/different.contract.md';
+    checks.target.contract = 'tasks/contracts/different.contract.md';
     writeFileSync(checksPath, `${JSON.stringify(checks, null, 2)}\n`);
     writeFileSync(
       join(root, 'plans', 'plan-demo.md'),
@@ -632,7 +594,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/archive/contract-20260721-0800-demo.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
       disposition: 'external_pass',
       reviewer: 'Claude',
       source: 'generic-review',
@@ -654,6 +616,7 @@ describe('AcceptanceReceipt', () => {
       `${readFileSync(join(root, livePlanPath), 'utf-8')}\nContract: ${liveContractPath}\n`,
     );
     commit(root, 'bind workflow pointers');
+    writePassingChecks(root);
     await externalPass(root, home);
     mkdirSync(join(root, 'plans', 'archive'), { recursive: true });
     mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
@@ -708,7 +671,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: archiveContractPath,
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
       disposition: 'external_pass',
       reviewer: 'Claude',
       source: 'generic-review',
@@ -750,7 +713,7 @@ describe('AcceptanceReceipt', () => {
       root,
       authorityHome: home,
       contract: 'tasks/contracts/demo.contract.md',
-      verification: '.ai/harness/checks/latest.json',
+      verification: '.ai/harness/runs/acceptance.report.json',
     });
     mkdirSync(join(root, 'plans', 'archive'), { recursive: true });
     mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
@@ -787,8 +750,8 @@ function reviewFixture() {
   mkdirSync(join(endpointHome, '.codex'));
   const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now()/1000)+86400 })).toString('base64url');
   writeFileSync(join(endpointHome,'.codex','auth.json'),JSON.stringify({tokens:{access_token:`fixture.${payload}.fixture`}}),{mode:0o600});
-  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n');
-  commit(fixture.root, 'ignore private runtime communication');
+  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
+
   const reviewerRepo = join(fixture.home, 'reviewer');
   git(fixture.root, 'worktree', 'add', '-qb', 'fixture-reviewer', reviewerRepo);
   writePassingChecks(fixture.root);
@@ -818,7 +781,7 @@ function reviewFixture() {
     close: async () => { calls.push('close'); return { status: 'closed', pids: [] }; },
     cancel: async () => { calls.push('cancel'); return { status: 'closed', pids: [] }; },
   };
-  const options = { repoRoot: fixture.root, contract: 'tasks/contracts/demo.contract.md', reviewerRepo,
+  const options = { repoRoot: fixture.root, contract: 'tasks/contracts/demo.contract.md', verification: '.ai/harness/runs/acceptance.report.json', reviewerRepo,
     endpoint: { session: 'private-fixture', home: endpointHome }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
     admitSession: () => { calls.push('admit'); } };
   return { ...fixture, reviewerRepo, calls, effects, options, sent: () => sent,
@@ -828,7 +791,11 @@ function reviewFixture() {
 test.skipIf(process.platform !== 'darwin')('generic orchestration collects domain Results, keeps one reviewer for three rounds and verifies close', async () => {
   const f = reviewFixture();
   expect(reviewLocation(f.root, f.options.contract).dir).toBe(reviewLocation(f.reviewerRepo, f.options.contract).dir);
+  const trackedReview = readFileSync(join(f.root, 'tasks/reviews/demo.review.md'), 'utf8');
   const first = await runReviewRound(f.options, f.effects);
+  expect(first.projection).toContain('.ai/harness/runs/generic-review/');
+  expect(readFileSync(first.projection, 'utf8')).toContain('Acceptance Receipt Projection');
+  expect(readFileSync(join(f.root, 'tasks/reviews/demo.review.md'), 'utf8')).toBe(trackedReview);
   expect(first.status).toBe('rejected');
   await expect(closeReview(f.root, f.options.contract, false, f.home, f.effects)).rejects.toThrow('disposition is reject');
   for (const number of [2, 3]) {
@@ -972,4 +939,88 @@ test.skipIf(process.platform !== 'darwin')('generic review refuses failed owner 
   await expect(runReviewRound({ ...f.options, harness: 'codex' }, effects)).rejects.toThrow('review_host_turn_unverified');
   const { existsSync } = await import('node:fs');
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+});
+
+test('empty and missing verification plans refuse external and waiver acceptance without publishing proof', async () => {
+  for (const kind of ['empty_plan', 'missing_plan']) {
+    const { root, home } = makeFixture();
+    const path = 'tasks/contracts/demo.contract.md';
+    const text = readFileSync(join(root, path), 'utf8');
+    const section = text.indexOf('## Verification Plan');
+    const replacement = kind === 'empty_plan' ? text.slice(0, section) + '## Verification Plan\n\n' + String.fromCharCode(96).repeat(3) + 'json\n{"protocol":1,"checks":[]}\n' + String.fromCharCode(96).repeat(3) + '\n' : text.slice(0, section);
+    writeFileSync(join(root, path), replacement);
+    recordUserWaiverGrant({ root, authorityHome: home, contract: path, actor: 'kito', summary: 'Owner waiver still requires execution proof.' });
+    await expect(externalPass(root, home)).rejects.toThrow(kind);
+    await expect(recordUserWaiverAcceptance({ root, authorityHome: home, contract: path, verification: '.ai/harness/runs/acceptance.report.json' })).rejects.toThrow(kind);
+    expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
+    expect(existsSync(acceptanceVerificationObservationPath(root, home, path, authorityFingerprint(replacement)))).toBe(false);
+  }
+}, 30000);
+
+test.skipIf(process.platform !== 'darwin')('generic review refuses empty and missing plans before any provider starts', async () => {
+  for (const kind of ['empty_plan', 'missing_plan']) {
+    const f = reviewFixture();
+    const file = join(f.root, f.options.contract);
+    const text = readFileSync(file, 'utf8');
+    const section = text.indexOf('## Verification Plan');
+    const replacement = kind === 'empty_plan' ? text.slice(0, section) + '## Verification Plan\n\n' + String.fromCharCode(96).repeat(3) + 'json\n{"protocol":1,"checks":[]}\n' + String.fromCharCode(96).repeat(3) + '\n' : text.slice(0, section);
+    writeFileSync(file, replacement);
+    await expect(runReviewRound(f.options, f.effects)).rejects.toThrow(kind);
+    expect(f.calls).toEqual([]);
+    expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+  }
+}, 30000);
+
+test('semantic admission retains scope and required benchmark refusal', async () => {
+  for (const change of ['scope', 'benchmark']) {
+    const { root, home } = makeFixture();
+    const path = join(root, 'tasks/contracts/demo.contract.md');
+    const text = readFileSync(path, 'utf8');
+    writeFileSync(path, change === 'scope' ? text.replace('  - feature.txt', '  - outside.txt') : text.replace('benchmark: not_applicable', 'benchmark: required'));
+    writePassingChecks(root);
+    await expect(externalPass(root, home)).rejects.toThrow(change === 'scope' ? 'Allowed Paths refuse reviewed path: feature.txt' : 'required benchmark report is missing');
+    expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
+  }
+}, 30000);
+
+test('synchronous binding inspection rejects missing observations and revoked waivers', async () => {
+  const { root, home } = makeFixture();
+  recordUserWaiverGrant({ root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md', actor: 'kito', summary: 'Bound waiver.' });
+  const receipt = await recordUserWaiverAcceptance({ root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md', verification: '.ai/harness/runs/acceptance.report.json' });
+  const subject = buildReviewSubject(root, { targetRef: 'main' });
+  const report = evaluateVerificationContract({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+  const evidence = inspectAcceptanceEvidence({ root, contract: 'tasks/contracts/demo.contract.md', report, subject, current: true });
+  const args = { root, authorityHome: home, contract: 'tasks/contracts/demo.contract.md', subject, evidence };
+  expect(inspectAcceptanceCurrentBinding(args)).toEqual(receipt);
+  const observation = acceptanceVerificationObservationPath(root, home, receipt.contract_file, receipt.contract_sha256);
+  const bytes = readFileSync(observation);
+  rmSync(observation);
+  expect(() => inspectAcceptanceCurrentBinding(args)).toThrow('Observation is missing or stale');
+  writeFileSync(observation, bytes);
+  revokeUserWaiverGrant({ root, authorityHome: home });
+  expect(() => inspectAcceptanceCurrentBinding(args)).toThrow('UserWaiverGrant');
+}, 30000);
+
+test('native report selection refuses retired, absolute, traversing and symlink inputs', async () => {
+  const { root, home } = makeFixture();
+  const contract = 'tasks/contracts/demo.contract.md';
+  for (const verification of [
+    '.ai/harness/checks/latest.json', join(root, '.ai/harness/runs/acceptance.report.json'),
+    '.ai/harness/runs/../runs/acceptance.report.json', '.ai/harness/runs/sub\\report.json',
+  ]) {
+    await expect(acceptanceContext({ root, contract, verification })).rejects.toThrow('verification_file is unsafe');
+  }
+  const { symlinkSync } = await import('fs');
+  symlinkSync(join(root, '.ai/harness/runs/acceptance.report.json'), join(root, '.ai/harness/runs/link.report.json'));
+  await expect(acceptanceContext({ root, contract, verification: '.ai/harness/runs/link.report.json' })).rejects.toThrow('non-symlink');
+  expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
+});
+
+test('benchmark applicability refuses inline overwrite and anchored scalar forms', () => {
+  const fence = String.fromCharCode(96).repeat(3);
+  for (const declaration of [
+    'evidence_requirements: {benchmark: required, benchmark: not_applicable}',
+    'evidence_requirements: {benchmark: not_applicable}',
+    'evidence_requirements:\n  benchmark: &value required',
+  ]) expect(() => acceptanceBenchmarkRequirement(fence + 'yaml\n' + declaration + '\n' + fence + '\n')).toThrow();
 });

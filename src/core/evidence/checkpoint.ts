@@ -8,13 +8,13 @@
  * A checkpoint is the canonical machine snapshot of an entire per-worktree
  * accepted event set (D1's compaction anchor, and the substrate EPC-07/08's
  * recovery-view/context-packet materializers will read from). Unlike
- * `checks-materializer.ts`'s D7 selection, it is NOT filtered to one
+ * the retired checks projection's D7 selection, it is NOT filtered to one
  * subject/contract -- it covers every accepted event in the ledger at
  * publish time. `provenance.subject_hash` and `provenance.contract_id` are
  * therefore `null` by construction: D8's field list is frozen program-wide,
  * but a whole-ledger snapshot has no single frozen-subject/contract to
  * report. `null` here is the same "not applicable" idiom
- * `checks-materializer.ts` already uses for `source_checkpoint_id: null`.
+ * the retired checks projection already uses for `source_checkpoint_id: null`.
  *
  * `checkpoint_id` is deliberately content-addressed (`chk-<sha256 hex>` of
  * the deterministic body), NOT a random/time ULID like `event_id` (D5).
@@ -103,7 +103,7 @@ export interface BuildCheckpointInput {
    * `worktree_id`); every accepted event in a per-worktree ledger carries
    * this same value by construction (D1), so the checkpoint reports it once
    * at the top level rather than re-deriving it from a contract path (unlike
-   * `checks-materializer.ts`'s `worktreeIdFor`, which is specific to that
+   * the retired checks projection's `worktreeIdFor`, which is specific to that
    * module's single-contract D7 scope).
    */
   readonly worktreeId: string;
@@ -154,7 +154,7 @@ interface CheckpointBody {
 /**
  * The deterministic body both `checkpoint_id` and `provenance.content_hash`
  * hash -- everything about the projection except the provenance block
- * itself (mirrors `checks-materializer.ts`'s `contentHashOf`: excluding
+ * itself (mirrors the retired checks projection's `contentHashOf`: excluding
  * provenance, including the volatile `generated_at`, keeps the hash stable
  * on replay).
  */

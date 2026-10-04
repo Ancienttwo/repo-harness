@@ -307,13 +307,11 @@ function publicationEnvironment(): {
   readonly gh_bin?: string;
   readonly git_bin?: string;
   readonly merge_seal_path?: string;
-  readonly checks_path?: string;
 } {
   return {
     gh_bin: process.env.REPO_HARNESS_GH_BIN,
     git_bin: process.env.REPO_HARNESS_GIT_BIN,
     merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
-    checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
   };
 }
 

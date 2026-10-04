@@ -28,7 +28,7 @@ Optional document: use this template only when the task calls for it. Ordinary w
 
 ## Evidence Links
 
-- Checks: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 
 ## Promotion Filter

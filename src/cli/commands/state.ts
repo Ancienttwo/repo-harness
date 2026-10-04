@@ -1,4 +1,3 @@
-import { recordArtifactRepair } from '../../effects/state/artifact-repair-store';
 import { Command } from 'commander';
 import {
   ATTEMPT_OUTCOME_VALUES,
@@ -278,18 +277,6 @@ export function buildStateCommand(): Command {
         nowMs: Date.now(),
         append: appendAttemptReceipt,
       }));
-    });
-
-  state
-    .command('repair-artifact')
-    .description('Record a reason to edit only the current verifier-declared invalid contract')
-    .requiredOption('--json', 'Output the artifact repair receipt as JSON')
-    .requiredOption('--reason <reason>', 'Why the active verification artifact needs repair')
-    .action((opts: { reason: string }) => {
-      try {
-        const receipt = recordArtifactRepair(process.cwd(), opts.reason);
-        writeOutcome({ exitCode: 0, stdout: `${JSON.stringify(receipt, null, 2)}\n`, stderr: '' });
-      } catch (error) { writeOutcome(operationalFailure(error)); }
     });
 
   state

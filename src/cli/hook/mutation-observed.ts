@@ -311,58 +311,12 @@ function renderFirstPrinciplesAdvisory(repoRoot: string, filePath: string): stri
 // gate for the (retired) task-handoff regeneration.
 // ---------------------------------------------------------------------------
 
-/**
- * EPC-05 note: deliberately NOT extended to
- * `CONTRACT_VERIFICATION_REPORT_RELATIVE` (`.ai/harness/checks/contract-verify.latest.json`).
- * This guard flags a hand-EDIT of a checkpoint-relevant file (the file was
- * the subject of a tracked Write/Edit tool call); the continuous-verification
- * report is machine-written telemetry from a Stop-time subprocess spawn, never
- * itself the target of an edit tool call in normal operation, so adding it
- * here would be unreachable. The existing `.ai/harness/checks/latest.json`
- * check is unchanged: hand-editing the acceptance-evidence file is still
- * checkpoint-worthy.
- */
+/** Only task and review edits request checkpoint work. */
 function isCheckpointPath(filePath: string): boolean {
   if (filePath === 'tasks/todos.md') return true;
   if (/^plans\/.*\.md$/.test(filePath)) return true;
   if (/^tasks\/reviews\/.*\.review\.md$/.test(filePath)) return true;
-  if (filePath === '.ai/harness/checks/latest.json') return true;
   return false;
-}
-
-// ---------------------------------------------------------------------------
-// Policy / repo-relative-path reads (verbatim re-ports of
-// mutation-guard.ts's private `policyGet`/`repoRelativePath` -- same
-// "outside Allowed Paths" reasoning).
-// ---------------------------------------------------------------------------
-
-function policyGet(repoRoot: string, path: readonly string[], fallback: string): string {
-  const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (!raw) return fallback;
-  try {
-    let current: unknown = JSON.parse(raw);
-    for (const segment of path) {
-      if (current === null || typeof current !== 'object') return fallback;
-      current = (current as Record<string, unknown>)[segment];
-    }
-    return typeof current === 'string' && current.length > 0 ? current : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function repoRelativePath(value: string, defaultValue: string, allowedPrefix: string): string {
-  if (!value || value.startsWith('/') || value.includes('\n') || value.includes('\r')) return defaultValue;
-  if (value === '..' || value.startsWith('../') || value.endsWith('/..') || value.includes('/../')) {
-    return defaultValue;
-  }
-  if (allowedPrefix && !value.startsWith(allowedPrefix)) return defaultValue;
-  return value;
-}
-
-function resolveChecksFile(repoRoot: string): string {
-  const value = policyGet(repoRoot, ['harness', 'checks_file'], '.ai/harness/checks/latest.json');
-  return repoRelativePath(value, '.ai/harness/checks/latest.json', '.ai/harness/');
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +374,6 @@ export interface PostEditJournalEvent {
   readonly subject_revision: string | null;
   readonly dirty: PostEditJournalDirtyBits;
   readonly payload: {
-    readonly contract_verification?: { readonly contract_file: string; readonly checks_file: string };
     readonly minimal_change?: { readonly path: string; readonly base_ref: string };
   };
 }
@@ -515,7 +468,6 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
     subject_revision: input.subjectRevision ?? existing?.subject_revision ?? null,
     dirty,
     payload: {
-      contract_verification: existing?.payload.contract_verification,
       minimal_change: input.minimalChangeInfo
         ? { path: input.minimalChangeInfo.path, base_ref: input.minimalChangeInfo.baseRef }
         : existing?.payload.minimal_change,

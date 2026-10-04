@@ -120,7 +120,7 @@ not replace the active plan, contract, tests, or human review card.
 
 Hook reports and `.ai/harness/events.jsonl` remain advisory and fail-open: a
 missing observer, malformed journal, or a hook crash must not create or remove
-merge authority. At `verify-sprint --prepare-acceptance`, Change Assessment v1
+merge authority. At `verification-plan execute`, Change Assessment v1
 instead recomputes the normalized final subject from the sole policy-owned base
 `.ai/harness/policy.json#worktree_strategy.review_base`. Missing/malformed
 policy, an unobservable final subject, an invalid packet, or an unmet declared
@@ -131,6 +131,6 @@ reason vocabulary `authority_change`, `irreversible_effect`,
 `pattern_novelty`, `reviewer_disagreement`, and `oracle_gap`. A later reviewer
 may append `reviewer_disagreement` for paths already bound to the packet, but
 cannot remove a reason, lower a selection, or change the packet subject/target.
-The overlay is not authority until the next `verify-sprint --prepare-acceptance`
+The overlay is not authority until the next `verification-plan execute`
 recomputes and binds it into canonical evidence; finalization fails closed if
 the prepared checks still contain the prior packet.

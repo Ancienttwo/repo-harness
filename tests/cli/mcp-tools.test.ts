@@ -726,10 +726,10 @@ describe('mcp tools', () => {
       for (let index = 0; index < 720; index += 1) {
         writeFileSync(join(repoRoot, 'plans/prds', `bulk-${String(index).padStart(3, '0')}.prd.md`), '# Bulk\n');
       }
-      writeFileSync(join(repoRoot, '.ai/harness/checks/latest.json'), '{"ok":true}\n');
+      writeFileSync(join(repoRoot, '.ai/harness/checks/change-assessment.latest.json'), '{"ok":true}\n');
 
       const result = await jsonTool(ctx, 'latest_checks');
-      expect(result.files.some((entry: { path: string }) => entry.path === '.ai/harness/checks/latest.json')).toBe(true);
+      expect(result.files.some((entry: { path: string }) => entry.path === '.ai/harness/checks/change-assessment.latest.json')).toBe(true);
     });
   });
 

@@ -51,7 +51,7 @@ For bugfix work, record the observed cause and reproduction; leave as-is otherwi
 - Deferred-goal ledger: `tasks/todos.md`
 - Review file: `{{REVIEW_FILE}}`
 - Notes file: `{{NOTES_FILE}}`
-- Checks file: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
 - Completion: run the selected repository checks, record their command/result/subject/environment and residual risk, then follow the current task's authorized publication scope. Do not create acceptance receipts or waivers to authorize an ordinary merge.
@@ -142,8 +142,8 @@ exit_criteria:
 ```
 
 Author the actual checks using [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
-The empty array is not permission to omit required repository checks: retain it
-only when no executable criterion applies and explain why in Acceptance Notes.
+The empty array is draft data. It cannot prove execution acceptance.
+Declare actual checks before execution acceptance.
 Prefer existing covering tests; creating a task-named test or adding typecheck
 is not a template requirement. For each selected check declare `id`, `kind`,
 `cwd`, `phase`, `cost`, `evidence_policy`, `necessity`, `inputs.env`, and its

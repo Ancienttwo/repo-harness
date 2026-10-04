@@ -310,7 +310,7 @@ flowchart TD
   PostHooks --> ArchQueue["Architecture queue<br/>architecture-queue.sh record/reindex<br/>check-architecture-sync.sh"]
   ArchQueue --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
-  Verify --> Checks["Structured evidence<br/>.ai/harness/checks/latest.json<br/>.ai/harness/runs/*.json"]
+  Verify --> Checks["Structured evidence<br/>.ai/harness/evidence/events/log.jsonl<br/>.ai/harness/runs/*.json"]
   Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
   CheckReview --> External["External acceptance advice<br/>or explicit manual override"]
   External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
@@ -541,7 +541,7 @@ Empieza por `tasks/reviews/<task>.review.md`. Su `## Human Review Card` es
 la superficie de decisión de una sola pantalla: verdict, change type,
 archivos previstos vs reales, comandos que pasaron, external acceptance,
 riesgo residual, acción del reviewer y rollback. Luego inspecciona el
-contract activo, el último trace en `.ai/harness/checks/latest.json` y los
+contract activo, el último trace en Verification Plan execution records y los
 archivos modificados. Acepta solo cuando la review recomiende pass, el
 verdict de la card sea pass, y el external acceptance sea pass,
 `not_required`, o un override explícito.
@@ -557,7 +557,7 @@ Los agentes leen los artefactos fuente antes que los resúmenes derivados:
 | El prompt actual del usuario y los archivos referenciados | Human Review Card de `tasks/reviews/<task>.review.md` |
 | `AGENTS.md` / `CLAUDE.md` | Archivos modificados y el diff |
 | Plan activo en `.ai/harness/active-plan` | Allowed paths y exit criteria del contract activo |
-| Contract activo en `tasks/contracts/` | `.ai/harness/checks/latest.json` y el run trace |
+| Contract activo en `tasks/contracts/` | Verification Plan execution records y el run trace |
 | Último handoff en `.ai/harness/handoff/` | Riesgos residuales y rollback |
 
 `tasks/current.md` es un snapshot local de orientación ignorado por git, no un

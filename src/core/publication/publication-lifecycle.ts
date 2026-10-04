@@ -7,7 +7,7 @@ import {
   publicationReceiptDigest,
   publicationSha256,
   stablePublicationJson,
-  type PublicationReceiptV1,
+  type PublicationReceiptV2,
 } from './publication-receipt';
 import { TASK_DIGEST_PATTERN, type CurrentPublicationPointerV1 } from '../state/coordination-identity';
 
@@ -201,7 +201,7 @@ export function canonicalPublicationIntegrationObservationBytes(observation: Pub
 }
 
 export function publicationPointerFromReceipt(
-  receipt: PublicationReceiptV1,
+  receipt: PublicationReceiptV2,
   shipTransactionKey: string,
 ): CurrentPublicationPointerV1 {
   if (shipTransactionKey.length === 0) throw new PublicationLifecycleError('publication_incomplete', 'ship transaction key is required');
@@ -214,7 +214,7 @@ export function publicationPointerFromReceipt(
 }
 
 export function publicationLineageFromPointer(
-  receipt: PublicationReceiptV1,
+  receipt: PublicationReceiptV2,
   pointer: CurrentPublicationPointerV1,
   reason: string,
 ): PublicationLineageV1 {

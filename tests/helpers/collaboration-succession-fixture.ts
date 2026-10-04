@@ -6,8 +6,8 @@
  * to the current review subject.
  *
  * Real matters here. `inspectBoundTask()` observes Git: HEAD, the tree, the
- * binary diff, an untracked inventory with filesystem entry types, the checks
- * file and the notes' Open Questions section, twice, and refuses if anything
+ * binary diff, an untracked inventory with filesystem entry types, the native verification
+ * evidence and the notes' Open Questions section, twice, and refuses if anything
  * moved between the reads. A stubbed claim receipt of the shape
  * `collaboration-delegation-fixture.ts` uses would let the succession tests pass
  * without a single one of those observations happening, which is precisely the
@@ -26,7 +26,11 @@ import { publishClaimActorReceipt } from '../../src/effects/engineers/claim-acto
 import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
+import { createHash } from 'crypto';
+import { canonicalize } from '../../src/core/evidence/canonical-json';
+import type { JsonValue } from '../../src/core/evidence/types';
+import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
+import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import {
   createLeaseDirectory,
   leaseOwnerPath,
@@ -101,26 +105,18 @@ function workEnvelope(repoRoot: string, repositoryId: string, headOid: string) {
 }
 
 /**
- * Verification evidence bound to the current review subject. `checksObservation()`
- * recomputes the subject from Git and compares four fields, so a hand-written
- * constant would classify as `checks_unverified` and the fixture could never
- * produce a clean bound task to contrast the dirty one against.
+ * Actual contract checks and direct assessment facts bind the freeze fixture.
+ * A hand-written status cannot make the task verified.
  */
 export function writeVerifiedChecks(repoRoot: string): void {
-  const subject = buildReviewSubject(repoRoot, { targetRef: 'main' });
-  if (subject.status !== 'ok') throw new Error(`review subject unavailable: ${subject.reason}`);
-  writeFileSync(join(repoRoot, '.ai/harness/checks/latest.json'), `${JSON.stringify({
-    status: 'pass',
-    contract: { file: 'tasks/contracts/succession.contract.md' },
-    review_subject_sha256: subject.review_subject_sha256,
-    change_assessment: {
-      assessment: {
-        review_subject_sha256: subject.review_subject_sha256,
-        target_ref: subject.target_ref,
-        target_revision: subject.target_rev,
-      },
-    },
-  })}\n`);
+  const contract = 'tasks/contracts/succession.contract.md';
+  const report = executeVerificationContract({ repoRoot, contractPath: contract, reportFile: '.ai/harness/runs/succession.report.json' });
+  if (!report.passed) throw new Error('real succession contract check did not pass');
+  const prepared = prepareChangeAssessment({ repoRoot, contractPath: contract });
+  const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
+  writeFileSync(join(repoRoot, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify({ ...basis,
+    evidence_sha256: 'sha256:' + createHash('sha256').update(canonicalize(basis as unknown as JsonValue)).digest('hex'),
+  }, null, 2) + '\n');
 }
 
 export function readLeaseOwnerRecord(repoRoot: string): LeaseOwnerRecord {
@@ -200,9 +196,14 @@ export function createCollaborationSuccessionFixture(
   mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
   // The checks file is runtime evidence, not tracked state; leaving it untracked
   // would report the bound task as `untracked_present` on every inspection.
-  writeFileSync(join(repoRoot, '.gitignore'), '.ai/harness/checks/\n');
-  writeFileSync(join(repoRoot, SUCCESSION_UNIT_REF), '# Plan: succession\n');
-  writeFileSync(join(repoRoot, 'tasks/contracts/succession.contract.md'), '# Contract: succession\n');
+  writeFileSync(join(repoRoot, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
+  writeFileSync(join(repoRoot, SUCCESSION_UNIT_REF), '# Plan: succession\n\n> **Task Contract**: tasks/contracts/succession.contract.md\n');
+  writeFileSync(join(repoRoot, 'tasks/contracts/succession.contract.md'), [
+    '# Contract: succession', '', '> **Plan**: ' + SUCCESSION_UNIT_REF, '', '## Allowed Paths', '', '```yaml', 'allowed_paths:', '  - "*"','```', '',
+    '## Evidence Requirements', '', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
+    '## Change Assessment', '', '```json', '{"protocol":1,"oracles":[]}', '```', '',
+    '## Verification Plan', '', '```json', JSON.stringify({protocol:1,checks:[{id:'contract-header',kind:'command',command:"grep -qx '# Contract: succession' tasks/contracts/succession.contract.md",cwd:'.',phase:'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Validate the tracked contract header.',inputs:{env:[]}}]}), '```', '',
+  ].join('\n'));
   writeFileSync(
     join(repoRoot, 'tasks/notes/succession.notes.md'),
     '# Notes\n\n## Open Questions\n\n- None.\n\n## Evidence Links\n',

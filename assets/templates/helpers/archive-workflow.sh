@@ -92,7 +92,7 @@ archive_transaction_commit() {
 verify_prediction_scratch_binding() {
   local source_root="$1"
   local scratch_root="$2"
-  local checks_file="$3"
+  local report_file="$3"
   local canonical_source canonical_scratch origin_url canonical_origin source_head scratch_head
   local review_base source_target scratch_target path source_path scratch_path
 
@@ -157,11 +157,12 @@ verify_prediction_scratch_binding() {
     echo "archive-workflow: prediction acceptance source and scratch must share the exact review target" >&2
     return 1
   }
-  [[ "$checks_file" != /* && "$checks_file" != ../* && "$checks_file" != */../* ]] || {
-    echo "archive-workflow: prediction checks path must stay repository-relative" >&2
+  [[ "$(verification_report_hash "$canonical_source" "$report_file")" == "$verified_verification_sha" ]] || {
+    echo "archive-workflow: verified source report changed" >&2
     return 1
   }
-  for path in "$checks_file" .ai/harness/active-plan .ai/harness/active-worktree; do
+  [[ "$(verification_report_hash "$canonical_scratch" "$report_file")" == "$verified_verification_sha" ]] || return 1
+  for path in "$report_file" .ai/harness/active-plan .ai/harness/active-worktree; do
     source_path="$canonical_source/$path"
     scratch_path="$canonical_scratch/$path"
     if [[ -e "$source_path" || -L "$source_path" || -e "$scratch_path" || -L "$scratch_path" ]]; then
@@ -210,7 +211,7 @@ completed_archive_gate() {
   local review_file="$2"
   local update_contract_status="${3:-1}"
   local workflow_state_file="$WORKFLOW_STATE_LIB"
-  local contract_status checks_file checks_message
+  local contract_status before_hash after_hash
 
   [[ -f "$contract_file" ]] || {
     echo "archive-workflow: Completed requires an active contract: $contract_file" >&2
@@ -225,42 +226,40 @@ completed_archive_gate() {
     return 1
   }
 
-  # shellcheck source=/dev/null
-  . "$workflow_state_file"
-  for gate_function in workflow_checks_file workflow_checks_pass; do
-    if ! declare -F "$gate_function" >/dev/null 2>&1; then
-      echo "archive-workflow: workflow gate authority is missing $gate_function" >&2
-      return 1
-    fi
-  done
-
   contract_status="$(awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$contract_file" | xargs)"
   if [[ "$contract_status" != "Active" && "$contract_status" != "Fulfilled" ]]; then
     echo "archive-workflow: Completed requires a verified Active or Fulfilled contract, got ${contract_status:-missing}: $contract_file" >&2
     return 1
   fi
 
-  checks_file="$(workflow_checks_file)"
-  if ! checks_message="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
-    echo "archive-workflow: Completed requires current passing verify-sprint evidence: ${checks_message:-$checks_file}" >&2
-    return 1
-  fi
-
+  before_hash="$(verification_report_hash "$PWD" "$verification_file")" || return 1
   if [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" || ! -f "$helper_dir/acceptance-receipt.ts" ]]; then
     echo "archive-workflow: Completed requires the AcceptanceReceipt helper and trusted Bun runtime" >&2
     return 1
   fi
   if ! REPO_HARNESS_TARGET_REPO_ROOT="$PWD" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
-    --contract "$contract_file" --verification "$checks_file" >/dev/null; then
+    --contract "$contract_file" --verification "$verification_file" >/dev/null; then
     echo "archive-workflow: Completed AcceptanceReceipt gate failed" >&2
     return 1
   fi
+
+  after_hash="$(verification_report_hash "$PWD" "$verification_file")" || return 1
+  [[ "$before_hash" == "$after_hash" ]] || {
+    echo "archive-workflow: verification report changed during acceptance" >&2
+    return 1
+  }
+  verified_verification_sha="$after_hash"
 
   if [[ ! -f "$helper_dir/check-architecture-sync.sh" ]]; then
     echo "archive-workflow: Completed requires architecture freshness helper: $helper_dir/check-architecture-sync.sh" >&2
     return 1
   fi
   REPO_HARNESS_TARGET_REPO_ROOT="$PWD" bash "$helper_dir/check-architecture-sync.sh"
+
+  [[ "$(verification_report_hash "$PWD" "$verification_file")" == "$verified_verification_sha" ]] || {
+    echo "archive-workflow: verified report changed before archive mutation" >&2
+    return 1
+  }
 
   if [[ "$update_contract_status" -eq 1 ]]; then
     promote_contract_to_fulfilled "$contract_file"
@@ -293,7 +292,7 @@ sealed_terminal_archive_gate() {
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--evidence-mode <current|sealed-terminal>] [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
+Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--evidence-mode <current|sealed-terminal>] [--verification <native-report-path>] [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
 
   --timestamp  Use this exact value as the archive-family filename timestamp
                instead of calling `date` here. Callers that predict archive
@@ -303,6 +302,31 @@ Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Aband
                invocations omit this and get a fresh single `date` call, as
                before.
 USAGE_EOF
+}
+
+verification_report_hash() {
+  local root="$1" path="$2"
+  [[ -n "$BUN_BIN" && -x "$BUN_BIN" ]] || return 1
+  "$BUN_BIN" - "$root" "$path" <<'JS_EOF'
+import { lstatSync, readFileSync, realpathSync } from "fs";
+import { createHash } from "crypto";
+import { resolve, sep } from "path";
+const [root, path] = process.argv.slice(2);
+try {
+  if (!path?.startsWith(".ai/harness/runs/") || path.split("/").some(x => x === ".." || x === "." || x === "") || path.includes("\\")) throw new Error("Completed requires an explicit native report under .ai/harness/runs/");
+  const base = realpathSync(root);
+  let location = base;
+  for (const segment of path.split("/")) {
+    location = resolve(location, segment);
+    if (lstatSync(location).isSymbolicLink()) throw new Error("verification path contains a symlink");
+  }
+  if (!location.startsWith(base + sep) || !lstatSync(location).isFile()) throw new Error("verification report must be a repository-local regular file");
+  process.stdout.write(`sha256:${createHash("sha256").update(readFileSync(location)).digest("hex")}`);
+} catch (error) {
+  process.stderr.write(`archive-workflow: verification report validation failed: ${error.message}\n`);
+  process.exit(1);
+}
+JS_EOF
 }
 
 sha256_file() {
@@ -322,7 +346,7 @@ sha256_file() {
 
 predict_archive_manifest() {
   local output="$1" fixed_timestamp="$2" fixed_timestamp_human="$3" fixed_parent_run_id="$4"
-  local scratch scratch_repo manifest_tmp path digest target_branch source_repo checks_file
+  local scratch scratch_repo manifest_tmp path digest target_branch source_repo
   [[ "$output" == /* ]] || { echo "archive-workflow: --predict-manifest output must be absolute" >&2; return 1; }
   [[ "${REPO_HARNESS_BUN_BIN:-}" == /* && -x "${REPO_HARNESS_BUN_BIN:-}" ]] || { echo "archive-workflow: --predict-manifest requires the trusted Bun runtime" >&2; return 1; }
   [[ ! -L "$output" ]] || { echo "archive-workflow: --predict-manifest output must not be a symlink" >&2; return 1; }
@@ -335,11 +359,9 @@ predict_archive_manifest() {
   if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
     resolve_archive_artifacts
     completed_archive_gate "$contract_file" "$review_file" 0
-    checks_file="$(workflow_checks_file)"
   elif [[ "$outcome" == "Completed" ]]; then
     resolve_archive_artifacts
     sealed_terminal_archive_gate "$contract_file" "$review_file"
-    checks_file=""
   fi
   scratch="$(mktemp -d)"
   scratch_repo="$scratch/repo"
@@ -379,9 +401,10 @@ predict_archive_manifest() {
       git -C "$scratch_repo" update-ref "$review_ref" "$review_oid" || { rm -rf "$scratch"; return 1; }
     fi
   fi
-  if [[ -d .ai/harness/checks ]]; then
-    mkdir -p "$scratch_repo/.ai/harness/checks"
-    cp -Rp .ai/harness/checks/. "$scratch_repo/.ai/harness/checks/"
+  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+    [[ "$(verification_report_hash "$source_repo" "$verification_file")" == "$verified_verification_sha" ]] || { rm -rf "$scratch"; return 1; }
+    mkdir -p "$scratch_repo/$(dirname "$verification_file")"
+    cp -p "$verification_file" "$scratch_repo/$verification_file"
   fi
   for path in .ai/harness/active-plan .ai/harness/active-worktree; do
     if [[ -f "$path" ]]; then
@@ -390,7 +413,7 @@ predict_archive_manifest() {
     fi
   done
   if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
-    verify_prediction_scratch_binding "$source_repo" "$scratch_repo" "$checks_file"
+    verify_prediction_scratch_binding "$source_repo" "$scratch_repo" "$verification_file"
   fi
   # Bind the clean tracked/runtime inputs before attaching the caller's
   # dependency tree. A node_modules symlink does not match a directory-only
@@ -401,6 +424,10 @@ predict_archive_manifest() {
   if ! (
     cd "$scratch_repo"
     export REPO_HARNESS_TARGET_REPO_ROOT="$scratch_repo"
+    if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+      [[ "$(verification_report_hash "$source_repo" "$verification_file")" == "$verified_verification_sha" ]] || exit 1
+      [[ "$(verification_report_hash "$scratch_repo" "$verification_file")" == "$verified_verification_sha" ]] || exit 1
+    fi
     apply_archive_workflow "${evidence_mode}-preverified" >/dev/null
   ); then
     rm -rf "$scratch"
@@ -816,6 +843,8 @@ timestamp_human_override=""
 parent_run_id_override=""
 predict_manifest_output=""
 evidence_mode="current"
+verification_file=""
+verified_verification_sha=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -827,6 +856,11 @@ while [[ $# -gt 0 ]]; do
     --outcome)
       [[ -n "${2:-}" ]] || { echo "Error: --outcome requires a value" >&2; usage; exit 1; }
       outcome="$2"
+      shift 2
+      ;;
+    --verification)
+      [[ -n "${2:-}" ]] || { echo "Error: --verification requires a path" >&2; exit 1; }
+      verification_file="$2"
       shift 2
       ;;
     --evidence-mode)

@@ -16,8 +16,59 @@ import { copyHelpers } from "./helpers/helper-script-fixture";
 import { run as scriptRun, tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
 import { hashVerificationPlan, parseVerificationPlanFromContractText } from "../src/core/evidence/verification-plan";
+import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
+import { seedAcceptanceFixture } from "./helpers/verification-plan-fixture";
+import { recordFixtureAcceptance } from "./helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..");
+const ARCHIVE_REPORT = ".ai/harness/runs/archive.report.json";
+
+test("native Completed archive validates real execution and acceptance before mutation", async () => {
+  const fixture = seedAcceptanceFixture("archive-native");
+  const { root, home, contract, verification } = fixture;
+  try {
+    writeFileSync(join(root, "tasks/todos.md"), "# Deferred Goal Ledger\n");
+    writeFileSync(join(root, "plans/plan-demo.md"), readFileSync(join(root, "plans/plan-demo.md"), "utf8")
+      + `\n> **Task Contract**: ${contract}\n`);
+    writeFileSync(join(root, contract), readFileSync(join(root, contract), "utf8")
+      .replace("> **Status**: Active", "> **Status**: Active\n> **Review File**: tasks/reviews/demo.review.md"));
+    const execution = executeVerificationContract({ repoRoot: root, contractPath: contract, reportFile: verification });
+    expect(execution.passed).toBe(true);
+    const assessment = runProcess(process.execPath, [join(ROOT, "scripts/change-assessment.ts"), "prepare", "--contract", contract], root);
+    expect(assessment.status, assessment.stderr).toBe(0);
+    const receipt = await recordFixtureAcceptance({ root, authorityHome: home, contract, verification,
+      disposition: "external_pass", reviewer: "Claude", source: "generic-review", actor: null,
+      summary: "Fixture review opinion for a real executed candidate.", findings: [] });
+    expect(receipt.disposition).toBe("external_pass");
+    const runtime = join(root, ".ai/harness/runs/archive-test-helpers");
+    mkdirSync(runtime, { recursive: true });
+    for (const helper of ["archive-workflow.sh", "check-architecture-sync.sh", "refresh-current-status.sh"]) {
+      copyFileSync(join(ROOT, "scripts", helper), join(runtime, helper));
+    }
+    // Forward to the actual owner CLI with an isolated host authority home.
+    // This adapter grants no result and does not parse verification evidence.
+    writeFileSync(join(runtime, "acceptance-receipt.ts"), [
+      `import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, "scripts/acceptance-receipt.ts"))};`,
+      `try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2), { authorityHome: ${JSON.stringify(home)} })); }`,
+      "catch (error) { console.error(error.message); process.exit(1); }",
+    ].join("\n"));
+    const args = ["--plan", "plans/plan-demo.md", "--outcome", "Completed"];
+    const env = { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath,
+      REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh") };
+    const missing = run(join(runtime, "archive-workflow.sh"), args, root, env);
+    expect(missing.status, missing.stdout + missing.stderr).toBe(1);
+    expect(missing.stderr).toContain("explicit native report");
+    expect(existsSync(join(root, contract))).toBe(true);
+    const archived = run(join(runtime, "archive-workflow.sh"), [...args, "--verification", verification], root, env);
+    expect(archived.status, archived.stdout + archived.stderr).toBe(0);
+    expect(existsSync(join(root, "plans/archive/plan-demo.md"))).toBe(true);
+    expect(existsSync(join(root, verification))).toBe(true);
+    expect(existsSync(join(root, ".ai/harness/evidence/events/log.jsonl"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+}, 60_000);
 
 const FIXTURE_AUTHORITY_ENV_KEYS = [
   "REPO_HARNESS_TARGET_REPO_ROOT",
@@ -37,7 +88,9 @@ function fixtureEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 function run(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
-  return spawnSync("bash", [script, ...args], {
+  const explicit = script === "scripts/archive-workflow.sh" && !args.includes("--verification")
+    ? [...args, "--verification", ARCHIVE_REPORT] : args;
+  return spawnSync("bash", [script, ...explicit], {
     cwd,
     encoding: "utf-8",
     env: fixtureEnv({
@@ -61,6 +114,8 @@ function installWorkflowArchiveFixture(cwd: string): void {
   mkdirSync(join(cwd, "scripts"), { recursive: true });
   mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
   mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+  mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
+  writeFileSync(join(cwd, ".gitignore"), ".ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\nnode_modules/\n");
   mkdirSync(join(cwd, "plans"), { recursive: true });
   mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
   mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
@@ -150,6 +205,12 @@ function writeWorkflowContract(cwd: string, status: string): void {
       "  benchmark: not_applicable",
       "```",
       "",
+      "## Verification Plan", "", String.fromCharCode(96).repeat(3) + "json",
+      JSON.stringify({ protocol: 1, checks: [{
+        id: "contract-header", kind: "command", command: "grep -qx '# Task Contract: demo' tasks/contracts/20260711-1200-demo.contract.md",
+        cwd: ".", phase: "verification", cost: "normal", evidence_policy: "current_exact",
+        necessity: "Check the actual fixture contract header.", inputs: { env: [] },
+      }] }), String.fromCharCode(96).repeat(3), "",
       "## Acceptance Policy",
       "",
       "```json",
@@ -223,11 +284,55 @@ function writeWorkflowReview(cwd: string, recommendation: string, external = "un
 }
 
 function writeWorkflowChecks(cwd: string): void {
-  writeFileSync(
-    join(cwd, ".ai/harness/checks/latest.json"),
-    '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"tasks/contracts/20260711-1200-demo.contract.md"},"review":{"file":"tasks/reviews/20260711-1200-demo.review.md"},"benchmark_evidence":{"status":"not_applicable","report_sha256":"","benchmark_subject_sha256":""}}\n',
-  );
+  const contractPath = "tasks/contracts/20260711-1200-demo.contract.md";
+  const path = join(cwd, contractPath);
+  if (!readFileSync(path, "utf8").includes("## Verification Plan")) {
+    writeFileSync(path, readFileSync(path, "utf8") + "\n## Verification Plan\n\n```json\n" + JSON.stringify({ protocol: 1, checks: [{
+      id: "contract-header", kind: "command", command: "grep -qx '# Task Contract: demo' " + contractPath,
+      cwd: ".", phase: "verification", cost: "normal", evidence_policy: "current_exact",
+      necessity: "Check the actual fixture contract header.", inputs: { env: [] },
+    }] }) + "\n```\n");
+  }
+  ensureReviewBaseline(cwd);
+  const report = executeVerificationContract({ repoRoot: cwd, contractPath, reportFile: ARCHIVE_REPORT });
+  expect(report.passed).toBe(true);
 }
+
+test.each(["report-symlink", "parent-symlink", "verify-swap", "architecture-swap"])("Completed archive refuses %s before mutation", (mode) => {
+  withTempRepo("archive-frozen-report", (cwd) => {
+    installWorkflowArchiveFixture(cwd);
+    writeWorkflowContract(cwd, "Active");
+    writeWorkflowReview(cwd, "pass", "pass");
+    writeWorkflowChecks(cwd);
+    const plan = readFileSync(join(cwd, "plans/plan-20260711-1200-demo.md"), "utf8");
+    const contract = readFileSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"), "utf8");
+    if (mode === "report-symlink" || mode === "parent-symlink") {
+      const source = join(cwd, ".ai/harness/runs/original.json");
+      copyFileSync(join(cwd, ARCHIVE_REPORT), source);
+      if (mode === "report-symlink") {
+        rmSync(join(cwd, ARCHIVE_REPORT));
+        symlinkSync(source, join(cwd, ARCHIVE_REPORT));
+      }
+    } else if (mode === "verify-swap") {
+      const helper = join(cwd, "scripts/acceptance-receipt.ts");
+      writeFileSync(helper, readFileSync(helper, "utf8")
+        .replace("import { existsSync, realpathSync }", "import { appendFileSync, existsSync, realpathSync }")
+        .replace("if (import.meta.main) process.exit", `if (process.argv[2] === 'verify') appendFileSync(${JSON.stringify(ARCHIVE_REPORT)}, ' ');\nif (import.meta.main) process.exit`));
+    } else {
+      writeFileSync(join(cwd, "scripts/check-architecture-sync.sh"), `#!/bin/bash\nprintf ' ' >> '${ARCHIVE_REPORT}'\n`);
+    }
+    const report = mode === "parent-symlink" ? ".ai/harness/runs/runs-link/report.json" : ARCHIVE_REPORT;
+    // A parent link inside the allowed namespace must also fail closed.
+    if (mode === "parent-symlink") {
+      symlinkSync(join(cwd, ".ai/harness/runs"), join(cwd, ".ai/harness/runs/runs-link"), "dir");
+    }
+    const result = run("scripts/archive-workflow.sh", ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--verification", report], cwd);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/symlink|changed/);
+    expect(readFileSync(join(cwd, "plans/plan-20260711-1200-demo.md"), "utf8")).toBe(plan);
+    expect(readFileSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"), "utf8")).toBe(contract);
+  });
+}, 60_000);
 
 function writeSealedWorkflowReview(cwd: string): void {
   writeFileSync(
@@ -492,10 +597,7 @@ describe("archive evidence gates", () => {
       writeFileSync(join(primary, "tasks/current.md"), "# Current Status Snapshot\n\n> **Status**: Active\n");
       writeFileSync(join(primary, sprint), "# Sprint: demo\n\n| 1 | [ ] | demo | contract | done | (pending) |\n");
       writeFileSync(join(primary, ".ai/harness/active-plan"), plan);
-      writeFileSync(
-        join(primary, ".ai/harness/checks/latest.json"),
-        `{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"${contract}"},"review":{"file":"${review}"},"benchmark_evidence":{"status":"not_applicable","report_sha256":"","benchmark_subject_sha256":""}}\n`,
-      );
+
 
       expect(runProcess("git", ["add", "."], primary).status).toBe(0);
       expect(runProcess("git", ["commit", "-m", "fixture"], primary).status).toBe(0);
@@ -545,12 +647,12 @@ describe("archive evidence gates", () => {
       writeWorkflowContract(cwd, "Fulfilled");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("current passing verify-sprint evidence");
+      expect(result.stderr).toContain("verification");
 
       writeWorkflowReview(cwd, "pass");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("current passing verify-sprint evidence");
+      expect(result.stderr).toContain("verification");
 
       writeWorkflowChecks(cwd);
       result = archiveWorkflow(cwd);
@@ -626,7 +728,7 @@ describe("archive evidence gates", () => {
       // tracked .gitkeep, before the live evidence is compensated in.
       writeFileSync(
         join(cwd, ".gitignore"),
-        ["node_modules/", ".ai/harness/checks/latest.json", ""].join("\n"),
+        ["node_modules/", ".ai/harness/runs/", ".ai/harness/evidence/", ""].join("\n"),
       );
       mkdirSync(join(cwd, "node_modules"), { recursive: true });
       writeFileSync(join(cwd, ".ai/harness/checks/.gitkeep"), "");
@@ -682,7 +784,7 @@ describe("archive evidence gates", () => {
       installWorkflowArchiveFixture(source);
       writeFileSync(
         join(source, ".gitignore"),
-        [".acceptance-pass", ".ai/harness/checks/latest.json", ""].join("\n"),
+        [".acceptance-pass", ".ai/harness/runs/", ".ai/harness/evidence/", ""].join("\n"),
       );
       writeWorkflowContract(source, "Fulfilled");
       writeWorkflowReview(source, "pass", "pass");
@@ -690,10 +792,10 @@ describe("archive evidence gates", () => {
       expect(runProcess("git", ["add", "."], source).status).toBe(0);
       expect(runProcess("git", ["commit", "-m", "root-bound receipt fixture"], source).status).toBe(0);
       expect(runProcess("git", ["clone", "--quiet", source, clone], container).status).toBe(0);
-      mkdirSync(join(clone, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(join(clone, ".ai/harness/runs"), { recursive: true });
       copyFileSync(
-        join(source, ".ai/harness/checks/latest.json"),
-        join(clone, ".ai/harness/checks/latest.json"),
+        join(source, ARCHIVE_REPORT),
+        join(clone, ARCHIVE_REPORT),
       );
       writeFileSync(
         join(clone, ".git/repo-harness-prediction-source"),

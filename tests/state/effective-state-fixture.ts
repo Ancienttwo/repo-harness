@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'child_process';
 import {
   resolveEffectiveState,
 } from '../../src/effects/state/resolve-effective-state';
+import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
 import type { EffectiveState, EffectiveStateRiskInput } from '../../src/core/state/types';
 
 export const ROOT = join(import.meta.dir, '../..');
@@ -126,10 +127,6 @@ export function createEffectiveStateFixture(
     '> **External Acceptance**: unavailable',
     '',
     ].join('\n'));
-    writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-      status: 'fail',
-      active_plan: PLAN,
-    }));
     writeFixture(cwd, 'tasks/current.md', [
       '# Current',
       `> **Updated At**: ${options.currentUpdatedAt ?? '2099-01-01T00:00:00.000Z'}`,
@@ -139,6 +136,8 @@ export function createEffectiveStateFixture(
     writeFixture(cwd, '.gitignore', [
       '.ai/harness/state/',
       '.ai/harness/checks/',
+      '.ai/harness/evidence/',
+      '.ai/harness/runs/',
       '.ai/harness/handoff/',
       '.ai/harness/active-worktree',
       '',
@@ -212,7 +211,42 @@ function gitHead(cwd: string): string {
   return result.stdout.trim();
 }
 
-function makeFreshEvidence(cwd: string, nowMs: number): void {
+export function nativeVerificationPlan(source = 'feature.txt'): string {
+  return [
+    '## Verification Plan', '', '```json',
+    JSON.stringify({ protocol: 1, checks: [{
+      id: 'fixture-content', kind: 'command',
+      command: 'test "$(cat ' + source + ')" = fixture',
+      cwd: '.', phase: 'verification', cost: 'normal',
+      evidence_policy: 'current_exact', necessity: 'Validate the tracked fixture content.',
+      inputs: { env: [] },
+    }] }), '```', '',
+  ].join('\n');
+}
+
+export function seedNativeVerification(cwd: string, contractPath: string): string {
+  const reportPath = '.ai/harness/runs/state-fixture-report.json';
+  const report = executeVerificationContract({ repoRoot: cwd, contractPath, reportFile: reportPath });
+  if (!report.passed) throw new Error(JSON.stringify(report));
+  const assessment = spawnSync(process.execPath, [
+    join(ROOT, 'scripts/change-assessment.ts'), 'prepare', '--repo', cwd, '--contract', contractPath,
+  ], { cwd, encoding: 'utf8' });
+  if (assessment.status !== 0) throw new Error(assessment.stdout + assessment.stderr);
+  return reportPath;
+}
+
+export function makeFreshEvidence(cwd: string, nowMs: number): void {
+  writeFixture(cwd, '.ai/harness/policy.json', JSON.stringify({ worktree_strategy: { review_base: 'main' } }));
+  writeFixture(cwd, 'feature.txt', 'fixture\n');
+  writeFixture(cwd, CONTRACT, readFileSync(join(cwd, CONTRACT), 'utf8') + [
+    '> **Owner**: fixture-owner', '',
+    '## Acceptance Policy', '', '```json',
+    '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}', '```', '',
+    '## Evidence Requirements', '', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
+    '## Change Assessment', '', '```json',
+    '{"protocol":1,"oracles":[]}', '```', '', nativeVerificationPlan(),
+  ].join('\n'));
+  commitFixture(cwd, 'declare fixture verification');
   const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
   const initial = resolveEffectiveState(cwd, nowMs, risk);
   const subject = initial.source_hashes.review_subject;
@@ -238,15 +272,6 @@ function makeFreshEvidence(cwd: string, nowMs: number): void {
     '- Exact Next Step: implement resolver',
     '',
   ].join('\n');
-  writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-    status: 'pass',
-    active_plan: PLAN,
-    review_subject_sha256: subject,
-    acceptance_receipt: {
-      status: 'pass',
-      disposition: 'external_pass',
-    },
-  }));
   writeFixture(cwd, '.ai/harness/handoff/current.md', handoff);
   writeFixture(cwd, '.ai/harness/handoff/resume.md', [
     '# Resume',
@@ -255,6 +280,16 @@ function makeFreshEvidence(cwd: string, nowMs: number): void {
     `> **Handoff Hash**: ${sha256(handoff)}`,
     '',
   ].join('\n'));
+  const reportPath = seedNativeVerification(cwd, CONTRACT);
+  const cli = join(ROOT, 'scripts/acceptance-receipt.ts');
+  for (const args of [
+    ['grant-waiver', '--actor', 'fixture-owner', '--summary', 'Fixture owner accepts the current change.'],
+    ['record', '--disposition', 'user_waiver', '--verification', reportPath],
+  ]) {
+    const receipt = spawnSync(process.execPath, [cli, ...args, '--repo', cwd, '--contract', CONTRACT], { cwd, encoding: 'utf8' });
+    if (receipt.status !== 0) throw new Error(receipt.stdout + receipt.stderr);
+  }
+
 }
 
 export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
@@ -285,10 +320,6 @@ export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
     name: 'stale-projections',
     risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
     setup: (cwd) => {
-      writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-        status: 'pass',
-        active_plan: 'plans/plan-old.md',
-      }));
       writeFixture(cwd, '.ai/harness/handoff/current.md', '- Active Plan: plans/plan-old.md\n');
       writeFixture(cwd, 'tasks/current.md', [
         '> **Updated At**: 2020-01-01T00:00:00Z',

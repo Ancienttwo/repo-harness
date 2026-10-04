@@ -23,7 +23,7 @@ import type { EffectiveState } from '../../src/core/state/types';
 // Root cause: resolveStableEffectiveState's stability contract
 // (src/effects/state/resolve-effective-state.ts) compares the FULL
 // source_hashes map -- including non-authority, high-churn surfaces such as
-// checks/latest.json, tasks/current.md, handoff/resume, and the
+// checks/change-assessment.latest.json, tasks/current.md, handoff/resume, and the
 // review_subject working-tree diff fingerprint -- between re-reads, and
 // throws `StateResolutionUnstableError` whenever any one of them differs. The
 // hook wrapper
@@ -47,7 +47,7 @@ import type { EffectiveState } from '../../src/core/state/types';
 // green across the fix. Only the DESIRED end state is asserted here -- no
 // assertion encodes today's bug as expected behavior.
 
-const CHECKS_RELATIVE_PATH = '.ai/harness/checks/latest.json';
+const CHECKS_RELATIVE_PATH = '.ai/harness/checks/change-assessment.latest.json';
 
 interface ContinuousMutator {
   readonly startedPath: string;
@@ -130,7 +130,7 @@ function waitForBarrier(path: string): void {
 }
 
 describe('Effective State stability contract: authority-only partition (hook-guard-stability)', () => {
-  test('sustained churn confined to a non-authority source (checks/latest.json) does not abort resolution', async () => {
+  test('sustained churn confined to a non-authority source (checks/change-assessment.latest.json) does not abort resolution', async () => {
     const fixture = createEffectiveStateFixture();
     try {
       const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;

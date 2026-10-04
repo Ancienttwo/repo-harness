@@ -38,39 +38,6 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
-// Minimal git fixture so workflow_current_review_subject_json (via the real
-// review-subject CLI) can resolve a genuine "ok" subject/target pair. Only the
-// contract-scoped benchmark-evidence regressions need a real subject binding;
-// every other test in this file exercises fail-fast paths that never reach it.
-function initEvidenceGitRepo(cwd: string): void {
-  expect(spawnSync("git", ["init", "-q"], { cwd, encoding: "utf-8" }).status).toBe(0);
-  expect(spawnSync("git", ["config", "user.name", "Workflow Test"], { cwd, encoding: "utf-8" }).status).toBe(0);
-  expect(spawnSync("git", ["config", "user.email", "workflow-test@example.com"], { cwd, encoding: "utf-8" }).status).toBe(0);
-  writeFileSync(join(cwd, "tracked.txt"), "base\n");
-  expect(spawnSync("git", ["add", "tracked.txt"], { cwd, encoding: "utf-8" }).status).toBe(0);
-  expect(spawnSync("git", ["commit", "-q", "-m", "init"], { cwd, encoding: "utf-8" }).status).toBe(0);
-  expect(spawnSync("git", ["branch", "-M", "main"], { cwd, encoding: "utf-8" }).status).toBe(0);
-}
-
-// Computes the real review subject/target for the fixture's CURRENT working
-// tree by invoking the same CLI workflow_current_review_subject_json shells
-// out to. Must be called only after every file that affects the subject
-// (contracts, source, anything outside tasks/reviews/*.review.md) is already
-// in its final byte-for-byte state.
-function currentReviewFingerprint(cwd: string): { subject: string; target: string } {
-  const res = spawnSync(
-    "bun",
-    [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "main", "--format", "json"],
-    { cwd, encoding: "utf-8" }
-  );
-  expect(res.status).toBe(0);
-  const parsed = JSON.parse(res.stdout);
-  expect(parsed.status).toBe("ok");
-  expect(parsed.review_subject_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
-  expect(parsed.target_rev).toMatch(/^[0-9a-f]{40,64}$/);
-  return { subject: parsed.review_subject_sha256, target: parsed.target_rev };
-}
-
 function evidenceAcceptanceEnv(): NodeJS.ProcessEnv {
   return {
     ...fixtureEnv(),
@@ -79,61 +46,14 @@ function evidenceAcceptanceEnv(): NodeJS.ProcessEnv {
   };
 }
 
-function writeEvidenceReview(cwd: string, fp: { subject: string; target: string }, benchmarkValue: string): void {
-  writeFileSync(
-    join(cwd, "tasks/reviews/demo.review.md"),
-    [
-      "# Task Review: demo",
-      "",
-      "> **Recommendation**: pass",
-      "",
-      // workflow_review_rubric_class reads Review Rubric Version as top-of-file
-      // metadata only (it stops at the first "## " heading), so it must sit
-      // here, not inside the External Acceptance Advice section below.
-      "> **Review Rubric Version**: 2",
-      "",
-      "## External Acceptance Advice",
-      "",
-      "> **External Acceptance**: pass",
-      "> **External Reviewer**: Claude",
-      "> **External Source**: generic-review",
-      "> **External Started**: 2026-03-04T14:05:00+0800",
-      "> **External Completed**: 2026-03-04T14:06:00+0800",
-      `> **Reviewed Subject SHA256**: ${fp.subject}`,
-      "> **Reviewed Subject Scope**: normalized-final-content",
-      `> **Reviewed Target Revision**: ${fp.target}`,
-      `> **Benchmark Evidence SHA256**: ${benchmarkValue}`,
-      "",
-      "- P1 blockers: none",
-      "- P2 advisories: none",
-      "- Acceptance checklist: pass",
-      "",
-    ].join("\n")
-  );
-}
 
-function runEvidenceAcceptance(cwd: string) {
-  return spawnSync(
-    "bash",
-    ["-lc", 'source "$WORKFLOW_STATE"; HOOK_HOST=codex workflow_external_acceptance_status "$PWD/tasks/reviews/demo.review.md"'],
-    { cwd, encoding: "utf-8", env: evidenceAcceptanceEnv() }
-  );
-}
-
-function runEvidenceChecksMatch(cwd: string) {
-  return spawnSync(
-    "bash",
-    ["-lc", 'source "$WORKFLOW_STATE"; workflow_benchmark_evidence_checks_match checks.json'],
-    { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } }
-  );
-}
 
 function runEvidenceRequirement(cwd: string, contractRelPath: string) {
-  return spawnSync(
-    "bash",
-    ["-lc", `source "$WORKFLOW_STATE"; workflow_contract_evidence_requirement "$PWD/${contractRelPath}"`],
-    { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } }
-  );
+  const initialized = spawnSync("git", ["init", "-q", cwd], { encoding: "utf-8", env: fixtureEnv() });
+  expect(initialized.status, initialized.stderr).toBe(0);
+  return spawnSync(process.execPath, [join(ROOT, "scripts/acceptance-receipt.ts"), "evidence-requirement", "--contract", contractRelPath], {
+    cwd, encoding: "utf-8", env: fixtureEnv(),
+  });
 }
 
 describe("workflow-state shared library", () => {
@@ -197,29 +117,6 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("reads only the verified AcceptanceReceipt projection from structured checks", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "workflow-acceptance-receipt-"));
-    try {
-      writeFileSync(join(cwd, "checks.json"), JSON.stringify({
-        acceptance_receipt: {
-          status: "pass",
-          reviewer: "User",
-          source: "user-waiver",
-          message: "AcceptanceReceipt user_waiver is valid.",
-        },
-      }));
-      const result = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; workflow_acceptance_receipt_status "$PWD/checks.json"'], {
-        cwd,
-        encoding: "utf-8",
-        env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") },
-      });
-      expect(result.status).toBe(0);
-      expect(result.stdout.trim()).toBe("pass\tUser\tuser-waiver\tAcceptanceReceipt user_waiver is valid.");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
   test("explicit verification does not consume review prose or create acceptance receipts", () => {
     for (const path of ["scripts/verify-sprint.sh", "assets/templates/helpers/verify-sprint.sh"]) {
       const helper = readFileSync(join(ROOT, path), "utf-8");
@@ -238,80 +135,6 @@ describe("workflow-state shared library", () => {
     expect(source).not.toContain("workflow_review_recommends_pass()");
   });
 
-  test("workflow checks reject legacy byte-only benchmark evidence", () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-benchmark-evidence-")));
-    try {
-      mkdirSync(join(cwd, "evals/harness/reports"), { recursive: true });
-      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.json"), '{"authoritative":true}\n');
-      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.md"), '# Authoritative\n');
-      // workflow_benchmark_evidence_checks_match now resolves this contract's
-      // evidence_requirements declaration before looking at recorded status;
-      // this fixture is about a "present but stale/legacy" evidence status, so
-      // the contract must declare `required` for that framing to still apply.
-      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
-      writeFileSync(
-        join(cwd, "tasks/contracts/demo.contract.md"),
-        [
-          "# Task Contract: demo",
-          "",
-          "## Evidence Requirements",
-          "",
-          "```yaml",
-          "evidence_requirements:",
-          "  benchmark: required",
-          "```",
-          "",
-        ].join("\n")
-      );
-      const fingerprint = spawnSync(
-        "bash",
-        ["-lc", 'source "$WORKFLOW_STATE"; workflow_benchmark_evidence_fingerprint'],
-        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
-      );
-      expect(fingerprint.status).toBe(1);
-      expect(fingerprint.stdout).toBe("");
-      writeFileSync(join(cwd, "checks.json"), JSON.stringify({
-        status: "pass",
-        source: "verify-sprint",
-        exit_code: 0,
-        contract: { file: "tasks/contracts/demo.contract.md" },
-        review: { file: "tasks/reviews/demo.review.md" },
-        benchmark_evidence: { status: "present", report_sha256: "sha256:" + "0".repeat(64), benchmark_subject_sha256: "sha256:" + "1".repeat(64) },
-      }));
-      const check = () => spawnSync(
-        "bash",
-        ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
-        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
-      );
-      const stale = check();
-      expect(stale.status).toBe(1);
-      expect(stale.stdout).toContain("Structured checks are stale for benchmark evidence");
-
-      writeFileSync(join(cwd, "checks.json"), JSON.stringify({
-        status: "pass",
-        source: "verify-sprint",
-        exit_code: 0,
-        contract: { file: "tasks/contracts/demo.contract.md" },
-        review: { file: "tasks/reviews/demo.review.md" },
-      }));
-      const legacy = check();
-      expect(legacy.status).toBe(1);
-      expect(legacy.stdout).toContain("invalid or legacy benchmark evidence status");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  // R-D (fix 4, hardened in fix-round-2 after external review): benchmark:
-  // must be an unambiguous DIRECT child of the single declaring
-  // evidence_requirements: line -- fail closed (print nothing, nonzero) on
-  // a duplicate benchmark: key within the declaration scope, on a
-  // benchmark: that only exists nested under an unrelated sibling key, and
-  // on a benchmark: nested one level deeper than the declaration's actual
-  // direct child (a grandchild, e.g. evidence_requirements: -> other_key:
-  // -> benchmark:) -- the last case is what fix-round-1's original
-  // "indent > er_indent" scope check missed, since it accepted any deeper
-  // indent rather than requiring the exact direct-child indent.
   test("workflow_contract_evidence_requirement fails closed on a duplicate benchmark: key, a sibling-nested benchmark:, and a grandchild-nested benchmark:", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-hardening-")));
     try {
@@ -412,7 +235,7 @@ describe("workflow-state shared library", () => {
         ].join("\n")
       );
       const realComment = runEvidenceRequirement(cwd, "real-comment-benchmark.contract.md");
-      expect(realComment.status).toBe(0);
+      expect(realComment.status, realComment.stderr).toBe(0);
       expect(realComment.stdout).toBe("not_applicable");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -534,70 +357,6 @@ describe("workflow-state shared library", () => {
     }
   }, 30_000);
 
-  test("workflow_benchmark_evidence_checks_match never invokes the validator when the contract declares not_applicable", () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-na-no-invoke-")));
-    try {
-      initEvidenceGitRepo(cwd);
-
-      mkdirSync(join(cwd, "evals/harness/reports"), { recursive: true });
-      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.json"), '{"authoritative":true}\n');
-      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.md"), '# Authoritative\n');
-
-      const invokedMarker = join(cwd, "validator-was-invoked.marker");
-      mkdirSync(join(cwd, "scripts"), { recursive: true });
-      writeFileSync(
-        join(cwd, "scripts/validate-harness-profile-benchmark.ts"),
-        [
-          "#!/usr/bin/env bun",
-          `require("fs").writeFileSync(${JSON.stringify(invokedMarker)}, "invoked");`,
-          `process.stdout.write(JSON.stringify({ report_evidence_sha256: "sha256:${"a".repeat(64)}", benchmark_subject_sha256: "sha256:${"b".repeat(64)}" }));`,
-          "",
-        ].join("\n")
-      );
-
-      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
-      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
-      writeFileSync(
-        join(cwd, "tasks/contracts/demo.contract.md"),
-        [
-          "# Task Contract: demo",
-          "",
-          "## Evidence Requirements",
-          "",
-          "```yaml",
-          "evidence_requirements:",
-          "  benchmark: not_applicable",
-          "```",
-          "",
-        ].join("\n")
-      );
-
-      writeFileSync(join(cwd, "checks.json"), JSON.stringify({
-        status: "pass",
-        source: "verify-sprint",
-        exit_code: 0,
-        contract: { file: "tasks/contracts/demo.contract.md" },
-        review: { file: "tasks/reviews/demo.review.md" },
-        benchmark_evidence: { status: "not_applicable", report_sha256: "", benchmark_subject_sha256: "" },
-      }));
-      const checksMatch = runEvidenceChecksMatch(cwd);
-      expect(checksMatch.status).toBe(0);
-      expect(existsSync(invokedMarker)).toBe(false);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  // Regression guard for the recorder/validator policy-key split: the
-  // recorder (workflow_current_review_subject_json, via
-  // workflow_current_review_subject_value -- what scripts/verify-sprint.sh
-  // embeds as review_subject_sha256 into verification evidence) must resolve
-  // its diff target from worktree_strategy.review_base, exactly like the
-  // acceptance-receipt.ts validator's reviewBase(). Before the fix the
-  // recorder read worktree_strategy.merge_back.target instead, so the two
-  // sides silently diffed against different refs and every receipt failed
-  // "verification evidence is stale for the current subject" whenever local
-  // main lagged origin/main -- the standard control-clone worktree pattern.
   test("recorder path resolves the review target from worktree_strategy.review_base, matching the acceptance-receipt validator, even when local main lags origin/main", () => {
     const upstream = realpathSync(mkdtempSync(join(tmpdir(), "workflow-subject-split-upstream-")));
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-subject-split-work-")));
@@ -681,7 +440,7 @@ describe("run summary shape is one authoring contract", () => {
   const SHAPE_FIELDS = [
     "generated_at", "run_id", "reason",
     "active_plan", "active_contract", "active_review", "active_notes",
-    "checks_file", "handoff_file", "policy_file", "context_map_file",
+    "handoff_file", "policy_file", "context_map_file",
   ] as const;
 
   function writeRunSummary(withJq: boolean): Record<string, unknown> {

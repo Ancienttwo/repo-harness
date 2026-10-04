@@ -1,11 +1,16 @@
+import { candidate, helperFingerprint } from '../../scripts/merge-gate';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
   buildPublicationReceipt,
+  buildPublicationCreateIntent,
+  canonicalPublicationCreateIntentBytes,
+  canonicalPublicationPrepareEnvelopeBytes,
+  validatePublicationReceipt,
   buildPublicationPrepareEnvelope,
   decodePublicationMarker,
   derivePublicationId,
@@ -45,7 +50,6 @@ interface Fixture {
   readonly gh: string;
   readonly body: string;
   readonly seal: string;
-  readonly checks: string;
 }
 
 function installFixture(): Fixture {
@@ -59,10 +63,7 @@ function installFixture(): Fixture {
   const base = git(root, 'rev-parse', 'HEAD');
   git(root, 'switch', '-c', 'codex/publication');
   writeFileSync(join(root, 'feature.txt'), 'publication\n');
-  mkdirSync(join(root, '.ai/harness/checks'), { recursive: true });
-  const checks = join(root, '.ai/harness/checks/latest.json');
-  writeFileSync(checks, JSON.stringify({ status: 'pass', review_subject_sha256: SUBJECT }) + '\n');
-  git(root, 'add', 'feature.txt', '.ai/harness/checks/latest.json');
+  git(root, 'add', 'feature.txt');
   git(root, 'commit', '-m', 'feature');
   const head = git(root, 'rev-parse', 'HEAD');
 
@@ -94,11 +95,16 @@ function installFixture(): Fixture {
 
   const seal = join(root, 'merge-seal.json');
   writeFileSync(seal, JSON.stringify({
-    protocol: 1,
+    protocol: 2,
+    repository_root: realpathSync(root),
+    base_ref: 'main',
+    helper_fingerprint: helperFingerprint(root),
+    pr_number: 1,
+    sealed_at: '2026-08-23T06:30:00Z',
     kind: 'repo-harness-merge-seal',
     base_sha: base,
     head_sha: head,
-    acceptance_subject_sha256: SUBJECT,
+    diff_fingerprint: candidate(root, 'main').diffFingerprint,
   }) + '\n');
   const body = join(root, 'pr-body.md');
   writeFileSync(body, 'Automated ship body.\n');
@@ -123,7 +129,7 @@ function installFixture(): Fixture {
     '',
   ].join('\n'));
   chmodSync(gh, 0o755);
-  return { root, base, head, gh, body, seal, checks };
+  return { root, base, head, gh, body, seal };
 }
 
 function withFixture(run: (fixture: Fixture) => void): void {
@@ -148,7 +154,6 @@ function ensureInput(fixture: Fixture) {
     target_branch: 'main',
     gh_bin: fixture.gh,
     merge_seal_path: fixture.seal,
-    checks_path: fixture.checks,
     create_intent_journal_path: join(fixture.root, 'publication-intent.status.json'),
   } as const;
 }
@@ -165,7 +170,7 @@ function prepareThenObserve(fixture: Fixture) {
   return prepared.create_intent!;
 }
 
-describe('PublicationReceiptV1', () => {
+describe('PublicationReceiptV2', () => {
   test('uses the frozen deterministic identity preimage and a complete canonical marker', () => {
     const input = {
       repo_id: 'fixture-common-dir',
@@ -178,8 +183,7 @@ describe('PublicationReceiptV1', () => {
       branch: 'codex/publication',
       head_sha: 'b'.repeat(40),
       tree_sha: 'c'.repeat(40),
-      review_subject_sha256: SUBJECT,
-      verification_evidence_sha256: `sha256:${'4'.repeat(64)}`,
+      candidate_diff_fingerprint: SUBJECT,
       merge_seal_sha256: `sha256:${'5'.repeat(64)}`,
       provider: 'github' as const,
       provider_repo_id: 'R_fixture',
@@ -191,7 +195,18 @@ describe('PublicationReceiptV1', () => {
     expect(receipt.publication_id).toBe('sha256:f1819c97aa8816e26d68c2edb23c6344427e65f747047763ee982b733751ab28');
     expect(receipt.publication_id).toBe(derivePublicationId(input));
     expect(receipt.publication_id).toBe(buildPublicationReceipt({ ...input, created_at: '2026-08-23T04:05:55Z' }).publication_id);
+    expect(receipt.protocol).toBe(2);
+    expect(Object.keys(receipt)).not.toContain('review_subject_sha256');
+    expect(Object.keys(receipt)).not.toContain('verification_evidence_sha256');
+    const intent = buildPublicationCreateIntent(input);
+    const intentBytes = '{"claim_id":"claim-publication-fixture","generation":1,"head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","kind":"repo-harness-publication-create-intent","protocol":1,"provider_repo_id":"R_fixture","publication_id":"sha256:f1819c97aa8816e26d68c2edb23c6344427e65f747047763ee982b733751ab28","task_id":"1111111111111111111111111111111111111111111111111111111111111111"}';
+    expect(canonicalPublicationCreateIntentBytes(intent)).toBe(intentBytes);
+    expect(canonicalPublicationPrepareEnvelopeBytes(buildPublicationPrepareEnvelope(intent)))
+      .toBe(`{"action":"create","create_intent":${intentBytes},"kind":"repo-harness-publication-prepare","protocol":1}`);
+    expect(canonicalPublicationPrepareEnvelopeBytes(buildPublicationPrepareEnvelope(null)))
+      .toBe('{"action":"existing","create_intent":null,"kind":"repo-harness-publication-prepare","protocol":1}');
     const marker = encodePublicationMarker(receipt);
+    expect(marker).toStartWith('<!-- repo-harness-publication-receipt:v2:');
     expect(decodePublicationMarker(marker)).toEqual(receipt);
     expect(decodePublicationMarker(replacePublicationMarker('human text', receipt))).toEqual(receipt);
     expect(publicationReceiptDigest(receipt)).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -223,8 +238,7 @@ describe('PublicationReceiptV1', () => {
         branch: first.receipt.branch,
         head_sha: first.receipt.head_sha,
         tree_sha: first.receipt.tree_sha,
-        review_subject_sha256: first.receipt.review_subject_sha256,
-        verification_evidence_sha256: first.receipt.verification_evidence_sha256,
+        candidate_diff_fingerprint: first.receipt.candidate_diff_fingerprint,
         merge_seal_sha256: first.receipt.merge_seal_sha256,
         provider: first.receipt.provider,
         provider_repo_id: first.receipt.provider_repo_id,
@@ -243,8 +257,7 @@ describe('PublicationReceiptV1', () => {
         pr_number: 1,
         gh_bin: fixture.gh,
         merge_seal_path: fixture.seal,
-        checks_path: fixture.checks,
-      });
+        });
       expect(rebuilt.receipt).toEqual(first.receipt);
       expect(readPublicationReceiptCache(fixture.root, first.receipt.publication_id)).toEqual(first.receipt);
 
@@ -258,7 +271,6 @@ describe('PublicationReceiptV1', () => {
             ...process.env,
             REPO_HARNESS_GH_BIN: fixture.gh,
             REPO_HARNESS_PUBLICATION_SEAL_PATH: fixture.seal,
-            REPO_HARNESS_PUBLICATION_CHECKS_PATH: fixture.checks,
           },
         },
       )) as { ok: boolean; receipt: unknown };
@@ -325,8 +337,7 @@ describe('PublicationReceiptV1', () => {
         pr_number: persisted.receipt.pr_number,
         gh_bin: fixture.gh,
         merge_seal_path: fixture.seal,
-        checks_path: fixture.checks,
-      })).toThrow(PublicationReceiptError);
+        })).toThrow(PublicationReceiptError);
       delete process.env.GH_BASE_SHA;
       process.env.GH_HEAD_REF = 'codex/retargeted';
       expect(() => rebuildPublicationReceipt({
@@ -334,8 +345,7 @@ describe('PublicationReceiptV1', () => {
         pr_number: persisted.receipt.pr_number,
         gh_bin: fixture.gh,
         merge_seal_path: fixture.seal,
-        checks_path: fixture.checks,
-      })).toThrow(PublicationReceiptError);
+        })).toThrow(PublicationReceiptError);
     });
   });
 
@@ -359,6 +369,65 @@ describe('PublicationReceiptV1', () => {
         expect(error).toBeInstanceOf(PublicationReceiptError);
         expect((error as PublicationReceiptError).code).toBe('publication_claim_mismatch');
       }
+    });
+  });
+
+
+  test('refuses retired V1 cache and marker bytes without migration or overwrite', () => {
+    withFixture((fixture) => {
+      const intent = prepareThenObserve(fixture);
+      const result = ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent });
+      const { candidate_diff_fingerprint, ...retained } = result.receipt;
+      const oldReceipt = { ...retained, protocol: 1, review_subject_sha256: SUBJECT, verification_evidence_sha256: SUBJECT };
+      expect(() => validatePublicationReceipt(oldReceipt)).toThrow('version 1 is retired');
+      const cache = publicationReceiptPath(fixture.root, result.receipt.publication_id);
+      const oldBytes = `${JSON.stringify(oldReceipt)}\n`;
+      writeFileSync(cache, oldBytes);
+      expect(() => readPublicationReceiptCache(fixture.root, result.receipt.publication_id)).toThrow(PublicationReceiptError);
+      expect(() => writePublicationReceiptCache(fixture.root, result.receipt)).toThrow(PublicationReceiptError);
+      expect(readFileSync(cache, 'utf-8')).toBe(oldBytes);
+      const oldMarker = `<!-- repo-harness-publication-receipt:v1:${Buffer.from(JSON.stringify(oldReceipt)).toString('base64url')} -->`;
+      writeFileSync(fixture.body, `human text\n${oldMarker}\n`);
+      const bodyBefore = readFileSync(fixture.body, 'utf-8');
+      expect(() => decodePublicationMarker(bodyBefore)).toThrow('marker version 1 is retired');
+      expect(() => replacePublicationMarker(bodyBefore, result.receipt)).toThrow('marker version 1 is retired');
+      expect(() => ensurePublicationReceipt(ensureInput(fixture))).toThrow(PublicationReceiptError);
+      expect(() => rebuildPublicationReceipt({ repo_root: fixture.root, pr_number: 1, gh_bin: fixture.gh, merge_seal_path: fixture.seal })).toThrow(PublicationReceiptError);
+      expect(readFileSync(fixture.body, 'utf-8')).toBe(bodyBefore);
+      expect(readFileSync(cache, 'utf-8')).toBe(oldBytes);
+    });
+  });
+
+  test('refuses a stale native seal repository, target, helper, candidate, or PR', () => {
+    withFixture((fixture) => {
+      const intent = prepareThenObserve(fixture);
+      const original = JSON.parse(readFileSync(fixture.seal, 'utf-8'));
+      for (const changed of [
+        { protocol: 1 }, { repository_root: '/tmp/other-publication' }, { base_ref: 'other' },
+        { helper_fingerprint: SUBJECT }, { diff_fingerprint: SUBJECT }, { pr_number: 2 },
+        { base_sha: 'f'.repeat(40) }, { head_sha: 'f'.repeat(40) },
+      ]) {
+        writeFileSync(fixture.seal, JSON.stringify({ ...original, ...changed }));
+        expect(() => ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent })).toThrow(PublicationReceiptError);
+        expect(readFileSync(fixture.body, 'utf-8')).toBe('Automated ship body.\n');
+      }
+      writeFileSync(fixture.seal, JSON.stringify(original));
+      const result = ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent });
+      expect(result.receipt.candidate_diff_fingerprint).toBe(original.diff_fingerprint);
+    });
+  });
+
+
+  test('returns a typed refusal for unavailable native Git evidence and keeps the host alive', () => {
+    withFixture((fixture) => {
+      const intent = prepareThenObserve(fixture);
+      const seal = JSON.parse(readFileSync(fixture.seal, 'utf-8'));
+      writeFileSync(fixture.seal, JSON.stringify({ ...seal, base_ref: 'refs/remotes/unavailable/main' }));
+      expect(() => ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent }))
+        .toThrow('native merge seal evidence is unavailable: git rev-parse');
+      expect(readFileSync(fixture.body, 'utf-8')).toBe('Automated ship body.\n');
+      writeFileSync(fixture.seal, JSON.stringify(seal));
+      expect(ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent }).receipt.protocol).toBe(2);
     });
   });
 

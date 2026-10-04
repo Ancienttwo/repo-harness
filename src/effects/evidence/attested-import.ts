@@ -17,7 +17,7 @@
  * (`target_commit`, `contract_hash`, `scope_hash`, `authority_commit`,
  * `env_provider_id`) are not carried by the receipt at all, so they are
  * computed from current repo state the same way
- * `src/effects/evidence/verify-producer.ts` computes them (read-only
+ * the retired verify producer computes them (read-only
  * pattern reference). That module's equivalent helpers are private and
  * unexported and the file itself is read-only, so the small git/parsing
  * helpers below are necessarily local, independent copies -- see
@@ -140,7 +140,7 @@ function lastCommitTouching(repoRoot: string, relativePath: string): string | nu
 /**
  * This module's own `package.json` version -- the repo-harness tool's own
  * version, independent of whichever `repoRoot` is being imported into
- * (pattern reference: `verify-producer.ts`'s private `providerCliVersion`;
+ * (pattern reference: the retired verify producer's private `providerCliVersion`;
  * necessarily duplicated, not imported -- see module doc).
  */
 function providerCliVersion(): string {
@@ -152,7 +152,7 @@ function providerCliVersion(): string {
   }
 }
 
-/** Isolated workspace id (pattern reference: `verify-producer.ts`'s private `workspaceId`; necessarily duplicated). */
+/** Isolated workspace id (pattern reference: the retired verify producer's private `workspaceId`; necessarily duplicated). */
 function workspaceId(repoRoot: string): string {
   const result = gitOutput(repoRoot, ["rev-parse", "--show-toplevel"]);
   const real = result.ok && result.text.trim() ? result.text.trim() : repoRoot;
@@ -161,7 +161,7 @@ function workspaceId(repoRoot: string): string {
 
 /**
  * Extract the `allowed_paths:` list from the contract's fenced ```yaml block
- * (pattern reference: `verify-producer.ts`'s private `parseContractAllowedPaths`;
+ * (pattern reference: the retired verify producer's private `parseContractAllowedPaths`;
  * necessarily duplicated -- see module doc).
  */
 function parseContractAllowedPaths(contractText: string): readonly string[] {
@@ -200,7 +200,7 @@ function worktreeIdFor(contractRelative: string): string {
  * D6 redaction hashes any 32+ char dot-free alnum run; a full
  * `sha256:<64-hex>` reference stored verbatim would come back uselessly
  * re-hashed (the exact bug EPC-02's dogfood run caught), so only a short
- * prefix travels in the payload (pattern reference: `verify-producer.ts`'s
+ * prefix travels in the payload (pattern reference: the retired verify producer's
  * `shortRunSnapshotId`).
  */
 function shortHashRef(hash: string): string {

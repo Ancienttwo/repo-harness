@@ -11,7 +11,7 @@ or refreshes a repo. The harness gives agents three durable surfaces:
   `AGENTS.md`, and root `CLAUDE.md` explain stable product intent, coding
   rules, and local workflow boundaries.
 - **Task contracts**: `plans/`, `tasks/contracts/`, `tasks/reviews/`, and
-  the current `.ai/harness/checks/latest.json` pointer turn a request into
+  native execution records turn a request into
   scoped implementation work with evidence-backed completion.
 - **Session journal**: `.ai/harness/handoff/`, `tasks/current.md`, and
   `.ai/harness/events.jsonl` let a new agent session resume from repo state
@@ -25,7 +25,7 @@ with the project.
 
 - **Planner** updates `docs/spec.md`, researches constraints, and writes or approves `plans/plan-*.md`.
 - **Generator** implements only against the active sprint contract and the plan's `## Task Breakdown`, leaving `tasks/todos.md` as a deferred-goal ledger, and records task-local implementation judgments in `tasks/notes/<plan-stem>.notes.md`.
-- **Evaluator** runs Waza `/check`, then writes `tasks/reviews/<plan-stem>.review.md` using fresh evidence from `.ai/harness/checks/latest.json` and `.ai/harness/runs/*.json`.
+- **Evaluator** runs Waza `/check`, then writes `tasks/reviews/<plan-stem>.review.md` using fresh evidence from Verification Plan execution records and `.ai/harness/runs/*.json`.
 
 ## State Flow
 
@@ -81,7 +81,7 @@ with the project.
 - Task synchronization: `check-task-sync.sh` accepts existing diff-bound workflow evidence or a valid scoped waiver. Otherwise it passes the complete changed-path inventory, including the configured Git base range, to `repo-harness state resolve`. A successful `lite` result needs no workflow artifact; `standard` and `strict` still require bound evidence. Missing, failed, or malformed resolver output fails closed. This is a ceremony exemption, not a substitute for behavior-specific verification.
 - Notes: `tasks/notes/<plan-stem>.notes.md` is task-local and auditable. It should not be treated as durable knowledge by default.
 - Current status: `tasks/current.md` is an ignored local read model for orientation only. It must be regenerated from source artifacts and must not contain hand-written kanban/checklist state.
-- Evidence: `.ai/harness/checks/latest.json` is the current gate, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
+- Evidence: Native execution evaluation supplies current check facts, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
 - Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
 - Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
 - Memory: `docs/researches/` and `tasks/lessons.md` are advisory. Current repo state and evidence override summaries.
@@ -90,7 +90,7 @@ with the project.
 
 ## Trace Evidence
 
-`repo-harness run verify-sprint` writes `.ai/harness/checks/latest.json` and an ignored `.ai/harness/runs/*.json` snapshot using `schema: repo-harness-run-trace.v1`. The trace is local evidence for workflow grading, not a cloud tracing dependency or a committed durable artifact.
+`repo-harness run verify-sprint` runs local checks. It writes no verification report. Run `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` to record declared checks. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty plans cannot pass.
 
 Required v1 fields:
 
@@ -264,3 +264,5 @@ Maintainer-facing map of which package file owns which contract:
 | `src/core/adoption/standard-plan.ts` | Canonical adoption planner |
 | `scripts/check-agent-tooling.sh` | External tooling detector |
 | `scripts/init-project.sh`, `scripts/create-project-dirs.sh` | Scaffolding steps |
+
+Generic-review writes its Markdown acceptance projection in the ignored review session directory under .ai/harness/runs/. It keeps the verified source tree intact. The host-owned receipt and review result retain acceptance authority. An explicit projection into a tracked review file changes the source tree and requires new execution evidence.

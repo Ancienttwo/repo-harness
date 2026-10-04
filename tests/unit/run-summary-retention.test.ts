@@ -31,7 +31,6 @@ function seedStopSummary(root: string, name: string, index: number, reason = 'se
     active_contract: '',
     active_review: '',
     active_notes: '',
-    checks_file: '.ai/harness/checks/latest.json',
     handoff_file: '.ai/harness/handoff/current.md',
     policy_file: '.ai/harness/policy.json',
     context_map_file: '.ai/context/context-map.json',

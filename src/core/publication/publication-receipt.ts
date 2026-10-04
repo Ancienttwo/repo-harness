@@ -3,19 +3,22 @@ import { createHash } from 'crypto';
 import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 
 /** This schema is deliberately independent from COORDINATION_PROTOCOL. */
-export const PUBLICATION_RECEIPT_PROTOCOL = 1 as const;
+export const PUBLICATION_RECEIPT_PROTOCOL = 2 as const;
+export const PUBLICATION_IDENTITY_PROTOCOL = 1 as const;
+export const PUBLICATION_CREATE_INTENT_PROTOCOL = 1 as const;
+export const PUBLICATION_PREPARE_PROTOCOL = 1 as const;
 export const PUBLICATION_RECEIPT_KIND = 'repo-harness-publication-receipt' as const;
 export const PUBLICATION_CREATE_INTENT_KIND = 'repo-harness-publication-create-intent' as const;
 export const PUBLICATION_PREPARE_KIND = 'repo-harness-publication-prepare' as const;
-export const PUBLICATION_MARKER_PREFIX = '<!-- repo-harness-publication-receipt:v1:';
+export const PUBLICATION_MARKER_PREFIX = '<!-- repo-harness-publication-receipt:v2:';
 export const PUBLICATION_MARKER_SUFFIX = ' -->';
 export const PUBLICATION_MARKER_MAX_BYTES = 32 * 1024;
 
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/;
-const MARKER_PATTERN = /<!-- repo-harness-publication-receipt:v1:([A-Za-z0-9_-]+) -->/g;
+const MARKER_PATTERN = /<!-- repo-harness-publication-receipt:v2:([A-Za-z0-9_-]+) -->/g;
 
-export interface PublicationReceiptV1 {
+export interface PublicationReceiptV2 {
   readonly protocol: typeof PUBLICATION_RECEIPT_PROTOCOL;
   readonly kind: typeof PUBLICATION_RECEIPT_KIND;
   readonly publication_id: string;
@@ -29,8 +32,7 @@ export interface PublicationReceiptV1 {
   readonly branch: string;
   readonly head_sha: string;
   readonly tree_sha: string;
-  readonly review_subject_sha256: string;
-  readonly verification_evidence_sha256: string;
+  readonly candidate_diff_fingerprint: string;
   readonly merge_seal_sha256: string;
   readonly provider: 'github';
   readonly provider_repo_id: string;
@@ -44,7 +46,7 @@ export interface PublicationReceiptV1 {
  * contains only the immutable identity preimage available before a PR exists.
  */
 export interface PublicationCreateIntentV1 {
-  readonly protocol: typeof PUBLICATION_RECEIPT_PROTOCOL;
+  readonly protocol: typeof PUBLICATION_CREATE_INTENT_PROTOCOL;
   readonly kind: typeof PUBLICATION_CREATE_INTENT_KIND;
   readonly publication_id: string;
   readonly provider_repo_id: string;
@@ -56,7 +58,7 @@ export interface PublicationCreateIntentV1 {
 
 /** Canonical shell hand-off. `existing` deliberately carries no create authority. */
 export interface PublicationPrepareEnvelopeV1 {
-  readonly protocol: typeof PUBLICATION_RECEIPT_PROTOCOL;
+  readonly protocol: typeof PUBLICATION_PREPARE_PROTOCOL;
   readonly kind: typeof PUBLICATION_PREPARE_KIND;
   readonly action: 'create' | 'existing';
   readonly create_intent: PublicationCreateIntentV1 | null;
@@ -69,7 +71,7 @@ export interface PublicationJournalEvidenceV1 {
   readonly receipt_digest: string;
 }
 
-export type PublicationReceiptInput = Omit<PublicationReceiptV1, 'protocol' | 'kind' | 'publication_id'>;
+export type PublicationReceiptInput = Omit<PublicationReceiptV2, 'protocol' | 'kind' | 'publication_id'>;
 
 function byteCompare(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
@@ -89,7 +91,7 @@ export function publicationSha256(value: string | Buffer): string {
 
 export function derivePublicationId(input: Pick<PublicationReceiptInput, 'provider_repo_id' | 'task_id' | 'claim_id' | 'generation' | 'head_sha'>): string {
   return publicationSha256(stablePublicationJson([
-    PUBLICATION_RECEIPT_PROTOCOL,
+    PUBLICATION_IDENTITY_PROTOCOL,
     input.provider_repo_id,
     input.task_id,
     input.claim_id,
@@ -115,7 +117,7 @@ function validateCreateIntentInput(input: Omit<PublicationCreateIntentV1, 'proto
 export function buildPublicationCreateIntent(input: Omit<PublicationCreateIntentV1, 'protocol' | 'kind' | 'publication_id'>): PublicationCreateIntentV1 {
   const valid = validateCreateIntentInput(input);
   return Object.freeze({
-    protocol: PUBLICATION_RECEIPT_PROTOCOL,
+    protocol: PUBLICATION_CREATE_INTENT_PROTOCOL,
     kind: PUBLICATION_CREATE_INTENT_KIND,
     publication_id: derivePublicationId(valid),
     ...valid,
@@ -126,7 +128,7 @@ export function validatePublicationCreateIntent(value: unknown): PublicationCrea
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('publication create intent must be an object');
   const record = value as Record<string, unknown>;
   requireExactKeys(record, ['protocol', 'kind', 'publication_id', 'provider_repo_id', 'task_id', 'claim_id', 'generation', 'head_sha']);
-  if (record.protocol !== PUBLICATION_RECEIPT_PROTOCOL || record.kind !== PUBLICATION_CREATE_INTENT_KIND) {
+  if (record.protocol !== PUBLICATION_CREATE_INTENT_PROTOCOL || record.kind !== PUBLICATION_CREATE_INTENT_KIND) {
     throw new Error('publication create intent protocol or kind is invalid');
   }
   const intent = buildPublicationCreateIntent({
@@ -146,7 +148,7 @@ export function canonicalPublicationCreateIntentBytes(intent: PublicationCreateI
 
 export function buildPublicationPrepareEnvelope(intent: PublicationCreateIntentV1 | null): PublicationPrepareEnvelopeV1 {
   return Object.freeze({
-    protocol: PUBLICATION_RECEIPT_PROTOCOL,
+    protocol: PUBLICATION_PREPARE_PROTOCOL,
     kind: PUBLICATION_PREPARE_KIND,
     action: intent === null ? 'existing' : 'create',
     create_intent: intent === null ? null : validatePublicationCreateIntent(intent),
@@ -157,7 +159,7 @@ export function validatePublicationPrepareEnvelope(value: unknown): PublicationP
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('publication prepare envelope must be an object');
   const record = value as Record<string, unknown>;
   requireExactKeys(record, ['protocol', 'kind', 'action', 'create_intent']);
-  if (record.protocol !== PUBLICATION_RECEIPT_PROTOCOL || record.kind !== PUBLICATION_PREPARE_KIND) {
+  if (record.protocol !== PUBLICATION_PREPARE_PROTOCOL || record.kind !== PUBLICATION_PREPARE_KIND) {
     throw new Error('publication prepare envelope protocol or kind is invalid');
   }
   if (record.action !== 'create' && record.action !== 'existing') throw new Error('publication prepare envelope action is invalid');
@@ -218,8 +220,7 @@ function validateInput(input: PublicationReceiptInput): PublicationReceiptInput 
     branch: requiredString(input.branch, 'branch'),
     head_sha: requiredString(input.head_sha, 'head_sha'),
     tree_sha: requiredString(input.tree_sha, 'tree_sha'),
-    review_subject_sha256: requiredString(input.review_subject_sha256, 'review_subject_sha256'),
-    verification_evidence_sha256: requiredString(input.verification_evidence_sha256, 'verification_evidence_sha256'),
+    candidate_diff_fingerprint: requiredString(input.candidate_diff_fingerprint, 'candidate_diff_fingerprint'),
     merge_seal_sha256: requiredString(input.merge_seal_sha256, 'merge_seal_sha256'),
     provider: input.provider,
     provider_repo_id: requiredString(input.provider_repo_id, 'provider_repo_id'),
@@ -237,7 +238,7 @@ function validateInput(input: PublicationReceiptInput): PublicationReceiptInput 
   for (const field of ['base_sha', 'head_sha', 'tree_sha'] as const) {
     if (!GIT_OID_PATTERN.test(receipt[field])) throw new Error(`publication receipt ${field} is invalid`);
   }
-  for (const field of ['review_subject_sha256', 'verification_evidence_sha256', 'merge_seal_sha256'] as const) {
+  for (const field of ['candidate_diff_fingerprint', 'merge_seal_sha256'] as const) {
     if (!SHA256_PATTERN.test(receipt[field])) throw new Error(`publication receipt ${field} is invalid`);
   }
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(receipt.created_at)
@@ -245,7 +246,7 @@ function validateInput(input: PublicationReceiptInput): PublicationReceiptInput 
   return Object.freeze(receipt);
 }
 
-function receiptBasis(input: PublicationReceiptInput): PublicationReceiptV1 {
+function receiptBasis(input: PublicationReceiptInput): PublicationReceiptV2 {
   const valid = validateInput(input);
   return Object.freeze({
     protocol: PUBLICATION_RECEIPT_PROTOCOL,
@@ -255,26 +256,26 @@ function receiptBasis(input: PublicationReceiptInput): PublicationReceiptV1 {
   });
 }
 
-export function canonicalPublicationReceiptBytes(receipt: PublicationReceiptV1): string {
+export function canonicalPublicationReceiptBytes(receipt: PublicationReceiptV2): string {
   return stablePublicationJson(receipt);
 }
 
-export function publicationReceiptDigest(receipt: PublicationReceiptV1): string {
+export function publicationReceiptDigest(receipt: PublicationReceiptV2): string {
   return publicationSha256(canonicalPublicationReceiptBytes(validatePublicationReceipt(receipt)));
 }
 
-export function buildPublicationReceipt(input: PublicationReceiptInput): PublicationReceiptV1 {
+export function buildPublicationReceipt(input: PublicationReceiptInput): PublicationReceiptV2 {
   const basis = receiptBasis(input);
   return Object.freeze(basis);
 }
 
-export function validatePublicationReceipt(value: unknown): PublicationReceiptV1 {
+export function validatePublicationReceipt(value: unknown): PublicationReceiptV2 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('publication receipt must be an object');
   const record = value as Record<string, unknown>;
+  if (record.protocol === 1 && record.kind === PUBLICATION_RECEIPT_KIND) throw new Error('publication receipt version 1 is retired; no automatic migration is available');
   const expected = [
     'protocol', 'kind', 'publication_id', 'repo_id', 'task_id', 'task_revision', 'claim_id', 'generation',
-    'target_ref', 'base_sha', 'branch', 'head_sha', 'tree_sha', 'review_subject_sha256',
-    'verification_evidence_sha256', 'merge_seal_sha256', 'provider', 'provider_repo_id', 'pr_number',
+    'target_ref', 'base_sha', 'branch', 'head_sha', 'tree_sha', 'candidate_diff_fingerprint', 'merge_seal_sha256', 'provider', 'provider_repo_id', 'pr_number',
     'pr_url', 'created_at',
   ];
   requireExactKeys(record, expected);
@@ -292,8 +293,7 @@ export function validatePublicationReceipt(value: unknown): PublicationReceiptV1
     branch: record.branch as string,
     head_sha: record.head_sha as string,
     tree_sha: record.tree_sha as string,
-    review_subject_sha256: record.review_subject_sha256 as string,
-    verification_evidence_sha256: record.verification_evidence_sha256 as string,
+    candidate_diff_fingerprint: record.candidate_diff_fingerprint as string,
     merge_seal_sha256: record.merge_seal_sha256 as string,
     provider: record.provider as 'github',
     provider_repo_id: record.provider_repo_id as string,
@@ -305,7 +305,7 @@ export function validatePublicationReceipt(value: unknown): PublicationReceiptV1
   return receipt;
 }
 
-export function encodePublicationMarker(receipt: PublicationReceiptV1): string {
+export function encodePublicationMarker(receipt: PublicationReceiptV2): string {
   const canonical = canonicalPublicationReceiptBytes(validatePublicationReceipt(receipt));
   const encoded = Buffer.from(canonical, 'utf-8').toString('base64url');
   const marker = `${PUBLICATION_MARKER_PREFIX}${encoded}${PUBLICATION_MARKER_SUFFIX}`;
@@ -314,6 +314,7 @@ export function encodePublicationMarker(receipt: PublicationReceiptV1): string {
 }
 
 function markerMatches(body: string): RegExpExecArray[] {
+  if (body.includes('<!-- repo-harness-publication-receipt:v1:')) throw new Error('publication receipt marker version 1 is retired; no automatic migration is available');
   const matches: RegExpExecArray[] = [];
   MARKER_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -321,7 +322,7 @@ function markerMatches(body: string): RegExpExecArray[] {
   return matches;
 }
 
-export function decodePublicationMarker(body: string): PublicationReceiptV1 | null {
+export function decodePublicationMarker(body: string): PublicationReceiptV2 | null {
   const matches = markerMatches(body);
   if (matches.length === 0) return null;
   if (matches.length !== 1) throw new Error('publication receipt marker is ambiguous');
@@ -342,7 +343,7 @@ export function decodePublicationMarker(body: string): PublicationReceiptV1 | nu
 }
 
 /** Replace the only marker, or append the first marker without changing human PR text. */
-export function replacePublicationMarker(body: string, receipt: PublicationReceiptV1): string {
+export function replacePublicationMarker(body: string, receipt: PublicationReceiptV2): string {
   const marker = encodePublicationMarker(receipt);
   const matches = markerMatches(body);
   if (matches.length > 1) throw new Error('publication receipt marker is ambiguous');

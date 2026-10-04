@@ -54,7 +54,7 @@ export const LEGACY_RESUME_MARKER = '<!-- generated-by: repo-harness codex-hando
 // ---------------------------------------------------------------------------
 // Small generic helpers. Duplicated deliberately rather than imported across
 // module boundaries, matching this repo's established convention for tiny
-// generic helpers (see `verify-producer.ts`/`attested-import.ts`'s duplicated
+// generic helpers (see the retired verify producer/`attested-import.ts`'s duplicated
 // `worktreeIdFor`/`sha256Hex`/`gitOutput`, each documented "necessarily
 // duplicated, not imported").
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ function declaredPath(repoRoot: string, plan: string, label: string): string {
 }
 
 /** Contract-path-derived worktree identity (pattern reference:
- * `verify-producer.ts`/`checks-materializer.ts`'s own `worktreeIdFor` --
+ * the retired verify producer/the retired checks projection's own `worktreeIdFor` --
  * necessarily duplicated, same reasoning as the block comment above). Used
  * only as the fallback when no checkpoint is available to source
  * `worktree_id` from directly. */
@@ -345,7 +345,6 @@ export interface RecoveryWorkflowContext {
   readonly recentCommandsText: string;
   readonly supersedes: string;
   readonly paths: {
-    readonly checks: string;
     readonly handoff: string;
     readonly resume: string;
     readonly events: string;
@@ -377,7 +376,6 @@ export function buildRecoveryContext(
   const now = (options.now ?? (() => new Date()))();
   const reason = options.reason ?? 'session-stop';
   const config = policy(repoRoot);
-  const checks = safeHarnessPath(nestedString(config, ['harness', 'checks_file']), '.ai/harness/checks/latest.json');
   const handoff = safeHarnessPath(nestedString(config, ['harness', 'handoff_file']), '.ai/harness/handoff/current.md');
   const resume = safeHarnessPath(nestedString(config, ['handoff_resume', 'resume_packet_file']), '.ai/harness/handoff/resume.md');
   const events = safeHarnessPath(nestedString(config, ['harness', 'events_file']), '.ai/harness/events.jsonl');
@@ -417,7 +415,7 @@ export function buildRecoveryContext(
     changed,
     recentCommandsText: recentCommands(repoRoot),
     supersedes: supersededPlan(repoRoot),
-    paths: { checks, handoff, resume, events, runsDir, policyFile, contextMap, researchDir, todoFile },
+    paths: { handoff, resume, events, runsDir, policyFile, contextMap, researchDir, todoFile },
     globalHandoffPath: latestGlobalHandoff(codexHome),
   };
 }
@@ -638,7 +636,6 @@ export function renderRecoveryHandoff(
     `- Contract: ${context.artifacts.contract || '(none)'}`,
     `- Review: ${context.artifacts.review || '(none)'}`,
     `- Notes: ${context.artifacts.notes || '(none)'}`,
-    `- Checks: ${context.paths.checks}`,
     `- Resume Packet: ${context.paths.resume}`,
     `- Policy: ${context.paths.policyFile}`,
     `- Context Map: ${context.paths.contextMap}`,
@@ -690,7 +687,6 @@ export function renderRecoveryResume(
     `- ${context.paths.todoFile}`,
     `- ${context.artifacts.notes || '(none)'}`,
     `- ${context.paths.researchDir}/`,
-    `- ${context.paths.checks}`,
     '',
     'Conditional first reads:',
     `- Active plan: ${context.artifacts.plan || '(none)'}`,
@@ -709,7 +705,6 @@ export function renderRecoveryResume(
     '',
     `- Repo handoff: ${context.paths.handoff}`,
     `- Resume packet: ${context.paths.resume}`,
-    `- Checks: ${context.paths.checks}`,
     `- Todo: ${context.paths.todoFile}`,
     `- Research: ${context.paths.researchDir}/`,
     `- Plan: ${context.artifacts.plan || '(none)'}`,

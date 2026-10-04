@@ -1,3 +1,5 @@
+import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
+import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import { recordFixtureAcceptance, fixtureReviewResult } from '../helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
@@ -80,7 +82,7 @@ import {
   type AcceptanceVerificationObservationV1,
   type UserWaiverGrant,
 } from '../../scripts/acceptance-receipt';
-import { emptyVerificationEvaluation, withEmptyVerificationPlan } from '../helpers/verification-plan-fixture';
+import { withEmptyVerificationPlan } from '../helpers/verification-plan-fixture';
 
 const REPO_ID = 'repo_0123456789abcdef';
 const OTHER_REPO_ID = 'repo_fedcba9876543210';
@@ -331,7 +333,7 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
     contract_sha256: authorityFingerprint(CONTRACT_TEXT),
     goal_file: GOAL_REF,
     goal_sha256: authorityFingerprint(GOAL_TEXT),
-    verification_file: '.ai/harness/checks/latest.json',
+    verification_file: '.ai/harness/runs/acceptance.report.json',
     verification_evidence_sha256: `sha256:${'c'.repeat(64)}`,
     benchmark_evidence_sha256: 'not-applicable',
     subject_sha256: `sha256:${'d'.repeat(64)}`,
@@ -440,8 +442,7 @@ function reviewingPublication(subject: Fixture, head: string, base: string, numb
     branch: 'main',
     head_sha: head,
     tree_sha: git(subject.root, 'rev-parse', `${head}^{tree}`),
-    review_subject_sha256: `sha256:${'5'.repeat(64)}`,
-    verification_evidence_sha256: `sha256:${'6'.repeat(64)}`,
+    candidate_diff_fingerprint: `sha256:${'5'.repeat(64)}`,
     merge_seal_sha256: `sha256:${'7'.repeat(64)}`,
     provider: 'github',
     provider_repo_id: 'R_issue284',
@@ -601,13 +602,16 @@ interface RecordFixture {
 }
 
 function recordContractText(): string {
-  return withEmptyVerificationPlan([
+  return [
     '# Task Contract: demo',
     '',
     '> **Status**: Active',
     `> **Plan**: ${RECORD_GOAL_REF}`,
     '> **Owner**: kito',
     '',
+    '## Allowed Paths', '', '```yaml', 'allowed_paths:', '  - "*"','```', '',
+    '## Evidence Requirements', '', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
+    '## Verification Plan', '', '```json', JSON.stringify({protocol:1,checks:[{id:'feature-content',kind:'command',command:'grep -qx candidate feature.txt',cwd:'.',phase:'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Validate the tracked candidate file.',inputs:{env:[]}}]}), '```', '',
     '## Acceptance Policy',
     '',
     '```json',
@@ -620,46 +624,15 @@ function recordContractText(): string {
     '{"protocol":1,"oracles":[]}',
     '```',
     '',
-  ].join('\n'));
+  ].join('\n');
 }
 
 function recordChecks(root: string): void {
-  const reviewSubject = buildReviewSubject(root, { targetRef: 'main' });
-  if (reviewSubject.status !== 'ok') throw new Error('record fixture subject must be ok');
-  const assessment = assessChange({
-    subject: reviewSubject,
-    workflowProfile: 'routine',
-    strictCategories: [],
-    patternNoveltyPaths: [],
-    declaredOracles: [],
-  });
-  if (assessment.status !== 'ready') throw new Error('record fixture assessment must be ready');
-  const selection_packet = buildReviewSelectionPacket(assessment);
-  const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment, selection_packet };
-  const checks = {
-    schema: 'repo-harness-run-trace.v1',
-    source: 'verify-sprint',
-    status: 'pass',
-    exit_code: 0,
-    active_plan: RECORD_GOAL_REF,
-    review_subject_sha256: reviewSubject.review_subject_sha256,
-    benchmark_evidence: { status: 'not_applicable', report_sha256: 'not-applicable' },
-    commands: [{ name: 'verify-sprint', status: 'pass', exit_code: 0 }],
-    guards: [
-      { name: 'contract', status: 'pass' },
-      { name: 'review', status: 'pass' },
-      { name: 'allowed_paths', status: 'pass' },
-      { name: 'change_assessment', status: 'pass' },
-    ],
-    contract: {
-      file: RECORD_CONTRACT_REF,
-      execution_evaluation: emptyVerificationEvaluation(root, RECORD_CONTRACT_REF),
-    },
-    review: { file: 'tasks/reviews/demo.review.md' },
-    change_assessment: { ...basis, sha256_placeholder: undefined },
-  };
-  checks.change_assessment = { ...basis, evidence_sha256: engineerSha256(stableJson(basis)) } as never;
-  writeRepoFile(root, '.ai/harness/checks/latest.json', `${JSON.stringify(checks, null, 2)}\n`);
+  const report = executeVerificationContract({ repoRoot: root, contractPath: RECORD_CONTRACT_REF, reportFile: '.ai/harness/runs/acceptance.report.json' });
+  if (!report.passed) throw new Error('genuine candidate check did not pass');
+  const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: RECORD_CONTRACT_REF });
+  const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
+  writeRepoFile(root, '.ai/harness/checks/change-assessment.latest.json', JSON.stringify({ ...basis, evidence_sha256: engineerSha256(stableJson(basis)) }, null, 2) + '\n');
 }
 
 /** A minimal repository the real acceptance record path can run against. */
@@ -670,7 +643,7 @@ function recordFixture(options: { readonly extraCandidateFile?: string } = {}): 
   git(root, 'init', '-b', 'main');
   git(root, 'config', 'user.name', 'Issue 284');
   git(root, 'config', 'user.email', 'issue284@test.invalid');
-  writeRepoFile(root, '.gitignore', '.ai/harness/checks/\n-checks.json\n');
+  writeRepoFile(root, '.gitignore', '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n-checks.json\n');
   writeRepoFile(root, '.ai/harness/policy.json', `${JSON.stringify({
     worktree_strategy: { review_base: 'main' },
     merge_gate: { enabled: true, rule: 'fixture' },
@@ -698,7 +671,7 @@ function recordExternalPass(
     root: fixtureValue.root,
     authorityHome: fixtureValue.home,
     contract: RECORD_CONTRACT_REF,
-    verification: overrides.verification ?? '.ai/harness/checks/latest.json',
+    verification: overrides.verification ?? '.ai/harness/runs/acceptance.report.json',
     disposition: 'external_pass',
     reviewer: 'Claude',
     source: 'generic-review',
@@ -830,7 +803,7 @@ describe('issue #284 closed dependency authority', () => {
     // A verification file the record path accepts (it only rejects paths that
     // escape the repository) but the shared validator refuses.
     const dashVerification = recordFixture();
-    writeFileSync(join(dashVerification.root, '-checks.json'), readFileSync(join(dashVerification.root, '.ai/harness/checks/latest.json')));
+    writeFileSync(join(dashVerification.root, '-checks.json'), readFileSync(join(dashVerification.root, '.ai/harness/runs/acceptance.report.json')));
     await expect(recordExternalPass(dashVerification, { verification: '-checks.json' }))
       .rejects.toThrow('AcceptanceReceipt verification_file is unsafe');
     expect(existsSync(acceptanceReceiptPath(dashVerification.root, dashVerification.home))).toBe(false);
@@ -852,7 +825,7 @@ describe('issue #284 closed dependency authority', () => {
       actor: 'kito',
       summary: 'owner waived the candidate',
     });
-    writeFileSync(join(waived.root, '-checks.json'), readFileSync(join(waived.root, '.ai/harness/checks/latest.json')));
+    writeFileSync(join(waived.root, '-checks.json'), readFileSync(join(waived.root, '.ai/harness/runs/acceptance.report.json')));
     await expect(recordUserWaiverAcceptance({
       root: waived.root,
       authorityHome: waived.home,

@@ -16,10 +16,10 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:fe44febc687f3778e10eb1ffdd9519940971fc800bdd353e8fcb0322a3531887",
-    "evidence_revision": "sha256:473330e7d45dff9d3d7cf53181c99fb9b8fe7e5c32c98ae66253def34ee9c2c1",
+    "subject_revision": "sha256:611ad84ed54754aa0afeb9d13ce4e9a0fdc5bc65321ee5707b54863c6d7dc890",
+    "evidence_revision": "sha256:<dynamic:evidence_revision>",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:ac5c7639ddfab5566d6b052473835e44146e2501a0dfb28f6c1817a38fb90b50",
+    "progress_token": "sha256:<dynamic:progress_token>",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -55,9 +55,7 @@
     "blockers": [],
     "stale_sources": [
       "active_sprint",
-      "checks",
       "current_snapshot",
-      "external_acceptance",
       "handoff",
       "review"
     ],
@@ -66,7 +64,6 @@
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
       ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
-      ".ai/harness/checks/latest.json": "sha256:47461207f39ae6d6fe413ed1e4baed64aa0df1550c36a3b0e124da90d063d855",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
@@ -77,7 +74,8 @@
       "tasks/current.md": "sha256:e16cda27c0a53e5a4f839011c5e47480be01ab0bee30e75576a62bc2732e9d30",
       "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:f41ca543703e6ccb56ee06570274a16eb33ae10d06ff0f52f5d05f492512ed7e",
       "review_subject": "sha256:8d1ea67b10188cb888564a019394712072bc46c65903acacf936b803358466c4",
-      "authority_revision": "sha256:<dynamic:authority_revision>"
+      "authority_revision": "sha256:<dynamic:authority_revision>",
+      "evidence_revision": "sha256:<dynamic:evidence_revision>"
     },
     "review": {
       "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
@@ -87,14 +85,16 @@
       "recorded_target_revision": null
     },
     "external_acceptance": {
-      "path": ".ai/harness/checks/latest.json",
-      "freshness": "stale",
+      "path": null,
+      "freshness": "missing",
       "status": null
     },
     "checks": {
-      "path": ".ai/harness/checks/latest.json",
-      "freshness": "stale",
-      "status": "pass"
+      "path": null,
+      "freshness": "missing",
+      "status": "missing",
+      "reason": "missing_plan",
+      "result_refs": []
     },
     "active_sprint": {
       "path": "plans/sprints/missing.sprint.md",

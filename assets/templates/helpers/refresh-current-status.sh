@@ -311,19 +311,15 @@ handoff_next_step() {
 }
 
 checks_summary() {
-  local checks_file status source exit_code
-  checks_file="$(json_get '.harness.checks_file' '.ai/harness/checks/latest.json')"
-  [[ -s "$checks_file" ]] || { printf 'status=(none), source=(none), file=%s' "$checks_file"; return 0; }
-
-  if command -v jq >/dev/null 2>&1; then
-    status="$(jq -r '.status // "(none)"' "$checks_file" 2>/dev/null || printf '(unreadable)')"
-    source="$(jq -r '.source // "(none)"' "$checks_file" 2>/dev/null || printf '(unreadable)')"
-    exit_code="$(jq -r '.exit_code // "(none)"' "$checks_file" 2>/dev/null || printf '(unreadable)')"
-    printf 'status=%s, source=%s, exit_code=%s, file=%s' "$status" "$source" "$exit_code" "$checks_file"
-    return 0
+  local contract result plan
+  plan="$(read_current_active_plan || true)"
+  contract="$(file_metadata_value "$plan" "Task Contract" || true)"
+  [[ -n "$contract" && -f "$contract" ]] || { printf 'verification=missing (no active contract)'; return 0; }
+  if result="$(repo-harness run verification-plan evaluate --repo "$PWD" --contract "$contract" 2>&1)"; then
+    printf '%s' "$result"
+  else
+    printf 'verification=unavailable or failed; %s' "$result"
   fi
-
-  printf 'file=%s' "$checks_file"
 }
 
 workstream_summary() {
@@ -535,7 +531,7 @@ $(git_status_files)
 - Active sprint marker: \`.ai/harness/sprint/active-sprint\`
 - Workstreams: \`tasks/workstreams/**/*.md\`
 - Handoff: \`.ai/harness/handoff/current.md\`
-- Checks: \`.ai/harness/checks/latest.json\`
+- Verification: read-only native execution evaluation
 EOF_STATUS
 }
 

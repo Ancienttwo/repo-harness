@@ -329,7 +329,7 @@ flowchart TD
   PostHooks --> ArchQueue["Architecture queue<br/>architecture-queue.sh record/reindex<br/>check-architecture-sync.sh"]
   ArchQueue --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
-  Verify --> Checks["Structured evidence<br/>.ai/harness/checks/latest.json<br/>.ai/harness/runs/*.json"]
+  Verify --> Checks["Structured evidence<br/>.ai/harness/evidence/events/log.jsonl<br/>.ai/harness/runs/*.json"]
   Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
   CheckReview --> External["External acceptance advice<br/>or explicit manual override"]
   External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
@@ -558,7 +558,7 @@ Start with `tasks/reviews/<task>.review.md`. Its `## Human Review Card` is the
 one-screen decision surface: verdict, change type, intended vs actual files,
 commands passed, external acceptance, residual risk, reviewer action, and
 rollback. Then inspect the active contract, the latest trace in
-`.ai/harness/checks/latest.json`, and the changed files. Accept only when the
+Verification Plan execution records, and the changed files. Accept only when the
 review recommends pass, the card verdict is pass, and external acceptance is
 pass, `not_required`, or an explicit override.
 
@@ -573,7 +573,7 @@ Agents read source artifacts before derived summaries:
 | Current user prompt and referenced files | `tasks/reviews/<task>.review.md` Human Review Card |
 | `AGENTS.md` / `CLAUDE.md` | Changed files and diff |
 | Active plan in `.ai/harness/active-plan` | Active contract allowed paths and exit criteria |
-| Active contract in `tasks/contracts/` | `.ai/harness/checks/latest.json` and run trace |
+| Active contract in `tasks/contracts/` | Verification Plan execution records and run trace |
 | Latest handoff in `.ai/harness/handoff/` | Residual risks and rollback |
 
 `tasks/current.md` is an ignored local orientation snapshot, not a tracked file.

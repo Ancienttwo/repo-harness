@@ -9,7 +9,7 @@ TASK_SOURCES:
   - tasks/reviews/
   - tasks/notes/
   - tasks/lessons.md
-  - .ai/harness/checks/latest.json (ignored runtime evidence)
+  - .ai/harness/runs/ (immutable execution records and selected reports)
   - .ai/harness/handoff/current.md
   - plans/
 
