@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ## [0.20.0] - Unreleased
 
-This preparation covers `v0.19.5..e853649e`.
+This preparation covers `v0.19.5..ffe70133`.
 The earlier `281e6555` commit prepared this version but did not publish it.
 No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 
@@ -57,6 +57,8 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 - Run the full union of core and integration tests in isolated file workers.
   Start tests and child tools with temporary HOME and tool roots under `/tmp`.
   Limit Herdr layouts to three panes per tab. (#504, #518, #496)
+- Deduplicate historical upgrade fixtures through verified Git blobs. Preserve
+  every release file byte, mode, path, and provenance check. (#525)
 - Record scheduler retirement guidance and OAR session resume ownership.
   These documents do not establish live provider or deployment acceptance.
   (#478, #479, #485)
@@ -90,6 +92,8 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
   Replace notify source files through exclusive temporary copies. Repair damaged
   debounce state and reject future timestamps. (#508)
 - Stabilize six load-sensitive checks without removing their coverage. (#516)
+- Keep Herdr test socket paths within native limits. Prevent the run-identity
+  fixture from leaving unrelated detached tooling work after teardown. (#524)
 
 - Keep and report a modified retired facade while selected runtime sync continues.
 

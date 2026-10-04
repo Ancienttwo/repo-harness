@@ -3,9 +3,9 @@
 - Date: 2026-10-05.
 - Status: PREP ONLY. No publication or production acceptance is claimed.
 - Branch: `codex/release-0.20.0`.
-- Source base: `e853649eee1d73582bac37f7eb39124c8035a9bc`.
+- Source base: `ffe70133fcb51fcce072f21bc0c45bda08cb0d4f`.
 - Previous public release: `v0.19.5` (`55bafc00`).
-- Release range: `v0.19.5..e853649e`, 80 reachable commits.
+- Release range: `v0.19.5..ffe70133`, 82 reachable commits.
 - Version: package, skill, template, and all five README files stay `0.20.0`.
 - Notes: [CHANGELOG](../../docs/CHANGELOG.md#0200---unreleased).
 - The earlier `281e6555` filing is a historical preparation record.
@@ -38,6 +38,17 @@ No new product code, dependency, test assertion, or abstraction is added here.
 
 ## Verification and hold
 
+#524 and #525 landed before this rebase. #524 fixes the two fixture failures
+listed below. #525 deduplicates historical upgrade fixtures and preserves their
+bytes, modes, paths, and provenance. The old full result remains historical.
+The following full run and tarball were produced before these test-only merges.
+Targeted post-rebase results are recorded in the appended release report.
+Post-rebase typecheck passed. Version tests: 14 pass. Release-route test: 1 pass.
+Herdr transport and run identity: 13 pass, 0 fail, including runner cleanup.
+Each test used a fresh `/tmp` HOME and the `test:files` entrypoint.
+Commands and outputs are in `/tmp/release-0200-rebase-evidence/`.
+No new full-suite or tarball claim is made for this revision.
+
 One approved full-suite run completed at `d9a368c36b1a70c4e80792f970f987ca37408642`.
 Command: `REPO_HARNESS_TEST_EXPENSIVE=1 bun run test:full --timeout 60000`.
 Outer HOME: `/tmp/rh-home.wWUxsS`. TMPDIR: `/tmp`.
@@ -67,7 +78,8 @@ No suggested setup action, credential, or permission change was applied.
 
 Full output and source-bound results are in `/tmp/release-0200-evidence/`.
 The report and PR record exact commands and the failed clean-main comparisons.
-Publication stays on hold. The full gate and installed host readiness are not green.
+Publication stays on hold. The new source has no full-suite result, and the
+isolated setup result remains blocked. The merged fixes do not waive the old failure.
 Tag, registry publication, and GitHub Release remain separate owner decisions.
 
 Skill eval evidence is unavailable. `full_test_count`, `dry_run_ratio`,
