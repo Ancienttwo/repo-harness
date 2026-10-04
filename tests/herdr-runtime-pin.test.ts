@@ -440,4 +440,28 @@ describe('shipped Herdr notify event handler', () => {
       } finally { console.error = originalError; fixture.cleanup(); }
     }
   });
+
+  test('future debounce timestamps cannot suppress any configured channel', async () => {
+    for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM']) {
+      for (const future of [Date.now() + 120_000, 9e15]) {
+        const fixture = eventFixture();
+        const originalError = console.error;
+        const logs: string[] = [];
+        console.error = (...args) => { logs.push(args.join(' ')); };
+        try {
+          const path = join(fixture.state, 'debounce-state.json');
+          const key = JSON.stringify(['notify-test', 'pane-1', 'blocked', channel]);
+          writeFileSync(path, JSON.stringify({ [key]: future }));
+          await notify(fixture.env, fixture.send);
+          expect(fixture.calls).toHaveLength(4);
+          expect(logs).toContain('[webhook-notify] Cannot read debounce state. Using empty state.');
+          const state = JSON.parse(readFileSync(path, 'utf8')) as Record<string, number>;
+          expect(Object.keys(state)).toHaveLength(4);
+          expect(state[key]).toBeLessThanOrEqual(Date.now());
+          await notify(fixture.env, fixture.send);
+          expect(fixture.calls).toHaveLength(4);
+        } finally { console.error = originalError; fixture.cleanup(); }
+      }
+    }
+  });
 });

@@ -66,7 +66,7 @@ export async function notify(env = process.env, send = fetch) {
   let state = {};
   try {
     const saved = objectJson(readFileSync(statePath, 'utf8'));
-    if (Object.values(saved).some((at) => typeof at !== 'number' || !Number.isFinite(at) || at < 0)) throw new Error('Invalid debounce state.');
+    if (Object.values(saved).some((at) => typeof at !== 'number' || !Number.isFinite(at) || at < 0 || at > now)) throw new Error('Invalid debounce state.');
     state = saved;
   } catch (error) {
     if (error.code !== 'ENOENT') log('Cannot read debounce state. Using empty state.');
