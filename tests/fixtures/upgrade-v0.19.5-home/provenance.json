@@ -4,69 +4,79 @@
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/claude-plan/SKILL.md",
-    "blob_sha": "8b23c939d6c552940102674b3a702ab8013dab40"
+    "blob_sha": "8b23c939d6c552940102674b3a702ab8013dab40",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/claude-plan/SKILL.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/claude-plan/SKILL.md",
-    "blob_sha": "8b23c939d6c552940102674b3a702ab8013dab40"
+    "blob_sha": "8b23c939d6c552940102674b3a702ab8013dab40",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-cross-review/SKILL.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/SKILL.md",
-    "blob_sha": "9236d2dee92d208d4cc83d554de7528473373b92"
+    "blob_sha": "9236d2dee92d208d4cc83d554de7528473373b92",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-cross-review/SKILL.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/SKILL.md",
-    "blob_sha": "9236d2dee92d208d4cc83d554de7528473373b92"
+    "blob_sha": "9236d2dee92d208d4cc83d554de7528473373b92",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-cross-review/references/claude-mode.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/references/claude-mode.md",
-    "blob_sha": "83346faccc8274b8f96bf76d83b42d182fc771d4"
+    "blob_sha": "83346faccc8274b8f96bf76d83b42d182fc771d4",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-cross-review/references/claude-mode.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/references/claude-mode.md",
-    "blob_sha": "83346faccc8274b8f96bf76d83b42d182fc771d4"
+    "blob_sha": "83346faccc8274b8f96bf76d83b42d182fc771d4",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-cross-review/references/codex-mode.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/references/codex-mode.md",
-    "blob_sha": "7c1a0c5b421232258010d6534e0268ef2ed5d26e"
+    "blob_sha": "7c1a0c5b421232258010d6534e0268ef2ed5d26e",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-cross-review/references/codex-mode.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/references/codex-mode.md",
-    "blob_sha": "7c1a0c5b421232258010d6534e0268ef2ed5d26e"
+    "blob_sha": "7c1a0c5b421232258010d6534e0268ef2ed5d26e",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-cross-review/references/codex-plugin-mode.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md",
-    "blob_sha": "17428d63b709356a7db460e3274707d7604cb464"
+    "blob_sha": "17428d63b709356a7db460e3274707d7604cb464",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-cross-review/references/codex-plugin-mode.md",
     "tag": "v0.19.5",
     "commit": "55bafc000ad0d4051bb443845ca9a51c4a2bf5dc",
     "path": "assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md",
-    "blob_sha": "17428d63b709356a7db460e3274707d7604cb464"
+    "blob_sha": "17428d63b709356a7db460e3274707d7604cb464",
+    "mode": 420
   }
 ]

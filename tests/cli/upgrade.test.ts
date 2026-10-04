@@ -9,20 +9,16 @@ import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { hashManagedTree, PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
+import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
 const CLI = join(ROOT, 'src/cli/index.ts');
-interface Provenance { fixture_path: string; tag: string; commit: string; path: string; blob_sha: string }
-function provenance(name: string): Provenance[] {
-  return JSON.parse(readFileSync(join(FIXTURES, name, 'provenance.json'), 'utf8'));
-}
-function seed(name: string, target: string): void {
+function seed(name: UpgradeFixture, target: string): void {
   for (const entry of provenance(name)) {
     if (entry.fixture_path.startsWith('release-source/')) continue;
     const dest = join(target, entry.fixture_path);
-    mkdirSync(dirname(dest), { recursive: true });
-    cpSync(join(FIXTURES, name, entry.fixture_path), dest);
+    copyUpgradeFixture(name, entry.fixture_path, dest);
   }
 }
 /** Include all file bytes and links. Never follow a link into another tree. */
@@ -56,22 +52,33 @@ const projectHook = '.ai/hooks/prompt-guard.sh';
 
 describe('upgrade with real release bytes', () => {
   test('every fixture file has release provenance and its recorded Git blob identity', () => {
-    for (const name of ['upgrade-v0.10-project', 'upgrade-v0.10-home', 'upgrade-v0.19.5-home']) {
+    const listedBlobs = new Set<string>();
+    for (const name of ['upgrade-v0.10-project', 'upgrade-v0.10-home', 'upgrade-v0.19.5-home'] as const) {
       const listed = new Set<string>();
       for (const entry of provenance(name)) {
         expect(entry.tag).toMatch(/^v0\./);
         expect(entry.commit).toMatch(/^[a-f0-9]{40}$/);
         expect(entry.path.length).toBeGreaterThan(0);
-        const file = join(FIXTURES, name, entry.fixture_path);
+        const file = join(UPGRADE_BLOBS, entry.blob_sha);
         const result = spawnSync('git', ['hash-object', '--no-filters', file], { encoding: 'utf8' });
         expect(result.status).toBe(0);
         expect(result.stdout.trim()).toBe(entry.blob_sha);
         listed.add(entry.fixture_path);
+        listedBlobs.add(entry.blob_sha);
       }
-      for (const [path, bytes] of Object.entries(tree(join(FIXTURES, name)))) {
-        if (bytes !== 'directory' && path !== 'provenance.json') expect(listed.has(path)).toBe(true);
-      }
+      expect(readdirSync(join(FIXTURES, name))).toEqual(['provenance.json']);
+      sandbox(({ home }) => {
+        copyUpgradeFixture(name, '', home);
+        for (const [path, bytes] of Object.entries(tree(home))) {
+          if (bytes !== 'directory') expect(listed.has(path)).toBe(true);
+        }
+        for (const entry of provenance(name)) {
+          expect(readFileSync(join(home, entry.fixture_path))).toEqual(readUpgradeFixture(name, entry.fixture_path));
+          expect(lstatSync(join(home, entry.fixture_path)).mode & 0o777).toBe(entry.mode);
+        }
+      }, false);
     }
+    expect(readdirSync(UPGRADE_BLOBS).sort()).toEqual([...listedBlobs].sort());
   });
 
   test('CLI check returns structured ownership and writes no bytes or directories', () => sandbox((opts) => {
@@ -99,7 +106,7 @@ describe('upgrade with real release bytes', () => {
 
   test('check classifies a fixed release subset with a golden ownership report', () => sandbox((opts) => {
     for (const path of [projectHook, 'scripts/capture-plan.sh']) {
-      put(join(opts.cwd, path), readFileSync(join(FIXTURES, 'upgrade-v0.10-project', path), 'utf8'));
+      put(join(opts.cwd, path), readUpgradeFixture('upgrade-v0.10-project', path).toString('utf8'));
     }
     seed('upgrade-v0.19.5-home', opts.home);
     const items = planLegacyLeftovers({ ...opts, scope: 'all' }).items;
@@ -217,7 +224,7 @@ describe('upgrade with real release bytes', () => {
 
   test('symlinked parents never grant ownership for matching release bytes', () => sandbox((opts) => {
     const external = join(opts.home, 'user-hooks'); mkdirSync(external);
-    put(join(external, 'prompt-guard.sh'), readFileSync(join(FIXTURES, 'upgrade-v0.10-project', projectHook), 'utf8'));
+    put(join(external, 'prompt-guard.sh'), readUpgradeFixture('upgrade-v0.10-project', projectHook).toString('utf8'));
     mkdirSync(join(opts.cwd, '.ai')); symlinkSync(external, join(opts.cwd, '.ai/hooks'));
     const before = tree(external);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).removedPaths).toEqual([]);
@@ -258,11 +265,15 @@ describe('upgrade with real release bytes', () => {
 
   test('real v0.10 installer markers prove ownership for still-shipped copied skills', () => sandbox((opts) => {
     const source = join(opts.home, 'release-source'); mkdirSync(join(source, 'assets/skill-commands'), { recursive: true });
-    cpSync(join(FIXTURES, 'upgrade-v0.10-home/release-source/SKILL.md'), join(source, 'SKILL.md'));
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source/SKILL.md', join(source, 'SKILL.md'));
     for (const name of ['repo-harness-plan', 'repo-harness-handoff', 'repo-harness-gptpro', 'repo-harness-check']) {
-      cpSync(join(FIXTURES, 'upgrade-v0.10-home/.codex/skills', name), join(source, 'assets/skill-commands', name), { recursive: true });
+      copyUpgradeFixture('upgrade-v0.10-home', `.codex/skills/${name}`, join(source, 'assets/skill-commands', name));
     }
-    const installer = spawnSync('bash', [join(FIXTURES, 'upgrade-v0.10-home/release-source/scripts/sync-codex-installed-copies.sh')], {
+    // The old installer must stay outside the source tree it copies and hashes.
+    const installerRoot = join(opts.home, 'release-installer');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source', installerRoot);
+    const installerPath = join(installerRoot, 'scripts/sync-codex-installed-copies.sh');
+    const installer = spawnSync('bash', [installerPath], {
       env: { ...process.env, HOME: opts.home, AGENTIC_DEV_SOURCE_ROOT: source, CODEX_SKILLS_ROOT: join(opts.home, '.codex/skills'), CLAUDE_SKILLS_ROOT: '', REPO_HARNESS_INSTALL_PROFILE: 'strict', AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
     });
     expect(installer.status).toBe(0);
@@ -280,7 +291,7 @@ describe('upgrade with real release bytes', () => {
 
   test('project helper and contract template refresh only with exact historical proof', () => sandbox((opts) => {
     const helper = '.ai/hooks/lib/workflow-state.sh'; const template = '.claude/templates/contract.template.md';
-    for (const path of [helper, template]) put(join(opts.cwd, path), readFileSync(join(FIXTURES, 'upgrade-v0.10-project', path), 'utf8'));
+    for (const path of [helper, template]) put(join(opts.cwd, path), readUpgradeFixture('upgrade-v0.10-project', path).toString('utf8'));
     const check = runUpgrade({ ...opts, scope: 'project' });
     for (const path of [helper, template]) expect(check.items.find((item) => item.path === join(opts.cwd, path))).toEqual(expect.objectContaining({ proof: 'historical-fingerprint', action: 'refresh' }));
     const result = runUpgrade({ ...opts, scope: 'project', apply: true });
@@ -321,8 +332,10 @@ describe('upgrade with real release bytes', () => {
     const unowned = join(opts.home, '.repo-harness/gates/user/merge-gate.latest.json');
     put(gate, '{"status":"complete"}\n'); put(unowned, '{"status":"user"}\n');
     mkdirSync(dirname(archive), { recursive: true });
-    expect(spawnSync('tar', ['-czf', archive, '-C', join(FIXTURES, 'upgrade-v0.19.5-home/.codex/skills'), 'repo-harness-cross-review']).status).toBe(0);
-    cpSync(join(FIXTURES, 'upgrade-v0.19.5-home/.codex/skills/repo-harness-cross-review'), backup, { recursive: true });
+    const archiveSource = join(opts.cwd, 'archive-source');
+    copyUpgradeFixture('upgrade-v0.19.5-home', '.codex/skills/repo-harness-cross-review', join(archiveSource, 'repo-harness-cross-review'));
+    expect(spawnSync('tar', ['-czf', archive, '-C', archiveSource, 'repo-harness-cross-review']).status).toBe(0);
+    cpSync(join(archiveSource, 'repo-harness-cross-review'), backup, { recursive: true });
     const surfaces = [gate, archive, backup].map((path) => ({ components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: lstatSync(path).isDirectory() ? 'directory-copy' : 'managed-file', content_hash: lstatSync(path).isDirectory() ? hashManagedTree(path) : `sha256:${new Bun.CryptoHasher('sha256').update(readFileSync(path)).digest('hex')}`, managed_marker: 'transaction-created-file', symlink_target: null }));
     put(join(opts.home, '.repo-harness/install-state.json'), JSON.stringify({ ownership_manifest: surfaces }));
     const before = tree(opts.home);

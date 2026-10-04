@@ -27,6 +27,7 @@ import {
 } from '../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog, probeExpectations } from '../src/core/skill-surface/catalog';
+import { copyUpgradeFixture } from './helpers/upgrade-fixtures';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -117,7 +118,7 @@ describe('install profiles', () => {
   test('one managed tree hash matches the actual copy projection with embedded Git metadata', () => withHome((env) => {
     const source = join(env.HOME!, 'release-skill');
     const copied = join(env.HOME!, 'copied-skill');
-    cpSync(join(ROOT, 'tests/fixtures/upgrade-v0.19.5-home/.codex/skills/repo-harness-cross-review'), source, { recursive: true });
+    copyUpgradeFixture('upgrade-v0.19.5-home', '.codex/skills/repo-harness-cross-review', source);
     expect(spawnSync('git', ['init', '-q', source], { env }).status).toBe(0);
     const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh'),
       '--stage-owned-copy', source, copied, 'canonical-skill'], {
@@ -135,7 +136,7 @@ describe('install profiles', () => {
 
   test('refresh retains a markerless owned directory receipt with no selected components', () => withHome((env) => {
     const path = join(env.HOME!, '.codex/skills/repo-harness-cross-review');
-    cpSync(join(ROOT, 'tests/fixtures/upgrade-v0.19.5-home/.codex/skills/repo-harness-cross-review'), path, { recursive: true });
+    copyUpgradeFixture('upgrade-v0.19.5-home', '.codex/skills/repo-harness-cross-review', path);
     const previousHash = hashManagedTree(path);
     writePath(join(env.HOME!, '.repo-harness/install-state.json'), JSON.stringify({
       protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
