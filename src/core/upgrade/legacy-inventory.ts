@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree } from '../../cli/installer/install-profile';
-import { stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
+import { isRepoHarnessLegacyTypedHookCommand, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
 import { loadWorkflowContractAsset } from '../adoption/workflow-contract-asset';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../skill-surface/catalog';
@@ -30,6 +30,7 @@ export interface LegacyInventoryOptions {
   readonly scope: 'project' | 'global' | 'all';
   readonly cwd: string;
   readonly home: string;
+  readonly repoHarnessHome?: string;
   readonly packageRoot: string;
   readonly includeStateArtifacts?: boolean;
 }
@@ -178,20 +179,36 @@ function actionsOf(): readonly RetirementAction[] {
   });
 }
 
-function historicalCommands(actions: readonly RetirementAction[]): Set<string> {
-  return new Set(actions.flatMap((action) => action.surface === 'hook-entry' ? [...(action.commands ?? [])] : []));
+function historicalCommands(actions: readonly RetirementAction[], shimPaths: readonly string[]): Set<string> {
+  const commands = new Set(actions.flatMap((action) => action.surface === 'hook-entry' ? [...(action.commands ?? [])] : []));
+  const prefix = '.repo-harness/hooks/';
+  for (const shim of shimPaths) {
+    commands.add(shim);
+    for (const action of actions) {
+      if (action.location !== 'global') continue;
+      for (const path of action.paths ?? []) {
+        if (!path.startsWith(prefix)) continue;
+        const name = path.slice(prefix.length);
+        if (name.endsWith('.sh') && !name.includes('/')) commands.add(`bash ${shim} ${name}`);
+      }
+    }
+  }
+  return commands;
 }
 
 export function stripLegacyHookEntries(
   value: unknown,
-  options: { readonly location?: 'project' } | { readonly location: 'global'; readonly home: string } = {},
+  options: { readonly location?: 'project' } | { readonly location: 'global'; readonly home: string; readonly repoHarnessHome?: string } = {},
 ): { config: Record<string, unknown>; removed: readonly { event: string; command: string }[] } {
   if (!record(value)) throw new Error('hook settings must be a JSON object');
   if (value.hooks === undefined) return { config: { ...value }, removed: [] };
   if (!record(value.hooks)) throw new Error('managed hook config must be an object keyed by event');
-  const commands = historicalCommands(actionsOf());
   const location = options.location ?? 'project';
-  const shimCommand = options.location === 'global' ? join(resolve(options.home), '.repo-harness/hook-shim.sh') : undefined;
+  const shimPaths = options.location === 'global' ? [
+    join(resolve(options.home), '.repo-harness/hook-shim.sh'),
+    ...(options.repoHarnessHome ? [join(resolve(options.repoHarnessHome), 'hook-shim.sh')] : []),
+  ] : [];
+  const commands = historicalCommands(actionsOf(), shimPaths);
   // Keep the existing merger as the owner of managed-entry removal.
   const managed = location === 'project' ? stripRepoHarnessManagedHooks(value.hooks) : { hooks: value.hooks, removed: [] };
   const hooks: Record<string, unknown> = {};
@@ -203,8 +220,9 @@ export function stripLegacyHookEntries(
       if (!record(block) || !Array.isArray(block.hooks)) { kept.push(block); continue; }
       const entries = block.hooks.filter((entry: unknown) => {
         const command = record(entry) ? entry.command : undefined;
-        // Global settings need a full historical command or the exact host shim path.
-        if (typeof command !== 'string' || (!commands.has(command) && command !== shimCommand)) return true;
+        // Global ownership needs a full historical command, never a path substring.
+        if (typeof command !== 'string' || (!commands.has(command)
+          && !(location === 'global' && isRepoHarnessLegacyTypedHookCommand(command)))) return true;
         removed.push({ event, command });
         return false;
       });
@@ -350,7 +368,7 @@ function scanGlobalDocuments(options: LegacyInventoryOptions, actions: readonly 
   const liveNames = new Set(packages.map((pkg) => pkg.name));
   const tokens = [
     ...retired.filter((action) => action.location !== 'global').flatMap((action) => [...(action.paths ?? [])]),
-    ...historicalCommands(actions), 'codex@openai-codex',
+    ...historicalCommands(actions, []), 'codex@openai-codex',
     ...retired.filter((action) => action.surface === 'skill').flatMap((action) => [...(action.paths ?? [])]).map((path) => path.split('/').at(-1)!).filter((name) => !liveNames.has(name)),
   ].filter((token) => token.length > 0 && !token.includes('*'));
   for (const name of ['.claude/CLAUDE.md', '.codex/AGENTS.md']) {
@@ -491,7 +509,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
         add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'unowned', proof: null, action: 'report', reason: 'Invalid hook settings; preserve current bytes.' });
         continue;
       }
-      const stripped = stripLegacyHookEntries(value, location === 'global' ? { location, home: options.home } : { location });
+      const stripped = stripLegacyHookEntries(value, location === 'global' ? { location, home: options.home, repoHarnessHome: options.repoHarnessHome } : { location });
       for (const entry of stripped.removed) add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'owned-clean', proof: 'managed-hook', action: 'strip-entry', expectedContentHash: hash(readFileSync(path)), hookEvent: entry.event, hookCommand: entry.command });
     }
   }

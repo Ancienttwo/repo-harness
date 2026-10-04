@@ -2245,7 +2245,6 @@
           "historicalFingerprints": {},
           "summary": "Strip exact commands from retired host hook templates.",
           "commands": [
-            "repo-harness hook SessionStart --route context",
             "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" codex-delegation-advisor.sh",
             "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" minimal-change-context.sh",
             "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" minimal-change-observer.sh",

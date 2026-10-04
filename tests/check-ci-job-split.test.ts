@@ -39,13 +39,13 @@ describe('single affected verification and daily fallback', () => {
     expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]))).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });
 
-  test('CHANGELOG.md uses the top-level docs policy and keeps real consumer coverage', () => {
-    expect(selectAffectedTests(['README.md', 'CHANGELOG.md', 'docs/release-notes.md'], new Map())).toEqual([]);
+  test('canonical changelog uses the docs policy and keeps real consumer coverage', () => {
+    expect(selectAffectedTests(['docs/CHANGELOG.md'], new Map())).toEqual([]);
     const sources = new Map([
-      ['tests/release-notes.test.ts', "readFileSync('CHANGELOG.md');"],
+      ['tests/release-notes.test.ts', "readFileSync('docs/CHANGELOG.md');"],
     ]);
-    expect(selectAffectedTests(['CHANGELOG.md'], sources)).toEqual(['tests/release-notes.test.ts']);
-    for (const path of ['RELEASE.md', 'release/CHANGELOG.md', 'unknown/product.conf']) {
+    expect(selectAffectedTests(['docs/CHANGELOG.md'], sources)).toEqual(['tests/release-notes.test.ts']);
+    for (const path of ['CHANGELOG.md', 'RELEASE.md', 'release/CHANGELOG.md', 'unknown/product.conf']) {
       expect(() => selectAffectedTests([path], new Map())).toThrow('coverage is unknown');
     }
   });

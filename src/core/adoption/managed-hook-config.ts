@@ -9,9 +9,14 @@ export interface StrippedManagedHookConfig {
 }
 
 const MANAGED_TAG = 'repo-harness-managed-hook-v1';
-const LEGACY_DIRECT_MANAGED = /^HOOK_HOST=(?:codex|claude) repo-harness hook (?:SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop) --route (?:default|edit|subagent|bash|always|delegation|context|quality)$/;
+const LEGACY_TYPED_MANAGED = /^(?:HOOK_HOST=(?:codex|claude) )?repo-harness hook (?:SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop) --route (?:default|edit|subagent|bash|always|delegation|context|quality)$/;
 const LEGACY_BARE_MANAGED = /^repo-harness hook(?:\s|$)/;
 const LEGACY_MANAGED_PREFIX = 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo";';
+
+// Both project adoption and global cleanup share the full legacy typed form.
+export function isRepoHarnessLegacyTypedHookCommand(command: unknown): boolean {
+  return typeof command === 'string' && command.match(LEGACY_TYPED_MANAGED)?.[0] === command;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -27,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function isRepoHarnessManagedHookCommand(command: unknown): command is string {
   if (typeof command !== 'string') return false;
   if (command.startsWith(`: ${MANAGED_TAG}; `)) return true;
-  if (LEGACY_DIRECT_MANAGED.test(command)) return true;
+  if (isRepoHarnessLegacyTypedHookCommand(command)) return true;
   if (LEGACY_BARE_MANAGED.test(command.trimStart())) return true;
   if (
     command.startsWith(LEGACY_MANAGED_PREFIX)
