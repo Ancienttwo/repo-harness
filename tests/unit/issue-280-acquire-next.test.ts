@@ -11,7 +11,7 @@ import { observeRetryEligibility } from '../../src/core/engineers/automation-att
 import { withExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, inspectAcquisitionReceiptCutover, migrateAcquisitionReceipts, requireAcquisitionLedgerV2, EngineerAcquisitionLedgerError, EngineerObservationError, type AcquireSelectedEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, requireAcquisitionLedgerV2, EngineerAcquisitionLedgerError, EngineerObservationError, type AcquireSelectedEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
 
 const D = (c: string) => `sha256:${c.repeat(64)}`;
 const principal = Object.freeze({
@@ -468,47 +468,6 @@ describe('S2 selected acquisition transaction', () => {
     expect(readFileSync(log,'utf8').trim().split('\n')).toHaveLength(1);
   });
 });
-
-describe('S2 one-shot legacy receipt cutover', () => {
-  function legacy(state: 'pending' | 'completed') {
-    const repo = root(), key = 'legacy-key';
-    const path = join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquire-next', `${engineerSha256(key).slice(7)}.json`);
-    mkdirSync(join(path,'..'), { recursive: true });
-    const basis = { protocol:1, kind:'repo-harness-engineer-acquire-next-receipt', request_sha256:D('a'), state,
-      result:state==='pending'?null:success(offer('first',10)) };
-    const receipt_sha256=engineerSha256(JSON.stringify(basis));
-    const bytes=JSON.stringify({...basis,receipt_sha256})+'\n';writeFileSync(path,bytes);
-    return {repo,key,path,bytes};
-  }
-  test('completed v1 key becomes a v2 terminal fence with exact source evidence, never replayed', () => {
-    const f=legacy('completed');let effects=0;
-    const input={repo_root:f.repo,principal,idempotency_key:f.key,dependencies:{resolvePrincipal:()=>principal,
-      collectOffers:()=>document([offer('first',10)]),acquire:()=>{effects++;return success(offer('first',10));}}};
-    expect(()=>acquireNextScheduledEngineerTask(input)).toThrow('cutover is required');
-    try { acquireNextScheduledEngineerTask(input); throw Error('expected cutover refusal'); } catch (error) {
-      expect(error).toBeInstanceOf(EngineerAcquisitionLedgerError);
-      expect((error as EngineerAcquisitionLedgerError).code).toBe('engineer_acquisition_ledger_cutover_required');
-    }
-    expect(effects).toBe(0); expect(readFileSync(f.path,'utf8')).toBe(f.bytes);
-    const inventory=inspectAcquisitionReceiptCutover(f.repo);
-    const args={repo_root:f.repo,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'operator:old-producers-stopped'};
-    const seal=migrateAcquisitionReceipts(args);expect(migrateAcquisitionReceipts(args)).toEqual(seal);
-    const fence=JSON.parse(readFileSync(f.path,'utf8'));expect(fence).toMatchObject({protocol:2,state:'fenced',legacy_bytes:f.bytes});
-    expect(acquireNextScheduledEngineerTask(input)).toMatchObject({error:'engineer_acquire_next_conflict'});
-    unlinkSync(f.path);
-    expect(acquireNextScheduledEngineerTask(input)).toMatchObject({error:'engineer_acquire_next_reconciliation_required'});
-    expect(effects).toBe(0);
-  });
-  test.each(['pending','corrupt'] as const)('%s legacy metadata stops activation and preserves unknown evidence', state => {
-    const f=legacy('pending');if(state==='corrupt')writeFileSync(f.path,'broken JSON');
-    const before=readFileSync(f.path,'utf8');
-    expect(()=>migrateAcquisitionReceipts({repo_root:f.repo,expected_inventory_sha256:state==='corrupt'?D('a'):inspectAcquisitionReceiptCutover(f.repo).inventory_sha256,quiescence_evidence:'operator:stopped'})).toThrow();
-    expect(readFileSync(f.path,'utf8')).toBe(before);
-    expect(()=>acquireNextScheduledEngineerTask({repo_root:f.repo,principal,idempotency_key:'new-key',dependencies:{resolvePrincipal:()=>principal}})).toThrow();
-    expect(existsSync(join(f.path,'..','cutover-v2.json'))).toBeFalse();
-  });
-});
-
 
 describe('S2 gatekeeper auto acquisition regressions', () => {
   const ledger = (repo: string) => join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquire-next');

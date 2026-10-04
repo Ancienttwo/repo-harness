@@ -103,14 +103,14 @@ repos.
   the host observed, and reads and digests the task contract from the repository
   itself. A caller names what it wants to do and what happened; it never states
   what that costs or when it happened. The limits are the host-owned
-  `ProgramAuthorizationV1` / `ProgramBudgetLimitV1` grant composed with the task
+  `ProgramAuthorizationV2` (protocol 2) / `ProgramBudgetLimitV1` grant composed with the task
   contract's own runner budget, strictest value per metric, recomputed from both
   authorities on every read rather than trusted from the record. A run with no
   task contract requires an explicit `contract_less` grant. Wall clock is a
   frozen absolute deadline measured on the store clock, which may not run
   backwards over the run's own durable records. A token or cost limit is
   refused at preflight until provider-attested usage is wired, because a
-  self-asserted usage number is worse than no limit. `ProgramAuthorizationV1`
+  self-asserted usage number is worse than no limit. `ProgramAuthorizationV2`
   grants are operator-minted into the account-level harness home and a budget is
   accepted only when its embedded grant resolves to byte-identical stored bytes.
 - The automation budget defends against honest-but-buggy controllers and

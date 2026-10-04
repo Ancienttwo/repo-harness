@@ -4,7 +4,7 @@ Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-har
 
 The acquisition-cutover CLI commands are retired. Ordinary acquisition uses the protocol 2 inner receipt ledger. Known pending and completed keys resolve before observation freshness checks.
 
-The retained inner migration functions are operator primitives. They do not dispatch tasks. Unknown or corrupt outcomes require their evidence owner. An old observation is not deletion authority.
+The inner migration functions are retired. Ordinary acquisition retains its ledger guard. Unknown or corrupt outcomes require their evidence owner. An old observation is not deletion authority.
 
 ## Error ownership
 

@@ -209,54 +209,13 @@ function cutoverLock<T>(root: string, run: () => T): T {
   const common = resolveGitCommonDirectory(root);
   return withExclusiveDirectoryLock(common, 'repo-harness/engineer-scheduling/v1/acquisition-cutover.lock', run, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
-/** Read-only operator inventory. This is never called by a normal v2 receipt reader. */
-export function inspectAcquisitionReceiptCutover(repoRoot: string) {
-  const directory = join(resolveGitCommonDirectory(repoRoot), ACQUISITION_STORE);
-  if (existsSync(directory)) guardedSchedulingDirectory(resolveGitCommonDirectory(repoRoot), ACQUISITION_STORE, false, 'ledger');
-  const entries = !existsSync(directory) ? [] : readdirSync(directory).sort().filter(name => name !== 'cutover-v2.json').map(name => {
-    if (!/^[a-f0-9]{64}\.json$/.test(name)) throw new Error('acquisition cutover requires quiesced producers and reconciliation of unsettled files/locks');
-    const raw = readEvidenceFile(join(directory, name), 'ledger');
-    const value = ledgerJson(raw);
-    // Interrupted one-shot conversion retains the exact source bytes in the closed v2 fence.
-    const bytes = value.protocol === 2 ? readReceipt(join(directory, name)).legacy_bytes : raw;
-    if (typeof bytes !== 'string') throw new Error('cutover inventory contains a non-legacy transaction');
-    return { key: name.slice(0,-5), bytes };
-  });
-  return Object.freeze({ inventory_sha256: digest(entries), entries: Object.freeze(entries) });
-}
-/** Offline one-shot cutover, after operator quiescence/recovery. Pending/unknown never become fabricated completed results. */
-export function migrateAcquisitionReceipts(options: { repo_root: string; expected_inventory_sha256: string; quiescence_evidence: string }) {
-  if (!options.quiescence_evidence.trim()) throw new Error('explicit old-producer quiescence evidence is required');
-  return cutoverLock(options.repo_root, () => {
-    if (storedEntryExists(sealPath(options.repo_root))) {
-      const seal = readSeal(options.repo_root);
-      if (seal.inventory_sha256 !== options.expected_inventory_sha256) throw new Error('cutover already sealed with another inventory');
-      return seal;
-    }
-    guardedSchedulingDirectory(resolveGitCommonDirectory(options.repo_root), ACQUISITION_STORE, true, 'ledger');
-    const inventory = inspectAcquisitionReceiptCutover(options.repo_root);
-    if (inventory.inventory_sha256 !== options.expected_inventory_sha256) throw new Error('cutover inventory changed');
-    // This parser exists only on the explicit one-shot operation, never on normal acquisition/replay.
-    for (const { bytes } of inventory.entries) {
-      const value = ledgerJson(bytes);
-      assertMessageExactKeys(value, ['protocol','kind','request_sha256','state','result','receipt_sha256'], 'legacy acquisition receipt', message => { throw new Error(message); });
-      const basis = { protocol: value.protocol, kind: value.kind, request_sha256: value.request_sha256, state: value.state, result: value.result };
-      const oldDigest = `sha256:${createHash('sha256').update(JSON.stringify(basis)).digest('hex')}`;
-      if (value.protocol !== 1 || value.kind !== 'repo-harness-engineer-acquire-next-receipt' || value.receipt_sha256 !== oldDigest || value.state !== 'completed' || value.result === null || typeof value.result.ok !== 'boolean' || !/^sha256:[a-f0-9]{64}$/.test(value.request_sha256)) throw new Error('legacy pending, corrupt or unknown effect must be explicitly reconciled before cutover');
-    }
-    for (const { key, bytes } of inventory.entries) writeReceipt(join(resolveGitCommonDirectory(options.repo_root), ACQUISITION_STORE, `${key}.json`), buildReceipt(null,'fenced',null,bytes));
-    const basis = { protocol: 2 as const, kind: CUTOVER_KIND, inventory_sha256: inventory.inventory_sha256,
-      migrated_keys: inventory.entries.map(entry => entry.key), quiescence_evidence: options.quiescence_evidence };
-    const seal = { ...basis, seal_sha256: digest(basis) }; writeReceipt(sealPath(options.repo_root), seal); return seal;
-  });
-}
 /** Empty new stores may initialize v2. Any pre-existing key requires explicit offline cutover. */
 export function requireAcquisitionLedgerV2(repoRoot: string): void {
   if (storedEntryExists(sealPath(repoRoot))) { readSeal(repoRoot); return; }
   cutoverLock(repoRoot, () => {
     if (storedEntryExists(sealPath(repoRoot))) { readSeal(repoRoot); return; }
     const common = resolveGitCommonDirectory(repoRoot), directory = join(common, ACQUISITION_STORE);
-    // Normal activation never parses legacy bytes. Non-empty/unsettled stores require the one-shot operator path.
+    // Normal activation never parses legacy bytes. Non-empty/unsettled stores require explicit recovery.
     if (existsSync(directory)) {
       guardedSchedulingDirectory(common, ACQUISITION_STORE, false, 'ledger');
       if (readdirSync(directory).length) invalidLedger('explicit one-shot acquisition receipt cutover is required before any new effect', 'engineer_acquisition_ledger_cutover_required');
