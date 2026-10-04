@@ -12,7 +12,7 @@ export function validSha(value: unknown): value is string {
 export function isDocumentationPath(path: string): boolean {
   if (path.split('/').some(part => !part || part === '.' || part === '..')) return false;
   if (path.startsWith('docs/reference-configs/')) return false;
-  return path === 'README.md' || path === 'DEBUG.md' || path === 'docs/architecture/.projection-manifest.json'
+  return path === 'README.md' || path === 'DEBUG.md' || path === 'CHANGELOG.md' || path === 'docs/architecture/.projection-manifest.json'
     || (path.startsWith('examples/') && path.endsWith('.md'))
     || path.startsWith('tasks/') || path.startsWith('plans/') || path.startsWith('.ai/harness/handoff/')
     || (path.startsWith('docs/') && path.endsWith('.md'));
