@@ -237,6 +237,9 @@ describe('prompt-guard decision engine', () => {
 
 // These state-dependent runtime cases survive the retired NL/TS evaluation.
 test.each([
+  { id: 'none-completion-token-substring', prompt: 'refresh the completionToken cache', overrides: {}, intent: 'none', action: 'allow' },
+  { id: 'review-acceptance-checklist', prompt: '验收开始：基于 active plan 执行 checklist，告诉对方模型验收什么。', overrides: {}, intent: 'review_release', action: 'allow' },
+  { id: 'planning-discussion-pending-fresh', prompt: '继续讨论这个 plan 的边界，我觉得执行门禁太机械了', overrides: { pending: 'fresh' }, intent: 'planning_discussion', action: 'allow' },
   { id: 'stale-active-marker', prompt: '开始执行', overrides: { plan: 'stale_marker' }, intent: 'general_execution', action: 'stale_active_plan_advice' },
   { id: 'general-execution-spec-missing', prompt: '开始执行', overrides: { spec: 'missing' }, intent: 'general_execution', action: 'spec_block' },
   { id: 'linked-worktree-execution', prompt: '开始执行', overrides: { worktree: 'linked_target' }, intent: 'general_execution', action: 'worktree_execution_advice' },

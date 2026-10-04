@@ -51,7 +51,7 @@ describe('documentation consumer discovery', () => {
   }, 60_000);
 });
 
-// Affected checks need full history for merge-base and subject verification.
+// Keep this full-history guard as required by the retirement brief.
 test('CI test checkout keeps the full Git history', () => {
   const workflow = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
   const testJob = workflow.slice(workflow.indexOf('  test:'), workflow.indexOf('  mcp-path-matrix:'));

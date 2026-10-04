@@ -279,7 +279,7 @@ flowchart TD
   NextTask --> UserTask
 
   UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
   LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -443,7 +443,6 @@ coordinación acotados. La adopción de handoff es deliberadamente no exclusiva:
 no otorga ninguna Task, Claim ni Lease.
 
 El sistema mantiene un Module Engineer y un writer. Los Workers read-only intercambian señales no fiables y handoffs explícitos. El canary C9 está retirado. Su resultado histórico no admitió varios reader seats. Las pruebas del runtime de colaboración siguen activas. Los `EngineerSeatV2` persistentes, el Review marketplace independiente y el Merge sin supervisión siguen inactivos.
-
 [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### Intake de fuentes externas

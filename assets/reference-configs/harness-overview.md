@@ -105,12 +105,12 @@ Required v1 fields:
 
 Harness cost reports separate measured values from unavailable telemetry. A
 metric is authoritative only when its named source exposes that value directly;
-missing or incomplete event metrics keep `runtime_evidence.available: false`.
+missing or incomplete event metrics remain unavailable.
 Reports must not derive model calls from turns, subagents from tool-name text,
 billing tokens from byte counts, or hidden legacy-script I/O from local
 heuristics.
 
-The two current evidence owners are:
+The current evidence sources and their reader are:
 
 - `.ai/harness/runs/hook-events.jsonl` is the sole hook runtime telemetry
   authority. `src/cli/hook/runtime.ts` appends exactly one
@@ -132,7 +132,11 @@ The two current evidence owners are:
   absent or malformed usage makes only the usage fields unavailable; it does
   not rewrite agent exit or grader status.
 
-Current SLOs:
+Historical HRD-08 report targets:
+
+The retired diet reporter measured these targets. No current report owns their
+SLO measurements. Existing runtime tests still check their named invariants.
+These targets are not a standing gate.
 
 - Runtime entry: exactly one per eligible host event.
 - Direct runtime-dispatch child processes: at most one per event. This does not

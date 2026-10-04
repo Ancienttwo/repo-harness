@@ -275,7 +275,7 @@ flowchart TD
   NextTask --> UserTask
 
   UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
   LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -434,9 +434,8 @@ repo-harness collaboration packet build|read
 coordination record を publish します。handoff の adoption は意図的に
 non-exclusive であり、Task も Claim も Lease も付与しません。
 
-Module Engineer と writer はそれぞれ一つです。有界の read-only Worker が信頼されていない signal と明示的な handoff を交換します。C9 canary は廃止しました。過去の結果は複数の reader seat を支持しません。共有 collaboration runtime のテストは保持します。 同じ capability の常駐 `EngineerSeatV2`、独立した Review marketplace、無人 Merge は無効のままです。
-
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
+Module Engineer と writer はそれぞれ一つです。有界の read-only Worker が信頼されていない signal と明示的な handoff を交換します。C9 canary は廃止しました。過去の結果は複数の reader seat を支持しません。共有 collaboration runtime のテストは保持します。同じ capability の常駐 `EngineerSeatV2`、独立した Review marketplace、無人 Merge は無効のままです。
+[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md)。
 
 ### External source intake
 

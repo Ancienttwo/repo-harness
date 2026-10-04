@@ -260,7 +260,7 @@ flowchart TD
   NextTask --> UserTask
 
   UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
   LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -418,8 +418,7 @@ records. Handoff adoption is deliberately non-exclusive: it grants no Task,
 Claim, or Lease.
 
 The substrate keeps one Module Engineer and one writer. Bounded read-only Workers exchange untrusted signals and explicit handoffs. The source-checkout C9 canary is retired. Its historical result did not support multiple reader seats. Shared collaboration runtime tests remain active. Persistent same-capability `EngineerSeatV2`, an independent Review marketplace, and unattended Merge remain inactive.
-
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
+See [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### External source intake
 

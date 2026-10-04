@@ -244,7 +244,7 @@ flowchart TD
   NextTask --> UserTask
 
   UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
   LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -394,9 +394,8 @@ repo-harness collaboration packet build|read
 多个 Module Engineer 读同一份 Work Exchange，并发布有界的 coordination 记录。
 Handoff adoption 刻意做成非独占：它不授予 Task、Claim 或 Lease。
 
-底层保持一个 Module Engineer 和一个 writer。有界的 read-only Worker 交换不受信任的 signal 和显式 handoff。C9 source-checkout canary 已退休。历史结果不支持多个 reader seat。共享 collaboration runtime 测试保留。 常驻的同 capability `EngineerSeatV2`、独立的 Review marketplace 和无人值守 Merge 仍处于关闭状态。
-
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
+底层保持一个 Module Engineer 和一个 writer。有界的 read-only Worker 交换不受信任的 signal 和显式 handoff。C9 source-checkout canary 已退休。历史结果不支持多个 reader seat。共享 collaboration runtime 测试保留。常驻的同 capability `EngineerSeatV2`、独立的 Review marketplace 和无人值守 Merge 仍处于关闭状态。
+[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md)。
 
 ### 外部来源接入
 
