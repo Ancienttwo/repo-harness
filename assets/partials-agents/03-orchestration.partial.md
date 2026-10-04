@@ -15,7 +15,6 @@
 - For non-trivial work, complete P1 map, P2 trace, and P3 decision before edits.
 - If stable product truth is missing and the task needs it, use `repo-harness run new-spec`.
 - Keep requested plans optional. Use `repo-harness run new-plan` or capture a completed note with `repo-harness run capture-plan --slug <slug> --title <title> --body-file <file>`. Capture does not approve or start execution.
-- Use `repo-harness run plan-to-todo --plan <plan-file>` only when the task explicitly requires a contract.
 - Use `repo-harness run new-sprint` only for a requested Sprint backlog.
 
 ### 4. Research Delegation Strategy

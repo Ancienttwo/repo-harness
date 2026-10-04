@@ -26,7 +26,7 @@ RULES:
   - Keep stable product intent in docs/spec.md
   - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
   - Treat .ai/harness/active-plan as authoritative only for this worktree; .ai/harness/active-worktree records the owner
-  - Keep separate optional plans in their owning worktrees
+  - Keep optional plans in their owning worktrees. For an explicit contract, check workflow inventory before implementation: owning worktree, contract, exit criteria and verification inputs
   - Process annotation notes before implementing
   - Use plan-to-todo only when the task explicitly requires a contract
   - Define task contracts in tasks/contracts/{plan-stem}.contract.md only when the task explicitly requires a contract
@@ -44,7 +44,6 @@ RULES:
   - Treat `.ai/hooks/` as the shared automation entrypoint when repo scripts reference hook-backed workflow checks
   - Treat user-level `~/.claude/settings.json` and `~/.codex/hooks.json` as host adapters; do not add repo-local project hook adapters unless explicitly migrating legacy config
   - For Codex sessions, run `repo-harness run check-task-sync`
-  - Create a checkpoint only when context/session rollover or unresolved work needs it
   - Update `tasks/workstreams/` only when durable capability progress changes
   - Archive completed/abandoned plans, contracts, reviews, notes, and todos with metadata
 {{#IF FACTOR_FACTORY_ENABLED}}

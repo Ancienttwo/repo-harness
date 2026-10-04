@@ -8,8 +8,6 @@
 - Claude runtime expectation: `{{CLAUDE_POLICY}}`.
 - Codex runtime expectation: `{{CODEX_POLICY}}`.
 - Treat an action request as authorization to complete its named scope.
-- Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
-- Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
 - Stable product truth: `docs/spec.md`.
 - Research reports: `docs/researches/`.
 - Deferred-goal ledger: `tasks/todos.md`.

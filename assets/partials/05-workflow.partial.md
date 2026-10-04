@@ -50,7 +50,7 @@ Core rules (canonical source: see Workflow Orchestration section below):
 - `docs/spec.md` is product truth; an explicit plan is execution truth for its task.
 - For an explicit contract, use its exit criteria and review as done gates. Write notes only for non-obvious decisions.
 - Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner.
-- Keep optional plans in their owning worktrees. Create a contract only when the task explicitly requires one.
+- Keep optional plans in their owning worktrees. For an explicit contract, check workflow inventory before implementation: owning worktree, contract, exit criteria and verification inputs.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.
 
