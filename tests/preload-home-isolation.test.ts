@@ -173,9 +173,15 @@ describe("test HOME and TMPDIR isolation", () => {
         const outside = f.unsafe();
         const value = name.endsWith("_DIRS") || name === "KUBECONFIG"
           ? f.temp + delimiter + outside : outside;
+        const env = { ...f.env };
+        // Windows consumes only one case-insensitive entry. Inject one authority.
+        for (const key of Object.keys(env)) {
+          if (key.toUpperCase() === name.toUpperCase()) delete env[key];
+        }
+        env[name] = value;
         const code = "await import(" + JSON.stringify(PRELOAD) + "); console.log('TEST_BODY_RAN');";
         const result = Bun.spawnSync([process.execPath, "-e", code], {
-          env: { ...f.env, [name]: value }, stdout: "pipe", stderr: "pipe",
+          env, stdout: "pipe", stderr: "pipe",
         });
         expect(result.exitCode, name).not.toBe(0);
         expect(result.stderr.toString(), name).toContain("Unsafe Bun test startup environment");
@@ -195,7 +201,12 @@ describe("test HOME and TMPDIR isolation", () => {
         + 'expect(child.exitCode).toBe(0); await Bun.write(' + JSON.stringify(marker)
         + ',JSON.stringify({parent:process.env,child:JSON.parse(child.stdout.toString())}));});\n');
       const env: NodeJS.ProcessEnv = { ...f.env };
-      for (const name of names) env[name] = f.unsafe();
+      for (const name of names) {
+        for (const key of Object.keys(env)) {
+          if (key.toUpperCase() === name.toUpperCase()) delete env[key];
+        }
+        env[name] = f.unsafe();
+      }
       // The shell config fixture names only a missing path in this worktree.
       const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
         cwd: ROOT, env, encoding: "utf8",
