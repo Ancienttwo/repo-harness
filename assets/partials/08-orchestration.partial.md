@@ -11,16 +11,14 @@
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - When the task uses a plan, do not implement while plan status is `Draft` or `Annotating`.
 
-### 3. Plan Node Default
-- Enter plan mode for non-trivial tasks.
-- If no stable product truth exists, run `repo-harness run new-spec`.
-- When the task requires a plan file and Codex Plan mode or Waza `/think` reaches a decision-complete work-package plan, capture it with `repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` and the plan text on stdin.
-- When the output is only the next checklist row for the current active plan, capture it with `repo-harness run capture-plan --artifact-level checklist-row --slug <slug> --title <title>` so the row stays in `## Task Breakdown`.
-- If the task requires a plan file and no captured active execution plan exists, run `repo-harness run new-plan --slug <slug> --title <title>` or capture a finished planning note with `repo-harness run capture-plan`.
-- If the user asks for a Sprint backlog, run `repo-harness run new-sprint --slug <slug> --title <title>`; it writes `plans/sprints/*.sprint.md`, not `plans/plan-*.md`.
-- When the task requires a plan file and the user approves implementation, run `repo-harness run plan-to-todo --plan <active-plan>` or capture the approved work-package plan with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute`; this creates contract/review/notes scaffolding and leaves plan tasks in `## Task Breakdown`.
-- Promote work into a top-level plan only when `Artifact Level: work-package` and the Promotion Gate are concrete: merge/PR unit, rollback surface, verification boundary, review/acceptance boundary, high-risk surface, and why it cannot stay a checklist row. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`.
-- Re-plan when execution drifts.
+### 3. Task Flow
+- Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
+- Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
+- For non-trivial work, complete P1 map, P2 trace, and P3 decision before edits.
+- If stable product truth is missing and the task needs it, use `repo-harness run new-spec`.
+- Keep requested plans optional. Use `repo-harness run new-plan` or capture a completed note with `repo-harness run capture-plan --slug <slug> --title <title> --body-file <file>`. Capture does not approve or start execution.
+- Use `repo-harness run plan-to-todo --plan <plan-file>` only when the task explicitly requires a contract.
+- Use `repo-harness run new-sprint` only for a requested Sprint backlog.
 
 ### 4. Research Delegation Strategy
 - The main agent decides whether to spawn based on task breadth, context impact, raw-log volume, and callable runner availability.

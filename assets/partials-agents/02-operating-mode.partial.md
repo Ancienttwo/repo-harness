@@ -7,7 +7,9 @@
 - Context profile: `{{CONTEXT_PROFILE}}`.
 - Claude runtime expectation: `{{CLAUDE_POLICY}}`.
 - Codex runtime expectation: `{{CODEX_POLICY}}`.
-- Do not implement until the user explicitly asks to implement.
+- Treat an action request as authorization to complete its named scope.
+- Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
+- Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
 - Stable product truth: `docs/spec.md`.
 - Research reports: `docs/researches/`.
 - Deferred-goal ledger: `tasks/todos.md`.
@@ -38,7 +40,7 @@
 - After substantive repo changes, run `repo-harness run check-task-sync`.
 - Primary worktree warns by default; enforce via `.claude/.require-worktree`.
 - When the task explicitly requires a contract, execution is worktree-first: `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree when policy enables it, and `repo-harness run contract-worktree finish` merges back only after Waza `/check` and sprint verification pass.
-- When the task requires a plan file and Codex Plan mode, Waza `/think`, or `repo-harness-check` produces a decision-complete work-package plan, capture it with `repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` only when `Artifact Level: work-package` and the Promotion Gate are concrete; if implementation is already approved, capture with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute` or run `repo-harness run plan-to-todo --plan <active-plan>`. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`; checklist-row captures should use `--artifact-level checklist-row` and must not expand into plan -> contract -> review -> notes.
+- Optional planning capture writes a reference only: `repo-harness run capture-plan --slug <slug> --title <title> --body-file <file>`. It does not create a contract or start execution.
 - If repo state conflicts with the task, use an isolated `codex/<task-slug>` worktree, validate with Waza `/check`, and merge back to `main` without unrelated dirty changes.
 
 ---

@@ -68,7 +68,7 @@ observed by a parent also need their actual process boundary.
 Existing opt-in cases use explicit environment gates for external dependencies.
 
 `REPO_HARNESS_TEST_EXPENSIVE` is the release-lane gate for real `npm pack`,
-real install, and real `herdr` cases. `scripts/check-ci.sh:73` is its single
+real install, and real `herdr` cases. `scripts/check-ci.sh:95` is its single
 naming authority -- the `all` lane exports it, `functional` and `governance`
 deliberately do not, and `tests/expensive-test-gate.test.ts` reads the exported
 name back out of that script so a rename cannot strand a gated file. Declared
@@ -104,7 +104,7 @@ needs a tolerance is usually reporting that some callee still reads real time.
 the applicable existing mechanism for the selected test.
 
 CI runs every selected file in its own process (`BUN_TEST_ISOLATE_FILES=1`)
-through a bounded pool (`BUN_TEST_JOBS=4`) with `BUN_TEST_MAX_CONCURRENCY=1`
-(`.github/workflows/ci.yml:92-95`). Process memory is isolated between files;
+through a bounded pool (`BUN_TEST_JOBS=8`) with `BUN_TEST_MAX_CONCURRENCY=1`
+(`.github/workflows/ci.yml:137-141`). Process memory is isolated between files;
 `--max-concurrency=1` bounds in-file concurrent tests to one. External filesystem
 and HOME state still need fixture isolation.

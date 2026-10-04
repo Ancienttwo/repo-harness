@@ -39,18 +39,18 @@ and keeps going after a failure, then prints `[ci] failed test files (N):`.
 - `BUN_TEST_TIMEOUT_MS` and `BUN_TEST_MAX_CONCURRENCY` feed the per-file
   `bun test` invocation (line 8).
 
-## The three gate lanes
+## The gate lanes
 
-`scripts/check-ci.sh [all|governance|functional]` defaults to `all`. Hosted CI
-invokes `governance` and `functional` as independent jobs; local and release
-callers run `all`.
+`scripts/check-ci.sh [affected|all|governance|functional]` defaults to `affected`.
+PR checks select affected tests. Daily and release callers select `all` explicitly.
+`governance` and `functional` remain available as separate lanes.
 
-Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1` (line 73), which is
+Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1` (line 95), which is
 what unskips the real `npm pack`/install cases in
 `tests/harness-benchmark-matrix.test.ts`. Generic review domain fixtures are
 zero-model, with existing task-agent lifecycle coverage. A green hosted `functional` run has
-deliberately not exercised them; run `bash scripts/check-ci.sh` with no lane
-argument before a release, and read the `[gate] ... unset` lines in any other
+deliberately not exercised them; run `bash scripts/check-ci.sh all`
+before a release, and read the `[gate] ... unset` lines in any other
 run as "not covered here" rather than "passed".
 
 ## Which CI lane a push or PR gets

@@ -9,12 +9,14 @@
 - Treat `.ai/harness/active-plan` as authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree.
 - Resolve annotations before implementation.
 
-### 3. Plan Node Default
-- Enter plan mode for non-trivial tasks.
-- If `docs/spec.md` is missing, run `repo-harness run new-spec` first.
-- When the task requires a plan file, capture decision-complete work-package output from Codex Plan mode or Waza `/think` with `repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>`; if no captured active execution plan exists, use `repo-harness run new-plan`; after approval, run `repo-harness run plan-to-todo` or capture with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute`.
-- Use `new-sprint.sh` only for Sprint backlogs; it writes `plans/sprints/*.sprint.md`, while PRDs stay in `plans/prds/`.
-- Record only deferred goals in `tasks/todos.md`.
+### 3. Task Flow
+- Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
+- Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
+- For non-trivial work, complete P1 map, P2 trace, and P3 decision before edits.
+- If stable product truth is missing and the task needs it, use `repo-harness run new-spec`.
+- Keep requested plans optional. Use `repo-harness run new-plan` or capture a completed note with `repo-harness run capture-plan --slug <slug> --title <title> --body-file <file>`. Capture does not approve or start execution.
+- Use `repo-harness run plan-to-todo --plan <plan-file>` only when the task explicitly requires a contract.
+- Use `repo-harness run new-sprint` only for a requested Sprint backlog.
 
 ### 4. Research Delegation Strategy
 - The main agent decides whether to spawn based on task breadth, context impact, raw-log volume, and callable runner availability.
@@ -24,7 +26,7 @@
 
 ### 4b. Durable Handoff
 - Treat auto-compact as an unreliable fallback.
-- Before switching sessions or worktrees, refresh `.ai/harness/handoff/current.md` and `.ai/harness/handoff/resume.md`, then resume from the filesystem artifacts.
+- Create a checkpoint only when context/session rollover or unresolved work needs it. Ordinary completion stays in the PR description.
 
 ### 5. Self-Improvement Loop
 - After correction, append prevention rule to `tasks/lessons.md`.

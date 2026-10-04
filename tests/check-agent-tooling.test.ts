@@ -78,7 +78,7 @@ function setupFakeEnvironment(prefix: string) {
 
   mkdirSync(home, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
-  writeExecutable(join(fakeBin, "herdr"), "#!/bin/sh\nprintf 'herdr 0.9.0\\n'\n");
+  writeExecutable(join(fakeBin, "herdr"), "#!/bin/sh\nprintf 'herdr 0.9.3\\n'\n");
   writeOfficialCodexPluginFixture(join(home, ".claude/plugins/cache/openai-codex/codex/1.0.6"));
   writeExecutable(
     join(fakeBin, "timeout"),
@@ -1717,7 +1717,7 @@ test.each(['present', 'missing', 'unavailable'])('herdr is a required runtime ca
     expect(report.runtime_capabilities.herdr.required).toBe(true);
     expect(report.runtime_capabilities.herdr.status).toBe(status);
     if (status === 'present') {
-      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.0');
+      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.3');
       expect(result.stderr).not.toContain('herdr runtime is');
     } else {
       expect(result.status).not.toBe(0);
@@ -1736,7 +1736,7 @@ test.each([undefined, "invalid"])("Herdr missing or malformed version policy is 
     });
     const herdr = JSON.parse(result.stdout).runtime_capabilities.herdr;
     expect(herdr.status).toBe("configuration-error");
-    expect(herdr.version).toBe("herdr 0.9.0");
+    expect(herdr.version).toBe("herdr 0.9.3");
     expect(herdr.reason).toContain("min_version");
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("repo-harness init --repo .");

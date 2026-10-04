@@ -4,11 +4,17 @@ Worker reference. Execute only the Bot-assigned recall or write scope.
 
 ## Vault resolution (fail-closed, and the vault itself is optional)
 
-1. Read `brainRoot` from `~/.repo-harness/config.json`.
+1. Use an explicit `REPO_HARNESS_BRAIN_ROOT` override when set. Otherwise read `brainRoot` from `~/.repo-harness/config.json`.
 2. Not configured, or the path does not exist → **stop and say so**. Do not scan the disk to guess a vault, and do not create a vault root on the fly.
 3. The project sub-vault is `<brainRoot>/<project-slug>/`; `<project-slug>` is the repo directory name or a name the user gives.
 
 **Having no brainRoot configured is a legitimate steady state, not a defect awaiting repair.** Unconfigured simply means this machine does not use the vault layer: the in-repo artifacts remain a complete, authoritative memory surface, and at closeout the conclusions go into the existing slots such as `tasks/lessons.md` and `docs/researches/`. Do not create a vault just so this skill can run. Only when the user explicitly wants the vault layer enabled, point them at `repo-harness install --brain-root <path>` or `repo-harness update --brain-root <path>`.
+
+The brain CLI does not enforce this skill boundary. `configuredBrainRoot()` uses
+`REPO_HARNESS_BRAIN_ROOT`, then user config, then `defaultBrainRootChoice()`.
+The default is iCloud `brain` when iCloud is available, otherwise `~/Documents/brain`.
+`brain sync` and other write paths can create directories. Do not call them to
+guess or create a missing vault for this skill.
 
 ## Phase init · create the project sub-vault
 
