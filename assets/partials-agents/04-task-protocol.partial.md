@@ -13,7 +13,7 @@ TASK_SOURCES:
   - .ai/harness/handoff/current.md
   - plans/
 
-PHASES: for explicit plans, research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
+PHASES: request -> branch -> bounded commits -> verify -> PR outcome
 
 ARCHIVE:
   PLAN: plans/archive/
@@ -26,9 +26,9 @@ RULES:
   - Keep stable product intent in docs/spec.md
   - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
   - Treat .ai/harness/active-plan as authoritative only for this worktree; .ai/harness/active-worktree records the owner
-  - When the task requires a plan file, keep separate plans in parallel worktrees and fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path
+  - Keep optional plans in their owning worktrees. For an explicit contract, check workflow inventory before implementation: owning worktree, contract, exit criteria and verification inputs
   - Process annotation notes before implementing
-  - When the task requires a plan file, project approved plans with `repo-harness run plan-to-todo` only after a concrete Promotion Gate; the execution checklist stays in the plan ## Task Breakdown, inline sprint rows stay inline, and only contract rows generate contract/review/notes artifacts
+  - Use plan-to-todo only when the task explicitly requires a contract
   - Define task contracts in tasks/contracts/{plan-stem}.contract.md only when the task explicitly requires a contract
   - For an explicit contract, fill tasks/reviews/{plan-stem}.review.md from Waza /check after verification
   - Record only non-obvious implementation decisions, deviations, tradeoffs, and open questions in tasks/notes/{plan-stem}.notes.md
@@ -44,7 +44,6 @@ RULES:
   - Treat `.ai/hooks/` as the shared automation entrypoint when repo scripts reference hook-backed workflow checks
   - Treat user-level `~/.claude/settings.json` and `~/.codex/hooks.json` as host adapters; do not add repo-local project hook adapters unless explicitly migrating legacy config
   - For Codex sessions, run `repo-harness run check-task-sync`
-  - Before ending a session, refresh `.ai/harness/handoff/current.md` when the task state changed
   - Update `tasks/workstreams/` only when durable capability progress changes
   - Archive completed/abandoned plans, contracts, reviews, notes, and todos with metadata
 {{#IF FACTOR_FACTORY_ENABLED}}

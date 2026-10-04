@@ -119,8 +119,8 @@ an invocation.
 
 ## Tools and workspace lifecycle
 
-- The profile retains 19 workflow/status tools and adds exactly five direct
-  coding tools, for 24 tools total. The direct tools are the five listed below;
+- The profile retains 24 workflow/status tools and adds exactly five direct
+  coding tools, for 29 tools total. The direct tools are the five listed below;
   workflow planning and handoff tools remain available under their existing
   path policy.
 - `open_workspace({repo_id, mode?, base_ref?})` defaults to a managed worktree;

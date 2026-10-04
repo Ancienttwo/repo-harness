@@ -8,7 +8,7 @@ PLAN_LOOP:
   RECOVERY: {{RECOVERY_PROFILE}}
   STATE: {{STATE_PROFILE}}
   CONTEXT: {{CONTEXT_PROFILE}}
-  PHASES: for explicit plans, research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
+  PHASES: request -> branch -> bounded commits -> verify -> PR outcome
   RESEARCH_DIR: docs/researches/
   SPEC_FILE: docs/spec.md
   PLAN_DIR: plans/
@@ -47,9 +47,9 @@ PLAN_LOOP:
 
 Core rules (canonical source: see Workflow Orchestration section below):
 - `docs/spec.md` is product truth; an explicit plan is execution truth for its task.
-- For an explicit contract, `tasks/contracts/`, `tasks/reviews/`, and `tasks/notes/` are done gates; hooks are accelerators only.
+- For an explicit contract, use its exit criteria and review as done gates. Write notes only for non-obvious decisions.
 - Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner.
-- When the task requires a plan file, fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path.
+- Keep optional plans in their owning worktrees. For an explicit contract, check workflow inventory before implementation: owning worktree, contract, exit criteria and verification inputs.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.
 

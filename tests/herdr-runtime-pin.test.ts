@@ -37,6 +37,7 @@ describe("herdr runtime pin has one source of truth", () => {
     const herdr = readPolicy().external_tooling?.herdr;
     expect(herdr).toBeDefined();
     expect(herdr.min_version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(herdr.min_version).toBe("0.9.3");
     const asset = herdr.release_assets?.["linux-x86_64"];
     expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(asset?.url).toContain(`/v${herdr.min_version}/`);
@@ -112,7 +113,7 @@ function notifyFixture() {
     FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl') };
   for (const key of Object.keys(env)) if (key.startsWith('HERDR_') || /^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_)/.test(key)) delete (env as NodeJS.ProcessEnv)[key];
   const shim = join(bin, 'herdr');
-  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[3]==='config-dir') console.log(process.env.FIXTURE_CONFIG);\n`);
+  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync,mkdirSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[3]==='config-dir') { mkdirSync(process.env.FIXTURE_CONFIG,{recursive:true}); console.log(process.env.FIXTURE_CONFIG); }\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
   chmodSync(shim, 0o755);
   const run = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
     [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'install', '--session', 'notify-test', '--non-interactive', ...args],
@@ -126,6 +127,71 @@ function notifyFixture() {
 const botFlags = ['--webhook-url', 'https://bot.example/routine', '--webhook-key', 'fixture-secret-key'];
 
 describe('Herdr notify install', () => {
+  test.each(['0.1.0', '0.2.0'])('a foreign local plugin at %s requires manual unlink before installation', version => {
+    const fixture = notifyFixture();
+    try {
+      const foreign = join(fixture.home, 'foreign-plugin'); mkdirSync(foreign);
+      writeFileSync(join(foreign, 'herdr-plugin.toml'), `version = "${version}"\n`);
+      writeFileSync(join(fixture.config, '.env'), 'keep config');
+      const result = fixture.run(botFlags, { FIXTURE_PLUGINS: JSON.stringify([
+        { plugin_id: 'aimpact.webhook-notify', version, plugin_root: foreign, source: { kind: 'local' } },
+      ]) });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('another source');
+      expect(result.stderr).toContain('herdr --session notify-test plugin unlink aimpact.webhook-notify');
+      expect(result.stderr).toContain('repo-harness herdr notify install --session notify-test');
+      expect(result.stdout + result.stderr).not.toContain('fixture-secret-key');
+      expect(readFileSync(join(fixture.config, '.env'), 'utf8')).toBe('keep config');
+      expect(readFileSync(join(foreign, 'herdr-plugin.toml'), 'utf8')).toBe(`version = "${version}"\n`);
+      expect(existsSync(join(fixture.config, 'source'))).toBe(false);
+      const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      expect(calls.map(call => call.args[3])).toEqual(['list', 'config-dir']);
+    } finally { fixture.cleanup(); }
+  });
+
+  test('a foreign managed plugin stops before the config directory is created', () => {
+    const fixture = notifyFixture();
+    try {
+      rmSync(fixture.config, { recursive: true });
+      const result = fixture.run(botFlags, { FIXTURE_PLUGINS: JSON.stringify([
+        { plugin_id: 'aimpact.webhook-notify', version: '0.2.0', plugin_root: join(fixture.home, 'managed-plugin'), source: { kind: 'github' } },
+      ]) });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('another source');
+      expect(existsSync(fixture.config)).toBe(false);
+      const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      expect(calls.map(call => call.args[3])).toEqual(['list']);
+    } finally { fixture.cleanup(); }
+  });
+
+  test('an older installer-owned local plugin is updated in place', () => {
+    const fixture = notifyFixture();
+    try {
+      const source = join(fixture.config, 'source'); mkdirSync(source);
+      writeFileSync(join(source, 'herdr-plugin.toml'), 'version = "0.1.0"\n');
+      const result = fixture.run(botFlags, { FIXTURE_PLUGINS: JSON.stringify([
+        { plugin_id: 'aimpact.webhook-notify', version: '0.1.0', plugin_root: source, source: { kind: 'local' } },
+      ]) });
+      expect(result.status).toBe(0);
+      expect(readFileSync(join(source, 'herdr-plugin.toml'), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify/herdr-plugin.toml'), 'utf8'));
+    } finally { fixture.cleanup(); }
+  });
+
+  test.each(['private-invalid-json', '{}', '{"result":{"type":"plugin_list","plugins":{}}}',
+    '{"result":{"type":"plugin_list","plugins":[{}]}}'])('invalid plugin inventory fails closed: %s', inventory => {
+    const fixture = notifyFixture();
+    try {
+      rmSync(fixture.config, { recursive: true });
+      const result = fixture.run(botFlags, { FIXTURE_LIST_OUTPUT: inventory });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('No files were changed');
+      expect(existsSync(fixture.config)).toBe(false);
+      expect(result.stdout + result.stderr).not.toContain('private-invalid-json');
+      expect(existsSync(join(fixture.config, 'source'))).toBe(false);
+      expect(existsSync(join(fixture.config, '.env'))).toBe(false);
+    } finally { fixture.cleanup(); }
+  });
+
   test('CLI links a durable source, writes private config, and enables it without leaking credentials', async () => {
     const fixture = notifyFixture();
     try {
@@ -145,6 +211,7 @@ describe('Herdr notify install', () => {
       expect(config.TELEGRAM_NOTIFY_DONE).toBe('0');
       const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
       expect(calls.map(call => call.args)).toEqual([
+        ['--session', 'notify-test', 'plugin', 'list', '--plugin', 'aimpact.webhook-notify', '--json'],
         ['--session', 'notify-test', 'plugin', 'config-dir', 'aimpact.webhook-notify'],
         ['--session', 'notify-test', 'plugin', 'link', join(fixture.config, 'source'), '--disabled'],
         ['--session', 'notify-test', 'plugin', 'enable', 'aimpact.webhook-notify'],
@@ -184,14 +251,14 @@ describe('Herdr notify install', () => {
   });
 
   test('Herdr failure output stays private and each failed stage stops installation', () => {
-    for (const operation of ['config-dir', 'link', 'enable']) {
+    for (const operation of ['list', 'config-dir', 'link', 'enable']) {
       const fixture = notifyFixture();
       try {
         const result = fixture.run(botFlags, { FIXTURE_FAIL: operation, FIXTURE_PRIVATE: 'private-webhook-url' });
         expect(result.status).toBe(1);
         expect(result.stdout + result.stderr).not.toContain('private-webhook-url');
         const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n');
-        expect(calls).toHaveLength(['config-dir', 'link', 'enable'].indexOf(operation) + 1);
+        expect(calls).toHaveLength(['list', 'config-dir', 'link', 'enable'].indexOf(operation) + 1);
       } finally { fixture.cleanup(); }
     }
   });

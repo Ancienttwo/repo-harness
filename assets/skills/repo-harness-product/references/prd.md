@@ -37,7 +37,7 @@ Codex.
 - If `$interview` is unavailable, still perform the same compact minimum-effective-interview pass in the current agent through the runtime's structured question tool (Claude `AskUserQuestion`, Codex `request_user_input`) or plain-text numbered questions, and report the missing skill as a fallback condition.
 - If `claude -p --model opus` fails or hangs, retry at most once with a smaller prompt; then fall back to Codex and report the fallback reason.
 - If Claude returns prose, implementation steps, or an incomplete PRD instead of PRD Markdown, repair the draft locally or rerun once before falling back.
-- If strict workflow verification rejects the PRD, stop and revise the PRD file before suggesting Sprint generation.
+- `check-task-workflow` reports diagnostics and exits 0. The retired `--strict` flag is rejected with exit 2. Run without that flag. Inspect the output and the PRD content before suggesting Sprint generation. Exit 0 does not prove that the PRD is complete.
 - If a matching PRD filename already exists, preserve it and create a new timestamped file.
 
 ## Boundaries

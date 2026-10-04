@@ -49,7 +49,7 @@ authorization、budget、task offer、lease を保持する長時間の作業で
 ### 1. CLI をインストールする
 
 前提条件は Git working tree、`bun`、そして host readiness のための利用可能な
-`herdr` >=0.9.0 です。macOS/Linux ではさらに `bash` が必要で、Windows では
+`herdr` >=0.9.3 です。macOS/Linux ではさらに `bash` が必要で、Windows では
 Git for Windows(その Bash と `usr/bin` の tools を含む)が必要です。`jq` は
 任意です。Node.js は不要です — installer は runtime として Bun >= 1.4.0 を
 使用し、必要であれば先に Bun のインストールまたはアップグレードを行います。

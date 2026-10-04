@@ -9,7 +9,10 @@ disable-model-invocation: true
 
 Bot entrypoint. The vault is optional. Keep authority in repo artifacts;
 sync direction is repo → brain. No configured brainRoot is a legitimate steady state.
-Resolve the root fail-closed. Never guess or create one to complete a task.
+The skill resolves the root fail-closed. Never guess or create one to complete a task.
+The brain CLI behaves differently: it uses the environment override, then user
+config, then a default root. Write commands can create directories. Do not use
+that CLI fallback to resolve a vault for this skill.
 Use `references/worker.md` for assigned recall, formatting, write and index steps.
 
 Exclusion-first write gate: anything already recorded by Git, CI, a registry,
