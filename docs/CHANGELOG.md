@@ -2,9 +2,101 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.20.0] - Unreleased
+
+This preparation covers `v0.19.5..e853649e`.
+The earlier `281e6555` commit prepared this version but did not publish it.
+No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
+
+### Added
+
+- Persistent Herdr task-agent lifecycle and CLI commands for task-scoped execution,
+  protected result collection, and repository-scoped workspace cleanup.
+- Trusted engineer observation preparation and first-offer staleness checks.
+- Managed updates detect stale ArchContext daemons and request user authorization
+  for maintenance. Runtime verification rejects unhealthy connections; a pending
+  daemon replacement preserves the verified CLI and its dependency closure.
+
+- Add persistent domain review through `repo-harness review` and OAR.
+  Isolate macOS reviewers with Seatbelt. (#476)
+- Add Herdr notifications for a required Bot webhook and optional Slack,
+  Discord, and Telegram channels. Select `blocked` and optional `done` per channel.
+  The Kanban shows read-only plugin and delivery status. (#500, #509)
+- Add the phase 1 R1-R4 pipeline observer ledger and read-only board projection.
+  Bind observations to source evidence. Record facts without automatic dispatch,
+  merge, or cleanup. Mini deployment and live cross-machine acceptance remain
+  outside this release preparation. (#519)
+
+- Add `upgrade` to check retired project and home files without writes.
+  `--apply` backs up targets and removes only unchanged owned bytes.
+  Changed and unowned items remain in the report.
+- Show the same leftover count in setup checks and after successful updates.
+  Update does not apply cleanup.
+- Add historical fingerprints and release-byte fixtures with provenance.
+- Refresh unchanged owned skill copies and two stale project assets with apply.
+  Report old state artifacts. Require `--include-state-artifacts` and ownership
+  proof for state removal. Keep third-party plugins and user rule lines.
+
+### Changed
+
+- Replace the old Codex goal MCP names with task-goal commands.
+- Retire the Codex plugin review provider, App-thread execution backend, and
+  headless Claude planning surface. Codex review uses the explicit Codex provider;
+  Claude acceptance retains its persistent Herdr domain reviewer.
+
+- Publish host-invariant guidance through the reference-document reader.
+
+- Pin `@botiverse/oar` to exact version `0.18.0`. Require Node `>=24 <26`.
+  ArchContext and its contracts remain pinned to `0.6.1`. (#481, #507)
+- Make Kanban read-only. Use CLI or MCP for task messages. (#482)
+- Split Bot decisions from worker execution. Restore P1/P2/P3 due diligence
+  and standalone host instructions. Limit plans to the requested scope.
+  Keep four operation boundaries and explicit owner approval for merge.
+  Use `gh`, `git`, or the GitHub API for GitHub operations.
+  (#483, #486, #487, #488, #489, #491, #495, #515)
+- Run the full union of core and integration tests in isolated file workers.
+  Start tests and child tools with temporary HOME and tool roots under `/tmp`.
+  Limit Herdr layouts to three panes per tab. (#504, #518, #496)
+- Record scheduler retirement guidance and OAR session resume ownership.
+  These documents do not establish live provider or deployment acceptance.
+  (#478, #479, #485)
+
+- Migrate pending post-edit journal v1 events with
+  `repo-harness state migrate-post-edit-journal-v1 --json`. Hooks keep v1 files
+  until this explicit migration runs.
+
+- Remove empty skill lifecycle hooks, `assets/skill-hooks.json`, and `scripts/run-skill-hook.ts`. Scaffold and template assembly call their tasks directly.
+- Remove `scripts/setup-plugins.sh`. Use `repo-harness install`.
+- Remove initializer question packs v2 and v3. The loader accepts v4 only.
+- Remove `state migrate-legacy-active-plan`. Repository adoption keeps its transactional marker migration.
+- Remove `engineer runtime-effect migrate-v1`. An unmigrated provider-thread V1 store stays blocked. This version has no path to unblock it. Migrate with v0.19.0 through v0.19.5 before upgrading.
+- Remove the full-disk MCP policy option. Setup still detects and disables old full-disk settings.
+- Remove init flags `--configure-codegraph`, `--brain-root`, `--brain-mode`, and `--interactive`. Remove update flags `--repo`, `--dry-run`, and `--interactive`. The CLI uses its standard unknown-option error.
+- Remove the `context-contract-sync` helper and script. Remove the no-op `capability-config --no-sync-contracts` option.
+- Remove `check-task-sync --validate-waivers-only` and `check-task-workflow --strict`. Use `check-task-workflow` for read-only diagnostics. Old downstream strict calls fail with exit 2. Adoption or init removes only the exact `repo-harness run check-task-workflow --strict` package entry. Other forms need an explicit user edit. Custom commands stay unchanged.
+
+### Fixed
+
+- Sample the MCP working baseline after request delivery before accepting an idle
+  observation, and keep observation cancellation separate from result collection.
+- Reap owned review providers after post-spawn setup failures and preserve CLI
+  help section spacing.
+
+- Recognize owned task-session process exit states and release the automation
+  planning lock before final settlement. (#471, #475)
+- Remove only owned dangling skill links during install. (#501)
+- Reuse PR CI repair issues and retain report errors. (#502)
+- Escape Slack control text. Reject temporary paths through symlink aliases.
+  Replace notify source files through exclusive temporary copies. Repair damaged
+  debounce state and reject future timestamps. (#508)
+- Stabilize six load-sensitive checks without removing their coverage. (#516)
+
+- Keep and report a modified retired facade while selected runtime sync continues.
 
 ### Removed
+
+- Retire direct cross-review. Use `repo-harness review` in Herdr.
+  Drain old reviewer sessions with the previous package before update. (#484)
 
 - Remove unused AXR6/AXR7 proposal scripts and the global-hook canary script.
 - Remove the v1 initializer question pack and the unused v1/v3 schemas.
@@ -22,64 +114,15 @@ Campaign execution moved to the existing [repo-harness](../SKILL.md), [repo-harn
   `prompt-route`, `prompt-guard-decide`, `minimal-change`, `review-rubric`, and
   `review-subject`. Use `repo-harness-hook` for these commands.
 
-### Changed
+### Upgrade limits
 
-- Migrate pending post-edit journal v1 events with
-  `repo-harness state migrate-post-edit-journal-v1 --json`. Hooks keep v1 files
-  until this explicit migration runs.
-
-- Remove empty skill lifecycle hooks, `assets/skill-hooks.json`, and `scripts/run-skill-hook.ts`. Scaffold and template assembly call their tasks directly.
-- Remove `scripts/setup-plugins.sh`. Use `repo-harness install`.
-- Remove initializer question packs v2 and v3. The loader accepts v4 only.
-- Remove `state migrate-legacy-active-plan`. Repository adoption keeps its transactional marker migration.
-- Remove `engineer runtime-effect migrate-v1`. An unmigrated provider-thread V1 store stays blocked. This version has no path to unblock it. Migrate with v0.19.0 through v0.19.5 before upgrading.
-- Remove the full-disk MCP policy option. Setup still detects and disables old full-disk settings.
-- Remove init flags `--configure-codegraph`, `--brain-root`, `--brain-mode`, and `--interactive`. Remove update flags `--repo`, `--dry-run`, and `--interactive`. The CLI uses its standard unknown-option error.
-- Remove the `context-contract-sync` helper and script. Remove the no-op `capability-config --no-sync-contracts` option.
-- Remove `check-task-sync --validate-waivers-only` and `check-task-workflow --strict`. Use `check-task-workflow` for read-only diagnostics. Old downstream strict calls fail with exit 2. Adoption or init removes only the exact `repo-harness run check-task-workflow --strict` package entry. Other forms need an explicit user edit. Custom commands stay unchanged.
-
-### Added
-
-- Add `upgrade` to check retired project and home files without writes.
-  `--apply` backs up targets and removes only unchanged owned bytes.
-  Changed and unowned items remain in the report.
-- Show the same leftover count in setup checks and after successful updates.
-  Update does not apply cleanup.
-- Add historical fingerprints and release-byte fixtures with provenance.
-- Refresh unchanged owned skill copies and two stale project assets with apply.
-  Report old state artifacts. Require `--include-state-artifacts` and ownership
-  proof for state removal. Keep third-party plugins and user rule lines.
-
-### Fixed
-
-- Keep and report a modified retired facade while selected runtime sync continues.
-
-## [0.20.0] - 2026-10-01
-
-### Added
-
-- Persistent Herdr task-agent lifecycle and CLI commands for task-scoped execution,
-  protected result collection, and repository-scoped workspace cleanup.
-- Trusted engineer observation preparation and first-offer staleness checks.
-- Managed updates detect stale ArchContext daemons and request user authorization
-  for maintenance. Runtime verification rejects unhealthy connections; a pending
-  daemon replacement preserves the verified CLI and its dependency closure.
-
-### Changed
-
-- Replace the old Codex goal MCP names with task-goal commands.
-- Retire the Codex plugin review provider, App-thread execution backend, and
-  headless Claude planning surface. Codex review uses the explicit Codex provider;
-  Claude acceptance retains its persistent Herdr domain reviewer.
-
-- Publish host-invariant guidance through the reference-document reader.
-
-### Fixed
-
-- Sample the MCP working baseline after request delivery before accepting an idle
-  observation, and keep observation cancellation separate from result collection.
-- Reap owned review providers after post-spawn setup failures and preserve CLI
-  help section spacing.
+- The removed provider-thread V1 migration has no replacement in this version.
+  Migrate that store with `0.19.0` through `0.19.5` before upgrade.
+- ProgramAuthorizationV2 uses protocol 2. Mint new operator grants for old grants.
+- `upgrade` reports leftovers by default. `--apply` changes files only after
+  ownership and byte checks. Normal update reports leftovers and does not clean.
+- Pipeline phase 1 records observations. Automatic dispatch, merge, cleanup,
+  test-slot control, and plugin delivery governance remain deferred.
 
 ## [0.19.5] - 2026-09-30
 
