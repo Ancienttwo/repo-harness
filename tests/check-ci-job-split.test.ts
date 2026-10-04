@@ -34,6 +34,7 @@ describe('single affected verification and daily fallback', () => {
     expect(selectAffectedTests(['src/core/feature.ts'], sources)).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
     expect(selectAffectedTests(['tests/unrelated.test.ts'], sources)).toEqual(['tests/unrelated.test.ts']);
     expect(selectAffectedTests(['docs/researches/observation.md'], sources)).toEqual([]);
+    expect(selectAffectedTests(['DEBUG.md', 'examples/agent-architecture.md'], sources)).toEqual([]);
     expect(() => selectAffectedTests(['unknown/product.conf'], sources)).toThrow('coverage is unknown');
     expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]))).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });

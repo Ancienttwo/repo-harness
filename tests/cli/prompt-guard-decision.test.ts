@@ -13,7 +13,6 @@ import {
 
 import { runPromptGuardVerdictFromPrompt } from '../../src/cli/commands/prompt-guard-decision';
 
-const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 const HOOK_ENTRY = join(import.meta.dir, '../..', 'src/cli/hook-entry.ts');
 
 const baseFacts: PromptGuardIntentFacts = {
@@ -182,10 +181,10 @@ describe('prompt-guard decision engine', () => {
     ).toBe('done_gate');
   });
 
-  test('internal CLI prints the action enum from environment facts', () => {
+  test('hook CLI prints the action enum from environment facts', () => {
     const res = spawnSync(
       process.execPath,
-      [CLI, 'prompt-guard-decide'],
+      [HOOK_ENTRY, 'prompt-guard-decide'],
       {
         cwd: join(import.meta.dir, '../..'),
         encoding: 'utf-8',

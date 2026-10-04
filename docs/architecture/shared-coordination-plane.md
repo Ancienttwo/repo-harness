@@ -4,7 +4,7 @@
 > **协议**:`repo-harness-lease-owner` v1、`repo-harness-board` v1
 > **权威**:`src/core/state/coordination-identity.ts`、`src/effects/state/coordination-lease-store.ts`、`src/core/state/project-board.ts`
 > **CLI**:`repo-harness sprint <identify|claim|bind|begin-completion|abort-completion|release|steal|reconcile>`、`repo-harness state board --json`
-> **设计来源**:`docs/researches/20260819-GPT-kanban.md` §3-§12
+> **设计来源**:[20260819-GPT-kanban.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260819-GPT-kanban.md) §3-§12
 
 本文是人工撰写的跨模块契约文档,不是 ArchContext capability 投影,所以它住在
 `docs/architecture/` 根目录、与 `effective-state-authority.md`、
@@ -213,7 +213,7 @@ receipt 是无害的:它只会清掉一次停滞计数。
 | slice 渲染与两个 host 挂载 | `src/cli/hook/board-slice-context.ts` |
 | PreEdit lease gate | `src/cli/hook/mutation-guard.ts`(`LeaseOwnershipGuard`) |
 | CLI 动词 | `src/cli/commands/state.ts`(`state board --json`) |
-| 设计来源 | `docs/researches/20260819-GPT-kanban.md` §3-§13 |
+| 设计来源 | [20260819-GPT-kanban.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260819-GPT-kanban.md) §3-§13 |
 
 ## 9. Hook 层:board slice 与 PreEdit lease gate(WP3)
 

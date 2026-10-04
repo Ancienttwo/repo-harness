@@ -46,6 +46,6 @@ SessionStart 首刀入口是 `session-context.ts` 与 `session-context-budget.ts
 - [CLI / codemode](https://github.com/earendil-works/pi/blob/v0.99.1/packages/coding-agent/docs/cli.md#how-codemode-works)
 - [MCP / exposure](https://github.com/earendil-works/pi/blob/v0.99.1/packages/coding-agent/docs/mcp.md#exposure)
 - [Extension tool execution](https://github.com/earendil-works/pi/blob/v0.99.1/packages/coding-agent/docs/extensions.md)
-- 本项目既有边界研究：`docs/researches/20260811-pi-harness-v2-reference-assessment.md`。
+- 本项目既有边界研究：[20260811-pi-harness-v2-reference-assessment.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260811-pi-harness-v2-reference-assessment.md)。
 
 本次仅新增这一研究文件，用于保存跨 session 可复用的比较结论；没有新增依赖、抽象或运行配置。

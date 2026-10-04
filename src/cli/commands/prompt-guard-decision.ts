@@ -213,7 +213,7 @@ function readStdinIfPiped(): string {
 }
 
 /**
- * CLI entry shared by `repo-harness prompt-guard-decide` and the hook-entry
+ * CLI entry for `repo-harness-hook prompt-guard-decide`
  * fast path. New-protocol callers pipe `{"prompt": "..."}` on stdin and get a
  * single-line verdict JSON. Legacy copied hooks call with empty stdin and
  * env-provided intent facts, and keep getting the bare action enum line.

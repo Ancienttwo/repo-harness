@@ -79,7 +79,7 @@
 | Source | Learn (學什麼) | Avoid (避什麼) |
 |--------|----------------|-----------------|
 | `Ancienttwo/repo-harness-page@ffe3ff1...` | exact warm-paper tokens、Space Grotesk/IBM Plex Sans/JetBrains Mono、carrot focus/accent、ink inverse band、48px grid wash、Lucide、120/180ms motion | 不复制 landing hero、marketing section rhythm、功能卡片墙 |
-| `docs/researches/20260823-human-control-board-agentic-factory.md` | five-column information architecture、Attention Inbox、Task Drawer、thin renderer boundary | 不提前加入 mutations、Tunnel、Planner 或 Worker Host |
+| [20260823-human-control-board-agentic-factory.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260823-human-control-board-agentic-factory.md) | five-column information architecture、Attention Inbox、Task Drawer、thin renderer boundary | 不提前加入 mutations、Tunnel、Planner 或 Worker Host |
 | `src/core/fleet/board.ts` | exact public statuses、null/consistency/error semantics | 不从标签或 prose 重新推断状态 |
 
 ## Color (色彩)

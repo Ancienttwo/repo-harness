@@ -483,8 +483,11 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const absPath = join(repoRoot, relativePath);
   const nowIso = new Date().toISOString();
   const current = readJournalEventFile(absPath);
-  const legacy = current ? null : readLegacyJournalEventFile(absPath);
-  const existing: PostEditJournalEvent | null = current ?? (legacy ? { ...legacy, schema_version: 2, source_key: key } : null);
+  if (!current && readLegacyJournalEventFile(absPath)) {
+    warnStderr('[PostEditJournal] WARN: v1 event blocks this journal write; run repo-harness state migrate-post-edit-journal-v1 --json');
+    throw new Error('post-edit journal v1 requires explicit migration');
+  }
+  const existing = current;
 
   const dirty: PostEditJournalDirtyBits = existing
     ? {
@@ -803,7 +806,8 @@ function warnStderr(line: string): void {
 }
 
 /**
- * Processes pending journal events within one bounded Stop-time pass. External
+ * Processes pending v2 journal events within one bounded Stop-time pass.
+ * V1 files stay pending until the explicit migration runs. External
  * helpers are process-group supervised and clamped to the pass deadline.
  * Completed, failed, and timed-out effects are all acknowledged; the latter
  * two emit warnings so one slow event cannot pin the queue head forever.
@@ -823,11 +827,15 @@ export function consumePendingPostEditEvents(
   if (!Number.isSafeInteger(helperTimeoutMs) || helperTimeoutMs < 1) {
     throw new Error('post-edit journal helper timeout must be a positive integer');
   }
-  migratePendingPostEditJournalV1(repoRoot, 100);
-  const { valid, corruptNames } = scanPendingPostEditEventFiles(repoRoot);
+  const { valid, corruptNames, legacyNames } = scanPendingPostEditEventFiles(repoRoot);
   let consumed = 0;
   let errors = 0;
   const warnings: string[] = [];
+  if (legacyNames.length > 0) {
+    const warning = `[PostEditJournal] WARN: retained ${legacyNames.length} v1 event(s); run repo-harness state migrate-post-edit-journal-v1 --json`;
+    warnings.push(warning);
+    warnStderr(warning);
+  }
 
   for (const name of corruptNames) {
     const warning = `[PostEditJournal] WARN: removed corrupt pending event file ${name}`;
@@ -885,5 +893,5 @@ export function consumePendingPostEditEvents(
       errors += 1;
     }
   }
-  return { consumed, pending: valid.length - consumed, errors, warnings };
+  return { consumed, pending: valid.length - consumed + legacyNames.length, errors, warnings };
 }

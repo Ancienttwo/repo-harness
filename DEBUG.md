@@ -4,7 +4,7 @@
 
 - Environment: macOS, Bun 1.4.0, Node 22.22.0, `archctx@0.4.5`, `archctx-contracts@0.4.5`, package-local CodeGraph 1.5.0.
 - The exact job is reproducible through `architecture-projection drain`: after three process attempts it enters dead-letter with `Worktree digest changed before apply`.
-- The failure is pre-write. Git remains at `777809873be8e3e1b6e6b834485ab2bf9694a5b6`, tracked files remain clean, and `docs/researches/20260824-TDD-audit.md` remains byte-identical at SHA-256 `54463962e91de98bc263ee1ffba051113b1048c5df47e9f8de75e03135bd91b2`.
+- The failure is pre-write. Git remains at `777809873be8e3e1b6e6b834485ab2bf9694a5b6`, tracked files remain clean, and [20260824-TDD-audit.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260824-TDD-audit.md) remains byte-identical at SHA-256 `54463962e91de98bc263ee1ffba051113b1048c5df47e9f8de75e03135bd91b2`.
 - repo-harness captures the projection snapshot with `.ai/harness` excluded. ArchContext's projection-specific snapshot also excludes `.ai/harness` and projection-owned outputs.
 - ArchContext 0.4.5 nevertheless passes a generic `computeWorktreeDigest(root)` to daemon `applyUpdate`; that generic digest includes `.ai/harness`. The daemon recomputes the same generic digest before apply and throws on any difference.
 - `.ai/harness` is demonstrably live during this session: job state, post-bash checks, event logs, hook telemetry, effective state, session budget, handoff, and run evidence have recent writes while tracked and user-authored inputs remain unchanged.

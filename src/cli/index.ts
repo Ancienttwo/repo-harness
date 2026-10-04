@@ -91,12 +91,6 @@ import {
   type InstallProfile,
   type LegacyInstalledProfileState,
 } from './installer/install-profile';
-import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
-import { routePromptExplicitFirst } from './hook/prompt-router';
-import { recordCircuitAttempt, type CircuitAttempt } from './hook/circuit-breaker';
-import { runMinimalChangeCli } from './hook/minimal-change-cli';
-import { runReviewRubricCli } from './hook/review-rubric';
-import { runReviewSubjectCli } from './hook/review-subject';
 import { runAdoptionPlan } from './commands/adoption-plan';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
 import {
@@ -871,78 +865,6 @@ export function buildProgram(): Command {
         console.error(`candidate reconciliation: ${(error as Error).message}`);
         process.exit(1);
       }
-    });
-  program
-    .command('circuit-breaker-record', { hidden: true })
-    .description('Internal persistent workflow circuit breaker')
-    .action(() => {
-      try {
-        const attempt = JSON.parse(readFileSync(0, 'utf-8')) as CircuitAttempt;
-        console.log(JSON.stringify(recordCircuitAttempt(process.cwd(), attempt)));
-        process.exit(0);
-      } catch (error) {
-        console.error(`circuit-breaker-record: ${(error as Error).message}`);
-        process.exit(2);
-      }
-    });
-  program
-    .command('prompt-route', { hidden: true })
-    .description('Internal explicit-first prompt router')
-    .action(() => {
-      let prompt = '';
-      try {
-        const input = readFileSync(0, 'utf-8').trim();
-        const parsed = JSON.parse(input) as { prompt?: unknown };
-        if (typeof parsed.prompt === 'string') prompt = parsed.prompt;
-      } catch { /* malformed prompt bypasses advisory routing */ }
-      console.log(JSON.stringify(routePromptExplicitFirst(prompt, {
-        hasActiveTask: process.env.PROMPT_ROUTE_ACTIVE_TASK === '1',
-      })));
-      process.exit(0);
-    });
-  program
-    .command('prompt-guard-decide', { hidden: true })
-    .description('Internal prompt-guard intent/state decision engine')
-    .action(() => {
-      console.log(runPromptGuardDecideCli());
-      process.exit(0);
-    });
-  program
-    .command('minimal-change', { hidden: true })
-    .argument('[args...]')
-    .allowUnknownOption(true)
-    .allowExcessArguments(true)
-    .description('Internal minimal-change hook context renderer')
-    .action((args: string[]) => {
-      // Hidden hook commands exit immediately; commit protocol bytes first.
-      const result = runMinimalChangeCli(args);
-      if (result.stdout) writeAllSync(1, result.stdout);
-      if (result.stderr) writeAllSync(2, result.stderr);
-      process.exit(result.exitCode);
-    });
-  program
-    .command('review-rubric', { hidden: true })
-    .argument('[args...]')
-    .allowUnknownOption(true)
-    .allowExcessArguments(true)
-    .description('Internal review rubric renderer')
-    .action((args: string[]) => {
-      const result = runReviewRubricCli(args);
-      if (result.stdout) writeAllSync(1, result.stdout);
-      if (result.stderr) writeAllSync(2, result.stderr);
-      process.exit(result.exitCode);
-    });
-  program
-    .command('review-subject', { hidden: true })
-    .argument('[args...]')
-    .allowUnknownOption(true)
-    .allowExcessArguments(true)
-    .description('Internal normalized review subject renderer')
-    .action((args: string[]) => {
-      const result = runReviewSubjectCli(args);
-      if (result.stdout) writeAllSync(1, result.stdout);
-      if (result.stderr) writeAllSync(2, result.stderr);
-      process.exit(result.exitCode);
     });
 
   return program;

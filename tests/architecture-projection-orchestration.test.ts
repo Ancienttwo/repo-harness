@@ -823,7 +823,7 @@ describe('durable architecture projection orchestration', () => {
     expect(readArchitectureDriftCursor(f.repoRoot)).toBeNull();
   });
 
-  test('migrates v1 observations under the writer lock without losing coalesced dirty state', () => {
+  test('requires explicit v1 migration without losing coalesced dirty state', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/legacy.ts', session_id: 'legacy' }) });
     const dir = join(f.repoRoot, '.ai/harness/journal/post-edit/pending');
@@ -836,6 +836,15 @@ describe('durable architecture projection orchestration', () => {
       payload: { ...event.payload, contract_verification: { contract_file: 'tasks/contracts/legacy.contract.md', checks_file: '.ai/harness/checks/latest.json' } },
     })}\n`);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
+    const legacyBytes = readFileSync(path, 'utf8');
+    const held = consumePendingPostEditEvents(f.repoRoot);
+    expect(held).toMatchObject({ consumed: 0, pending: 1, errors: 0 });
+    expect(held.warnings.join('\n')).toContain('state migrate-post-edit-journal-v1 --json');
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/legacy.ts', session_id: 'legacy' }) });
+    expect(readFileSync(path, 'utf8')).toBe(legacyBytes);
+    const migrated = spawnSync(process.execPath, [join(import.meta.dir, '../src/cli/index.ts'), 'state', 'migrate-post-edit-journal-v1', '--json'], { cwd: f.repoRoot, encoding: 'utf8' });
+    expect(migrated.status).toBe(0);
+    expect(JSON.parse(migrated.stdout)).toEqual({ migrated: 1, remaining: 0 });
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/legacy.ts', session_id: 'legacy' }) });
     expect(readPendingPostEditEvents(f.repoRoot)[0]).toMatchObject({
       schema_version: 2,
