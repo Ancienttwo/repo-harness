@@ -83,10 +83,30 @@
   },
   "cutoverClosure": {
     "protocol": 1,
-    "categories": ["old_implementation", "callers", "fallback", "tests", "docs_and_projections", "compatibility_expiry"],
-    "dispositions": ["removed", "migrated", "retained_with_reason", "not_applicable"],
-    "selectorKinds": ["path", "relation", "symbol"],
-    "errorCodes": ["refactor_closure_residue", "refactor_closure_incomplete", "refactor_closure_missing"],
+    "categories": [
+      "old_implementation",
+      "callers",
+      "fallback",
+      "tests",
+      "docs_and_projections",
+      "compatibility_expiry"
+    ],
+    "dispositions": [
+      "removed",
+      "migrated",
+      "retained_with_reason",
+      "not_applicable"
+    ],
+    "selectorKinds": [
+      "path",
+      "relation",
+      "symbol"
+    ],
+    "errorCodes": [
+      "refactor_closure_residue",
+      "refactor_closure_incomplete",
+      "refactor_closure_missing"
+    ],
     "authority": "scripts/cutover-closure.ts",
     "projection": "assets/templates/helpers/cutover-closure.ts",
     "evidenceKind": "cutover_closure"
@@ -414,7 +434,8 @@
         "preserve",
         "archive",
         "reconfigure",
-        "remove"
+        "remove",
+        "refresh"
       ],
       "safety": {
         "removeOnlyOwnership": "known_generated",
@@ -588,7 +609,620 @@
             "scripts/workflow-contract.ts",
             "scripts/workstream-sync.sh"
           ],
-          "summary": "Remove legacy repo-harness helper scripts from root scripts/ only when file content is identifiable as generated repo-harness runtime; preserve ambiguous app-owned scripts."
+          "summary": "Remove legacy repo-harness helper scripts from root scripts/ only when file content is identifiable as generated repo-harness runtime; preserve ambiguous app-owned scripts.",
+          "retiredBy": "8e160323",
+          "historicalFingerprints": {
+            "scripts/architecture-event.ts": [
+              "sha256:01703f7f3fbc91b1a1d8758e5a74c638100c2422073c107aefca6a65467ac260",
+              "sha256:093c11e8d122f1a3b26df207129ee4a5fed72916f7259afe783e92dffb486d51",
+              "sha256:0faf1b1e325035a4dd24548711ded37d063afa179ffccf1cafea6f7dea78b35a",
+              "sha256:12dca1f712d8c2b233ebe4c92844315f96c1cbaaf50f8436de79173d7c5d96dd",
+              "sha256:1c8ac70a404310732f4e80b1cb4dc54e9bdd9a31917c3341f16372fb49b6213b",
+              "sha256:24736ca272c3666cf5df328db1760366ee648c46c55a836dc21a819d0ae2fb28",
+              "sha256:283451a5889a0256c9aec96ea2c552043ad4bbf1c3ce2e284000568ecd299210",
+              "sha256:3f915740d148fe01b97f2e741ed08ed324d217dddacbeedcdd82829aed4fe1e5",
+              "sha256:4811d4e08d9f141d433adf5c6e7281e5c87b947b6b87119b788dcb372e9a86a0",
+              "sha256:59c2d3b5ab63292b22ed683d0de140b71eaec553852877fd5492c6f8a9772a1f",
+              "sha256:5b092cb8e8db3c77ea8d773eec8d70859dab3186f01215e7c93e9c762b4c7f4d",
+              "sha256:8d99b85c3cf17e0ffea4ef95f2ad8227e78ec9d40d0ef45a1085de7962c91bd9",
+              "sha256:8f6bbf24f4f7d3404d07eaa1ebe71676cd11b54e6816d5bcb1e24d378eff1c0b",
+              "sha256:8fec7ef91dfab9a5eed96163531aba49890e23017518f3c80650cfbf426c31cd",
+              "sha256:9d744983c46f5c9eb5fd5d457b9d50ba82b3a9152bb304120f87abf63695e4a2",
+              "sha256:9e7968906d94de3a59791781af105abc4cf37153a7444f465ff77c1853e789c3",
+              "sha256:b151a4a42d1f0a3935c14e66f4928cf7cf2f33ad39f4f5f1cda675f356529107",
+              "sha256:d8c5535eeb8f0d27be2486d5848776fd1763d158b605ea88cf51b4427431c6ff",
+              "sha256:d97b10fe8b410a16e77bfa4c46eb7398806160dabf36f8fa73958719e4c1c442",
+              "sha256:f174996f2b3e99015c7081ec51172f653acc7a8cf11492d3af6048bdfa7f868e",
+              "sha256:f38661d24696ced2c999e9501fde413ed7876a8b21c19a2548cb4542104ed3d0"
+            ],
+            "scripts/architecture-queue.sh": [
+              "sha256:57de5422b9a403d13864d3f97cef03ced3281b20bb95842d83ba90f6aa11bf22",
+              "sha256:62b38c06c38a689269c8de2d444716b3a97a9353138b57a9d535dab2033e116d",
+              "sha256:8690884363aaa4edceb77ca0badbca1a8393ce923dff337443e5fb7c1c6bde58",
+              "sha256:87b70611ecc9e7aa9646b3b717a04ff3a8814cb5eec69dafa9b27a02e2c03c6c",
+              "sha256:8bab53f1a3d8f8aa2593747c106830b0072ac762ecdd6c22156aa9b329d60cca",
+              "sha256:9265ad61c9e46e43f946597395c3a6c3234888eedcbd6fdfeca742afe80ad765",
+              "sha256:a1c5d0922c5e0ce0fe25cb9a548731addec98ff6d52c270181f2955598392aa5",
+              "sha256:a3aff4ec1923a770eca63ecc6e4c9aba026a359b0ab4a14e1dda3e2352ec727d",
+              "sha256:a83cd421d4f3f243d280483c93caf372c168453dd270f8c8ff5c0dd487ba8310",
+              "sha256:bd6d03f9a3463cdc2ef03375225f2dd9ee98548149c3ec26649c3dcce07ffb0a",
+              "sha256:ecf61ade5a2b6f5f1c5932eaef8a68cb399d0550c450c643f1a77c96d617f7d1"
+            ],
+            "scripts/archive-architecture-request.sh": [
+              "sha256:1eb9b8e1c9f9defdc3465a97b0e2b4be5e8d94715d63d0cfd5127d689834909f",
+              "sha256:27510bd23ed5a13c2187f29addd19be1160d5bc58fb4232ede1fd9a1e8146556",
+              "sha256:8d39b043c466dc55fcd4e5d17d9e876bf5f24770d09a428cb6dad9bae8366e70",
+              "sha256:9f7b047d30f4a80d0ec38b8359d87234e039c36824696e5e1b9096f3c96bfd22"
+            ],
+            "scripts/archive-workflow.sh": [
+              "sha256:139635ab6149e65735762d38e583cac25efd3aac72cdceba8481224101459d12",
+              "sha256:2a2be8c30d59db4eaa2925731b20e17212f388c6b1865bb386fa04174ece2765",
+              "sha256:517425d625d343f68b763e3b42a9dc29286611b0751f0f342a06d006b4363c35",
+              "sha256:5c9eec392d1e6c4f9b58488f08bd92fdd3bad41315eec92efaf589452f4e91a9",
+              "sha256:5f6fd7278df960f31b6725204e6e59b91a22b36f94cd98968a0ec40a1eea84ec",
+              "sha256:7fd98f7af7be44f09b8c7eaf53e9b18158252ed762872d84cf824e9016c35e5c",
+              "sha256:a35c12b2271a51ae71a4289c7bfccb44a35cd9feae47d39b4774087b5cc6a41f",
+              "sha256:a75e62c5f6507bbb263069e80483e9a886b7c5c75c683558749c736481f013ab",
+              "sha256:acab3e647432d0d1c2cada5a561708c4e55a49da3020f33e5894213bd23df175",
+              "sha256:b9db69d02ab7e866773ff0857d05c8d5636311728c3db9614afe23da44ea7763",
+              "sha256:c07394f255209bd72b2c59d16bda7892a4ac31a25b4ac744880999972c720217",
+              "sha256:c4ab2ebf608c70875060d4064d9f7c49e43cbd945f427b3a1f23d7158dd5c120",
+              "sha256:c8bcf520acbd33b9eb225bd33b570fd95beb87b8cb3af2818f2e8700c93cf560",
+              "sha256:d58fb9e92b7cae6518c8592daeaf8834d2dd32d7a587c30da9c93d4f2dd8877f",
+              "sha256:e13141e0e10a2158ac2a9fe1d809a4f9bbcb872699a2d158eee0ed298669247c",
+              "sha256:e23f125a84797938789e60c9fb4f7d33e53790bc12479b1f893e35f921c3caf3",
+              "sha256:ecb8ed18cfcde66d8ccf658d7a99880dfef249b12cf676127e5c8f93927558ae",
+              "sha256:ef115654713170939ebf8f2b6e9e00db7257771ccf041dc8b07ac22e9aa10d88",
+              "sha256:fec2f620a976c84e090d3d3c56bc1bd6f376ad8afcd01a08ad8296b953bb2ab7"
+            ],
+            "scripts/classify-historical-plans.ts": [
+              "sha256:6189122f3d2f37aeeddbcc4d0730366fc740d9b25cac4c914671a6eb7417e779",
+              "sha256:75ed86c113e6ad3aca2cbdf53e256d88b80cb9fb6f73ae217cf6ff9a4a481018",
+              "sha256:c86b00f80246e8ea5884adb88c64fb4c2b7208efbd47331dc9ff23d6db63fc6f"
+            ],
+            "scripts/capability-config.ts": [
+              "sha256:2b302f56e310f26cc8cc0913f94f66c82f272fec1bffeb01d196d2200fc9b353",
+              "sha256:86cfbd64bacf9263a8e15f37babf5224e9058e5028af7493261475fa08263748",
+              "sha256:979278bbaa8a32fc7f5e9ef19176c5d4144e15e5486cddd0a68c4e797ec6cd48",
+              "sha256:a98defb33ad21f66b8a6f359366f74dcdefea2a5331c460ac1bc5ea6d4075e95",
+              "sha256:ace3f977b81d7fe6b4d20da5828c7437d79f823a2dc5477fd751b3ea56a63abd",
+              "sha256:d048ebfd83c6ec828c5988cb2c633b1e3c9f255a42455672b026ee5b817d4581"
+            ],
+            "scripts/capability-resolver.ts": [
+              "sha256:08e9e16307fbdfb34422447a6667c198bd3dd8af0cdfe9c084390b0ad70fcae3",
+              "sha256:1cf7991038ea3e85a0cd3238d7c78b0e3f27639fbca79810f28230d5e7e5c56f",
+              "sha256:21ab0917392104a5ea693db69d9ff6cd127474b8a03106e5dc346508d2255c9d",
+              "sha256:270fa9d7e8acc7be178d56e5770ca483620bd4d99624cd891f08f82a06c82844",
+              "sha256:302d23b72736e7c4e7e82842a685b689306a65e496ca336595472a79b229fef5",
+              "sha256:3548a3541432dd26493fd8808a78fd9f72b391469baed7017d24ccf6486bba31",
+              "sha256:35621af59bd68052afc7024daacff85ca7ef749892cefbd0ce4bf550299d28de",
+              "sha256:770ac4634bff32be5074c9589137954d315935f1476782f009a9d5aef8443bcd",
+              "sha256:7fb2cfecf7e690874f3a43518d8984270078443edb799886df8434e17a4a491d",
+              "sha256:8bcf922abcd7fa6193d0e6c942f65e0708a8e30314208f0685b90ecfc03394cf",
+              "sha256:9b314b1ada40823415eb570016626f7994815edfcca9b5cb108b4d19c097b2ab",
+              "sha256:afd3d2311a297146373da542b8620ca1726e1821ffb4b8721dc2776ba96283ae",
+              "sha256:c1dcf03a86c73bde1e7852652dfe87edc781ef17ab6bcdf42418b9374cf02afb",
+              "sha256:c9078c8f3a3554b8af97bf42e2552d0c122b6210b2ebff2813cead5405f3cec3",
+              "sha256:cea56ba068e647b72af65126ff6ce75e777bad71535b1a6f13ca9bf4c41a8174",
+              "sha256:d1dc7569e37900cc5f15c0cde5b1be8d7cfca727acea0079afd945ecf7939e27"
+            ],
+            "scripts/capture-plan.sh": [
+              "sha256:0f0f887de97e546dc2ce11ba5d6e7071b7d3e9680064946e328d1a06a2090991",
+              "sha256:10f73e2a1b3f9fd3b4a1eee3e551bec433b8781ba75a2f929c1036f72d1db277",
+              "sha256:13a528a7361ff7cf1e1e0607c48a309720eb43e77085e4611b7d3fa18b6121c8",
+              "sha256:2178e2f328080b16ba36fb583a6d4f7b272985855c0b3f0fc6438f033a8c2003",
+              "sha256:42910b3c6988e676ddd34ab777ee395acb152cd170d36b56f1f2a6a9b253b923",
+              "sha256:58cd14792c30e2d5c9a0a558e939d5c5bccddd3b27f4d11a5cc4cb3099e2f70f",
+              "sha256:bef852bf82f49a7d01c6da139ce7b96eefc36adb8f27063fbad6904b7b539cbe",
+              "sha256:d4764d5e8cb01937b8ad570aa9e9988e567f279f114352fb6e834b8679c07917",
+              "sha256:ee8e3fcfed3568e1cb3b635f085ddb988f3d0572c488c5f79307cb5de0e04935"
+            ],
+            "scripts/check-agent-tooling.sh": [
+              "sha256:00986499510e53a8e2a39317fdc9e2e8d4313468a287de392fac4cd8105c8bbc",
+              "sha256:1737dfb1a238554a9bcd36bdec56f460f8a30278e46be1724f263800f3cad359",
+              "sha256:25e602162c97bcc867737639d9059cb661bed12384eeff8f43adc7f67d41716d",
+              "sha256:269775db9b90e3a109ed10761730fe6b76c714ddef279438eeff7384c5328732",
+              "sha256:2c45292679a685f27bb320870daddc91073b0608448e1a8be5539cf09bb943d4",
+              "sha256:2fa5e9f274bf37d97e40a1e85d60228f0cd826aff4d014a7609948c57ef903cf",
+              "sha256:350b1f8d316bc60bb63fa9789455f188a090752c4d55033604491aa709d1445d",
+              "sha256:354f4a8055e62120a7d0404adc6bef33d6ee58da7adb8deab2e62e02ac5beb14",
+              "sha256:35ce6b030f4febe9f0fd8ac5f411caaf618c1690214b0c359aa9f87e03637844",
+              "sha256:3ddf7035a3244f270a7e27e0207cbcb304f68ef383a0e15ac0c76bad2884738d",
+              "sha256:3de04fe5f671802fbc80e6f02816af9d3c3b671db9f450fc9d89ebcceb066c3c",
+              "sha256:3e3e756e33f4019ea08f79d751612615b7efd9edbaea27db3e9eaadc151bb108",
+              "sha256:4875237dbcd086cdaee331b2b0bdc772ea04d2c50068bbc8df56883a9d99f6f3",
+              "sha256:4ad9b8e09f3bef43460441e05eb357070812f53472e7c02e0ce7b70708865040",
+              "sha256:4efa44268a39582a13a690650688a8e1a43553749c2fbe79341704f47e3e5162",
+              "sha256:4f2c7876cc986c0c0158f6188dc6857249db9a200bdd45997d793a3850174687",
+              "sha256:5bdbec3164aeddee614fb0fb96e9f0e3c8551387c608c92913f55ace98a68a7f",
+              "sha256:5fec685711e05e4f42c3a4de6783f14ee0d8a0cd8d722bf8a184d91ab4d1ff7a",
+              "sha256:6f01a74350ab2b385e47ac48695530a378f1518c5357d7200bdba2878afb8b87",
+              "sha256:7e5b4804d310aa6ddf49483ebb652a6662b1726f6df3e686b61f7f1a9f062fff",
+              "sha256:a0744e5ac9b78c492fd5481c589e50d900d1814558027b850b2f6e28e8cbddfb",
+              "sha256:b02a683a1b55eb0790c133bc90cd41d91edd62203e86efa77c42df745068aa23",
+              "sha256:b3cce9e5f2c172aa5314779f1f1b6ca40ff4c635db7e438e232a3862a9d00ffc",
+              "sha256:ba82cde8324de4d8302a2574f42618acbf66e0ce9d88c572260b58dbd1801a2c",
+              "sha256:bc26b56a06fee74f66c4a65517b3e5560fcd52324b5820291319d5ef257afb92",
+              "sha256:c12231bd2e66e086f860dcdb441aa548c4151a1c97ff61ef1c149659adfed192",
+              "sha256:c62d2eb9cb1f0664f334c6c3df32a1bc5ce2a25b113b2ff5a30fed33eec01c1e",
+              "sha256:ca79c10be7a5ffa8e21ff912f9cedf0752d81c09bc45bfb9559ce10692faec70",
+              "sha256:da38814c59deacaa906b79743da58e8065950908682c4d07bc9d19f77d6ee69b",
+              "sha256:dbf6b0c12354943d8546cb693f90b4cc6d6fa55d165538be8c26fa5559ef04e1",
+              "sha256:e106641c2b1b4b4bad97e72fe34eaf2ecf0c5e0c20b5f640f65a4ebece63347a",
+              "sha256:e613da2c6c8ea23bbe13d050dfa8f955aaae1828fce7942021c2d6f831242936",
+              "sha256:e95307b051554b74bc49f268ea703124e7e3e7f6b6d64108881c84af7fa368c5",
+              "sha256:f128c887cc19031e763fdd591f394062b0c663ee411269f2122eb2a44f7782bd",
+              "sha256:f4339ad4e53cea83055580e39e6dd10f1909bd2df698b104560424875b997ab7",
+              "sha256:f67ced26df91c806759f63fb766385fad55c95d23e9254be4c24e2688d72f99b",
+              "sha256:fb30feaa1339921c780e30f4ebbeb750d5bfdda390fa2f756ad1f5ab15ec6f14"
+            ],
+            "scripts/check-architecture-sync.sh": [
+              "sha256:1aa84c1f888a199aba5d07a00fa2061c2079e01a8147c0c698155ddaae0b7dd5",
+              "sha256:1b06f1cd76274ac89733f09fb2b68342efe03b249eae230e10b0748ddeab61ab",
+              "sha256:35b4c463197d9b718a02f6bc29fb7f5a1b80fc82def462cb66360b2c187bdb77",
+              "sha256:5b4bf384073b5bfa49d2ed0dab1ef1c5367302fc09b022a35df455ea9674f55a",
+              "sha256:5b8529a204970c5f1d31363a1b22076632479a04f4d1df8d232dd3ac559e0bd7",
+              "sha256:a9852f6d205c4199194bfc3c8fd8839b62c2fe9d6fcb21ad631ca287049b97e1",
+              "sha256:aeb9887856b65891fddfdcd745c04a0146944365aa9344e1efd18f2082299389",
+              "sha256:ee3308fa9c30c2979e44b12d1156f7750655ef0128389b8617109947f059d50d",
+              "sha256:f5eda22d7cfdcb4a0411301fe876464ef0995b5462733294227127763c423c48",
+              "sha256:ff35ba8cc0147fafc0cab471c37aa06ea72314b5bb9f8e3f62382141f7692300"
+            ],
+            "scripts/check-brain-manifest.sh": [
+              "sha256:1ca7a3a395c9aae0268f4c28c2f78d831efdc1fa110ff5979863ef750cca7271",
+              "sha256:68e1ee8f2620d67fc0567d86c59b3b46da803cb670c7529b134e78fc6e103517",
+              "sha256:b9b14131efbbbeeb0e5ccb80ec23810242f6d5dd25e1dc43f15e8defbb5f6167"
+            ],
+            "scripts/check-context-files.sh": [
+              "sha256:3bc31c1beb093370966149b9c4be4dee4e44c237120d64e578d5665eb46698c4",
+              "sha256:422cc87faec9ba39d6728ddf7db26aed400b5a61b7fe989d33a7f22c0f29ca78"
+            ],
+            "scripts/check-deploy-sql-order.sh": [
+              "sha256:b483dd0edef8cab740904abb0803b297f72be7f733f49a9633f531e01acd0f7b",
+              "sha256:f8dca7856085204adb949e7b4d276909f5400626bd5d1f4977f5cd631dbf4ce1"
+            ],
+            "scripts/check-skill-version.ts": [
+              "sha256:3552cadd98fbce3a6d8c886449b42bee6e38b82750211d4e382f674303997dd1",
+              "sha256:44b6b6c54307be06169ce886ad322ac1a31a8f78442913058f99d6b3b0dd08e7"
+            ],
+            "scripts/check-task-sync.sh": [
+              "sha256:0c8fed53ca29ef5627707e9ea3c1ea71caf697fa4a29f8be4e6524273c6b2a33",
+              "sha256:2558f5b30ce1a830d5841a6d9fe7084d081ee3b4a862ad998a7e8cb26d1a723b",
+              "sha256:3affda7b25b4653d4904b00c7c418781db7b2f7629996708c0f502dca2ae0db5",
+              "sha256:4348a880aee2906e38ccea06ac7ce691b51f9eacdda2154d2b2947c9d3d5c461",
+              "sha256:4c57939626ec5a32ad0d95ea005d043f894b49f3657fa920ec9d261c910288d6",
+              "sha256:59ced36999a77ff55283f5eee2884a9572c88fa2ba61316fe7cef392a6f59255",
+              "sha256:5ac74092eb085765f5eb4f0621441daf90df38dfd57defe0689d0ea52170f365",
+              "sha256:74cf54055322801073169f84b6a0a7c353530e4ab3210ff43d2c1d34ff7e20c5",
+              "sha256:7bf68382811e7a055a03836572ce42e466fa3367b28bc974c64658a6e4953d69",
+              "sha256:88bca479d9535bc15ecfbf21de7ba2d6d5ac3809088c247b4eb78f01c9b3e10a",
+              "sha256:ecd6257dc02d48db87ce49881835bbad173dccce5376e5036f85a07ef3542c66"
+            ],
+            "scripts/check-task-workflow.sh": [
+              "sha256:063497f44f833650df600714b4e61939d97c4c6c091970737dadb279585d4692",
+              "sha256:094ec26ca5fe2751370fa6f12cf4eb349aa096ddeea3520ed56c8cd671879d0e",
+              "sha256:0a64aa5865dcc0eef651c68aa834f9ab9c32a39713fc037b49962f2bca2512b4",
+              "sha256:0c1dbb2b5f7d7b0ebee9320591f620a990c7f2acd3ca782102ce3274af433c0e",
+              "sha256:1d8c939fd9bc22a2cf6cbcf196acc2936f63f2f04b1e7abb695acda92c239ebc",
+              "sha256:1db5f6b27c6526a00afb238df81001505b20437311f9ba9f5038668d67976901",
+              "sha256:2dc7b4056890d713190306759f19e7f6452f5f4b5e8a89adcd2da3c3d21a578a",
+              "sha256:392f99c80547b5c4aab72e0b3273412ec51a5620a02b16ef934a6024ac6eb713",
+              "sha256:3e51646361a5ebb814b6389681d5d0a17c9a00b3f7cdaed8331824cfc606da62",
+              "sha256:4bd17ca759742d0ce553fe9e58203dbaf2ef2f0a431daa8922cd38cb2fdbdcd1",
+              "sha256:6febab4e6ac2fe2a77130bdf6b6de62121cb0707065c23415a5d839aef48ad9f",
+              "sha256:8dd0963fe1ca96df4033bd03fde7cfef517a933c6f5419c043e4a30b18b1a510",
+              "sha256:aecbd9d912ea9b371069040fd36d605258dfd72acac7082eb011d802de531620",
+              "sha256:b1ca147bc9f95dff2372f96bb937a47f854f0fc4573204aa928adc79986a5335",
+              "sha256:c1e0f69375e11fa4345fa026c1d25ad5d8d21f429033f5cd2881dba54c4f76c5",
+              "sha256:c35fd7fbd0138ffdbfbb103ddcf535c92c1f15cfd49a87bdf8ea8436bb73ebdf",
+              "sha256:c6ff38232cce418d7bf3cdc4f4b88236bc6515fdf50a839f57c22b54dcbed890",
+              "sha256:e43231fbbd8922abd17403c1c9ae70011257a202c47506a9dafe04a6c8871b61",
+              "sha256:e72058cc0323c60b8dc259cb3a7dc8f450016e6b2abfa9788fe3561bd08fe311",
+              "sha256:eba3aaaea38dbad7bae5c7e12ba9af5717ba7ba3c95e4e9a2bbf6d1e7246bbf4",
+              "sha256:fa6cbb3a14cf759f77a1e770fe468f70dfe2acafd3a2ba4273085cdd9c1fa9a7",
+              "sha256:ffaec8e0203d5a9dc57bd07489de6983011c1705ba431b9eec37601f09439ca1"
+            ],
+            "scripts/codex-handoff-resume.sh": [
+              "sha256:1735ec997886ddf0c586d924fe31f9a4d0eda6b07525064dbabd7fab869e4b32",
+              "sha256:353534c5f4235baee29f1486e0aa38f40aca4182d858230fb67c607e14cbc67d",
+              "sha256:a317e7c5fefd4fcca0a341282767707e436ad47d0b38f6f44f6ef0cefa37c941"
+            ],
+            "scripts/context-contract-sync.sh": [
+              "sha256:702738bd19b1ef8c7cf4f16294fd8cb4013de429df6e77ab17baea8058c3d810",
+              "sha256:9ce65549550cf859a2f66f50d86e09ba5219eee6069cfba4a75a89ae39d86545",
+              "sha256:b18227ceb8f2f542fa9f9c8db28eeef35fa5bf3c55f8c4d089065d29ef004ab1",
+              "sha256:d051610f314d0a9aade0cdd36e7b567910c63daf032a1d32941f2ce757b40517",
+              "sha256:dfe51afc0aa9172ef6174668eb3c6b5c2f92b499a473f56904bc834918874156",
+              "sha256:f2a449fcfc47e5531355375b4683c643de874d7d8b6b6e0038d88af572f0a78e",
+              "sha256:f7a314809383015cc752aa0015b563cded4d04413875fe0187079866520ab9b0"
+            ],
+            "scripts/contract-run.ts": [
+              "sha256:16c66087967e50aa02947a927250f587b6c7fc9890f4f85a545b0e9d8d180400",
+              "sha256:202c76a15da0d35eadd3a21e51d69267d9c0c92042929d4c5eb713fee519bf35",
+              "sha256:2119a4a5d84fe9f4304995a7980231b38d73dd41a24afa5c9f7caa1f9d18c51f",
+              "sha256:22c8234958433ee02d0358ce2ea4f7928d3109127ec07fe01232c7f52e7650a0",
+              "sha256:236527eb347fa62edf217aaac9bbc2692e47d5a101a6ce730ac1a83eacf38cc8",
+              "sha256:2741b01b7679ce6e6a7bbb51b53c2969a5fe5869ee4b91e7d6f64619a50943cf",
+              "sha256:3001923bcc0f5c073bb264fff2ab9061f6bdd5b8f73751138c1c84df189b0cf7",
+              "sha256:4049c80d4edbca4a323e5bdc9eb48354196e7dabbca56b69bd753d0980c6064e",
+              "sha256:4b1b7ffa0902acab1caf0733536c1c482a99aa8f91635bb9c87c3428fd9ae30e",
+              "sha256:4bef606b97af80af73e395f0aaa0ee2a26a34a7fdc12e1ca121da968d5bc34f6",
+              "sha256:5b6d1c118679e21a78bcf68f063d565246503ce04f4bdbf1b01763f4fe89847d",
+              "sha256:7c681f553b87aca714327ce8c0ef7850a7331a1972536550c1b8b36b3442d09f",
+              "sha256:a00c847197b121a378f7f52ab6d6bf199fdb8a234e107fdcf004ce711fe8a431",
+              "sha256:a4a451bbca248523bd68f5a12a0d9894a39e5bef08642b8c00311c5da906c0b8",
+              "sha256:b3ecc5f6cf8570154f7777cff549102d2b3a7b7403db952e600532884d076358",
+              "sha256:c5a57f02b9d0477d3e5a62edf8ca4ea78bb6e646182d9469749b0b48b1c9f848",
+              "sha256:c760e4cd0c283da200b09eb350c1c8ed9b9d5de777ea81a4b1bb9920da660967",
+              "sha256:d69a1ae5134fe7a53b5b0599825789d9b94c89823dc5475621113de69ba043ab",
+              "sha256:d823e33b524684c073cb7933e8ceb4131fe1dc675fae47b663a6a8ed7018352d",
+              "sha256:d9b62b97945dc756b3b82170980423133be637df6f7572d7ec05c4b07be614f9",
+              "sha256:e27f77489a340b459a80efd76154df7e0bdf2711b744a54fb2810d0fc277c5d1",
+              "sha256:ea3f9eb472e06b8c2d5626ad4295ee32e0fda9e57eba0b9d542dc39b76282d00",
+              "sha256:edbc1153fd11ccf039946deeb0738913faa7da87658a0b8ee8af2469e3dd6e95",
+              "sha256:f0a2a61d002b8365cff9f51a8ffc8a2a26a26ffd6a35e14a7619c0944aa31b43"
+            ],
+            "scripts/contract-worktree.sh": [
+              "sha256:016f187544d7270214a51c1883e148c6f6060c720873cc682065317a9e9c12dd",
+              "sha256:02f0270574dd72843fc58f664c7e4e08d0d14cb7ca619d05cbc8d92f4fa0300f",
+              "sha256:0349ea30d276ef6c0bd6e756f64362de24161f74e1de7b066555031014663c85",
+              "sha256:05c7d80eba7eb60d2871512d4fc59886d04714055bd3ce8bbfd9e495316b951b",
+              "sha256:0810412fadbc50901204523cb6dae9d6c398a04d222829afce98706b09220f49",
+              "sha256:0b479b08ea65728fc75a03546ede9e52473dead3c1a2d3cdb1167e4e65e09941",
+              "sha256:0fb6bfc3beb7662d47304b0d9935696bc245245e2c43d25dba5c5542c09a84e1",
+              "sha256:1004d1b13760a9302abb5435a52de4bb2d4991147e35f88522cb622838136668",
+              "sha256:12d5765663026e8252c3dfa3146d1076407b08dff440a8c981f9053204a0c957",
+              "sha256:1bf6ef8391d4f92d1463454704b202f1c66094d8b55ef9c9b1bb5edd13175ac7",
+              "sha256:231ccb339fe9b335f48559aebe7d69f21a8f4488e765f5549e2463c510dbf4c3",
+              "sha256:2a7a245e42f019412c4694dfcf3abdfa4ece99500afab4c779c6a2b5a152cc43",
+              "sha256:350bcbeffe2dd48a568d98a3a8be0625b4e1b4a25cda9e6698cee0e91a8f2847",
+              "sha256:3af76baf02537418ba2e8a17788d8d29f94879c3425c2fc71531fb0ed089707e",
+              "sha256:41c43e7d397bd3a25b180f86029354f7801db7046ea373da752086256316b62f",
+              "sha256:4322794e6a39d1d469b92bc6b2052dca9f3a22fa5757d9c0aaa82ee3c241124e",
+              "sha256:4c71b1e65572de403cae4019f8962b0177d9dcf098819856335ece1d116767ae",
+              "sha256:5c993361e49ff276c15eff8cc5401cd4c88f19df5a5fbdc0d8170098820e2d1e",
+              "sha256:6bb41649214a844503d4345f92d091f472ea0ce96f4955ecc47f7ef0532752c5",
+              "sha256:71e15d06f1c4bf154dd7b8f1657b0f153cedc600d739857c999aeb06bcc4c0cd",
+              "sha256:76ac20f2dbbd1e28c4e4075753a15db59c8be689582d1290082f01f389981703",
+              "sha256:7e1c6c0c43ebf446e3845fb61854ca9c5c92a76103e234567577c1bb108e5fa7",
+              "sha256:8223e3cf9ce324b797018dcfe4968476e1b678632e51de01ca195b00225aeb36",
+              "sha256:8b0746dae7b1ff4bfdeb2fabc99e8afe7752687554f2c0560c283327ce3324e6",
+              "sha256:8cf556f28e0c292f83982652a181386e2f79657187a8438070088dca6e053bc9",
+              "sha256:9bb301ee902467711e9dadcbeb4675c1db8eb27639f6c051854e8bd83bc120e8",
+              "sha256:a5460daa009dc59130ab6c90664ee9ae30aed2884c2e9cbfc620e5d816c21fbb",
+              "sha256:aca10623a0f48c320f5ae2d3ca7ce2b1e35a7abb42915ad55ec19c414ef6a220",
+              "sha256:b265b91f3d9e27e7537bb9a12769daed0c75d239b41daf1fbbe1f6cd89d4e347",
+              "sha256:b59eb154133ba6b29d656afbb5c71ade9760b54b1adeb3006c66f9e322950ae6",
+              "sha256:b87d0ee7e6ce3f321d50ba782e429e23041917fc99eeefe38987071f37fccc69",
+              "sha256:bfe5006969b617e4bc02970dcc8b5f8df01ebf39c08d221ff296a8a61d9b786d",
+              "sha256:bfeade101f1280fcc44c8c1ff03291df202a296ff9ab02ce856fa4d6978345f0",
+              "sha256:d2491f1ff4d46b83177b43e3f8db19f3071d518de433a2d361791d7709f72f68",
+              "sha256:f0d789b6f87e29613f07424206d94f45dd43133814751189d0415cd470302eee",
+              "sha256:f46a1ccce3f9a2f2f25870a70bf4e7dd474bcefd4e1e3de2cf1a89cc1fb54c8c",
+              "sha256:fc0230cd02d8c57c55320034d96b7e40a8fce86d5b83f56f13c3b5dc01b96b3f"
+            ],
+            "scripts/ensure-task-workflow.sh": [
+              "sha256:042028d3b46eba6f651a44a3403e76a07cf9730eb8259cf36fbf791b66b38ca5",
+              "sha256:04222e50f8c54d9b610ac7d4f1b518d30bad4e5a3d20a458978b6d041c681315",
+              "sha256:06b2ebf522bbfed3220a824faa785f2b31b8df798a54e978c251746932d6e6a4",
+              "sha256:0a798b4e99af248a68c87ffb3812283edde72c44fb14653c4f5ce4516ee5d5c1",
+              "sha256:0acd9d64fbf4d9d785262a8e471e67fb7192b407f1c8065105619d3aaa920d31",
+              "sha256:0cf840a7c2a8159a1a196a785ee7697661523bb6c63ee56b3abc234c46968981",
+              "sha256:0f53bb5a63e81c310142937ef801358ca50707abe4071f0877c477f11b8eb750",
+              "sha256:13e636cd2680da149d55efa420bcd64c8b8e5520fba7cfb78763d467263bfae1",
+              "sha256:158956ab76ed726b20bb4f849fca724b373f0d7356338be1e10032cc7d0eeacc",
+              "sha256:1e987f821e0745b625b1f1205fc6b701cdb684cef4d430e40cbf8f5d77b3d9e3",
+              "sha256:225d0bd56bba84b7ff4aa9e798b10d6d423534aba464147aafe1b3702ba60b6d",
+              "sha256:230c53368aad75a201e90ae8e824a9b093b2aeecc5f7782ad0c6489ce2d821eb",
+              "sha256:25ee6a56af9db8669b38dbcde784285e1ce06e456e057fbd6886fb846243f0c7",
+              "sha256:2acba7e68747187bd81f063db2db877b86024d15d3c9930f52f01ef32a5383cf",
+              "sha256:38cff7bcbca4ed7ebbd0cc94a5ae924cc21c156c9a1f6f221841885b3c35a0d2",
+              "sha256:3915a57320246ef58621fcefedcd9b0fa8767b5077b52ccc225567289499578b",
+              "sha256:3982cc6001b5ba075519331c0b9cf8af1f88ba333b5a7e07cb81f21509bb2154",
+              "sha256:3dab96a4d7206af01c3720dfdb78f3255610e580bfaab651d72ba06e5ec02fa4",
+              "sha256:3f70348cf30b60a15de7d362cbc2ac5c96c2132bb9f4fb45f3e24fe10707f946",
+              "sha256:43517de265309ad8b754025a6d9c0e0f71cee2ce864ff5609e1363001719922f",
+              "sha256:4657b6e0d184d438ba4cc48e3e6a3b89ee070ebbc85d5d0b01241c6735ed2c70",
+              "sha256:4b3157b363ccb181ce76fbaf5732d42fc65f516c331108b44f2215bc343be570",
+              "sha256:4bf76cf8959e64e4275eada61b71ad652c4e1c1c4106e7c6675e1485657129c8",
+              "sha256:4d78dc83bb06172b8d6d6aaf9748ad17654d19e301d7226746e822d06858e21a",
+              "sha256:4e015c12a308bb34bdddc371d91273a206a71fda42787dbac63ef6c2b438fcde",
+              "sha256:507dd7dc6fb11dc15b3890df3c5e40aa03c38624b47770781facc1a49f8d3d34",
+              "sha256:53b6aded8f336b7a9c679d0c5527aa419a01115bfe0474bc5c47f663eddb709c",
+              "sha256:5603d22f6f20eaec5051c8159da394546c81b0a4af9d9e5bcde48ec65b455ee9",
+              "sha256:5643e64bdd70eba39ffed6f7d4986655078fb37e33150271f0b21a0fa79fc617",
+              "sha256:56b01c7aa631a1fcddfbb5a5af16fcb9fa66320d6e69889daf0099cc080390c3",
+              "sha256:5db9196c35323460a67836784ec837f997c6b1b1b56e654f863dd972623b209e",
+              "sha256:5dc71fa8089530ab7e588af5927ab5ed684c29401414ce54879da3943de558ec",
+              "sha256:6297c1787f7570231206c54e8270d05156fa25fe854e521d7996e51e22df4d96",
+              "sha256:661804f7ac20a7e6a18c4a999972754ed7feafb05a7b4775b46b0bab31a1d028",
+              "sha256:6638622503242129217745f8faa1ec8b8a034a1fd8e7686fc2d33ae3d4f4f258",
+              "sha256:669a144e1cd5b4956fac31c0d9947d73f0d77e0157c4605738e6b42cb7a96671",
+              "sha256:674cf35a9e024ac2000ebbb7c27397b887e91ad0daca94d4cde2df197ebb9eb2",
+              "sha256:69dc232f12eababe96182f327a4a5fe96a8aea04752a7f7813274d972dfb757c",
+              "sha256:7230e63b195dfc85d2b64f7e8841620ae31559c51ee21fc10389996831f49f9b",
+              "sha256:726e75724651ea633ee1e74d85af03c4ba0da5d8872584a13d97c2bc4dd397d9",
+              "sha256:75d87c325489cc771a19fba749ca29850c59caad1afd85c647e1c74a62b2b46c",
+              "sha256:78bc76e10d6f6f81a8bf21bd38110f61707fd0b37283b1b7ec839e82685227cd",
+              "sha256:7a64b50a19cf208d544b1178c04f2b901a1dc3f6cdc948b8170966e0a7d11873",
+              "sha256:7d1ee09a6b229d0fc925f5f50d8ba53c7089e52e57e5d0b049005d40bbe0d990",
+              "sha256:8017407f6cd2953f357d9d890552ae6ffa280f29944a3295c4b309aeb5e73787",
+              "sha256:83a09d33d3854e27fd5ad0996cc2390cda0bc2637dafa2bcc473a19a6e964707",
+              "sha256:84f64eb2b0fca9266cb5021e5dc05f229e04c255d8226122c512902cbba27dfb",
+              "sha256:8870fd1757f35fafd01587838f50a7883faa66c25b0ab052d0bc08e50b49eeb5",
+              "sha256:89ec133f9cd2ad6e64806e503a30f30b86ff745f0e30803367182c53e3c7c93e",
+              "sha256:8a527229e74a36e70f87c5de9317719771b1ac964a347f5b9da2b987c10ff491",
+              "sha256:8c7eb2083fccef98dbd6a84aa46db5508b346fd406397a651d30f0efa3e23778",
+              "sha256:8e3207e83204b98075b4ae7f64c12d9db96b98ac331c2f7ef61d9433da770fd1",
+              "sha256:91abc6110b6476d07446ded9ba7a0f5143ff7820152a56f66cae53490497df8b",
+              "sha256:9341b5d6c2ba9369c813b1b31cfbf2a2391abd13b52c49a26794d6d2bfaae252",
+              "sha256:9364a733bc04cf2d3dcb7d734e760adc0d3329bd4e4e51105b99064d329a1e0c",
+              "sha256:9364c4def3e07310858b31156c5987c3792b65b9d621a2b4294d836d0d2cdee1",
+              "sha256:945f01163ddf8ecf2736af04293e0d4ba636d3efb8697cb2322e3358e7ce9543",
+              "sha256:96332ea28c29ce2b56c3b58cb7366395cfbda7fc7aaef37363d51bc5a51abb0e",
+              "sha256:980faa9c0e74a4ce5c02fbe1e1dd002f950611c0b3a971b18b70a2379540e8e0",
+              "sha256:9a65b4d35db1308d3a33c0eb720ce0295044043ddab2c404a79b032dbab698bb",
+              "sha256:9c8602b333525c87d4d8e50316c984f0c2e6a13ec08466bcb85658ad202c4072",
+              "sha256:a0d9549d9d95a611fe72b18c736c04d77d57ba0676967f0ee3ebb15b0f79bc54",
+              "sha256:a1f8778de2f767611b6e2b92213a62c4f4ae80eb8cbe34c663316384441e794d",
+              "sha256:a2803971f728ec9b436f117bf26ee2915850ba39c1cfd8e3530c7cd7f5466b98",
+              "sha256:a8ade6a3093cc138e1222803a7513c3fc13ef54ecbd2dfe7ea7a0e23dc242ae1",
+              "sha256:ae6c03cee874e0fcd93783dd19b0527979cb9b18b38043604fe07c36f9915c75",
+              "sha256:afca9ce4409a4b3a128dc4512562c1048910d41ea7dcbcbf28409ca6e08ddbd2",
+              "sha256:b5a3fa0344da1aa21467a696d0ab777aaf244ea72dc21ea4c1484d2a627afa96",
+              "sha256:bca529e457962ab5d9c5ad9c37b59358cb6d266b9a1cd608161eb94834420ebb",
+              "sha256:bd479f9ddc284902a01ce5a497fefca256952a8128a650ec90541a451f9a8ad8",
+              "sha256:be6045b988c47780a85313ba6a4e093dcb2024ad561668d5b18b4cee011df36e",
+              "sha256:bed7279f0dffb02635b06493c9b307e0a58fca4f2bab504297964396c53b9a3b",
+              "sha256:c91848fb157692f60eb7aea543404572305780e02805623763bc5c9329897f93",
+              "sha256:d25ed23c01cf1a164dd8e3a74a487a1d64c65e099cec6bc62ec46709b9bb57e3",
+              "sha256:d5806b7828e00bef78287d63334addb6b3473469cf167f258b061bfb1df961a2",
+              "sha256:d5a52f0c9fe0e2d7e9bd933b33f5bf6a9573e27cfd609b7e4177ae624d850b35",
+              "sha256:d906cbd7dd835a3c95a507d6cd2cbfea31383ec83d7051c8ed1bf4a5d8f5b1d8",
+              "sha256:dc7f093354ae114bd183dfa8413786850e1fabd4068cbfab97d4c789518da258",
+              "sha256:de273e6068b126caf8e2774118a3e6f8cda6316620d7237905ebafb83b9df3f5",
+              "sha256:f4eb22d7aca8ef02bedc379ac305c850c25a963901b823b750af42b13d1eacea",
+              "sha256:f4ef200fa734233742fe08087fafa27dab331d3a62eae95c335ef7bbbff3c32a",
+              "sha256:f6b473d05f1bc77cc842f01fd0c444da50f4b1ddb3140e08feafcdda28d0c0d8",
+              "sha256:f91b400c30f12f6ecf2cf4311acc21e0a1f02ca31dec5f62340bca8747ea8bed",
+              "sha256:fc540d00212489c1e63d827f44f0dd23627bd5cff06e2d4c55f814b278959e11",
+              "sha256:fe066c949505166f5ea74300b77224cff2d8cc86ff3cad453a7566649f51c55b"
+            ],
+            "scripts/heartbeat-triage.sh": [
+              "sha256:13f03c3e694eeafb3a4e155aab812e8a5a3d2ed179b7743eaf8deea9e08ef8fc",
+              "sha256:3a6d78bd27accf69507ad22f87f8da051e209e19d87f1b5a293886778d847288",
+              "sha256:4fb08c19cd81f87e333c3cf1b162f326c8259d3aa8c510ab59894ae9da10809b",
+              "sha256:5cee1101372cf51d6a15b43d257718baaa1bcc9886cf08c6e6fbfd9532165f2d",
+              "sha256:da24cdb691c05cbad1f672c1e47b524df4d1e72cf1c5d1305d640db77b082fe7"
+            ],
+            "scripts/inspect-project-state.ts": [
+              "sha256:75081071c325ae73341d2309926eeccd3761f56d8fd7db80e8c2cce7ea79ac3f",
+              "sha256:97889e6b2819f176b357a167296471c87eafa515d541fd83f7c8adfe383e3ec0"
+            ],
+            "scripts/maintenance-triage.sh": [
+              "sha256:eb5f0d9f117763716bd0f26a43ce3aef5359fdc056982c9086c821c9b57dd131"
+            ],
+            "scripts/migrate-project-template.sh": [
+              "sha256:06b5afd75679444627779e749032d38aebc6e315bd8da80b0777872490c0feae",
+              "sha256:5cd59662958cba7553c7b1d5b6e71452adc992cd31759b3361f6864012bd6210",
+              "sha256:6cc7314953a005e2d5bb3542339a603c24e92a4da271223cda5e15e213b0fb59",
+              "sha256:6db91a70cf1692eea4a337e30f47cb5326707c06e6ab2fac38166d192f58144e",
+              "sha256:b3443dc5f5b2db2547aaf82854a61bcb1bea87e47f4639f5bd14004c22f4fe6a",
+              "sha256:bd22c8a4b01f5f18c6ef5d3db945609e7bcf28d22775b88f694f0e159e70d548",
+              "sha256:d450e7bbdd45924adba177e8e3c6e1730c0ce80d47fe72e88552f9d999693362"
+            ],
+            "scripts/migrate-workflow-docs.ts": [
+              "sha256:d2fbfbbe8c5112630c0a4686e6d636320685c95e5b2135fbf87ddc3f73119f5f",
+              "sha256:ebcd1f9175f599a56c8c9adce67fef1e5028596e4b9cec26283e831ec763b9ad"
+            ],
+            "scripts/new-plan.sh": [
+              "sha256:043dfe34d22b5bcb29121a81b7ada7aed324598ca6059c57250377ecc63b63e8",
+              "sha256:42f71d86776740e03aaa5d4bd2124cbff517d52db29ae4991802c21ba840a416",
+              "sha256:9faaf0d86eed64f27d071edf6099b5e9c42abf56b09e40953e7c7997850f2ba5",
+              "sha256:ac37a5c5fa4c7bfc2b7128d1543da934f9ff312c50b614811d53a2fed91c2d5f",
+              "sha256:c96840e75f79711e2d42d1cb4b12214134399b371931a1a42ac667584e2c5d52",
+              "sha256:e3c7d9885812df881c225ddf9b443bc769e216e65b5685834e953411630d76df",
+              "sha256:ef25ea4ba67a16c7d79522728979091db3d2e26493a2a2d0a83aaa21072a0fb6"
+            ],
+            "scripts/new-spec.sh": [
+              "sha256:2f5201528382cfcaec5dfe6c399b289214560574780504eb9686bb455b24f89d",
+              "sha256:aaf4f0c7fdc0e3372c37aec9af3252c6bb5fcfecebd2d5d8658fa15cb1f65d59",
+              "sha256:bb1372b9beb6e3e8a0da8f64a1c1c6463adf351d7e0adf6ac694cbad6e3bfbd6"
+            ],
+            "scripts/new-sprint.sh": [
+              "sha256:38cd336815eeebba46584419dbc506666c6d69ee3cf74a928a895761ecdf2b21",
+              "sha256:6e5243f7fe50ba64da53498caa25187ad5602edadb1b2d59ce2352e07e2dedbc",
+              "sha256:8b759035bc2bfceb6262f1505b47af4873042c813a7e5bc62769fbb9d7ef0725"
+            ],
+            "scripts/plan-to-todo.sh": [
+              "sha256:01a29285a54997f0703f7bbe4931ac2bc18653ee98f4aed2745c4b83771821f5",
+              "sha256:1f6a148846abbba812d64487773ff73cc781f0ff6a30ce602032cdf5fdbfb179",
+              "sha256:1ff274e6c72a5cab0c93dc22c28fa61f87f4f70328334827ebf1825f7f504c7f",
+              "sha256:20e920eb22003f4294e8c676a9b7c0ed17261b09f63caf86c4a4018f44ff869b",
+              "sha256:36ec84bb2d14f637b11ce915b6140c87612347a3818544e7daa093d2e007de59",
+              "sha256:44d8d4e5ca951e3a72c5cc53f37234857e55fa13989bccc23adfd7553a4f2e5e",
+              "sha256:4ad453dc528c9cd5b14137067cb6c663432db155f53878a3a8ba7f5997071ab2",
+              "sha256:4dce86e6d299127fbc7f30dfb42dbb7fcac52251d0e80e1e232f6de46e3537a4",
+              "sha256:59012bd324e4ecc7af17e2a257774eb70126179bc3a188e4a2e0a60bb987e37e",
+              "sha256:68690f19ce9b71a13ac1ab6217a57c247d144e0ee58fb34e6214d465bc210892",
+              "sha256:689aab940d768c232803eb88a878fdc992315b409e271dc68a590b333620da6d",
+              "sha256:6bfa8190d60321f46302adafac56d0e4cb07910dd3ae19ee20768d9512f52443",
+              "sha256:6e1b7d222ec29c407fb20317fc900d63a8195cf330dff679c2d4a7e2899908dc",
+              "sha256:7169eed7dd30d0d06b8e2117ea7e191a98fff6f0f372cb73b6602b2f40cd256d",
+              "sha256:75c4408b7282229eddc8cd8a86ed261647b487cd10ae32dbf22da15215fe1826",
+              "sha256:8191b9f1b7048dfb9197014a98d65fbf60986942e38f6aa397dce7cd2036e98e",
+              "sha256:8e67cad9dc9aa8c681d92ec26a2288ce13fe325c537209875e5d2bad69f34080",
+              "sha256:910c177dde08990f0f397a4437db1843ed217a565143cfc1bf75feefa0142c27",
+              "sha256:99f8fe9670dc697016c5c5761483569ae1294c96a2d743eb7a685f5d078e0eba",
+              "sha256:a0bcd4c3bd83afd1f8e80d1e6eaf49143989c20532504ede6ae5bb7018fb923c",
+              "sha256:a6bc8fae2f23ad13539e666618049748dc218c50c6c31b3bb8359cc15ae0b931",
+              "sha256:b125c5ab8889f91fbb8ccd0e1e7745154e0863b8cda9e1c12f0a7b6d80d311a9",
+              "sha256:b54e98365d30c7be735d28dcc29bd6c0bc9e5ce5c0b6399d96ccf7649cc8c825",
+              "sha256:bedcd05bf8eaf50c58f183fc7f15d80b6fedb56695cc19c13d410f144b20e9ac",
+              "sha256:bfc34db296f1df1bfcb6cde3ec773b5740a5361e37401c628617eadb9a5f48dc",
+              "sha256:c6446124a79b50e6731c809c865ee7ac477997fe4384148540dc187d2b526b3b",
+              "sha256:d1a7b5f2fa72bb169ba4aa7558ab5da0ccb00f00eb1ab0a9006b617a151825b4",
+              "sha256:ddcb22e7fafcecd852d535cb5ecf51678042768385c1c2e82b4e3a799065e931",
+              "sha256:e079cf531f85b51e9410956b9befac81c4796f5931d59515f8de0cd0280dc8ee",
+              "sha256:e1f3985c74f778120fedcd1bc9c07c28c40d4053443c6b4752c8406c44535083",
+              "sha256:ea90dab3656328b2c73f4fd9a2711ac74a756c8e1851f1473b76604144ec06f0",
+              "sha256:fb7334bf8e80a27e968066beeb6a817abcb582b844f75b8b2a26bbd91c866f54",
+              "sha256:fd6bf7e5ece59277e4fad032d8498ff2bc2afb11b49530e52be5d71332973978"
+            ],
+            "scripts/prepare-codex-handoff.sh": [
+              "sha256:513250601e4e31f68fc06b06074f13c98bfdfa0c9fdf65a0f916a3fcbc037033",
+              "sha256:95689fbf9f1987cb86369885b4c79791096628a15ec0837137ff9235eeded0fa",
+              "sha256:be90d8a37ca3beb17b9d5d98ec6069df9f3aa8331082f6d814f1ac02af44b9ba",
+              "sha256:f07b8bf7173a83f1697ea72194768bbfc3a99e32d270df99f00546b8815ed9ee"
+            ],
+            "scripts/prepare-handoff.sh": [
+              "sha256:1441f9c26d148c30bac3a0f55b06b8b978ed3aec58fa6a30d4a1de92213612df",
+              "sha256:39e08c5ad6de5b32863f5a8cf743957da0011152df8efca32278b1d77ae3a9fe",
+              "sha256:aac1e4f2b2283475e1315498c1a25dffbef43f69d194b2cfbb8a573bfd73c2b4",
+              "sha256:abc7ab8c8391ddb316de932d701d5b0e550ee6337e45035aa83cec3fe967f0e5"
+            ],
+            "scripts/refresh-current-status.sh": [
+              "sha256:7b8f18cbb6cfb1eb612d48e2eef5ad708eb0289f5dbcf1961a7d9b4a3353f36e",
+              "sha256:86434a0b42222f533f197caf2e341f2a556298a5f97586dffb18291ce3e4f784",
+              "sha256:8a267fdf2a07613d042587dc32c7471c063d7a0fee28740e47698beaf73508a3",
+              "sha256:93152807a968d71b161c7d48fbba027f59174319d367b77f1f36681d707489a9",
+              "sha256:993e204309576a40034ba95756cfc6da5ce50eac52084180a5e763b2c750d9f1",
+              "sha256:f7d281c04f96dd7e17dd5d4327f1d9f4a2a319bf9e93951a7c559e63f981c7fe"
+            ],
+            "scripts/select-agent-context-blocks.sh": [
+              "sha256:2c0d89fc76315aca9dc2f70efcbf5fdc4b8b6b99d4bccb4bb950e4f51cf14bdd",
+              "sha256:96a1e75befc4dcd4f133cffdcf7771791d16dd235012011f607be7520ad7e0cb"
+            ],
+            "scripts/ship-worktrees.sh": [
+              "sha256:3283921580951421c6d8995027384868b341ea0e760990c60f2763848313bad4",
+              "sha256:345e65869428d1a6dd9219c8b5291055b97c582f59fa383c219ddc1b449fc674",
+              "sha256:4312d2e3293cc50314b6abae15a371b8ab4351812d096990be3cae10ca745f37",
+              "sha256:5be3c3af9440d1164b62530f4e54f7a1eee6069a950b3cf014b42a5119aa94e5",
+              "sha256:738249aa14d3b1c79caba09e83eaf7316bb74c3dc629cd687a7002d61bcac9ed",
+              "sha256:7962b924d0dca4db18399d53f7c3f0f6513180e4468a09c48f020b99b46c4079",
+              "sha256:7e3bfe862bdf628da835b8aa5ea66c5116a78422abde03e14b09fc26069cb7ce",
+              "sha256:88d0de52b15232c20bf1cc8ffea33ae0a523957c63109866f496bc9578598299",
+              "sha256:890cef5552435d88e91af2d2cdb24b4adeb6f729eecb9c7cd9a2de02307ba15e",
+              "sha256:8c498658108b60b0567b32904820fe5339f5b2b7344238049d4a4c26e4526757",
+              "sha256:9244282238e14689dd6d279dc8f8920a72eaeb80963c93fef8b29de443900414",
+              "sha256:9a96b522d8e9ea17eb9c45f93485cbd3ea559a630a2cc8239cd41601d8f98665",
+              "sha256:9f867d7854aac7e5afc14bef8a184a57ed965b571d2e51741626f72fb8ac43c2",
+              "sha256:a9ebe3d0d24e1ad3d510e9735871ff7b61886d23f3617449bae0c614f2de76a5",
+              "sha256:b83853525b05fb2e90dd4be77a03e001fbdec652170c09013ce0b041527cc41b",
+              "sha256:cb8a7479501061bfb530dcab2ff707feeefe2c4f6fc4852467b08e9c6ede0580",
+              "sha256:ccfe251f9b68d933fd41a02b2b13a63d0410cfbe208e89c01889f1306dc243f1",
+              "sha256:dd303fd75a1fe071796217d7512430d3dadddc825af538b00fee0f003c14cdd7",
+              "sha256:e0547c5a6534248bb0ae8a8cb9cf36035f23ea39f714c72d03f7580d49777ca5",
+              "sha256:e5dd092a5445706893ce561ade3f547f58a6fbbd35bf9ade09b2202729482ded"
+            ],
+            "scripts/sprint-backlog.sh": [
+              "sha256:00cbb8fdd5b02956b52b2ab6ad6aa7ea096d956149b74e3515076e58690b5352",
+              "sha256:058c24cef994848621f3ad805f690c562fee07538dcf3f24a22983c67b44e39d",
+              "sha256:1cf785977e50333669422a470eb67bdc7df125c0ba880758a78660a2919fe593",
+              "sha256:269aeba909ccb3477461ad5ac6ce2be0fa563990f1f08364762a2433bb6ae6e7",
+              "sha256:34d2879367be660ac7476babf62f9cbdb87b869c2a7f03eaad63d76dd7d99842",
+              "sha256:559729f527f9dabb4bdd1b9e3a550e81835b95169d5ba13a67037afd8dd15152",
+              "sha256:56ea2a5e3249b7e61c246841106c5090a488137db247d3f097d9f6b74ffa6c84",
+              "sha256:793e5389eb0842c3a72a8812cd0cd0d000632b51a6a3512ad1d44616c40b67be",
+              "sha256:82e4a00cb93a4642bbb20a317c7c45bd40b810065c296347800d301a120bbf8f",
+              "sha256:9e382043b9de788bcc15caf334886cc457affd2a41305000837354b705614957",
+              "sha256:b814e99c8c9bef98b7148c670690d0a59c605c80cabff6cf87517275e5c37033",
+              "sha256:bdac8777a707f31c0932f9a56592d2d3ecfcdf9eb7f94a29213420b2f0087337",
+              "sha256:d77ecc85bf08e741c622eeb110eeaee4ae0be2e7cab96988ffc2571f00d353fc",
+              "sha256:e1a7b05a7e0e027d378cd873dc284a6b17e1aef98c5dd6034c055cfc36ff6cd5",
+              "sha256:e4b7dd522003632874251bcdae71ab5422799b410eb39ea6f1914abbb072e9c3",
+              "sha256:faf4496c43dbd460b68eb86789d538898fdfe7adb055fd9042f625354f825fef"
+            ],
+            "scripts/summarize-failures.sh": [
+              "sha256:9cea3e945684384b527a0ee1fea774114e391411912600140d1e2af7702b84f2"
+            ],
+            "scripts/switch-plan.sh": [
+              "sha256:468cb501938412bd4d6ead2d449bdbb088a310e30346842bbce89cbbcd2afe91",
+              "sha256:6f67a0ff2418277656463fbaf37d24d60fe535114ef747b961de32a86f176aaf",
+              "sha256:a11b0e2536245d5cad6db4bcfc154c9e05b2daa9034b5e6aa3397cf41146824b",
+              "sha256:c9df594c07dd8b4e669ea875c66cb2ff8896bbdbf04044c70d5ed9e9977c7870"
+            ],
+            "scripts/sync-brain-docs.sh": [
+              "sha256:a81c3cf39ef21ec3f8ca378a7a83a776ef884dad2f14d7e9165bec216ecb778b"
+            ],
+            "scripts/verify-contract.sh": [
+              "sha256:0891674d7d251b3adaeef27a6aa582bd7906f2b4feb241860717da102f699571",
+              "sha256:0b8abfc4e16928b35b9d895ef52a70a4325f99f27c398719170b22315cf2eeea",
+              "sha256:0de4e9cdd934b49cea0ab21eeb43c016ee633f8c94a6276f7d017946dfcb6816",
+              "sha256:139b33da0b1a119fb2fda5cdd6968fee5240b71c49c3f1f61814acfb4cd3c06f",
+              "sha256:1e021bc8c3346eab6fea8e5b5393625ef629c86d234a560d8f528967ac331e4c",
+              "sha256:257773acc99bb5a0b999eaf4f2362f021d58a75508832b397bf0a0dc54262f9b",
+              "sha256:4efc018173dba2043f982a9de5fab894f5ce6d2e559a499ba0aef2460afa2a90",
+              "sha256:56f18321aad6f6075d5e2364e1ff7a3d72b430e46d4b253e26759d372541a1b9",
+              "sha256:611c64d357982c1c70b719bb16bbf7260d5fefd140449707ca990c22ae4914cc",
+              "sha256:63e984c2bd58401bede9fadd0ae1592108e0f2a3a92fcb88827bb66595cb0e12",
+              "sha256:6759c1894b54a98bb322a545b9c5dd8a1a12030be72f8364ea8da417ff569067",
+              "sha256:6b0515e09e865cbbe3ea4ff1f7f2adcffee07f618662eaf3142cc6210f448b3e",
+              "sha256:711b9f7236caed4abb420cee0f4ce1d8e9a5fa951ed86f01f79e6e1e6b710a04",
+              "sha256:880fe5a3d4578241d12fa286dd26176de4b549c50d65072d6e363b3bdc7657c3",
+              "sha256:9c096e92d2b8d6fb6de0cc6045aacde91ec7f9d1085397086700a19bfd6158d3",
+              "sha256:9e97925dd22829cde705c1ccfc22be9afb3d3b309ff681f9e9ab94360db7a6c4",
+              "sha256:9ecde5a9220f5295d38a7ab2706fe222c73cbb85d1ee5bb01ee459c91c2f1c2d",
+              "sha256:bb9f0c3fbf7a7529b94dfd69d6f22c70a65f4e504b42aba8b5c2c7b5feefb4b6",
+              "sha256:d252cbfc8a4f5f1e4c3b26a00a3ea033483ba002c59d7c5877677c6dcdb832b7",
+              "sha256:df0fc8b5842ae9411d81e61847e71f8d91f34e045a66eb8a46b1a07078a9497c",
+              "sha256:e14a4785289d1025c714aaa894fadab4e9b9f726a323801e1f116baddd6e6b4b",
+              "sha256:f5485c8528046936298fce0f673ebd237d6ee5910759f9bb68e639cf21d1bc58",
+              "sha256:fdf5f116d865c2f5c18c9bc7a1fa56f5b68e2588cf6eebf8f16d31e1fc99e529"
+            ],
+            "scripts/verify-sprint.sh": [
+              "sha256:0201ce21dd9f793717b5fd41d7492429ca2a90de2c7ed4dc4b3d547c7b31120d",
+              "sha256:10897021bd040a57c0e60a29f2360ad8eec5ce92bd4288ad42d8291cd17ae898",
+              "sha256:13d7f9a439666d8ec6d56df7a120f35129892844dfc6d4bfc84af6908e5276de",
+              "sha256:18c5c37eb2981a9960f1545d69b195774393193e51dae8f80b122ebd1845b474",
+              "sha256:1e47dd631f22a2f01c58ecf311d44dd5e1f0ce9c5cc81f7b2c9d0a58d8e6e2ba",
+              "sha256:229e9c9de4cd845bda49125b83c55932bdae9e4e47dedbd87cf426c7a41011b3",
+              "sha256:3583a5a60bebd04cbbc83fe767dfb81a2eacab3d9a88f41d97383c50fd6cad48",
+              "sha256:3d9e5aa30954f1c7cd9cc723fd4985c0d4840bb114791e28cebb560edac0890a",
+              "sha256:44dff648338d4ea496579e81c0fbbb9519c92b3e402925f33eecc519534a9696",
+              "sha256:4ac63ddcf033ba1633572e4e957ee451265c6df5fb73e084d0b942abb088c010",
+              "sha256:4b9f5fecd4a2e7e3af100f793a1052307a8e4dae6ec19ad961ef65251dc19621",
+              "sha256:4d7b43cd79265805454ac03811c23e60dc5efbc2d79ce69ce16829e0337ae90f",
+              "sha256:4fdc607bbe83a3d218f7ef63dc2fcf71084133d5f78aecb4b5db4794c011dc8b",
+              "sha256:6292435bc29afea8b9c8fa02e25e6926d5c43d8386e03e780a5217fde2dcdbaf",
+              "sha256:7604772b34374ca6a934d991eede8f1ba059262cb9a9548e7c8a6b9fa8057091",
+              "sha256:7845706f4147b9b2565147ee1cb7069baf67f960bf13dd83bc2baf159aecc0c9",
+              "sha256:78639eeddb0c6d3b57b0c26ddcfe8a2dfcfb65dc3c76b2985168b541e53b8fa9",
+              "sha256:7a8ed0032f1ad91186f6c59a31a6926882edba3143b54c83b65c019d2695908e",
+              "sha256:7c59ce916403267b600c3b82de49304843140fa2ba1a2b1b97eac247c48c03ab",
+              "sha256:7dd054271b4d2aa8889484bbadb466a8bd1d730ad4ec082bef585ffcf041dbfa",
+              "sha256:81fbbc26ab7d9a5d478e4df10d4d5d9889e5e4d5b3f70928e3c1986bf9921b1c",
+              "sha256:85bf602597705c69d159164a790b037e4fa093f95358878d567ee8459c6aae77",
+              "sha256:91822ce616fc66fb07e51c6e93aebd93e46b351ada87f83818087c028e3a6d9c",
+              "sha256:937d31fced304e903350d1fcc4f08549eabd75c59a9d261b50abb6ba64c22091",
+              "sha256:9c954b3468cef6869281b71f48eb0ceddd89f24e5e2b4bf04d1a45ff9f46d6a3",
+              "sha256:9d5104b2d39ed60260db206b5a6fd3dff3fd9f182eac03d8f3563396d92634c4",
+              "sha256:a9e59b376983a976ecfc930ec14d637a60e1f97182460ff956286602224c18f4",
+              "sha256:ad6a51f2bc6c8b788e9952230676b71240092c9d65c647446eb751ae9a7e78d8",
+              "sha256:b951195484593eafb3312fa9771a67776c444a10754d697a064761250946e434",
+              "sha256:c5cfae45e88d5469fe356a700a4a0e7673ca17ad2c703af22d2eff5b65aad036",
+              "sha256:ce4ecec961e7c6c1773095eb2d14584f8769ce8a45b06be8f85130e7b9b5ba0d",
+              "sha256:e2a6388096fca994cdf4e490aeebb5ab4dd519a78014780dd71cfaccdaca1d53",
+              "sha256:e860e20414da268ae4956fde302029b29d6a6d6dd69ffcebc1e9dec657cb620b",
+              "sha256:eb7d7b8319997e5d5a25f853c3c72cc81c453299aaa54e38c0759063891101d7",
+              "sha256:ed816043757ed987380a2f63d4d902727d09480f9e2d981224f536fcda418dbc",
+              "sha256:fc80a282793951e6d5fb5aa83401ff54ea3f1024fc4d08eb1e0a2e4703b9f4c1"
+            ],
+            "scripts/workflow-contract.ts": [
+              "sha256:04dee9b9ec7b5c44ad15a21bcf7ac8cf6cdac3ad7ece73a14e04621a714a8c6e",
+              "sha256:06b0fd42fe8e2e112173840582963b0390161ee998d601e108ea3e05d04e5a88",
+              "sha256:172fdd1bfa57edd5f427e95680e67d6304696c6f0483d3c5d8adae2d2db84352",
+              "sha256:9bcdc82141c5567688fe201bbe79a7079256abb382c2f2893a3d9da4711373d4",
+              "sha256:cd87ada4bfb09e3df02973ceaf694950d98b6de5156b635a632cf3bb8c81a5f1"
+            ],
+            "scripts/workstream-sync.sh": [
+              "sha256:28370df249966cf84cc46c133bac5d37865dfc0bbebeafaee5e3bae5e39c0004",
+              "sha256:906340aabb6174e2fd36ca595cd7d1ac62f296c3ba4a28a14dffbbe07e886447",
+              "sha256:d71a478a19ae17ea2a13e35f0815ea5f73403f57884361a97c745b819508683e",
+              "sha256:f5e1765fce3ddad19932efc247a90c5d64266ad4bc68b31f82b20b3201139cc6",
+              "sha256:fa958b05d4aa981c82ed80049c490d98040bcf2878177ef84fd48ebdc4f15bc0"
+            ]
+          }
         },
         {
           "id": "legacy-skill-factory-generated-assets",
@@ -609,7 +1243,9 @@
             ".claude/.skill-factory-session-marker.json",
             ".claude/.skill-factory-user"
           ],
-          "summary": "Remove repo-local Skill Factory and auto-memory files that were generated by retired workflow versions."
+          "summary": "Remove repo-local Skill Factory and auto-memory files that were generated by retired workflow versions.",
+          "retiredBy": "d25bc6db",
+          "historicalFingerprints": {}
         },
         {
           "id": "legacy-claude-hook-shims",
@@ -642,7 +1278,119 @@
             ".claude/hooks/trace-event.sh",
             ".claude/hooks/worktree-guard.sh"
           ],
-          "summary": "Remove generated Claude hook shims after .ai/hooks becomes the shared hook implementation layer."
+          "summary": "Remove generated Claude hook shims after .ai/hooks becomes the shared hook implementation layer.",
+          "retiredBy": "d25bc6db",
+          "historicalFingerprints": {
+            ".claude/hooks/anti-simplification.sh": [
+              "sha256:f8d18fe83db5132419a51e3371faeb2d1678e5e8bb0a7dc4f7a4b1594d203838"
+            ],
+            ".claude/hooks/changelog-guard.sh": [
+              "sha256:ead15ff74773b40a5be025e462b28e8d77b9bddb7e93f99978ecb49a4bd4bdad"
+            ],
+            ".claude/hooks/hook-input.sh": [
+              "sha256:1004cc2a8ec2e667d59554df54b08edc2d23dba86effd41762d320ba9d0f7afe",
+              "sha256:37e72e5ec134015ef89903fe7970b9f3a5c95e66eb468b3f2f4a766e13f49fef",
+              "sha256:3cbae61ffe469cecd4c320ef438220b9db9ae7470bf91de845002e58e46c77dd",
+              "sha256:9fab7c99d96e680ffd133343b94221fa25475680b559fd1155e4ac400d4fb8da",
+              "sha256:dbf4f400ddce9cf06460f4d7b235d7621e2213e1e1b5cecc5f44a8d2d12cfa11"
+            ],
+            ".claude/hooks/lib/session-state.sh": [
+              "sha256:ea7067d34eb3dc99f35149a86fe243df887f435e2f1cafc0e0f5c1059371f21c"
+            ],
+            ".claude/hooks/lib/workflow-state.sh": [
+              "sha256:091dee96bda01a9e87c5b99356d86881727ba28a55711921170e6aa7e5d7e5f4",
+              "sha256:28b279fbf7091a52a82cb420a85aa8516c98f25489f09a4b24fc494faebaca08",
+              "sha256:2b6e5f8329be2660f8601c21adb4d6e4b189e6adf3fdae5a67b500050bb9fc4e",
+              "sha256:38c3a3ea3914ddaeedbcbbda7da671ce62236886219cf0cc505afcfc9dada94b",
+              "sha256:3a1c7a5ff671efb7d296590dc75e42cef7c0c8e18eeaf9771182cf23b2272d8c",
+              "sha256:40d3285d3c6dab7ddbed01952dc08f14c2a4d73ebf06fbd7122676d283c33243",
+              "sha256:44d549c9b2703089b62e59597f48fe57a28b028bbf15973b09f76c1d1d414811",
+              "sha256:680cd1ca2c1f7b1e5e7e22ea519082c417bfbf6534479bddcbda6b74efa8c56a",
+              "sha256:6a4cb509f583777c6e29bcd15e6eb64b923450cc6f87758e3d59c92278b3085b",
+              "sha256:718bbfd6677f9ef44f894b1014621051240d6b5c06dd6085101ee1824ac202cc",
+              "sha256:78df163dcb36bb043ab98c363ef9ab4cd43e9aa9521fa782c52d9cffccd278ca",
+              "sha256:790d5367fed14038e7f38515eb69cb68a4479daa6fec6267be22c2c59475991a",
+              "sha256:7d4a7e72208ee9b901985660208206218c2f56900b4e349bb6af34a67299b871",
+              "sha256:92cc9904452f8e386e232044a7811a9fc5cedecd24169699a7e79cd92a7fbf89",
+              "sha256:9766c37244030153583465d67b6e1c70f622bdefc931cffbdf826b745cae59d4",
+              "sha256:99db9082d341d5e5267b4995a416d2352eacebea800b823460db0c550beb93c3",
+              "sha256:b8750733d95aa5b4fa9538de433fd54f71af7573299f52abc20cc23419a4c291",
+              "sha256:bab17e770a652dc6fc28db221c40a54dbd121a84e0f1ff83b0ffdbc0bafb1487",
+              "sha256:bc14dfa884fb111c9e83ad2e32fbe003c27ede914ab0cde96412381e498b1bae",
+              "sha256:bcf278f5ec5b1c59aa80d22aca6d250909e9a553e562d717e3e527974c6b5da5",
+              "sha256:c41c0803f7fdc6f342a2a0fa8fe9490a14da0b3f3af1c2928da393a9d88b120c",
+              "sha256:ccf16d489929545913aa54b517cf9137da79a5d1534007a20b4ac0ac7b54d615",
+              "sha256:d576fbc8e7f223bbaf5e11a517f395f0adcf40f9e3a30fa1c0c1ee2164ff352d",
+              "sha256:f547bfdc5206dab2e27159cbd30a4c6c032838f0c3e82d091a3f06987a41ada9",
+              "sha256:f7a9ee3b42e42b35dec1642a6b438197f633cdd750e7523ba757e77a7cc4535f",
+              "sha256:ffe9e0567dd23eabb561f30b38e33e65a416fd8d92d120bc17eba614e397fddc"
+            ],
+            ".claude/hooks/post-bash.sh": [
+              "sha256:67731b354a87120791034dcf7ae7c823827b224b5c12290ff1d84c9d8d26bdec",
+              "sha256:72c2f1d2d45a3103d237fd6bad65748424e69d159704f927e24075ccfc8ee142",
+              "sha256:831083310ec4c6d2f1d3e07bb10c174e97c474ce873f61a9572865ef71813875"
+            ],
+            ".claude/hooks/post-edit-guard.sh": [
+              "sha256:55373ea9063bf600e33cf1a6b5e9865b3c59d868403024b00cdf75c0fd6d5f93",
+              "sha256:61f173180eca366be814f9cc5a441c003234bef10ecfa8aa9de1f803418e4c56",
+              "sha256:8abfbedfdab8365d93a4bb4928ffefe8ecd1675c5f68ac255e167de9eb2cd889",
+              "sha256:e9177b066d6d2e4a086cf8bcad433d48bce6e52695dd376575fd8dbccf921a51"
+            ],
+            ".claude/hooks/pre-edit-guard.sh": [
+              "sha256:093926398f8f4c7f6aa580cc08ad95c8e1d32f177a0dffa3c937c7a725d93018",
+              "sha256:0c84d228436a2bf2128deca93c2d2880bd9506f9d71c19a0c53cb6abb3aa201d",
+              "sha256:2ca6356ed2d97e5307e76da0cc6547c75f5493ab45437707ae5846ee601b5c94",
+              "sha256:3a19217126d0dcef6aaf4cd6c0c3120ba28054aabbbad537b1d6abd8842f9d37",
+              "sha256:900c895b4a0f3d424950da7b6822840bbf83700f0fa7ab123afb1a7eba200127",
+              "sha256:92b48af23e1869703e7fd8e8eeef2c23465e40a6db158f784ad9001b2e5d2869",
+              "sha256:9d249ab5a7e60711f6aa3a6674bca7d70be0f724a5e4153249c0f85dee12673b",
+              "sha256:a3482943158c93304a1fe0f74ebaf6441077be455219bd32a546b7b6d2884afb",
+              "sha256:aa22aaee59822e2b7f3643b0ddc8a3ad9ce4926460b8c32e825e200013af66e5",
+              "sha256:bcfdcddd14cada872b8f27175258379fa2280e3131ab768531bfa442d0ae43b6",
+              "sha256:d7ae5d46cc502a202f344a2575b32bd95a7d615031046c514f04f8404fd0c0ad",
+              "sha256:de8985d4ef0e8f31e26a241b671b8a83135da7f7a4ffa65846436c353a9c038c",
+              "sha256:eb62be4c0a8b4be9794f1a8ff74793dd7fe3377c57459a63dfcf02778f371ed4",
+              "sha256:ecb9b53df3becf975f05250383d5a17877119cf2b56288c80194e0173dad7a40"
+            ],
+            ".claude/hooks/prompt-guard.sh": [
+              "sha256:015b91b9b473a54f18a584f5d2c50a0f8661b5c1042587e2f61990eb871275f9",
+              "sha256:1669b4ea30596f321d99d360dcbf11b1695d5bbd624acd804ae33df1804f0d45",
+              "sha256:1cf06609784a6095cf65782faed94a6b2aab8d23038cc1119a5d7fda931c45ac",
+              "sha256:2785f5e4ea91506c3a7973ed5fd99c9a4a4aa2aaf2510cb2bcdb3d18f97bbd7d",
+              "sha256:4be9386d6dcc81a7df24c98a2c2a858185aa59d3c0b73a8dc2ff2c2dfba40820",
+              "sha256:55e86dcb04fa42b023e7fb47bc662cb494f068540a12c0d9517dce57e3ee961a",
+              "sha256:6ff197ab7a4e1a226ed92592cb78de4838e610a5e10801c31c6a0c395e2b26e3",
+              "sha256:7b60611874ae8bb77a63d300a44a28ff9aa0dcbc28d3f498269e34e21a32ff11",
+              "sha256:84c84b411ebe3a87b550054f07aa40ea2e9148f6e2d6850d0ae5127d566267ce",
+              "sha256:95ee2aac854a9e57219c51ecf596dbce46ecd1bc51a214692b7d1cdf2b80c3f2",
+              "sha256:9a6f23b02c9f1d35d7db378092602d12c34986e31b80ed3cc6243867bdf5cca5",
+              "sha256:9e4d062410cdb4c83d034865a222d04f8a5d6f3759bb9b198851f325ed8a7f0d",
+              "sha256:a2617fa020dfc3baf311fa2d0a665c7daafe96fe1b365fc80d9eb1e2cbfd62c6",
+              "sha256:b2e5b26f2c0ec1d00e7b6cc6ba37962b0eec82538d69a897a88c2fba2fc00319",
+              "sha256:b346dd9b24fe490c9a60d63163be4fcc6ec05b6ef6fbf8cb79af10a58b80054e",
+              "sha256:e5ff60a9b03092c9a33f9860f486d0f6760f81d6d8aec504724606c4a58f6e90",
+              "sha256:e90377afafe9d23111c42874353c3e0161c75b4499bc615877d573938fe5e8f2",
+              "sha256:ea031617135f22b73b4371e4fb55aded53daf79b63239515f79bf67dbfe6c508",
+              "sha256:ed881e5c537a6624ddcf6b1466317e4bb219ee52650c4482ed733e2418832c86"
+            ],
+            ".claude/hooks/run-hook.sh": [
+              "sha256:0ffd93e87427329f4c9e5bb7d2bf6b841383c452e3569d277e5d108e0c29649c",
+              "sha256:45c026e2fb704100fed9d6169e94165ea8a11b362ac1e520787a1437e4539835",
+              "sha256:9a6a961dc76da68873ec6a0b2eacc67046f2dfd7fb6d391fad8a43714338157d",
+              "sha256:f20b4113ba5cf6ee05c3e26860df248b0cb06b4e03d64770cac3cbc81e627988"
+            ],
+            ".claude/hooks/session-start-context.sh": [
+              "sha256:3223b6e1a108c957b8bbcdc19657ebf00a62c65dca4b305ed09189b16de3eec2",
+              "sha256:5558b72eb83b4d643db212aa58eb90e1ba2bf96cea4292ff723661757f2d1620",
+              "sha256:57300d82e95af81f08866318f9c6a7d27a8f04026b373017579195b766cdab71",
+              "sha256:b83b7599a5f882265fb7ad4b9d6ba9b63e5f2df6a774f398c324bb21fb666b5b",
+              "sha256:ed4bb740de77523c6b8ca1eb2a5091d134323b03ef3ce0399d559f02389c44c6",
+              "sha256:f7033b056587b88035fdddf4f3a844bd078892ce1c5da388bc46afd73aac03e0"
+            ],
+            ".claude/hooks/worktree-guard.sh": [
+              "sha256:0c7183c164562c9e82d62bb3420041ddcf80a3a97e720a7e794f81fecd8f0cf2"
+            ]
+          }
         },
         {
           "id": "legacy-hook-runtime-retirement",
@@ -687,7 +1435,104 @@
             "scripts/hook-shim.sh": "sha256:052992749c0b4baed2365d63599005297348a0af8f272e286844c396defd6ff8",
             "scripts/repo-harness.sh": "sha256:c0eb418c86bb02d7d071abc3c9b1d0cfa3d9b180bd70ddd4746b6b00615c26a4"
           },
-          "summary": "Remove the exact generated Bash hook runtime and prototype dispatcher after typed handler cutover; preserve any byte-modified file as user-owned."
+          "summary": "Remove the exact generated Bash hook runtime and prototype dispatcher after typed handler cutover; preserve any byte-modified file as user-owned.",
+          "retiredBy": "804c198f",
+          "historicalFingerprints": {
+            ".ai/hooks/anti-simplification.sh": [
+              "sha256:f8d18fe83db5132419a51e3371faeb2d1678e5e8bb0a7dc4f7a4b1594d203838"
+            ],
+            ".ai/hooks/changelog-guard.sh": [
+              "sha256:ead15ff74773b40a5be025e462b28e8d77b9bddb7e93f99978ecb49a4bd4bdad"
+            ],
+            ".ai/hooks/codex-delegation-advisor.sh": [
+              "sha256:02588de7a91563adb2476664b01f999cd4cb7c0d662d795750c0675d1b2163b8",
+              "sha256:0298b4055d86d070de23c4c2483f273922471160a5cb602ab314e3a980586512",
+              "sha256:259af77b45860922ab35d8a529a137744b134c68fd602e4fbade158cd2ea04f3",
+              "sha256:37c931b10369ec4b00ad4a38da621ca68a0d3096e5102aef6e8b9bdffd32a53f",
+              "sha256:41c93adb642f847a00664a441b7bdcf3eb2c791be405097443120c4f5f54ba6c",
+              "sha256:508f7bf990ee0861e2b4dee57cb2466dd289b96d1cf5c9285f7b89f099f09775",
+              "sha256:86ebbea6f10fd8d655deff39df8180e453f2ccf399df3baff582bee497a3e964",
+              "sha256:8fae6699a602d5f094a0b0513b6b4f4ae7b8574ef283c3f94e4b2a705159cf94",
+              "sha256:d4b6af13d97dd584ba2303b957e68465d825e9807dff92048c6885cf76ef8f5c",
+              "sha256:da3d81512fb2a702dcdc8a929603b7232d6646812c150d591e559ab5333c068a"
+            ],
+            ".ai/hooks/first-principles-guard.sh": [
+              "sha256:705c85ac266897ac66fc15ea117e167ad34b767dd39c3ad9a08ddec47345110e"
+            ],
+            ".ai/hooks/hook-input.sh": [
+              "sha256:1004cc2a8ec2e667d59554df54b08edc2d23dba86effd41762d320ba9d0f7afe",
+              "sha256:37e72e5ec134015ef89903fe7970b9f3a5c95e66eb468b3f2f4a766e13f49fef",
+              "sha256:3cbae61ffe469cecd4c320ef438220b9db9ae7470bf91de845002e58e46c77dd",
+              "sha256:9fab7c99d96e680ffd133343b94221fa25475680b559fd1155e4ac400d4fb8da",
+              "sha256:dbf4f400ddce9cf06460f4d7b235d7621e2213e1e1b5cecc5f44a8d2d12cfa11"
+            ],
+            ".ai/hooks/post-bash.sh": [
+              "sha256:67731b354a87120791034dcf7ae7c823827b224b5c12290ff1d84c9d8d26bdec",
+              "sha256:72c2f1d2d45a3103d237fd6bad65748424e69d159704f927e24075ccfc8ee142",
+              "sha256:831083310ec4c6d2f1d3e07bb10c174e97c474ce873f61a9572865ef71813875"
+            ],
+            ".ai/hooks/post-tool-observer.sh": [
+              "sha256:9a120a0b2482fd097c03214a59b1485a3ac2a286a5f87dd3024ade46df3625f5",
+              "sha256:c33d05e7ae339efe512383a38f1dea03493bd826b124c03fb9381d1f3d428686"
+            ],
+            ".ai/hooks/prompt-guard.sh": [
+              "sha256:015b91b9b473a54f18a584f5d2c50a0f8661b5c1042587e2f61990eb871275f9",
+              "sha256:1669b4ea30596f321d99d360dcbf11b1695d5bbd624acd804ae33df1804f0d45",
+              "sha256:1cf06609784a6095cf65782faed94a6b2aab8d23038cc1119a5d7fda931c45ac",
+              "sha256:2785f5e4ea91506c3a7973ed5fd99c9a4a4aa2aaf2510cb2bcdb3d18f97bbd7d",
+              "sha256:4be9386d6dcc81a7df24c98a2c2a858185aa59d3c0b73a8dc2ff2c2dfba40820",
+              "sha256:55e86dcb04fa42b023e7fb47bc662cb494f068540a12c0d9517dce57e3ee961a",
+              "sha256:6ff197ab7a4e1a226ed92592cb78de4838e610a5e10801c31c6a0c395e2b26e3",
+              "sha256:7b60611874ae8bb77a63d300a44a28ff9aa0dcbc28d3f498269e34e21a32ff11",
+              "sha256:84c84b411ebe3a87b550054f07aa40ea2e9148f6e2d6850d0ae5127d566267ce",
+              "sha256:95ee2aac854a9e57219c51ecf596dbce46ecd1bc51a214692b7d1cdf2b80c3f2",
+              "sha256:9a6f23b02c9f1d35d7db378092602d12c34986e31b80ed3cc6243867bdf5cca5",
+              "sha256:9e4d062410cdb4c83d034865a222d04f8a5d6f3759bb9b198851f325ed8a7f0d",
+              "sha256:a2617fa020dfc3baf311fa2d0a665c7daafe96fe1b365fc80d9eb1e2cbfd62c6",
+              "sha256:b2e5b26f2c0ec1d00e7b6cc6ba37962b0eec82538d69a897a88c2fba2fc00319",
+              "sha256:b346dd9b24fe490c9a60d63163be4fcc6ec05b6ef6fbf8cb79af10a58b80054e",
+              "sha256:e5ff60a9b03092c9a33f9860f486d0f6760f81d6d8aec504724606c4a58f6e90",
+              "sha256:e90377afafe9d23111c42874353c3e0161c75b4499bc615877d573938fe5e8f2",
+              "sha256:ea031617135f22b73b4371e4fb55aded53daf79b63239515f79bf67dbfe6c508",
+              "sha256:ed881e5c537a6624ddcf6b1466317e4bb219ee52650c4482ed733e2418832c86"
+            ],
+            ".ai/hooks/run-hook.sh": [
+              "sha256:0ffd93e87427329f4c9e5bb7d2bf6b841383c452e3569d277e5d108e0c29649c",
+              "sha256:45c026e2fb704100fed9d6169e94165ea8a11b362ac1e520787a1437e4539835",
+              "sha256:9a6a961dc76da68873ec6a0b2eacc67046f2dfd7fb6d391fad8a43714338157d",
+              "sha256:f20b4113ba5cf6ee05c3e26860df248b0cb06b4e03d64770cac3cbc81e627988"
+            ],
+            ".ai/hooks/subagent-return-channel-guard.sh": [
+              "sha256:1fc137e861644ac3c584f1d754b23da2becb20cf8676f74cfe6381d427544f41"
+            ],
+            ".ai/hooks/subagent-start-context.sh": [
+              "sha256:057ce395f506e391b13e21a2c2269cb936b5d6f863245dbd0f0e5a19ed61e00d",
+              "sha256:11eab153f44b6e94ec4a9ed7c841d52c600aea9c56ab638caca9c7c7d5f4e479",
+              "sha256:1861dac1b4b16fd0076b8734f3dc13de2fc8ce7a9f62d184b6b0c8c5759f9c90",
+              "sha256:19535f396bac3897928dc9034515e898888c4d20a0df4e5b634107e3c00ba8fb"
+            ],
+            ".ai/hooks/subagent-stop-quality.sh": [
+              "sha256:4c93d30d77d4a4834fad944c1c4bc60419ff48db591ef57d79a7416c89150fbd",
+              "sha256:652911acb8be0b51d07b3f2e33ea5ba3616f67fea224831e4d93bcd4446edfe9"
+            ],
+            ".ai/hooks/lib/minimal-change.sh": [
+              "sha256:132d1be716ebf0008d2e1eade7af2758b21bdfb44c69b6015554daf76286f726",
+              "sha256:9c2530b1abd9e603b7a247a37f7f18e33b07f52cdd23d400cbfb2390d2be553b",
+              "sha256:ea457d62fb809c8b8f668fbd1aaf6499078e53cce26eb1e5b5f79da160eaa142",
+              "sha256:ec4aef88ad8c4ab986bd2912ba75f2063c0412453dde487e9fd4953e5edc7e1c"
+            ],
+            ".ai/hooks/lib/session-state.sh": [
+              "sha256:ea7067d34eb3dc99f35149a86fe243df887f435e2f1cafc0e0f5c1059371f21c"
+            ],
+            "scripts/hook-shim.sh": [
+              "sha256:052992749c0b4baed2365d63599005297348a0af8f272e286844c396defd6ff8"
+            ],
+            "scripts/repo-harness.sh": [
+              "sha256:c0eb418c86bb02d7d071abc3c9b1d0cfa3d9b180bd70ddd4746b6b00615c26a4",
+              "sha256:c4362e1e268ce8ed2842967e0e84cddc53effd9834c707de8efca4b492894685",
+              "sha256:f667f3896bc6de2df2791a0aa4ed3980f8021ee4c46fe4f97245941ab4eead92"
+            ]
+          }
         },
         {
           "id": "split-post-tool-observer-hooks",
@@ -699,7 +1544,9 @@
             ".ai/hooks/trace-event.sh",
             ".ai/hooks/context-pressure-hook.sh"
           ],
-          "summary": "Remove the split PostToolUse observer hooks replaced by the merged post-tool-observer.sh."
+          "summary": "Remove the split PostToolUse observer hooks replaced by the merged post-tool-observer.sh.",
+          "retiredBy": "d25bc6db",
+          "historicalFingerprints": {}
         },
         {
           "id": "legacy-architecture-drift-helper",
@@ -710,7 +1557,9 @@
           "paths": [
             "assets/templates/helpers/architecture-drift.sh"
           ],
-          "summary": "Remove the retired architecture-drift helper after architecture-queue.sh absorbs request, card, index, and gate ownership."
+          "summary": "Remove the retired architecture-drift helper after architecture-queue.sh absorbs request, card, index, and gate ownership.",
+          "retiredBy": "8e160323",
+          "historicalFingerprints": {}
         },
         {
           "id": "custom-claude-hooks-preserve",
@@ -749,8 +1598,1118 @@
             "docs/researches/legacy-research-notes.md"
           ],
           "summary": "Archive legacy singleton research notes into the docs/researches report surface and leave a tombstone pointer."
+        },
+        {
+          "id": "legacy-earlier-hook-runtime-retirement",
+          "signal": "legacy-earlier-hook-runtime-retirement",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "paths": [
+            ".ai/hooks/minimal-change-context.sh",
+            ".ai/hooks/minimal-change-observer.sh",
+            ".ai/hooks/post-edit-guard.sh",
+            ".ai/hooks/pre-edit-guard.sh",
+            ".ai/hooks/security-sentinel.sh",
+            ".ai/hooks/session-start-context.sh",
+            ".ai/hooks/stop-orchestrator.sh",
+            ".ai/hooks/worktree-guard.sh"
+          ],
+          "retiredBy": "60e0f73b 8cdc0340 4d24a01b b12c07b2",
+          "historicalFingerprints": {
+            ".ai/hooks/minimal-change-context.sh": [
+              "sha256:51c7675910be87be8a1095ee08e692d7ecdc6686da71a3e6e5df845e51442cbf"
+            ],
+            ".ai/hooks/minimal-change-observer.sh": [
+              "sha256:e5213c455fbe81593c746b9aa8cfd5cc9e752e6cd5836b2fb57ad64c076ff5b9",
+              "sha256:f9e6317c5bf96a3c3ce5629ab0f939c61592a73775b0687ce277840c3ab7d66a"
+            ],
+            ".ai/hooks/post-edit-guard.sh": [
+              "sha256:55373ea9063bf600e33cf1a6b5e9865b3c59d868403024b00cdf75c0fd6d5f93",
+              "sha256:61f173180eca366be814f9cc5a441c003234bef10ecfa8aa9de1f803418e4c56",
+              "sha256:8abfbedfdab8365d93a4bb4928ffefe8ecd1675c5f68ac255e167de9eb2cd889",
+              "sha256:e9177b066d6d2e4a086cf8bcad433d48bce6e52695dd376575fd8dbccf921a51"
+            ],
+            ".ai/hooks/pre-edit-guard.sh": [
+              "sha256:093926398f8f4c7f6aa580cc08ad95c8e1d32f177a0dffa3c937c7a725d93018",
+              "sha256:0c84d228436a2bf2128deca93c2d2880bd9506f9d71c19a0c53cb6abb3aa201d",
+              "sha256:2ca6356ed2d97e5307e76da0cc6547c75f5493ab45437707ae5846ee601b5c94",
+              "sha256:3a19217126d0dcef6aaf4cd6c0c3120ba28054aabbbad537b1d6abd8842f9d37",
+              "sha256:900c895b4a0f3d424950da7b6822840bbf83700f0fa7ab123afb1a7eba200127",
+              "sha256:92b48af23e1869703e7fd8e8eeef2c23465e40a6db158f784ad9001b2e5d2869",
+              "sha256:9d249ab5a7e60711f6aa3a6674bca7d70be0f724a5e4153249c0f85dee12673b",
+              "sha256:a3482943158c93304a1fe0f74ebaf6441077be455219bd32a546b7b6d2884afb",
+              "sha256:aa22aaee59822e2b7f3643b0ddc8a3ad9ce4926460b8c32e825e200013af66e5",
+              "sha256:bcfdcddd14cada872b8f27175258379fa2280e3131ab768531bfa442d0ae43b6",
+              "sha256:d7ae5d46cc502a202f344a2575b32bd95a7d615031046c514f04f8404fd0c0ad",
+              "sha256:de8985d4ef0e8f31e26a241b671b8a83135da7f7a4ffa65846436c353a9c038c",
+              "sha256:eb62be4c0a8b4be9794f1a8ff74793dd7fe3377c57459a63dfcf02778f371ed4",
+              "sha256:ecb9b53df3becf975f05250383d5a17877119cf2b56288c80194e0173dad7a40"
+            ],
+            ".ai/hooks/security-sentinel.sh": [
+              "sha256:7f5258d8fd5d91946f0fd36ede430d385165da60228f8ad2792843ce5bd1f5cf"
+            ],
+            ".ai/hooks/session-start-context.sh": [
+              "sha256:3223b6e1a108c957b8bbcdc19657ebf00a62c65dca4b305ed09189b16de3eec2",
+              "sha256:5558b72eb83b4d643db212aa58eb90e1ba2bf96cea4292ff723661757f2d1620",
+              "sha256:57300d82e95af81f08866318f9c6a7d27a8f04026b373017579195b766cdab71",
+              "sha256:b83b7599a5f882265fb7ad4b9d6ba9b63e5f2df6a774f398c324bb21fb666b5b",
+              "sha256:ed4bb740de77523c6b8ca1eb2a5091d134323b03ef3ce0399d559f02389c44c6",
+              "sha256:f7033b056587b88035fdddf4f3a844bd078892ce1c5da388bc46afd73aac03e0"
+            ],
+            ".ai/hooks/stop-orchestrator.sh": [
+              "sha256:1545045cbbf54d80bd17f17d0011ef0bbcf9b7d9038b721a14324ab295037102",
+              "sha256:18721550c44e0521894e7b96ed7ea4ee7a98465d1eb5a15e59a9e8782c6e9e51",
+              "sha256:1a07b868909bd4ac3941dcd5aeae6b025bd1ddfc77e0fafc72a8f2c20c43ce3b",
+              "sha256:1b99cd861d3a31761076c59e32235993912074a50e48e3f23181555277c7b28c",
+              "sha256:1d39f0da70ae58d100b9196c82c00594fe5aadb21bf439ce44b436435611f2db",
+              "sha256:45f7b850c704b50cf5abfc09140711edc406c52e2e26fa4b97ca17e0e2cd9684",
+              "sha256:5a4b97ba76d1f0955e48000ae5f9ad276ab70c0e4682d5f98f419f4cb50e2dbe",
+              "sha256:6ffac0a0859ae159354f35a8d5ce2e58e0bcd352a89cf2c563ae544d298191bc",
+              "sha256:758c8b90e21a2d8dbe343118290f457277465074cf44c66e7408e95f0396c33b",
+              "sha256:7a51823a671145b1009b9cf9b8fd13696739ee01a00573c5d4e80dfab82d107d",
+              "sha256:97a2dee14b22e9e88329bba2a12f1831f2d052d95c96f2bca9ce2c69cdac0321",
+              "sha256:9af68e7a275ff1089a30967faeca73baac6b618ef42bf1c606f2a083a18f1550",
+              "sha256:b6ed73fe1cdb6cc68bb318c8f4c3cbf1352f9cad9a33a864448cc8097472a9f0",
+              "sha256:be4d1250be94e8b38ff9005eb58891733a87fba7992f60b39c42c2774d0563f8",
+              "sha256:ff7dd6d81ed7f6ffa2f735851c634677b5e5d2a7dcb63c2376d54e08544c0d44"
+            ],
+            ".ai/hooks/worktree-guard.sh": [
+              "sha256:0c7183c164562c9e82d62bb3420041ddcf80a3a97e720a7e794f81fecd8f0cf2"
+            ]
+          },
+          "summary": "Remove unchanged copies of the earlier retired project Bash hooks."
+        },
+        {
+          "id": "global-hook-shim-runtime",
+          "signal": "global-hook-shim-runtime",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "file",
+          "paths": [
+            ".repo-harness/hook-shim.sh",
+            ".repo-harness/hooks/AGENTS.md",
+            ".repo-harness/hooks/CLAUDE.md",
+            ".repo-harness/hooks/anti-simplification.sh",
+            ".repo-harness/hooks/changelog-guard.sh",
+            ".repo-harness/hooks/codex-delegation-advisor.sh",
+            ".repo-harness/hooks/first-principles-guard.sh",
+            ".repo-harness/hooks/hook-input.sh",
+            ".repo-harness/hooks/lib/minimal-change.sh",
+            ".repo-harness/hooks/lib/session-state.sh",
+            ".repo-harness/hooks/lib/workflow-state.sh",
+            ".repo-harness/hooks/minimal-change-context.sh",
+            ".repo-harness/hooks/minimal-change-observer.sh",
+            ".repo-harness/hooks/post-bash.sh",
+            ".repo-harness/hooks/post-edit-guard.sh",
+            ".repo-harness/hooks/post-tool-observer.sh",
+            ".repo-harness/hooks/pre-edit-guard.sh",
+            ".repo-harness/hooks/prompt-guard.sh",
+            ".repo-harness/hooks/run-hook.sh",
+            ".repo-harness/hooks/security-sentinel.sh",
+            ".repo-harness/hooks/session-start-context.sh",
+            ".repo-harness/hooks/stop-orchestrator.sh",
+            ".repo-harness/hooks/subagent-return-channel-guard.sh",
+            ".repo-harness/hooks/subagent-start-context.sh",
+            ".repo-harness/hooks/subagent-stop-quality.sh",
+            ".repo-harness/hooks/worktree-guard.sh",
+            ".repo-harness/hooks/.version"
+          ],
+          "retiredBy": "804c198f",
+          "historicalFingerprints": {
+            ".repo-harness/hook-shim.sh": [
+              "sha256:052992749c0b4baed2365d63599005297348a0af8f272e286844c396defd6ff8"
+            ],
+            ".repo-harness/hooks/AGENTS.md": [
+              "sha256:08d81e74722e3dbed0218db0da9d04b3f4a2bcec0330fd1501981bd3ba8ed484",
+              "sha256:6c853d8a5927b8723228f40e70f171b4bcd2469345da79a4612d5b90b7ba2333",
+              "sha256:727fc67b0f54723858850a50c1fd24ac001f8911e725eeb8fd84ea3c2a368eca",
+              "sha256:7e8acd8e140594f5e5ddda7fcac2ba3335163e49fa9570d5bc98c5b5caf0004f",
+              "sha256:995c4efe4971ef385dadcd682967e4e87cfc4b5a6dc7c742fc3232eb9203b3b7",
+              "sha256:c183d43e0259f71af0a74b2c070a3afb1976d6749fa3559fccc44e74fffd12b4",
+              "sha256:e1b9ca10af0d0513dffc26dceb193b21209d68ee430a8c5a57d5c0577d4f812d"
+            ],
+            ".repo-harness/hooks/CLAUDE.md": [
+              "sha256:08d81e74722e3dbed0218db0da9d04b3f4a2bcec0330fd1501981bd3ba8ed484",
+              "sha256:6c853d8a5927b8723228f40e70f171b4bcd2469345da79a4612d5b90b7ba2333",
+              "sha256:727fc67b0f54723858850a50c1fd24ac001f8911e725eeb8fd84ea3c2a368eca",
+              "sha256:7e8acd8e140594f5e5ddda7fcac2ba3335163e49fa9570d5bc98c5b5caf0004f",
+              "sha256:995c4efe4971ef385dadcd682967e4e87cfc4b5a6dc7c742fc3232eb9203b3b7",
+              "sha256:c183d43e0259f71af0a74b2c070a3afb1976d6749fa3559fccc44e74fffd12b4",
+              "sha256:e1b9ca10af0d0513dffc26dceb193b21209d68ee430a8c5a57d5c0577d4f812d"
+            ],
+            ".repo-harness/hooks/anti-simplification.sh": [
+              "sha256:f8d18fe83db5132419a51e3371faeb2d1678e5e8bb0a7dc4f7a4b1594d203838"
+            ],
+            ".repo-harness/hooks/changelog-guard.sh": [
+              "sha256:ead15ff74773b40a5be025e462b28e8d77b9bddb7e93f99978ecb49a4bd4bdad"
+            ],
+            ".repo-harness/hooks/codex-delegation-advisor.sh": [
+              "sha256:02588de7a91563adb2476664b01f999cd4cb7c0d662d795750c0675d1b2163b8",
+              "sha256:0298b4055d86d070de23c4c2483f273922471160a5cb602ab314e3a980586512",
+              "sha256:259af77b45860922ab35d8a529a137744b134c68fd602e4fbade158cd2ea04f3",
+              "sha256:37c931b10369ec4b00ad4a38da621ca68a0d3096e5102aef6e8b9bdffd32a53f",
+              "sha256:41c93adb642f847a00664a441b7bdcf3eb2c791be405097443120c4f5f54ba6c",
+              "sha256:508f7bf990ee0861e2b4dee57cb2466dd289b96d1cf5c9285f7b89f099f09775",
+              "sha256:86ebbea6f10fd8d655deff39df8180e453f2ccf399df3baff582bee497a3e964",
+              "sha256:8fae6699a602d5f094a0b0513b6b4f4ae7b8574ef283c3f94e4b2a705159cf94",
+              "sha256:d4b6af13d97dd584ba2303b957e68465d825e9807dff92048c6885cf76ef8f5c",
+              "sha256:da3d81512fb2a702dcdc8a929603b7232d6646812c150d591e559ab5333c068a"
+            ],
+            ".repo-harness/hooks/first-principles-guard.sh": [
+              "sha256:705c85ac266897ac66fc15ea117e167ad34b767dd39c3ad9a08ddec47345110e"
+            ],
+            ".repo-harness/hooks/hook-input.sh": [
+              "sha256:1004cc2a8ec2e667d59554df54b08edc2d23dba86effd41762d320ba9d0f7afe",
+              "sha256:37e72e5ec134015ef89903fe7970b9f3a5c95e66eb468b3f2f4a766e13f49fef",
+              "sha256:3cbae61ffe469cecd4c320ef438220b9db9ae7470bf91de845002e58e46c77dd",
+              "sha256:9fab7c99d96e680ffd133343b94221fa25475680b559fd1155e4ac400d4fb8da",
+              "sha256:dbf4f400ddce9cf06460f4d7b235d7621e2213e1e1b5cecc5f44a8d2d12cfa11"
+            ],
+            ".repo-harness/hooks/lib/minimal-change.sh": [
+              "sha256:132d1be716ebf0008d2e1eade7af2758b21bdfb44c69b6015554daf76286f726",
+              "sha256:9c2530b1abd9e603b7a247a37f7f18e33b07f52cdd23d400cbfb2390d2be553b",
+              "sha256:ea457d62fb809c8b8f668fbd1aaf6499078e53cce26eb1e5b5f79da160eaa142",
+              "sha256:ec4aef88ad8c4ab986bd2912ba75f2063c0412453dde487e9fd4953e5edc7e1c"
+            ],
+            ".repo-harness/hooks/lib/session-state.sh": [
+              "sha256:ea7067d34eb3dc99f35149a86fe243df887f435e2f1cafc0e0f5c1059371f21c"
+            ],
+            ".repo-harness/hooks/lib/workflow-state.sh": [
+              "sha256:091dee96bda01a9e87c5b99356d86881727ba28a55711921170e6aa7e5d7e5f4",
+              "sha256:38c3a3ea3914ddaeedbcbbda7da671ce62236886219cf0cc505afcfc9dada94b",
+              "sha256:3a1c7a5ff671efb7d296590dc75e42cef7c0c8e18eeaf9771182cf23b2272d8c",
+              "sha256:44d549c9b2703089b62e59597f48fe57a28b028bbf15973b09f76c1d1d414811",
+              "sha256:680cd1ca2c1f7b1e5e7e22ea519082c417bfbf6534479bddcbda6b74efa8c56a",
+              "sha256:6a4cb509f583777c6e29bcd15e6eb64b923450cc6f87758e3d59c92278b3085b",
+              "sha256:78df163dcb36bb043ab98c363ef9ab4cd43e9aa9521fa782c52d9cffccd278ca",
+              "sha256:92cc9904452f8e386e232044a7811a9fc5cedecd24169699a7e79cd92a7fbf89",
+              "sha256:99db9082d341d5e5267b4995a416d2352eacebea800b823460db0c550beb93c3",
+              "sha256:bab17e770a652dc6fc28db221c40a54dbd121a84e0f1ff83b0ffdbc0bafb1487",
+              "sha256:bc14dfa884fb111c9e83ad2e32fbe003c27ede914ab0cde96412381e498b1bae",
+              "sha256:c41c0803f7fdc6f342a2a0fa8fe9490a14da0b3f3af1c2928da393a9d88b120c",
+              "sha256:ccf16d489929545913aa54b517cf9137da79a5d1534007a20b4ac0ac7b54d615",
+              "sha256:f547bfdc5206dab2e27159cbd30a4c6c032838f0c3e82d091a3f06987a41ada9",
+              "sha256:f7a9ee3b42e42b35dec1642a6b438197f633cdd750e7523ba757e77a7cc4535f",
+              "sha256:ffe9e0567dd23eabb561f30b38e33e65a416fd8d92d120bc17eba614e397fddc"
+            ],
+            ".repo-harness/hooks/minimal-change-context.sh": [
+              "sha256:51c7675910be87be8a1095ee08e692d7ecdc6686da71a3e6e5df845e51442cbf"
+            ],
+            ".repo-harness/hooks/minimal-change-observer.sh": [
+              "sha256:e5213c455fbe81593c746b9aa8cfd5cc9e752e6cd5836b2fb57ad64c076ff5b9",
+              "sha256:f9e6317c5bf96a3c3ce5629ab0f939c61592a73775b0687ce277840c3ab7d66a"
+            ],
+            ".repo-harness/hooks/post-bash.sh": [
+              "sha256:67731b354a87120791034dcf7ae7c823827b224b5c12290ff1d84c9d8d26bdec",
+              "sha256:72c2f1d2d45a3103d237fd6bad65748424e69d159704f927e24075ccfc8ee142",
+              "sha256:831083310ec4c6d2f1d3e07bb10c174e97c474ce873f61a9572865ef71813875"
+            ],
+            ".repo-harness/hooks/post-edit-guard.sh": [
+              "sha256:55373ea9063bf600e33cf1a6b5e9865b3c59d868403024b00cdf75c0fd6d5f93",
+              "sha256:61f173180eca366be814f9cc5a441c003234bef10ecfa8aa9de1f803418e4c56",
+              "sha256:8abfbedfdab8365d93a4bb4928ffefe8ecd1675c5f68ac255e167de9eb2cd889",
+              "sha256:e9177b066d6d2e4a086cf8bcad433d48bce6e52695dd376575fd8dbccf921a51"
+            ],
+            ".repo-harness/hooks/post-tool-observer.sh": [
+              "sha256:9a120a0b2482fd097c03214a59b1485a3ac2a286a5f87dd3024ade46df3625f5",
+              "sha256:c33d05e7ae339efe512383a38f1dea03493bd826b124c03fb9381d1f3d428686"
+            ],
+            ".repo-harness/hooks/pre-edit-guard.sh": [
+              "sha256:093926398f8f4c7f6aa580cc08ad95c8e1d32f177a0dffa3c937c7a725d93018",
+              "sha256:0c84d228436a2bf2128deca93c2d2880bd9506f9d71c19a0c53cb6abb3aa201d",
+              "sha256:2ca6356ed2d97e5307e76da0cc6547c75f5493ab45437707ae5846ee601b5c94",
+              "sha256:3a19217126d0dcef6aaf4cd6c0c3120ba28054aabbbad537b1d6abd8842f9d37",
+              "sha256:900c895b4a0f3d424950da7b6822840bbf83700f0fa7ab123afb1a7eba200127",
+              "sha256:92b48af23e1869703e7fd8e8eeef2c23465e40a6db158f784ad9001b2e5d2869",
+              "sha256:9d249ab5a7e60711f6aa3a6674bca7d70be0f724a5e4153249c0f85dee12673b",
+              "sha256:a3482943158c93304a1fe0f74ebaf6441077be455219bd32a546b7b6d2884afb",
+              "sha256:aa22aaee59822e2b7f3643b0ddc8a3ad9ce4926460b8c32e825e200013af66e5",
+              "sha256:bcfdcddd14cada872b8f27175258379fa2280e3131ab768531bfa442d0ae43b6",
+              "sha256:d7ae5d46cc502a202f344a2575b32bd95a7d615031046c514f04f8404fd0c0ad",
+              "sha256:de8985d4ef0e8f31e26a241b671b8a83135da7f7a4ffa65846436c353a9c038c",
+              "sha256:eb62be4c0a8b4be9794f1a8ff74793dd7fe3377c57459a63dfcf02778f371ed4",
+              "sha256:ecb9b53df3becf975f05250383d5a17877119cf2b56288c80194e0173dad7a40"
+            ],
+            ".repo-harness/hooks/prompt-guard.sh": [
+              "sha256:015b91b9b473a54f18a584f5d2c50a0f8661b5c1042587e2f61990eb871275f9",
+              "sha256:1669b4ea30596f321d99d360dcbf11b1695d5bbd624acd804ae33df1804f0d45",
+              "sha256:1cf06609784a6095cf65782faed94a6b2aab8d23038cc1119a5d7fda931c45ac",
+              "sha256:2785f5e4ea91506c3a7973ed5fd99c9a4a4aa2aaf2510cb2bcdb3d18f97bbd7d",
+              "sha256:4be9386d6dcc81a7df24c98a2c2a858185aa59d3c0b73a8dc2ff2c2dfba40820",
+              "sha256:55e86dcb04fa42b023e7fb47bc662cb494f068540a12c0d9517dce57e3ee961a",
+              "sha256:6ff197ab7a4e1a226ed92592cb78de4838e610a5e10801c31c6a0c395e2b26e3",
+              "sha256:7b60611874ae8bb77a63d300a44a28ff9aa0dcbc28d3f498269e34e21a32ff11",
+              "sha256:84c84b411ebe3a87b550054f07aa40ea2e9148f6e2d6850d0ae5127d566267ce",
+              "sha256:95ee2aac854a9e57219c51ecf596dbce46ecd1bc51a214692b7d1cdf2b80c3f2",
+              "sha256:9a6f23b02c9f1d35d7db378092602d12c34986e31b80ed3cc6243867bdf5cca5",
+              "sha256:9e4d062410cdb4c83d034865a222d04f8a5d6f3759bb9b198851f325ed8a7f0d",
+              "sha256:a2617fa020dfc3baf311fa2d0a665c7daafe96fe1b365fc80d9eb1e2cbfd62c6",
+              "sha256:b2e5b26f2c0ec1d00e7b6cc6ba37962b0eec82538d69a897a88c2fba2fc00319",
+              "sha256:b346dd9b24fe490c9a60d63163be4fcc6ec05b6ef6fbf8cb79af10a58b80054e",
+              "sha256:e5ff60a9b03092c9a33f9860f486d0f6760f81d6d8aec504724606c4a58f6e90",
+              "sha256:e90377afafe9d23111c42874353c3e0161c75b4499bc615877d573938fe5e8f2",
+              "sha256:ea031617135f22b73b4371e4fb55aded53daf79b63239515f79bf67dbfe6c508",
+              "sha256:ed881e5c537a6624ddcf6b1466317e4bb219ee52650c4482ed733e2418832c86"
+            ],
+            ".repo-harness/hooks/run-hook.sh": [
+              "sha256:0ffd93e87427329f4c9e5bb7d2bf6b841383c452e3569d277e5d108e0c29649c",
+              "sha256:45c026e2fb704100fed9d6169e94165ea8a11b362ac1e520787a1437e4539835",
+              "sha256:9a6a961dc76da68873ec6a0b2eacc67046f2dfd7fb6d391fad8a43714338157d",
+              "sha256:f20b4113ba5cf6ee05c3e26860df248b0cb06b4e03d64770cac3cbc81e627988"
+            ],
+            ".repo-harness/hooks/security-sentinel.sh": [
+              "sha256:7f5258d8fd5d91946f0fd36ede430d385165da60228f8ad2792843ce5bd1f5cf"
+            ],
+            ".repo-harness/hooks/session-start-context.sh": [
+              "sha256:3223b6e1a108c957b8bbcdc19657ebf00a62c65dca4b305ed09189b16de3eec2",
+              "sha256:5558b72eb83b4d643db212aa58eb90e1ba2bf96cea4292ff723661757f2d1620",
+              "sha256:57300d82e95af81f08866318f9c6a7d27a8f04026b373017579195b766cdab71",
+              "sha256:b83b7599a5f882265fb7ad4b9d6ba9b63e5f2df6a774f398c324bb21fb666b5b",
+              "sha256:ed4bb740de77523c6b8ca1eb2a5091d134323b03ef3ce0399d559f02389c44c6",
+              "sha256:f7033b056587b88035fdddf4f3a844bd078892ce1c5da388bc46afd73aac03e0"
+            ],
+            ".repo-harness/hooks/stop-orchestrator.sh": [
+              "sha256:1545045cbbf54d80bd17f17d0011ef0bbcf9b7d9038b721a14324ab295037102",
+              "sha256:18721550c44e0521894e7b96ed7ea4ee7a98465d1eb5a15e59a9e8782c6e9e51",
+              "sha256:1a07b868909bd4ac3941dcd5aeae6b025bd1ddfc77e0fafc72a8f2c20c43ce3b",
+              "sha256:1b99cd861d3a31761076c59e32235993912074a50e48e3f23181555277c7b28c",
+              "sha256:1d39f0da70ae58d100b9196c82c00594fe5aadb21bf439ce44b436435611f2db",
+              "sha256:45f7b850c704b50cf5abfc09140711edc406c52e2e26fa4b97ca17e0e2cd9684",
+              "sha256:5a4b97ba76d1f0955e48000ae5f9ad276ab70c0e4682d5f98f419f4cb50e2dbe",
+              "sha256:6ffac0a0859ae159354f35a8d5ce2e58e0bcd352a89cf2c563ae544d298191bc",
+              "sha256:758c8b90e21a2d8dbe343118290f457277465074cf44c66e7408e95f0396c33b",
+              "sha256:7a51823a671145b1009b9cf9b8fd13696739ee01a00573c5d4e80dfab82d107d",
+              "sha256:97a2dee14b22e9e88329bba2a12f1831f2d052d95c96f2bca9ce2c69cdac0321",
+              "sha256:9af68e7a275ff1089a30967faeca73baac6b618ef42bf1c606f2a083a18f1550",
+              "sha256:b6ed73fe1cdb6cc68bb318c8f4c3cbf1352f9cad9a33a864448cc8097472a9f0",
+              "sha256:be4d1250be94e8b38ff9005eb58891733a87fba7992f60b39c42c2774d0563f8",
+              "sha256:ff7dd6d81ed7f6ffa2f735851c634677b5e5d2a7dcb63c2376d54e08544c0d44"
+            ],
+            ".repo-harness/hooks/subagent-return-channel-guard.sh": [
+              "sha256:1fc137e861644ac3c584f1d754b23da2becb20cf8676f74cfe6381d427544f41"
+            ],
+            ".repo-harness/hooks/subagent-start-context.sh": [
+              "sha256:057ce395f506e391b13e21a2c2269cb936b5d6f863245dbd0f0e5a19ed61e00d",
+              "sha256:11eab153f44b6e94ec4a9ed7c841d52c600aea9c56ab638caca9c7c7d5f4e479",
+              "sha256:1861dac1b4b16fd0076b8734f3dc13de2fc8ce7a9f62d184b6b0c8c5759f9c90",
+              "sha256:19535f396bac3897928dc9034515e898888c4d20a0df4e5b634107e3c00ba8fb"
+            ],
+            ".repo-harness/hooks/subagent-stop-quality.sh": [
+              "sha256:4c93d30d77d4a4834fad944c1c4bc60419ff48db591ef57d79a7416c89150fbd",
+              "sha256:652911acb8be0b51d07b3f2e33ea5ba3616f67fea224831e4d93bcd4446edfe9"
+            ],
+            ".repo-harness/hooks/worktree-guard.sh": [
+              "sha256:0c7183c164562c9e82d62bb3420041ddcf80a3a97e720a7e794f81fecd8f0cf2"
+            ],
+            ".repo-harness/hooks/.version": [
+              "sha256:179a5390966e85c2071a87c1b31de13df67460665196f6529f8c4986842f81e5",
+              "sha256:780363b8ef02ff7e83eb72709f6396b09dec21a26403bb44f58ea8d6757fe33d",
+              "sha256:786aebf3f673c87c5f643e65953ffd9b336284b41b28d54c7aeee806fcdd8ea4",
+              "sha256:902311c7bb38fa1658ff403def6158ee7378fe9d6e2e284fa1c38735c31bd30b",
+              "sha256:966f2f8695b5c07de3f37c682b1409da1ac84b5c7ce04a27068bb4c017ac0cb8",
+              "sha256:967d9afb101346667166f2e76e81910bc190488d7d41d50ca0072e9d92f00e32",
+              "sha256:97a5d6e540a6120d09c39ddb667e0e8e2bac7fcc2ffef813b82e08fd60365bce",
+              "sha256:9c788a838dc1f6bfd80fa39757a95f94260071c35011c9a05301da1c73507657",
+              "sha256:9d8c94f1ad3ea96b1e2ac4914fda4cb93c76b4a3e0d8cc6dd8976d6c0b227d15",
+              "sha256:a66780da23103beaf12432b418508966b31a2a3a787f9468a5b6cdaa8667c1ef",
+              "sha256:a92b0248b8baacfaf54e8d59caaca7d5e6b9a0a25ee140c81ea973b4ae25142f",
+              "sha256:aaf6721dc37c40b4233accfc081f25776ff3bd1d2a4b9d5cea760d1c2cf86665",
+              "sha256:ceb9b2c03afb769df3b1e518520c4e1798e9a3313a1c5ffffcb054fef5d6d6fb",
+              "sha256:cf6a05db55c83ecdf0b3323be40d441e20f4bbd3860a3f4104a9dab70fbae161",
+              "sha256:d0176718bd214ce8474c06ed61c395ca113fdfc2acdd86d9aa9933b40d9b561e",
+              "sha256:dc24feb5bd35084d8ae32a4eafbec12352707d4662401fcbcc9bbd696cde77a9",
+              "sha256:f34248c2449a022d41c918d1e995ad85859a1e9f0e6f89d0af23ae4a55519f71",
+              "sha256:f4d439e0b523208a09d13862c16820cc3028fd94417310ce1d53a31d14d6a2c4"
+            ]
+          },
+          "summary": "Remove unchanged files from the retired global Bash hook runtime."
+        },
+        {
+          "id": "global-hook-shim-directory",
+          "signal": "global-hook-shim-directory",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "directory",
+          "paths": [
+            ".repo-harness/hooks"
+          ],
+          "retiredBy": "804c198f",
+          "historicalFingerprints": {
+            ".repo-harness/hooks": [
+              "sha256:0016dcd4ffe638d7265bc4f65d25d04ac3f61a19ec71e80b74d95a0029014e01",
+              "sha256:008567e35679a523daae07409c06ec56b7d87f479d3f12e8edccdabcdc5a77b9",
+              "sha256:01286d904e1d3dcf5836b84a3b73a0dfdf4343593038f18dff920d3231315249",
+              "sha256:035e350cf32bc86fc80bfea16842dc4e532a8dd7716997ded62b2327bbb032f6",
+              "sha256:0457c291beffe9e1f8cc5ab9d24142ccb4c8f335d26db3603039675fb126c869",
+              "sha256:05daf761299d5411d49e9879e6632469c01880c2164e5df5b8819f3f094abfdc",
+              "sha256:0626457a532124b222bd4ad94b0d0adda333dac62886c7a30686e25943626b66",
+              "sha256:0a8989e0d1b9f4cbc03627a711b002b190c058bf079c83e864f237420278e44d",
+              "sha256:0db3353c8d60c145923c82f359db4c272d0c31ab719021521e60855c55e59429",
+              "sha256:0ec347a2e3cd238aff64ebcd94eeb1f2e1ce1df157587820ca8cd1a6b74b2606",
+              "sha256:11331413db5a45f5fc0546893f391d49b16689394ed009d77fb180ce7a22a563",
+              "sha256:127ef8477763df15ffc1e59fede30bcc7ad612d41f6b284145b60a5ed4aaaa9e",
+              "sha256:15792b81a86019917797f15aee58d3bf114637f6fc1bad5cd2cfcabd25ef416e",
+              "sha256:15cbe50bd44a94997129d9fe9c55ea18af202f5490af96a3ac8a5cae7016112a",
+              "sha256:16c865f5ac7ccaaf9ef3abbe012af48ce3423431793762e433ab22f5dfbfcb7b",
+              "sha256:17a84ca7561ed3921e328f6dd5745d3b5e641e4dc9abcff750b2dd14b2fd2280",
+              "sha256:1a09b19ad1b1127c463838e2c2e48cbbac22a10aa5eae5d6ad3dd347fb3f8aa1",
+              "sha256:1ae5061e539a224cbac6eda3709e040c59d413a75a152671599efefc8028615d",
+              "sha256:1fa4f94a8ae53fb2db78672ccb14716e5e9a95a9a90f77563cf260101f55ebf8",
+              "sha256:20585111121f9bcb61376b16bcf0e28a6c81a918bc5a5262fa9684e99262e5c3",
+              "sha256:2a632647bbbd793390b42236055e9b05c3af1796c78e06d41618f1297b92f912",
+              "sha256:2aad0e5db5e615e51064d31c0c3876c771344cdbbaf1fd1fa91aa839da0fea55",
+              "sha256:2cb7e00b9d8375c96b8caa809f17b9a3c8a27ef3d770c981b39e61763f436755",
+              "sha256:36ea6899147821bebc18ec857e737289ff1b8d1af2f21595efa98db8037392ea",
+              "sha256:3c78149c94a52dcb23db7f8c0c8592b0d3dfe5fb5d657c25a9da8eb50bd4db00",
+              "sha256:3c8fe2c8710b1fa36a04c1802057b0be05361374f3c844064e44eb7cd9d02907",
+              "sha256:3d21225000e351a756c5ed10a7b2b8a7b6ba86ee30bbfe8cb20d9f899cc92efc",
+              "sha256:3f6458a5eb6244771c7ea05c4952bbdccd942cf10d785393d84c9cdeea1e6044",
+              "sha256:40ee058a836ef8c257ae361ccbf57104d0407e7b92fa39d02b55a6ca9b3a77b3",
+              "sha256:4137afb00616804c2c8e7d01f7515e6b313eaf0c20dc02e310013219f4450a13",
+              "sha256:433e5fbfdcd9764426132d140f7611921389b75d3b882799d3ac7d978afe2542",
+              "sha256:4371f48ca2c9497da483cb3eed5035474b78263f40a17c410715b0b29e22160c",
+              "sha256:46b11d8cf2f64101aae3396d6648d76940d6193e04ece1349309659b37775fb0",
+              "sha256:484deab9a225f1d5db8e798aca5d6cd02577db7b3d0b06bdd2ddfbbf14978fe3",
+              "sha256:484fe811a0d28f5143228146b235cdecf1255ebb96ce5374f877d3ce6999e3b5",
+              "sha256:488215dcdae7a084071d5160050998e844fb130c17c95c3d2b9368f4585ee8bf",
+              "sha256:4c3056796ad987e34297b1d2df6179cc9de8892a487446546c7709d51cc181d1",
+              "sha256:4eccc43440bc81fe0daee75a30dfca3ca4874c911b5526f470c1d8b2ba9e2307",
+              "sha256:53205288ff5877ce946a6baec8d69cec9789d98e7780d49ec90390183e0c5ff9",
+              "sha256:57cd03ffe9eb99ede933e96096cd79d04ff8e2047eb729b94d0bc9e0158e411f",
+              "sha256:595fd28b9a6fd2c09567aa8879c29765e7c13d70b447e5854e11f5a8e7018b66",
+              "sha256:5aecd9aa0b52dace1fe048ffb12db27242798c121a70e879bfaf5a98215b6645",
+              "sha256:5ba7e97ef707d023014cf6bcc036c90b53f9b739b9a332346a7413c8cb521247",
+              "sha256:5fe6808c4d79034c582af5627c8aa55fdc89502c0b09c46007cd6430392f6fc2",
+              "sha256:6217ee153d92c360989cc7ece3ef857556f85e36a2b35858a8f809e239800a44",
+              "sha256:6627d0ba38459c08fd93eab1f3ea6620d050aca6d849b79f10cedb2fe30ce71d",
+              "sha256:67a3613c50a6af94eac0dd78949ce4da8b0b55755002b9c5bfdedf83c9543cad",
+              "sha256:68876eee5e43d87e2d513b7539c47c5e219119c67997bff7d794b5aebd9e966a",
+              "sha256:696b021565a12a81bf94476601eeefcaa4d61a5ca61e0f00615148a9e06b18c7",
+              "sha256:69fb6fdf1c2743a5edb2de917255740bd195fd397d95a2a89b06e9f201ccbf32",
+              "sha256:6adbca6f611ed4918e2678825f20ff46aea0475d42986dba97acc2b27d44d785",
+              "sha256:6f699b14f6397dc7de5c6534b10f21081cc4e75b914ed22ca44770276c405423",
+              "sha256:70f6adcc30fabbfc325001aec9765acbfc1a5c307a4a286b3fdd448bece72add",
+              "sha256:7248cfa1b6da1a66941735fac907a09d936f0f54cfad41db72ca1478f636f411",
+              "sha256:72d546ef25a2df00d00aff179b1503c40d955d52869dde2c22614107deddc6fe",
+              "sha256:730fbdedb1a08ab348d4dc3e0a187f460a21ec601e764825fe176cc665998c5e",
+              "sha256:79ece36f71cf100b099b61197447e9d5373500bb1ae28476e7fd2860c00b9387",
+              "sha256:7c387bd75b6fd9c390ad9c8c8632f52c6723faed61b257df9a79954781c12d4b",
+              "sha256:7c42873624d9a84d527d48d9fbe5d5334604799d0185bc4fe6750d5090b397df",
+              "sha256:7c87b46328a9247f45120cda0dd5e74f56f35aeb1ade6924e8fd1f4ffda83450",
+              "sha256:7e36da1fefdb0c969310255bf15fcbeaef15d4fad299f184e3b56fdba289c9e6",
+              "sha256:7f4061e90931ac3adcac703e03073dbd09eb0b8a90a0e1d295641356ba0bdcd1",
+              "sha256:82c215f7488d43a1523a49a6ec391cf5ce6d17d99216682e5e6060074eb2a05d",
+              "sha256:8552e7a0087e79e44e87ba333383833466b881ac0e61ffb6760a55044b6048b2",
+              "sha256:8b012e289a4ec7ba050e4ac43aeec1fa51a9d9b5d2bf02de58da4142dcd0f6b4",
+              "sha256:8b04a56ade6741e7541e015744bac129b4c3e7927d1330693db728e23a374e6e",
+              "sha256:8e050b184b9f2475363526f37cde14cd47e214bfb6491cde4f0a9056af5ba83a",
+              "sha256:8fcc72608523e447ca9e292c8588417397c68c757cda2afc972996568590518d",
+              "sha256:919cc8246181c64336d18db68b341050f688def9f93d081b693261ac3df62da5",
+              "sha256:93053aa861e44bc7cb574521fadbc119f8ef7dd662e886900bb6593af8ef3ad7",
+              "sha256:95dc5ab88c9f9daec96ed782539136c7f2710092f00198ae5af6b079e0735b06",
+              "sha256:99df62722e3bd28d384d1f697c1aca0379acc08106164ae2eea8c36f4de07475",
+              "sha256:9cd1ee09002a6cf90e0c005e21f1cc958414faa12b6cc7a579ff2f637e484cc1",
+              "sha256:a0587d8142ca78f4fc28b26cb00de45094a62737830175b95667f35e6596f79c",
+              "sha256:a06aeac3cede9ff89948613067aca1c88b59e791ae8cf199824c0296b3038128",
+              "sha256:a218d455854e76554fd7797da446807d4a6c721f5a0531e4a2f89fcd486299b4",
+              "sha256:a772e51a577aff5a74cdcec591ec333ca773d186a3e22e5499d6301d541822a0",
+              "sha256:a7952e7cd709a3fb15f67910dff2ec7e3c868d690feddcaf9d9c920e83eeaeee",
+              "sha256:a91abaf3a9f3443b135ccb6d456e2712acac33a432389630f0b7a994ba58b04e",
+              "sha256:a969865c0c7c913092cb938a048f2ed26909bce7ea2b1c3baa5e42786619c19c",
+              "sha256:ab717cff6a6e5284dbd52a7fe6e5d690309c27977292882ba0f4454df205bda4",
+              "sha256:abc6749b761090cb00af0d0ada38a34ca67a8b5ce13bad4d86a43cb89c12bc2e",
+              "sha256:ad76ff6043f945c402f757baad3d324993c1a9ec28fbb6f726a964e680447e8d",
+              "sha256:ad7f651ba3517d9efd5389ef222884b56e5a3b4db31232a1870a4a1544193e3e",
+              "sha256:b34a98600c607639eebb9899bbd6d0bac78c79d9f960dccf17f0ff692557ff9b",
+              "sha256:b3624aab08261bdbda9aab113e1dfd43ecd36485a5781e0191ae7be2694d4bcb",
+              "sha256:b3daeff669330966b6ade02debdda5dd8d1e77bd43607813c8422b833e773579",
+              "sha256:b4922f4734d8b447b18be8b671e9e03587c64bac575c4aa4859a7a1b1b30ad2c",
+              "sha256:b59cd33d4b8bc775a9872974a700c08dfb5561bbb36e38950e136dd3ed6ea943",
+              "sha256:b85c73f3994987d2a583565ad7b9cb4f8b5f74c0ba8c10d3d506a12e2b8321c4",
+              "sha256:b94fd240f0c356cb2b2876cdab6a5c54bf380309eb677d00b54eb2689ef361a5",
+              "sha256:baac0126101d9a1e98c3b7fcc01c12c647547b36131589aa8acb20b5d63f89da",
+              "sha256:bba5a5fbbcb27794600d7a9d9ea43bf031402bc36cb49a59480bcd390f21864b",
+              "sha256:bddc4baa33f0b7dbb68efa686382cd19c3aaca3067562119e8cc4d637f550a36",
+              "sha256:bfa600867de25ffedb6909e00af516687fb1dbbd64ea48bed5093153607339db",
+              "sha256:c16bfa41317bb18a8a7095891b8dacb3f96160ec61cec666d696202041b5cba4",
+              "sha256:c273f9ee6287d773582c6c287a1fe544cb7d92a2931e6354b77b37890ecf7a6d",
+              "sha256:c27d66f796ec297198dde3bd10c41015339b3e8ae3c517f7f53f95d02f646eee",
+              "sha256:c84c08de9a68d0ef153217aafcc84650a1aa837b4ffa0e67157c82f751510a92",
+              "sha256:cc61e6c868ab46c13bdacd467e061a3e5d3e854c0f32a8ae469586f7f2cfcdee",
+              "sha256:cc79b026ca322733824b76502b2846690e313104c4412e587c3585100223723d",
+              "sha256:cd3f8298c430ae18680433d71cdf4cf65f8c5e73c08743abcb0833619761a7a1",
+              "sha256:ce53d4fd7fd1615b1163023dc38a5c408835ba2ece1e9472d8080f4ebe83e123",
+              "sha256:cf048f9cb644ba6e011ef6947980fc9c5556b4865441172dd721e3a9b555b025",
+              "sha256:cf2f0b3a3866cd16963453bd7c6dde7ca40acb7ce5e7ac2e3335104076cb5365",
+              "sha256:d277ca91a6753d99c2dc02ae84964cd410bc0b3b3525e85a9a5707627d544c7f",
+              "sha256:d544bec4b9fd828b99fe482b252efb8045e68ac8902dec1b615d3a6a5dafa7ef",
+              "sha256:d59c0da228cd249f97cc5943de46367b8c13654f85269dea4b20de52c711f6d3",
+              "sha256:d6bd10f0c81344748426a07df7bc7d2edb1418fc71004f1380cf4a151da287f9",
+              "sha256:d72e0126ea26df95c9ce303ddc622249d1d76a836bd245aa59e58680eff697d9",
+              "sha256:d890bd3431ee1a76524160e2d650ee5e03ca21b63557badb23b0d0a57445c348",
+              "sha256:d9e86c14074d263a5d419313d768a77f8d8aeb79668d22de7f3652e2266ae846",
+              "sha256:db2f2bf71bbeb601cd6fc6af4de6914eb77c85214125cbf2b92b179fe411724c",
+              "sha256:dd88bd39d7287a78b48b21dcbef6e6ecfe008b2d8e400361fe2e871ae8c04d07",
+              "sha256:ddc92b2d6ab2dbb711bf7e06e78ea7dae2d75ab1f52a3a157a6d095ec2ab7b42",
+              "sha256:e3d225e6497515750aa841c3e18565e3e284eadd8dfc747ea4919775f2b64bee",
+              "sha256:e3e11f300e23da652038e988db7a77ae6e933fbbcb4751811b581e6ee21e06df",
+              "sha256:e50931637918fae85f273b3f04e457deee072318e9431754904af49721417956",
+              "sha256:e5304468e90ea60f7c045197971c18790ce2a027cf377f3f87d49727f8c8f43b",
+              "sha256:e627cd28de06b4868af9679f0e6a83165f83a5bafccddd1534cd529f2046edd0",
+              "sha256:e6bdbb5e650f26d6f7e29ebde825a5c94144d0183fe5d9a8e310be754c30f62f",
+              "sha256:e6ca02e870495c02abcc5ba53364544afd06d6a606921854cf7a21a3ba0e0b5d",
+              "sha256:e7bf485e239333ba50addfadcae2b092f5a00a658e190288ae3572cb61e40511",
+              "sha256:e802b803510c8f5728146a4f4f575e867b474ac8b3db53fc58d2876ef30f2e8c",
+              "sha256:e95814bf8d826b8d2b12792472d4eedb1ed45c9dbb8a9a5262b1d1f4071fe899",
+              "sha256:e95c2d2a60256b13e2361b0c2ff8182299a4ca12e2f316139a03409334a0b4c7",
+              "sha256:e99cc7df19531707cbb85fcf3d05eae87fa7f2ccabe2106d05a35495482610a9",
+              "sha256:ede1753a1b766bb0763bd2558285a3898204d62cae8c2b67a0b80314fddc11d5",
+              "sha256:f5a9a24db7395b65292f2b2c1f8e5bb5e426b5b5b5d3640d35888ea8023f4ef6",
+              "sha256:f5b9d7f1cd9e493264a630fd7ffa8c1b680951abefb8406a298e6a19b7fd0736",
+              "sha256:f5d945365c0983119f3e44e7b9d46fa551cd5ced95425adaa59aae4085d860bb",
+              "sha256:f851eb57310d14f744dd33854f3e820fc4b3b95f0f62f1e8af2d8b6b5ca6fd61",
+              "sha256:f98dec2e9e53a63427bb92a2a5283558f62153c9e0022586a71d5703ab13f2ad",
+              "sha256:fda4b5aeba776d7a95b82966bad2635264bd5a6d03b9f34342508912ca82776f"
+            ]
+          },
+          "summary": "Remove the retired global Bash hook directory when its complete tree is unchanged."
+        },
+        {
+          "id": "retired-skill-facades",
+          "signal": "retired-skill-facades",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "skill",
+          "paths": [],
+          "retiredBy": "9a50c194",
+          "summary": "Remove unchanged retired command facade trees."
+        },
+        {
+          "id": "retired-skills",
+          "signal": "retired-skills",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "skill",
+          "paths": [
+            ".claude/skills/merge-gate",
+            ".codex/skills/merge-gate",
+            ".agents/skills/merge-gate",
+            ".claude/skills/repo-harness-check-references",
+            ".codex/skills/repo-harness-check-references",
+            ".agents/skills/repo-harness-check-references",
+            ".claude/skills/repo-harness-root-references",
+            ".codex/skills/repo-harness-root-references",
+            ".agents/skills/repo-harness-root-references",
+            ".claude/skills/repo-harness-plan-canonical",
+            ".codex/skills/repo-harness-plan-canonical",
+            ".agents/skills/repo-harness-plan-canonical",
+            ".claude/skills/claude-plan",
+            ".codex/skills/claude-plan",
+            ".agents/skills/claude-plan"
+          ],
+          "retiredBy": "f8046677 78d53404 9a50c194 1602dad9",
+          "historicalFingerprints": {
+            ".claude/skills/merge-gate": [
+              "sha256:57072933570844a4e8d8b4502a1918c958a36d42cc3267c34a4a41d500a1371c"
+            ],
+            ".codex/skills/merge-gate": [
+              "sha256:57072933570844a4e8d8b4502a1918c958a36d42cc3267c34a4a41d500a1371c"
+            ],
+            ".agents/skills/merge-gate": [
+              "sha256:57072933570844a4e8d8b4502a1918c958a36d42cc3267c34a4a41d500a1371c"
+            ],
+            ".claude/skills/repo-harness-check-references": [
+              "sha256:010e7ef626c45ff337da6434c55a370ab37fad0408f3266d7bb4a6f841a44d80"
+            ],
+            ".codex/skills/repo-harness-check-references": [
+              "sha256:010e7ef626c45ff337da6434c55a370ab37fad0408f3266d7bb4a6f841a44d80"
+            ],
+            ".agents/skills/repo-harness-check-references": [
+              "sha256:010e7ef626c45ff337da6434c55a370ab37fad0408f3266d7bb4a6f841a44d80"
+            ],
+            ".claude/skills/repo-harness-root-references": [
+              "sha256:130b1f25bdd8a8fb72673a3a9da494c4f265fd9e124a686e0f96998c62bb41a5"
+            ],
+            ".codex/skills/repo-harness-root-references": [
+              "sha256:130b1f25bdd8a8fb72673a3a9da494c4f265fd9e124a686e0f96998c62bb41a5"
+            ],
+            ".agents/skills/repo-harness-root-references": [
+              "sha256:130b1f25bdd8a8fb72673a3a9da494c4f265fd9e124a686e0f96998c62bb41a5"
+            ],
+            ".claude/skills/repo-harness-plan-canonical": [
+              "sha256:9f0f94bd4e80f90f3098a02272870825c2bf28cebba840b67f24946ea7c0c73a"
+            ],
+            ".codex/skills/repo-harness-plan-canonical": [
+              "sha256:9f0f94bd4e80f90f3098a02272870825c2bf28cebba840b67f24946ea7c0c73a"
+            ],
+            ".agents/skills/repo-harness-plan-canonical": [
+              "sha256:9f0f94bd4e80f90f3098a02272870825c2bf28cebba840b67f24946ea7c0c73a"
+            ],
+            ".claude/skills/claude-plan": [
+              "sha256:14e3682057e39b4510f3e4878d639d45aefde2af7c79846d1de6daa1a2baa378",
+              "sha256:8a48ed1b20e1378e5c0bb6fd2f94641a423f5ce0a10116933ae852ed4c339a11"
+            ],
+            ".codex/skills/claude-plan": [
+              "sha256:14e3682057e39b4510f3e4878d639d45aefde2af7c79846d1de6daa1a2baa378",
+              "sha256:8a48ed1b20e1378e5c0bb6fd2f94641a423f5ce0a10116933ae852ed4c339a11"
+            ],
+            ".agents/skills/claude-plan": [
+              "sha256:14e3682057e39b4510f3e4878d639d45aefde2af7c79846d1de6daa1a2baa378",
+              "sha256:8a48ed1b20e1378e5c0bb6fd2f94641a423f5ce0a10116933ae852ed4c339a11"
+            ]
+          },
+          "summary": "Remove unchanged retired skill trees."
+        },
+        {
+          "id": "retired-skill-references",
+          "signal": "retired-skill-references",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "file",
+          "paths": [
+            ".claude/skills/repo-harness-cross-review/references/claude-mode.md",
+            ".codex/skills/repo-harness-cross-review/references/claude-mode.md",
+            ".agents/skills/repo-harness-cross-review/references/claude-mode.md",
+            ".claude/skills/repo-harness-cross-review/references/codex-plugin-mode.md",
+            ".codex/skills/repo-harness-cross-review/references/codex-plugin-mode.md",
+            ".agents/skills/repo-harness-cross-review/references/codex-plugin-mode.md"
+          ],
+          "retiredBy": "1433393d cc1fc8ee",
+          "historicalFingerprints": {
+            ".claude/skills/repo-harness-cross-review/references/claude-mode.md": [
+              "sha256:05145561bd952e9dfc953bf4c6b7e1dd78462f2150ea99dd06359c5e2db1f01a",
+              "sha256:2a623741425a7c6cffdcfcd542a86fe33e7570f288169b597d0c3937696ba927",
+              "sha256:529ad89768fc821600cb49d1c0e2d7f4f25cc91cd0ecae7cd76116c809d22e80",
+              "sha256:6ecd1b27393021fbff2932449879fa44d5b60bc9309a4f05d2b2c80bf2b7a2ce",
+              "sha256:8e82a4a24b50185f9e5ac38219bec95fe226b2a63c6c391a9512f141b8835cb7",
+              "sha256:a70e88c6f431ab8fa1f5b31c7ce3b0498b622f9726bd19bb2ecebe046d62ef36",
+              "sha256:c94bdf996bed9bd257a05ac7ed3fd078e30f1b20fdb368662f8c61ff1c57b909"
+            ],
+            ".codex/skills/repo-harness-cross-review/references/claude-mode.md": [
+              "sha256:05145561bd952e9dfc953bf4c6b7e1dd78462f2150ea99dd06359c5e2db1f01a",
+              "sha256:2a623741425a7c6cffdcfcd542a86fe33e7570f288169b597d0c3937696ba927",
+              "sha256:529ad89768fc821600cb49d1c0e2d7f4f25cc91cd0ecae7cd76116c809d22e80",
+              "sha256:6ecd1b27393021fbff2932449879fa44d5b60bc9309a4f05d2b2c80bf2b7a2ce",
+              "sha256:8e82a4a24b50185f9e5ac38219bec95fe226b2a63c6c391a9512f141b8835cb7",
+              "sha256:a70e88c6f431ab8fa1f5b31c7ce3b0498b622f9726bd19bb2ecebe046d62ef36",
+              "sha256:c94bdf996bed9bd257a05ac7ed3fd078e30f1b20fdb368662f8c61ff1c57b909"
+            ],
+            ".agents/skills/repo-harness-cross-review/references/claude-mode.md": [
+              "sha256:05145561bd952e9dfc953bf4c6b7e1dd78462f2150ea99dd06359c5e2db1f01a",
+              "sha256:2a623741425a7c6cffdcfcd542a86fe33e7570f288169b597d0c3937696ba927",
+              "sha256:529ad89768fc821600cb49d1c0e2d7f4f25cc91cd0ecae7cd76116c809d22e80",
+              "sha256:6ecd1b27393021fbff2932449879fa44d5b60bc9309a4f05d2b2c80bf2b7a2ce",
+              "sha256:8e82a4a24b50185f9e5ac38219bec95fe226b2a63c6c391a9512f141b8835cb7",
+              "sha256:a70e88c6f431ab8fa1f5b31c7ce3b0498b622f9726bd19bb2ecebe046d62ef36",
+              "sha256:c94bdf996bed9bd257a05ac7ed3fd078e30f1b20fdb368662f8c61ff1c57b909"
+            ],
+            ".claude/skills/repo-harness-cross-review/references/codex-plugin-mode.md": [
+              "sha256:0da255bf7457da08cf6fc5a51f055bcd24d704f22a041ddea94d60b15754d4e0",
+              "sha256:888eb9dbe996dcd9f9f09715671ff83f5d1ea97aabf98b8477ccec3f01266e4f"
+            ],
+            ".codex/skills/repo-harness-cross-review/references/codex-plugin-mode.md": [
+              "sha256:0da255bf7457da08cf6fc5a51f055bcd24d704f22a041ddea94d60b15754d4e0",
+              "sha256:888eb9dbe996dcd9f9f09715671ff83f5d1ea97aabf98b8477ccec3f01266e4f"
+            ],
+            ".agents/skills/repo-harness-cross-review/references/codex-plugin-mode.md": [
+              "sha256:0da255bf7457da08cf6fc5a51f055bcd24d704f22a041ddea94d60b15754d4e0",
+              "sha256:888eb9dbe996dcd9f9f09715671ff83f5d1ea97aabf98b8477ccec3f01266e4f"
+            ]
+          },
+          "summary": "Remove unchanged retired references from the active cross-review skill."
+        },
+        {
+          "id": "retired-host-hook-templates",
+          "signal": "retired-host-hook-templates",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "hook-entry",
+          "paths": [
+            ".claude/settings.json",
+            ".codex/hooks.json"
+          ],
+          "retiredBy": "d25bc6db",
+          "historicalFingerprints": {},
+          "summary": "Strip exact commands from retired host hook templates.",
+          "commands": [
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" codex-delegation-advisor.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" minimal-change-context.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" minimal-change-observer.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-bash.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-edit-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-tool-observer.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" pre-edit-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" prompt-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" security-sentinel.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" session-start-context.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" stop-orchestrator.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" subagent-return-channel-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" subagent-start-context.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" subagent-stop-quality.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" worktree-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" minimal-change-context.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" minimal-change-observer.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-bash.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-edit-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-tool-observer.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" pre-edit-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" prompt-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" security-sentinel.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" session-start-context.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" stop-orchestrator.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" subagent-return-channel-guard.sh",
+            "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" worktree-guard.sh"
+          ]
+        },
+        {
+          "id": "stale-project-copies",
+          "signal": "stale-project-copies",
+          "action": "refresh",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "project",
+          "surface": "file",
+          "paths": [
+            ".ai/hooks/lib/workflow-state.sh",
+            ".claude/templates/contract.template.md"
+          ],
+          "sourcePaths": {
+            ".ai/hooks/lib/workflow-state.sh": "assets/hooks/lib/workflow-state.sh",
+            ".claude/templates/contract.template.md": "assets/templates/contract.template.md"
+          },
+          "historicalFingerprints": {
+            ".ai/hooks/lib/workflow-state.sh": [
+              "sha256:091dee96bda01a9e87c5b99356d86881727ba28a55711921170e6aa7e5d7e5f4",
+              "sha256:28b279fbf7091a52a82cb420a85aa8516c98f25489f09a4b24fc494faebaca08",
+              "sha256:2b6e5f8329be2660f8601c21adb4d6e4b189e6adf3fdae5a67b500050bb9fc4e",
+              "sha256:38c3a3ea3914ddaeedbcbbda7da671ce62236886219cf0cc505afcfc9dada94b",
+              "sha256:3a1c7a5ff671efb7d296590dc75e42cef7c0c8e18eeaf9771182cf23b2272d8c",
+              "sha256:40d3285d3c6dab7ddbed01952dc08f14c2a4d73ebf06fbd7122676d283c33243",
+              "sha256:44d549c9b2703089b62e59597f48fe57a28b028bbf15973b09f76c1d1d414811",
+              "sha256:680cd1ca2c1f7b1e5e7e22ea519082c417bfbf6534479bddcbda6b74efa8c56a",
+              "sha256:6a4cb509f583777c6e29bcd15e6eb64b923450cc6f87758e3d59c92278b3085b",
+              "sha256:718bbfd6677f9ef44f894b1014621051240d6b5c06dd6085101ee1824ac202cc",
+              "sha256:78df163dcb36bb043ab98c363ef9ab4cd43e9aa9521fa782c52d9cffccd278ca",
+              "sha256:790d5367fed14038e7f38515eb69cb68a4479daa6fec6267be22c2c59475991a",
+              "sha256:7d4a7e72208ee9b901985660208206218c2f56900b4e349bb6af34a67299b871",
+              "sha256:92cc9904452f8e386e232044a7811a9fc5cedecd24169699a7e79cd92a7fbf89",
+              "sha256:9766c37244030153583465d67b6e1c70f622bdefc931cffbdf826b745cae59d4",
+              "sha256:99db9082d341d5e5267b4995a416d2352eacebea800b823460db0c550beb93c3",
+              "sha256:b8750733d95aa5b4fa9538de433fd54f71af7573299f52abc20cc23419a4c291",
+              "sha256:bab17e770a652dc6fc28db221c40a54dbd121a84e0f1ff83b0ffdbc0bafb1487",
+              "sha256:bc14dfa884fb111c9e83ad2e32fbe003c27ede914ab0cde96412381e498b1bae",
+              "sha256:bcf278f5ec5b1c59aa80d22aca6d250909e9a553e562d717e3e527974c6b5da5",
+              "sha256:c41c0803f7fdc6f342a2a0fa8fe9490a14da0b3f3af1c2928da393a9d88b120c",
+              "sha256:ccf16d489929545913aa54b517cf9137da79a5d1534007a20b4ac0ac7b54d615",
+              "sha256:d576fbc8e7f223bbaf5e11a517f395f0adcf40f9e3a30fa1c0c1ee2164ff352d",
+              "sha256:f547bfdc5206dab2e27159cbd30a4c6c032838f0c3e82d091a3f06987a41ada9",
+              "sha256:f7a9ee3b42e42b35dec1642a6b438197f633cdd750e7523ba757e77a7cc4535f",
+              "sha256:ffe9e0567dd23eabb561f30b38e33e65a416fd8d92d120bc17eba614e397fddc"
+            ],
+            ".claude/templates/contract.template.md": [
+              "sha256:015724f7f29e8a225092f4698a9987ec37fc93bb93d6e42a6666c741dcf307e0",
+              "sha256:13ec3e814a1330926f9fadb01a054eb0d43a57883bbf4f263414a11f8a6a29c2",
+              "sha256:15d6e8907ff05bf021b0c87c2424b901eb813612ff0942ff75fd0bf544009e93",
+              "sha256:3794966e3f9d99df5eca0879bdcddfcbaa84febcbd3a24d01820e084024de2ea",
+              "sha256:3e99035eaeb5a4a512476acb24dcd8ae7df686b28c22c00ca4364a5e9ce14b37",
+              "sha256:4f0c3e6132fd1296d395ef5482ce56c1b29c4de7432438b3d699787bce2b6c59",
+              "sha256:501db1f17544280af462d6c7df06f24ffee08fb5bcbb664fd99fa2d1b1dde715",
+              "sha256:5f862c801a6335266e939dd1a149716b18034613c2a3328bc2a1f74f806b6f96",
+              "sha256:64782652d308d872523068ec5e5ad615cc2990180d66b38af7f32ef680c19829",
+              "sha256:6490bfb66a279c6b8513534b0ae94724d2b7cfdaeea4813e0a7b11a7294ee8f2",
+              "sha256:7ec5c1b9e2ba8eaa6ba0014cbcf9ae2f61cd45e24bce1d62c78a5b319f7c4253",
+              "sha256:9454dfbec6eee6d133c7153b1855c686efdd79607dc8d2d3190553f59ce35703",
+              "sha256:a4025194af9e26340df85190525c7965954d87ebaf8a9d9b2871582f52dc24f7",
+              "sha256:b1245b9e0ce50700aa3088ab62c366630c05e96cf284cea3fa853e642fcbc883",
+              "sha256:b21e61741553c59bf227ded1e5cc2fc0dec74f384b0def79c8ca073e5f25581f",
+              "sha256:b947d4ac49f8b7e9567b557dec94f4946071b35e6019c241d8349cafcf100be8",
+              "sha256:bb35a9a61c6aa99e1fb6f6f9f62fc86d6c91ba31454f489d7d28e9c51be9d6c7",
+              "sha256:c864fd3852d7665d080418834481a18dc8f18d59e609090c75c3627d86c3b16e",
+              "sha256:cccbef00ae171cb91c2a5ca486bf5a462b054247df27d0887dc659051f8e119f",
+              "sha256:d6485883592d00494ab44c6e358ebe298dbd1ac43231d61f196b9a87dac75ec9",
+              "sha256:dc9d52f635b5833c7cb10cc3b5b320b08b5674422e29beb28a5742b0eb11f7ab",
+              "sha256:e0b129efb586c3261589dd125ad259f384640c9f53da95df33834706773ac735",
+              "sha256:e8e9fa3d5b25283d9bfa1823a262fea6597c5ca3810e0ce3119247e4c5036f29",
+              "sha256:fc1070975d625bcf3c0b0a26ffdb6185b0cc209cf6824501fec6a5440e58aac9",
+              "sha256:febeabc5eb46ee3340677711dfa94be2668153ba31fb25b3d487e56513b028e7"
+            ]
+          },
+          "summary": "Refresh unchanged old copies of the current project helper and contract template."
+        },
+        {
+          "id": "stale-installed-skills",
+          "signal": "stale-installed-skills",
+          "action": "refresh",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "location": "global",
+          "surface": "skill",
+          "paths": [
+            ".claude/skills/repo-harness-setup",
+            ".codex/skills/repo-harness-setup",
+            ".agents/skills/repo-harness-setup",
+            ".claude/skills/repo-harness-check",
+            ".codex/skills/repo-harness-check",
+            ".agents/skills/repo-harness-check",
+            ".claude/skills/repo-harness-test",
+            ".codex/skills/repo-harness-test",
+            ".agents/skills/repo-harness-test",
+            ".claude/skills/repo-harness-product",
+            ".codex/skills/repo-harness-product",
+            ".agents/skills/repo-harness-product",
+            ".claude/skills/repo-harness-ship",
+            ".codex/skills/repo-harness-ship",
+            ".agents/skills/repo-harness-ship",
+            ".claude/skills/repo-harness-architecture",
+            ".codex/skills/repo-harness-architecture",
+            ".agents/skills/repo-harness-architecture",
+            ".claude/skills/obsidian-memory",
+            ".codex/skills/obsidian-memory",
+            ".agents/skills/obsidian-memory",
+            ".claude/skills/auto-campaign",
+            ".codex/skills/auto-campaign",
+            ".agents/skills/auto-campaign",
+            ".claude/skills/repo-harness-cross-review",
+            ".codex/skills/repo-harness-cross-review",
+            ".agents/skills/repo-harness-cross-review",
+            ".claude/skills/repo-harness-chatgpt",
+            ".codex/skills/repo-harness-chatgpt",
+            ".agents/skills/repo-harness-chatgpt"
+          ],
+          "sourcePaths": {
+            ".claude/skills/repo-harness-setup": "assets/skills/repo-harness-setup",
+            ".codex/skills/repo-harness-setup": "assets/skills/repo-harness-setup",
+            ".agents/skills/repo-harness-setup": "assets/skills/repo-harness-setup",
+            ".claude/skills/repo-harness-check": "assets/skill-commands/repo-harness-check",
+            ".codex/skills/repo-harness-check": "assets/skill-commands/repo-harness-check",
+            ".agents/skills/repo-harness-check": "assets/skill-commands/repo-harness-check",
+            ".claude/skills/repo-harness-test": "assets/skills/repo-harness-test",
+            ".codex/skills/repo-harness-test": "assets/skills/repo-harness-test",
+            ".agents/skills/repo-harness-test": "assets/skills/repo-harness-test",
+            ".claude/skills/repo-harness-product": "assets/skills/repo-harness-product",
+            ".codex/skills/repo-harness-product": "assets/skills/repo-harness-product",
+            ".agents/skills/repo-harness-product": "assets/skills/repo-harness-product",
+            ".claude/skills/repo-harness-ship": "assets/skill-commands/repo-harness-ship",
+            ".codex/skills/repo-harness-ship": "assets/skill-commands/repo-harness-ship",
+            ".agents/skills/repo-harness-ship": "assets/skill-commands/repo-harness-ship",
+            ".claude/skills/repo-harness-architecture": "assets/skill-commands/repo-harness-architecture",
+            ".codex/skills/repo-harness-architecture": "assets/skill-commands/repo-harness-architecture",
+            ".agents/skills/repo-harness-architecture": "assets/skill-commands/repo-harness-architecture",
+            ".claude/skills/obsidian-memory": "assets/skills/obsidian-memory",
+            ".codex/skills/obsidian-memory": "assets/skills/obsidian-memory",
+            ".agents/skills/obsidian-memory": "assets/skills/obsidian-memory",
+            ".claude/skills/auto-campaign": "assets/skills/auto-campaign",
+            ".codex/skills/auto-campaign": "assets/skills/auto-campaign",
+            ".agents/skills/auto-campaign": "assets/skills/auto-campaign",
+            ".claude/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review",
+            ".codex/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review",
+            ".agents/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review",
+            ".claude/skills/repo-harness-chatgpt": "assets/skills/repo-harness-chatgpt",
+            ".codex/skills/repo-harness-chatgpt": "assets/skills/repo-harness-chatgpt",
+            ".agents/skills/repo-harness-chatgpt": "assets/skills/repo-harness-chatgpt"
+          },
+          "historicalFingerprints": {
+            ".claude/skills/repo-harness-setup": [
+              "sha256:af5cb389276cd4979a515f418458d6790da8b22957008a77a424271922446002",
+              "sha256:b553a01b6d7c223647280440705ceeb69af45827bd47863cb4938cdb803923b1",
+              "sha256:da175b22971374f0ca2624c175cdaefe154fa83aa587e874affdf46ed3743133"
+            ],
+            ".codex/skills/repo-harness-setup": [
+              "sha256:af5cb389276cd4979a515f418458d6790da8b22957008a77a424271922446002",
+              "sha256:b553a01b6d7c223647280440705ceeb69af45827bd47863cb4938cdb803923b1",
+              "sha256:da175b22971374f0ca2624c175cdaefe154fa83aa587e874affdf46ed3743133"
+            ],
+            ".agents/skills/repo-harness-setup": [
+              "sha256:af5cb389276cd4979a515f418458d6790da8b22957008a77a424271922446002",
+              "sha256:b553a01b6d7c223647280440705ceeb69af45827bd47863cb4938cdb803923b1",
+              "sha256:da175b22971374f0ca2624c175cdaefe154fa83aa587e874affdf46ed3743133"
+            ],
+            ".claude/skills/repo-harness-check": [
+              "sha256:4169d5de244dfa25db9085fee49b0abe20c44092d740e2607f7b79c3f36b4067",
+              "sha256:45912519c3c16dc42c45d409b1e42ff49d98e8e3afeea989f722abb98fdea4b2",
+              "sha256:47b13bc2830d871ca1b15313b31a8e396f1c127cc2b29c96826b16c463028132",
+              "sha256:47eb01dbd00092b83948ba391febb94a25990ed8624e617323b67d65ffd74a33",
+              "sha256:8baa6e212d90644df5f1dc1a0829cfd6e2afb30a4dbf545857e7ab1795867b2b",
+              "sha256:98ea054b66842d8098d55af579276f8c945f6052f3695101a07f794c76690eec",
+              "sha256:c4a92fe0d6f8e3a392c9e564c23fe3f19b69f544751318e754b1f841dcc79a90",
+              "sha256:d76fbe093d7892067a60a5c756e4ac358f511b20b5b4cbde15d666f976290e43",
+              "sha256:f30a8d02f5dd4be962735c3edba30df1236796b9f3635637ea7f2f67aa035c66",
+              "sha256:f30cb17423bce81bb9c77778b76fe0556682e2368952076a44da777fc2ab58dd",
+              "sha256:f5caccfcc18630c0d8d165b3f622865c0d0282e0e8b2a763a31192e92630821d"
+            ],
+            ".codex/skills/repo-harness-check": [
+              "sha256:4169d5de244dfa25db9085fee49b0abe20c44092d740e2607f7b79c3f36b4067",
+              "sha256:45912519c3c16dc42c45d409b1e42ff49d98e8e3afeea989f722abb98fdea4b2",
+              "sha256:47b13bc2830d871ca1b15313b31a8e396f1c127cc2b29c96826b16c463028132",
+              "sha256:47eb01dbd00092b83948ba391febb94a25990ed8624e617323b67d65ffd74a33",
+              "sha256:8baa6e212d90644df5f1dc1a0829cfd6e2afb30a4dbf545857e7ab1795867b2b",
+              "sha256:98ea054b66842d8098d55af579276f8c945f6052f3695101a07f794c76690eec",
+              "sha256:c4a92fe0d6f8e3a392c9e564c23fe3f19b69f544751318e754b1f841dcc79a90",
+              "sha256:d76fbe093d7892067a60a5c756e4ac358f511b20b5b4cbde15d666f976290e43",
+              "sha256:f30a8d02f5dd4be962735c3edba30df1236796b9f3635637ea7f2f67aa035c66",
+              "sha256:f30cb17423bce81bb9c77778b76fe0556682e2368952076a44da777fc2ab58dd",
+              "sha256:f5caccfcc18630c0d8d165b3f622865c0d0282e0e8b2a763a31192e92630821d"
+            ],
+            ".agents/skills/repo-harness-check": [
+              "sha256:4169d5de244dfa25db9085fee49b0abe20c44092d740e2607f7b79c3f36b4067",
+              "sha256:45912519c3c16dc42c45d409b1e42ff49d98e8e3afeea989f722abb98fdea4b2",
+              "sha256:47b13bc2830d871ca1b15313b31a8e396f1c127cc2b29c96826b16c463028132",
+              "sha256:47eb01dbd00092b83948ba391febb94a25990ed8624e617323b67d65ffd74a33",
+              "sha256:8baa6e212d90644df5f1dc1a0829cfd6e2afb30a4dbf545857e7ab1795867b2b",
+              "sha256:98ea054b66842d8098d55af579276f8c945f6052f3695101a07f794c76690eec",
+              "sha256:c4a92fe0d6f8e3a392c9e564c23fe3f19b69f544751318e754b1f841dcc79a90",
+              "sha256:d76fbe093d7892067a60a5c756e4ac358f511b20b5b4cbde15d666f976290e43",
+              "sha256:f30a8d02f5dd4be962735c3edba30df1236796b9f3635637ea7f2f67aa035c66",
+              "sha256:f30cb17423bce81bb9c77778b76fe0556682e2368952076a44da777fc2ab58dd",
+              "sha256:f5caccfcc18630c0d8d165b3f622865c0d0282e0e8b2a763a31192e92630821d"
+            ],
+            ".claude/skills/repo-harness-test": [
+              "sha256:1ad6c2df5ce259208c174c391e8c8c5d63a5bf81b65fdc97cebf59ef8fa35e43",
+              "sha256:556f910f10f53cc2f50db5e0280991985d9e70026186ab15a86a0b35553163c5",
+              "sha256:9a685a4e5447e7dd580ca2dac9956a96d4c3dd699a1a2aaa42e6c508c0df3ea9"
+            ],
+            ".codex/skills/repo-harness-test": [
+              "sha256:1ad6c2df5ce259208c174c391e8c8c5d63a5bf81b65fdc97cebf59ef8fa35e43",
+              "sha256:556f910f10f53cc2f50db5e0280991985d9e70026186ab15a86a0b35553163c5",
+              "sha256:9a685a4e5447e7dd580ca2dac9956a96d4c3dd699a1a2aaa42e6c508c0df3ea9"
+            ],
+            ".agents/skills/repo-harness-test": [
+              "sha256:1ad6c2df5ce259208c174c391e8c8c5d63a5bf81b65fdc97cebf59ef8fa35e43",
+              "sha256:556f910f10f53cc2f50db5e0280991985d9e70026186ab15a86a0b35553163c5",
+              "sha256:9a685a4e5447e7dd580ca2dac9956a96d4c3dd699a1a2aaa42e6c508c0df3ea9"
+            ],
+            ".claude/skills/repo-harness-product": [
+              "sha256:1142f1de09755f51d9b3652e726537cd77f958eb89f9f7f863136362fd2c58dd",
+              "sha256:14a6e68d5dd2ac66903dc46d8aeb95e373b748dc9fc46ce35264c988474fd791",
+              "sha256:32daba91aff59e3cdfa97f2e64e65a4a2bd0f134e34690bfd9c8e5fe400114e0",
+              "sha256:6257a6294e5c4066b1a889949ad921472b675060066a09b75b7d2406f196f7cd",
+              "sha256:7fe145713fa74d48c8439f45f565079d3c60146ea748f69f4de182c8f68347cd",
+              "sha256:b647125d9032700cbde6ee58f27ef46ec996ff957016ecd5c617933851f5cfe2",
+              "sha256:c6aa9fdb993b08d8321a1cc7e3e7b251a761d9ac5e3bae91bb8930287c094ca7",
+              "sha256:e3680a59cfdb3a420891d93a82d7507806c36f96244b1c4152c0164fd428495b"
+            ],
+            ".codex/skills/repo-harness-product": [
+              "sha256:1142f1de09755f51d9b3652e726537cd77f958eb89f9f7f863136362fd2c58dd",
+              "sha256:14a6e68d5dd2ac66903dc46d8aeb95e373b748dc9fc46ce35264c988474fd791",
+              "sha256:32daba91aff59e3cdfa97f2e64e65a4a2bd0f134e34690bfd9c8e5fe400114e0",
+              "sha256:6257a6294e5c4066b1a889949ad921472b675060066a09b75b7d2406f196f7cd",
+              "sha256:7fe145713fa74d48c8439f45f565079d3c60146ea748f69f4de182c8f68347cd",
+              "sha256:b647125d9032700cbde6ee58f27ef46ec996ff957016ecd5c617933851f5cfe2",
+              "sha256:c6aa9fdb993b08d8321a1cc7e3e7b251a761d9ac5e3bae91bb8930287c094ca7",
+              "sha256:e3680a59cfdb3a420891d93a82d7507806c36f96244b1c4152c0164fd428495b"
+            ],
+            ".agents/skills/repo-harness-product": [
+              "sha256:1142f1de09755f51d9b3652e726537cd77f958eb89f9f7f863136362fd2c58dd",
+              "sha256:14a6e68d5dd2ac66903dc46d8aeb95e373b748dc9fc46ce35264c988474fd791",
+              "sha256:32daba91aff59e3cdfa97f2e64e65a4a2bd0f134e34690bfd9c8e5fe400114e0",
+              "sha256:6257a6294e5c4066b1a889949ad921472b675060066a09b75b7d2406f196f7cd",
+              "sha256:7fe145713fa74d48c8439f45f565079d3c60146ea748f69f4de182c8f68347cd",
+              "sha256:b647125d9032700cbde6ee58f27ef46ec996ff957016ecd5c617933851f5cfe2",
+              "sha256:c6aa9fdb993b08d8321a1cc7e3e7b251a761d9ac5e3bae91bb8930287c094ca7",
+              "sha256:e3680a59cfdb3a420891d93a82d7507806c36f96244b1c4152c0164fd428495b"
+            ],
+            ".claude/skills/repo-harness-ship": [
+              "sha256:583ef31075d2d93f6e20975e924a20925d5c1fe771944fd656ca469feadee4f8",
+              "sha256:a28107a6f35ecd2cfe7c8a7701612836084b8832d859b2ceba6921a36aea27a9",
+              "sha256:e2678f31459ee46fcdeec908b7f696de5c1ea9fd99634c5d03e6dd6c510a237c"
+            ],
+            ".codex/skills/repo-harness-ship": [
+              "sha256:583ef31075d2d93f6e20975e924a20925d5c1fe771944fd656ca469feadee4f8",
+              "sha256:a28107a6f35ecd2cfe7c8a7701612836084b8832d859b2ceba6921a36aea27a9",
+              "sha256:e2678f31459ee46fcdeec908b7f696de5c1ea9fd99634c5d03e6dd6c510a237c"
+            ],
+            ".agents/skills/repo-harness-ship": [
+              "sha256:583ef31075d2d93f6e20975e924a20925d5c1fe771944fd656ca469feadee4f8",
+              "sha256:a28107a6f35ecd2cfe7c8a7701612836084b8832d859b2ceba6921a36aea27a9",
+              "sha256:e2678f31459ee46fcdeec908b7f696de5c1ea9fd99634c5d03e6dd6c510a237c"
+            ],
+            ".claude/skills/repo-harness-architecture": [
+              "sha256:2d956d1c447d96af14eb5f1548222ea76aa86e6af7934788a5653ae891cead19",
+              "sha256:2e3076baa3d956480e751ccc86a4a6d1c65a78b6181e3e05ff0ec1e77232e0ff",
+              "sha256:714dbd34bcdacac789b07040621cb0dd7c0d4a32bf599d8e3de208148a2cbc6c",
+              "sha256:87ff468796e003f8769a428101f755920bcf3b3861d92fc56aab0debcd6cadfe",
+              "sha256:89933dbe07b805847fbc95316ae940734a107b6e6f7743eaa93ce282d82079b5",
+              "sha256:8b559651fb8b1bdd465b558114898e5fc77c1c98e8c6be61355275c26ecd704c",
+              "sha256:ac8df644fbd3b47fb74d4109b5cc03e9957eef4ea88592c9a2abd02d6b1c9b64",
+              "sha256:d4f41d90ad42cc334d3679ca24610966901952adc80437b7802e6cfbf6bb3588"
+            ],
+            ".codex/skills/repo-harness-architecture": [
+              "sha256:2d956d1c447d96af14eb5f1548222ea76aa86e6af7934788a5653ae891cead19",
+              "sha256:2e3076baa3d956480e751ccc86a4a6d1c65a78b6181e3e05ff0ec1e77232e0ff",
+              "sha256:714dbd34bcdacac789b07040621cb0dd7c0d4a32bf599d8e3de208148a2cbc6c",
+              "sha256:87ff468796e003f8769a428101f755920bcf3b3861d92fc56aab0debcd6cadfe",
+              "sha256:89933dbe07b805847fbc95316ae940734a107b6e6f7743eaa93ce282d82079b5",
+              "sha256:8b559651fb8b1bdd465b558114898e5fc77c1c98e8c6be61355275c26ecd704c",
+              "sha256:ac8df644fbd3b47fb74d4109b5cc03e9957eef4ea88592c9a2abd02d6b1c9b64",
+              "sha256:d4f41d90ad42cc334d3679ca24610966901952adc80437b7802e6cfbf6bb3588"
+            ],
+            ".agents/skills/repo-harness-architecture": [
+              "sha256:2d956d1c447d96af14eb5f1548222ea76aa86e6af7934788a5653ae891cead19",
+              "sha256:2e3076baa3d956480e751ccc86a4a6d1c65a78b6181e3e05ff0ec1e77232e0ff",
+              "sha256:714dbd34bcdacac789b07040621cb0dd7c0d4a32bf599d8e3de208148a2cbc6c",
+              "sha256:87ff468796e003f8769a428101f755920bcf3b3861d92fc56aab0debcd6cadfe",
+              "sha256:89933dbe07b805847fbc95316ae940734a107b6e6f7743eaa93ce282d82079b5",
+              "sha256:8b559651fb8b1bdd465b558114898e5fc77c1c98e8c6be61355275c26ecd704c",
+              "sha256:ac8df644fbd3b47fb74d4109b5cc03e9957eef4ea88592c9a2abd02d6b1c9b64",
+              "sha256:d4f41d90ad42cc334d3679ca24610966901952adc80437b7802e6cfbf6bb3588"
+            ],
+            ".claude/skills/obsidian-memory": [
+              "sha256:c4b7ef3548f757f1527b3847fcef61b26d53f48a3e77bc4195832aae31a1a525",
+              "sha256:e7a8320f520e94a4fe48f8d591851108848ba47f323035156ee62d98779e55bb",
+              "sha256:ed8509b030568b55f1f3461c6fbdb2e7aed98b885d1e33db1c7a8f055d2f3939",
+              "sha256:fb3a789362176e9b34b7dcea463cf627e25c6f933c2947bd59d9935a065fbb9b"
+            ],
+            ".codex/skills/obsidian-memory": [
+              "sha256:c4b7ef3548f757f1527b3847fcef61b26d53f48a3e77bc4195832aae31a1a525",
+              "sha256:e7a8320f520e94a4fe48f8d591851108848ba47f323035156ee62d98779e55bb",
+              "sha256:ed8509b030568b55f1f3461c6fbdb2e7aed98b885d1e33db1c7a8f055d2f3939",
+              "sha256:fb3a789362176e9b34b7dcea463cf627e25c6f933c2947bd59d9935a065fbb9b"
+            ],
+            ".agents/skills/obsidian-memory": [
+              "sha256:c4b7ef3548f757f1527b3847fcef61b26d53f48a3e77bc4195832aae31a1a525",
+              "sha256:e7a8320f520e94a4fe48f8d591851108848ba47f323035156ee62d98779e55bb",
+              "sha256:ed8509b030568b55f1f3461c6fbdb2e7aed98b885d1e33db1c7a8f055d2f3939",
+              "sha256:fb3a789362176e9b34b7dcea463cf627e25c6f933c2947bd59d9935a065fbb9b"
+            ],
+            ".claude/skills/auto-campaign": [
+              "sha256:6b311fe03bea253a0c08c2a52ea6aac4593b95ccbb8b8efa4832bdb5d12807b8",
+              "sha256:97dd543e1f5100a202bf1c986b52f2afe56df0cde3e01ef78b07ae24a3d6b453"
+            ],
+            ".codex/skills/auto-campaign": [
+              "sha256:6b311fe03bea253a0c08c2a52ea6aac4593b95ccbb8b8efa4832bdb5d12807b8",
+              "sha256:97dd543e1f5100a202bf1c986b52f2afe56df0cde3e01ef78b07ae24a3d6b453"
+            ],
+            ".agents/skills/auto-campaign": [
+              "sha256:6b311fe03bea253a0c08c2a52ea6aac4593b95ccbb8b8efa4832bdb5d12807b8",
+              "sha256:97dd543e1f5100a202bf1c986b52f2afe56df0cde3e01ef78b07ae24a3d6b453"
+            ],
+            ".claude/skills/repo-harness-cross-review": [
+              "sha256:15b5410fe4ec093a04e5e1781364b6fd06334c9e1adcbf59faf5deab1a42976f",
+              "sha256:336d2288c3f5e2ba438703a8badaa3c4ba422212ec5585a9a314a50344903d09",
+              "sha256:693f8b7a66c12bf43a87cb2e002768d134a9201c832899ff54bcae6eac76ba84",
+              "sha256:7cf5844ecdbfa8ca510eecb1e51082fe7fb876e9cd67b296b20ebab4d40b9bcd",
+              "sha256:7eefabeb72c5742318e216d619734e0e6be3a1c7530d968a57543ed120730349",
+              "sha256:81d297c0516647acb555c32cb3ec66d7fe9d217f2d9db5f64daecfa608e18d91",
+              "sha256:881d8c1d9525504e9464ca2ca361cded067a117d981bc8a928eb677711f152ff",
+              "sha256:948ccd3200bf185a5d4105123f7a28e1a96b34887524090fc74eb8b899a42cd7",
+              "sha256:b01b8e0866238400398332080e74ede6c3b8989335a84e6c67fe9e562d711e18",
+              "sha256:b94713c4cf1a33cc9bcc6a3e9f4dd025b20e87600a8f10b9894929ab2415d797",
+              "sha256:ba31016fb654436b161694f6e9c72841a6b8148bb8c1f54d16c33c70ad0f66a3",
+              "sha256:c06b4ff6828bcbd4df59f84c5dfc94d868b742e13b86053f6886d3386bdf2e74",
+              "sha256:e5db6c4ae6d274f650e80cac1358617b40a20e138a2d1e7191f5d8210c7c4feb"
+            ],
+            ".codex/skills/repo-harness-cross-review": [
+              "sha256:15b5410fe4ec093a04e5e1781364b6fd06334c9e1adcbf59faf5deab1a42976f",
+              "sha256:336d2288c3f5e2ba438703a8badaa3c4ba422212ec5585a9a314a50344903d09",
+              "sha256:693f8b7a66c12bf43a87cb2e002768d134a9201c832899ff54bcae6eac76ba84",
+              "sha256:7cf5844ecdbfa8ca510eecb1e51082fe7fb876e9cd67b296b20ebab4d40b9bcd",
+              "sha256:7eefabeb72c5742318e216d619734e0e6be3a1c7530d968a57543ed120730349",
+              "sha256:81d297c0516647acb555c32cb3ec66d7fe9d217f2d9db5f64daecfa608e18d91",
+              "sha256:881d8c1d9525504e9464ca2ca361cded067a117d981bc8a928eb677711f152ff",
+              "sha256:948ccd3200bf185a5d4105123f7a28e1a96b34887524090fc74eb8b899a42cd7",
+              "sha256:b01b8e0866238400398332080e74ede6c3b8989335a84e6c67fe9e562d711e18",
+              "sha256:b94713c4cf1a33cc9bcc6a3e9f4dd025b20e87600a8f10b9894929ab2415d797",
+              "sha256:ba31016fb654436b161694f6e9c72841a6b8148bb8c1f54d16c33c70ad0f66a3",
+              "sha256:c06b4ff6828bcbd4df59f84c5dfc94d868b742e13b86053f6886d3386bdf2e74",
+              "sha256:e5db6c4ae6d274f650e80cac1358617b40a20e138a2d1e7191f5d8210c7c4feb"
+            ],
+            ".agents/skills/repo-harness-cross-review": [
+              "sha256:15b5410fe4ec093a04e5e1781364b6fd06334c9e1adcbf59faf5deab1a42976f",
+              "sha256:336d2288c3f5e2ba438703a8badaa3c4ba422212ec5585a9a314a50344903d09",
+              "sha256:693f8b7a66c12bf43a87cb2e002768d134a9201c832899ff54bcae6eac76ba84",
+              "sha256:7cf5844ecdbfa8ca510eecb1e51082fe7fb876e9cd67b296b20ebab4d40b9bcd",
+              "sha256:7eefabeb72c5742318e216d619734e0e6be3a1c7530d968a57543ed120730349",
+              "sha256:81d297c0516647acb555c32cb3ec66d7fe9d217f2d9db5f64daecfa608e18d91",
+              "sha256:881d8c1d9525504e9464ca2ca361cded067a117d981bc8a928eb677711f152ff",
+              "sha256:948ccd3200bf185a5d4105123f7a28e1a96b34887524090fc74eb8b899a42cd7",
+              "sha256:b01b8e0866238400398332080e74ede6c3b8989335a84e6c67fe9e562d711e18",
+              "sha256:b94713c4cf1a33cc9bcc6a3e9f4dd025b20e87600a8f10b9894929ab2415d797",
+              "sha256:ba31016fb654436b161694f6e9c72841a6b8148bb8c1f54d16c33c70ad0f66a3",
+              "sha256:c06b4ff6828bcbd4df59f84c5dfc94d868b742e13b86053f6886d3386bdf2e74",
+              "sha256:e5db6c4ae6d274f650e80cac1358617b40a20e138a2d1e7191f5d8210c7c4feb"
+            ],
+            ".claude/skills/repo-harness-chatgpt": [
+              "sha256:07bf2f36816fe64eacd8f04902fc0a088a2f742cc90848980d94edc7721ccd98",
+              "sha256:1d0f8d9acb4e11e9f3d8f2029a1eb151ad902829860504b18f4cdd3cae626426",
+              "sha256:3f9e5f5245e13ed74db78ca206665ae0b0553f811781c3bec1e3f11d0cbd39b5",
+              "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
+              "sha256:8afbe3b73e553e44ecb3e62702be5d04ad1b6d076bf10307d17a3e3f1c4b5fce",
+              "sha256:9aa9e8dff5c75be7ebaaa1c1b20b397cbe394174500ee84620fb0b8bc0082ff6",
+              "sha256:b926f38987cdeb06a049ac5afc771aebc9764408eb08f5548d931b14f280f17c",
+              "sha256:d156465499240e8d6676c6fcaa8702161dd1624fb63bf90e82cd03f7a3fad138",
+              "sha256:fe8ed9adeb4b56ef02e893160bf073a1dd0ef052b6d6f98a056e66c75988b91a"
+            ],
+            ".codex/skills/repo-harness-chatgpt": [
+              "sha256:07bf2f36816fe64eacd8f04902fc0a088a2f742cc90848980d94edc7721ccd98",
+              "sha256:1d0f8d9acb4e11e9f3d8f2029a1eb151ad902829860504b18f4cdd3cae626426",
+              "sha256:3f9e5f5245e13ed74db78ca206665ae0b0553f811781c3bec1e3f11d0cbd39b5",
+              "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
+              "sha256:8afbe3b73e553e44ecb3e62702be5d04ad1b6d076bf10307d17a3e3f1c4b5fce",
+              "sha256:9aa9e8dff5c75be7ebaaa1c1b20b397cbe394174500ee84620fb0b8bc0082ff6",
+              "sha256:b926f38987cdeb06a049ac5afc771aebc9764408eb08f5548d931b14f280f17c",
+              "sha256:d156465499240e8d6676c6fcaa8702161dd1624fb63bf90e82cd03f7a3fad138",
+              "sha256:fe8ed9adeb4b56ef02e893160bf073a1dd0ef052b6d6f98a056e66c75988b91a"
+            ],
+            ".agents/skills/repo-harness-chatgpt": [
+              "sha256:07bf2f36816fe64eacd8f04902fc0a088a2f742cc90848980d94edc7721ccd98",
+              "sha256:1d0f8d9acb4e11e9f3d8f2029a1eb151ad902829860504b18f4cdd3cae626426",
+              "sha256:3f9e5f5245e13ed74db78ca206665ae0b0553f811781c3bec1e3f11d0cbd39b5",
+              "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
+              "sha256:8afbe3b73e553e44ecb3e62702be5d04ad1b6d076bf10307d17a3e3f1c4b5fce",
+              "sha256:9aa9e8dff5c75be7ebaaa1c1b20b397cbe394174500ee84620fb0b8bc0082ff6",
+              "sha256:b926f38987cdeb06a049ac5afc771aebc9764408eb08f5548d931b14f280f17c",
+              "sha256:d156465499240e8d6676c6fcaa8702161dd1624fb63bf90e82cd03f7a3fad138",
+              "sha256:fe8ed9adeb4b56ef02e893160bf073a1dd0ef052b6d6f98a056e66c75988b91a"
+            ]
+          },
+          "summary": "Refresh unchanged old copies of skills that the current package still ships."
         }
       ]
     }
-  }
+  },
+  "installedCopyExcludes": [
+    ".git/",
+    ".git",
+    "_ops/",
+    "node_modules/",
+    ".DS_Store",
+    ".codegraph/",
+    "evals/benchmark.md",
+    ".codex/",
+    ".claude/settings.local.json",
+    ".claude/.atomic_pending",
+    ".claude/.session-id",
+    ".claude/.trace.jsonl",
+    ".claude/.session-handoff.md",
+    ".claude/.task-state.json",
+    ".claude/.task-handoff.md",
+    ".claude/*.tmp",
+    ".claude/*.bak",
+    ".claude/*.bak.*",
+    ".claude/*.backup-*",
+    ".ai/harness/checks/latest.json",
+    ".ai/harness/checks/*.latest.json",
+    ".ai/harness/checks/*.latest.md",
+    ".ai/harness/events.jsonl",
+    ".ai/harness/archive/",
+    ".ai/harness/failures/latest.jsonl",
+    ".ai/harness/handoff/current.md",
+    ".ai/harness/handoff/resume.md",
+    ".ai/harness/architecture/events.jsonl",
+    ".ai/harness/worktrees/",
+    ".ai/harness/runs/"
+  ]
 }

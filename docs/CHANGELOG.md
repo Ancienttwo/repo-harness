@@ -38,6 +38,22 @@ Campaign execution moved to the existing [repo-harness](../SKILL.md), [repo-harn
 - Remove the `context-contract-sync` helper and script. Remove the no-op `capability-config --no-sync-contracts` option.
 - Remove `check-task-sync --validate-waivers-only` and `check-task-workflow --strict`. Use `check-task-workflow` for read-only diagnostics. Old downstream strict calls fail with exit 2. Adoption or init removes only the exact `repo-harness run check-task-workflow --strict` package entry. Other forms need an explicit user edit. Custom commands stay unchanged.
 
+### Added
+
+- Add `upgrade` to check retired project and home files without writes.
+  `--apply` backs up targets and removes only unchanged owned bytes.
+  Changed and unowned items remain in the report.
+- Show the same leftover count in setup checks and after successful updates.
+  Update does not apply cleanup.
+- Add historical fingerprints and release-byte fixtures with provenance.
+- Refresh unchanged owned skill copies and two stale project assets with apply.
+  Report old state artifacts. Require `--include-state-artifacts` and ownership
+  proof for state removal. Keep third-party plugins and user rule lines.
+
+### Fixed
+
+- Keep and report a modified retired facade while selected runtime sync continues.
+
 ## [0.20.0] - 2026-10-01
 
 ### Added

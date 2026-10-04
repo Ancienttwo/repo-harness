@@ -7,9 +7,8 @@ import { makeOperationId } from "./operations";
 import { adoptionTemplateFile } from "./manifest-templates";
 import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { managedBlockNeedsUpdate } from "./managed-block";
-import { loadWorkflowContractAsset, readWorkflowContractAsset } from "./workflow-contract-asset";
-import { isRepoHarnessSourceCheckout } from "./source-checkout";
-import { stripRepoHarnessManagedHooks } from "./managed-hook-config";
+import { readWorkflowContractAsset } from "./workflow-contract-asset";
+import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -105,21 +104,6 @@ export interface StandardPlanOptions {
   readonly repoRoot: string;
   readonly mode: AdoptionMode;
   readonly env?: NodeJS.ProcessEnv;
-}
-
-interface WorkflowContractAsset {
-  readonly migrations?: {
-    readonly upgrade?: {
-      readonly actions?: ReadonlyArray<{
-        readonly id?: string;
-        readonly action?: string;
-        readonly ownership?: string;
-        readonly cleanupMode?: string;
-        readonly paths?: readonly string[];
-        readonly fingerprints?: Readonly<Record<string, string>>;
-      }>;
-    };
-  };
 }
 
 function safePath(repoRoot: string, path: string): string {
@@ -485,22 +469,6 @@ Use \`repo-harness docs show ${docId}\` for the full generic runtime guide.
 `;
 }
 
-function knownGeneratedFile(repoRoot: string, path: string, declaredFingerprint?: string): boolean {
-  if (declaredFingerprint !== undefined && !/^sha256:[0-9a-f]{64}$/.test(declaredFingerprint)) {
-    throw new Error(`invalid known-generated fingerprint for ${path}`);
-  }
-  const target = safePath(repoRoot, path);
-  if (!existsSync(target) || !lstatSync(target).isFile()) return false;
-  const content = readFileSync(target, "utf-8");
-  if (declaredFingerprint !== undefined) return contentHash(content) === declaredFingerprint;
-  const helperAsset = join(TEMPLATE_ROOT, "helpers", path.replace(/^scripts\//, ""));
-  if (path.startsWith("scripts/") && existsSync(helperAsset) && readFileSync(helperAsset, "utf-8") === content) return true;
-  if (path.startsWith(".ai/hooks/") && existsSync(join(HOOK_ROOT, path.slice(".ai/hooks/".length)))) {
-    return readFileSync(join(HOOK_ROOT, path.slice(".ai/hooks/".length)), "utf-8") === content;
-  }
-  return false;
-}
-
 function isCanonicalDeferredLedger(content: string): boolean {
   return /^# Deferred Goal Ledger\s*$/m.test(content) && /^> \*\*Status\*\*:\s*Backlog\s*$/m.test(content);
 }
@@ -608,82 +576,40 @@ function addLegacySprintMoves(repoRoot: string, operations: AdoptionOperation[])
   }
 }
 
-function addKnownGeneratedCleanup(repoRoot: string, operations: AdoptionOperation[]): AdoptionWarning[] {
+function addLegacyCleanup(repoRoot: string, operations: AdoptionOperation[]): AdoptionWarning[] {
+  const plan = planLegacyLeftovers({ scope: "project", cwd: repoRoot, home: repoRoot, packageRoot: join(ASSET_ROOT, "..") });
   const warnings: AdoptionWarning[] = [];
-  // The source package owns its canonical scripts. They may be byte-identical
-  // to package helpers, but that is not evidence that this source repo is a
-  // downstream generated runtime copy.
-  if (isRepoHarnessSourceCheckout(repoRoot)) return warnings;
-  const contract = loadWorkflowContractAsset<WorkflowContractAsset>();
-  const actions = contract.migrations?.upgrade?.actions ?? [];
-  for (const action of actions) {
-    if (action.action !== "remove" || action.ownership !== "known_generated") continue;
-    const paths = action.paths ?? [];
-    if (action.cleanupMode === "exact_fingerprint") {
-      if (new Set(paths).size !== paths.length) {
-        throw new Error(`duplicate path in exact-fingerprint migration action ${action.id ?? "<unnamed>"}`);
-      }
-      const fingerprints = action.fingerprints ?? {};
-      for (const path of paths) {
-        if (path.includes("*")) {
-          throw new Error(`wildcard is not allowed in exact-fingerprint migration action: ${path}`);
-        }
-        if (fingerprints[path] === undefined) {
-          throw new Error(`missing exact fingerprint for ${path} in migration action ${action.id ?? "<unnamed>"}`);
-        }
-      }
-      for (const path of Object.keys(fingerprints)) {
-        if (!paths.includes(path)) {
-          throw new Error(`fingerprint declared for undeclared migration path ${path}`);
-        }
-      }
+  const hookPaths = new Set<string>();
+  for (const item of plan.items) {
+    const path = relative(resolve(repoRoot), item.path).split(sep).join("/");
+    if (item.action === "strip-entry") {
+      hookPaths.add(path);
+      continue;
     }
-    for (const path of paths) {
-      if (path.includes("*")) continue;
-      if (!knownGeneratedFile(repoRoot, path, action.fingerprints?.[path])) {
-        if (action.fingerprints?.[path] && existsSync(safePath(repoRoot, path))) {
-          warnings.push({
-            code: "known-generated-fingerprint-mismatch",
-            message: `Preserving ${path}: current bytes do not match the declared retired generated asset`,
-            risk: "medium",
-          });
-        }
-        continue;
+    if (item.action === "report") {
+      if (item.reason === "Current bytes do not match the declared retired generated asset.") {
+        warnings.push({ code: "known-generated-fingerprint-mismatch", message: `Preserving ${path}: current bytes do not match the declared retired generated asset`, risk: "medium" });
       }
-      const remove = removeOperation(repoRoot, path, "Remove known-generated retired workflow asset");
-      if (remove) operations.push(remove);
-      const untrack: AdoptionOperation = {
-        id: makeOperationId("gitUntrack", path),
-        kind: "gitUntrack",
-        path,
-        reason: "Untrack removed known-generated workflow asset from the git index",
-        risk: "medium",
-        status: "planned",
-      };
-      operations.push(untrack);
+      continue;
     }
+    if (item.action !== "remove") continue;
+    // Adoption's existing transaction format snapshots regular files only.
+    if (item.surface !== "file") continue;
+    const remove = removeOperation(repoRoot, path, "Remove known-generated retired workflow asset");
+    if (remove) operations.push(remove);
+    operations.push({
+      id: makeOperationId("gitUntrack", path), kind: "gitUntrack", path,
+      reason: "Untrack removed known-generated workflow asset from the git index", risk: "medium", status: "planned",
+    });
+  }
+  for (const path of hookPaths) {
+    const current = jsonFile(repoRoot, path);
+    if (!current) continue;
+    const stripped = stripLegacyHookEntries(current, { location: "project" });
+    operations.push(writeOperation(repoRoot, path, jsonContent(stripped.config),
+      "Remove repo-local repo-harness host adapters after the user-level typed adapter cutover", { risk: "medium" }));
   }
   return warnings;
-}
-
-function addLegacyHostAdapterCleanup(repoRoot: string, operations: AdoptionOperation[]): void {
-  for (const path of [".codex/hooks.json", ".claude/settings.json"] as const) {
-    const current = jsonFile(repoRoot, path);
-    if (!current || current.hooks === undefined) continue;
-    const stripped = stripRepoHarnessManagedHooks(current.hooks);
-    if (stripped.removed.length === 0) continue;
-
-    const next: JsonObject = { ...current };
-    if (Object.keys(stripped.hooks).length === 0) delete next.hooks;
-    else next.hooks = stripped.hooks;
-    operations.push(writeOperation(
-      repoRoot,
-      path,
-      jsonContent(next),
-      "Remove repo-local repo-harness host adapters after the user-level typed adapter cutover",
-      { risk: "medium" },
-    ));
-  }
 }
 
 function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]): void {
@@ -706,14 +632,6 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
 }
 
 function addHookOperations(repoRoot: string, operations: AdoptionOperation[]): void {
-  const hookFiles = readdirSync(HOOK_ROOT).filter((name) => name.endsWith(".sh"));
-  for (const name of hookFiles) {
-    const target = `.ai/hooks/${name}`;
-    if (knownGeneratedFile(repoRoot, target)) {
-      const remove = removeOperation(repoRoot, target, "Remove stale repo-local hook runtime after typed handler cutover");
-      if (remove) operations.push(remove);
-    }
-  }
   for (const name of readdirSync(join(HOOK_ROOT, "lib")).filter((entry) => entry.endsWith(".sh")).sort()) {
     const source = join(HOOK_ROOT, "lib", name);
     operations.push(writeOperation(repoRoot, `.ai/hooks/lib/${name}`, readFileSync(source, "utf-8"), "Install repo-local hook helper library", { mode: 0o755, risk: "medium" }));
@@ -850,7 +768,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   });
 
   if (opts.mode === "minimal") {
-    return { operations, warnings: [] };
+    return { operations, warnings: addLegacyCleanup(opts.repoRoot, operations) };
   }
 
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", jsonContent(policy), "Merge canonical harness policy defaults without discarding explicit repo settings", { risk: "medium" }));
@@ -887,13 +805,12 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
 
   addActivePlanMigration(opts.repoRoot, operations);
   addTemplateOperations(opts.repoRoot, operations);
-  addLegacyHostAdapterCleanup(opts.repoRoot, operations);
   addHookOperations(opts.repoRoot, operations);
   addReferenceOperations(opts.repoRoot, documentationProfile, operations);
   addLegacyDocumentMigrations(opts.repoRoot, operations);
   addLegacySprintMoves(opts.repoRoot, operations);
   addPackageOperation(opts.repoRoot, operations);
-  const cleanupWarnings = addKnownGeneratedCleanup(opts.repoRoot, operations);
+  const cleanupWarnings = addLegacyCleanup(opts.repoRoot, operations);
 
   const warnings: AdoptionWarning[] = [
     ...cleanupWarnings,

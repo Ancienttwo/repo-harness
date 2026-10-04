@@ -88,37 +88,17 @@ if ! FACADE_SOURCES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facade
   echo "[sync-installed] skill-surface-select facade-sources failed" >&2
   exit 1
 fi
-common_excludes=(
-  --exclude='.git/'
-  --exclude='_ops/'
-  --exclude='node_modules/'
-  --exclude='.DS_Store'
-  --exclude='.codegraph/'
-  --exclude='evals/benchmark.md'
-  --exclude='.codex/'
-  --exclude='.claude/settings.local.json'
-  --exclude='.claude/.atomic_pending'
-  --exclude='.claude/.session-id'
-  --exclude='.claude/.trace.jsonl'
-  --exclude='.claude/.session-handoff.md'
-  --exclude='.claude/.task-state.json'
-  --exclude='.claude/.task-handoff.md'
-  --exclude='.claude/*.tmp'
-  --exclude='.claude/*.bak'
-  --exclude='.claude/*.bak.*'
-  --exclude='.claude/*.backup-*'
-  --exclude='.ai/harness/checks/latest.json'
-  --exclude='.ai/harness/checks/*.latest.json'
-  --exclude='.ai/harness/checks/*.latest.md'
-  --exclude='.ai/harness/events.jsonl'
-  --exclude='.ai/harness/archive/'
-  --exclude='.ai/harness/failures/latest.jsonl'
-  --exclude='.ai/harness/handoff/current.md'
-  --exclude='.ai/harness/handoff/resume.md'
-  --exclude='.ai/harness/architecture/events.jsonl'
-  --exclude='.ai/harness/worktrees/'
-  --exclude='.ai/harness/runs/'
-)
+# The workflow contract owns filters for both read-only projection hashes and
+# the existing rsync writer. Resolve it beside this script, not injected content.
+RUNTIME_ROOT="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
+if ! COPY_EXCLUDES="$(bun -e 'const c = await Bun.file(process.argv[1]).json(); if (!Array.isArray(c.installedCopyExcludes) || !c.installedCopyExcludes.every((p) => typeof p === "string" && !p.includes("\n"))) throw new Error("invalid installed copy exclusions"); process.stdout.write(c.installedCopyExcludes.join("\n"));' "$RUNTIME_ROOT/assets/workflow-contract.v1.json")"; then
+  echo "[sync-installed] installed copy exclusions are invalid." >&2
+  exit 1
+fi
+common_excludes=()
+while IFS= read -r copy_exclude; do
+  [[ -n "$copy_exclude" ]] && common_excludes+=("--exclude=$copy_exclude")
+done <<< "$COPY_EXCLUDES"
 
 require_rsync_for_copy_mode() {
   if command -v rsync >/dev/null 2>&1; then
@@ -213,7 +193,7 @@ assert_managed_dest() {
       || { refuse_unowned_dest "$dest" "ownership marker has no content hash"; return 1; }
     actual_hash="$(managed_tree_hash "$dest")"
     [[ "$actual_hash" == "$expected_hash" ]] \
-      || { refuse_unowned_dest "$dest" "managed copy content has drifted"; return 1; }
+      || { refuse_unowned_dest "$dest" "managed copy content has drifted"; return 2; }
     return 0
   fi
 
@@ -247,6 +227,15 @@ sync_copy() {
   rsync -a --delete "${common_excludes[@]}" "$source/" "$dest/"
   write_owner_marker "$dest" "$surface"
 }
+
+# Internal upgrade staging uses the same projection and marker writer. It
+# accepts only a new destination. The upgrade transaction owns replacement.
+if [[ "${1:-}" == "--stage-owned-copy" ]]; then
+  [[ "$#" -eq 4 && -d "$2" && ! -e "$3" && ! -L "$3" ]] || exit 2
+  case "$4" in canonical-skill|command-facade) ;; *) exit 2 ;; esac
+  sync_copy "$3" "$2" "$4"
+  exit 0
+fi
 
 sync_claude_alias_links() {
   if [[ -z "$CLAUDE_SKILLS_ROOT" ]]; then
@@ -329,7 +318,17 @@ preflight_skill_root() {
     # proves that from the marker + content hash alone and does not require
     # $source to exist for that branch; unmarked or drifted content still
     # fails closed here exactly as before.
-    assert_managed_dest "$dest" "$source" command-facade || exit 1
+    if assert_managed_dest "$dest" "$source" command-facade; then
+      continue
+    else
+      local ownership_status=$?
+      # Active surfaces still fail closed. Only a verified retired marker
+      # with changed content may proceed to the report-only retirement pass.
+      if [[ "$ownership_status" -eq 2 ]] && ! facade_selected "$name"; then
+        continue
+      fi
+      exit 1
+    fi
   done
 }
 
@@ -348,12 +347,15 @@ remove_retired_owned_facades() {
     if [[ -z "$source" || ! -d "$source" ]]; then
       echo "[sync-installed] retiring $dest: canonical facade source no longer exists in the package"
     fi
-    # remove_managed_dest asserts ownership first (fail-closed on an unowned
-    # or modified copy) and only removes a proven, unmodified managed copy;
-    # this now covers "not selected by this profile", "retired from the
-    # package", and "fully retired name absent from the catalog" the same
-    # safe way.
-    remove_managed_dest "$dest" "$source" command-facade
+    # Retired copies must not block refresh of the selected runtime. Keep
+    # unknown or modified content and report it for explicit upgrade cleanup.
+    if assert_managed_dest "$dest" "$source" command-facade; then
+      remove_managed_dest "$dest" "$source" command-facade
+    else
+      local ownership_status=$?
+      [[ "$ownership_status" -eq 2 ]] || exit 1
+      echo "[sync-installed] preserving retired facade $dest. Run: repo-harness upgrade" >&2
+    fi
   done
 }
 

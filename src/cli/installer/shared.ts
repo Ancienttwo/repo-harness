@@ -14,12 +14,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export function atomicWriteFileSync(filePath: string, content: string): void {
+export function atomicWriteFileSync(filePath: string, content: string, options: { readonly mode?: number } = {}): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmp, content, 'utf-8');
-  fs.renameSync(tmp, filePath);
+  try {
+    fs.writeFileSync(tmp, content, { encoding: 'utf-8', mode: options.mode });
+    fs.renameSync(tmp, filePath);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 
 export function readJsonOrEmpty<T = Record<string, unknown>>(filePath: string): T {

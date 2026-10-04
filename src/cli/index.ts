@@ -26,6 +26,8 @@ import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } 
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { buildTaskAgentCommand } from './commands/task-agent';
+import { buildUpgradeCommand } from './commands/upgrade';
+import { planLegacyLeftovers, formatLegacyLeftoverSummary } from '../core/upgrade/legacy-inventory';
 import { buildToolsCommand } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
 import { buildBrainCommand } from './commands/brain';
@@ -429,6 +431,7 @@ async function runGlobalRuntimeBootstrap(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
       [codexRoot, claudeRoot],
       true,
+      currentProfile?.ownership_manifest,
     );
     if (rawOpts.json === true) console.log(JSON.stringify({ ...profilePlan, removedDanglingSkillLinks }, null, 2));
     else {
@@ -729,6 +732,10 @@ export function buildProgram(): Command {
         codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
       });
+      if (result.exitCode === 0) {
+        const leftovers = planLegacyLeftovers({ scope: 'all', cwd: process.cwd(), home: process.env.HOME ?? homedir(), packageRoot: candidateSourceRoot() });
+        result.lines.push(formatLegacyLeftoverSummary(leftovers.items));
+      }
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -803,6 +810,7 @@ export function buildProgram(): Command {
     .action(() => { console.error('UPGRADE_REQUIRED: claude-review is retired; use repo-harness review. Drain old sessions with the previous version and archive old receipts.'); process.exitCode = 1; });
   program.addCommand(buildTaskAgentCommand());
   program.addCommand(buildSetupCommand());
+  program.addCommand(buildUpgradeCommand());
 
   program
     .command('migrate')

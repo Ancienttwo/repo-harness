@@ -119,7 +119,7 @@ export type WorkflowContract = {
       actions: Array<{
         id: string;
         signal: string;
-        action: "preserve" | "archive" | "reconfigure" | "remove";
+        action: "preserve" | "archive" | "reconfigure" | "remove" | "refresh";
         risk: "low" | "medium" | "high";
         ownership: "known_generated" | "managed_config" | "user_authored" | "user_local";
         paths: string[];

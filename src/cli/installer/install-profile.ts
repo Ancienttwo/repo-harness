@@ -81,6 +81,8 @@ export { PROFILE_COMPONENTS };
 
 export interface InstalledProfileState {
   readonly protocol: 2;
+  /** Older protocol-2 records did not include the package version. */
+  readonly package_version?: string;
   readonly profile: InstallProfile;
   readonly components: readonly InstallComponent[];
   readonly transaction_id: string;
@@ -258,16 +260,25 @@ function adapterHasRequiredProjection(path: string, host: HookHost, profile: Ins
   }
 }
 
-export function hashManagedTree(root: string): string {
+/** Hash one selected tree. No excludes means the complete ownership proof. */
+export function hashManagedTree(root: string, options: { readonly excludes?: readonly string[] } = {}): string {
+  const patterns = (options.excludes ?? []).map((pattern) => ({
+    directory: pattern.endsWith('/'),
+    basename: !pattern.replace(/\/$/, '').includes('/'),
+    glob: new Bun.Glob(`${pattern.replace(/\/$/, '').includes('/') ? '**/' : ''}${pattern.replace(/\/$/, '')}`),
+  }));
   const entries: Array<{ path: string; type: 'file' | 'symlink' }> = [];
   const visit = (directory: string, prefix: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (entry.name === OWNER_MARKER) continue;
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (patterns.some((pattern) => (!pattern.directory || entry.isDirectory())
+        && pattern.glob.match(pattern.basename ? entry.name : relative))) continue;
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute, relative);
       else if (entry.isFile()) entries.push({ path: relative, type: 'file' });
       else if (entry.isSymbolicLink()) entries.push({ path: relative, type: 'symlink' });
+      else if (options.excludes !== undefined) throw new Error(`unsupported installed-copy source entry: ${relative}`);
     }
   };
   visit(root, '');
@@ -349,8 +360,9 @@ function captureManagedFile(
 function captureOwnedPath(
   path: string,
   components: readonly InstallComponent[],
+  options: { readonly allowEmptyComponents?: boolean } = {},
 ): ManagedInstallSurface | null {
-  if (components.length === 0 || (!existsSync(path) && !lstatExists(path))) return null;
+  if ((components.length === 0 && !options.allowEmptyComponents) || (!existsSync(path) && !lstatExists(path))) return null;
   const stat = lstatSync(path);
   if (stat.isSymbolicLink()) {
     return {
@@ -586,6 +598,26 @@ export function recordVerifiedAgentFleetOwnership(
   writeState({ ...current, ownership_manifest: ownershipManifest }, env);
 }
 
+/** Refresh only receipts for surfaces already held by the install authority. */
+export function recordRefreshedInstallOwnership(
+  paths: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const current = readInstalledProfile(env);
+  if (current === null) return;
+  const selected = new Set(paths);
+  const ownershipManifest = current.ownership_manifest.map((surface) => {
+    if (!selected.has(surface.path)) return surface;
+    // Existing receipts keep ownership even when no component is selected.
+    // Recapture bytes without requiring or inventing a new owner marker.
+    const refreshed = captureOwnedPath(surface.path, surface.components, { allowEmptyComponents: true });
+    if (!refreshed || refreshed.type !== surface.type) throw new Error(`cannot refresh install ownership: ${surface.path}`);
+    return { ...surface, content_hash: refreshed.content_hash, symlink_target: refreshed.symlink_target };
+  });
+  if (JSON.stringify(ownershipManifest) === JSON.stringify(current.ownership_manifest)) return;
+  writeState({ ...current, package_version: installedPackageVersion(), ownership_manifest: ownershipManifest }, env);
+}
+
 export function assertInstallProfile(value: string): InstallProfile {
   if (!INSTALL_PROFILES.includes(value as InstallProfile)) {
     throw new Error(`invalid install profile ${value}; expected ${INSTALL_PROFILES.join('|')}`);
@@ -638,6 +670,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
 export function beginInstallHostTransaction(
   paths: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
+  options: { readonly retainBackup?: boolean } = {},
 ): InstallHostTransaction {
   const transactionRoot = join(env.HOME ?? homedir(), '.repo-harness', 'transactions');
   mkdirSync(transactionRoot, { recursive: true });
@@ -649,7 +682,11 @@ export function beginInstallHostTransaction(
       cpSync(path, backupPath, { recursive: true, force: false, errorOnExist: true, verbatimSymlinks: true });
       return { path, existed: true, backup_path: backupPath };
     });
-    return { protocol: 1, backup_root: backupRoot, snapshots };
+    const transaction: InstallHostTransaction = { protocol: 1, backup_root: backupRoot, snapshots };
+    if (options.retainBackup === true) {
+      writeFileSync(join(backupRoot, 'manifest.json'), `${JSON.stringify(transaction, null, 2)}\n`, { mode: 0o600 });
+    }
+    return transaction;
   } catch (error) {
     rmSync(backupRoot, { recursive: true, force: true });
     throw error;
@@ -665,7 +702,10 @@ function lstatExists(path: string): boolean {
   }
 }
 
-export function rollbackInstallHostTransaction(transaction: InstallHostTransaction): void {
+export function rollbackInstallHostTransaction(
+  transaction: InstallHostTransaction,
+  options: { readonly retainBackup?: boolean } = {},
+): void {
   const failures: string[] = [];
   for (const snapshot of [...transaction.snapshots].reverse()) {
     try {
@@ -683,7 +723,9 @@ export function rollbackInstallHostTransaction(transaction: InstallHostTransacti
       failures.push(`${snapshot.path}: ${String((error as Error).message ?? error)}`);
     }
   }
-  rmSync(transaction.backup_root, { recursive: true, force: true });
+  if (failures.length === 0 && options.retainBackup !== true) {
+    rmSync(transaction.backup_root, { recursive: true, force: true });
+  }
   if (failures.length > 0) throw new Error(`install transaction compensation failed:\n${failures.join('\n')}`);
 }
 
@@ -874,8 +916,12 @@ function parseCurrentStateBase(
   if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') {
     throw new Error(`installed profile state has invalid metadata; rerun repo-harness install --profile <minimal|full>: ${path}`);
   }
+  if (raw.package_version !== undefined && (typeof raw.package_version !== 'string' || !raw.package_version.trim())) {
+    throw new Error(`installed profile state has an invalid package version: ${path}`);
+  }
   return {
     protocol: 2,
+    ...(raw.package_version === undefined ? {} : { package_version: raw.package_version }),
     profile,
     components: PROFILE_COMPONENTS[profile],
     transaction_id: raw.transaction_id,
@@ -1177,6 +1223,13 @@ function writeState(state: InstalledProfileState, env: NodeJS.ProcessEnv): void 
   renameSync(temp, target);
 }
 
+function installedPackageVersion(): string {
+  const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
+  const raw = JSON.parse(readFileSync(path, 'utf-8')) as { version?: unknown };
+  if (typeof raw.version !== 'string' || !raw.version.trim()) throw new Error(`invalid package version: ${path}`);
+  return raw.version;
+}
+
 export function applyInstallProfile(
   profile: InstallProfile,
   env: NodeJS.ProcessEnv = process.env,
@@ -1207,6 +1260,7 @@ export function applyInstallProfile(
     && JSON.stringify(current.ownership_manifest) === JSON.stringify(ownershipManifest);
   const state: InstalledProfileState = {
     protocol: 2,
+    package_version: installedPackageVersion(),
     profile,
     components: PROFILE_COMPONENTS[profile],
     transaction_id: current?.profile === profile && plan.install.length === 0 && plan.remove.length === 0 && sameOwnership
@@ -1218,6 +1272,7 @@ export function applyInstallProfile(
     ownership_manifest: ownershipManifest,
     previous: current && migrationSource === undefined ? {
       protocol: current.protocol,
+      ...(current.package_version === undefined ? {} : { package_version: current.package_version }),
       profile: current.profile,
       components: current.components,
       transaction_id: current.transaction_id,

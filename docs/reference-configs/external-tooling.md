@@ -147,6 +147,31 @@ Waza and Mermaid providers remain behind explicit `--with-external-skills`;
 Repo-local workflow refresh stays on `repo-harness init`; `setup check
 --check-updates` remains the read-only advisory surface.
 
+`repo-harness upgrade` checks retired files in the current Git repository and
+home. It writes nothing by default. `--json` lists each item with ownership and
+proof. `--scope project|global|all` limits the check. Check exits 1 when it finds
+leftovers. `setup check`, `update --check`, and a successful `update` print one
+count and the upgrade command. Update does not run cleanup.
+
+`upgrade --apply` also refreshes old owned copies of still-shipped skills from
+this package. It refreshes the project workflow-state helper and contract
+template only when an old ownership hash matches. It keeps changed copies.
+Update continues to report counts only. This puts destructive changes and copy
+replacement under the same explicit, backed-up transaction.
+
+Old merge-gate state, v0.10.0 archives, and older backups are report-only by
+default. Use `upgrade --apply --include-state-artifacts` to select these artifacts
+for removal. This flag still requires ownership proof. Unknown artifacts stay.
+The third-party `codex@openai-codex` Claude plugin and user rule lines in
+`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
+
+`upgrade --apply` backs up eligible targets and checks ownership again before
+removal. It keeps current global typed adapters, sibling user hooks, changed
+files, and files without proof. Apply exits 1 on failure and restores its target
+snapshots. Backup manifests list original paths. Project transactions use
+`repo-harness init rollback`; global backups require manual target replacement from each snapshot.
+Do not overlay directory contents. Restore symlinks verbatim.
+
 The cross-review skill is **harness-owned**; its routing source lives in
 `assets/skills/repo-harness-cross-review/`. Explicit independent review uses
 the persistent fleet deep-reasoner task-agent and existing OAR host in Herdr.

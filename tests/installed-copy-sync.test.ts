@@ -535,8 +535,11 @@ describe("Codex installed copy sync", () => {
         cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "minimal" },
       });
 
-      expect(retry.status).toBe(1);
+      // A retired conflict stays visible without blocking selected runtime sync.
+      expect(retry.status).toBe(0);
       expect(retry.stderr).toContain("managed copy content has drifted");
+      expect(retry.stderr).toContain("preserving retired facade");
+      expect(existsSync(join(codexSkills, "repo-harness-check", "SKILL.md"))).toBe(true);
       expect(existsSync(productDest)).toBe(true);
       expect(readFileSync(join(productDest, "SKILL.md"), "utf-8")).toContain("user edit");
     } finally {

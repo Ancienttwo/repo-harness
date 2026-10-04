@@ -114,6 +114,20 @@ function baseToolingReport(tools: ToolingReport['tools'] = {}): ToolingReport {
 }
 
 describe('init-hook command', () => {
+  test('prints one leftover summary without listing or changing retired bytes', () => {
+    withTempHome((home, repo) => {
+      const oldShim = join(ROOT, 'tests/fixtures/upgrade-v0.10-home/.repo-harness/hook-shim.sh');
+      const target = join(home, '.repo-harness/hook-shim.sh');
+      mkdirSync(join(home, '.repo-harness'), { recursive: true });
+      const original = readFileSync(oldShim, 'utf8');
+      writeFileSync(target, original);
+      const report = runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
+      expect(formatInitHook(report)).toContain('1 leftovers (1 removable). Run: repo-harness upgrade');
+      expect(formatInitHook(report)).not.toContain(target);
+      expect(readFileSync(target, 'utf8')).toBe(original);
+    });
+  });
   test('reports missing Global Working Rules as Agent action without creating files', () => {
     withTempHome((home, repo) => {
       const report = runInitHook({
