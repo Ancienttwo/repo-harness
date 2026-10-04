@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { preparePipelineSQLite } from '../helpers/pipeline-sqlite-fixture';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, chmodSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -9,7 +10,7 @@ import { decodeRecord, digest, keyOf, PipelineError, type Evidence, type Key, ty
 import { currentSubject, requirementPass } from '../../src/core/pipeline/gates';
 import { advanceRecord } from '../../src/core/pipeline/stage-machine';
 import { projectedRuns, projectBoard } from '../../src/core/pipeline/projection';
-import { assertSQLiteVersion, exportSnapshot, immutableDatabase, openSnapshot, PipelineStore, selectSQLite, snapshotPointerPath } from '../../src/effects/pipeline/store';
+import { assertSQLiteVersion, exportSnapshot, immutableDatabase, openSnapshot, PipelineStore, snapshotPointerPath } from '../../src/effects/pipeline/store';
 import { mutatePipeline, newPipeline, type MutationBoundary } from '../../src/effects/pipeline/ledger';
 import { ingestEvent, observations } from '../../src/effects/pipeline/ingest';
 import { readPipelineSnapshot, readPipelineStatus } from '../../src/effects/pipeline/read';
@@ -20,9 +21,9 @@ import { captureGitVirtualTreeSnapshot, executeVerificationContract, verificatio
 import { createPipelineStatusReader } from '../../src/effects/operator/pipeline-status';
 import { startOperatorServer, OPERATOR_ROUTES } from '../../src/effects/operator/server';
 
-// Use the fixed library configured by the test runner. No test bypasses the
-// runtime version check. Test hosts, databases and artifacts all live in /tmp.
-selectSQLite();
+// Check the fixed SQLite prerequisite before any database opens.
+// Test hosts, databases and artifacts all live in /tmp.
+preparePipelineSQLite();
 const CLI=resolve(import.meta.dir,'../../src/cli/index.ts');
 let scratch:string;let env:NodeJS.ProcessEnv;let store:PipelineStore;const saved={...process.env};
 beforeEach(()=>{
@@ -78,8 +79,11 @@ test('A1: six tasks in two real repositories preserve imported and host-scoped i
   record(keys[2],'request',{role:'implement'},'enroll');
   expect(store.all()).toHaveLength(6);expect(store.read(keys[2]).runs[0].request_id).toBe(imported.request.request_id);
   keys.forEach((key,i)=>record(key,'observation',{kind:'note',source:'operator',data:{index:i}},'same-key'));
+  const bound=resource(keys[2],a);record(keys[2],'evidence',{evidence:evidence(a,bound,'plan','pass',join(a,'plan.md'),'plan')});
   const board=readPipelineSnapshot({env});expect(board.cards).toHaveLength(6);
-  for(const [i,key] of keys.entries()){expect(store.read(key).observations.at(-1)?.data.index).toBe(i);const status=readPipelineStatus(key,{env,events:true}) as any;expect(status.record.task.value).toBe(key.task);expect(status.events.every((e:any)=>e.source_host===key.source_host&&e.repository_id===key.repository_id)).toBe(true);}
+  for(const [i,key] of keys.entries()){expect(store.read(key).observations.filter(o=>o.kind==='note').map(o=>o.data)).toEqual([{index:i}]);const status=readPipelineStatus(key,{env,events:true}) as any;expect(status.record.task.value).toBe(key.task);expect(status.events.every((e:any)=>e.source_host===key.source_host&&e.repository_id===key.repository_id)).toBe(true);}
+  const importedCard=board.cards.find(c=>c.source_host===keys[2].source_host&&c.repository_id===digest(keys[2].repository_id)&&c.task===keys[2].task)!;
+  const detail=readPipelineStatus(keys[2],{env,evidence:0}) as any;expect(detail.evidence.sha256).toBe(digest(readFileSync(join(a,'plan.md'))));expect(importedCard.evidence).toContainEqual({kind:detail.evidence.kind,source:detail.evidence.source,verdict:detail.evidence.verdict,current:detail.evidence.current,count:1});
   expect(readFileSync(join(imported.dir,'request-1.json'))).toEqual(requestBytes);expect(readFileSync(join(imported.dir,'binding.json'))).toEqual(bindingBytes);
   expect(()=>decodeRecord({...store.read(keys[0]),unknown:true})).toThrow('unknown');
 });
@@ -147,11 +151,9 @@ test('A6: original execution provenance admits pass/fail, per-check AND and auth
   writeFileSync(join(root,'.ai/harness/runs/fail-b'),'fail');const failed=execute(root,'fail');expect(failed.report.passed).toBe(false);expect(()=>validateMaterializedVerificationExecutionReport({repoRoot:root,contractPath:'plan.md',report:failed.report,env})).toThrow('passing');
   const row=evidence(root,s,'b','fail',failed.path);row.produced_at='2000-01-01T00:00:00.000Z';record(key,'evidence',{evidence:row,contract_path:'plan.md'});
   const stored=store.read(key);expect(stored.evidence.at(-1)?.source).toBe('verified');expect(stored.evidence.at(-1)?.execution_order).toBeGreaterThan(stored.evidence[1].execution_order);expect(requirementPass(stored,'affected_tests')).toBe(false);
-  const attested={...row,sha256:digest('wrong'),execution_order:100};record(key,'evidence',{evidence:attested,contract_path:'plan.md'});expect(store.read(key).evidence.at(-1)?.source).toBe('attested');expect(requirementPass(store.read(key),'affected_tests')).toBe(false);
+  const uncertain=create(root,'attested-only');resource(uncertain,root);
+  const attested={...row,sha256:digest('wrong'),execution_order:100};record(uncertain,'evidence',{evidence:attested,contract_path:'plan.md'});expect(store.read(uncertain).evidence.at(-1)?.source).toBe('attested');expect(requirementPass(store.read(uncertain),'affected_tests')).toBe(false);
   rmSync(join(root,'.ai/harness/runs/fail-b'));const restored=execute(root,'restored');for(const id of ['a','b'])record(key,'evidence',{evidence:evidence(root,s,id,'pass',restored.path),contract_path:'plan.md'});
-  // A corrected source-owned artifact can explicitly supersede the uncertain
-  // claim. Its caller-supplied order must not prevent that correction forever.
-  const corrected=store.read(key);record(key,'resource',{relations:[{rel:'supersedes',from:corrected.evidence.length-1,to:3}]});
   expect(store.read(key).evidence.at(-1)?.source).toBe('verified');
   expect(requirementPass(store.read(key),'affected_tests')).toBe(true);
   writeFileSync(join(root,'source.txt'),'dirty\n');resource(key,root);expect(store.read(key).evidence.every(e=>!e.current)).toBe(true);expect(requirementPass(store.read(key),'affected_tests')).toBe(false);
@@ -189,7 +191,9 @@ test('A9: pinned snapshot and GET/HEAD paths never open or change live WAL files
 
 test('A10/A14: unavailable authority and missing D never create a fallback or alter existing workflow paths',()=>{
   const missing=join(scratch,'missing','db');expect(()=>new PipelineStore({env:{...env,REPO_HARNESS_PIPELINES_AUTHORITY_HOST:'another-host',REPO_HARNESS_PIPELINES_DB:missing}})).toThrow('authority host');expect(existsSync(missing)).toBe(false);
-  const r=cli(['new','--source-host','max','--repository-id','/repo/.git','--title','one'],{REPO_HARNESS_PIPELINES_DB:'/Volumes/D/repo-harness/pipelines/pipelines.db'});expect(r.status).toBe(3);expect(readPipelineSnapshot({env:{...env,REPO_HARNESS_PIPELINES_DB:missing}}).status).toBe('unavailable');expect(existsSync(missing)).toBe(false);
+  let mounted=false;try{mounted=statSync('/Volumes/D').dev!==statSync('/Volumes').dev;}catch{}
+  if(mounted)throw new Error('A14 requires unmounted D. Refuse to create a test database on the real volume.');
+  const r=cli(['new','--source-host','max','--repository-id','/repo/.git','--title','one'],{REPO_HARNESS_PIPELINES_DB:'/Volumes/D/repo-harness/pipelines/pipelines.db'});expect(r.status).toBe(3);expect(r.stdout).toContain('volume_unavailable');expect(readPipelineSnapshot({env:{...env,REPO_HARNESS_PIPELINES_DB:missing}}).status).toBe('unavailable');expect(existsSync(missing)).toBe(false);
   for(const version of ['3.51.0','unknown','3.50.6'])expect(()=>assertSQLiteVersion(version)).toThrow();for(const version of ['3.51.3','3.50.7','3.44.6','3.53.4'])expect(()=>assertSQLiteVersion(version)).not.toThrow();
   for(const file of ['src/effects/terminal/task-session.ts','src/effects/terminal/herdr.ts','src/effects/publication/merge-readiness.ts'])expect(readFileSync(resolve(import.meta.dir,'../..',file),'utf8')).not.toMatch(/from ['"].*pipeline/);
 });
@@ -202,8 +206,8 @@ test('A11: post-commit export failure preserves receipt; later export catches up
 
 test('A12: killed and concurrent exporters only publish complete monotonic immutable generations',async()=>{
   const key=create(repo('repo'));const pointerPath=snapshotPointerPath(store.path);const old=readFileSync(pointerPath);const pinned=openSnapshot(pointerPath);const pinnedBytes=readFileSync(join(join(scratch,'store'),pinned.pointer.file));
-  const killed=worker(`exportSnapshot(s,undefined,stage=>{if(stage==='copied')process.kill(process.pid,'SIGKILL')});`);await child(killed);expect(readFileSync(pointerPath)).toEqual(old);
   const mutation=worker(`mutatePipeline(s,${JSON.stringify(key)},{op:'record',kind:'observation',payload:{kind:'note',source:'operator',data:{}},state_version:1},stage=>{if(stage==='commit')process.kill(process.pid,'SIGKILL')});`);await child(mutation);
+  const killed=worker(`exportSnapshot(s,undefined,stage=>{if(stage==='copied')process.kill(process.pid,'SIGKILL')});`);expect((await child(killed)).code).not.toBe(0);expect(readFileSync(pointerPath)).toEqual(old);
   const exporter=worker(`console.log(JSON.stringify(exportSnapshot(s)));`);const result=await Promise.all([child(exporter),child(exporter)]);expect(result.map(r=>r.code)).toEqual([0,0]);const pointer=JSON.parse(readFileSync(pointerPath,'utf8'));expect(pointer.commit_seq).toBe(store.watermark().commit_seq);expect(result.map(r=>JSON.parse(r.out).file)).toEqual([pointer.file,pointer.file]);
   expect(pinned.db.query('SELECT state_version FROM pipelines').get()).toEqual({state_version:1});expect(readFileSync(join(join(scratch,'store'),pinned.pointer.file))).toEqual(pinnedBytes);pinned.db.close();
 });
@@ -276,4 +280,39 @@ test('A6: a real timed-out execution is verified incomplete and cannot pass admi
 test('A9/A13: list pins one generation and source CLI rejects mismatched selectors',async()=>{
   const {readPipelineListView}=await import('../../src/effects/pipeline/read');const root=repo('selectors'),key=create(root);record(key,'observation',{kind:'note',source:'operator',data:{}});const listed=readPipelineListView(env) as any;expect(listed.records[0].state_version).toBe(listed.cards[0].state_version);expect(listed.records[0].repository_id).toBe(key.repository_id);expect(listed.commit_seq).toBe(store.watermark().commit_seq);
   const query={key,root,kind:'subject',payload:{subject:subject(root),contract_path:'plan.md',base_ref:'main'}};const input=join(scratch,'query.json');writeFileSync(input,JSON.stringify(query));const wrong=cli(['record','--validate-only','--source-host',key.source_host,'--repository-id',key.repository_id,'--task','foreign','--kind','subject','--payload',input]);expect(wrong.status).toBe(2);expect(wrong.stdout).toContain('selectors');
+});
+
+test('F3/F9: restore preserves the inbox and unavailable records cannot stop unrelated writes',async()=>{
+  const {reverifyRestoredStore}=await import('../../src/effects/pipeline/ledger');const root=repo('partial-restore'),good=create(root,'good'),unknown=create(root,'unknown');resource(good,root);
+  const pending=persistedRequest(root,good.task,'implement');result(pending.request);record(good,'request',{role:'implement'});ingestEvent(store,{host:hostname(),herdr_session:'observer-fixture',result:{panes:[]}},{snapshot:true});
+  ingestEvent(store,{pane_id:'unclaimed'},{delivery_id:'inbox-before-restore'});const before=observations(store).filter(o=>o.kind==='unclaimed');
+  store.restoreEpoch();expect(projectedRuns(store.read(good),observations(store))[0].result_state).toBe('present_unvalidated');expect(observations(store).filter(o=>o.kind==='unclaimed')).toEqual(before);expect(ingestEvent(store,{pane_id:'unclaimed'},{delivery_id:'inbox-before-restore'}).status).toBe('duplicate');
+  reverifyRestoredStore(store);expect(store.read(unknown).flags_attested).toContain('restore_source_unavailable');expect(store.read(unknown).admission).toBe('observed');expect(projectedRuns(store.read(good),observations(store))[0].result_state).toBe('validated');
+  record(good,'observation',{kind:'note',source:'operator',data:{}});create(root,'after-restore');expect(()=>mutatePipeline(store,unknown,{op:'advance',to:'plan-review',state_version:store.read(unknown).state_version})).toThrow('Current verified plan');
+});
+
+test('F4: late external merge facts preserve cleanup and abandoned terminal positions',()=>{
+  const root=repo('terminal'),s=subject(root);
+  for(const phase of ['cleanup','abandoned'] as const){const receipt=newPipeline(store,{source_host:hostname(),repository_id:taskRepository(root).repository_id,root,adopt_task:phase,backfill:true,phase,note:'Historical terminal state is attested'});const key={source_host:hostname(),repository_id:taskRepository(root).repository_id,task:receipt.task};record(key,'external-merge',{squash_commit:s.head_sha,pre_merge_head:s.head_sha,pre_merge_base:s.base_sha,tree_digest:s.tree_digest,method:'squash',observed_at:new Date().toISOString()});expect(store.read(key).phase).toBe(phase);expect(store.read(key).merge.external_merge?.source).toBe('attested');expect(store.read(key).observations.at(-1)?.kind).toBe('external_merge');}
+});
+
+test('F5: unchanged exports create no copy and failed unpublished builds remove only their own file',async()=>{
+  const key=create(repo('export-cleanup'));const directory=join(scratch,'store'),pointer=snapshotPointerPath(store.path);const before=readdirSync(directory).sort();exportSnapshot(store);exportSnapshot(store);expect(readdirSync(directory).sort()).toEqual(before);
+  const mutation=worker(`mutatePipeline(s,${JSON.stringify(key)},{op:'record',kind:'observation',payload:{kind:'note',source:'operator',data:{}},state_version:1},stage=>{if(stage==='commit')process.kill(process.pid,'SIGKILL')});`);await child(mutation);const current=readdirSync(directory).sort();const oldPointer=readFileSync(pointer);
+  expect(()=>exportSnapshot(store,undefined,stage=>{if(stage==='verified')throw new Error('Interrupted verified build');})).toThrow('Interrupted');expect(readdirSync(directory).sort()).toEqual(current);expect(readFileSync(pointer)).toEqual(oldPointer);
+  let loserFileCount=0;const published=exportSnapshot(store,undefined,stage=>{if(stage==='verified'){const winner=exportSnapshot(store);expect(winner.commit_seq).toBe(store.watermark().commit_seq);loserFileCount=readdirSync(directory).filter(name=>name.startsWith('.pipeline-')).length;}});expect(readdirSync(directory).filter(name=>name.startsWith('.pipeline-'))).toHaveLength(loserFileCount-1);expect(openSnapshot(pointer).pointer.file).toBe(published.file);
+});
+
+test('F2: matching remote subject and digest cannot hide changed evidence identity or verdict',()=>{
+  const root=repo('evidence-channel'),key=create(root,'channel','source-a'),s=subject(root);const declared=evidence(root,s,'plan','pass',join(root,'plan.md'),'plan');const query:AuthorityQuery={key,root,kind:'evidence',payload:{evidence:declared}};const channel=join(scratch,'identity-channel.ts');
+  const channelEnv={...env,REPO_HARNESS_PIPELINES_SOURCE_HOST:'mini',REPO_HARNESS_PIPELINES_SOURCE_COMMANDS:JSON.stringify({'source-a':[process.execPath,channel]})};
+  for(const [field,value] of [['verdict','fail'],['check_id','foreign'],['kind','cross_review'],['reviewer','owner'],['path','/foreign/report']] as const){
+    writeFileSync(channel,`process.env.REPO_HARNESS_PIPELINES_SOURCE_HOST='source-a';const {validateOnSource}=await import(${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/authority.ts'))});const {digest}=await import(${JSON.stringify(resolve(import.meta.dir,'../../src/core/pipeline/types.ts'))});let q=await Bun.stdin.json();let b=validateOnSource(q);b.output.evidence[${JSON.stringify(field)}]=${JSON.stringify(value)};const {sha256,...envelope}=b;b.sha256=digest(JSON.stringify(envelope));console.log(JSON.stringify(b));`);
+    expect(sourceAuthority(query,channelEnv)).toBeNull();
+  }
+});
+
+test('ungated blocked return and rework remain observed rather than qualified',()=>{
+  const root=repo('admission'),key=create(root);mutatePipeline(store,key,{op:'advance',to:'blocked',reason:'Observed wait',state_version:1});mutatePipeline(store,key,{op:'advance',to:'plan',state_version:2});expect(store.read(key).admission).toBe('observed');
+  const imported=newPipeline(store,{source_host:hostname(),repository_id:key.repository_id,root,adopt_task:'rework',backfill:true,phase:'cross-review',note:'Historical position is attested'});const retry={...key,task:imported.task};mutatePipeline(store,retry,{op:'advance',to:'implement',reason:'Recorded rework',state_version:1});expect(store.read(retry).admission).toBe('observed');expect(store.read(retry).counters.fix_loops).toBe(1);
 });

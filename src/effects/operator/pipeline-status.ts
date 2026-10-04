@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { decodePipelineBoard, unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/projection';
+import { decodePipelineBoard, unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
 const run=promisify(execFile);
 export interface PipelineStatusReadInput {env?:NodeJS.ProcessEnv}
 // A failed refresh retains the last good CLI snapshot and its original times.

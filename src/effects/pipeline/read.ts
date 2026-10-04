@@ -1,5 +1,6 @@
 import { decodeRecord, keyOf, PipelineError, type Key } from '../../core/pipeline/types';
-import { projectBoard, unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/projection';
+import { projectBoard } from '../../core/pipeline/projection';
+import { unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
 import { projectedRuns, type LogObservation } from './ingest';
 import { openSnapshot, snapshotPointerPath, storePath } from './store';
 
@@ -20,7 +21,7 @@ export function readPipelineStatus(key:Key,input:{env?:NodeJS.ProcessEnv;events?
     const row=db.query('SELECT record FROM pipelines WHERE source_host=? AND repository_id=? AND task=?').get(key.source_host,key.repository_id,key.task) as {record:string}|null;
     if(!row)throw new PipelineError('unknown_id',6,'Pipeline key is unknown');
     const record=decodeRecord(JSON.parse(row.record));
-    const logs=db.query('SELECT * FROM observations WHERE source_host=? AND repository_id=? AND task=? ORDER BY seq').all(key.source_host,key.repository_id,key.task).map((r:any)=>({...r,payload:JSON.parse(r.payload)}));
+    const logs=db.query("SELECT * FROM observations WHERE (source_host=? AND repository_id=? AND task=?) OR kind='restore_epoch' ORDER BY seq").all(key.source_host,key.repository_id,key.task).map((r:any)=>({...r,payload:JSON.parse(r.payload)}));
     if(input.evidence!==undefined){const e=record.evidence[input.evidence];if(!e)throw new PipelineError('usage',2,'Evidence index is unknown');return {...key,evidence:e,epoch:pointer.epoch,commit_seq:pointer.commit_seq};}
     record.runs=projectedRuns(record,logs);
     const events=input.events?db.query('SELECT * FROM transitions WHERE source_host=? AND repository_id=? AND task=? ORDER BY seq DESC LIMIT ?').all(key.source_host,key.repository_id,key.task,Math.min(input.limit??20,100)):undefined;

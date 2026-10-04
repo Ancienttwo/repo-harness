@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { decodePipelineBoard, PIPELINE_STALE_AFTER_MS, type PipelineBoardV2, type PipelineCard } from '../core/pipeline/projection';
+import { decodePipelineBoard, PIPELINE_STALE_AFTER_MS, type PipelineBoardV2, type PipelineCard } from '../core/pipeline/board';
 import { Icon } from './icons';
 import { useObservationRefresh } from './useObservationRefresh';
 import {

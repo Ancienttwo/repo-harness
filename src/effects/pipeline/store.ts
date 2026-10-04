@@ -1,7 +1,7 @@
 import { Database, constants as sqlite } from 'bun:sqlite';
 import { hostname } from 'node:os';
 import { dirname, join, resolve, basename } from 'node:path';
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, statfsSync, lstatSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, statfsSync, lstatSync, writeFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { decodeRecord, digest, PipelineError, type Key, type PipelineRecord } from '../../core/pipeline/types';
 
@@ -36,7 +36,7 @@ export function storeFailure(error: unknown): PipelineError {
 function requireLocation(path:string,env:NodeJS.ProcessEnv): void {
   const authority=env.REPO_HARNESS_PIPELINES_AUTHORITY_HOST ?? 'kitos';
   if(hostname() !== authority) throw new PipelineError('authority_unavailable',3,'Run the writer on the configured authority host');
-  if(path.startsWith('/Volumes/D/')) {
+  if(path==='/Volumes/D'||path.startsWith('/Volumes/D/')) {
     try {if(statSync('/Volumes/D').dev === statSync('/Volumes').dev) throw new Error('not mounted');}
     catch {throw new PipelineError('volume_unavailable',3,'Volume D is not mounted');}
   }
@@ -104,20 +104,25 @@ export class PipelineStore {
     const bytes=JSON.stringify(payload);
     this.db.query('INSERT INTO transitions(source_host,repository_id,task,event_id,ts,actor,op,from_phase,to_phase,payload,payload_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(key.source_host,key.repository_id,key.task,randomUUID(),new Date().toISOString(),hostname(),op,from,to,bytes,digest(bytes));
   }
+  appendObservation(input:{key?:Key;role?:string;round?:number;request_id?:string;kind:string;source:string;observed_at:string;payload:unknown;terminal_key?:string}):void {
+    this.db.query('INSERT INTO observations(source_host,repository_id,task,role,round,request_id,kind,source,observed_at,payload,terminal_key) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(input.key?.source_host??null,input.key?.repository_id??null,input.key?.task??null,input.role??null,input.round??null,input.request_id??null,input.kind,input.source,input.observed_at,JSON.stringify(input.payload),input.terminal_key??null);
+  }
   // Backup/restore is an explicit maintenance action, never a read-side repair.
   restoreEpoch():void {
     let previousEpoch=0;const pointerPath=snapshotPointerPath(this.path);
     if(existsSync(pointerPath)){const previous=openSnapshot(pointerPath);try{previousEpoch=previous.pointer.epoch;}finally{previous.db.close();}}
     this.transaction(()=>{
       for(const record of this.all()) {
-        record.evidence.forEach(e=>e.current=false);
+        record.evidence.forEach(e=>{e.current=false;if(e.source==='verified')e.source='attested';});
         record.runs.forEach(r=>{r.result_state='present_unvalidated';r.status='pending_verification';});
         record.flags_attested.push('restore_requires_reverification');record.state_version++;record.updated_at=new Date().toISOString();
         if(record.merge.owner_approval && !record.merge.owner_approval.consumed_at) {record.merge.owner_approval.expired=true;record.merge.owner_approval.expired_reason='restore';}
         this.save(record);this.audit({source_host:record.source_host,repository_id:record.repository_id,task:record.task.value},'restore-epoch',record.phase,record.phase,{});
       }
       const epoch=Math.max(previousEpoch,this.watermark().epoch)+1;
-      this.db.exec('DELETE FROM observations');
+      // Keep observation and delivery history. The marker fences old derived
+      // run state without losing the inbox or making receipt dedupe lie.
+      this.appendObservation({kind:'restore_epoch',source:'store',observed_at:new Date().toISOString(),payload:{epoch}});
       this.db.query('UPDATE metadata SET epoch=?,commit_seq=commit_seq+1,recovery_pending=1 WHERE id=1').run(epoch);
     });
   }
@@ -128,8 +133,20 @@ export function immutableDatabase(path:string):Database {
   return new Database(`file:${encodeURI(resolve(path)).replaceAll('?','%3F').replaceAll('#','%23')}?immutable=1&mode=ro`, sqlite.SQLITE_OPEN_READONLY | sqlite.SQLITE_OPEN_URI);
 }
 export function exportSnapshot(store:PipelineStore,out=snapshotPointerPath(store.path),boundary?:(stage:'copied'|'verified'|'published')=>void):Pointer {
+  if(existsSync(out)) {
+    const previous=openSnapshot(out);
+    try {
+      const current=store.watermark();
+      if(previous.pointer.epoch>current.epoch||(previous.pointer.epoch===current.epoch&&previous.pointer.commit_seq>=current.commit_seq))return previous.pointer;
+    }finally{previous.db.close();}
+  }
   const directory=dirname(resolve(out));mkdirSync(directory,{recursive:true,mode:0o700});
   const temporary=join(directory,`.pipeline-${randomUUID()}.db`);
+  // Claim an empty file with O_EXCL. VACUUM INTO accepts an empty target.
+  // Cleanup owns this file only. Published generations are never reclaimed.
+  durable(temporary,Buffer.alloc(0));
+  let published=false;
+  try {
   // VACUUM INTO is a consistent SQLite backup. It contains metadata and logs
   // from the same view. No watermark is taken from the live connection.
   store.db.query('VACUUM INTO ?').run(temporary);syncFile(temporary);boundary?.('copied');
@@ -145,8 +162,9 @@ export function exportSnapshot(store:PipelineStore,out=snapshotPointerPath(store
     let old:Pointer|null=null;
     if(existsSync(out)) {try{old=JSON.parse(readFileSync(out,'utf8'));}catch{throw new PipelineError('snapshot_pointer',3,'Publication pointer is corrupt');}}
     if(old && (old.epoch>pointer.epoch || (old.epoch===pointer.epoch && old.commit_seq>=pointer.commit_seq))) return old;
-    const next=out+`.${randomUUID()}.tmp`;durable(next,JSON.stringify(pointer)+'\n');renameSync(next,out);syncFile(directory);boundary?.('published');return pointer;
+    const next=out+`.${randomUUID()}.tmp`;durable(next,JSON.stringify(pointer)+'\n');renameSync(next,out);published=true;syncFile(directory);boundary?.('published');return pointer;
   });
+  }finally{if(!published&&existsSync(temporary))unlinkSync(temporary);}
 }
 export function publishAfterCommit(store:PipelineStore):void {
   let last:unknown;

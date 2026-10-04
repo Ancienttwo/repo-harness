@@ -70,7 +70,7 @@ export function ingestEvent(store:PipelineStore,payload:unknown,input:{source?:s
         if(log.kind==='result'&&!projectedRuns(current,[...observations(store),...pending.filter(o=>o.kind==='enrollment'&&identity(o,keyOf(current)))]).some(r=>r.role===log.role&&r.round===log.round&&r.request_id===log.request_id)){errors++;continue;}
       }
       if(log.terminal_key&&store.db.query('SELECT 1 FROM observations WHERE terminal_key=?').get(log.terminal_key)){if(!input.snapshot)status='duplicate';continue;}
-      store.db.query('INSERT INTO observations(source_host,repository_id,task,role,round,request_id,kind,source,observed_at,payload,terminal_key) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(log.source_host,log.repository_id,log.task,log.role,log.round,log.request_id,log.kind,log.source,log.observed_at,JSON.stringify(log.payload),log.terminal_key);appended++;
+      store.appendObservation({...(log.task?{key:{source_host:log.source_host!,repository_id:log.repository_id!,task:log.task}}:{}),role:log.role??undefined,round:log.round??undefined,request_id:log.request_id??undefined,kind:log.kind,source:log.source,observed_at:log.observed_at,payload:log.payload,terminal_key:log.terminal_key??undefined});appended++;
     }
     boundary?.('observations');
     if(delivery)store.db.query('INSERT INTO ingest_receipts VALUES(?,?,?,?,?)').run(source,delivery,digest(JSON.stringify(event)),new Date().toISOString(),status);

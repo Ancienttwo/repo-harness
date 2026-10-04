@@ -77,7 +77,7 @@ function prepareRecord(store:PipelineStore,record:PipelineRecord,kind:string,pay
     return ()=>{if(!record.observations.some(o=>o.kind==='session'&&o.data.role===payload.role))record.observations.push({kind:'session',source:'registration',observed_at:now,data:{role:payload.role}});enroll(record,reconcile?runs:runs.filter(r=>payload.round===undefined||r.round===payload.round));record.observations.push({kind:'enrollment',source:'outbox',observed_at:now,data:{registration_incomplete:bundle.output.registration_incomplete,errors:bundle.output.errors}});};
   }
   if(kind==='evidence') {
-    const e=decodeEvidence(payload.evidence);const admitted=evidenceAdmission(record,{...payload,evidence:e},store.env);
+    const e=decodeEvidence(payload.evidence);const admitted=evidenceAdmission({...record,runs:projectedRuns(record,observations(store))},{...payload,evidence:e},store.env);
     return ()=>{record.evidence.push(admitted);refreshValidity(record,currentSubject(record));if(payload.relations)record.relations.push(...payload.relations);};
   }
   if(kind==='ask') return ()=>{if(record.phase!=='merge-ask'||record.merge.external_merge)throw new PipelineError('transition_not_allowed',7,'Ask is pre-merge only');record.merge.ask={at:now,digest:text(payload.digest,'digest')};};
@@ -90,7 +90,9 @@ function prepareRecord(store:PipelineStore,record:PipelineRecord,kind:string,pay
   if(kind==='revoke') return ()=>{if(record.merge.owner_approval?.consumed_at)throw new PipelineError('transition_not_allowed',7,'Historical go cannot be revoked');if(record.merge.owner_approval){record.merge.owner_approval.expired=true;record.merge.owner_approval.expired_reason=text(payload.reason,'reason');}};
   if(kind==='external-merge') return ()=>{
     const fact={...payload,source:'attested' as const,approval_not_recorded:!record.merge.owner_approval,confirmed_deviation:false};
-    record.merge.external_merge=fact as PipelineRecord['merge']['external_merge'];record.merge.squash_commit=text(payload.squash_commit,'squash_commit');record.phase='merged';record.phase_since=now;record.admission='observed';
+    record.merge.external_merge=fact as PipelineRecord['merge']['external_merge'];record.merge.squash_commit=text(payload.squash_commit,'squash_commit');
+    if(record.phase!=='cleanup'&&record.phase!=='abandoned'){record.phase='merged';record.phase_since=now;record.admission='observed';}
+    else record.observations.push({kind:'external_merge',source:'operator',observed_at:now,data:fact});
   };
   if(kind==='observation') return ()=>{
     const o={kind:text(payload.kind,'kind'),source:text(payload.source,'source'),observed_at:now,data:object(payload.data)};
@@ -138,21 +140,36 @@ export function reverifyRestoredStore(store:PipelineStore):void {
   const records=store.all();
   const prepared=records.map(record=>{
     const prior=record.observations.slice().reverse().find(o=>o.kind==='subject');
-    if(!prior)throw new PipelineError('source_unavailable',3,'Restored record has no source subject');
-    const observed=observeSubject(store,record,prior.data);
-    if(observed.data.quality!=='verified')throw new PipelineError('source_unavailable',3,'Restored subject remains unavailable');
-    const runs=record.runs.map(run=>{
+    const observed=prior?observeSubject(store,record,prior.data):{kind:'subject',source:'git',observed_at:new Date().toISOString(),data:{subject:null,quality:'unavailable'}};
+    let unavailable=observed.data.quality!=='verified';
+    const roles=new Set(record.runs.map(run=>run.role));
+    for(const observation of record.observations)if(observation.kind==='session'&&typeof observation.data.role==='string')roles.add(observation.data.role);
+    for(const role of roles){
+      const bundle=sourceAuthority({key:keyOf(record),root:record.repo.root,kind:'enroll',payload:{role}},store.env);
+      if(bundle)enroll(record,bundle.output.runs);else unavailable=true;
+    }
+    const checked=record.runs.map(run=>{
       const bundle=sourceAuthority({key:keyOf(record),root:record.repo.root,kind:'result',payload:{role:run.role,round:run.round,request_id:run.request_id,context_sha256:run.context_sha256}},store.env);
-      if(!bundle||bundle.output.result_state==='invalid')throw new PipelineError('source_unavailable',3,'Restored request remains unavailable');
-      return {...run,result_state:bundle.output.result_state};
+      if(!bundle){unavailable=true;return {available:false,run:{...run,result_state:'present_unvalidated' as const,status:'pending_verification' as const}};}
+      if(bundle.output.result_state==='invalid')unavailable=true;
+      return {available:true,run:{...run,result_state:bundle.output.result_state}};
     });
-    return {record,observed,runs,version:record.state_version};
+    const evidence=record.evidence.map(row=>{
+      const request=record.runs.find(run=>run.request_id===row.authority_ref?.execution_id);
+      const admitted=evidenceAdmission(record,{evidence:row,contract_path:prior?.data.contract_path,...(request?{request:{role:request.role,round:request.round}}:{})},store.env);
+      if(admitted.source!=='verified')unavailable=true;
+      return {...admitted,registered_at:row.registered_at};
+    });
+    return {record,observed,checked,runs:checked.map(item=>item.run),evidence,unavailable,version:record.state_version};
   });
   store.transaction(()=>{
     for(const item of prepared){
       if(store.read(keyOf(item.record)).state_version!==item.version)throw new PipelineError('rev_conflict',4,'Restored record changed',true);
-      item.record.observations.push(item.observed);item.record.runs=item.runs;item.record.flags_attested=item.record.flags_attested.filter(f=>f!=='restore_requires_reverification');
-      item.record.state_version++;item.record.updated_at=new Date().toISOString();store.save(item.record);store.audit(keyOf(item.record),'reverify',item.record.phase,item.record.phase,{});
+      item.record.observations.push(item.observed);item.record.runs=item.runs;item.record.evidence=item.evidence;item.record.flags_attested=item.record.flags_attested.filter(f=>!['restore_requires_reverification','restore_source_unavailable','source_stale'].includes(f));
+      if(item.unavailable){item.record.flags_attested.push('restore_source_unavailable','source_stale');item.record.admission='observed';}
+      refreshValidity(item.record,currentSubject(item.record));
+      for(const checked of item.checked){const run=checked.run;store.appendObservation({key:keyOf(item.record),role:run.role,round:run.round,request_id:run.request_id,kind:checked.available?'source_check':'source_unavailable',source:'outbox',observed_at:new Date().toISOString(),payload:{result_state:run.result_state}});}
+      item.record.state_version++;item.record.updated_at=new Date().toISOString();store.save(item.record);store.audit(keyOf(item.record),'reverify',item.record.phase,item.record.phase,{quality:item.unavailable?'unavailable':'verified'});
     }
     store.db.exec('UPDATE metadata SET recovery_pending=0 WHERE id=1');store.bump();
   });

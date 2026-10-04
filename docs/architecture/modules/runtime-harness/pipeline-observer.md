@@ -14,12 +14,15 @@ The writer copies a complete generation with `VACUUM INTO`.
 It reads the watermark from that copy.
 It checks integrity and digest before publication.
 SQLite serializes the publication guard and the atomic pointer rename.
-A published file never changes. The writer retains old and interrupted generations.
+A published file never changes. The writer retains published and crash-orphan generations.
+It removes only its own failed or losing unpublished copy.
+An unchanged watermark creates no copy.
 
 All read paths use the published copy with SQLite `immutable=1`.
 They never open the live WAL store.
 The operator API exposes GET and HEAD only.
 The organization view shows the CLI projection and bounded details.
+The pure board wire decoder has no Node or record-schema dependency.
 
 The observer has no imports in live dispatch, notice, merge or cleanup consumers.
 It does not suppress delivery. It does not run checks, merge, remove worktrees or delete branches.

@@ -287,34 +287,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
 
     const { dir } = api.readTaskAgent(fixture, spec.task, spec.role);
     writeFileSync(join(fixture, 'context.md'), 'owned context');
-    // Observer A3/A5: register the real session before send, then lose the
-    // post-send ledger registration. The next round must enroll the request
-    // from the original artifacts. Existing dispatch does not call the ledger.
-    const { PipelineStore } = await import('../src/effects/pipeline/store');
-    const { newPipeline, mutatePipeline } = await import('../src/effects/pipeline/ledger');
-    const { ingestEvent, observations, projectedRuns } = await import('../src/effects/pipeline/ingest');
-    const { hostname } = await import('node:os');
-    const observerEnv = { ...env, REPO_HARNESS_PIPELINES_AUTHORITY_HOST: hostname(),
-      REPO_HARNESS_PIPELINES_DB: join(fixture, '.ai/harness/pipeline/observer.db') };
-    const observerKey = { source_host: hostname(), repository_id: binding.repository_id, task: spec.task };
-    const enrolled = new PipelineStore({ env: observerEnv });
-    try {
-      newPipeline(enrolled, { ...observerKey, adopt_task: spec.task, root: fixture });
-      mutatePipeline(enrolled, observerKey, { op: 'record', kind: 'request', payload: { role: spec.role }, state_version: 1, reconcile: true });
-      expect(enrolled.read(observerKey).runs).toHaveLength(0);
-    } finally { enrolled.close(); }
     const request = await api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md');
     await until(() => existsSync(request.result_ref));
-    const recovered = new PipelineStore({ env: observerEnv });
-    try {
-      expect(recovered.read(observerKey).runs).toHaveLength(0);
-      ingestEvent(recovered, { host: hostname(), herdr_session: session, result: { panes: [] } }, { snapshot: true });
-      const runs = projectedRuns(recovered.read(observerKey), observations(recovered));
-      expect(runs).toHaveLength(1);
-      expect(runs[0].request_id).toBe(request.request_id);
-      expect(runs[0].result_state).toBe('validated');
-      expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
-    } finally { recovered.close(); }
     expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
     const result = api.readSessionArtifact<Record<string, unknown>>(request.result_ref);
     api.writeSessionArtifact(request.result_ref, { ...result, request_id: 'another-request' }, false);
@@ -870,3 +844,99 @@ test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a pri
     rmSync(fixture,{recursive:true,force:true});
   }
 }, 60000);
+
+test('pipeline observer recovers a real Herdr request after post-send registration is lost', async () => {
+  const { preparePipelineSQLite } = await import('./helpers/pipeline-sqlite-fixture');
+  preparePipelineSQLite();
+  const { PipelineStore } = await import('../src/effects/pipeline/store');
+  const { newPipeline, mutatePipeline } = await import('../src/effects/pipeline/ledger');
+  const { ingestEvent, observations, projectedRuns } = await import('../src/effects/pipeline/ingest');
+  const { hostname } = await import('node:os');
+  const api = await import('../src/effects/terminal/task-session');
+  const modulePath = new URL('../src/effects/terminal/task-session.ts', import.meta.url).pathname;
+  const fixture = realpathSync(mkdtempSync('/tmp/po-'));
+  const home = join(fixture, 'h'); mkdirSync(home);
+  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  const configPath = join(fixture, 'herdr.toml');
+  const endpoint = { session, configPath, home };
+  const env = { ...herdrEnvironment(endpoint), TMPDIR: '/tmp', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const herdr = Bun.which('herdr');
+  if (!herdr) throw new Error('real_herdr_required_for_task_proof');
+  run('git', ['init', '-q', '-b', 'main'], fixture, env);
+  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
+  const execute = (args: string[]) => {
+    requireFixtureSession(session);
+    return run(herdr, ['--session', session, ...args], fixture, env);
+  };
+  const call = (args: string[]) => JSON.parse(execute(args)).result;
+  const ready = join(fixture, 'peer.ready');
+  const peer = join(fixture, 'peer.ts');
+  symlinkSync(process.execPath, join(fixture, 'codex'));
+  writeFileSync(peer, `
+import {readFileSync,writeFileSync} from 'fs';
+import {writeSessionArtifact} from ${JSON.stringify(modulePath)};
+process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
+writeFileSync(${JSON.stringify(ready)}, 'ready');
+let buffer=''; process.stdin.on('data',chunk=>{
+ buffer+=chunk.toString(); if (!/[\\r\\n]/.test(buffer)) return;
+ const lines=buffer.split(/[\\r\\n]+/); buffer=lines.pop() ?? '';
+ for(const line of lines){
+  const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');
+  const match=/^Read task request (.+); write its result only to (.+)\\.$/.exec(text);
+  if(!match)continue;
+  const request=JSON.parse(readFileSync(match[1],'utf8'));
+  readFileSync(request.context_ref,'utf8');
+  writeSessionArtifact(request.result_ref,{request_id:request.request_id,context_sha256:request.context_sha256,value:'artifact-result'});
+ }
+});
+`);
+  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' });
+  try {
+    await until(() => { try { call(['workspace', 'list']); return true; } catch { return false; } });
+    const root = call(['workspace', 'create', '--cwd', fixture, '--no-focus']);
+    const spec = { task: 'observer-task', role: 'advisor', harness_kind: 'codex', endpoint, parent_pane: root.root_pane.pane_id, args: [], max_requests: 1 };
+    const binding = await api.startTaskAgent(fixture, spec, {
+      start: async (_endpoint, name, pane, kind) => {
+        execute(['pane', 'run', pane, `exec ${quote(join(fixture, 'codex'))} ${quote(peer)}`]);
+        await until(() => existsSync(ready));
+        execute(['pane', 'report-agent', pane, '--source', 'fixture', '--agent', kind, '--state', 'working', '--seq', '1']);
+        execute(['agent', 'rename', pane, name]);
+      },
+    });
+    const { dir } = api.readTaskAgent(fixture, spec.task, spec.role);
+    writeFileSync(join(fixture, 'context.md'), 'owned observer context');
+    const observerEnv = { ...env, REPO_HARNESS_PIPELINES_AUTHORITY_HOST: hostname(), REPO_HARNESS_PIPELINES_DB: join(fixture, '.ai/harness/pipeline/observer.db') };
+    const key = { source_host: hostname(), repository_id: binding.repository_id, task: spec.task };
+    const enrolled = new PipelineStore({ env: observerEnv });
+    try {
+      newPipeline(enrolled, { ...key, adopt_task: spec.task, root: fixture });
+      mutatePipeline(enrolled, key, { op: 'record', kind: 'request', payload: { role: spec.role }, state_version: 1, reconcile: true });
+      expect(enrolled.read(key).runs).toHaveLength(0);
+    } finally { enrolled.close(); }
+    // Send through the original API. Do not register the request in the ledger.
+    const request = await api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md');
+    await until(() => existsSync(request.result_ref));
+    const requestBytes = readFileSync(join(dir, 'request-1.json'));
+    const resultBytes = readFileSync(request.result_ref);
+    const recovered = new PipelineStore({ env: observerEnv });
+    try {
+      expect(recovered.read(key).runs).toHaveLength(0);
+      ingestEvent(recovered, { host: hostname(), herdr_session: session, result: call(['pane', 'list']) }, { snapshot: true });
+      const runs = projectedRuns(recovered.read(key), observations(recovered));
+      expect(runs).toHaveLength(1);
+      expect(runs[0].request_id).toBe(request.request_id);
+      expect(runs[0].result_state).toBe('validated');
+      expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
+      expect(readFileSync(join(dir, 'request-1.json'))).toEqual(requestBytes);
+      expect(readFileSync(request.result_ref)).toEqual(resultBytes);
+      expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
+    } finally { recovered.close(); }
+  } finally {
+    requireFixtureSession(session);
+    try { execute(['server', 'stop']); } catch {
+      if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM');
+    }
+    await exited(server);
+    rmSync(fixture, { recursive: true, force: true });
+  }
+}, 60_000);

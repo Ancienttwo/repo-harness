@@ -115,13 +115,25 @@ export function sourceAuthority(query:AuthorityQuery,env:NodeJS.ProcessEnv=proce
     }
     const {sha256,...envelope}=bundle;
     if(bundle.protocol!==2||bundle.source_host!==query.key.source_host||bundle.repository_id!==query.key.repository_id||bundle.task!==query.key.task||bundle.query_sha256!==digest(JSON.stringify(query))||sha256!==digest(JSON.stringify(envelope))) return null;
-    if(query.kind==='evidence' && (!equal(bundle.subject,query.payload.evidence.subject)||bundle.output.artifact_digest!==query.payload.evidence.sha256)) return null;
+    if(query.kind==='evidence') {
+      const declared=query.payload.evidence,admitted=bundle.output.evidence;
+      if(!admitted||!equal(bundle.subject,declared.subject)||bundle.output.artifact_digest!==declared.sha256||!equal(admitted.subject,declared.subject))return null;
+      for(const field of ['kind','check_id','reviewer','path','sha256','verdict'])if(admitted[field]!==declared[field])return null;
+      if(admitted.source!=='verified'||!Number.isSafeInteger(admitted.execution_order)||admitted.execution_order<0||admitted.authority_ref?.validated_on!==query.key.source_host)return null;
+      if(['plan_review','cross_review'].includes(declared.kind)&&!equal(bundle.request_identity,query.payload.request))return null;
+    }
     if(query.kind==='result' && bundle.output.result_state==='validated' && !equal(bundle.request_identity,{role:query.payload.role,round:query.payload.round,request_id:query.payload.request_id,context_sha256:query.payload.context_sha256})) return null;
     return bundle;
   }catch{return null;}
 }
 export function evidenceAdmission(record:PipelineRecord,payload:Record<string,any>,env:NodeJS.ProcessEnv):Evidence {
   const e=payload.evidence as Evidence;
+  if(['plan_review','cross_review'].includes(e.kind)) {
+    const declared=payload.request;
+    const run=record.runs.find(r=>r.role===declared?.role&&r.round===declared?.round);
+    if(!run||(declared.request_id&&declared.request_id!==run.request_id)||(declared.context_sha256&&declared.context_sha256!==run.context_sha256))return {...e,source:'attested',authority_ref:null,registered_at:new Date().toISOString(),current:false};
+    payload={...payload,request:{role:run.role,round:run.round,request_id:run.request_id,context_sha256:run.context_sha256}};
+  }
   const bundle=sourceAuthority({key:{source_host:record.source_host,repository_id:record.repository_id,task:record.task.value},root:record.repo.root,kind:'evidence',payload},env);
   if(bundle?.output.evidence?.source==='verified') return {...bundle.output.evidence,registered_at:new Date().toISOString(),current:true};
   return {...e,source:e.source==='missing'?'missing':'attested',authority_ref:null,registered_at:new Date().toISOString(),current:false};

@@ -19,8 +19,13 @@ The writer requires SQLite 3.51.3 or later, or the fixed 3.44.6 and 3.50.7 branc
 Unknown and unfixed versions fail before directory creation.
 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY` can select an installed SQLite library.
 It does not disable the version check.
-This worktree uses Bun 1.4.2 with an unfixed built-in SQLite 3.51.0.
+This macOS worktree uses Bun 1.4.2. Its default system SQLite is 3.51.0.
 Acceptance tests use the installed Homebrew SQLite 3.53.4.
+The shared test fixture selects it before the first DB opens and prints runtime metadata.
+A missing or unfixed library fails the fixture prerequisite. There is no version bypass.
+The pinned Linux Bun 1.4.0 runtime bundles SQLite 3.53.2.
+That version was verified in a network-disabled local Linux container.
+Production library selection remains explicit. No CI workflow changed.
 See the [SQLite WAL-reset notice](https://sqlite.org/wal.html#the_wal_reset_bug).
 No Mini deployment took place in this task.
 
@@ -105,7 +110,9 @@ Each commit triggers up to three snapshot export attempts.
 An export failure keeps the committed receipt. It reports a warning on stderr.
 The board keeps its last complete generation and source times.
 After five minutes, the shared projection threshold labels that generation stale.
-No published file is rewritten. This implementation does not reclaim generations.
+No published file is rewritten. Unchanged exports create no copy.
+A failed build or losing exporter removes only its own unpublished file.
+This implementation does not reclaim published or crash-orphan generations.
 A later explicit export can catch up.
 
 ## Merge facts and restore
@@ -122,8 +129,10 @@ Restore a quiescent backup through the normal operator process.
 Then run `export-snapshot --restore-epoch --json` on the restored store.
 This bumps the epoch, invalidates in-flight observations and blocks new writes.
 Run `export-snapshot --reverify --json` after source access returns.
-This checks original subjects and requests before it enables new writes.
-Evidence still needs fresh registration before it can qualify a gate.
+This checks original subjects, requests and evidence before it enables new writes.
+Records that remain unreachable stay unavailable and cannot qualify a gate.
+They do not stop unrelated observer writes.
+A restore marker fences old derived run state. Inbox and receipt history stay intact.
 Readers never initialize, migrate, recover or repair the store.
 Incompatible store protocols fail closed. No migration from an older protocol is supplied.
 

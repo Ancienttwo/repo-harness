@@ -8,7 +8,7 @@ import { PipelineBoardPanel, pipelineCardKey, type PipelineBoardReader } from '.
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import { projectSnapshotViewState } from '../../src/operator-web/types';
-import type { PipelineBoardV2, PipelineCard } from '../../src/core/pipeline/projection';
+import type { PipelineBoardV2, PipelineCard } from '../../src/core/pipeline/board';
 
 const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('en', key, values);
 
@@ -214,6 +214,33 @@ describe('pipeline board refresh', () => {
       expect(requested).toHaveLength(2);
       expect(panel().getAttribute('data-pipeline-state')).toBe('refresh-failed');
       expect(panel().textContent).not.toContain('/Users/');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('the default reader rejects a served absolute path under /opt or /var and shows no path', async () => {
+    const originalFetch = globalThis.fetch;
+    let body: unknown = board({ cards: [card({ subject: { ...card().subject!, environment: '/opt/homebrew/bin/bun' } })] });
+    globalThis.fetch = (async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch;
+    try {
+      await act(async () => root.render(<PipelineBoardPanel t={t} />));
+      expect(panel().getAttribute('data-pipeline-state')).toBe('unavailable');
+      expect(panel().querySelector('.pipeline-cards')).toBeNull();
+      expect(panel().textContent).not.toContain('/opt/');
+
+      const served = board();
+      body = served;
+      await visibilityChange();
+      expect(panel().getAttribute('data-pipeline-state')).toBe('ready');
+
+      body = board({ cards: [card({ blocked: 'gate failed in /var/folders/nz/T/worktree' })] });
+      await visibilityChange();
+      expect(panel().getAttribute('data-pipeline-state')).toBe('refresh-failed');
+      expect(panel().querySelector(`time[datetime="${served.generated_at}"]`)).not.toBeNull();
+      expect(panel().textContent).not.toContain('/var/');
     } finally {
       globalThis.fetch = originalFetch;
     }

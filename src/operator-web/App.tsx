@@ -8,7 +8,7 @@ import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from '.
 import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { type NotifyStatusV1 } from '../core/operator/notify-status';
 import { NotifyStatusPanel, type NotifyStatusReader } from './NotifyStatus';
-import { type PipelineBoardV2 } from '../core/pipeline/projection';
+import { type PipelineBoardV2 } from '../core/pipeline/board';
 import { PipelineBoardPanel, type PipelineBoardReader } from './PipelineBoard';
 import { TaskDiff } from './TaskDiff';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';

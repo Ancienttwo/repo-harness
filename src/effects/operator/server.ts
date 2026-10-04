@@ -1,4 +1,4 @@
-import { decodePipelineBoard, type PipelineBoardV2 } from '../../core/pipeline/projection';
+import { decodePipelineBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
 import { createPipelineStatusReader, type PipelineStatusReadInput } from './pipeline-status';
 import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/notify-status';
 import { readNotifyStatus, type NotifyStatusReadInput } from './notify-status';

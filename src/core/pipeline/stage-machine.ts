@@ -3,6 +3,7 @@ import { PipelineError, type Phase, type PipelineRecord } from './types';
 
 export function advanceRecord(record:PipelineRecord,to:Phase,reason?:string):void {
   const from=record.phase;const now=new Date().toISOString();
+  let qualified=false;
   if(from==='cleanup' || from==='abandoned' && to!=='cleanup') throw new PipelineError('transition_not_allowed',7,'Terminal record');
   if(to==='blocked'||to==='abandoned') {
     if(!reason) throw new PipelineError('usage',2,'This transition requires a reason');
@@ -38,7 +39,8 @@ export function advanceRecord(record:PipelineRecord,to:Phase,reason?:string):voi
       requireGate(!!record.resources.worktree && checklist!.data.path===record.resources.worktree,'Cleanup path must match the registry');
       if(from==='abandoned'||record.admission==='observed') requireGate(checklist!.data.owner_approval===true,'Owner approval is required for this cleanup observation');
     } else throw new PipelineError('transition_not_allowed',7,`${from} to ${to} is not allowed`);
+    qualified=true;
   }
   record.phase=to;record.phase_since=now;
-  record.admission=['merged','cleanup','abandoned','blocked'].includes(to)?'observed':'gate_qualified';
+  record.admission=qualified&&!['merged','cleanup','abandoned','blocked'].includes(to)?'gate_qualified':'observed';
 }
