@@ -90,7 +90,7 @@ with the project.
 
 ## Trace Evidence
 
-`repo-harness run verify-sprint` runs local checks. It writes no verification report. Run `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` to record declared checks. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty plans cannot pass.
+`repo-harness run verify-sprint` runs local checks. It writes no verification report. Run `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` to record declared checks. Before semantic review or acceptance, run `repo-harness run change-assessment prepare --contract <contract>` from the execution repository. This command writes the independent assessment. If a packet has a reviewer-disagreement overlay, pass its path with `--packet` when you prepare it again. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty plans cannot pass.
 
 Required v1 fields:
 

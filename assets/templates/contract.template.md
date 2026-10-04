@@ -52,7 +52,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Notes file: `{{NOTES_FILE}}`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: run the checks in the Verification Plan, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+- Completion gate: run the checks in the Verification Plan, run `repo-harness run change-assessment prepare --contract <contract>` from the execution repository before semantic review, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
 
 ## Change Assessment
 
