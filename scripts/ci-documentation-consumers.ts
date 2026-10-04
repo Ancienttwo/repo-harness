@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { API } from 'typescript/unstable/async';
@@ -123,15 +123,6 @@ export async function discoverDocumentationConsumers(repoRoot = resolve(import.m
     if (result.status !== 0) throw new Error(`Documentation discovery requires tracked Git paths: ${result.stderr}`);
     trackedDocuments = new Set(result.stdout.split('\0').filter(isDocumentationPath));
   }
-  const files: string[] = [];
-  function collect(dir: string) {
-    for (const entry of readdirSync(resolve(repoRoot, dir), { withFileTypes: true })) {
-      const file = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) collect(file);
-      else if (/\.[cm]?tsx?$/.test(file)) files.push(file);
-    }
-  }
-  collect('tests');
   const api = new API();
   const snapshot = await api.updateSnapshot({ openProjects: [resolve(repoRoot, 'tsconfig.json')] });
   try {
@@ -139,6 +130,9 @@ export async function discoverDocumentationConsumers(repoRoot = resolve(import.m
     if (!project) throw new Error('Documentation discovery requires the repository TypeScript project');
     const syntaxErrors = await project.program.getSyntacticDiagnostics();
     if (syntaxErrors.length) throw new Error(`Documentation discovery requires parseable TypeScript: ${syntaxErrors[0]!.fileName}: ${syntaxErrors[0]!.text}`);
+    const files = (await project.program.getSourceFileNames())
+      .map(file => relative(repoRoot, file).replaceAll('\\', '/'))
+      .filter(file => file.startsWith('tests/') && /\.[cm]?tsx?$/.test(file));
     const sources = new Map<string, SourceFile>();
     for (const file of files) {
       const source = await project.program.getSourceFile(resolve(repoRoot, file));

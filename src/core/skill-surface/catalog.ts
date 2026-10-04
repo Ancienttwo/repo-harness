@@ -32,6 +32,11 @@ export interface SkillSurfaceRetirementCandidate {
   readonly note: string;
 }
 
+export interface SkillSurfaceRetirementCleanup {
+  readonly actionId: string;
+  readonly historicalFingerprints: readonly string[];
+}
+
 /**
  * Migration-diagnostics-only record for a package name that has been fully
  * deleted from `packages[]` (source directory removed, no longer
@@ -45,6 +50,8 @@ export interface SkillSurfaceRetiredPackage {
   readonly name: string;
   readonly replacement: string | null;
   readonly note: string;
+  /** Inert ownership proof for the workflow contract's explicit cleanup action. */
+  readonly cleanup?: readonly SkillSurfaceRetirementCleanup[];
 }
 
 export interface SkillSurfacePackage {
@@ -523,7 +530,27 @@ function validateRetiredPackages(
       ));
       continue;
     }
-    entries.push({ name, replacement: replacement as string | null, note });
+    let cleanup: SkillSurfaceRetirementCleanup[] | undefined;
+    if (rawEntry.cleanup !== undefined) {
+      if (!/^[a-z0-9][a-z0-9_-]*$/.test(name) || !Array.isArray(rawEntry.cleanup) || rawEntry.cleanup.length === 0) {
+        diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.cleanup`, `${name}: cleanup requires a safe package name and a non-empty array`));
+        continue;
+      }
+      cleanup = [];
+      const actionIds = new Set<string>();
+      for (const [cleanupIndex, item] of rawEntry.cleanup.entries()) {
+        const path = `${basePath}.cleanup[${cleanupIndex}]`;
+        if (!isRecord(item) || typeof item.actionId !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(item.actionId)
+          || actionIds.has(item.actionId) || !isStringArray(item.historicalFingerprints)
+          || item.historicalFingerprints.length === 0 || item.historicalFingerprints.some((hash) => !/^sha256:[0-9a-f]{64}$/.test(hash))) {
+          diagnostics.push(diagnostic("FIELD_REQUIRED", path, `${name}: cleanup requires a unique action id and exact SHA-256 fingerprints`));
+          continue;
+        }
+        actionIds.add(item.actionId);
+        cleanup.push({ actionId: item.actionId, historicalFingerprints: item.historicalFingerprints });
+      }
+    }
+    entries.push({ name, replacement: replacement as string | null, note, ...(cleanup === undefined ? {} : { cleanup }) });
   }
   return entries;
 }

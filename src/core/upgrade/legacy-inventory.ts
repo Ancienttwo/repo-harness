@@ -48,7 +48,7 @@ interface RetirementAction {
   readonly commands?: readonly string[];
   readonly sourcePaths?: Readonly<Record<string, string>>;
 }
-interface Contract { readonly installedCopyExcludes?: readonly string[]; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
+interface Contract { readonly installedCopyExcludes?: readonly string[]; readonly helpers?: { readonly scripts?: readonly string[] }; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
 interface ManifestSurface {
   readonly authority?: string;
   readonly removal?: string;
@@ -106,7 +106,24 @@ export function legacyPathSnapshot(path: string): LegacyPathSnapshot | null {
 }
 
 function actionsOf(): readonly RetirementAction[] {
-  const actions = loadWorkflowContractAsset<Contract>().migrations?.upgrade?.actions ?? [];
+  const contract = loadWorkflowContractAsset<Contract>();
+  const actions = [...(contract.migrations?.upgrade?.actions ?? [])];
+  const packageRoot = resolve(import.meta.dir, '..', '..', '..');
+  const catalogPath = join(packageRoot, 'assets', 'skill-commands', 'manifest.json');
+  const catalog = parseSkillSurfaceCatalog(readFileSync(catalogPath, 'utf8'), { declared: true });
+  if (catalog.status !== 'valid') throw new Error('retirement inventory requires a valid skill catalog');
+  for (const pkg of catalog.catalog.retiredPackages) {
+    for (const cleanup of pkg.cleanup ?? []) {
+      const action = actions.find((entry) => entry.id === cleanup.actionId);
+      if (!action || action.location !== 'global' || action.surface !== 'skill'
+        || action.action !== 'remove' || action.ownership !== 'known_generated') {
+        throw new Error(`retired package cleanup action is missing or unsafe: ${cleanup.actionId}`);
+      }
+      const paths = ['.claude', '.codex', '.agents'].map((host) => `${host}/skills/${pkg.name}`);
+      actions.push({ ...action, paths, fingerprints: undefined,
+        historicalFingerprints: Object.fromEntries(paths.map((path) => [path, cleanup.historicalFingerprints])) });
+    }
+  }
   for (const action of actions) {
     if (!['remove', 'refresh'].includes(action.action ?? '') || action.ownership !== 'known_generated') continue;
     const paths = action.paths ?? [];
@@ -124,7 +141,41 @@ function actionsOf(): readonly RetirementAction[] {
       if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error(`invalid known-generated fingerprint in ${action.id ?? '<unnamed>'}`);
     }
   }
-  return actions;
+  return actions.map((action) => {
+    if (action.action !== 'remove' || action.ownership !== 'known_generated' || action.surface === 'hook-entry') return action;
+    const paths = new Set(action.paths ?? []);
+    // Historical proof names retired candidates even after the runtime registry drops them.
+    for (const [path, hashes] of Object.entries(action.historicalFingerprints ?? {})) {
+      if (hashes.length === 0) continue;
+      if (isAbsolute(path) || path.includes('\\') || path.includes('*') || path.split('/').some((part) => ['', '.', '..'].includes(part))) {
+        throw new Error(`unsafe historical retirement path: ${path}`);
+      }
+      if (action.cleanupMode === 'exact_fingerprint' && !paths.has(path)) {
+        throw new Error(`historical fingerprint declared for undeclared exact migration path ${path}`);
+      }
+      paths.add(path);
+    }
+    const fingerprints = { ...action.fingerprints };
+    if (action.cleanupMode === 'generated_helper' && (action.location ?? 'project') === 'project' && (action.surface ?? 'file') === 'file') {
+      if (!contract.helpers?.scripts) throw new Error('generated helper retirement requires the helper registry');
+      for (const path of action.paths ?? []) {
+        if (!path.startsWith('scripts/')) continue;
+        const name = path.slice('scripts/'.length);
+        if (!contract.helpers.scripts.includes(name)) continue;
+        if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) throw new Error(`unsafe declared helper name: ${name}`);
+        const source = join(packageRoot, 'assets', 'templates', 'helpers', name);
+        if (!isLegacyPathSafe(packageRoot, source, false) || !stat(source)?.isFile()) {
+          throw new Error(`declared helper projection is missing or unsafe: ${name}`);
+        }
+        const digest = hash(readFileSync(source));
+        if (fingerprints[path] !== undefined && fingerprints[path] !== digest) {
+          throw new Error(`declared helper fingerprint differs from its package projection: ${path}`);
+        }
+        fingerprints[path] = digest;
+      }
+    }
+    return { ...action, paths: [...paths], fingerprints };
+  });
 }
 
 function historicalCommands(actions: readonly RetirementAction[]): Set<string> {
@@ -394,7 +445,7 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   }
 }
 
-/** Read-only inventory. Only the shipped contract defines retired paths. */
+/** Read-only inventory. Shipped retirement records define candidates and ownership proof. */
 export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: LeftoverItem[] } {
   const actions = actionsOf();
   const manifest = manifestOf(options.home);

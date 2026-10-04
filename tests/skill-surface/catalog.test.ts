@@ -94,6 +94,27 @@ function catalogValue(packages: unknown[], overrides: Record<string, unknown> = 
 
 const VALID_BASE = catalogValue([ROUTER, FACADE]);
 
+test("retired package cleanup preserves exact proof records and rejects invalid ownership metadata", () => {
+  const cleanup = [{ actionId: "retired-skills", historicalFingerprints: [`sha256:${"a".repeat(64)}`] }];
+  const value = catalogValue([ROUTER, FACADE], { retiredPackages: [{ name: "old-skill", replacement: null, note: "Retired package.", cleanup }] });
+  const parsed = validateSkillSurfaceCatalogValue(value);
+  expect(parsed.status).toBe("valid");
+  if (parsed.status !== "valid") throw new Error("expected valid retirement proof");
+  expect(parsed.catalog.retiredPackages[0]!.cleanup).toEqual(cleanup);
+  for (const malformed of [
+    { actionId: "retired-skills", historicalFingerprints: [] },
+    { actionId: "retired-skills", historicalFingerprints: ["sha256:bad"] },
+    { actionId: "", historicalFingerprints: cleanup[0]!.historicalFingerprints },
+  ]) {
+    expect(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE], {
+      retiredPackages: [{ name: "old-skill", replacement: null, note: "Retired package.", cleanup: [malformed] }],
+    })).status).toBe("invalid");
+  }
+  expect(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE], {
+    retiredPackages: [{ name: "../outside", replacement: null, note: "Retired package.", cleanup }],
+  })).status).toBe("invalid");
+});
+
 describe("skill-surface catalog: absence vs. declared-missing", () => {
   test("steady-state catalog exposes only minimal and full profiles", () => {
     expect(SKILL_SURFACE_PROFILES).toEqual(["minimal", "full"]);

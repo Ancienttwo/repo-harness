@@ -161,8 +161,9 @@ replacement under the same explicit, backed-up transaction.
 Old merge-gate state, v0.10.0 archives, and older backups are report-only by
 default. Use `upgrade --apply --include-state-artifacts` to select these artifacts
 for removal. This flag still requires ownership proof. Unknown artifacts stay.
-The third-party `codex@openai-codex` Claude plugin and user rule lines in
+The third-party Claude plugin and user rule lines in
 `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
+See [external tooling](docs/reference-configs/external-tooling.md) for the plugin ID.
 
 Project cleanup supports regular files and host hook entries. Project
 directories and symlinks remain report-only. Global cleanup supports verified
