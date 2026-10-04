@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
-import { fchmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, fchmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -137,7 +137,15 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
       const stat = lstatSync(target);
       if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Plugin source must be a regular file.');
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    copyFileSync(join(ASSETS, name), target);
+    const temporary = join(source, `.${name}-${randomUUID()}`);
+    try {
+      copyFileSync(join(ASSETS, name), temporary, constants.COPYFILE_EXCL);
+      // Rename replaces a late target symlink without writing through it.
+      renameSync(temporary, target);
+    } finally {
+      try { unlinkSync(temporary); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    }
   }
   herdr([...prefix, 'link', source, '--disabled'], env);
   writeConfig(dir, config);

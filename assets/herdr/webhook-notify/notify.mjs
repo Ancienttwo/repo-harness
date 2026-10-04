@@ -1,8 +1,8 @@
 // Adapted from ~/herdr-plugins/webhook-notify. Config and identity come from Herdr.
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { hostname, tmpdir } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { isAbsolute, join, sep } from 'node:path';
 import { parseEnv } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
@@ -17,9 +17,9 @@ function objectJson(raw) {
 }
 
 function isTemporary(path) {
-  const absolute = resolve(path);
-  return [tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'].some((root) => {
-    const normalized = resolve(root);
+  const absolute = realpathSync(path);
+  return [tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'].filter(existsSync).some((root) => {
+    const normalized = realpathSync(root);
     return absolute === normalized || absolute.startsWith(normalized + sep);
   });
 }
@@ -55,7 +55,8 @@ export async function notify(env = process.env, send = fetch) {
   const targets = [
     { channel: 'WEBHOOK', url: config.WEBHOOK_URL, body: payload,
       headers: { authorization: `Bearer ${config.WEBHOOK_KEY}`, 'x-webhook-key': config.WEBHOOK_KEY } },
-    { channel: 'SLACK', url: config.SLACK_WEBHOOK_URL, body: { text } },
+    { channel: 'SLACK', url: config.SLACK_WEBHOOK_URL,
+      body: { text: text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') } },
     { channel: 'DISCORD', url: config.DISCORD_WEBHOOK_URL, body: { content: text.slice(0, 2000), allowed_mentions: { parse: [] } } },
     { channel: 'TELEGRAM', url: config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID
       ? `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage` : '',
@@ -63,9 +64,14 @@ export async function notify(env = process.env, send = fetch) {
   ].filter((target) => target.url && (data.agent_status === 'blocked' || config[`${target.channel}_NOTIFY_DONE`] === '1'));
   const statePath = join(env.HERDR_PLUGIN_STATE_DIR, 'debounce-state.json');
   let state = {};
-  try { state = objectJson(readFileSync(statePath, 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw new Error('Cannot read debounce state.'); }
-  for (const [key, at] of Object.entries(state)) if (typeof at !== 'number' || now - at >= DEBOUNCE_MS) delete state[key];
+  try {
+    const saved = objectJson(readFileSync(statePath, 'utf8'));
+    if (Object.values(saved).some((at) => typeof at !== 'number' || !Number.isFinite(at) || at < 0)) throw new Error('Invalid debounce state.');
+    state = saved;
+  } catch (error) {
+    if (error.code !== 'ENOENT') log('Cannot read debounce state. Using empty state.');
+  }
+  for (const [key, at] of Object.entries(state)) if (now - at >= DEBOUNCE_MS) delete state[key];
   for (const target of targets) {
     const key = JSON.stringify([config.NOTIFY_SESSION, data.pane_id, data.agent_status, target.channel]);
     if (state[key] && now - state[key] < DEBOUNCE_MS) continue;
