@@ -71,21 +71,24 @@ function configPresence(dir: string | null): Record<NotifyConfigKey, NotifyPrese
  * The shipped plugin writes one stderr line per channel attempt:
  * `<CHANNEL>: HTTP <status>` or `<CHANNEL>: delivery failed.`. One event can try
  * several channels; it succeeded only when every attempt returned 2xx.
+ * Herdr does not promise log order, so the newest finish time selects the entry.
+ * An entry without a valid finish time cannot be placed in time and is skipped.
  */
 function lastDelivery(raw: string | null): NotifyDeliveryV1 {
   const logs = (json(raw) as { readonly result?: { readonly logs?: readonly HerdrPluginLog[] } } | null)?.result?.logs;
   if (!Array.isArray(logs)) return { at: null, result: 'missing' };
-  for (let index = logs.length - 1; index >= 0; index -= 1) {
-    const entry = logs[index];
+  let newest: { readonly finished: number; readonly ok: boolean } | null = null;
+  for (const entry of logs) {
+    const finished = entry?.finished_unix_ms;
+    if (typeof finished !== 'number' || !Number.isSafeInteger(finished) || finished < 0) continue;
     const stderr = typeof entry?.stderr === 'string' ? entry.stderr : '';
     const attempts = [...stderr.matchAll(/\[webhook-notify\] [A-Z]+: (?:HTTP (\d{3})|delivery failed\.)/gu)];
-    if (attempts.length === 0) continue;
-    const finished = entry?.finished_unix_ms;
-    const at = typeof finished === 'number' && Number.isSafeInteger(finished) ? new Date(finished).toISOString() : null;
+    if (attempts.length === 0 || (newest !== null && finished <= newest.finished)) continue;
     const ok = attempts.every(attempt => attempt[1] !== undefined && Number(attempt[1]) >= 200 && Number(attempt[1]) < 300);
-    return { at, result: ok ? 'succeeded' : 'failed' };
+    newest = { finished, ok };
   }
-  return { at: null, result: 'missing' };
+  if (newest === null) return { at: null, result: 'missing' };
+  return { at: new Date(newest.finished).toISOString(), result: newest.ok ? 'succeeded' : 'failed' };
 }
 
 /** Read plugin install, enable, config presence, and the last recorded delivery. Values stay out. */

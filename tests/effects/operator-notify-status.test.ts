@@ -132,6 +132,21 @@ describe('notify plugin status', () => {
     } finally { f.cleanup(); }
   });
 
+  test('the newest delivery is chosen by finish time, not by log array position', async () => {
+    const f = fixture();
+    try {
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_500_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 500\n' },
+        { finished_unix_ms: 1_700_000_900_000, status: 'succeeded', stderr: '' },
+        { status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+        { finished_unix_ms: 'later', status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+      ] } });
+      const status = await readNotifyStatus({ env: f.env });
+      expect(status.last_delivery).toEqual({ at: '2023-11-14T22:21:40.000Z', result: 'failed' });
+    } finally { f.cleanup(); }
+  });
+
   test('a status read from a secret-bearing config renders no secret value in the panel', async () => {
     const f = fixture();
     try {
