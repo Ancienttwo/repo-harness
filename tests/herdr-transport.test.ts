@@ -2,9 +2,8 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, symlinkSync, rmSync } from 'fs';
 import { spawn } from 'child_process';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
-import { herdrCommand, herdrEnvironment, herdrResult } from '../src/effects/terminal/herdr';
+import { herdrCommand, herdrEnvironment, herdrResult, validateHerdrEndpoint } from '../src/effects/terminal/herdr';
 import { buildAgentRuntimeEffectIntent, buildAgentRuntimeHostAction } from '../src/core/engineers/agent-runtime-effect';
 import { executeHerdrCliAgentAction } from '../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
 
@@ -15,8 +14,10 @@ async function until(check: () => boolean) {
 }
 
 test('real herdr submits busy and multiline input, rejects blocked or exited peers, and reconnects without replay', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'rh-herdr-input-'));
-  const endpoint = { session: `input-${randomUUID()}`, configPath: join(root, 'herdr.toml'), agentName: 'fixture-peer' };
+  // Keep both native socket paths below sun_path even with the runner's nested TMPDIR.
+  const root = mkdtempSync('/tmp/rh-herdr-input-');
+  const endpoint = { session: `input-${randomUUID().slice(0, 8)}`, home: root, configPath: join(root, 'herdr.toml'), agentName: 'fixture-peer' };
+  validateHerdrEndpoint(endpoint);
   writeFileSync(endpoint.configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n');
   const received = join(root, 'input.bin');
   const ready = join(root, 'ready');
