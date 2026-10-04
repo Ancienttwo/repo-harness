@@ -50,7 +50,7 @@ cada paso.
 
 ### 1. Instalar el CLI
 
-Prerrequisitos: un Git working tree, `bun` y un `herdr` >=0.9.0 utilizable para
+Prerrequisitos: un Git working tree, `bun` y un `herdr` >=0.9.3 utilizable para
 la readiness del host; macOS/Linux también requieren `bash`, mientras que
 Windows requiere Git for Windows (incluidos su Bash y sus herramientas de
 `usr/bin`). `jq` es opcional. No se necesita Node.js — el instalador usa Bun >=

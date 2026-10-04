@@ -48,7 +48,7 @@ advance across sessions without a human driving each step.
 
 ### 1. Install the CLI
 
-Prerequisites: a Git working tree, `bun`, and usable `herdr` >=0.9.0 for host readiness; macOS/Linux also require `bash`,
+Prerequisites: a Git working tree, `bun`, and usable `herdr` >=0.9.3 for host readiness; macOS/Linux also require `bash`,
 while Windows requires Git for Windows (including its Bash and `usr/bin`
 tools). `jq` is optional. No Node.js required — the installer uses Bun >=
 1.4.0 as the runtime, installing or upgrading Bun first when needed.

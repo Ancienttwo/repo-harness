@@ -42,8 +42,8 @@ and keeps going after a failure, then prints `[ci] failed test files (N):`.
 ## The gate lanes
 
 `scripts/check-ci.sh [affected|all|governance|functional]` defaults to `affected`.
-PR checks select affected tests. Daily and release callers select `all` explicitly.
-`governance` and `functional` remain available as separate lanes.
+PR checks select affected tests. Daily CI selects `governance` and `functional`.
+The release gate selects `all`.
 
 Only the `all` lane exports `REPO_HARNESS_TEST_EXPENSIVE=1` (line 95), which is
 what unskips the real `npm pack`/install cases in

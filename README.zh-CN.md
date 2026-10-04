@@ -48,7 +48,7 @@ authorization、budget、task offer 和 lease，因此一个 Sprint 可以跨会
 
 ### 1. 安装 CLI
 
-前置条件：一个 Git working tree、`bun`，以及可用的 `herdr` >=0.9.0 来满足 host
+前置条件：一个 Git working tree、`bun`，以及可用的 `herdr` >=0.9.3 来满足 host
 readiness；macOS/Linux 还需要 `bash`，Windows 则需要 Git for Windows（包括其 Bash
 与 `usr/bin` 工具）。`jq` 可选。不需要 Node.js——installer 使用 Bun >= 1.4.0
 作为 runtime，需要时会先安装或升级 Bun。

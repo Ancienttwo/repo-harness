@@ -7,7 +7,6 @@
 - Context profile: `{{CONTEXT_PROFILE}}`.
 - Claude runtime expectation: `{{CLAUDE_POLICY}}`.
 - Codex runtime expectation: `{{CODEX_POLICY}}`.
-- Treat an action request as authorization to complete its named scope.
 - Stable product truth: `docs/spec.md`.
 - Research reports: `docs/researches/`.
 - Deferred-goal ledger: `tasks/todos.md`.
