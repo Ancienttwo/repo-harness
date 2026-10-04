@@ -215,6 +215,9 @@ describe('run-identity acceptance probe: SessionStart -> PostToolUse.bash', () =
         HOOK_HOST: 'claude',
         HOOK_SESSION_ID: 'run-identity-acceptance-session',
         REPO_HARNESS_WORKFLOW_PROFILE: 'routine',
+        // This fixture owns synchronous identity hooks, not detached tooling probes.
+        // Detached advisory lifecycle has separate coverage in session-context.test.ts.
+        REPO_HARNESS_TOOLING_ADVISORY: '0',
         // Deliberately absent: HOOK_RUN_ID / CODEX_RUN_ID / CLAUDE_RUN_ID.
         // Omitting every upstream run-identity source forces the mint path,
         // so this probe actually exercises SessionStart's minting rather
@@ -226,6 +229,7 @@ describe('run-identity acceptance probe: SessionStart -> PostToolUse.bash', () =
 
       const sessionStartResult = runHook({ event: 'SessionStart', routeId: 'default', cwd: root, env });
       expect(sessionStartResult.exitCode).toBe(0);
+      expect(existsSync(join(root, '.ai/harness/security/tooling-update-advisory-claude.lock'))).toBe(false);
 
       const bashResult = runHook({
         event: 'PostToolUse',
