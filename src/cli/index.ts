@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { buildPipelineCommand } from './commands/pipeline';
 import { withRuntimeHostTransactionLock } from './installer/runtime-host-lock';
 import { captureConfigurationRestores } from './installer/configuration-ownership';
 /**
@@ -809,6 +810,7 @@ export function buildProgram(): Command {
   program.command('claude-review', { hidden: true }).helpOption(false).allowUnknownOption().argument('[args...]')
     .action(() => { console.error('UPGRADE_REQUIRED: claude-review is retired; use repo-harness review. Drain old sessions with the previous version and archive old receipts.'); process.exitCode = 1; });
   program.addCommand(buildTaskAgentCommand());
+  program.addCommand(buildPipelineCommand());
   program.addCommand(buildSetupCommand());
   program.addCommand(buildUpgradeCommand());
 

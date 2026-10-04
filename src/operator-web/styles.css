@@ -382,6 +382,27 @@ code, .mono-value { font-family: var(--font-mono); }
 .notify-status__heading p { margin-bottom: 8px; font-size: 11px; font-weight: 600; letter-spacing: .1em; color: var(--text-muted); }
 .notify-status__heading h2 { margin: 0 0 12px; font-size: 20px; }
 .notify-status .detail-list dd time + span { margin-left: 8px; }
+.pipeline-board { margin: 0 0 24px; padding: clamp(16px, 2vw, 24px); border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--surface-card); font-size: 14px; }
+.pipeline-board__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pipeline-board__heading p { margin-bottom: 8px; font-size: 11px; font-weight: 600; letter-spacing: .1em; color: var(--text-muted); }
+.pipeline-board__heading h2 { margin: 0 0 12px; font-size: 20px; }
+.pipeline-board .operator-notice { margin-bottom: 14px; }
+.pipeline-facts { margin-bottom: 16px; }
+.pipeline-cards__heading { margin: 0 0 10px; font-size: 14px; }
+.pipeline-cards__heading span { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
+.pipeline-cards { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.pipeline-card { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-card); }
+.pipeline-card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pipeline-card__title { color: var(--text-strong); overflow-wrap: anywhere; }
+.pipeline-card__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.pipeline-card__meta { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; color: var(--text-muted); font-size: 12px; }
+.pipeline-card__meta .mono-value { overflow-wrap: anywhere; }
+.pipeline-card__blocked { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--danger-text); font-size: 12px; }
+.pipeline-card__detail summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.pipeline-card__detail summary:focus-visible { outline: none; box-shadow: var(--ring); }
+.pipeline-card__detail .detail-list .mono-value { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+.pipeline-card__detail h4 { margin: 12px 0 6px; font-size: 12px; }
+.pipeline-runs, .pipeline-evidence { display: grid; gap: 4px; margin: 0; padding-left: 18px; font-size: 12px; }
 @media (max-width: 600px) {
   .automation-heading h2 { font-size: 22px; }
   .automation-scope { overflow-wrap: anywhere; }

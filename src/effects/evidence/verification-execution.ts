@@ -685,6 +685,7 @@ function matchingImmutableExecution(
   context: PreparedContext,
   check: VerificationCheck,
   result: VerificationExecutionResult,
+  requirePass = true,
 ): boolean {
   return executionEvents(context).some(({ event, payload }) => {
     if (payload.plan_hash !== context.planHash
@@ -694,7 +695,7 @@ function matchingImmutableExecution(
       || payload.cache_key !== result.cache_key
       || payload.execution_id !== result.execution_id
       || payload.run_file !== result.run_file
-      || !payload.passed) return false;
+      || (requirePass && !payload.passed)) return false;
     const genesis = readGenesisRecord(context.repoRoot);
     if (!genesis || event.worktree_id !== genesis.worktree_id) return false;
     const identity = event.subject_identity;
@@ -713,7 +714,7 @@ function matchingImmutableExecution(
     });
     if (selfBoundCacheKey !== payload.cache_key) return false;
     const stored = readValidRunResult(context, payload);
-    if (!stored || !stored.passed) return false;
+    if (!stored || (requirePass && !stored.passed)) return false;
     const normalized = { ...result, execution: "executed" as const };
     const ledgerProjection = redactPayloadStrings(
       stored as unknown as JsonValue,
@@ -731,19 +732,30 @@ function matchingImmutableExecution(
  * The report's frozen snapshot is verified while the current checkout may
  * have moved because receipt/archive readers consume historical facts.
  */
-export function validateMaterializedVerificationExecutionReport(input: {
+interface MaterializedVerificationInput {
   readonly repoRoot: string;
   readonly contractPath: string;
   /** Caller-verified archived contract bytes for a retired declared path. */
   readonly contractText?: string;
   readonly report: unknown;
   readonly env?: NodeJS.ProcessEnv;
-}): VerificationExecutionReportValidation {
+}
+
+export function validateMaterializedVerificationExecutionReport(input: MaterializedVerificationInput): VerificationExecutionReportValidation {
+  return validateMaterializedOutcome(input, true);
+}
+
+/** Observer admission retains negative immutable outcomes without granting a pass. */
+export function validateMaterializedVerificationExecutionOutcome(input: MaterializedVerificationInput): VerificationExecutionReportValidation {
+  return validateMaterializedOutcome(input, false);
+}
+
+function validateMaterializedOutcome(input: MaterializedVerificationInput, requirePass: boolean): VerificationExecutionReportValidation {
   const reportObject = objectValue(input.report, "verification report");
   if (reportObject.protocol !== 1 || reportObject.kind !== "verification_execution_report") {
     throw new Error("verification report protocol or kind is invalid");
   }
-  if (reportObject.status !== "passed" || reportObject.passed !== true) {
+  if (requirePass && (reportObject.status !== "passed" || reportObject.passed !== true)) {
     throw new Error("verification report is not a passing evaluation");
   }
   const target = objectValue(reportObject.target, "verification report target");
@@ -800,12 +812,12 @@ export function validateMaterializedVerificationExecutionReport(input: {
   }
   for (const check of plan.checks) {
     const result = supplied.get(check.id);
-    if (!result || result.kind !== check.kind || result.passed !== true) throw new Error(`verification report result is invalid: ${check.id}`);
+    if (!result || result.kind !== check.kind || typeof result.passed !== "boolean" || (requirePass && result.passed !== true)) throw new Error(`verification report result is invalid: ${check.id}`);
     if (check.evidence_policy === "current_exact") {
       if (result.target !== "current_exact" || (result.execution !== "executed" && result.execution !== "reused")) {
         throw new Error(`verification report exact result has invalid disposition: ${check.id}`);
       }
-      if (!matchingImmutableExecution(context, check, result)) {
+      if (!matchingImmutableExecution(context, check, result, requirePass)) {
         throw new Error(`verification report exact result is not backed by immutable evidence: ${check.id}`);
       }
     }
@@ -826,7 +838,8 @@ export function validateMaterializedVerificationExecutionReport(input: {
     }
   }
   const results = plan.checks.map((check) => supplied.get(check.id)!);
-  const expected = buildReport(context, results, "passed", false);
+  const expected = buildReport(context, results, results.every(result => result.passed) ? "passed" : "failed", false);
+  if (!requirePass && (reportObject.status !== expected.status || reportObject.passed !== expected.passed)) throw new Error("verification report outcome is inconsistent");
   const evaluation = objectValue(reportObject.evaluation, "verification report evaluation");
   const projectedEvaluation = redactPayloadStrings(
     expected.evaluation as unknown as JsonValue,
@@ -836,6 +849,34 @@ export function validateMaterializedVerificationExecutionReport(input: {
     throw new Error("verification report evaluation metadata is inconsistent");
   }
   return { valid: true, report: input.report as VerificationExecutionReport };
+}
+
+export function verificationOutcomeProvenance(input: MaterializedVerificationInput, checkId: string) {
+  const { report } = validateMaterializedVerificationExecutionOutcome(input);
+  const plan = parseVerificationPlanFromContractText(input.contractText ?? resolveContract(input.repoRoot, input.contractPath).text);
+  const result = report.results.find(item => item.id === materializedVerificationCheckId(checkId));
+  if (!result) throw new Error("verification check is absent");
+  const events = readAcceptedEvents(input.repoRoot).accepted;
+  const offset = events.slice().reverse().findIndex(event => {
+    const payload = payloadOf(input.repoRoot, event);
+    return payload?.execution_id === result.execution_id && payload.check_id === checkId && payload.cache_key === result.cache_key;
+  });
+  if (offset < 0) throw new Error("verification sequence is unavailable");
+  const index = events.length - 1 - offset;
+  const payload = payloadOf(input.repoRoot, events[index]!)!;
+  return { report, result, execution_order: index + 1,
+    environment: `verification-execution/${payload.toolchain_hash}`,
+    contract_identity: payload.contract_hash,
+    check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
+  };
+}
+
+export function verificationContractProvenance(repoRoot: string, contractPath: string, env: NodeJS.ProcessEnv = process.env) {
+  const contractText = resolveContract(repoRoot, contractPath).text;
+  const plan = parseVerificationPlanFromContractText(contractText);
+  return { contract_identity: sha256(contractText),
+    check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
+    environment: resolveToolchain(env).providerId, check_ids: plan.checks.map(check => check.id) };
 }
 
 function subjectIdentity(context: PreparedContext, check: VerificationCheck, key: string): SubjectIdentity {

@@ -515,7 +515,7 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
 function requestOutbox(binding: TaskPaneBinding, dir: string): string {
   return join(binding.execution_root, '.ai/harness/runs/task-agent-outbox', dir.split('/').pop()!);
 }
-function assertTaskRequest(root: string, dir: string, request: TaskRequest): { binding: TaskPaneBinding; outbox: string } {
+export function assertTaskRequest(root: string, dir: string, request: TaskRequest): { binding: TaskPaneBinding; outbox: string } {
   const { binding, dir: expectedDir } = readTaskAgent(root, request.task, request.role);
   const outbox = requestOutbox(binding, dir);
   if (request.protocol !== 2 || dir !== expectedDir || !Number.isSafeInteger(request.round) || request.round < 1
