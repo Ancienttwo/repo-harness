@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -12,10 +13,12 @@ import { processSprintDependencies, releaseSprintCommand } from '../../src/effec
 import { readLease } from '../../src/effects/state/coordination-lease-store';
 
 const roots: string[] = [];
+const templates = fixtureTemplate(historicalPlanningFixture);
+afterAll(() => templates.dispose());
 afterEach(() => { for (const root of roots.splice(0).reverse()) rmSync(root, { recursive: true, force: true }); });
 const sha = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 async function fixture(mode = 'fail') {
-  const f = await historicalPlanningFixture(false, false, undefined, true, {}, false, false, true);
+  const f = await templates.materialize(false, false, undefined, true, {}, false, false, true);
   roots.push(f.root, f.home);
   const d = installHistoricalBoundDispatch(f); roots.push(d.envelope.worktree_path);
   const budget = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env }).budget;

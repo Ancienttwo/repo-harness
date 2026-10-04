@@ -91,4 +91,60 @@ describe('single affected verification and daily fallback', () => {
       expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\n`);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
+
+  test('local base selects committed, staged, unstaged and untracked changes with removed import edges', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'rh-ci-local-selection-'));
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      if (result.status !== 0) throw Error(result.stderr);
+      return result.stdout.trim();
+    };
+    const write = (path: string, content: string) => {
+      mkdirSync(resolve(repo, path, '..'), { recursive: true }); writeFileSync(join(repo, path), content);
+    };
+    const select = (...args: string[]) => spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts'), ...args], {
+      cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: '', GITHUB_OUTPUT: '' },
+    });
+    const selected = () => JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'));
+    try {
+      git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
+      for (const name of ['committed', 'staged', 'unstaged', 'deleted']) {
+        write(`src/${name}.ts`, 'export const value=1;');
+        write(`tests/${name}.test.ts`, `import { value } from '../src/${name}';`);
+      }
+      write('src/deleted-consumer.ts', "import { value } from './deleted'; export { value };");
+      write('tests/deleted.test.ts', "import { value } from '../src/deleted-consumer';");
+      git('add', '.'); git('commit', '-qm', 'base');
+      git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
+      expect(select('--base', 'origin/main').status).toBe(0);
+      expect(selected()).toEqual([]);
+      write('src/committed.ts', 'export const value=2;'); git('add', 'src/committed.ts'); git('commit', '-qm', 'candidate');
+      write('src/staged.ts', 'export const value=2;'); git('add', 'src/staged.ts');
+      write('src/unstaged.ts', 'export const value=2;');
+      git('rm', '-q', 'src/deleted.ts'); write('src/deleted-consumer.ts', 'export const value=2;');
+      write('src/untracked.ts', 'export const value=1;');
+      write('tests/untracked.test.ts', "import { value } from '../src/untracked';");
+      const result = select('--base', 'origin/main');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('mode=affected');
+      expect(selected()).toEqual(['tests/committed.test.ts', 'tests/deleted.test.ts', 'tests/staged.test.ts', 'tests/unstaged.test.ts', 'tests/untracked.test.ts']);
+      expect(select('--base', 'origin/main').status).toBe(0);
+      write('unknown/product.conf', 'unknown');
+      const unknown = select('--base', 'origin/main');
+      expect(unknown.status).not.toBe(0); expect(unknown.stderr).toContain('coverage is unknown');
+      expect(select('--base', 'missing-ref').status).not.toBe(0);
+      expect(select('--base').status).not.toBe(0);
+      expect(select('--base', 'origin/main', '--extra').status).not.toBe(0);
+      write('tests/invalid\nname.test.ts', 'export {};');
+      expect(select('--base', 'origin/main').stderr).toContain('invalid-diff');
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  });
+
+  test('local affected shell rejects invalid base arguments before running a gate', () => {
+    for (const args of [['affected', '--base'], ['all', '--base', 'origin/main'], ['affected', '--base', '--bad'], ['affected', '--base', 'origin/main', '--extra']]) {
+      const result = spawnSync('/bin/bash', [join(ROOT, 'scripts/check-ci.sh'), ...args], { encoding: 'utf8' });
+      expect(result.status).toBe(2); expect(result.stderr).toContain('Usage:');
+      expect(result.stdout).not.toContain('[ci] install');
+    }
+  });
 });

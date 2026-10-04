@@ -1,10 +1,15 @@
-import { test, expect } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { afterAll, test, expect } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { createAdoptionRepository } from '../helpers/campaign-adoption-repository';
 import { ensureCampaignAuthoringBudget, reserveCampaignAuthoringBudget, reserveAutomationBudget, appendAutomationUsage, readAutomationBudgetStatus, AutomationBudgetStoreError } from '../../src/effects/automation/budget-store';
 
+const templates = fixtureTemplate(createAdoptionRepository);
+afterAll(() => templates.dispose());
+
 test('campaign at acquisition cap rejects new acquisition without stopping acquired work', async () => {
-  const f = await createAdoptionRepository('active', 2, undefined, {}, {}, { max_successful_acquisitions: 1 });
+  const f = await templates.materialize('active', 2, undefined, {}, {}, { max_successful_acquisitions: 1 });
+  f.resetCalls();
   try {
     const { budget } = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env });
     const common = { repo_root: f.root, automation_run_id: budget.automation_run_id, expected_budget_sha256: budget.budget_sha256, unit_kind: 'execute' as const, unit_id: 'acquired-task', attempt: 1, provider: null, env: f.env };
@@ -41,7 +46,8 @@ test('campaign at acquisition cap rejects new acquisition without stopping acqui
 
 
 test('campaign acquisition cap does not suppress runner exhaustion or reopen its stop receipt', async () => {
-  const f = await createAdoptionRepository('active', 2, undefined, {}, {}, { max_successful_acquisitions: 1, max_runner_invocations: 3 });
+  const f = await templates.materialize('active', 2, undefined, {}, {}, { max_successful_acquisitions: 1, max_runner_invocations: 3 });
+  f.resetCalls();
   try {
     const { budget } = ensureCampaignAuthoringBudget({ repo_root: f.root, authorization: f.authorization, env: f.env });
     const common = { repo_root: f.root, automation_run_id: budget.automation_run_id, expected_budget_sha256: budget.budget_sha256, unit_kind: 'execute' as const, unit_id: 'acquired-task', attempt: 1, provider: null, env: f.env };

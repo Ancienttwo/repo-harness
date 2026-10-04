@@ -1,8 +1,9 @@
+import { fixtureTemplate } from '../helpers/repo-fixture';
 import { campaignBrowserMetadata } from '../helpers/campaign-browser-session';
 import { startIssueBatchAuthoring, continueIssueBatchAuthoring } from '../../src/effects/automation/gpt-pro-issue-authoring';
 import { createHash } from 'crypto';
 import historyFixture from '../fixtures/campaign-revision-evidence/history.json';
-import { test, expect, afterEach } from 'bun:test';
+import { afterAll, test, expect, afterEach } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -21,13 +22,15 @@ import { canonicalMessageDigest, messageSha256 } from '../../src/core/messages/m
 import { ensureCampaignAuthoringBudget, readCampaignBudgetLedger } from '../../src/effects/automation/budget-store';
 import { listIssueAuthoringSessions } from '../../src/effects/automation/issue-batch-store';
 const roots: string[] = [];
+const templates = fixtureTemplate(createAdoptionRepository);
+afterAll(() => templates.dispose());
 afterEach(() => {
   for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true });
 });
 const git = (root: string, args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 async function fixture(cleanup = true, groupCount: 1 | 2 | 3 = 1) {
-  const f = await createAdoptionRepository(
+  const f = await templates.materialize(
     'active',
     1,
     undefined,
@@ -35,6 +38,7 @@ async function fixture(cleanup = true, groupCount: 1 | 2 | 3 = 1) {
     {},
     { group_count: groupCount, max_provider_calls: 20, max_provider_failures: 10, max_agent_turns: 30, max_runner_invocations: 30 },
   );
+  f.resetCalls();
   roots.push(f.root, f.home);
   // Production order: the group adoption and its publication precede start_group.
   const publication = installHistoricalAdoption(f);
@@ -350,8 +354,9 @@ test('three-group real-store sequence carries each final SHA and refuses Group 4
 }, 60000);
 
 test('start_group is refused before the group adoption and publication and leaves campaign state unchanged', async () => {
-  const f = await createAdoptionRepository('active', 1, undefined, {}, {},
+  const f = await templates.materialize('active', 1, undefined, {}, {},
     { group_count: 1, max_provider_calls: 20, max_provider_failures: 10, max_agent_turns: 30, max_runner_invocations: 30 });
+  f.resetCalls();
   roots.push(f.root, f.home);
   const campaign = join(developmentCampaignStoreRoot(f.root), createHash('sha256').update(f.intent.campaign_id, 'utf8').digest('hex'));
   const facts = () => ({

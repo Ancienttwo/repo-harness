@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, join } from 'path';
@@ -15,6 +15,7 @@ import {
   publishCandidateReconciliationCapability,
   routeRegistryDigest,
   sha256,
+  type CandidatePackageIdentity,
   type CandidateReconciliationRequest,
   type CandidateReconciliationReceipt,
 } from '../../src/cli/runtime/candidate-reconciliation';
@@ -97,8 +98,18 @@ function writeMinimalInstallState(home: string): void {
   }, null, 2)}\n`);
 }
 
-function candidateReceipt(adapterDigest: string): CandidateReconciliationReceipt {
-  const identity = candidatePackageIdentity(import.meta.dir + '/../..');
+const candidateRoots: string[] = [];
+afterAll(() => { for (const root of candidateRoots) rmSync(root, { recursive: true, force: true }); });
+
+// Agent trace writes change the live checkout. Each test owns immutable candidate code.
+function fixtureCandidate(ownerRoot?: string): CandidatePackageIdentity {
+  const root = ownerRoot ?? mkdtempSync(join(tmpdir(), 'repo-harness-candidate-identity-'));
+  if (!ownerRoot) candidateRoots.push(root);
+  const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
+  return candidatePackageIdentity(copyRuntimeFixture(join(root, 'candidate'), version, 150));
+}
+
+function candidateReceipt(identity: CandidatePackageIdentity, adapterDigest: string): CandidateReconciliationReceipt {
   return {
     protocol: 1,
     transaction_id: 'transaction-fixture',
@@ -119,7 +130,7 @@ function invokeCandidateChild(
   env: NodeJS.ProcessEnv,
 ): ReturnType<typeof spawnSync> {
   return spawnSync(process.execPath, [
-    CLI,
+    join(request.candidate.root, 'src', 'cli', 'index.ts'),
     '__reconcile-installed-runtime',
     '--request',
     encodeCandidateRequest(request),
@@ -157,6 +168,7 @@ function runCandidateChild(
 
 describe('candidate-bound global runtime reconciliation', () => {
   test('rejects a predecessor Stop timeout projection even when the route count is unchanged', () => {
+    const identity = fixtureCandidate();
     const candidate = buildManagedHooks('codex', 'full');
     const predecessor = structuredClone(candidate);
     const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
@@ -165,9 +177,9 @@ describe('candidate-bound global runtime reconciliation', () => {
 
     expect(candidate.Stop?.[0]?.hooks[0]?.timeout).toBe(150);
     expect(managedProjectionDigest(predecessor)).not.toBe(managedProjectionDigest(candidate));
-    expect(() => assertCandidateReconciliationReceipt(candidateReceipt(managedProjectionDigest(predecessor)), {
+    expect(() => assertCandidateReconciliationReceipt(candidateReceipt(identity, managedProjectionDigest(predecessor)), {
       transaction_id: 'transaction-fixture',
-      candidate: candidatePackageIdentity(import.meta.dir + '/../..'),
+      candidate: identity,
       target: 'codex',
       profile: 'full',
       require_complete: true,
@@ -175,10 +187,11 @@ describe('candidate-bound global runtime reconciliation', () => {
   });
 
   test('accepts the candidate projection and binds its package identity to the transaction receipt', () => {
+    const identity = fixtureCandidate();
     const candidate = buildManagedHooks('codex', 'full');
-    expect(() => assertCandidateReconciliationReceipt(candidateReceipt(managedProjectionDigest(candidate)), {
+    expect(() => assertCandidateReconciliationReceipt(candidateReceipt(identity, managedProjectionDigest(candidate)), {
       transaction_id: 'transaction-fixture',
-      candidate: candidatePackageIdentity(import.meta.dir + '/../..'),
+      candidate: identity,
       target: 'codex',
       profile: 'full',
       require_complete: true,
@@ -189,7 +202,7 @@ describe('candidate-bound global runtime reconciliation', () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-runtime-'));
     const home = join(root, 'home');
     const cwd = join(root, 'repo');
-    const candidate = candidatePackageIdentity(import.meta.dir + '/../..');
+    const candidate = fixtureCandidate(root);
     const token = 'a'.repeat(64);
     const env = {
       ...process.env,
@@ -250,7 +263,7 @@ describe('candidate-bound global runtime reconciliation', () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-capability-'));
     const home = join(root, 'home');
     const cwd = join(root, 'repo');
-    const candidate = candidatePackageIdentity(import.meta.dir + '/../..');
+    const candidate = fixtureCandidate(root);
     const token = 'c'.repeat(64);
     const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
     try {
@@ -328,7 +341,7 @@ describe('candidate-bound global runtime reconciliation', () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-ledger-'));
     const home = join(root, 'home');
     const cwd = join(root, 'repo');
-    const candidate = candidatePackageIdentity(import.meta.dir + '/../..');
+    const candidate = fixtureCandidate(root);
     const token = 'b'.repeat(64);
     const env = {
       ...process.env,

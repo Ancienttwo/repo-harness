@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { fixtureTemplate } from '../helpers/repo-fixture';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { rmSync } from 'fs';
 import { adoptIssueBatch } from '../../src/effects/automation/issue-batch-adoption';
 import { readIssueBatchAdoptionArtifact } from '../../src/effects/automation/issue-batch-store';
@@ -7,9 +8,14 @@ import { runCampaignPlanningStep } from '../../src/effects/automation/campaign-p
 import { runCampaignAcquisition } from '../../src/effects/automation/campaign-acquisition';
 import { createAdoptionRepository } from '../helpers/campaign-adoption-repository';
 
+const adoptionTemplates = fixtureTemplate(createAdoptionRepository);
+const planningTemplates = fixtureTemplate(historicalPlanningFixture);
+afterAll(() => { adoptionTemplates.dispose(); planningTemplates.dispose(); });
+
 describe('BRC6a active revision admission', () => {
   test('refuses historical adoption replay without upgrading content evidence', async () => {
-    const f = await createAdoptionRepository('active', 1, 'capability.runtime-harness.fixture');
+    const f = await adoptionTemplates.materialize('active', 1, 'capability.runtime-harness.fixture');
+    f.resetCalls();
     try {
       installHistoricalAdoption(f);
       const before = readIssueBatchAdoptionArtifact(f.root, f.intent, 'publication');
@@ -19,7 +25,7 @@ describe('BRC6a active revision admission', () => {
     } finally { rmSync(f.root, {recursive:true,force:true}); rmSync(f.home,{recursive:true,force:true}); }
   });
   test('historical materialization cannot admit planning or acquisition', async () => {
-    const f = await historicalPlanningFixture();
+    const f = await planningTemplates.materialize();
     let effects = 0;
     try {
       expect(() => runCampaignPlanningStep(f.executeInput, { preflight: () => { effects++; throw new Error('called'); }, refresh: () => { effects++; throw new Error('called'); } })).toThrow('trusted exact revision readback');
@@ -28,7 +34,8 @@ describe('BRC6a active revision admission', () => {
     } finally { rmSync(f.root, {recursive:true,force:true}); rmSync(f.home,{recursive:true,force:true}); }
   });
   test('refuses active adoption before challenge, observation or publication', async () => {
-    const f = await createAdoptionRepository();
+    const f = await adoptionTemplates.materialize();
+    f.resetCalls();
     let observations = 0;
     try {
       await expect(adoptIssueBatch(f.input, { ...f.deps, observe: (...args) => {
