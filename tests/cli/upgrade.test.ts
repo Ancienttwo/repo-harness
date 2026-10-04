@@ -176,9 +176,10 @@ describe('upgrade with real release bytes', () => {
     }
   }));
 
-  test.each(['default', 'custom'])('global cleanup removes real installer shim commands from %s REPO_HARNESS_HOME', (kind) => sandbox((opts) => {
-    const harnessHome = join(opts.home, kind === 'default' ? '.repo-harness' : 'custom-runtime');
-    const shim = join(harnessHome, 'hook-shim.sh');
+  test.each(['default', 'custom', 'custom-trailing-slash', 'custom-relative'])('global cleanup removes real installer shim commands from %s REPO_HARNESS_HOME', (kind) => sandbox((opts) => {
+    const base = join(opts.home, kind === 'default' ? '.repo-harness' : 'custom-runtime');
+    const harnessHome = kind === 'custom-trailing-slash' ? `${base}/` : kind === 'custom-relative' ? 'custom-runtime' : base;
+    const shim = `${harnessHome}/hook-shim.sh`;
     const installer = join(FIXTURES, 'upgrade-v0.10-home/release-source/scripts/repo-harness.sh');
     const generated = spawnSync('bash', ['-c', 'source "$1" help >/dev/null; build_hooks_json', 'release-installer', installer], {
       env: { ...process.env, HOME: opts.home, REPO_HARNESS_HOME: harnessHome }, encoding: 'utf8',

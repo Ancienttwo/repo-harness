@@ -370,7 +370,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const packageRoot = resolve(opts.packageRoot ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
     const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env, HOME: home };
     const options: PlannerOptions = { scope, cwd, home, packageRoot,
-      ...(env.REPO_HARNESS_HOME ? { repoHarnessHome: resolve(env.REPO_HARNESS_HOME) } : {}),
+      ...(env.REPO_HARNESS_HOME ? { repoHarnessHome: env.REPO_HARNESS_HOME } : {}),
       ...(apply && opts.includeStateArtifacts === true ? { includeStateArtifacts: true } : {}) };
     const items = supportedItems(planLegacyLeftovers(options).items);
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,

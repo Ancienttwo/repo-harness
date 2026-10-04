@@ -206,7 +206,8 @@ export function stripLegacyHookEntries(
   const location = options.location ?? 'project';
   const shimPaths = options.location === 'global' ? [
     join(resolve(options.home), '.repo-harness/hook-shim.sh'),
-    ...(options.repoHarnessHome ? [join(resolve(options.repoHarnessHome), 'hook-shim.sh')] : []),
+    // The retired installer wrote this configured root verbatim.
+    ...(options.repoHarnessHome ? [`${options.repoHarnessHome}/hook-shim.sh`] : []),
   ] : [];
   const commands = historicalCommands(actionsOf(), shimPaths);
   // Keep the existing merger as the owner of managed-entry removal.
