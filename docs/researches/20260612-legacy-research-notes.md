@@ -861,7 +861,7 @@
 - The repeated name came from the original prompt-derived slug and then propagated through plan, contract, review, archive, and current-status artifacts; it was not an active-plan marker selecting that stale Draft.
 
 ### Root Cause
-- `prompt-guard.sh:derive_plan_start_title` stripped leading punctuation before collapsing `[$think](...)` to `think`. After the leading `[$` was removed, the markdown-link regex no longer matched and the local skill path became part of the title and slug.
+- `prompt-guard.sh:derive_plan_start_title` stripped leading punctuation before collapsing `[$think]` with a placeholder link target to `think`. After the leading `[$` was removed, the markdown-link regex no longer matched and the local skill path became part of the title and slug.
 
 ### Fix Boundary
 - Collapse Waza think skill links before trimming leading punctuation in both `.ai/hooks/prompt-guard.sh` and `assets/hooks/prompt-guard.sh`.

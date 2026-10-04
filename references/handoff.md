@@ -1,6 +1,7 @@
 # Root Reference: Handoff
 
-Source facade: `assets/skill-commands/repo-harness-handoff`.
+Runtime helpers: `scripts/prepare-codex-handoff.sh` and
+`scripts/codex-handoff-resume.sh`.
 
 Use when the user wants to save, refresh, or resume the repo-local handoff
 surface without running a full check or repair pass.

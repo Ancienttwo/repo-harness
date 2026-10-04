@@ -1,5 +1,8 @@
 # Fleet 职责盘点：宿主调度与 repo-harness 不变量
 
+> Historical record. PR #482 made the Kanban browser read-only.
+> The unused Task Message request builder and child process are now removed.
+
 评估日期：2026-09-30。范围是 `src/{core,effects}/{fleet,engineers,collaboration,automation,operator}/**/*.ts` 的当前工作树源码；本次只有文档修改，没有启动任何 agent runtime 或验证生产安装。
 
 ## 结论
@@ -55,7 +58,7 @@
 | E12 | `src/core/engineers/{engineering-overlay,module-message}.ts` | 963 | **O** | 工程师 read model 与模块消息 transport/schema；消息证据为次责 | `src/core/engineers/engineering-overlay.ts:439`; `src/core/engineers/module-message.ts:503` |
 | E13 | `src/core/fleet/{board,task-inbox-layout}.ts` | 407 | **O** | board 投影与 inbox 布局常量 | `src/core/fleet/board.ts:355`; `src/core/fleet/task-inbox-layout.ts:9` |
 | E14 | `src/effects/engineers/engineering-overlay.ts` | 286 | **O** | 聚合工程师/绑定/证据的 read model | `src/effects/engineers/engineering-overlay.ts:245` |
-| E15 | `src/effects/fleet/{board,task-inbox-layout,task-message-request}.ts` | 939 | **O** | 看板采集与 operator 消息入口；不派发 agent | `src/effects/fleet/task-message-request.ts:165`; `src/effects/fleet/board.ts:623` |
+| E15 | `src/effects/fleet/{board,task-inbox-layout}.ts` | 939 | **O** | 看板采集与 operator 消息入口；不派发 agent | the retired Operator Task Message request builder; `src/effects/fleet/board.ts:623` |
 | T1 | `src/effects/automation/controller-run.ts` | 261 | **S** | 有界 step loop，调用 acquireNext/dispatch；混合预算和 receipts | `src/effects/automation/controller-run.ts:181`; `src/effects/automation/controller-run.ts:245` |
 | T2 | `src/effects/automation/{campaign-worker,campaign-runtime,campaign-container}.ts` | 1,092 | **S** | worker/verifier invocation 与 Docker namespace 启动；混合 A/C 安全与终态记录 | `src/effects/automation/campaign-worker.ts:108`; `src/effects/automation/campaign-runtime.ts:89`; `src/effects/automation/campaign-container.ts:162` |
 | T3 | `src/core/automation/{budget,campaign-authoring-budget,campaign-containment,campaign-planning,connector-challenge,development-campaign,issue-batch-adoption,issue-batch}.ts` | 3,048 | **A** | 预算/授权/containment/parent 与已验证输入契约；混合 C | `src/core/automation/budget.ts:2003`; `src/core/automation/campaign-containment.ts:147`; `src/core/automation/issue-batch-adoption.ts:56` |
@@ -72,7 +75,7 @@
 | L6 | `src/effects/collaboration/work-exchange.ts` | 410 | **O** | 双读采集协作 snapshot，不拥有执行权 | `src/effects/collaboration/work-exchange.ts:300` |
 | P1 | `src/core/operator/{automation-summary,collaboration-snapshot,decision-inventory,fleet-snapshot,observation-identity,organization-snapshot,planning-snapshot,repository-snapshot,task-activity,task-context,task-diff,task-history}.ts` | 1,337 | **O** | operator 投影/解码/身份与分页 DTO | `src/core/operator/task-context.ts:95`; `src/core/operator/repository-snapshot.ts:30` |
 | P2 | `src/effects/operator/{automation-summary,collaboration,task-activity,task-context,task-diff,task-history}.ts` | 703 | **O** | 读取 domain stores/Git，为 UI 返回 scoped observation | `src/effects/operator/task-context.ts:13`; `src/effects/operator/task-history.ts:20` |
-| P3 | `src/effects/operator/{fleet-collector-process,collaboration-worker,task-message-process,task-read-process}.ts` | 303 | **O** | 采集/消息 helper process 与 worker thread，不是 LLM agent；消息次责 C/A | `src/effects/operator/fleet-collector-process.ts:113`; `src/effects/operator/task-message-process.ts:49`; `src/effects/operator/collaboration-worker.ts:44` |
+| P3 | `src/effects/operator/{fleet-collector-process,collaboration-worker,task-read-process}.ts` | 303 | **O** | 采集/消息 helper process 与 worker thread，不是 LLM agent；消息次责 C/A | `src/effects/operator/fleet-collector-process.ts:113`; the retired Task Message child process; `src/effects/operator/collaboration-worker.ts:44` |
 | P4 | `src/effects/operator/server.ts` | 2,258 | **O** | loopback HTTP/read observation supervision/static assets；唯一 POST task message 次责 A/C | `src/effects/operator/server.ts:125`; `src/effects/operator/server.ts:1445` |
 
 ### 边界判断

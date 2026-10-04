@@ -2,6 +2,15 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Removed
+
+- Remove unused AXR6/AXR7 proposal scripts and the global-hook canary script.
+- Remove the v1 initializer question pack and the unused v1/v3 schemas.
+- Remove unused scripts/lib context files, Operator Task Message modules,
+  and the old workflow contract install planner.
+
 ## [0.20.0] - 2026-10-01
 
 ### Added

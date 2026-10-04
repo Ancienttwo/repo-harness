@@ -268,9 +268,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     }
   });
 
-  // LSC-08 falsifier: the frozen strict.stop.not-ready-to-ship-still-allows
-  // cell (tests/state/fixtures/loop-semantics/characterization.json) is the
-  // cheapest fixture that forces allowedToStop=allow and readyToShip=block
+  // This fixture forces allowedToStop=allow and readyToShip=block
   // from the SAME evaluation -- Strict's stop-only requirement
   // (durable_recovery_state) is satisfied by any on-disk handoff/resume
   // checkpoint, while its ship-only requirements (fresh_review,

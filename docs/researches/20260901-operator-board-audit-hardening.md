@@ -1,5 +1,8 @@
 # Operator Task Board audit hardening (#242–#251)
 
+> Historical record. PR #482 made the Kanban browser read-only.
+> The unused Task Message request builder and child process are now removed.
+
 ## Scope and baseline
 
 - Repository: `Ancienttwo/repo-harness`
@@ -9,7 +12,7 @@
 
 ## P1 · Architecture map
 
-The browser Task Board in `src/operator-web/App.tsx` consumes two independent authorities: the Fleet projection from `src/effects/fleet/board.ts` through `src/effects/operator/server.ts`, and the selected repository's collaboration projection from `src/effects/operator/collaboration.ts`. Task Message is the only write: the browser POSTs through the Operator server to `src/effects/fleet/task-message-request.ts`, which resolves the registered repository and writes under the canonical task lock.
+The browser Task Board in `src/operator-web/App.tsx` consumes two independent authorities: the Fleet projection from `src/effects/fleet/board.ts` through `src/effects/operator/server.ts`, and the selected repository's collaboration projection from `src/effects/operator/collaboration.ts`. Task Message is the only write: the browser POSTs through the Operator server to the retired Operator Task Message request builder, which resolves the registered repository and writes under the canonical task lock.
 
 The authoritative boundaries remain separate:
 

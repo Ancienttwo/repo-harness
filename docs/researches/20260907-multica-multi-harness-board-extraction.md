@@ -104,7 +104,7 @@ Multica 按 run 和 provider/model 展示 token/cost，单个 run 无 usage 时�
 
 ## 下一刀：当前 Task 的消息投递证据
 
-与 BRC-claude 两轮讨论后的更新方案已捕获为 [Operator Task Message delivery evidence](../../plans/plan-20260907-1207-operator-delivery-evidence.md)，状态 Draft，未进入实施。首包从同一个已校验 notify status 投影 adapter、effect 阶段、通知观察时间、receipt 类型、sequence 和 observation digest，并给出当前 claim 关联的 notify effect 数量。无历史分页、无新 endpoint 指纹、无原始 host/session 信息出境。
+与 BRC-claude 两轮讨论后的更新方案已捕获为 [Operator Task Message delivery evidence](../../plans/archive/plan-20260907-1207-operator-delivery-evidence.md)，状态 Draft，未进入实施。首包从同一个已校验 notify status 投影 adapter、effect 阶段、通知观察时间、receipt 类型、sequence 和 observation digest，并给出当前 claim 关联的 notify effect 数量。无历史分页、无新 endpoint 指纹、无原始 host/session 信息出境。
 
 入口：`src/effects/engineers/agent-runtime-effect-store.ts:401` → 既有 Fleet projection → `src/core/operator/` 的安全投影 → `src/operator-web/App.tsx:850`。多个 notify effect 仍投影 reconciliation，不挑最新一条。数量也可能来自同 claim 的两条不同消息，文案不能把它断言成重复执行。stopped/superseded 通知不呈现为仍在飞。
 
