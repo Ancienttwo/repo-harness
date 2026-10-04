@@ -38,13 +38,37 @@ No new product code, dependency, test assertion, or abstraction is added here.
 
 ## Verification and hold
 
-One full-suite run is approved. Every run uses a fresh HOME under `/tmp`.
-Only failed files will be compared with a detached clean-main worktree under `/tmp`.
-Record command results, source revision, counts, and tarball hash in
-`/tmp/release-0200-report.md` and the PR body before completion.
-No second full-suite run is authorized.
-The final release gate, tag, registry publication, and GitHub Release stay separate.
-Any failed or incomplete check is a release hold. Do not edit assertions to hide it.
+One approved full-suite run completed at `d9a368c36b1a70c4e80792f970f987ca37408642`.
+Command: `REPO_HARNESS_TEST_EXPENSIVE=1 bun run test:full --timeout 60000`.
+Outer HOME: `/tmp/rh-home.wWUxsS`. TMPDIR: `/tmp`.
+The runner created fresh HOME and tool roots for each test process.
+Result: exit 1; 4,975 pass, 1 fail, 6 skip;
+404 files completed; 60,917 assertions; 568.982 seconds.
+Two files exited 1:
+
+- `tests/herdr-transport.test.ts`: one test failed with a fixture startup timeout.
+  The same failure reproduced on clean main `e853649e`, exit 1.
+- `tests/run-identity.test.ts`: all 12 tests passed, then the runner failed to
+  remove its temporary HOME with `ENOTEMPTY`. The same post-test cleanup failure
+  reproduced on clean main `e853649e`, exit 1. It is not an assertion failure.
+
+Clean-main comparison used detached `/tmp/rh-main.OVi88X/source`.
+Only those two files ran. Each run had a fresh HOME and used `test:files`.
+No test or product source changed. No second full suite ran.
+
+Typecheck, 14 version tests, one release-route test, version consistency,
+and the fast prepublish check passed.
+Tarball pack and install passed. Installed CLI output: `0.20.0`.
+Tarball SHA256: `b415f1da29aba5ca681cc6d3698e04ef0ed3db8dc5a9f6bcaefe39329fed92fb`.
+Install prefix: `/tmp/rh-npm-prefix.FeaWn8`. HOME: `/tmp/rh-home.s2K46f`.
+The read-only setup check returned exit 1, status `blocked`.
+The fresh environment lacks host configuration, CodeGraph index, and runtime setup.
+No suggested setup action, credential, or permission change was applied.
+
+Full output and source-bound results are in `/tmp/release-0200-evidence/`.
+The report and PR record exact commands and the failed clean-main comparisons.
+Publication stays on hold. The full gate and installed host readiness are not green.
+Tag, registry publication, and GitHub Release remain separate owner decisions.
 
 Skill eval evidence is unavailable. `full_test_count`, `dry_run_ratio`,
 `grader_pass_rate`, and `effectiveness_authority` are unavailable.
