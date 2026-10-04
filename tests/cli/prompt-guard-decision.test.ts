@@ -245,20 +245,25 @@ test.each([
 ] as const)('historical state routing remains covered: $id', ({ prompt, overrides, intent, action }) => {
   const snapshot = state(overrides);
   const previous = { ...process.env };
+  const controlledEnv = {
+    PROMPT_GUARD_SPEC_STATE: snapshot.spec,
+    PROMPT_GUARD_PLAN_STATE: snapshot.plan,
+    PROMPT_GUARD_PENDING_STATE: snapshot.pending,
+    PROMPT_GUARD_WORKTREE_STATE: snapshot.worktree,
+    PROMPT_GUARD_CONTRACT_STATE: snapshot.contract,
+    PROMPT_GUARD_CONTRACT_PATH_STATE: snapshot.contractPath,
+    PROMPT_GUARD_EVIDENCE_STATE: snapshot.evidence,
+  };
   try {
-    Object.assign(process.env, {
-      PROMPT_GUARD_SPEC_STATE: snapshot.spec,
-      PROMPT_GUARD_PLAN_STATE: snapshot.plan,
-      PROMPT_GUARD_PENDING_STATE: snapshot.pending,
-      PROMPT_GUARD_WORKTREE_STATE: snapshot.worktree,
-      PROMPT_GUARD_CONTRACT_STATE: snapshot.contract,
-      PROMPT_GUARD_CONTRACT_PATH_STATE: snapshot.contractPath,
-      PROMPT_GUARD_EVIDENCE_STATE: snapshot.evidence,
-    });
+    Object.assign(process.env, controlledEnv);
     const verdict = runPromptGuardVerdictFromPrompt(prompt);
     expect(verdict.intent).toBe(intent);
     expect(verdict.action).toBe(action);
   } finally {
-    process.env = previous;
+    for (const key of Object.keys(controlledEnv)) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
