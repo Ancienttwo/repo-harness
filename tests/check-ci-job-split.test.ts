@@ -43,7 +43,7 @@ describe('single affected verification and daily fallback', () => {
     const { jobs } = workflow;
     expect(workflow.on.schedule).toEqual([{ cron: '0 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
-    expect(jobs.required.needs).toEqual(['selection', 'verify']);
+    expect(jobs.required.needs).toEqual(['selection', 'verify', 'test-home-isolation']);
     expect(jobs.verify.if).toBe("needs.selection.outputs.mode == 'affected'");
     expect(jobs.verify.steps.some((step: any) => step.run === 'bash scripts/check-ci.sh affected')).toBe(true);
     const upload = jobs.selection.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
@@ -67,8 +67,10 @@ describe('single affected verification and daily fallback', () => {
     for (const selection of ['success', 'failure', 'cancelled', 'skipped']) {
       for (const verification of ['success', 'failure', 'cancelled', 'skipped']) {
         for (const mode of ['affected', 'daily', 'invalid', '']) {
-          const result = spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env, SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification } });
-          expect(result.status === 0).toBe(selection === 'success' && verification === 'success' && mode === 'affected');
+          for (const isolation of ['success', 'failure', 'cancelled', 'skipped', '']) {
+            const result = spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env, SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification, HOME_ISOLATION_RESULT: isolation } });
+            expect(result.status === 0).toBe(selection === 'success' && verification === 'success' && mode === 'affected' && isolation === 'success');
+          }
         }
       }
     }

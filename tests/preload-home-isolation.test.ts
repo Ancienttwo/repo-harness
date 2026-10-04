@@ -17,7 +17,16 @@ function fixture() {
   const home = mkdtempSync(join(TMP_ROOT, "home-iso-fixture-"));
   const temp = mkdtempSync(join(TMP_ROOT, "tmp-iso-fixture-"));
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp };
-  return { home, temp, env, close: () => { rmSync(home, { recursive: true, force: true }); rmSync(temp, { recursive: true, force: true }); } };
+  let unsafeRoot: string | undefined;
+  return {
+    home, temp, env,
+    unsafe: () => unsafeRoot ??= mkdtempSync(join(ROOT, ".home-iso-unsafe-")),
+    close: () => {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(temp, { recursive: true, force: true });
+      if (unsafeRoot) rmSync(unsafeRoot, { recursive: true, force: true });
+    },
+  };
 }
 
 const inspection = '({home:process.env.HOME,osHome:require("node:os").homedir(),tmp:require("node:os").tmpdir()})';
@@ -36,6 +45,7 @@ const toolFamilies = [
   ["shell config", ["BASH_ENV", "ENV", "ZDOTDIR"]],
   ["other tool state", ["ORACLE_HOME_DIR", "HERDR_CONFIG_PATH", "REPO_HARNESS_BRAIN_ROOT", "REPO_HARNESS_MCP_WORKTREE_ROOT"]],
   ["registry", ["REPO_HARNESS_HOME"]],
+  ["mixed-case roots", ["Bun_Install", "Codex_Home", "Xdg_Config_Home", "Git_Config_Global", "repo_harness_home"]],
 ] as const;
 
 describe("test HOME and TMPDIR isolation", () => {
@@ -84,7 +94,7 @@ describe("test HOME and TMPDIR isolation", () => {
     let replacement: string | undefined;
     try {
       const link = join(f.home, "outside-link");
-      symlinkSync(join(ROOT, "not-a-test-home"), link, process.platform === "win32" ? "junction" : "dir");
+      symlinkSync(f.unsafe(), link, process.platform === "win32" ? "junction" : "dir");
       const code = 'require("node:os").homedir(); process.env.HOME=' + JSON.stringify(link) + "; await import(" + JSON.stringify(PRELOAD) + "); console.log(process.env.HOME);";
       const result = Bun.spawnSync([process.execPath, "-e", code], { env: f.env, stdout: "pipe", stderr: "pipe" });
       expect(result.exitCode).toBe(0);
@@ -126,7 +136,7 @@ describe("test HOME and TMPDIR isolation", () => {
     try {
       const code = "await import(" + JSON.stringify(PRELOAD) + "); console.log('TEST_BODY_RAN');";
       const result = Bun.spawnSync([process.execPath, "-e", code], {
-        env: { ...f.env, TMPDIR: join(ROOT, "not-a-test-temp"), TEMP: join(ROOT, "not-a-test-temp"), TMP: join(ROOT, "not-a-test-temp") },
+        env: { ...f.env, TMPDIR: f.unsafe(), TEMP: f.unsafe(), TMP: f.unsafe() },
         stdout: "pipe", stderr: "pipe",
       });
       expect(result.exitCode).not.toBe(0);
@@ -160,7 +170,7 @@ describe("test HOME and TMPDIR isolation", () => {
     const f = fixture();
     try {
       for (const name of names) {
-        const outside = join(ROOT, "not-a-test-tool-root");
+        const outside = f.unsafe();
         const value = name.endsWith("_DIRS") || name === "KUBECONFIG"
           ? f.temp + delimiter + outside : outside;
         const code = "await import(" + JSON.stringify(PRELOAD) + "); console.log('TEST_BODY_RAN');";
@@ -185,7 +195,7 @@ describe("test HOME and TMPDIR isolation", () => {
         + 'expect(child.exitCode).toBe(0); await Bun.write(' + JSON.stringify(marker)
         + ',JSON.stringify({parent:process.env,child:JSON.parse(child.stdout.toString())}));});\n');
       const env: NodeJS.ProcessEnv = { ...f.env };
-      for (const name of names) env[name] = join(ROOT, "not-a-test-tool-root");
+      for (const name of names) env[name] = f.unsafe();
       // The shell config fixture names only a missing path in this worktree.
       const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
         cwd: ROOT, env, encoding: "utf8",
@@ -197,6 +207,12 @@ describe("test HOME and TMPDIR isolation", () => {
           if (["USERPROFILE", "TEMP", "TMP"].includes(name)) {
             const suffix = relative(TMP_ROOT, environment[name]!);
             expect(isAbsolute(suffix) || suffix === ".." || suffix.startsWith(".." + sep), name).toBe(false);
+          } else if (process.platform === "win32" && ["APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH"].includes(name)) {
+            const path = name === "HOMEDRIVE" || name === "HOMEPATH"
+              ? environment.HOMEDRIVE! + environment.HOMEPATH! : environment[name]!;
+            const suffix = relative(TMP_ROOT, path);
+            expect(isAbsolute(suffix) || suffix === ".." || suffix.startsWith(".." + sep), name).toBe(false);
+            expect(environment[name], name).not.toBe(env[name]);
           } else if (name === "REPO_HARNESS_HOME" && environment === observed.parent) {
             // The repo preload creates its default only after the runner removed the unsafe input.
             expect(environment[name]!.startsWith(environment.TMPDIR! + sep)).toBe(true);
@@ -280,7 +296,7 @@ describe("test HOME and TMPDIR isolation", () => {
         + 'expect(child.exitCode).toBe(0);await Bun.write(' + JSON.stringify(marker)
         + ',JSON.stringify({paths:' + inspection + ',roots:JSON.parse(child.stdout.toString())}));});\n');
       const result = spawnSync("bash", ["-c", 'source "$1"; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
-        cwd: f.temp, env: { ...f.env, BUN_INSTALL: join(ROOT, "not-a-test-tool-root"), CODEX_HOME: join(ROOT, "not-a-test-tool-root") }, encoding: "utf8",
+        cwd: f.temp, env: { ...f.env, BUN_INSTALL: f.unsafe(), CODEX_HOME: f.unsafe() }, encoding: "utf8",
       });
       expect(result.status, result.stdout + result.stderr).toBe(0);
       const value = JSON.parse(readFileSync(marker, "utf8")) as { paths: { home: string; osHome: string; tmp: string }; roots: Record<string, string> };
@@ -298,7 +314,7 @@ describe("test HOME and TMPDIR isolation", () => {
   test("refuses a Git config symlink before Git can follow it", () => {
     const f = fixture();
     try {
-      symlinkSync(join(ROOT, "not-a-test-gitconfig"), join(f.home, ".gitconfig"), "file");
+      symlinkSync(f.unsafe(), join(f.home, ".gitconfig"), "file");
       const result = Bun.spawnSync([process.execPath, "-e", "await import(" + JSON.stringify(PRELOAD) + "); console.log('TEST_BODY_RAN');"], {
         env: f.env, stdout: "pipe", stderr: "pipe",
       });
@@ -334,7 +350,7 @@ describe("test HOME and TMPDIR isolation", () => {
     const f = fixture();
     try {
       const result = Bun.spawnSync([process.execPath, "--no-env-file", "-e", "await import(" + JSON.stringify(PRELOAD) + "); console.log('TEST_BODY_RAN');"], {
-        env: { ...f.env, [name]: join(ROOT, "not-a-test-startup-path") }, stdout: "pipe", stderr: "pipe",
+        env: { ...f.env, [name]: f.unsafe() }, stdout: "pipe", stderr: "pipe",
       });
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr.toString()).toContain("Unsafe Bun test startup environment");
@@ -346,7 +362,7 @@ describe("test HOME and TMPDIR isolation", () => {
     const f = fixture();
     try {
       const result = Bun.spawnSync([process.execPath, "--no-env-file", "-e", "delete process.env.BUN_INSTALL; await import(" + JSON.stringify(PRELOAD) + "); console.log('TEST_BODY_RAN');"], {
-        env: { ...f.env, BUN_INSTALL: join(ROOT, "not-a-test-tool-root") }, stdout: "pipe", stderr: "pipe",
+        env: { ...f.env, BUN_INSTALL: f.unsafe() }, stdout: "pipe", stderr: "pipe",
       });
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr.toString()).toContain("unsafe BUN_INSTALL");
