@@ -1,11 +1,8 @@
 # Root Reference: Reusable Workflow Packaging Rubric
 
-Source: `assets/skill-commands/repo-harness-autoplan`'s "Reusable Workflow
-Packaging Rubric" section — extracted alone. The rest of that facade
-(automated self-review orchestration) does not move anywhere; it retires
-without a replacement, because root `execute` already follows Effective
-State and the existing plan -> contract -> worktree -> verify -> ship
-machinery (no invented `workflow run --mode autoplan` engine).
+This reference preserves the reusable workflow packaging rubric.
+The old autoplan facade is retired. It has no replacement.
+Root `execute` follows Effective State and the existing workflow commands.
 
 ## Rubric
 

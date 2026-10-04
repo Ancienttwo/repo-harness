@@ -1,5 +1,8 @@
 # Task Board audit and repair (#316, #317, #320)
 
+> Historical record. PR #482 made the Kanban browser read-only.
+> The unused Task Message request builder and child process are now removed.
+
 ## Scope and baseline
 
 - Repository: `Ancienttwo/repo-harness`
@@ -10,13 +13,13 @@
   1. Operator server and API transport (`src/effects/operator/server.ts`)
   2. Fleet snapshot pipeline (`src/core/fleet/board.ts`, `src/effects/fleet/board.ts`)
   3. Browser UI (`src/operator-web/`)
-  4. Task Message write plus collaboration read (`src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, `src/effects/operator/collaboration.ts`)
+  4. Task Message write plus collaboration read (`src/effects/fleet/task-inbox.ts`, the retired Operator Task Message request builder, `src/effects/operator/collaboration.ts`)
   5. Agent Runtime probe against a live board
 - Shipped as three merged pull requests: #316 `codex/operator-web-composer-truth`, #317 `codex/operator-server-write-gate`, #320 `codex/fleet-board-card-containment`.
 
 ## P1 · Architecture map
 
-The Task Board is a read projection with one write. `src/effects/fleet/board.ts` collects per-repository observations and hands them to the pure projection in `src/core/fleet/board.ts`, which assigns each card a column, an attention owner, and the fleet-level counts and digest. `src/core/operator/fleet-snapshot.ts` narrows that snapshot to the transport-safe `OperatorFleetSnapshotV1`, which `src/effects/operator/server.ts` serves alongside the per-repository collaboration projection from `src/effects/operator/collaboration.ts`. The browser in `src/operator-web/` is a strict decoder and a presentation client: it invents no identity and holds no second copy of a count. The single write is a Task Message — the browser POSTs one envelope, the server dispatches to `src/effects/fleet/task-message-request.ts`, which resolves the registered repository against `src/effects/repo-registry.ts` and publishes through `src/effects/fleet/task-inbox.ts` under the canonical task lock. Everything else on the board, including the collaboration slice, is observation only.
+The Task Board is a read projection with one write. `src/effects/fleet/board.ts` collects per-repository observations and hands them to the pure projection in `src/core/fleet/board.ts`, which assigns each card a column, an attention owner, and the fleet-level counts and digest. `src/core/operator/fleet-snapshot.ts` narrows that snapshot to the transport-safe `OperatorFleetSnapshotV1`, which `src/effects/operator/server.ts` serves alongside the per-repository collaboration projection from `src/effects/operator/collaboration.ts`. The browser in `src/operator-web/` is a strict decoder and a presentation client: it invents no identity and holds no second copy of a count. The single write is a Task Message — the browser POSTs one envelope, the server dispatches to the retired Operator Task Message request builder, which resolves the registered repository against `src/effects/repo-registry.ts` and publishes through `src/effects/fleet/task-inbox.ts` under the canonical task lock. Everything else on the board, including the collaboration slice, is observation only.
 
 ## Findings fixed
 
@@ -46,7 +49,7 @@ Scope: `src/effects/operator/server.ts`, `src/effects/operator/collaboration.ts`
 
 ### #320 — card-level containment and write-lock protocol
 
-Scope: `src/core/fleet/board.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, `src/effects/fleet/task-message-request.ts`, `src/core/operator/fleet-snapshot.ts`, `src/operator-web/types.ts`, `src/operator-web/i18n.ts`.
+Scope: `src/core/fleet/board.ts`, `src/effects/fleet/board.ts`, `src/effects/fleet/task-inbox.ts`, the retired Operator Task Message request builder, `src/core/operator/fleet-snapshot.ts`, `src/operator-web/types.ts`, `src/operator-web/i18n.ts`.
 
 - Failure containment moved to the card. One throwing observation used to mark a whole repository `unreadable` with an empty card list; a card now carries a typed `error` from the closed `FleetBoardErrorV1` vocabulary with `column: null`, and the repository stays `ok` with `snapshot_consistency: 'degraded'`. No data is invented for the failed card. Repository-level `unreadable` is reserved for failures that occur before any card can be read.
 - The inbox scan skips a non-current-revision event instead of aborting. A single stale event previously made an entire task inbox unreadable forever after a sprint row edit. `superseded_revision_count` makes the skip observable. `task_revision_mismatch` stays fail-closed on the send path, where the caller names one specific revision.

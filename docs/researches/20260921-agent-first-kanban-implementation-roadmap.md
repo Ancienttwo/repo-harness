@@ -404,7 +404,7 @@ Fleet placement修复和新browser schema分别升级实际protocol，当前基�
 | AKN-06 刷新、审阅与历史恢复 | 既有server collector IPC/single-flight、epoch、TaskDiff evidence、bounded history/source readers | OB-05–07；只刷新观察不驱动执行；旧head/base/contract失效；归档无关联不伪造 |
 | AKN-07 同包真实旅程与发布证据 | `scripts/check-tarball-install-smoke.sh`、真实安装包浏览器+同一已准入Host canary、文档/验收record | OB-08及AF/ST全集追溯；声明准确支持模式；无真人逐任务机械操作；不自动关闭BRC14/15或启guarded merge |
 
-AKN-00独立Draft：[AKN-00：固定原生执行路径准入与故障证据](../../plans/plan-20260921-1946-akn00-native-execution-admission.md)。
+AKN-00独立Draft：[AKN-00：固定原生执行路径准入与故障证据](../../plans/archive/plan-20260921-1946-akn00-native-execution-admission.md)。
 
 ### 2026-09-24 实施状态读回
 

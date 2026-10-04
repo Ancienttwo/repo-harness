@@ -4,9 +4,8 @@
 
 ## Current Snapshot
 
-- Latest snapshot: [repo-harness plugin review](snapshots/2026-05-25-repo-harness-plugin-review.md) (2026-05-25)
-- Latest semantic diagram: [repo-harness plugin review Mermaid](snapshots/2026-05-25-repo-harness-plugin-review.md#semantic-diagram) (2026-05-25)
-- Runtime hook adapter semantic diagram: [hook adapter workflow Mermaid](modules/runtime-harness/hook-adapters.md#semantic-diagram) (2026-05-30)
+- Current capability boundaries: [architecture modules](modules/).
+- Runtime hook adapter diagrams: [hook adapter architecture](modules/runtime-harness/hook-adapters.md).
 
 ## System Boundary
 
@@ -34,8 +33,8 @@ Authoritative surfaces:
   Consumer cutovers to that matrix land one package at a time through the
   Loop Semantics Convergence sprint
   (`plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md`);
-  its frozen current-behavior baseline lives in
-  `tests/state/loop-semantics-characterization.test.ts`.
+  its active state goldens live in `tests/state/cli-state-golden.test.ts`.
+  Adapter parity is checked in `tests/state/adapter-parity.test.ts`.
 - Loop semantics parity contract (LSC-08): the readiness authority
   (`src/core/workflow/operation-readiness.ts`'s `evaluateReadiness`, carried
   verbatim as `EffectiveStateV1.readiness`) and its Skill guidance
@@ -204,7 +203,7 @@ flowchart LR
 | engineer-messages -> engineer-bindings | `src/effects/engineers/module-inbox.ts` 在 send、delivery 与 ACK 边界调用 `readEngineerBindingStatus` 重验精确 Binding |
 | mcp-sidecar -> engineer-messages | `src/cli/mcp/engineer-tools.ts` 从已验证 principal 派生 sender/recipient 并调用 module inbox effects |
 | mcp-sidecar -> engineer-scheduling | `src/cli/mcp/engineer-tools.ts` 调用 scheduling effects 投影并获取带 revision fence 的 Engineer offer |
-| mcp-sidecar -> contract-assets | `src/cli/mcp/tools.ts` 导入 `../runtime/helper-runner` 的 `runHelper` |
+| mcp-sidecar -> contract-assets | `src/cli/mcp/tools.ts` 导入 `../../effects/runtime/helper-runner` 的 `runHelper` |
 | mcp-sidecar -> codegraph-readiness | `src/cli/mcp/server.ts`、`coding-tools.ts`、`reader-tools.ts` 导入 `./codegraph-adapter` |
 | general-repo-access -> mcp-sidecar | `src/cli/mcp/general-repo-access.ts` 导入同目录的 `./types` / `./paths` / `./audit` / `./redaction` 与 `../../effects/repo-registry` |
 | general-repo-access -> codegraph-readiness | `src/cli/mcp/general-repo-access.ts` 导入 `./codegraph-adapter` 的 `createCodeGraphCliAdapter` |
@@ -266,7 +265,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 
 - P1: helper dispatch and authoritative benchmark production are separate
   consumers of one neutral lifecycle/locking effects layer. Workflow helper
-  policy remains in `src/cli/runtime/helper-runner.ts`; benchmark semantics
+  policy remains in `src/effects/runtime/helper-runner.ts`; benchmark semantics
   remain in `scripts/run-harness-profile-benchmark.ts`.
 - P2: helper identity selects a fixed timeout envelope. A private launcher
   waits on an inherited start barrier while the supervisor publishes the PGID;

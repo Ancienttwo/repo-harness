@@ -134,13 +134,13 @@ regressions verify these separate boundaries.
 
 | 历史段落 | 历史说法 | HEAD 实际 | 位置 |
 | --- | --- | --- | --- |
-| 2026-07-16 Closeout Runner Guardrails | `verify-contract`/`verify-sprint` 720 秒 | **3,660 秒**（`VERIFIER_HELPER_TIMEOUT_MS = 3_660_000`） | `src/cli/runtime/helper-runner.ts:15` |
+| 2026-07-16 Closeout Runner Guardrails | `verify-contract`/`verify-sprint` 720 秒 | **3,660 秒**（`VERIFIER_HELPER_TIMEOUT_MS = 3_660_000`） | `src/effects/runtime/helper-runner.ts:15` |
 | 2026-07-16 Closeout Runner Guardrails | 900 秒档只含 `contract-worktree`/`ship-worktrees` | 还包含 **`merge-gate`**；`PROTECTED_HELPERS` 另含 `acceptance-receipt` | `helper-runner.ts:12`、`:134-137` |
 | 2026-07-14 Helper Descriptions | 46 → 48 条描述 | **52 条**（scripts 与 descriptions 均为 52） | `assets/workflow-contract.v1.json#helpers` |
 
 另有两处已由后续 slice 取代，历史段落本身未改写：
 
-- 旧文档头部与 P1 曾把 `assets/skills/merge-gate/` 列为 matched prefix 与权威文件。该目录在 HEAD **不存在**（当前 Skill 来源由 `assets/skill-commands/manifest.json` 控制），`.ai/context/capabilities.json` 的 prefix 列表也已移除它。这与 2026-07-21 段落「former host-only merge-gate skill/agent ... are removed」一致。
+- 旧文档头部与 P1 曾把已退役的 merge-gate Skill 目录列为 matched prefix 与权威文件。该目录在 HEAD **不存在**（当前 Skill 来源由 `assets/skill-commands/manifest.json` 控制），`.ai/context/capabilities.json` 的 prefix 列表也已移除它。这与 2026-07-21 段落「former host-only merge-gate skill/agent ... are removed」一致。
 - 旧 P2 只描述了 shell 路线（`pi_install_workflow_contract` → `pi_write_harness_policy` → …）。这些函数在 `scripts/lib/project-init-lib.sh:917,1675` 仍然存在，但调用者只有 `scripts/create-project-dirs.sh:43` 与 `scripts/init-project.sh:69`，且这两个脚本**不在** `helpers.scripts` 契约清单里。`repo-harness init` 的实际 runtime path 是 §2.1 的 TS 事务模型。
 
 ### 2026-08-11 Codex Native Agent Policy Cutover
@@ -185,7 +185,7 @@ regressions verify these separate boundaries.
 
 ### 2026-08-21 Windows Protected Helper Platform Contract
 
-- P1: `src/cli/runtime/helper-runner.ts` remains the sole protected-helper
+- P1: `src/effects/runtime/helper-runner.ts` remains the sole protected-helper
   dispatcher; `src/cli/runtime/protected-helper-platform.ts` owns platform
   resolution and the protocol-1 Windows schema; install/update owns discovery
   and persistence; Git for Windows supplies the Bash/POSIX runtime; and the
@@ -228,7 +228,7 @@ regressions verify these separate boundaries.
   policy owns enablement, the OS account home
   `~/.repo-harness/config.json#merge_gate` owns local
   runner identity, the host-only `merge-gatekeeper` agent owns only tool-free model isolation,
-  `assets/skills/merge-gate` owns review semantics, and `scripts/merge-gate.ts`
+  the former merge-gate skill owned review semantics, and `scripts/merge-gate.ts`
   is the only receipt writer/verifier.
 - P2: finish snapshots live workflow state, verifies and archives it, commits
   the exact candidate, and invokes Claude with no tools from an empty temporary
@@ -399,14 +399,14 @@ regressions verify these separate boundaries.
 ### 2026-07-14 Helper Descriptions Contract Surface Closeout
 
 - `assets/workflow-contract.v1.json#helpers.descriptions` is the sole authority for the one-line description of every bundled helper (helper id, filename minus extension, mapped to description text). `helpers.scripts` keeps sole authority over which helpers exist; descriptions attach display data to those ids without introducing a second id list.
-- The contract parser fails closed in `src/cli/runtime/helper-runner.ts` (`readContractHelperDescriptions`): a missing `descriptions` object, a scripts entry without a description, an empty or non-string value, or a description key with no matching script is a contract error, so the description map cannot drift from the script list.
+- The contract parser fails closed in `src/effects/runtime/helper-runner.ts` (`readContractHelperDescriptions`): a missing `descriptions` object, a scripts entry without a description, an empty or non-string value, or a description key with no matching script is a contract error, so the description map cannot drift from the script list.
 - `repo-harness run --help` now renders the full helper enumeration lazily through `listHelpers()` (`src/cli/commands/run.ts`), closing the discovery gap where the 46-helper surface was previously printed only on an unknown-helper failure. `.ai/harness/workflow-contract.json` remains the byte-identical installed mirror of the assets contract; no module boundary, dependency direction, or verification command changed.
 - Regression coverage: `tests/workflow-contract.test.ts` (descriptions cover `helpers.scripts` 1:1 with non-empty text) and `tests/cli/run.test.ts` (fail-closed validation plus `run --help` enumeration output).
 - The invariant was exercised live at ship time: rebasing onto origin/main added two upstream helpers (`run-bounded-verifier-command.ts`, `validate-harness-profile-benchmark.ts`) and the fail-closed check blocked shipping until their descriptions landed, bringing the map to 48 entries.
 
 ### 2026-07-16 Closeout Runner Guardrails
 
-- P1: `src/cli/runtime/helper-runner.ts` remains the canonical helper dispatch
+- P1: `src/effects/runtime/helper-runner.ts` remains the canonical helper dispatch
   policy. Ordinary helpers receive a fixed 120-second envelope,
   `verify-contract`/`verify-sprint` receive 720 seconds, and
   `contract-worktree`/`ship-worktrees` receive 900 seconds. Repository policy

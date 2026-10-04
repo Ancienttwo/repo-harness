@@ -140,7 +140,7 @@ Codex/Claude host hook
 
 ### 3.3 派生 index
 
-`## Pending Requests` 下 `<!-- BEGIN/END ARCHITECTURE PENDING REQUESTS -->` 标记内由 `reindex` 全量重写(复用 `context-contract-sync.sh replace_contract_block` 的 marker 平衡 awk);空态 `- (none)`;额外清除标记外任何 `^- \[ \] .*\](requests/...)$` 游离行(即治愈现网 Review Backlog 污染,人工 prose bullet 不匹配、保留);`reindex --check` 只比对不写,即 index 完整性检查。
+`## Pending Requests` 下 `<!-- BEGIN/END ARCHITECTURE PENDING REQUESTS -->` 标记内由 `reindex` 全量重写(复用 `context-contract-sync.sh replace_contract_block` 的 marker 平衡 awk);空态 `- (none)`;额外清除标记外任何 `^- \[ \] .*\]\(requests/...\)$` 游离行(即治愈现网 Review Backlog 污染,人工 prose bullet 不匹配、保留);`reindex --check` 只比对不写,即 index 完整性检查。
 
 ### 3.4 子命令
 
