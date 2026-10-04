@@ -8,6 +8,8 @@ import { TaskEvidence, type TaskContextReader, type TaskActivityReader } from '.
 import { AutomationSummary, type RepositoryObservationReader } from './AutomationSummary';
 import { type NotifyStatusV1 } from '../core/operator/notify-status';
 import { NotifyStatusPanel, type NotifyStatusReader } from './NotifyStatus';
+import { type PipelineBoardV2 } from '../core/pipeline/projection';
+import { PipelineBoardPanel, type PipelineBoardReader } from './PipelineBoard';
 import { TaskDiff } from './TaskDiff';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
@@ -63,6 +65,8 @@ export interface OperatorAppProps {
   readonly readTaskActivity?: TaskActivityReader;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
+  readonly readPipelineBoard?: PipelineBoardReader;
+  readonly initialPipelineBoard?: PipelineBoardV2;
 }
 
 /**
@@ -1555,6 +1559,8 @@ export function OperatorApp({
   readTaskHistory,
   readNotifyStatus,
   initialNotifyStatus,
+  readPipelineBoard,
+  initialPipelineBoard,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -1712,6 +1718,7 @@ export function OperatorApp({
           {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
           {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
           <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} t={t} />
+          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} t={t} />
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />

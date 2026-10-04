@@ -1,0 +1,46 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.pipeline-observer
+kind: capability
+name: Pipeline Observer
+status: active
+summary: Records host-scoped pipeline facts in one transactional store and publishes immutable read projections.
+responsibilities:
+  - Own pipeline record validation, record CAS, receipts and the store commit sequence.
+  - Validate artifacts on their source host through the original authority paths.
+  - Record notices as observations without changing live delivery or dispatch.
+  - Publish complete immutable generations for read-only CLI and operator consumers.
+  - Record merge and cleanup facts without executing those operations.
+source:
+  include:
+    - "src/core/pipeline/**"
+    - "src/effects/pipeline/**"
+    - "src/cli/commands/pipeline.ts"
+    - "src/effects/operator/pipeline-status.ts"
+    - "src/operator-web/PipelineBoard.tsx"
+    - "assets/pipeline-record.v2.schema.json"
+  entrypoints:
+    - id: entrypoint.pipeline-observer.cli
+      path: "src/cli/commands/pipeline.ts"
+      symbols:
+        - name: "buildPipelineCommand"
+          sinks:
+            - id: sink.pipeline-observer.ledger
+              path: "src/effects/pipeline/ledger.ts"
+              symbol: "mutatePipeline"
+    - id: entrypoint.pipeline-observer.read
+      path: "src/effects/pipeline/read.ts"
+      symbols:
+        - name: "readPipelineSnapshot"
+          sinks:
+            - id: sink.pipeline-observer.immutable
+              path: "src/effects/pipeline/store.ts"
+              symbol: "openSnapshot"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run check:type"
+    - "bun test tests/effects/pipeline-observer.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun test tests/operator-web/operator-pipeline-board.test.tsx --timeout 60000 --max-concurrency 1"
