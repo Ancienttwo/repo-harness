@@ -358,10 +358,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
         "herdr-cli-agent": { enabled: false },
       },
     },
-    development_campaign: {
-      version: 1,
-      mode: "off",
-    },
     operations: {
       dir: "deploy",
       private_dir: "_ops",

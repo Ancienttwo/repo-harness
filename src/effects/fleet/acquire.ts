@@ -1,4 +1,3 @@
-import { requireCampaignActiveAdmission } from '../automation/campaign-revision-admission';
 import { canonicalMessageBytes } from '../../core/messages/mechanics';
 /**
  * Read-side fleet offers and the acquisition seam.
@@ -71,8 +70,6 @@ import { validateLeaseReclaimEligibility } from '../../core/state/lease-liveness
 import { readClaimTokenForTask } from '../state/coordination-claim-token';
 import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 import { resolveBoard } from '../state/resolve-board';
-import { campaignTaskIntent, campaignTaskPlanProof } from '../automation/campaign-planning-proof';
-import { CampaignCapacityError, withCampaignCapacity } from '../automation/campaign-capacity';
 
 type TaskOfferPlanFailure = NonNullable<ClassifyTaskOfferInput['plan_failure']>;
 
@@ -233,16 +230,6 @@ export function collectRepoTaskOffers(
         taskCell: card.task,
       });
     }
-    if (proofResult?.ok) proofResult = campaignTaskPlanProof(repo.path, card.task_id, card.task_revision, proofResult, options.env, targetRef);
-    // Current execution projection is distinct from immutable envelope antecedent validation.
-    if (proofResult?.ok) {
-      try {
-        const intent = campaignTaskIntent(repo.path, card.task_id, targetRef);
-        if (intent) requireCampaignActiveAdmission(repo.path, intent, options.env);
-      } catch (error) {
-        proofResult = { ok: false, code: 'plan_not_projectable', error: String(error), candidates: [proofResult.proof.plan_path] };
-      }
-    }
     return [buildTaskOffer(repo, registry, board, card, index, proofResult)];
   });
   return Object.freeze({
@@ -356,8 +343,6 @@ export interface FleetAcquireFailure {
   readonly ok: false;
   readonly error: FleetAcquireErrorCode;
   readonly message: string;
-  /** A transient capacity refusal is distinct from an unavailable asserted Task. */
-  readonly reason?: 'campaign_capacity_full';
   /** Present only when release of this call's own claim also failed. */
   readonly cause?: Exclude<FleetAcquireErrorCode, 'rollback_failed'>;
 }
@@ -408,8 +393,6 @@ export interface FleetAcquireDependencies {
     readonly sprintPath: string;
   }) => CanonicalSprintRead;
   readonly readPlanProof: typeof readCanonicalTaskPlanProof;
-  readonly campaignPlanProof: typeof campaignTaskPlanProof;
-  readonly withCampaignCapacity: typeof withCampaignCapacity;
   readonly repoIdentity: typeof resolveRepoIdentity;
 }
 
@@ -473,8 +456,6 @@ function acquisitionDependencies(overrides: Partial<FleetAcquireDependencies> = 
     readLease,
     readCanonicalSprint,
     readPlanProof: readCanonicalTaskPlanProof,
-    campaignPlanProof: campaignTaskPlanProof,
-    withCampaignCapacity,
     repoIdentity: resolveRepoIdentity,
     ...overrides,
   };
@@ -705,8 +686,6 @@ function revalidateClaimAuthority(
         : `plan or contract proof became invalid after claim: ${proof.error}`),
     };
   }
-  const campaignProof = deps.campaignPlanProof(repo.path, offer.task_id, offer.task_revision, proof, options.env, offer.canonical_target.ref);
-  if (!campaignProof.ok) return { ok: false, result: failure('offer_stale', `campaign planning authority changed after claim: ${campaignProof.error}`) };
   return { ok: true, task: task.task.row.task };
 }
 
@@ -769,16 +748,13 @@ export function acquireFleetTask(options: FleetAcquireOptions = {}): FleetAcquir
   const deps = acquisitionDependencies(options.dependencies);
   const attempts = validateAttempts(options.max_attempts);
   const sessionId = options.session_id ?? `fleet-acquire-${randomUUID()}`;
-  const fullCandidates = new Set<string>();
-  let capacityScanLimit: number | undefined;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const initialRegistry = capacityScanLimit === undefined && options.registry_snapshot !== undefined
+    const initialRegistry = attempt === 0 && options.registry_snapshot !== undefined
       ? options.registry_snapshot
       : deps.readRegistry({ env: options.env, adoptedOnly: true });
     const initial = deps.collectOffers(collectOptions(options, initialRegistry));
-    capacityScanLimit ??= initial.offers.length;
-    const selected = selectOffer({ ...initial, offers: initial.offers.filter(offer => !fullCandidates.has(`${offer.repo_id}:${offer.task_id}`)) }, options);
+    const selected = selectOffer(initial, options);
     if (!selected.ok) return selected.result;
     const offer = selected.offer;
     if (offer.canonical_target === null || offer.plan === null) {
@@ -789,41 +765,27 @@ export function acquireFleetTask(options: FleetAcquireOptions = {}): FleetAcquir
       return failure('authorization_stale', 'selected offer no longer has write authorization');
     }
 
-    const claimCurrentOffer = () => {
-      const revalidated = revalidateOffer(offer, originalRepo, options, deps);
-      if (!revalidated.ok) return { failure: revalidated.result };
+    let revalidated: Extract<OfferRevalidation, { readonly ok: true }>;
+    let claim: CommandOutcome;
+    try {
+      const current = revalidateOffer(offer, originalRepo, options, deps);
+      if (!current.ok) return current.result;
+      revalidated = current;
       try {
-        deps.preflight(revalidated.repo.path, offer.plan!.contract_path);
+        deps.preflight(revalidated.repo.path, offer.plan.contract_path);
       } catch (error) {
-        return { failure: failure('offer_stale', error instanceof Error ? error.message : String(error)) };
+        return failure('offer_stale', error instanceof Error ? error.message : String(error));
       }
-      const claim = deps.claim({
+      claim = deps.claim({
         taskId: offer.task_id,
         expectedTaskRevision: offer.task_revision,
-        targetRef: offer.canonical_target!.ref,
+        targetRef: offer.canonical_target.ref,
         sprintPath: offer.sprint_path,
         sessionId,
       }, deps.sprintDependencies(revalidated.repo.path));
-      return { revalidated, claim };
-    };
-    let admission: ReturnType<typeof claimCurrentOffer>;
-    try {
-      admission = deps.withCampaignCapacity(originalRepo.path, offer.task_id, offer.canonical_target.ref, options.env, claimCurrentOffer);
     } catch (error) {
-      if (error instanceof CampaignCapacityError && error.code === 'campaign_capacity_full' && options.assertion?.task_id === undefined) {
-        fullCandidates.add(`${offer.repo_id}:${offer.task_id}`);
-        if (fullCandidates.size >= capacityScanLimit) return failure('no_eligible_task', 'campaign capacity scan exhausted the initial offer count');
-        // Capacity skips do not spend claim-race retries; the first snapshot bounds this scan.
-        attempt -= 1;
-        continue;
-      }
-      if (error instanceof CampaignCapacityError && error.code === 'campaign_capacity_full') {
-        return Object.freeze({ ...failure('no_eligible_task', error.message), reason: 'campaign_capacity_full' });
-      }
       return failure('authorization_stale', error instanceof Error ? error.message : String(error));
     }
-    if (admission.failure) return admission.failure;
-    const { revalidated, claim } = admission;
     if (claim.exitCode !== 0) {
       // Losing an election is expected under concurrency. Re-read the offer on
       // the next bounded attempt; no lease exists that this caller may release.

@@ -43,16 +43,13 @@ export interface AcquireNextFiltersV1 {
   readonly task_ids?: readonly string[];
 }
 
-/** Trusted entrypoint metadata: plain remains R1; campaign R2 binds owner guards/context. */
-export interface AcquisitionPolicy {
-  readonly policy_id: 'engineer/plain' | 'engineer/campaign';
-  readonly policy_revision: 'R1' | 'R2';
-  readonly scope: null | Readonly<{
-    campaign_id: string; group_number: number; intent_sha256: string; manifest_sha256: string;
-    authorization_revision: string; parent_host: string; parent_session: string;
-  }>;
+/** Keep the plain policy identity in persisted acquisition requests. */
+interface AcquisitionPolicy {
+  readonly policy_id: 'engineer/plain';
+  readonly policy_revision: 'R1';
+  readonly scope: null;
 }
-export const PLAIN_ACQUISITION_POLICY_R1: AcquisitionPolicy = Object.freeze({ policy_id: 'engineer/plain', policy_revision: 'R1', scope: null });
+const PLAIN_ACQUISITION_POLICY_R1: AcquisitionPolicy = Object.freeze({ policy_id: 'engineer/plain', policy_revision: 'R1', scope: null });
 
 export interface AcquireNextScheduledEngineerTaskOptions {
   readonly repo_root: string;
@@ -62,9 +59,6 @@ export interface AcquireNextScheduledEngineerTaskOptions {
   readonly max_selection_attempts?: number;
   readonly session_id?: string | null;
   readonly env?: NodeJS.ProcessEnv;
-  readonly admission_policy?: AcquisitionPolicy;
-  readonly before_acquire?: (offer: EngineerOfferV1) => void;
-  readonly accept_acquired?: (result: Extract<ScheduledEngineerAcquireResult, { ok: true }>) => Exclude<ScheduledEngineerAcquireResult, { ok: true }> | void;
   readonly dependencies?: Partial<AcquireNextDependencies>;
 }
 export interface AcquireSelectedEngineerTaskOptions extends Omit<AcquireNextScheduledEngineerTaskOptions, 'filters' | 'max_selection_attempts'> {
@@ -83,7 +77,7 @@ export interface AcquireNextDependencies {
   readonly now: () => number;
   readonly withLock: <T>(repoRoot: string, key: string, run: () => T) => T;
 }
-export interface AcquisitionRequestV2 {
+interface AcquisitionRequestV2 {
   readonly protocol: 2;
   readonly operation: 'auto' | 'selected';
   readonly key_sha256: string;
@@ -152,21 +146,6 @@ function closedAssertion(value: ScheduledEngineerAcquireAssertionV1): ScheduledE
     } else if (typeof item !== 'string' || !item.length || item.length > 512) throw new Error(`selected ${key} is invalid`);
   }
   return Object.freeze({ ...value });
-}
-function policyFor(options: AcquireNextScheduledEngineerTaskOptions): AcquisitionPolicy {
-  const policy = options.admission_policy ?? PLAIN_ACQUISITION_POLICY_R1;
-  assertMessageExactKeys(policy as unknown as Record<string, unknown>, ['policy_id','policy_revision','scope'], 'acquisition policy', message => { throw new Error(message); });
-  if (!['engineer/plain','engineer/campaign'].includes(policy.policy_id)) throw new Error('unsupported trusted acquisition policy');
-  if (policy.policy_id === 'engineer/plain') {
-    if (policy.policy_revision !== 'R1' || policy.scope !== null || options.accept_acquired || options.before_acquire) throw new Error('plain acquisition cannot carry a campaign callback or guard');
-  } else {
-    if (policy.policy_revision !== 'R2' || !policy.scope || typeof options.accept_acquired !== 'function' || typeof options.before_acquire !== 'function') throw new Error('campaign acquisition requires its trusted R2 scope, owner guard and callback');
-    assertMessageExactKeys(policy.scope, ['campaign_id','group_number','intent_sha256','manifest_sha256','authorization_revision','parent_host','parent_session'], 'campaign acquisition scope', message => { throw new Error(message); });
-    for (const [key, value] of Object.entries(policy.scope)) {
-      if (key === 'group_number' ? !Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > 3 : typeof value !== 'string' || !value.length || value.length > 512) throw new Error('campaign acquisition scope is invalid');
-    }
-  }
-  return Object.freeze({ ...policy, scope: policy.scope === null ? null : Object.freeze({ ...policy.scope }) });
 }
 function acquisitionDependencies(options: AcquireNextScheduledEngineerTaskOptions): AcquireNextDependencies {
   return { collectOffers: collectEngineerOffers, acquire: acquireScheduledEngineerTask, now: Date.now,
@@ -288,20 +267,6 @@ export function requireAcquisitionLedgerV2(repoRoot: string): void {
     writeReceipt(sealPath(repoRoot), { ...basis, seal_sha256: digest(basis) });
   });
 }
-/** The outer budget owner checks inner key state before reserving. This reads v2 only and never replays an effect. */
-export function requireFreshAcquisitionBudgetAdmission(repoRoot: string, request: AcquisitionRequestV2): void {
-  if (request.repository !== resolveGitCommonDirectory(repoRoot) || !/^sha256:[a-f0-9]{64}$/.test(request.key_sha256)) throw new Error('inner acquisition request identity is invalid');
-  requireAcquisitionLedgerV2(repoRoot);
-  const path = join(request.repository, ACQUISITION_STORE, `${request.key_sha256.slice(7)}.json`);
-  if (!storedEntryExists(path)) {
-    if (readSeal(repoRoot).migrated_keys.includes(request.key_sha256.slice(7))) throw new Error('known inner legacy fence is missing; requires reconciliation');
-    return;
-  }
-  const receipt = readReceipt(path);
-  if (receipt.state === 'fenced' || receipt.request_sha256 !== digest(request)) throw new Error('inner acquisition key conflict before budget reservation');
-  throw new Error('inner acquisition has no matching outer outcome; requires reconciliation before budget reservation');
-}
-
 function eligible(offer: EngineerOfferV1, filters: AcquireNextFiltersV1): boolean {
   return (filters.capability_id === undefined || offer.primary_capability === filters.capability_id)
     && (filters.minimum_priority === undefined || offer.priority >= filters.minimum_priority)
@@ -309,9 +274,6 @@ function eligible(offer: EngineerOfferV1, filters: AcquireNextFiltersV1): boolea
 }
 function selectionMayBeRetried(result: AcquireNextScheduledEngineerTaskResult): boolean {
   return !result.ok && (result.error === 'engineer_offer_stale' || (result.error === 'fleet_acquire_failed' && result.fleet?.ok === false && result.fleet.error === 'fleet_acquire_failed' && result.fleet.fleet?.ok === false && (result.fleet.fleet.error === 'offer_stale' || result.fleet.fleet.error === 'claim_failed')));
-}
-function campaignCapacityBlocked(result: AcquireNextScheduledEngineerTaskResult): boolean {
-  return !result.ok && result.error === 'fleet_acquire_failed' && result.fleet?.ok === false && result.fleet.fleet?.ok === false && result.fleet.fleet.error === 'no_eligible_task' && result.fleet.fleet.reason === 'campaign_capacity_full';
 }
 function runAcquisitionTransaction(options: AcquireNextScheduledEngineerTaskOptions, request: AcquisitionRequestV2, deps: AcquireNextDependencies, perform: (observation: PreparedEngineerObservation | null) => AcquireNextScheduledEngineerTaskResult): AcquireNextScheduledEngineerTaskResult {
   const authorized = deps.resolvePrincipal({ repo_root: options.repo_root, authorization_id: options.principal.auth_subject, env: options.env });
@@ -337,8 +299,7 @@ function runAcquisitionTransaction(options: AcquireNextScheduledEngineerTaskOpti
       dependencies: { now: deps.now, resolvePrincipal: deps.resolvePrincipal },
     });
     writeReceipt(path, buildReceipt(request,'pending',null));
-    let result = perform(observation);
-    if (result.ok && options.accept_acquired) result = options.accept_acquired(result) ?? result;
+    const result = perform(observation);
     const idle = request.operation === 'auto' && !result.ok && result.error === 'engineer_no_eligible_offer';
     if (idle) {
       // A determinate no-effect poll remains uncached, under the key lock, as in the original auto path.
@@ -354,48 +315,33 @@ function requestBasis(options: AcquireNextScheduledEngineerTaskOptions, operatio
   const session = options.session_id ?? null;
   if (session !== null && (typeof session !== 'string' || !session.trim() || session.length > 512)) throw new Error('session identity is invalid');
   return Object.freeze({ protocol: 2, operation, key_sha256: engineerSha256(options.idempotency_key), repository: resolveGitCommonDirectory(options.repo_root), principal: validateEngineerPrincipal(options.principal),
-    session_id: session, policy: policyFor(options), filters, max_selection_attempts: attempts, assertion: selected, observation_ref: observationRef });
+    session_id: session, policy: PLAIN_ACQUISITION_POLICY_R1, filters, max_selection_attempts: attempts, assertion: selected, observation_ref: observationRef });
 }
-/** One identity owner for inner ledger and the campaign budget wrapper. Only trusted server code supplies policy/callback. */
-export function buildAcquisitionRequestIdentity(options: AcquireNextScheduledEngineerTaskOptions | AcquireSelectedEngineerTaskOptions): AcquisitionRequestV2 {
-  if ('assertion' in options) {
-    if (!/^sha256:[a-f0-9]{64}$/.test(options.observation_ref)) throw new Error('selected observation_ref is invalid');
-    return requestBasis(options,'selected',null,null,closedAssertion(options.assertion),options.observation_ref);
-  }
-  const { filters, attempts } = validateOptions(options);
-  return requestBasis(options,'auto',filters,attempts,null,null);
-}
-
 export function acquireNextScheduledEngineerTask(options: AcquireNextScheduledEngineerTaskOptions): AcquireNextScheduledEngineerTaskResult {
   const { attempts, filters } = validateOptions(options), deps = acquisitionDependencies(options);
   const request = requestBasis(options,'auto',filters,attempts,null,null);
   return runAcquisitionTransaction(options,request,deps,() => {
     const observedAt = deps.now();
-    const noEligible = Object.freeze({ ok: false as const, error: 'engineer_no_eligible_offer' as const, message: 'no eligible Engineer offer matches the closed filters and current campaign capacity' });
+    const noEligible = Object.freeze({ ok: false as const, error: 'engineer_no_eligible_offer' as const, message: 'no eligible Engineer offer matches the closed filters' });
     let result: AcquireNextScheduledEngineerTaskResult = noEligible;
-    const fullCandidates = new Set<string>(); let capacityScanLimit: number | undefined;
     for (let index = 0; index < attempts; index += 1) {
       const document = deps.collectOffers({ repo_root: options.repo_root, principal: options.principal, env: options.env, now_ms: observedAt });
-      capacityScanLimit ??= document.offers.length;
-      const selected = document.offers.find(offer => eligible(offer,filters) && !fullCandidates.has(offer.task_id));
+      const selected = document.offers.find(offer => eligible(offer,filters));
       if (!selected) return noEligible;
-      options.before_acquire?.(selected);
       result = deps.acquire({ repo_root: options.repo_root, principal: options.principal, assertion: assertion(selected), session_id: options.session_id, env: options.env, offer_options: { now_ms: observedAt } });
-      if (campaignCapacityBlocked(result)) { fullCandidates.add(selected.task_id); result = noEligible; if (fullCandidates.size >= capacityScanLimit) return result; index -= 1; continue; }
       if (!selectionMayBeRetried(result)) break;
     }
     return result;
   });
 }
 export function acquireSelectedEngineerTask(options: AcquireSelectedEngineerTaskOptions): AcquireNextScheduledEngineerTaskResult {
-  if (Object.keys(options).some(key => !['repo_root','principal','idempotency_key','session_id','env','admission_policy','before_acquire','accept_acquired','dependencies','assertion','observation_ref'].includes(key))) throw new Error('selected request contains an unknown field');
+  if (Object.keys(options).some(key => !['repo_root','principal','idempotency_key','session_id','env','dependencies','assertion','observation_ref'].includes(key))) throw new Error('selected request contains an unknown field');
   if (!/^sha256:[a-f0-9]{64}$/.test(options.observation_ref)) throw new Error('selected observation_ref is invalid');
   const deps = acquisitionDependencies(options), selected = closedAssertion(options.assertion);
   const request = requestBasis(options,'selected',null,null,selected,options.observation_ref);
   return runAcquisitionTransaction(options,request,deps,observation => {
     const matches = observation!.offers.offers.filter(offer => canonicalEngineerJson(assertion(offer)) === canonicalEngineerJson(selected));
     if (matches.length !== 1) return { ok: false, error: 'engineer_offer_stale', message: 'caller assertion is not one exact offer in the trusted snapshot' };
-    options.before_acquire?.(matches[0]!);
     return deps.acquire({ repo_root: options.repo_root, principal: options.principal, assertion: selected,
       session_id: options.session_id, env: options.env, offer_options: { now_ms: observation!.observation.observed_at_ms } });
   });

@@ -333,11 +333,7 @@ function receiptForPointer(repoRoot: string, pointer: CurrentPublicationPointerV
 }
 
 interface PublicationValidationEnvironment {
-  /** Campaign supplies its budget-owned live Provider transport. */
-  readonly fetch_target?: (args: readonly string[]) => void;
   readonly observe_integration?: (repoRoot: string, prNumber: number) => ProviderPullRequestIntegrationV1;
-  /** Persist a consuming transaction proof before the reviewing Lease is released. */
-  readonly before_integration_release?: (result: ReconcilePublicationResult) => void;
   readonly gh_bin?: string;
   readonly git_bin?: string;
   readonly merge_seal_path?: string;
@@ -746,7 +742,6 @@ function fetchProviderTarget(
   targetRef: string,
   publicationId: string,
   gitBin = 'git',
-  fetchTarget?: (args: readonly string[]) => void,
 ): { readonly fetchedOid: string; readonly observationRef: string } {
   if (remote.trim() === '' || remote.startsWith('-') || /[\0\r\n]/u.test(remote)) {
     throw failure('publication_incomplete', 'remote is unsafe');
@@ -759,8 +754,7 @@ function fetchProviderTarget(
   const publicationKey = publicationId.slice('sha256:'.length);
   const temporaryRef = `refs/repo-harness/observations/tmp/${publicationKey}/${randomUUID()}`;
   const fetchArgs = ['fetch', '--no-tags', '--no-write-fetch-head', remote, `+refs/heads/${targetRef}:${temporaryRef}`];
-  if (fetchTarget) fetchTarget(fetchArgs);
-  else gitOutput(repoRoot, gitBin, fetchArgs, `cannot fetch provider target ${remote}/${targetRef}`);
+  gitOutput(repoRoot, gitBin, fetchArgs, `cannot fetch provider target ${remote}/${targetRef}`);
   const fetchedOid = gitOutput(
     repoRoot,
     gitBin,
@@ -919,35 +913,6 @@ export function readPublicationIntegrationObservations(
   return Object.freeze(observations.sort((left, right) => left.observation_id.localeCompare(right.observation_id)));
 }
 
-/** Resume only a release whose exact immutable observation was already persisted here. */
-export function resumePublicationIntegrationRelease(input: {
-  readonly repo_root: string; readonly task_id: string; readonly expected_claim_id: string;
-  readonly expected_generation: number; readonly publication_id: string; readonly expected_head_sha: string;
-  readonly evidence: PublicationIntegrationObservationV1; readonly authorization_fence: () => void;
-}): void {
-  withTaskLock(input.repo_root, input.task_id, () => {
-    const evidence = validatePublicationIntegrationObservation(input.evidence);
-    const bytes = `${canonicalPublicationIntegrationObservationBytes(evidence)}\n`;
-    if (readFileSync(integrationObservationPath(input.repo_root, evidence), 'utf8') !== bytes
-      || evidence.task_id !== input.task_id || evidence.claim_id !== input.expected_claim_id
-      || evidence.generation !== input.expected_generation || evidence.publication_id !== input.publication_id
-      || evidence.head_sha !== input.expected_head_sha) throw failure('publication_pointer_mismatch', 'release proof differs from persisted integration');
-    const lease = readLease(input.repo_root, input.task_id);
-    if (lease.classification === 'available') return;
-    const record = currentReviewingRecord(input.repo_root, input.task_id);
-    const pointer = record.current_publication;
-    assertLeaseMatchesReceipt(record, receiptForPointer(input.repo_root, pointer), pointer);
-    if (record.claim_id !== evidence.claim_id || record.generation !== evidence.generation
-      || record.task_revision !== evidence.task_revision || pointer.publication_id !== evidence.publication_id
-      || pointer.receipt_sha256 !== evidence.receipt_sha256 || pointer.head_sha !== evidence.head_sha) {
-      throw failure('publication_claim_mismatch', 'remaining reviewing Lease differs from persisted integration');
-    }
-    assertCanonicalCompletedAt(input.repo_root, record, evidence.fetched_target_oid);
-    input.authorization_fence();
-    removeLease(input.repo_root, input.task_id, input.expected_claim_id);
-  });
-}
-
 /** Provider-OID-fenced closeout for one exact reviewing publication. */
 export function reconcilePublication(input: ReconcilePublicationInput): ReconcilePublicationResult {
   try {
@@ -969,7 +934,6 @@ export function reconcilePublication(input: ReconcilePublicationInput): Reconcil
       initialLive.receipt.target_ref,
       initialLive.receipt.publication_id,
       input.git_bin ?? 'git',
-      input.fetch_target,
     );
     const mergeMode = classifyPublicationMerge(input.repo_root, initialLive.receipt.head_sha, fetched.fetchedOid);
 
@@ -1040,7 +1004,6 @@ export function reconcilePublication(input: ReconcilePublicationInput): Reconcil
         observation_ref: fetched.observationRef,
         evidence,
       });
-      input.before_integration_release?.(result);
       removeLease(input.repo_root, input.task_id, input.expected_claim_id);
       return result;
     });

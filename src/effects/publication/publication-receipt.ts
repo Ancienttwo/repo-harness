@@ -242,7 +242,7 @@ export function observeProviderPullRequestState(
   }
 }
 
-/** Shared decoder for the CLI and budget-owned Campaign transport observations. */
+/** Decoder for provider integration observations. */
 export function providerIntegrationFromJson(
   providerRepoId: string, value: unknown, prNumber: number,
 ): ProviderPullRequestIntegrationV1 {
