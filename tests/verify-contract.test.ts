@@ -36,7 +36,7 @@ describe('explicit verification owner',()=>{
   });
 });
 
-test('campaign metadata preflight validates canonical task inputs without executing their commands',()=>{
+test('task metadata preflight validates canonical task inputs without executing their commands',()=>{
   const root=fixture(); try {
     mkdirSync(join(root,'tasks/reviews'),{recursive:true});
     writeFileSync(join(root,'tasks/reviews/task.md'),'# task input\n');

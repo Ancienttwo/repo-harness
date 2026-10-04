@@ -1,4 +1,3 @@
-import { campaignAttemptResultInstruction } from "../scripts/contract-run";
 import { describe, expect, test } from "bun:test";
 import {
   chmodSync,
@@ -1449,17 +1448,4 @@ describe("contract-run helper", () => {
       }
     }, 30_000);
   });
-});
-
-
-test("campaign result output authority names only the current runner-owned file", () => {
-  for (const path of [".ai/harness/runs/one/campaign-attempt-result.json", ".ai/harness/runs/two/campaign-attempt-result.json"]) {
-    const instruction = campaignAttemptResultInstruction(path);
-    expect(instruction).toContain(`explicitly authorizes writing only ${path},`);
-    expect(instruction).toContain("Even when blocked, write this file before returning");
-    expect(instruction).toContain("Select exactly one outcome supported by observed evidence");
-    expect(instruction).toContain("This authorizes no other file outside Writable paths");
-    expect(instruction).not.toContain("tasks/notes/");
-    expect(instruction.match(/campaign-attempt-result\.json/g)).toHaveLength(1);
-  }
 });

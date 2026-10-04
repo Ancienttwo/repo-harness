@@ -245,7 +245,7 @@ interface AuthoritySource {
  * `*_PROTOCOL` and is *not* listed here are frozen in
  * `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`,
  * section 「納入判據與排除清單」. Adding or removing a module here without
- * moving that section is a silent re-baseline.
+ * moving that section is a silent re-baseline. Retired modules leave this inventory.
  *
  * The closed scan C0 deferred lives below in `C1 closed inclusion scan`: it
  * sweeps `src/core/**` for `*_PROTOCOL` exports and asserts the result equals
@@ -339,22 +339,12 @@ interface ExcludedModule {
  * `*_PROTOCOL` and is not an authority source appears here with the clause it
  * fails, so "not inventoried" is always an adjudication rather than an omission.
  *
- * The first ten rows are the hand adjudication C0 froze in
+ * The original rows are the hand adjudication C0 froze in
  * `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`,
  * section 「納入判據與排除清單」. Moving a row here without moving that section
- * is a silent re-baseline.
+ * is a silent re-baseline. Retired modules leave this inventory.
  */
 const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
-  {
-    module: 'src/core/automation/connector-challenge.ts',
-    fails: ['C-1'],
-    evidence: 'exact-content readback evidence for campaign intake; owns no Task/Claim, Lease, Publication, Acceptance, or Delegation wire identity',
-  },
-  {
-    module: 'src/core/automation/issue-batch-adoption.ts',
-    fails: ['C-1'],
-    evidence: 'campaign intake projection, like WorkDemand; downstream scheduling consumes canonical Sprint and WorkGraph authorities, never the adoption receipt as Task/Claim or delivery publication authority',
-  },
   {
     module: 'src/core/automation/controller.ts',
     fails: ['C-1', 'C-2'],
@@ -373,16 +363,6 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     module: 'src/core/automation/budget.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
-  },
-  {
-    module: 'src/core/automation/campaign-planning.ts',
-    fails: ['C-1'],
-    evidence: 'local planning evidence plane: binds the authorized host handoff and declared repair scope; existing TaskOffer, external-source binding, Claim and Lease own all execution readiness and acquisition authority',
-  },
-  {
-    module: 'src/core/automation/campaign-authoring-budget.ts',
-    fails: ['C-1'],
-    evidence: 'automation cost evidence plane: seals campaign authoring reservations and usage in the existing budget ledger for BRC6 consumption; it owns no Task/Claim, Lease, Publication, Acceptance, or Delegation wire identity',
   },
   {
     module: 'src/core/state/lease-liveness.ts',

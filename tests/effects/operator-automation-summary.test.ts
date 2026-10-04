@@ -6,14 +6,12 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as locks from '../../src/effects/locking/exclusive-directory-lock';
-import { buildAutomationBudget, sealAutomationMetricSupport, sealProgramAuthorization, type ProgramAuthorizationCampaignV1 } from '../../src/core/automation/budget';
+import { buildAutomationBudget, sealAutomationMetricSupport, sealProgramAuthorization } from '../../src/core/automation/budget';
 import { buildAutomationControllerRun } from '../../src/core/automation/controller';
-import { buildDevelopmentCampaignDefinition } from '../../src/core/automation/development-campaign';
 import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
 import { publishAutomationBudget, readAutomationBudgetBoardSlice } from '../../src/effects/automation/budget-store';
 import { startAutomationControllerRun } from '../../src/effects/automation/controller-store';
-import { createDevelopmentCampaign } from '../../src/effects/automation/development-campaign-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { automationSummaryReaders, readOperatorAutomationSummary } from '../../src/effects/operator/automation-summary';
 import { decodeOperatorAutomationSummary } from '../../src/core/operator/automation-summary';
@@ -42,18 +40,13 @@ function fixture(populated = true) {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore','pipe','pipe'] }).trim();
   git('init','-q','-b','main');git('config','user.email','fixture@example.com');git('config','user.name','Fixture');
   mkdirSync(join(root,'.ai/harness'),{recursive:true});
-  writeFileSync(join(root,'.ai/harness/policy.json'),JSON.stringify({
-    development_campaign: { version:1,mode:'shadow',limits:{maximum_group_count:1,maximum_issues_per_group:2,maximum_parallel_tasks:2} },
-    external_sources: { version:1,mode:'manual',github:{enabled:true,repository:'acme/widgets',selection:{kind:'labels',labels_all:['campaign'],assignees_any:[]},limits:{max_pages:1,max_issues:2,max_body_bytes:1024,max_total_bytes:4096,deadline_ms:1000}} },
-  }));
+  writeFileSync(join(root,'.ai/harness/policy.json'),'{}');
   git('add','.');git('commit','-qm','fixture');
   const id = repoHarnessRepoIdFor(root), env = { ...process.env, REPO_HARNESS_HOME:home }, at = new Date().toISOString();
   writeFileSync(join(home,'registered-repos.json'),JSON.stringify({version:1,authorizationRevision:1,repos:[{id,path:root,accessMode:'read_only',source:'manual',registeredAt:at,lastSeenAt:at}]}));
-  const campaign: ProgramAuthorizationCampaignV1 = { campaign_id:'campaign-1',group_count:1,issues_per_group:2,allowed_issue_kinds:['bugfix','test_gap'],max_parallel_tasks:2,
-    transient_retry:{max_consecutive_failures:3,initial_backoff_ms:1,maximum_backoff_ms:4},issue_author:'gpt_pro',local_parent_host:'codex',chrome_profile_directory:'PRIVATE_PROFILE',max_authoring_rounds_per_group:5,max_controller_steps:100,max_provider_calls:100,require_fresh_main_audit:true };
   const grant = sealProgramAuthorization({authorization_id:'authorization-1',repository_id:id,target_ref:'refs/heads/main',target_revision:git('rev-parse','HEAD'),work_graph_revision:hex('graph'),
-    allowed_work_package_ids:['campaign-1'],allowed_risk_tiers:['low'],merge_mode:'manual',allowed_merge_method:'squash',max_repair_cycles:2,budget:limits,contract_scope:'contract_less',contract_path:null,
-    campaign,issued_by:'owner',issued_at:at,expires_at:new Date(Date.now()+3600000).toISOString()});
+    allowed_work_package_ids:['work-package-1'],allowed_risk_tiers:['low'],merge_mode:'manual',allowed_merge_method:'squash',max_repair_cycles:2,budget:limits,contract_scope:'contract_less',contract_path:null,
+    issued_by:'owner',issued_at:at,expires_at:new Date(Date.now()+3600000).toISOString()});
   const budget = buildAutomationBudget({automation_run_id:hex('run'),goal_id:hex('goal'),goal_revision:hex('goal-revision'),repository_id:id,engineer_id:null,claim_id:null,
     authorization:grant,contract_sha256:null,contract_limits:null,metric_support:sealAutomationMetricSupport({provider:'codex',capability_sha256:hex('capability'),verified_metrics:[],observed_at:at}),
     unattended:true,created_by:'owner',created_at:at,supersedes_sha256:null,revision:1});
@@ -66,8 +59,6 @@ function fixture(populated = true) {
     mintProgramAuthorization({repo_root:root,authorization:grant,env});
     publishAutomationBudget({repo_root:root,budget,env});
     startAutomationControllerRun({repo_root:root,run,idempotency_key:'start',observed_at:at});
-    createDevelopmentCampaign({repo_root:root,campaign:buildDevelopmentCampaignDefinition({campaign_id:campaign.campaign_id,authorization_id:grant.authorization_id,
-      authorization_sha256:grant.authorization_sha256,repository_id:id,target_ref:grant.target_ref,target_revision:grant.target_revision,created_at:at}),idempotency_key:'create',env});
   }
   return {base,root,home,id,env,grant,budget,run,input:{repository_id:id,env}};
 }
@@ -91,30 +82,27 @@ describe('original automation observation', () => {
     } finally { await server.close(); rmSync(f.base,{recursive:true,force:true}); }
   });
 
-  test('reads real grant/budget/controller/Campaign records without locks or changed bytes', () => {
+  test('reads real grant/budget/controller records without locks or changed bytes', () => {
     const f = fixture();
     try {
       const before = files(f.base); denyLocks = true;
       const value = readOperatorAutomationSummary(f.input);
-      expect([value.policy.status,value.grants.status,value.budgets.status,value.controllers.status,value.campaigns.status]).toEqual(['known','known','known','known','known']);
+      expect([value.grants.status,value.budgets.status,value.controllers.status]).toEqual(['known','known','known']);
       expect(value.grants.records[0]).toMatchObject({authorization_sha256:f.grant.authorization_sha256,expires_at:f.grant.expires_at,contract_scope:'contract_less'});
       expect(value.budgets.records[0]?.metrics).toEqual(readAutomationBudgetBoardSlice(f.root,f.budget.automation_run_id,f.env).metrics);
       expect(value.controllers.records[0]).toMatchObject({run_sha256:f.run.run_sha256,operation:'start',state:'created'});
-      expect(value.campaigns.records[0]).toMatchObject({authorization_sha256:f.grant.authorization_sha256,operation:'authorize',typed_reason_status:'unavailable'});
       expect(value.native_execution).toEqual({status:'unavailable',reason:'native_admission_authority_unavailable',turn_ref:null});
       expect(JSON.stringify(value)).not.toContain('PRIVATE_');expect(JSON.stringify(value)).not.toContain(f.root);
       expect(files(f.base)).toEqual(before);
     } finally { denyLocks=false;rmSync(f.base,{recursive:true,force:true}); }
   });
 
-  test('missing records and unavailable policy stay distinct, with no fabricated default mode', () => {
+  test('missing records stay missing, with no fabricated defaults', () => {
     const f = fixture(false);
     try {
       const value=readOperatorAutomationSummary(f.input);expect(value.grants.status).toBe('missing');expect(value.controllers.status).toBe('missing');
       mintProgramAuthorization({repo_root:f.root,authorization:f.grant,env:f.env});
-      expect(readOperatorAutomationSummary(f.input).campaigns.status).toBe('missing');
-      writeFileSync(join(f.root,'.ai/harness/policy.json'),'broken');
-      const failed=readOperatorAutomationSummary(f.input);expect(failed.policy).toMatchObject({status:'unavailable',records:[]});expect(failed.budgets.status).toBe('missing');
+      const failed=readOperatorAutomationSummary(f.input);expect(failed.budgets.status).toBe('missing');
     } finally {rmSync(f.base,{recursive:true,force:true});}
   });
 
@@ -122,7 +110,7 @@ describe('original automation observation', () => {
     const f=fixture();
     try {
       const wrong=readOperatorAutomationSummary(f.input,{...automationSummaryReaders,grant:(...args)=>({...automationSummaryReaders.grant(...args),repository_id:'another-repo'})});
-      expect(wrong.grants.status).toBe('unavailable');expect(wrong.controllers.status).toBe('known');expect(wrong.campaigns.status).toBe('unavailable');
+      expect(wrong.grants.status).toBe('unavailable');expect(wrong.controllers.status).toBe('known');
       const changed=readOperatorAutomationSummary(f.input,{...automationSummaryReaders,head:(...args)=>({...automationSummaryReaders.head(...args),event_sha256:`sha256:${hex('wrong')}`})});
       expect(changed.controllers.status).toBe('unavailable');expect(changed.grants.status).toBe('known');
       const limit=readOperatorAutomationSummary(f.input,{...automationSummaryReaders,grant_ids:()=>Array(65).fill(hex('grant'))});

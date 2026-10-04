@@ -478,7 +478,7 @@ describe('repository snapshot transport', () => {
 function automationFixture(repositoryId: string) {
   const source = { status: 'missing' as const, observed_at: '2026-09-22T00:00:00.000Z', reason: null, records: [] };
   return { protocol: 1 as const, repository_id: repositoryId, consistency: 'observed' as const, observed_at: source.observed_at,
-    policy: source, grants: source, budgets: source, controllers: source, campaigns: source,
+    grants: source, budgets: source, controllers: source,
     native_execution: { status: 'unavailable' as const, reason: 'native_admission_authority_unavailable' as const, turn_ref: null },
   };
 }

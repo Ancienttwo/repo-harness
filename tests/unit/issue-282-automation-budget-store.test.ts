@@ -49,6 +49,7 @@ import {
   type ReconcileAutomationReservationInput,
   type ReserveAutomationBudgetInput,
   readAutomationBudget,
+  listAutomationBudgetRuns,
   repairAutomationBudgetDrift,
 } from '../../src/effects/automation/budget-store';
 import type { AutomationBudgetStatusV1 } from '../../src/effects/automation/budget-store';
@@ -176,7 +177,7 @@ function makeBudget(options: BudgetOptions): AutomationBudgetV1 {
       max_repair_cycles: limits.max_repair_cycles,
       budget: limits,
       contract_scope: options.contract === undefined ? 'contract_less' : 'task_contract',
-      contract_path: options.contract?.path ?? null, campaign: null,
+      contract_path: options.contract?.path ?? null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',
@@ -1081,6 +1082,38 @@ describe('issue #282 — grants are anchored in the harness home', () => {
     expect(mintProgramAuthorization({ repo_root: repo, authorization: budget.authorization })).toBe(path);
     expect(listStoredProgramAuthorizations(repo)).toEqual([budget.authorization.authorization_sha256]);
     expect(publishAutomationBudget({ repo_root: repo, budget }).current.state).toBe('active');
+  });
+
+  test('discovery ignores unsupported grant protocols and keeps current grants', () => {
+    const repo = repoFixture();
+    const current = makeBudget({ run: 'discovery-current' });
+    const retired = makeBudget({ run: 'discovery-unsupported' });
+    publishBudget(repo, current);
+    publishBudget(repo, retired);
+    const retiredGrantPath = mintProgramAuthorization({ repo_root: repo, authorization: retired.authorization });
+    const retiredGrant = { ...retired.authorization, protocol: 1 };
+    writeFileSync(retiredGrantPath, `${canonicalAutomationJson(retiredGrant)}\n`);
+    const retiredBudgetPath = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'budgets', `${retired.budget_sha256}.json`);
+    const retiredBytes = `${canonicalAutomationJson({ ...retired, authorization: retiredGrant })}\n`;
+    writeFileSync(retiredBudgetPath, retiredBytes);
+    expect(listStoredProgramAuthorizations(repo)).toEqual([current.authorization.authorization_sha256]);
+    expect(listAutomationBudgetRuns(repo)).toEqual([current.automation_run_id]);
+    expect(readAutomationBudgetBoardSlice(repo, current.automation_run_id).state).toBe('active');
+    expect(readFileSync(retiredBudgetPath, 'utf8')).toBe(retiredBytes);
+    expect(() => readAutomationBudgetStatus(repo, retired.automation_run_id)).toThrow(/fields are invalid|protocol is unsupported/u);
+  });
+
+  test('discovery fails closed on an extra field in the current grant protocol', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'discovery-invalid-current' });
+    publishBudget(repo, budget);
+    const malformed = { ...budget.authorization, unknown_authority: true };
+    const grantPath = mintProgramAuthorization({ repo_root: repo, authorization: budget.authorization });
+    writeFileSync(grantPath, `${canonicalAutomationJson(malformed)}\n`);
+    expect(() => listStoredProgramAuthorizations(repo)).toThrow(/program authorization fields are invalid/u);
+    const budgetPath = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'budgets', `${budget.budget_sha256}.json`);
+    writeFileSync(budgetPath, `${canonicalAutomationJson({ ...budget, authorization: malformed })}\n`);
+    expect(() => listAutomationBudgetRuns(repo)).toThrow(/program authorization fields are invalid/u);
   });
 
   test('tampered stored grant bytes are refused', () => {

@@ -328,11 +328,11 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 12 repo-owned entries plus the 8 external skills (20 packages)", () => {
+  test("covers all 11 repo-owned entries plus the 8 external skills (19 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(20);
+    expect(resolution.catalog.packages.length).toBe(19);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(12);
+    expect(repoOwned.length).toBe(11);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
@@ -414,7 +414,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     ]);
     expect(facadesForProfile(catalog, "full")).toEqual([
       "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-ship",
-      "obsidian-memory", "auto-campaign",
+      "obsidian-memory",
     ]);
   });
 
@@ -529,7 +529,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
       "repo-harness", "repo-harness-check", "repo-harness-test", "repo-harness-product",
-      "repo-harness-ship", "obsidian-memory", "auto-campaign",
+      "repo-harness-ship", "obsidian-memory",
     ]);
     expect(externalSkills).toEqual([
       "repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
@@ -548,7 +548,6 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(expectations.planningSkillNames).toEqual(["think", "hunt", "check", "health", "mermaid"]);
     expect(expectations.planningCapabilityPaths).toEqual([
       "assets/skills/repo-harness-product/SKILL.md",
-      "assets/skills/auto-campaign/SKILL.md",
     ]);
     expect(expectations.crossModel).toEqual(["repo-harness-cross-review"]);
   });
@@ -574,9 +573,9 @@ describe("skill-surface catalog: explicit-only projection onto host-native switc
     return existsSync(path) && /^\s*allow_implicit_invocation:\s*false\s*$/m.test(readFileSync(path, "utf-8"));
   }
 
-  test("the explicit-only set is exactly auto-campaign, repo-harness-ship and obsidian-memory", () => {
+  test("the explicit-only set is exactly repo-harness-ship and obsidian-memory", () => {
     expect(facades.filter((pkg) => pkg.discoverability === "explicit-only").map((pkg) => pkg.name).sort()).toEqual([
-      "auto-campaign", "obsidian-memory", "repo-harness-ship",
+      "obsidian-memory", "repo-harness-ship",
     ]);
   });
 
@@ -590,7 +589,7 @@ describe("skill-surface catalog: explicit-only projection onto host-native switc
 
   test("explicit-only facades stay installed: facade selection filters kind and profile, never discoverability", () => {
     expect(facadesForProfile(catalog, "minimal")).toContain("obsidian-memory");
-    for (const name of ["auto-campaign", "repo-harness-ship", "obsidian-memory"]) expect(facadesForProfile(catalog, "full")).toContain(name);
+    for (const name of ["repo-harness-ship", "obsidian-memory"]) expect(facadesForProfile(catalog, "full")).toContain(name);
   });
 });
 
@@ -627,7 +626,7 @@ test("audience source selection returns disjoint complete load groups and reject
   const lines = (body: string) => body.trim().split("\n");
   expect(lines(bot.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
-    "obsidian-memory", "auto-campaign", "repo-harness-cross-review", "repo-harness-chatgpt",
+    "obsidian-memory", "repo-harness-cross-review", "repo-harness-chatgpt",
   ]);
   expect(lines(worker.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness-setup", "repo-harness-test", "repo-harness-architecture",

@@ -1,4 +1,3 @@
-import { CampaignCapacityError } from '../src/effects/automation/campaign-capacity';
 /**
  * Real filesystem proof for WP2's token publication seam. A token remains a
  * worktree-local capability, so its writer must prove the shared lease while
@@ -554,7 +553,6 @@ function buildEffectDependencies(
     readonly tokenError?: Error;
     readonly claimRace?: boolean;
     readonly authorizationStaleAfterClaim?: boolean;
-    readonly campaignStaleAt?: number;
   } = {},
 ): { readonly dependencies: Partial<FleetAcquireDependencies>; readonly calls: string[]; readonly released: string[] } {
   const fixture = effectFixture();
@@ -563,7 +561,6 @@ function buildEffectDependencies(
   let lease: LeaseOwnerRecord | null = fixture.claimed;
   let claimAttempts = 0;
   let registryReads = 0;
-  let campaignReads = 0;
   const dependencies: Partial<FleetAcquireDependencies> = {
     preflight: (repoPath) => { calls.push(repoPath === EFFECT_WORKTREE ? 'worktree-preflight' : 'preflight'); },
     collectOffers: (() => {
@@ -609,13 +606,6 @@ function buildEffectDependencies(
       calls.push('proof');
       return { ok: true, proof: { ...fixture.proof, projectable: true as const } };
     }) as FleetAcquireDependencies['readPlanProof'],
-    withCampaignCapacity: (_root, _task, _target, _env, claim) => claim(),
-    campaignPlanProof: ((_root, _task, _revision, proof) => {
-      campaignReads++;
-      return campaignReads === options.campaignStaleAt
-        ? { ok: false, code: 'plan_not_projectable', error: 'source drift', candidates: [] }
-        : proof;
-    }),
     bind: (() => {
       calls.push('bind');
       lease = {
@@ -721,45 +711,4 @@ describe('fleet acquire mutation orchestration', () => {
     expect(fixture.released).toEqual(['claim-effect']);
     expect(fixture.calls).not.toContain('bind');
   });
-});
-
-test.each([1, 2])('campaign source drift at post-claim authority check %i releases ownership before projection', check => {
-  const fixture = buildEffectDependencies({ campaignStaleAt: check });
-  const result = acquireFleetTask({ dependencies: fixture.dependencies, session_id: 'effect-session' });
-  expect(result).toMatchObject({ ok: false, error: 'offer_stale' });
-  expect(fixture.released).toEqual(['claim-effect']);
-  expect(fixture.calls).not.toContain('project');
-  expect(fixture.calls.includes('token')).toBe(check === 2);
-});
-
-
-test('common Fleet capacity admission refuses before the existing claim boundary', () => {
-  const fixture = buildEffectDependencies();
-  const result = acquireFleetTask({ dependencies: { ...fixture.dependencies,
-    withCampaignCapacity: () => { throw new CampaignCapacityError('campaign_capacity_full', 'campaign is full'); },
-  } });
-  expect(result).toMatchObject({ ok: false, error: 'no_eligible_task' });
-  expect(fixture.calls).not.toContain('claim');
-  expect(fixture.calls).not.toContain('start');
-});
-
-test('unasserted Fleet acquisition skips a full campaign and preserves later ready work', () => {
-  const fixture = buildEffectDependencies();
-  const ready = effectFixture();
-  const blocked = ['a', 'b', 'c', 'd'].map(id => ({ ...ready.offer, task_id: id.repeat(64) }));
-  const visited: string[] = [];
-  const dependencies: Partial<FleetAcquireDependencies> = { ...fixture.dependencies,
-    collectOffers: () => ({ ...ready.document, offers: [...blocked, ready.offer] }),
-    withCampaignCapacity: (_root, task, _target, _env, claim) => {
-      visited.push(task);
-      if (blocked.some(offer => task === offer.task_id)) throw new CampaignCapacityError('campaign_capacity_full', 'campaign is full');
-      return claim();
-    },
-  };
-  expect(acquireFleetTask({ dependencies })).toMatchObject({ ok: true, envelope: { task_id: ready.taskId } });
-  expect(visited).toEqual([...blocked.map(offer => offer.task_id), ready.taskId]);
-  expect(fixture.calls.filter(call => call === 'claim')).toHaveLength(1);
-  visited.length = 0;
-  expect(acquireFleetTask({ dependencies, assertion: { task_id: blocked[0]!.task_id } })).toMatchObject({ ok: false, error: 'no_eligible_task', reason: 'campaign_capacity_full' });
-  expect(visited).toEqual([blocked[0]!.task_id]);
 });
