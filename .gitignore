@@ -4,6 +4,9 @@ node_modules/
 # Test coverage
 coverage/
 
+# HOME isolation test scratch
+/.home-iso-unsafe-*/
+
 # Notification test workspaces
 /.notify-workspace-*/
 

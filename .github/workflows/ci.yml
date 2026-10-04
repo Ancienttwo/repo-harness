@@ -183,6 +183,7 @@ jobs:
       - name: Run the native path tests
         shell: bash
         env:
+          BUN_TEST_MAX_CONCURRENCY: '1'
           REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: '1'
         run: |
           source scripts/lib/ci-run-tests.sh
