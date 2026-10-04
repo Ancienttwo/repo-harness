@@ -63,8 +63,8 @@ function NotifyFacts({ status, t }: { readonly status: NotifyStatusV1; readonly 
       <div>
         <dt>{t('notify.lastDelivery')}</dt>
         <dd>
-          {status.last_delivery.at ? <time dateTime={status.last_delivery.at}>{status.last_delivery.at}</time> : t('notify.delivery.missing')}
-          {status.last_delivery.result !== 'missing' && <span>{t(`notify.delivery.${status.last_delivery.result}`)}</span>}
+          {status.last_delivery.at && <time dateTime={status.last_delivery.at}>{status.last_delivery.at}</time>}
+          <span>{t(`notify.delivery.${status.last_delivery.result}`)}</span>
         </dd>
       </div>
     </dl>

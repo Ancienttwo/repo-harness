@@ -5,7 +5,7 @@ export type NotifyConfigKey = typeof NOTIFY_STATUS_KEYS[number];
 export type NotifyPresence = 'configured' | 'missing';
 export type NotifyLinkState = 'linked' | 'missing';
 export type NotifyEnableState = 'enabled' | 'disabled' | 'missing';
-export type NotifyDeliveryState = 'succeeded' | 'failed' | 'missing';
+export type NotifyDeliveryState = 'succeeded' | 'failed' | 'unsupported' | 'unavailable' | 'missing';
 
 export interface NotifyDeliveryV1 {
   readonly at: string | null;
@@ -26,7 +26,7 @@ export interface NotifyStatusV1 {
 const PRESENCE = new Set<NotifyPresence>(['configured', 'missing']);
 const LINK = new Set<NotifyLinkState>(['linked', 'missing']);
 const ENABLE = new Set<NotifyEnableState>(['enabled', 'disabled', 'missing']);
-const DELIVERY = new Set<NotifyDeliveryState>(['succeeded', 'failed', 'missing']);
+const DELIVERY = new Set<NotifyDeliveryState>(['succeeded', 'failed', 'unsupported', 'unavailable', 'missing']);
 
 export function decodeNotifyStatus(value: unknown): NotifyStatusV1 {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('notify_status_invalid');

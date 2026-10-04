@@ -657,6 +657,8 @@ const en = {
   'notify.delivery.succeeded': 'succeeded',
   'notify.delivery.failed': 'failed',
   'notify.delivery.missing': 'no delivery recorded',
+  'notify.delivery.unsupported': 'log format not supported',
+  'notify.delivery.unavailable': 'delivery log unavailable',
 
   'error.untranslated': 'untranslated server message',
   'loading.boardLabel': 'Loading Fleet board',
@@ -1305,6 +1307,8 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'notify.delivery.succeeded': '成功',
   'notify.delivery.failed': '失败',
   'notify.delivery.missing': '没有投递记录',
+  'notify.delivery.unsupported': '日志格式不支持',
+  'notify.delivery.unavailable': '读不到投递日志',
 
   'error.untranslated': '未翻译的服务端消息',
   'loading.boardLabel': '正在加载 Fleet 看板',

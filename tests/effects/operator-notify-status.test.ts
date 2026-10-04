@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -179,5 +179,86 @@ describe('notify plugin status', () => {
       const denied = await fetch(`${server.url}/api/v1/notify/status`, { method: 'POST' });
       expect(denied.status).toBe(405);
     } finally { await server.close(); f.cleanup(); }
+  });
+  test('the 0.1.0 plugin log format is read, and its delivery identities stay out', async () => {
+    const f = fixture();
+    try {
+      // Line shapes copied from a real 0.1.0 install; the identity tokens are placeholders.
+      const legacy = (stderr: string, finished: number) => ({ finished_unix_ms: finished, status: 'succeeded', exit_code: 0, stderr });
+      for (const [stderr, result] of [
+        ['[webhook-notify] POST wA:p4:done -> 200\n', 'succeeded'],
+        ['[webhook-notify] SLACK wA:p4:blocked -> 200\n[webhook-notify] POST wA:p4:blocked -> 200\n', 'succeeded'],
+        ['[webhook-notify] POST wA:p4:done -> 503\n', 'failed'],
+        ['[webhook-notify] POST failed: The operation was aborted due to timeout\n', 'failed'],
+        ['[webhook-notify] SLACK wA:p4:blocked -> 200\n[webhook-notify] POST failed: fetch failed\n', 'failed'],
+      ] as const) {
+        f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+          legacy(stderr, 1_700_000_300_000),
+          legacy('[webhook-notify] debounced wA:p4:done\n', 1_700_000_400_000),
+          legacy('', 1_700_000_500_000),
+        ] } });
+        const status = await readNotifyStatus({ env: f.env });
+        expect(status.last_delivery).toEqual({ at: '2023-11-14T22:18:20.000Z', result });
+        expect(JSON.stringify(status)).not.toContain('wA:p4');
+        expect(JSON.stringify(status)).not.toContain('timeout');
+      }
+    } finally { f.cleanup(); }
+  });
+
+  test('a newest record in an unknown format is unsupported, and an unreadable log is unavailable, never missing', async () => {
+    const f = fixture();
+    try {
+      const known = { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' };
+      const unknown = { status: 'succeeded', stderr: '[webhook-notify] WEBHOOK delivered private-identity ok\n' };
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [known, { ...unknown, finished_unix_ms: 1_700_000_100_000 }] } });
+      const newer = await readNotifyStatus({ env: f.env });
+      expect(newer.last_delivery).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
+      expect(JSON.stringify(newer)).not.toContain('private-identity');
+      const markup = renderToStaticMarkup(createElement(NotifyStatusPanel, { initialStatus: newer, t: key => translate('en', key) }));
+      expect(markup).toContain('log format not supported');
+      expect(markup).not.toContain('no delivery recorded');
+      expect(markup).not.toContain('private-identity');
+
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ ...unknown, finished_unix_ms: 1_699_999_000_000 }, known] } });
+      expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'succeeded' });
+
+      f.env.FIXTURE_LOGS = 'not json';
+      const unreadable = await readNotifyStatus({ env: f.env });
+      expect(unreadable.last_delivery).toEqual({ at: null, result: 'unavailable' });
+      expect(renderToStaticMarkup(createElement(NotifyStatusPanel, { initialStatus: unreadable, t: key => translate('en', key) })))
+        .toContain('delivery log unavailable');
+    } finally { f.cleanup(); }
+  });
+
+  test('a Telegram refusal inside HTTP 200 reaches the reader as a failed delivery', async () => {
+    const pluginPath = join(import.meta.dir, '../../assets/herdr/webhook-notify/notify.mjs');
+    const { notify } = await import(pluginPath) as {
+      notify: (env: NodeJS.ProcessEnv, send: typeof fetch) => Promise<void>;
+    };
+    for (const [telegramOk, result] of [[false, 'failed'], [true, 'succeeded']] as const) {
+      const f = fixture();
+      const state = join(f.root, 'state');
+      mkdirSync(state);
+      writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\nNOTIFY_SESSION='notify-test'\nTELEGRAM_BOT_TOKEN='123:token'\nTELEGRAM_CHAT_ID='-42'\n`, { mode: 0o600 });
+      const stderr: string[] = [];
+      const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
+      try {
+        await notify({ ...f.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: f.config, HERDR_PLUGIN_STATE_DIR: state,
+          HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
+          HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/Users/operator/project' }),
+        }, (async (url: string | URL | Request) => new Response(JSON.stringify({ ok: !String(url).includes('telegram.org') || telegramOk }), { status: 200 })) as typeof fetch);
+      } finally { spy.mockRestore(); }
+      try {
+        expect(stderr).toHaveLength(2);
+        f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
+        expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result });
+      } finally { f.cleanup(); }
+    }
+  });
+
+  test('the reader performs no synchronous filesystem or process call on the server request path', async () => {
+    const source = await Bun.file(new URL('../../src/effects/operator/notify-status.ts', import.meta.url)).text();
+    expect(source).not.toMatch(/\b\w+Sync\s*\(/u);
+    expect(source).toContain("from 'node:fs/promises'");
   });
 });

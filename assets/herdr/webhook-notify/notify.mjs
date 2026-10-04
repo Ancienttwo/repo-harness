@@ -82,7 +82,8 @@ export async function notify(env = process.env, send = fetch) {
       });
       let ok = response.ok;
       if (ok && target.channel === 'TELEGRAM') ok = (await response.json()).ok === true;
-      log(`${target.channel}: HTTP ${response.status}`);
+      // Telegram can refuse a message inside an HTTP 200; the log must keep that failure.
+      log(`${target.channel}: HTTP ${response.status}${response.ok && !ok ? ' app-failed' : ''}`);
       if (ok) {
         state[key] = now;
         const temporary = `${statePath}-${randomUUID()}`;
