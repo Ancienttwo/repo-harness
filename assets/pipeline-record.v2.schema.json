@@ -1,0 +1,1216 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "repo-harness.pipeline-record.v2"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_host": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+    },
+    "updated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_bot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "root"
+      ],
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acceptance": {
+          "type": "string"
+        },
+        "source_ref": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "sha256",
+                "host"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "title",
+        "issue",
+        "acceptance",
+        "source_ref"
+      ],
+      "additionalProperties": false
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "plan-review",
+        "implement",
+        "cross-review",
+        "test",
+        "merge-ask",
+        "merged",
+        "cleanup",
+        "blocked",
+        "abandoned"
+      ]
+    },
+    "admission": {
+      "type": "string",
+      "enum": [
+        "gate_qualified",
+        "observed",
+        "attested_only"
+      ]
+    },
+    "phase_since": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+    },
+    "blocked": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "since": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+            },
+            "return_to": {
+              "type": "string",
+              "enum": [
+                "plan",
+                "plan-review",
+                "implement",
+                "cross-review",
+                "test",
+                "merge-ask",
+                "merged",
+                "cleanup",
+                "blocked",
+                "abandoned"
+              ]
+            }
+          },
+          "required": [
+            "reason",
+            "since",
+            "return_to"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/run"
+      }
+    },
+    "counters": {
+      "type": "object",
+      "properties": {
+        "attempts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "infra_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fix_loops": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "review_rounds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "problem_fingerprints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fp": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              "first_seen": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "fp",
+              "first_seen",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "attempts",
+        "infra_retries",
+        "fix_loops",
+        "review_rounds",
+        "problem_fingerprints"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rel": {
+            "type": "string",
+            "enum": [
+              "derived_from",
+              "reviews",
+              "validates",
+              "supersedes"
+            ]
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string",
+                "minLength": 1
+              }
+            ]
+          }
+        },
+        "required": [
+          "rel",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "merge": {
+      "type": "object",
+      "properties": {
+        "phase_entry_facts": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "base_sha": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40,64}$"
+                },
+                "head_sha": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40,64}$"
+                }
+              },
+              "required": [
+                "base_sha",
+                "head_sha"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "at",
+                "digest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner_approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/approval"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external_merge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/mergeFact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "squash_commit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40,64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "merge_seal_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "phase_entry_facts",
+        "ask",
+        "owner_approval",
+        "external_merge",
+        "squash_commit",
+        "merge_seal_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "worktree": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_base": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_base_sha": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40,64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "worktree",
+        "branch",
+        "pr",
+        "pr_base",
+        "pr_base_sha"
+      ],
+      "additionalProperties": false
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observed_at": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "kind",
+          "observed_at",
+          "source",
+          "data"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "flags_attested": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "source_host",
+    "repository_id",
+    "state_version",
+    "created_at",
+    "updated_at",
+    "host",
+    "owner_bot",
+    "repo",
+    "task",
+    "phase",
+    "admission",
+    "phase_since",
+    "blocked",
+    "next_action",
+    "runs",
+    "counters",
+    "evidence",
+    "relations",
+    "merge",
+    "resources",
+    "policy",
+    "observations",
+    "flags_attested"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness.pipeline-record.v2",
+  "$defs": {
+    "subject": {
+      "type": "object",
+      "properties": {
+        "base_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "head_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "tree_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "plan_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "worktree_clean": {
+          "type": "boolean"
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract_identity": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "check_set_identity": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "base_sha",
+        "head_sha",
+        "tree_digest",
+        "plan_revision",
+        "worktree_clean",
+        "environment",
+        "contract_identity",
+        "check_set_identity"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "plan_review",
+            "cross_review",
+            "typecheck",
+            "affected_tests",
+            "full_suite",
+            "cleanup_check"
+          ]
+        },
+        "check_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "attested",
+            "missing"
+          ]
+        },
+        "authority_ref": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "execution_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "report_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "validated_on": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "execution_id",
+                "report_ref",
+                "validated_on"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "request_changes",
+            "incomplete",
+            "blocked"
+          ]
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "execution_order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "produced_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+        },
+        "registered_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+        },
+        "current": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "check_id",
+        "subject",
+        "source",
+        "authority_ref",
+        "verdict",
+        "reviewer",
+        "path",
+        "sha256",
+        "execution_order",
+        "produced_at",
+        "registered_at",
+        "current"
+      ],
+      "additionalProperties": false
+    },
+    "requirement": {
+      "type": "object",
+      "properties": {
+        "requirement": {
+          "const": "required"
+        },
+        "check_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "identity": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "requirement",
+        "check_ids",
+        "identity"
+      ],
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "verification": {
+          "type": "object",
+          "properties": {
+            "check_set_identity": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "check_set_identity",
+            "source",
+            "typecheck",
+            "affected_tests",
+            "full_suite"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/requirement"
+          }
+        },
+        "stall_thresholds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "verification",
+        "stall_thresholds"
+      ],
+      "additionalProperties": false
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": 2
+        },
+        "result_contract": {
+          "type": "object",
+          "properties": {
+            "required_fields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "atomic_write": {
+              "const": "temp_rename"
+            },
+            "submission": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "repo": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "task": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "round": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "command",
+                "repo",
+                "task",
+                "role",
+                "round"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "required_fields",
+            "atomic_write",
+            "submission"
+          ],
+          "additionalProperties": false
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "context_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "result_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "session_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "endpoint": {
+          "type": "object",
+          "properties": {
+            "session": {
+              "type": "string",
+              "minLength": 1
+            },
+            "configPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "home": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "session"
+          ],
+          "additionalProperties": false
+        },
+        "harness_kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pane": {
+          "type": "object",
+          "properties": {
+            "pane_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tab_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workspace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "herdr_session": {
+              "type": "string",
+              "minLength": 1
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "registered_at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+            },
+            "closed_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "pane_id",
+            "tab_id",
+            "workspace_id",
+            "herdr_session",
+            "host",
+            "registered_at",
+            "closed_at"
+          ],
+          "additionalProperties": false
+        },
+        "result_state": {
+          "type": "string",
+          "enum": [
+            "missing",
+            "present_unvalidated",
+            "validated",
+            "applied",
+            "invalid"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "waiting_input",
+            "waiting_approval",
+            "waiting_retry",
+            "verifying",
+            "external_pending",
+            "pending_verification",
+            "crashed_unknown",
+            "ended"
+          ]
+        },
+        "progress": {
+          "type": "object",
+          "properties": {
+            "last_observation_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "note": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "last_observation_at",
+            "note"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol",
+        "result_contract",
+        "task",
+        "role",
+        "round",
+        "request_id",
+        "context_ref",
+        "source_ref",
+        "context_sha256",
+        "result_ref",
+        "source_host",
+        "attempt",
+        "session_ref",
+        "endpoint",
+        "harness_kind",
+        "pane",
+        "result_state",
+        "status",
+        "progress"
+      ],
+      "additionalProperties": false
+    },
+    "approval": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+        },
+        "pr": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "head_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "base_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "tree_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "target_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "merge_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validity": {
+          "const": "exact_candidate"
+        },
+        "attested": {
+          "const": true
+        },
+        "expired": {
+          "type": "boolean"
+        },
+        "expired_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consumed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "channel",
+        "ref",
+        "at",
+        "pr",
+        "head_sha",
+        "base_sha",
+        "tree_digest",
+        "target_branch",
+        "provider",
+        "repository_id",
+        "merge_method",
+        "validity",
+        "attested",
+        "expired",
+        "expired_reason",
+        "consumed_at"
+      ],
+      "additionalProperties": false
+    },
+    "mergeFact": {
+      "type": "object",
+      "properties": {
+        "squash_commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "pre_merge_head": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "pre_merge_base": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "tree_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "attested",
+            "verified"
+          ]
+        },
+        "approval_not_recorded": {
+          "type": "boolean"
+        },
+        "confirmed_deviation": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "squash_commit",
+        "pre_merge_head",
+        "pre_merge_base",
+        "tree_digest",
+        "method",
+        "observed_at",
+        "source",
+        "approval_not_recorded",
+        "confirmed_deviation"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
