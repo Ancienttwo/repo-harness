@@ -92,7 +92,7 @@ describe("herdr runtime pin has one source of truth", () => {
 });
 
 // These fixtures replace only external I/O. They run the shipped command and plugin.
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parseEnv } from 'node:util';
 import { spawnSync } from 'node:child_process';
@@ -101,6 +101,7 @@ import { askMasked } from '../src/cli/commands/herdr';
 
 function notifyFixture() {
   const root = mkdtempSync(join(tmpdir(), 'rh-herdr-notify-'));
+  const workspace = mkdtempSync(join(ROOT, '.notify-workspace-'));
   const home = join(root, 'home');
   const config = join(root, 'config');
   const state = join(root, 'state');
@@ -116,7 +117,10 @@ function notifyFixture() {
   const run = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
     [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'install', '--session', 'notify-test', '--non-interactive', ...args],
     { env: { ...env, ...extra }, encoding: 'utf8', timeout: 20_000 });
-  return { root, home, config, state, env, run, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  return { root, workspace, home, config, state, env, run, cleanup: () => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
+  } };
 }
 
 const botFlags = ['--webhook-url', 'https://bot.example/routine', '--webhook-key', 'fixture-secret-key'];
@@ -152,7 +156,7 @@ describe('Herdr notify install', () => {
       await installedNotify({ ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
         HERDR_PLUGIN_STATE_DIR: fixture.state,
         HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'done' } }),
-        HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/Users/operator/project' }),
+        HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fixture.workspace }),
       }, async (url: string) => { delivered.push(url); return new Response('{"ok":true}'); });
       expect(delivered).toEqual(['https://slack.example/secret']);
       chmodSync(path, 0o644);
@@ -203,6 +207,41 @@ describe('Herdr notify install', () => {
     } finally { fixture.cleanup(); }
   });
 
+  test('a source symlink inserted after lstat cannot overwrite another file', () => {
+    const fixture = notifyFixture();
+    try {
+      const source = join(fixture.config, 'source'); mkdirSync(source);
+      const target = join(source, 'notify.mjs'); writeFileSync(target, 'old source');
+      const victim = join(fixture.home, 'keep'); writeFileSync(victim, 'keep');
+      const marker = join(fixture.root, 'swapped');
+      const driver = join(fixture.root, 'race.mjs');
+      // Keep the real stat result. Move a real symlink into the gap before copy.
+      writeFileSync(driver, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const target = ${JSON.stringify(target)}, victim = ${JSON.stringify(victim)};
+const lstat = fs.lstatSync;
+fs.lstatSync = (...args) => {
+  const result = lstat(...args);
+  if (String(args[0]) === target) {
+    fs.unlinkSync(target); fs.symlinkSync(victim, target);
+    fs.writeFileSync(${JSON.stringify(marker)}, 'swapped');
+  }
+  return result;
+};
+syncBuiltinESMExports();
+const { installNotify } = await import(${JSON.stringify(join(ROOT, 'src/cli/commands/herdr.ts'))});
+await installNotify({ session: 'notify-test', nonInteractive: true,
+  webhookUrl: 'https://bot.example/routine', webhookKey: 'fixture-secret-key' });
+`);
+      const result = spawnSync('node', [driver], { env: fixture.env, encoding: 'utf8', timeout: 20_000 });
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(marker, 'utf8')).toBe('swapped');
+      expect(readFileSync(victim, 'utf8')).toBe('keep');
+      expect(lstatSync(target).isSymbolicLink()).toBe(false);
+      expect(readFileSync(target, 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify/notify.mjs'), 'utf8'));
+    } finally { fixture.cleanup(); }
+  });
+
   test('masked input restores terminal state on Enter, cancel, and EOF', async () => {
     for (const ending of ['enter', 'cancel', 'eof']) {
       const input = new PassThrough() as unknown as NodeJS.ReadStream;
@@ -234,7 +273,7 @@ describe('shipped Herdr notify event handler', () => {
     const env = { ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
       HERDR_PLUGIN_STATE_DIR: fixture.state, HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed',
         data: { type: 'pane_agent_status_changed', pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: status, agent: 'codex', title: 'Needs input' } }),
-      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/Users/operator/project', focused_pane_cwd: '/Users/operator/project', workspace_label: 'project' }) };
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.workspace, workspace_label: 'project' }) };
     const calls: Array<{url: string; init: RequestInit}> = [];
     const send = (async (url: string | URL | Request, init: RequestInit) => {
       calls.push({ url: String(url), init });
@@ -275,11 +314,50 @@ describe('shipped Herdr notify event handler', () => {
     }
   });
 
-  test('session and temporary workspace filters stop every delivery', async () => {
-    for (const path of ['/tmp', '/tmp/test', '/private/tmp/test', '/var/folders/test', '/private/var/folders/test', join(tmpdir(), 'test')]) {
+  test('Slack escapes broadcast and user mentions in every message field', async () => {
+    const fixture = eventFixture();
+    try {
+      const event = JSON.parse(fixture.env.HERDR_PLUGIN_EVENT_JSON);
+      event.data.display_agent = '<!channel>';
+      event.data.title = '<!everyone> <@U123|user> &lt;!here&gt; & text';
+      event.data.pane_id = '<@U456>';
+      fixture.env.HERDR_PLUGIN_EVENT_JSON = JSON.stringify(event);
+      fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: fixture.workspace, workspace_label: '<!here>', tab_label: '<!subteam^S123>' });
+      await notify(fixture.env, fixture.send);
+      expect(fixture.calls).toHaveLength(4);
+      const slack = JSON.parse(String(fixture.calls[1]!.init.body)).text;
+      for (const token of ['!channel', '!here', '!everyone', '@U123|user', '@U456', '!subteam^S123']) {
+        expect(slack).toContain(`&lt;${token}&gt;`);
+      }
+      expect(slack).toContain('&amp;lt;!here&amp;gt; &amp; text');
+      expect(slack).not.toMatch(/[<>]/);
+      expect(JSON.parse(String(fixture.calls[0]!.init.body)).title).toBe(event.data.title);
+    } finally { fixture.cleanup(); }
+  });
+
+  test('temporary workspaces reached through a durable symlink are filtered', async () => {
+    for (const field of ['workspace_cwd', 'focused_pane_cwd', 'worktree']) {
       const fixture = eventFixture();
       try {
-        fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: '/Users/operator/project', focused_pane_cwd: path });
+        const alias = join(fixture.workspace, 'temporary'); symlinkSync(fixture.root, alias);
+        expect(realpathSync(alias)).toBe(realpathSync(fixture.root));
+        const context = { workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.workspace, worktree: { path: fixture.workspace } };
+        if (field === 'worktree') context.worktree.path = alias;
+        else context[field as 'workspace_cwd' | 'focused_pane_cwd'] = alias;
+        fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify(context);
+        await notify(fixture.env, fixture.send);
+        expect(fixture.calls).toHaveLength(0);
+      } finally { fixture.cleanup(); }
+    }
+  });
+
+  test('session and temporary workspace filters stop every delivery', async () => {
+    for (const path of ['/tmp', '/private/tmp', '/var/folders', '/private/var/folders', tmpdir()].filter(existsSync)) {
+      const fixture = eventFixture();
+      try {
+        fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: fixture.workspace, focused_pane_cwd: path });
+        await notify(fixture.env, fixture.send); expect(fixture.calls).toHaveLength(0);
+        fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: fixture.workspace, focused_pane_cwd: fixture.root });
         await notify(fixture.env, fixture.send); expect(fixture.calls).toHaveLength(0);
       } finally { fixture.cleanup(); }
     }
@@ -287,7 +365,7 @@ describe('shipped Herdr notify event handler', () => {
       const fixture = eventFixture();
       try {
         if (change === 'session') fixture.env.HERDR_SESSION = 'other-session';
-        else fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: '/Users/operator/project', workspace_label: 'rh-herdr-test' });
+        else fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: fixture.workspace, workspace_label: 'rh-herdr-test' });
         await notify(fixture.env, fixture.send); expect(fixture.calls).toHaveLength(0);
       } finally { fixture.cleanup(); }
     }
@@ -326,17 +404,64 @@ describe('shipped Herdr notify event handler', () => {
   });
 
   test('missing Bot config, malformed events, and missing paths fail closed', async () => {
-    for (const invalid of ['bot', 'event', 'path', 'relative-path', 'state']) {
+    for (const invalid of ['bot', 'event', 'path', 'relative-path', 'missing-directory']) {
       const fixture = eventFixture();
       try {
         if (invalid === 'bot') writeFileSync(join(fixture.config, '.env'), 'NOTIFY_SESSION=notify-test\n');
         if (invalid === 'event') fixture.env.HERDR_PLUGIN_EVENT_JSON = '{';
         if (invalid === 'path') fixture.env.HERDR_PLUGIN_CONTEXT_JSON = '{}';
         if (invalid === 'relative-path') fixture.env.HERDR_PLUGIN_CONTEXT_JSON = '{"workspace_cwd":"relative"}';
-        if (invalid === 'state') writeFileSync(join(fixture.state, 'debounce-state.json'), '{');
+        if (invalid === 'missing-directory') fixture.env.HERDR_PLUGIN_CONTEXT_JSON = JSON.stringify({ workspace_cwd: join(fixture.workspace, 'missing') });
         await expect(notify(fixture.env, fixture.send)).rejects.toThrow();
         expect(fixture.calls).toHaveLength(0);
       } finally { fixture.cleanup(); }
+    }
+  });
+
+  test('corrupt or unreadable debounce state logs a warning and still sends', async () => {
+    for (const invalid of ['{', '[]', 'null', '{"bad":"private-state-value"}', '{"bad":1e400}', '{"bad":-1}', 'directory']) {
+      const fixture = eventFixture();
+      const originalError = console.error;
+      const logs: string[] = [];
+      console.error = (...args) => { logs.push(args.join(' ')); };
+      try {
+        const path = join(fixture.state, 'debounce-state.json');
+        if (invalid === 'directory') mkdirSync(path);
+        else writeFileSync(path, invalid);
+        await notify(fixture.env, fixture.send);
+        expect(fixture.calls).toHaveLength(4);
+        expect(logs).toContain('[webhook-notify] Cannot read debounce state. Using empty state.');
+        expect(logs.join('\n')).not.toContain('private-state-value');
+        if (invalid !== 'directory') {
+          expect(Object.keys(JSON.parse(readFileSync(path, 'utf8')))).toHaveLength(4);
+          await notify(fixture.env, fixture.send);
+          expect(fixture.calls).toHaveLength(4);
+        }
+      } finally { console.error = originalError; fixture.cleanup(); }
+    }
+  });
+
+  test('future debounce timestamps cannot suppress any configured channel', async () => {
+    for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM']) {
+      for (const future of [Date.now() + 120_000, 9e15]) {
+        const fixture = eventFixture();
+        const originalError = console.error;
+        const logs: string[] = [];
+        console.error = (...args) => { logs.push(args.join(' ')); };
+        try {
+          const path = join(fixture.state, 'debounce-state.json');
+          const key = JSON.stringify(['notify-test', 'pane-1', 'blocked', channel]);
+          writeFileSync(path, JSON.stringify({ [key]: future }));
+          await notify(fixture.env, fixture.send);
+          expect(fixture.calls).toHaveLength(4);
+          expect(logs).toContain('[webhook-notify] Cannot read debounce state. Using empty state.');
+          const state = JSON.parse(readFileSync(path, 'utf8')) as Record<string, number>;
+          expect(Object.keys(state)).toHaveLength(4);
+          expect(state[key]).toBeLessThanOrEqual(Date.now());
+          await notify(fixture.env, fixture.send);
+          expect(fixture.calls).toHaveLength(4);
+        } finally { console.error = originalError; fixture.cleanup(); }
+      }
     }
   });
 });
