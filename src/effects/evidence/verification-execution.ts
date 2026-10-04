@@ -713,6 +713,14 @@ function materializedVerificationCheckId(id: string): string {
   return projected.execution_evaluation.results[0].id;
 }
 
+function matchesLedgerCheckId(storedId: string, declaredId: string): boolean {
+  if (storedId === declaredId) return true;
+  // Older writers treated check_id as an untyped string. Compare that exact
+  // projection; the immutable run must still contain the declared ID.
+  const legacy = redactPayloadStrings({ id: declaredId }, []) as { readonly id: string };
+  return storedId === legacy.id;
+}
+
 function matchingImmutableExecution(
   context: PreparedContext,
   check: VerificationCheck,
@@ -725,7 +733,8 @@ function matchingImmutableExecution(
       || payload.toolchain_hash !== context.toolchainHash
       || payload.inputs_hash !== declaredEnvironmentHash(check, context.env))) return false;
     if (payload.contract_hash !== context.contractHash) return false;
-    if (payload.plan_hash !== context.planHash
+    if (!matchesLedgerCheckId(payload.check_id, check.id)
+      || payload.plan_hash !== context.planHash
       || payload.check_fingerprint !== fingerprintVerificationCheck(check)
       || payload.execution_spec_hash !== fingerprintVerificationCheckExecution(check)
       || payload.snapshot_hash !== context.snapshot.snapshot_hash
@@ -898,7 +907,9 @@ export function verificationOutcomeProvenance(input: MaterializedVerificationInp
   const events = readAcceptedEvents(input.repoRoot).accepted;
   const offset = events.slice().reverse().findIndex(event => {
     const payload = payloadOf(input.repoRoot, event);
-    return payload?.execution_id === result.execution_id && payload.check_id === checkId && payload.cache_key === result.cache_key;
+    return payload?.execution_id === result.execution_id
+      && matchesLedgerCheckId(payload.check_id, checkId)
+      && payload.cache_key === result.cache_key;
   });
   if (offset < 0) throw new Error("verification sequence is unavailable");
   const index = events.length - 1 - offset;
