@@ -57,7 +57,6 @@ import {
   AgentRuntimeEffectStoreError,
   listAgentRuntimeEffects,
   listDueOfferWakes,
-  migrateProviderThreadEffectsV1,
   observeAgentRuntimeEffect,
   prepareAgentRuntimeEffect,
   readAgentRuntimeEffectStatus,
@@ -660,14 +659,6 @@ export function buildEngineerCommand(): Command {
         observed_at: options.observedAt,
       });
       emit(receipt, options.json, `${receipt.effect_id} ${receipt.receipt_sha256}`);
-    }));
-  runtimeEffect
-    .command('migrate-v1')
-    .requiredOption('--migrated-at <timestamp>', 'Stable RFC3339 migration time')
-    .option('--json', 'Output JSON')
-    .action((options: { migratedAt: string; json?: boolean }) => run(() => {
-      const result = migrateProviderThreadEffectsV1(realpathSync(process.cwd()), options.migratedAt);
-      emit(result, options.json, result ? `${result.source_tree_sha256} ${result.archive_relative_path}` : 'no-v1-store');
     }));
   runtimeEffect
     .command('status')

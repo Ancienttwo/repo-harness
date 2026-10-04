@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -41,7 +41,6 @@ import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
   AgentRuntimeEffectStoreError,
   projectTaskAgentRuntimeState,
-  migrateProviderThreadEffectsV1,
   observeAgentRuntimeEffect,
   prepareAgentRuntimeEffect,
   readAgentRuntimeEffectStatus,
@@ -300,22 +299,17 @@ describe('R1 provider-neutral Agent Runtime', () => {
     expect(() => validateAgentRuntimeCapabilityObservation({...evidence,adapter_kind:'codex-app-thread'})).toThrow('adapter_kind is invalid');
   });
 
-  test('V1 retirement is terminal-only and moves exact bytes without synthesizing V2 effects', () => {
-    const repoRoot = fixture(); const common = resolveGitCommonDirectory(repoRoot); const v1 = join(common, 'repo-harness/provider-thread-effects/v1/effects/abc'); mkdirSync(v1, { recursive: true }); writeFileSync(join(v1, 'current.json'), '{"state":"observed_success"}\n');
-    const receipt = migrateProviderThreadEffectsV1(repoRoot, '2026-08-30T10:20:00.000Z')!; expect(receipt.archive_relative_path).toContain(receipt.source_tree_sha256.slice(7)); expect(existsSync(join(common, receipt.archive_relative_path))).toBe(true); expect(existsSync(join(common, 'repo-harness/agent-runtime-effects/v2/effects'))).toBe(true);
-    expect(migrateProviderThreadEffectsV1(repoRoot, '2026-08-30T10:21:00.000Z')).toEqual(receipt);
-  });
-
-  test('V1 retirement refuses non-terminal state and recovers a crash after archive rename', () => {
-    const blockedRoot = fixture(); const blockedCommon = resolveGitCommonDirectory(blockedRoot); const blocked = join(blockedCommon, 'repo-harness/provider-thread-effects/v1/effects/abc'); mkdirSync(blocked, { recursive: true }); writeFileSync(join(blocked, 'current.json'), '{"state":"effect_started"}\n');
-    expect(() => migrateProviderThreadEffectsV1(blockedRoot, '2026-08-30T10:20:00.000Z')).toThrow('non-terminal');
-    expect(existsSync(join(blockedCommon, 'repo-harness/provider-thread-effects/v1'))).toBe(true);
-
-    const repoRoot = fixture(); const common = resolveGitCommonDirectory(repoRoot); const terminal = join(common, 'repo-harness/provider-thread-effects/v1/effects/abc'); mkdirSync(terminal, { recursive: true }); writeFileSync(join(terminal, 'current.json'), '{"state":"observed_failure"}\n');
-    expect(() => migrateProviderThreadEffectsV1(repoRoot, '2026-08-30T10:30:00.000Z', () => { throw new Error('crash'); })).toThrow('crash');
-    expect(existsSync(join(common, 'repo-harness/provider-thread-effects/v1'))).toBe(false);
-    const recovered = migrateProviderThreadEffectsV1(repoRoot, '2026-08-30T10:31:00.000Z');
-    expect(recovered?.migrated_at).toBe('2026-08-30T10:31:00.000Z');
-    expect(migrateProviderThreadEffectsV1(repoRoot, '2026-08-30T10:32:00.000Z')).toEqual(recovered);
+  test('unmigrated V1 store blocks capability recording without changing its bytes', () => {
+    const repoRoot = fixture();
+    const common = resolveGitCommonDirectory(repoRoot);
+    const directory = join(common, 'repo-harness/provider-thread-effects/v1/effects/abc');
+    mkdirSync(directory, { recursive: true });
+    const file = join(directory, 'current.json');
+    const bytes = Buffer.from('{"state":"effect_started"}\n');
+    writeFileSync(file, bytes);
+    expect(() => capability(repoRoot)).toThrow('Provider Thread V1 store exists without an exact migration receipt');
+    expect(readFileSync(file)).toEqual(bytes);
+    expect(existsSync(join(common, 'repo-harness/agent-runtime-effects/v2/migrations/v1.json'))).toBe(false);
+    expect(existsSync(join(common, 'repo-harness/provider-thread-effects/archive'))).toBe(false);
   });
 });

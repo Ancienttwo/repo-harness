@@ -53,6 +53,11 @@ function writeActiveSprintFixture(cwd: string) {
 }
 
 describe("run command", () => {
+  test("retired context helper is absent from the registry", () => {
+    expect(listHelpers().map((helper) => helper.id)).not.toContain("context-contract-sync");
+    expect(resolveHelper("context-contract-sync")).toBeNull();
+  });
+
   test("passes unknown options through to the selected helper", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-cli-"));
     const logFile = join(tmp, "args.log");

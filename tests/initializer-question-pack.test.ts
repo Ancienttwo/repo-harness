@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { InitializerQuestionPackV4 } from "../scripts/initializer-question-pack";
 import {
   getAiNativeProfileIds,
@@ -31,10 +33,13 @@ describe("Initializer question pack", () => {
     );
   });
 
-  test("should still load the legacy v2 question pack when requested explicitly", () => {
-    const pack = loadQuestionPack(join(import.meta.dir, "..", "assets", "initializer-question-pack.v2.json"));
-    expect(pack.version).toBe("initializer-question-pack.v2");
-    expect(pack.decisionPoints.length).toBe(9);
+  test.each(["initializer-question-pack.v2", "initializer-question-pack.v3"])("rejects retired version %s", (version) => {
+    const dir = mkdtempSync(join(tmpdir(), "retired-question-pack-"));
+    try {
+      const file = join(dir, "pack.json");
+      writeFileSync(file, JSON.stringify({ version }));
+      expect(() => loadQuestionPack(file)).toThrow(`Unsupported question pack version: ${version}`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test("should group questions by batch", () => {

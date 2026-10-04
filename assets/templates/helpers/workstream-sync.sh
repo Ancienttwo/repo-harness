@@ -116,20 +116,6 @@ capability_resolver() {
   return 127
 }
 
-context_contract_sync() {
-  local sibling=""
-  if [[ -x "scripts/context-contract-sync.sh" ]]; then
-    bash "scripts/context-contract-sync.sh" "$@"
-    return $?
-  fi
-  sibling="$(helper_sibling context-contract-sync.sh || true)"
-  if [[ -n "$sibling" ]]; then
-    bash "$sibling" "$@"
-    return $?
-  fi
-  return 127
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --block)
@@ -301,9 +287,8 @@ Track durable multi-session progress for \`${capability_id}\` without inflating 
 EOF_WORKSTREAM
 fi
 
-event_json="{\"ts\":\"$(json_escape "$iso_timestamp")\",\"file_path\":\"$(json_escape "$workstream_file")\",\"severity\":\"medium\",\"functional_block\":\"$(json_escape "$functional_block")\",\"capability_id\":\"$(json_escape "$capability_id")\",\"matched_prefix\":\"$(json_escape "$matched_prefix")\",\"architecture_domain\":\"$(json_escape "$architecture_domain")\",\"architecture_capability\":\"$(json_escape "$architecture_capability")\",\"architecture_module\":\"$(json_escape "$architecture_module")\",\"workstream_dir\":\"$(json_escape "$workstream_dir")\",\"contract_agents\":\"$(json_escape "$contract_agents")\",\"contract_claude\":\"$(json_escape "$contract_claude")\",\"active_workstream\":\"$(json_escape "$workstream_file")\",\"change_type\":\"workstream-sync\",\"spawn_recommended\":false,\"contract_sync_required\":true,\"request_file\":\"$(json_escape "$request_file")\"}"
+event_json="{\"ts\":\"$(json_escape "$iso_timestamp")\",\"file_path\":\"$(json_escape "$workstream_file")\",\"severity\":\"medium\",\"functional_block\":\"$(json_escape "$functional_block")\",\"capability_id\":\"$(json_escape "$capability_id")\",\"matched_prefix\":\"$(json_escape "$matched_prefix")\",\"architecture_domain\":\"$(json_escape "$architecture_domain")\",\"architecture_capability\":\"$(json_escape "$architecture_capability")\",\"architecture_module\":\"$(json_escape "$architecture_module")\",\"workstream_dir\":\"$(json_escape "$workstream_dir")\",\"contract_agents\":\"$(json_escape "$contract_agents")\",\"contract_claude\":\"$(json_escape "$contract_claude")\",\"active_workstream\":\"$(json_escape "$workstream_file")\",\"change_type\":\"workstream-sync\",\"spawn_recommended\":false,\"contract_sync_required\":false,\"request_file\":\"$(json_escape "$request_file")\"}"
 printf '%s\n' "$event_json" >> "$event_file"
 
-context_contract_sync sync-event --json "$event_json" >/dev/null 2>&1 || true
 
 echo "[WorkstreamSync] Ensured $workstream_file for $capability_id."

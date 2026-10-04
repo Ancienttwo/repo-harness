@@ -2203,7 +2203,7 @@ CURRENT_STATUS_EOF
 
 - `repo-harness run architecture-queue` records architecture-sensitive edits as requests.
 - `repo-harness run archive-architecture-request` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
-- `repo-harness run context-contract-sync` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
+- Read architecture documents on demand. Update real boundaries explicitly.
 - `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.
 - Markdown Mermaid fenced blocks are the only architecture diagram artifacts; do not generate standalone HTML.

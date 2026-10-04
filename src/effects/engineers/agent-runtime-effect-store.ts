@@ -73,14 +73,13 @@ import type { RuntimeDeliveryState, RuntimeReachability } from '../../core/fleet
 
 export const AGENT_RUNTIME_EFFECT_RELATIVE_ROOT = 'repo-harness/agent-runtime-effects/v2';
 export const PROVIDER_THREAD_EFFECT_V1_RELATIVE_ROOT = 'repo-harness/provider-thread-effects/v1';
-const V1_ARCHIVE_PARENT = 'repo-harness/provider-thread-effects/archive';
 
 export type AgentRuntimeEffectStoreErrorCode =
   | 'agent_runtime_effect_invalid' | 'agent_runtime_effect_unreadable' | 'agent_runtime_effect_persistence_failed'
   | 'agent_runtime_effect_not_found' | 'agent_runtime_effect_conflict' | 'agent_runtime_effect_binding_stale'
   | 'agent_runtime_effect_claim_stale' | 'agent_runtime_effect_capability_unsupported'
   | 'agent_runtime_effect_transition_invalid' | 'agent_runtime_effect_migration_required'
-  | 'agent_runtime_effect_migration_blocked' | 'agent_runtime_effect_authorization_stale'
+  | 'agent_runtime_effect_authorization_stale'
   | 'agent_runtime_effect_wake_superseded' | 'agent_runtime_effect_wake_coalescing';
 
 export class AgentRuntimeEffectStoreError extends Error {
@@ -107,16 +106,6 @@ export interface AgentRuntimeEffectStatus {
 export interface StartAgentRuntimeEffectResult extends AgentRuntimeEffectStatus { readonly action: AgentRuntimeHostActionV2 | null }
 export type AgentRuntimeEffectCrashBoundary = 'after_observation_fsync' | 'after_current_fsync';
 export type AgentRuntimeEffectCrashHook = (boundary: AgentRuntimeEffectCrashBoundary) => void;
-
-export interface AgentRuntimeV1MigrationReceiptV1 {
-  readonly protocol: 1;
-  readonly kind: 'repo-harness-agent-runtime-v1-migration-receipt';
-  readonly source_tree_sha256: string;
-  readonly archive_relative_path: string;
-  readonly migrated_at: string;
-  readonly receipt_sha256: string;
-}
-export type AgentRuntimeV1MigrationCrashHook = (boundary: 'after_archive_rename') => void;
 
 interface StorePaths { common: string; root: string; capabilities: string; effects: string; locks: string; migrations: string; wakes: string }
 interface EffectPaths { store: StorePaths; effect: string; intent: string; observations: string; current: string; controller_step: string; lock_relative: string }
@@ -820,77 +809,4 @@ export function subscribeToOfferWakes(repoRoot: string, input: { engineer_id?: s
       return count;
     },
   });
-}
-
-function treeDigest(root: string): string {
-  const hash = createHash('sha256'); const walk = (directory: string): void => { for (const name of readdirSync(directory).sort()) { const path = join(directory, name); const stat = lstatSync(path); if (stat.isSymbolicLink()) fail('agent_runtime_effect_migration_blocked', 'V1 store contains a symbolic link'); const scoped = relative(root, path); if (stat.isDirectory()) { hash.update(`d\0${scoped}\0`); walk(path); } else if (stat.isFile()) { hash.update(`f\0${scoped}\0`); hash.update(readFileSync(path)); hash.update('\0'); } else fail('agent_runtime_effect_migration_blocked', 'V1 store contains an unsupported entry'); } }; walk(root); return `sha256:${hash.digest('hex')}`;
-}
-function migrationReceiptDigest(value: Omit<AgentRuntimeV1MigrationReceiptV1, 'receipt_sha256'>): string { return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`; }
-function migrationTimestamp(value: string): string {
-  try { if (new Date(value).toISOString() !== value) throw new Error('non-canonical'); }
-  catch (error) { fail('agent_runtime_effect_migration_blocked', 'migrated_at must be a canonical RFC3339 timestamp', error); }
-  return value;
-}
-function buildMigrationReceipt(sourceTreeSha256: string, migratedAt: string): AgentRuntimeV1MigrationReceiptV1 {
-  const basis = Object.freeze({ protocol: 1 as const, kind: 'repo-harness-agent-runtime-v1-migration-receipt' as const, source_tree_sha256: sourceTreeSha256, archive_relative_path: `${V1_ARCHIVE_PARENT}/v1-${sourceTreeSha256.slice(7)}`, migrated_at: migrationTimestamp(migratedAt) });
-  return Object.freeze({ ...basis, receipt_sha256: migrationReceiptDigest(basis) });
-}
-function parseMigrationReceipt(raw: string): AgentRuntimeV1MigrationReceiptV1 {
-  try {
-    const value = JSON.parse(raw) as Record<string, unknown>;
-    const keys = Object.keys(value).sort();
-    const expectedKeys = ['archive_relative_path', 'kind', 'migrated_at', 'protocol', 'receipt_sha256', 'source_tree_sha256'].sort();
-    if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)
-      || value.protocol !== 1
-      || value.kind !== 'repo-harness-agent-runtime-v1-migration-receipt'
-      || typeof value.source_tree_sha256 !== 'string'
-      || !/^sha256:[0-9a-f]{64}$/u.test(value.source_tree_sha256)
-      || value.archive_relative_path !== `${V1_ARCHIVE_PARENT}/v1-${value.source_tree_sha256.slice(7)}`
-      || typeof value.migrated_at !== 'string'
-      || new Date(value.migrated_at).toISOString() !== value.migrated_at
-      || typeof value.receipt_sha256 !== 'string'
-      || !/^sha256:[0-9a-f]{64}$/u.test(value.receipt_sha256)) fail('agent_runtime_effect_migration_blocked', 'V1 migration receipt is malformed');
-    const receipt = value as unknown as AgentRuntimeV1MigrationReceiptV1;
-    const basis = { protocol: receipt.protocol, kind: receipt.kind, source_tree_sha256: receipt.source_tree_sha256, archive_relative_path: receipt.archive_relative_path, migrated_at: receipt.migrated_at };
-    if (migrationReceiptDigest(basis) !== receipt.receipt_sha256 || `${JSON.stringify(receipt)}\n` !== raw) fail('agent_runtime_effect_migration_blocked', 'V1 migration receipt digest or canonical bytes are invalid');
-    return Object.freeze(receipt);
-  } catch (error) {
-    if (error instanceof AgentRuntimeEffectStoreError) throw error;
-    fail('agent_runtime_effect_migration_blocked', 'V1 migration receipt is unreadable', error);
-  }
-}
-function readCompletedMigration(store: StorePaths, targetReceipt: string): AgentRuntimeV1MigrationReceiptV1 {
-  const receipt = parseMigrationReceipt(readRaw(targetReceipt, 'V1 migration receipt'));
-  const archive = join(store.common, receipt.archive_relative_path);
-  if (!existsSync(archive) || treeDigest(archive) !== receipt.source_tree_sha256) fail('agent_runtime_effect_migration_blocked', 'V1 migration archive does not match its receipt');
-  return receipt;
-}
-function publishMigrationReceipt(targetReceipt: string, receipt: AgentRuntimeV1MigrationReceiptV1): AgentRuntimeV1MigrationReceiptV1 {
-  const bytes = `${JSON.stringify(receipt)}\n`;
-  if (!writeExclusive(targetReceipt, bytes, 'V1 migration receipt') && readRaw(targetReceipt, 'V1 migration receipt') !== bytes) fail('agent_runtime_effect_migration_blocked', 'V1 migration receipt conflicts');
-  return receipt;
-}
-function recoverArchivedMigration(store: StorePaths, targetReceipt: string, migratedAt: string): AgentRuntimeV1MigrationReceiptV1 | null {
-  const parent = join(store.common, V1_ARCHIVE_PARENT);
-  if (!existsSync(parent)) return null;
-  const names = readdirSync(parent).sort();
-  if (names.length === 0) return null;
-  if (names.length !== 1 || !/^v1-[0-9a-f]{64}$/u.test(names[0]!)) fail('agent_runtime_effect_migration_blocked', 'V1 archive recovery is ambiguous');
-  const archive = join(parent, names[0]!); const stat = lstatSync(archive);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) fail('agent_runtime_effect_migration_blocked', 'V1 archive recovery target is unsafe');
-  const digestValue = treeDigest(archive);
-  if (names[0] !== `v1-${digestValue.slice(7)}`) fail('agent_runtime_effect_migration_blocked', 'V1 archive recovery digest is mismatched');
-  return publishMigrationReceipt(targetReceipt, buildMigrationReceipt(digestValue, migratedAt));
-}
-export function migrateProviderThreadEffectsV1(repoRoot: string, migratedAt: string, crashHook?: AgentRuntimeV1MigrationCrashHook): AgentRuntimeV1MigrationReceiptV1 | null {
-  migrationTimestamp(migratedAt);
-  const store = pathsFor(repoRoot); prepareStore(store); const source = join(store.common, PROVIDER_THREAD_EFFECT_V1_RELATIVE_ROOT); const targetReceipt = join(store.migrations, 'v1.json');
-  if (!existsSync(source)) return existsSync(targetReceipt) ? readCompletedMigration(store, targetReceipt) : recoverArchivedMigration(store, targetReceipt, migratedAt);
-  return withExclusiveDirectoryLock(store.common, `${AGENT_RUNTIME_EFFECT_RELATIVE_ROOT}/locks/migrate-v1.lock`, () => {
-    const digestValue = treeDigest(source); const archiveRelative = `${V1_ARCHIVE_PARENT}/v1-${digestValue.slice(7)}`; const archive = join(store.common, archiveRelative);
-    if (existsSync(targetReceipt)) { const existing = readCompletedMigration(store, targetReceipt); if (existing.source_tree_sha256 === digestValue && existing.archive_relative_path === archiveRelative) return existing; fail('agent_runtime_effect_migration_blocked', 'existing migration receipt does not match the V1 tree'); }
-    const effects = join(source, 'effects'); if (existsSync(effects)) for (const effect of readdirSync(effects).sort()) { const current = JSON.parse(readRaw(join(effects, effect, 'current.json'), 'V1 effect current')) as { state?: unknown }; if (current.state !== 'observed_success' && current.state !== 'observed_failure' && current.state !== 'stopped') fail('agent_runtime_effect_migration_blocked', `V1 effect ${effect} is non-terminal: ${String(current.state)}`); }
-    ensureDirectory(store.common, join(store.common, V1_ARCHIVE_PARENT), true); if (existsSync(archive)) fail('agent_runtime_effect_migration_blocked', 'V1 archive target already exists without a receipt'); renameSync(source, archive); syncDirectory(dirname(archive)); crashHook?.('after_archive_rename');
-    return publishMigrationReceipt(targetReceipt, buildMigrationReceipt(digestValue, migratedAt));
-  }, { reclaimStaleEmptyDirectory: true });
 }

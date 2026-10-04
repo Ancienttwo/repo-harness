@@ -2,7 +2,6 @@
 set -euo pipefail
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --validate-waivers-only) echo '[task-sync] waiver admission was removed; historical records grant no permission.'; exit 0 ;;
     --help|-h) echo 'Usage: check-task-sync (read-only diff observation)'; exit 0 ;;
     *) echo "[task-sync] unknown argument: $1" >&2; exit 2 ;;
   esac

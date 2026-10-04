@@ -33,7 +33,7 @@ Record only artifacts selected for this task. Omit unused optional contract, rev
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
+- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; State resolution does not read `.claude/.active-plan`. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: use a worktree for actual concurrency or dirty-work conflicts. Use contract projection only when the task explicitly selects that workflow.
 
 ## Approach
@@ -60,7 +60,7 @@ Record only artifacts selected for this task. Omit unused optional contract, rev
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `repo-harness run verify-sprint --test <affected-test-file>` (repeat `--test` for each selected existing test; omit it for a typecheck-only task).
-- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
+- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; State resolution does not read `.claude/.active-plan`. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
 

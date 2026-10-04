@@ -117,8 +117,7 @@ Hook scope is detect, classify, record, and remind:
 
 - `repo-harness run architecture-queue` writes requests and events.
 - `repo-harness run workstream-sync` maintains durable capability workstreams.
-- `repo-harness run context-contract-sync` updates only controlled local agent
-  context blocks.
+- Agents read architecture documents on demand and update real boundaries explicitly.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
@@ -182,6 +181,6 @@ After handler or workflow-contract changes, run:
 ```bash
 bun test
 repo-harness run check-task-sync
-repo-harness run check-task-workflow --strict
+repo-harness run check-task-workflow
 repo-harness init --repo . --dry-run
 ```

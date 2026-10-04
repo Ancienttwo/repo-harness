@@ -187,7 +187,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
     expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
     expect(pkg.scripts["check:architecture-sync"]).toBe("repo-harness run check-architecture-sync");
-    expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow --strict");
+    expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow");
     expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
     expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
   });
@@ -271,7 +271,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).not.toContain("context-budget.ts");
     expect(contract.helpers.scripts).toContain("architecture-queue.sh");
     expect(contract.helpers.scripts).toContain("archive-architecture-request.sh");
-    expect(contract.helpers.scripts).toContain("context-contract-sync.sh");
+    expect(contract.helpers.scripts).not.toContain("context-contract-sync.sh");
     expect(contract.helpers.scripts).toContain("workstream-sync.sh");
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
     expect(contract.helpers.scripts).toContain("contract-run.ts");
@@ -513,18 +513,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(migration).not.toContain("Exactly two attempts");
   });
 
-  test("setup script should delegate to the typed global install path", () => {
-    const setup = read("scripts/setup-plugins.sh");
-    expect(setup).toContain("repo-harness install");
-    expect(setup).toContain('bun "$ROOT_DIR/src/cli/index.ts" install');
-    expect(setup).not.toContain("ESSENTIAL_PLUGINS");
-    expect(setup).not.toContain("feature-dev");
-  });
-
   test("hook docs and scripts should use ToolUse event names", () => {
     const skill = read("SKILL.md");
     const plugins = read("references/plugins-core.md");
-    const setup = read("scripts/setup-plugins.sh");
     const legacyPre = `PreTool${"Call"}`;
     const legacyPost = `PostTool${"Call"}`;
 
@@ -532,7 +523,5 @@ describe("Bootstrap Script Contracts", () => {
     expect(skill).not.toContain(legacyPost);
     expect(plugins).not.toContain(legacyPre);
     expect(plugins).not.toContain(legacyPost);
-    expect(setup).not.toContain(legacyPre);
-    expect(setup).not.toContain(legacyPost);
   });
 });

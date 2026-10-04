@@ -25,8 +25,9 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
   `.ai/harness/checks/latest.json` and `.ai/harness/handoff/current.md`.
 - `tasks/todos.md` is the deferred-goal ledger; durable progress lives in
   `tasks/workstreams/` and release history in `docs/CHANGELOG.md`.
-- `scripts/check-task-sync.sh` and `scripts/check-task-workflow.sh` enforce the
-  repo-local task and workflow contracts.
+- `scripts/check-task-sync.sh` observes the diff.
+  `scripts/check-task-workflow.sh` reports JSON diagnostics.
+  These helpers do not grant or block workflow permission.
 - Helper commands are installed from `assets/workflow-contract.v1.json`,
   including plan, sprint, contract-worktree, handoff, verification, capability,
   and architecture helpers.

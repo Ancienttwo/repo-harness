@@ -94,7 +94,6 @@ export interface McpPolicyOptions {
   devAgentRunner?: boolean;
   allowedAgents?: McpAgentRunnerName[];
   runnerTimeoutMs?: number;
-  fullDiskRead?: boolean;
   enableReader?: boolean;
   allowedRoots?: string[];
   discoveryRoots?: string[];
@@ -134,7 +133,6 @@ function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPo
 
 export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {}): McpPolicy {
   if (profile === 'planner') {
-    const broadRead = opts.fullDiskRead === true;
     return {
       profile,
       allowedRoots: opts.allowedRoots,
@@ -143,31 +141,30 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
         workspaceReader: opts.enableReader === true,
         workflowPlanner: true,
       }),
-      readGlobs: broadRead ? ['**'] : withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
+      readGlobs: withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
       writeGlobs: withWorkspacePrefixGlobs(PLANNER_WRITE_GLOBS),
       denyGlobs: COMMON_DENY_GLOBS,
-      allowAbsoluteRead: broadRead,
+      allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: !broadRead,
+        fixedWorkflowCheck: true,
       }),
     };
   }
 
   if (profile === 'executor') {
-    const broadRead = opts.fullDiskRead === true;
     return {
       profile,
       allowedRoots: opts.allowedRoots,
       discoveryRoots: opts.discoveryRoots,
       capabilities: capabilities({ workflowExecutor: true }),
-      readGlobs: broadRead ? ['**'] : withWorkspacePrefixGlobs(['plans/**', 'tasks/**', 'docs/spec.md', '.ai/context/**', '.ai/harness/**']),
+      readGlobs: withWorkspacePrefixGlobs(['plans/**', 'tasks/**', 'docs/spec.md', '.ai/context/**', '.ai/harness/**']),
       writeGlobs: withWorkspacePrefixGlobs(['tasks/reviews/**', '.ai/harness/checks/**', '.ai/harness/handoff/**']),
       denyGlobs: COMMON_DENY_GLOBS,
-      allowAbsoluteRead: broadRead,
+      allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: !broadRead,
+        fixedWorkflowCheck: true,
       }),
     };
   }

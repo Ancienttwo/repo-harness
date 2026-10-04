@@ -80,7 +80,6 @@ export const RUN_HELP_GROUPS = [
       'capability-config',
       'architecture-queue',
       'archive-architecture-request',
-      'context-contract-sync',
       'workstream-sync',
     ],
   },

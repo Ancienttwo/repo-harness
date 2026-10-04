@@ -206,7 +206,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const runnerTimeoutMs = parseTimeoutMs(
     opts.devRunnerTimeoutMs ?? process.env.REPO_HARNESS_MCP_DEV_RUNNER_TIMEOUT_MS ?? config?.devMode?.timeoutMs,
   );
-  const fullDiskRead = false;
   const configuredAllowedRoots = Array.from(new Set([
     ...(opts.allowedRoots ?? []),
     ...(config?.permissions?.allowedRoots ?? []),
@@ -244,7 +243,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     devAgentRunner,
     allowedAgents,
     runnerTimeoutMs,
-    fullDiskRead,
     enableReader: readerEnabled,
     allowedRoots: policyAllowedRoots,
     discoveryRoots,

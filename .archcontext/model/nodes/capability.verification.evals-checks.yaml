@@ -38,4 +38,4 @@ extensions:
   verification:
     - "bun test"
     - "bash scripts/check-task-sync.sh"
-    - "bash scripts/check-task-workflow.sh --strict"
+    - "bash scripts/check-task-workflow.sh"

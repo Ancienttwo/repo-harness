@@ -2,13 +2,8 @@
  * Mutation guard — HRD-03 in-process decision handler for `PreToolUse.edit`.
  *
  * Preserves path/private boundaries; workflow stages are advisory.
- * Historical implementation ported the decision surface of the retired
- * `assets/hooks/worktree-guard.sh` and `assets/hooks/pre-edit-guard.sh`
- * scripts into one in-process handler consuming the HRD-02 collector, with
- * byte-identical decisions, reason tokens, message text, exit codes,
- * host-visible output shape, and durable write set. See
- * `tasks/notes/20260720-0419-hrd-03-pre-edit-one-decision-cutover.notes.md`
- * for the guard-port order and observable quirks reproduced deliberately.
+ * Uses the typed collector for host input and applies private/path boundaries
+ * in process. See the historical guard-port notes for the original decisions.
  *
  * Reads as a decision pipeline: `runMutationGuard()` orchestrates one
  * worktree check plus one pass of `runPerPathGuards()` per target path

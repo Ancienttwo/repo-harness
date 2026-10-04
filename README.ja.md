@@ -124,7 +124,7 @@ spec、task state、helper runtime、hook adapter の対象、verification フ�
 
 ```bash
 repo-harness init
-bash scripts/check-task-workflow.sh --strict
+bash scripts/check-task-workflow.sh
 bun test
 ```
 

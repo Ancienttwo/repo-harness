@@ -123,7 +123,7 @@ scaffold mode de `repo-harness-setup`.
 
 ```bash
 repo-harness init
-bash scripts/check-task-workflow.sh --strict
+bash scripts/check-task-workflow.sh
 bun test
 ```
 

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { writeAllSync } from './runtime/write-all-sync';
-import { runInit, type InitBrainMode } from './commands/init';
+import { runInit } from './commands/init';
 import { runHook } from './commands/hook';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
@@ -106,7 +106,6 @@ import {
   assertTarget,
   assertLocation,
   assertAdoptionMode,
-  assertBrainMode,
 } from './commands/validators';
 import type { HookEvent, RouteId } from './hook/route-registry';
 import type { Location } from './installer/types';
@@ -596,11 +595,7 @@ export function buildProgram(): Command {
     .option('--no-verify', 'Skip repo workflow verification after apply')
     .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
     .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
-    .option('--configure-codegraph', 'Deprecated: user-level MCP config belongs to repo-harness update/setup')
     .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
-    .option('--brain-root <path>', 'Deprecated: user-level brain config belongs to repo-harness update/setup')
-    .option('--brain-mode <mode>', 'Deprecated: init does not perform user-level brain sync', 'skip')
-    .option('--interactive', 'Rejected: interactive host setup belongs to repo-harness install')
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (action: string | undefined, rawOpts: {
       repo?: string;
@@ -610,11 +605,7 @@ export function buildProgram(): Command {
       verify?: boolean;
       codegraph?: boolean;
       mode?: string;
-      configureCodegraph?: boolean;
       syncCodegraph?: boolean;
-      brainRoot?: string;
-      brainMode?: string;
-      interactive?: boolean;
       json?: boolean;
     }) => {
       if (action) {
@@ -640,20 +631,7 @@ export function buildProgram(): Command {
         process.exit(2);
       }
       const target = assertTarget(rawOpts.target, 'init');
-      assertBrainMode(rawOpts.brainMode ?? 'skip', 'init');
       const mode = assertAdoptionMode(rawOpts.mode ?? 'standard', 'init');
-      if (rawOpts.configureCodegraph === true) {
-        console.error('repo-harness init: --configure-codegraph writes user-level MCP config; run repo-harness update instead');
-        process.exit(2);
-      }
-      if (rawOpts.brainRoot || rawOpts.brainMode !== 'skip') {
-        console.error('repo-harness init: brain configuration writes user-level state; run repo-harness update instead');
-        process.exit(2);
-      }
-      if (rawOpts.interactive === true) {
-        console.error('repo-harness init: --interactive can configure user-level runtime state; use repo-harness install or setup instead');
-        process.exit(2);
-      }
       if (rawOpts.dryRun === true) {
         const plan = runAdoptionPlan({
           repo: rawOpts.repo,
@@ -676,8 +654,7 @@ export function buildProgram(): Command {
         configureCodegraphMcp: false,
         syncCodegraph: rawOpts.syncCodegraph === true,
         mode,
-        brainRoot: rawOpts.brainRoot,
-        brainMode: rawOpts.brainMode as InitBrainMode,
+        brainMode: 'skip' as const,
       };
       const result = runInit(common);
       if (rawOpts.json === true) {
@@ -707,13 +684,8 @@ export function buildProgram(): Command {
     .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
     .option('--no-codegraph', 'Skip refreshing the global CodeGraph CLI/MCP')
     .option('--brain-root <path>', 'Brain vault root for manifest sync')
-    .option('--repo <path>', 'Deprecated: use repo-harness init --repo <path>')
-    .option('--dry-run', 'Deprecated: use repo-harness init --dry-run for repo-level planning')
-    .option('--interactive', 'Deprecated: use repo-harness init --interactive for repo-level planning')
     .option('--json', 'Output JSON instead of human-readable text')
     .action((rawOpts: {
-      repo?: string;
-      dryRun?: boolean;
       target: string;
       version?: string;
       channel?: string;
@@ -730,18 +702,11 @@ export function buildProgram(): Command {
       codegraph?: boolean;
       configureCodegraph?: boolean;
       brainRoot?: string;
-      interactive?: boolean;
       json?: boolean;
     }) => {
       const target = assertTarget(rawOpts.target, 'update');
       if (rawOpts.channel !== undefined && !['latest', 'next'].includes(rawOpts.channel)) {
         console.error('repo-harness update: invalid --channel (expected: latest, next)');
-        process.exit(2);
-      }
-      if (rawOpts.repo || rawOpts.dryRun || rawOpts.interactive) {
-        console.error(
-          'repo-harness update no longer refreshes repositories. For repo-level refresh, run: repo-harness init --repo <path>',
-        );
         process.exit(2);
       }
       if (rawOpts.check === true || rawOpts.runtimeRefresh === false) {

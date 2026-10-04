@@ -26,6 +26,19 @@ import {
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
+test('setup disables legacy full-disk read and records its detection', () => {
+  withTmpRepo((repoRoot, userHome) => {
+    const file = join(userHome, 'mcp.local.json');
+    writeFileSync(file, JSON.stringify({ version: 3, permissions: { fullDiskRead: true } }));
+    const result = runMcpSetupChatgpt({ repo: repoRoot });
+    expect(result.status).toBe('ok');
+    const config = JSON.parse(readFileSync(file, 'utf8'));
+    expect(config.permissions.fullDiskRead).toBe(false);
+    expect(config.permissions.legacyFullDiskReadDetected).toBe(true);
+    expect(result.lines.join('\n')).toContain('Legacy full-disk read: detected and disabled; use --allow-root to authorize reader roots');
+  });
+});
+
 function withTmpRepo<T>(fn: (repoRoot: string, userHome: string) => T): T {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-'));
   const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-home-'));

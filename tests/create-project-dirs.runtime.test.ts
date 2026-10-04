@@ -155,7 +155,6 @@ describe("create-project-dirs runtime smoke", () => {
         "capability-config.ts",
         "architecture-queue.sh",
         "archive-architecture-request.sh",
-        "context-contract-sync.sh",
         "workstream-sync.sh",
         "ensure-task-workflow.sh",
         "check-task-workflow.sh",
@@ -254,7 +253,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).toContain("capability-config.ts");
       expect(workflowContract.helpers.scripts).toContain("architecture-queue.sh");
       expect(workflowContract.helpers.scripts).toContain("archive-architecture-request.sh");
-      expect(workflowContract.helpers.scripts).toContain("context-contract-sync.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("context-contract-sync.sh");
       expect(workflowContract.helpers.scripts).toContain("workstream-sync.sh");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");

@@ -80,7 +80,7 @@ if [[ "$lane" != functional ]]; then
     echo "[ci] GitHub Actions must provide REPO_HARNESS_DIFF_BASE for diff-bound workflow evidence." >&2
     exit 1
   fi
-  bash scripts/check-task-workflow.sh --strict
+  bash scripts/check-task-workflow.sh
 
   echo "[ci] repository inspection"
   bun scripts/inspect-project-state.ts --repo . --format text >/dev/null

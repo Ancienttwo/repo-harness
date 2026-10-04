@@ -19,6 +19,16 @@ Campaign execution moved to the existing [repo-harness](../SKILL.md), [repo-harn
 - Remove shipped research scripts: `axr7-consumer-e2e.ts`, `session-context-packet-panel.ts`, `benchmark-general-repo-reader.ts`, `run-bdd2-evals.ts`, `c9-collaboration-canary.ts`, `hook-dispatch-diet-report.ts`, `route-nl-vs-ts-eval.ts`, `loop-engine-cutover-gate.ts`, `run-debug-ground-truth-eval.ts`, `mcp-observability-report.ts`, and `akn00-native-execution-admission.ts`.
 - Remove `benchmark:mcp-reader`, `benchmark:debug`, and `check:route-eval`. Retire the BDD2, BDD3, and debug ground-truth data. Keep the hook telemetry reader, CI full-history check, scaffold loader, ME2B, and shared collaboration test dependencies.
 
+- Remove empty skill lifecycle hooks, `assets/skill-hooks.json`, and `scripts/run-skill-hook.ts`. Scaffold and template assembly call their tasks directly.
+- Remove `scripts/setup-plugins.sh`. Use `repo-harness install`.
+- Remove initializer question packs v2 and v3. The loader accepts v4 only.
+- Remove `state migrate-legacy-active-plan`. Repository adoption keeps its transactional marker migration.
+- Remove `engineer runtime-effect migrate-v1`. An unmigrated provider-thread V1 store stays blocked. This version has no path to unblock it. Migrate with v0.19.0 through v0.19.5 before upgrading.
+- Remove the full-disk MCP policy option. Setup still detects and disables old full-disk settings.
+- Remove init flags `--configure-codegraph`, `--brain-root`, `--brain-mode`, and `--interactive`. Remove update flags `--repo`, `--dry-run`, and `--interactive`. The CLI uses its standard unknown-option error.
+- Remove the `context-contract-sync` helper and script. Remove the no-op `capability-config --no-sync-contracts` option.
+- Remove `check-task-sync --validate-waivers-only` and `check-task-workflow --strict`. Use `check-task-workflow` for read-only diagnostics. Old downstream strict calls fail with exit 2. Adoption or init removes only the exact `repo-harness run check-task-workflow --strict` package entry. Other forms need an explicit user edit. Custom commands stay unchanged.
+
 ## [0.20.0] - 2026-10-01
 
 ### Added
