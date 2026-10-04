@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { hostname } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { assertTaskRequest, readTaskAgent, readSessionArtifact, readTaskRequestResult, type TaskRequest } from '../terminal/task-session';
 import { taskRepository } from '../terminal/task-worktree';

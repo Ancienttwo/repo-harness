@@ -1,6 +1,6 @@
 import { sourceAuthority } from './authority';
 import { PipelineStore, publishAfterCommit } from './store';
-import { digest, equal, keyOf, object, PipelineError, type Key, type PipelineRecord, type Run } from '../../core/pipeline/types';
+import { digest, keyOf, object, PipelineError, type Key, type PipelineRecord, type Run } from '../../core/pipeline/types';
 
 export { type LogObservation, projectedRuns } from '../../core/pipeline/projection';
 import { type LogObservation, projectedRuns } from '../../core/pipeline/projection';

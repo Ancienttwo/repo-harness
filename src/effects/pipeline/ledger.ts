@@ -1,7 +1,7 @@
 import { basename } from 'node:path';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { decodeEvidence, decodePolicy, decodeRecord, decodeSubject, digest, equal, keyOf, object, PHASES, PipelineError, text, wire, type Key, type Phase, type PipelineRecord, type Run } from '../../core/pipeline/types';
+import { decodeEvidence, decodePolicy, decodeSubject, digest, keyOf, object, PHASES, PipelineError, text, wire, type Key, type Phase, type PipelineRecord, type Run } from '../../core/pipeline/types';
 import { advanceRecord } from '../../core/pipeline/stage-machine';
 import { currentSubject, refreshValidity } from '../../core/pipeline/gates';
 import { sourceAuthority, evidenceAdmission } from './authority';

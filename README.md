@@ -440,6 +440,13 @@ Claim, or Lease.
 The substrate keeps one Module Engineer and one writer. Bounded read-only Workers exchange untrusted signals and explicit handoffs. The source-checkout C9 canary is retired. Its historical result did not support multiple reader seats. Shared collaboration runtime tests remain active. Persistent same-capability `EngineerSeatV2`, an independent Review marketplace, and unattended Merge remain inactive.
 See [`20260830-c9-real-multi-agent-canary.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260830-c9-real-multi-agent-canary.md).
 
+### Pipeline observer
+
+`repo-harness pipeline` records pipeline facts and publishes an immutable board.
+It does not change dispatch, delivery, merge or cleanup.
+The organization tab reads `/api/v1/pipelines` with GET or HEAD only.
+See [pipeline observer operations](docs/reference-configs/pipeline-observer.md).
+
 ### External source intake
 
 ```bash

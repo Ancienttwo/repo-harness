@@ -287,8 +287,34 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
 
     const { dir } = api.readTaskAgent(fixture, spec.task, spec.role);
     writeFileSync(join(fixture, 'context.md'), 'owned context');
+    // Observer A3/A5: register the real session before send, then lose the
+    // post-send ledger registration. The next round must enroll the request
+    // from the original artifacts. Existing dispatch does not call the ledger.
+    const { PipelineStore } = await import('../src/effects/pipeline/store');
+    const { newPipeline, mutatePipeline } = await import('../src/effects/pipeline/ledger');
+    const { ingestEvent, observations, projectedRuns } = await import('../src/effects/pipeline/ingest');
+    const { hostname } = await import('node:os');
+    const observerEnv = { ...env, REPO_HARNESS_PIPELINES_AUTHORITY_HOST: hostname(),
+      REPO_HARNESS_PIPELINES_DB: join(fixture, '.ai/harness/pipeline/observer.db') };
+    const observerKey = { source_host: hostname(), repository_id: binding.repository_id, task: spec.task };
+    const enrolled = new PipelineStore({ env: observerEnv });
+    try {
+      newPipeline(enrolled, { ...observerKey, adopt_task: spec.task, root: fixture });
+      mutatePipeline(enrolled, observerKey, { op: 'record', kind: 'request', payload: { role: spec.role }, state_version: 1, reconcile: true });
+      expect(enrolled.read(observerKey).runs).toHaveLength(0);
+    } finally { enrolled.close(); }
     const request = await api.sendTaskRequest(fixture, spec.task, spec.role, 'context.md');
     await until(() => existsSync(request.result_ref));
+    const recovered = new PipelineStore({ env: observerEnv });
+    try {
+      expect(recovered.read(observerKey).runs).toHaveLength(0);
+      ingestEvent(recovered, { host: hostname(), herdr_session: session, result: { panes: [] } }, { snapshot: true });
+      const runs = projectedRuns(recovered.read(observerKey), observations(recovered));
+      expect(runs).toHaveLength(1);
+      expect(runs[0].request_id).toBe(request.request_id);
+      expect(runs[0].result_state).toBe('validated');
+      expect(existsSync(join(dir, 'collected-1.json'))).toBe(false);
+    } finally { recovered.close(); }
     expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
     const result = api.readSessionArtifact<Record<string, unknown>>(request.result_ref);
     api.writeSessionArtifact(request.result_ref, { ...result, request_id: 'another-request' }, false);

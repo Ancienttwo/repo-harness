@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
-import { PipelineError, object, type Key, type Phase } from '../../core/pipeline/types';
+import { PipelineError, type Key, type Phase } from '../../core/pipeline/types';
 import { newPipeline, mutatePipeline, reverifyRestoredStore } from '../../effects/pipeline/ledger';
 import { ingestEvent } from '../../effects/pipeline/ingest';
 import { validateOnSource, type AuthorityQuery } from '../../effects/pipeline/authority';

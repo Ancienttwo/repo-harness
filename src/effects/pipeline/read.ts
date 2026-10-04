@@ -1,4 +1,4 @@
-import { decodeRecord, keyOf, equal, PipelineError, type Key } from '../../core/pipeline/types';
+import { decodeRecord, keyOf, PipelineError, type Key } from '../../core/pipeline/types';
 import { projectBoard, unavailableBoard, type PipelineBoardV2 } from '../../core/pipeline/projection';
 import { projectedRuns, type LogObservation } from './ingest';
 import { openSnapshot, snapshotPointerPath, storePath } from './store';
