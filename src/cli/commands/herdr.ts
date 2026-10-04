@@ -125,9 +125,6 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (name.startsWith('HERDR_') || SECRETS.includes(name as typeof SECRETS[number])) delete env[name];
   const prefix = ['--session', options.session, 'plugin'];
-  const dir = herdr([...prefix, 'config-dir', PLUGIN_ID], env);
-  if (!isAbsolute(dir) || /[\r\n\x00]/.test(dir)) throw new Error('Herdr returned an invalid config directory.');
-  const source = join(dir, 'source');
   let plugins: unknown;
   try {
     const response = JSON.parse(herdr([...prefix, 'list', '--plugin', PLUGIN_ID, '--json'], env));
@@ -142,11 +139,14 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
     || typeof plugin.source?.kind !== 'string')) {
     throw new Error('Herdr returned invalid webhook-notify plugin data. No files were changed.');
   }
-  if (plugins.some(plugin => plugin.source.kind !== 'local' || resolve(plugin.plugin_root) !== resolve(source))) {
-    throw new Error('An existing webhook-notify plugin uses another source. No files were changed.\n'
-      + `Run: herdr --session ${options.session} plugin unlink ${PLUGIN_ID}\n`
-      + `Then run: repo-harness herdr notify install --session ${options.session}`);
-  }
+  const foreignSourceMessage = 'An existing webhook-notify plugin uses another source. Installation stopped before linking or enabling the plugin.\n'
+    + `Run: herdr --session ${options.session} plugin unlink ${PLUGIN_ID}\n`
+    + `Then run: repo-harness herdr notify install --session ${options.session}`;
+  if (plugins.some(plugin => plugin.source.kind !== 'local')) throw new Error(foreignSourceMessage);
+  const dir = herdr([...prefix, 'config-dir', PLUGIN_ID], env);
+  if (!isAbsolute(dir) || /[\r\n\x00]/.test(dir)) throw new Error('Herdr returned an invalid config directory.');
+  const source = join(dir, 'source');
+  if (plugins.some(plugin => resolve(plugin.plugin_root) !== resolve(source))) throw new Error(foreignSourceMessage);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(source, { recursive: true, mode: 0o700 });
   if (lstatSync(dir).isSymbolicLink() || lstatSync(source).isSymbolicLink()) throw new Error('Plugin directories must not be symbolic links.');

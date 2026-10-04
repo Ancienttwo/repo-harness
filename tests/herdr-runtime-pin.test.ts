@@ -113,7 +113,7 @@ function notifyFixture() {
     FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl') };
   for (const key of Object.keys(env)) if (key.startsWith('HERDR_') || /^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_)/.test(key)) delete (env as NodeJS.ProcessEnv)[key];
   const shim = join(bin, 'herdr');
-  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[3]==='config-dir') console.log(process.env.FIXTURE_CONFIG);\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
+  writeFileSync(shim, `#!${process.execPath}\nimport {appendFileSync,mkdirSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.FIXTURE_CALLS,JSON.stringify({args,secret:process.env.WEBHOOK_KEY??null})+'\\n');\nif(process.env.FIXTURE_FAIL===args[3]) { console.error('private '+process.env.FIXTURE_PRIVATE);process.exit(1); }\nif(args[3]==='config-dir') { mkdirSync(process.env.FIXTURE_CONFIG,{recursive:true}); console.log(process.env.FIXTURE_CONFIG); }\nif(args[3]==='list') console.log(process.env.FIXTURE_LIST_OUTPUT??JSON.stringify({id:'cli:plugin',result:{type:'plugin_list',plugins:JSON.parse(process.env.FIXTURE_PLUGINS??'[]')}}));\n`);
   chmodSync(shim, 0o755);
   const run = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
     [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'install', '--session', 'notify-test', '--non-interactive', ...args],
@@ -127,7 +127,7 @@ function notifyFixture() {
 const botFlags = ['--webhook-url', 'https://bot.example/routine', '--webhook-key', 'fixture-secret-key'];
 
 describe('Herdr notify install', () => {
-  test.each(['0.1.0', '0.2.0'])('a foreign local plugin at %s requires manual unlink before any write', version => {
+  test.each(['0.1.0', '0.2.0'])('a foreign local plugin at %s requires manual unlink before installation', version => {
     const fixture = notifyFixture();
     try {
       const foreign = join(fixture.home, 'foreign-plugin'); mkdirSync(foreign);
@@ -145,7 +145,22 @@ describe('Herdr notify install', () => {
       expect(readFileSync(join(foreign, 'herdr-plugin.toml'), 'utf8')).toBe(`version = "${version}"\n`);
       expect(existsSync(join(fixture.config, 'source'))).toBe(false);
       const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-      expect(calls.map(call => call.args[3])).toEqual(['config-dir', 'list']);
+      expect(calls.map(call => call.args[3])).toEqual(['list', 'config-dir']);
+    } finally { fixture.cleanup(); }
+  });
+
+  test('a foreign managed plugin stops before the config directory is created', () => {
+    const fixture = notifyFixture();
+    try {
+      rmSync(fixture.config, { recursive: true });
+      const result = fixture.run(botFlags, { FIXTURE_PLUGINS: JSON.stringify([
+        { plugin_id: 'aimpact.webhook-notify', version: '0.2.0', plugin_root: join(fixture.home, 'managed-plugin'), source: { kind: 'github' } },
+      ]) });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('another source');
+      expect(existsSync(fixture.config)).toBe(false);
+      const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      expect(calls.map(call => call.args[3])).toEqual(['list']);
     } finally { fixture.cleanup(); }
   });
 
@@ -166,9 +181,11 @@ describe('Herdr notify install', () => {
     '{"result":{"type":"plugin_list","plugins":[{}]}}'])('invalid plugin inventory fails closed: %s', inventory => {
     const fixture = notifyFixture();
     try {
+      rmSync(fixture.config, { recursive: true });
       const result = fixture.run(botFlags, { FIXTURE_LIST_OUTPUT: inventory });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('No files were changed');
+      expect(existsSync(fixture.config)).toBe(false);
       expect(result.stdout + result.stderr).not.toContain('private-invalid-json');
       expect(existsSync(join(fixture.config, 'source'))).toBe(false);
       expect(existsSync(join(fixture.config, '.env'))).toBe(false);
@@ -194,8 +211,8 @@ describe('Herdr notify install', () => {
       expect(config.TELEGRAM_NOTIFY_DONE).toBe('0');
       const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
       expect(calls.map(call => call.args)).toEqual([
-        ['--session', 'notify-test', 'plugin', 'config-dir', 'aimpact.webhook-notify'],
         ['--session', 'notify-test', 'plugin', 'list', '--plugin', 'aimpact.webhook-notify', '--json'],
+        ['--session', 'notify-test', 'plugin', 'config-dir', 'aimpact.webhook-notify'],
         ['--session', 'notify-test', 'plugin', 'link', join(fixture.config, 'source'), '--disabled'],
         ['--session', 'notify-test', 'plugin', 'enable', 'aimpact.webhook-notify'],
       ]);
@@ -234,14 +251,14 @@ describe('Herdr notify install', () => {
   });
 
   test('Herdr failure output stays private and each failed stage stops installation', () => {
-    for (const operation of ['config-dir', 'list', 'link', 'enable']) {
+    for (const operation of ['list', 'config-dir', 'link', 'enable']) {
       const fixture = notifyFixture();
       try {
         const result = fixture.run(botFlags, { FIXTURE_FAIL: operation, FIXTURE_PRIVATE: 'private-webhook-url' });
         expect(result.status).toBe(1);
         expect(result.stdout + result.stderr).not.toContain('private-webhook-url');
         const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n');
-        expect(calls).toHaveLength(['config-dir', 'list', 'link', 'enable'].indexOf(operation) + 1);
+        expect(calls).toHaveLength(['list', 'config-dir', 'link', 'enable'].indexOf(operation) + 1);
       } finally { fixture.cleanup(); }
     }
   });
