@@ -15,8 +15,16 @@ export function requirementPass(record:PipelineRecord,kind:string):boolean {
   const requirement=record.policy.verification[kind] as Requirement|undefined;
   const subject=currentSubject(record);
   if(!subject || !subject.worktree_clean || !requirement || typeof requirement==='string' || requirement.check_ids.length===0) return false;
+  // A verified correction can supersede an attested claim. Caller-provided
+  // ordering on that old claim is not an execution-authority sequence.
+  const superseded=new Set<number>();
+  for(const relation of record.relations) {
+    if(relation.rel!=='supersedes'||typeof relation.to!=='number')continue;
+    const replacement=record.evidence[relation.from],prior=record.evidence[relation.to];
+    if(replacement?.source==='verified'&&replacement.current&&prior&&replacement.kind===prior.kind&&replacement.check_id===prior.check_id&&equal(replacement.subject,prior.subject)&&(prior.source!=='verified'||replacement.execution_order>=prior.execution_order))superseded.add(relation.to);
+  }
   return requirement.check_ids.every(id=>{
-    const rows=record.evidence.filter(e=>e.kind===kind && e.check_id===id && e.current && equal(e.subject,subject) && e.subject.contract_identity===requirement.identity && e.subject.check_set_identity===record.policy.verification.check_set_identity);
+    const rows=record.evidence.filter((e,index)=>!superseded.has(index) && e.kind===kind && e.check_id===id && e.current && equal(e.subject,subject) && e.subject.contract_identity===requirement.identity && e.subject.check_set_identity===record.policy.verification.check_set_identity);
     if(!rows.length) return false;
     const latest=Math.max(...rows.map(e=>e.execution_order));
     // Equal authority order with conflicting claims cannot be resolved by arrival.

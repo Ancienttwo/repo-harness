@@ -149,8 +149,11 @@ test('A6: original execution provenance admits pass/fail, per-check AND and auth
   const stored=store.read(key);expect(stored.evidence.at(-1)?.source).toBe('verified');expect(stored.evidence.at(-1)?.execution_order).toBeGreaterThan(stored.evidence[1].execution_order);expect(requirementPass(stored,'affected_tests')).toBe(false);
   const attested={...row,sha256:digest('wrong'),execution_order:100};record(key,'evidence',{evidence:attested,contract_path:'plan.md'});expect(store.read(key).evidence.at(-1)?.source).toBe('attested');expect(requirementPass(store.read(key),'affected_tests')).toBe(false);
   rmSync(join(root,'.ai/harness/runs/fail-b'));const restored=execute(root,'restored');for(const id of ['a','b'])record(key,'evidence',{evidence:evidence(root,s,id,'pass',restored.path),contract_path:'plan.md'});
-  // The explicit uncertainty at order 100 remains visible. It cannot become verified.
+  // A corrected source-owned artifact can explicitly supersede the uncertain
+  // claim. Its caller-supplied order must not prevent that correction forever.
+  const corrected=store.read(key);record(key,'resource',{relations:[{rel:'supersedes',from:corrected.evidence.length-1,to:3}]});
   expect(store.read(key).evidence.at(-1)?.source).toBe('verified');
+  expect(requirementPass(store.read(key),'affected_tests')).toBe(true);
   writeFileSync(join(root,'source.txt'),'dirty\n');resource(key,root);expect(store.read(key).evidence.every(e=>!e.current)).toBe(true);expect(requirementPass(store.read(key),'affected_tests')).toBe(false);
 });
 
@@ -268,4 +271,9 @@ test('A3: ingest observation and delivery receipt remain atomic across process d
 test('A6: a real timed-out execution is verified incomplete and cannot pass admission',()=>{
   const root=repo('timeout'),key=create(root);const plan=readFileSync(join(root,'plan.md'),'utf8').replaceAll('test ! -f .ai/harness/runs/fail-', 'sleep 1 # ');writeFileSync(join(root,'plan.md'),plan);git(root,'add','plan.md');git(root,'commit','-qm','timeout input');const s=resource(key,root);
   const reportFile='.ai/harness/runs/incomplete.json';const output=executeVerificationContract({repoRoot:root,contractPath:'plan.md',env,timeoutMs:100,reportFile,forceReason:'Test incomplete authority'});expect(output.results[0].timed_out).toBe(true);record(key,'evidence',{evidence:evidence(root,s,'tc','incomplete',join(root,reportFile),'typecheck'),contract_path:'plan.md'});expect(store.read(key).evidence[0].source).toBe('verified');expect(requirementPass(store.read(key),'typecheck')).toBe(false);
+});
+
+test('A9/A13: list pins one generation and source CLI rejects mismatched selectors',async()=>{
+  const {readPipelineListView}=await import('../../src/effects/pipeline/read');const root=repo('selectors'),key=create(root);record(key,'observation',{kind:'note',source:'operator',data:{}});const listed=readPipelineListView(env) as any;expect(listed.records[0].state_version).toBe(listed.cards[0].state_version);expect(listed.records[0].repository_id).toBe(key.repository_id);expect(listed.commit_seq).toBe(store.watermark().commit_seq);
+  const query={key,root,kind:'subject',payload:{subject:subject(root),contract_path:'plan.md',base_ref:'main'}};const input=join(scratch,'query.json');writeFileSync(input,JSON.stringify(query));const wrong=cli(['record','--validate-only','--source-host',key.source_host,'--repository-id',key.repository_id,'--task','foreign','--kind','subject','--payload',input]);expect(wrong.status).toBe(2);expect(wrong.stdout).toContain('selectors');
 });

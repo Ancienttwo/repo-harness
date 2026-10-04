@@ -28,12 +28,12 @@ export function readPipelineStatus(key:Key,input:{env?:NodeJS.ProcessEnv;events?
   }finally{db.close();}
 }
 
-export function readPipelineInbox(env:NodeJS.ProcessEnv=process.env):unknown[] {
-  let opened;try{opened=openSnapshot(snapshotPointerPath(storePath(env)));}catch{return [];}
-  try{return opened.db.query("SELECT kind,source,observed_at,payload FROM observations WHERE kind IN ('unclaimed','weak_observation') ORDER BY seq DESC LIMIT 100").all().map((raw:any)=>{const p=JSON.parse(raw.payload);return {disposition:raw.kind,source:raw.source,received_at:raw.observed_at,pending_attention:p.pending_attention===true,candidate_hint:p.candidate_hint??null};});}finally{opened.db.close();}
-}
-
-export function readPipelineList(env:NodeJS.ProcessEnv=process.env,repo?:string,phase?:string):unknown[] {
-  let opened;try{opened=openSnapshot(snapshotPointerPath(storePath(env)));}catch{return [];}
-  try{return (opened.db.query('SELECT record FROM pipelines ORDER BY source_host,repository_id,task').all() as {record:string}[]).map(row=>decodeRecord(JSON.parse(row.record))).filter(r=>(!repo||r.repo.id===repo)&&(!phase||r.phase===phase)).map(r=>({...keyOf(r),id:r.id,title:r.task.title,phase:r.phase,state_version:r.state_version}));}finally{opened.db.close();}
+export function readPipelineListView(env:NodeJS.ProcessEnv=process.env,repo?:string,phase?:string):unknown {
+  let opened;try{opened=openSnapshot(snapshotPointerPath(storePath(env)));}catch{return {...unavailableBoard(),records:[],inbox:[]};}
+  try {
+    const records=(opened.db.query('SELECT record FROM pipelines ORDER BY source_host,repository_id,task').all() as {record:string}[]).map(row=>decodeRecord(JSON.parse(row.record))).filter(r=>(!repo||r.repo.id===repo)&&(!phase||r.phase===phase));
+    const logs=opened.db.query('SELECT * FROM observations ORDER BY seq').all().map((row:any)=>({...row,payload:JSON.parse(row.payload)})) as LogObservation[];
+    const board=projectBoard(records,logs,opened.pointer);
+    return {...board,records:records.map(r=>({...keyOf(r),id:r.id,title:r.task.title,phase:r.phase,state_version:r.state_version})),inbox:logs.filter(o=>['unclaimed','weak_observation'].includes(o.kind)).slice(-100).map(o=>({disposition:o.kind,source:o.source,received_at:o.observed_at,pending_attention:o.payload.pending_attention===true,candidate_hint:o.payload.candidate_hint??null}))};
+  }finally{opened.db.close();}
 }
