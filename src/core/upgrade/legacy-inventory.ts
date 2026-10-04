@@ -184,6 +184,10 @@ function historicalCommands(actions: readonly RetirementAction[], shimPaths: rea
   const prefix = '.repo-harness/hooks/';
   for (const shim of shimPaths) {
     commands.add(shim);
+    // v0.1.2-v0.2.4 installers used these names before the central bundle.
+    for (const name of ['trace-event.sh', 'context-pressure-hook.sh', 'autoresearch-advisory.sh', 'finalize-handoff.sh']) {
+      commands.add(`bash ${shim} ${name}`);
+    }
     for (const action of actions) {
       if (action.location !== 'global') continue;
       for (const path of action.paths ?? []) {

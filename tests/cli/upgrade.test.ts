@@ -213,6 +213,38 @@ describe('upgrade with real release bytes', () => {
     }
   }));
 
+  test('global cleanup removes four early installer shim hooks and keeps user mentions', () => sandbox((opts) => {
+    const release = spawnSync('git', ['show', 'v0.1.2:scripts/repo-harness.sh'], { cwd: ROOT, encoding: 'utf8' });
+    expect(release.status, release.stderr).toBe(0);
+    const installer = join(opts.home, 'release-source/scripts/repo-harness.sh');
+    put(installer, release.stdout);
+    const generated = spawnSync('bash', ['-c', 'source "$1" help >/dev/null; build_hooks_json', 'early-release-installer', installer], {
+      env: { ...process.env, HOME: opts.home }, encoding: 'utf8',
+    });
+    expect(generated.status, generated.stderr).toBe(0);
+    const hooks: Record<string, { hooks: { type: string; command: string }[] }[]> = JSON.parse(generated.stdout);
+    const names = ['trace-event.sh', 'context-pressure-hook.sh', 'autoresearch-advisory.sh', 'finalize-handoff.sh'];
+    const legacy = Object.values(hooks).flatMap((blocks) => blocks.flatMap((block) => block.hooks.map((hook) => hook.command)));
+    const early = legacy.filter((command) => names.some((name) => command.endsWith(` ${name}`)));
+    expect([...new Set(early)].sort()).toEqual(names.map((name) => `bash ${opts.home}/.repo-harness/hook-shim.sh ${name}`).sort());
+    const user = [...new Set(early)].flatMap((command) => [`echo ${command}`, `${command} --user-option`])
+      .map((command) => ({ type: 'command', command }));
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      put(join(opts.home, name), JSON.stringify({ owner: 'user', hooks: {
+        ...hooks, Stop: [...hooks.Stop, { matcher: 'user', hooks: user }],
+      } }));
+    }
+    const plan = runUpgrade({ ...opts, scope: 'global' });
+    expect(plan.items.filter((item) => early.includes(item.hookCommand!))).toHaveLength(early.length * 2);
+    expect(plan.items.filter((item) => user.some((hook) => hook.command === item.hookCommand))).toEqual([]);
+    expect(runUpgrade({ ...opts, scope: 'global', apply: true }).exitCode).toBe(0);
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      expect(JSON.parse(readFileSync(join(opts.home, name), 'utf8'))).toEqual({
+        owner: 'user', hooks: { Stop: [{ matcher: 'user', hooks: user }] },
+      });
+    }
+  }));
+
   test('global cleanup removes only full legacy typed command forms', () => sandbox((opts) => {
     const legacy = [
       'HOOK_HOST=codex repo-harness hook PreToolUse --route edit',
