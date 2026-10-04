@@ -158,10 +158,8 @@ describe("Bootstrap Script Contracts", () => {
         expect(read(file)).toContain(`## ${section}\n`);
       }
     }
-    // Publication authorization can be stricter for a host without replacing
-    // the standalone sibling's other shared rules or host guidance.
-    const sharedRules = (content: string) => content.split(/\n## (?:Claude Code|Codex)\n/)[0]!
-      .split('\n').filter(line => !line.includes('squash-merge')).join('\n');
+    // Both standalone hosts must share all rules before host-specific guidance.
+    const sharedRules = (content: string) => content.split(/\n## (?:Claude Code|Codex)\n/)[0]!;
     expect(sharedRules(claude)).toBe(sharedRules(agents));
     expect(agents).toContain('current task explicitly authorizes main publication');
     expect(claude).toContain("## Claude Code");

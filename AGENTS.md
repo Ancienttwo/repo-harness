@@ -11,6 +11,7 @@
 - Automatically delete only merged, clean worktrees/branches; ask the user for every other deletion. Credentials/permissions (including confirmation bypass) and release/production operations require user approval.
 - Use gatekeeper/cross-model review for large changes, security/permissions, or unresolved model uncertainty; ordinary steps record diagnostics without approval loops.
 - Model division and cross-model dispatch/review follow [Herdr Dispatch](docs/reference-configs/external-tooling.md#herdr-dispatch).
+- GitHub operations (PRs, reviews, merges, labels, releases, comments) go only through the gh/git CLI or the GitHub API. Never use simulated browser clicks on github.com: the account can be banned.
 - When one PR changes both test assertions and implementation code, run one read-only review focused on tests bent to fit a bug (on-demand, not a restored gate; dispatch per the herdr guide).
 - `.archcontext/model/` owns architecture boundaries; read `docs/architecture/` on demand and update only real responsibility changes. Architecture diagnostics do not block work or author nested agent instructions.
 - Preserve `agents/fleet/`, release checklists and downstream `assets/templates` / `assets/partials*`. Keep `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json` aligned.
