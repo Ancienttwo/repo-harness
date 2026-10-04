@@ -44,6 +44,32 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+  test-home-isolation:
+    name: Test HOME isolation (${{ matrix.os }})
+    needs: selection
+    if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Run the isolation tests
+        shell: bash
+        run: |
+          source scripts/lib/ci-run-tests.sh
+          run_bun_test_file tests/preload-home-isolation.test.ts
+
   verify:
     name: Typecheck and affected tests
     needs: selection
@@ -154,10 +180,24 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
+      - name: Isolate the native test home
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("node:fs"), path = require("node:path");
+            const root = path.resolve("/tmp");
+            fs.mkdirSync(root, { recursive: true });
+            const canonical = fs.realpathSync(root);
+            const home = fs.mkdtempSync(path.join(canonical, "rh-test-home-"));
+            const temp = fs.mkdtempSync(path.join(canonical, "rh-test-tmp-"));
+            const env = { HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp };
+            fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(env).map(([key, value]) => key + "=" + value).join("\n") + "\n");
+          '
       - env:
           REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: '1'
         run: >-
           bun test --timeout 60000 --max-concurrency 1
+          tests/preload-home-isolation.test.ts
           tests/cli/mcp-workspaces.test.ts tests/cli/mcp-reader-tools.test.ts
           tests/cli/mcp-policy.test.ts tests/cli/mcp-http.test.ts tests/cli/mcp-oauth.test.ts
           tests/cli/mcp-stdio.test.ts tests/effects/fleet-collector-process.test.ts

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { basename, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
@@ -1400,7 +1400,7 @@ exit 0
           ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
-          PATH: `${fakeBin}:${join(process.env.HOME ?? '', '.bun', 'bin')}:/usr/bin:/bin`,
+          PATH: `${fakeBin}:${dirname(process.execPath)}:/usr/bin:/bin`,
           // Sabotaging PATH alone is not enough: resolveCompatibleNodeRuntime falls through to a
           // tier-3 scan of trusted machine paths (/usr/local/bin, hostedtoolcache, nvm) that finds a
           // real Node 24 on CI. Pin the tier-1 explicit authority at the incompatible fake so the
