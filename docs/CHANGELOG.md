@@ -104,6 +104,8 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 
 - Remove `scripts/emit-verify-evidence.ts`, `verify-producer.ts`, and `checks-materializer.ts`. Remove the `.ai/harness/checks/latest.json` chain and `state repair-artifact`. Keep other check caches.
 - Acceptance, review, and current archive require an explicit native report under `.ai/harness/runs/`. State and task freeze evaluate the owning execution records. Empty or missing Verification Plans cannot pass.
+- Keep long Verification Plan check IDs intact. Old records that hashed an ID now read as missing. Execute that plan again to write an exact record. Keep the old ledger bytes.
+- Writing an acceptance projection to a tracked file changes the native source tree and makes its prior execution proof stale. Generic review uses an ignored session projection.
 - Publication receipts and PR receipt markers use V2. Old finalized V1 receipts, markers, and digests fail closed. This release has no automatic upgrade. Publication identity, create intent, and prepare remain V1.
 
 - Retire direct cross-review. Use `repo-harness review` in Herdr.
