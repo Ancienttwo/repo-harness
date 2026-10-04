@@ -239,21 +239,49 @@ describe('notify plugin status', () => {
       const f = fixture();
       const state = join(f.root, 'state');
       mkdirSync(state);
+      // The plugin skips temporary workspaces, so this one lives in the git-ignored repository path #508 uses.
+      const workspace = mkdtempSync(join(import.meta.dir, '../../.notify-workspace-'));
       writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\nNOTIFY_SESSION='notify-test'\nTELEGRAM_BOT_TOKEN='123:token'\nTELEGRAM_CHAT_ID='-42'\n`, { mode: 0o600 });
       const stderr: string[] = [];
       const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
       try {
         await notify({ ...f.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: f.config, HERDR_PLUGIN_STATE_DIR: state,
           HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
-          HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: '/Users/operator/project' }),
+          HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: workspace }),
         }, (async (url: string | URL | Request) => new Response(JSON.stringify({ ok: !String(url).includes('telegram.org') || telegramOk }), { status: 200 })) as typeof fetch);
       } finally { spy.mockRestore(); }
       try {
         expect(stderr).toHaveLength(2);
         f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
         expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result });
-      } finally { f.cleanup(); }
+      } finally { f.cleanup(); rmSync(workspace, { recursive: true, force: true }); }
     }
+  });
+
+  test('a debounce-state warning from the shipped plugin does not hide the delivery result', async () => {
+    const pluginPath = join(import.meta.dir, '../../assets/herdr/webhook-notify/notify.mjs');
+    const { notify } = await import(pluginPath) as {
+      notify: (env: NodeJS.ProcessEnv, send: typeof fetch) => Promise<void>;
+    };
+    const f = fixture();
+    const state = join(f.root, 'state');
+    mkdirSync(state);
+    writeFileSync(join(state, 'debounce-state.json'), 'not json');
+    const workspace = mkdtempSync(join(import.meta.dir, '../../.notify-workspace-'));
+    writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\nNOTIFY_SESSION='notify-test'\n`, { mode: 0o600 });
+    const stderr: string[] = [];
+    const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
+    try {
+      await notify({ ...f.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: f.config, HERDR_PLUGIN_STATE_DIR: state,
+        HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: 'blocked' } }),
+        HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: workspace }),
+      }, (async (_url: string | URL | Request) => new Response('{}', { status: 200 })) as typeof fetch);
+    } finally { spy.mockRestore(); }
+    try {
+      expect(stderr).toEqual(['[webhook-notify] Cannot read debounce state. Using empty state.', '[webhook-notify] WEBHOOK: HTTP 200']);
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
+      expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'succeeded' });
+    } finally { f.cleanup(); rmSync(workspace, { recursive: true, force: true }); }
   });
 
   test('the reader performs no synchronous filesystem or process call on the server request path', async () => {

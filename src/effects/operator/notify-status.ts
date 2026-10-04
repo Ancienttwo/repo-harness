@@ -82,6 +82,7 @@ const LINE_FORMATS: readonly (readonly [RegExp, (match: RegExpMatchArray) => boo
   [/^\[webhook-notify\] [A-Z]+: HTTP (\d{3})( app-failed)?$/u, match => is2xx(match[1]!) && match[2] === undefined],
   [/^\[webhook-notify\] [A-Z]+: delivery failed\.$/u, () => false],
   [/^\[webhook-notify\] Invalid config, event, or state\.$/u, () => null],
+  [/^\[webhook-notify\] Cannot read debounce state\. Using empty state\.$/u, () => null],
   [/^\[webhook-notify\] (?:POST|SLACK) \S+ -> (\d{3})$/u, match => is2xx(match[1]!)],
   [/^\[webhook-notify\] (?:POST|SLACK) failed: /u, () => false],
   [/^\[webhook-notify\] (?:invalid \S+: |skip test workspace |no target configured |debounced |state write failed: |error: )/u, () => null],
