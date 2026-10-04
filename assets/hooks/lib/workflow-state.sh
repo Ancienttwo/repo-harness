@@ -1370,16 +1370,8 @@ workflow_hook_cli_json() {
     bun "$HOOK_REPO_ROOT/src/cli/hook-entry.ts" "$@"
     return $?
   fi
-  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
-    bun "$REPO_HARNESS_CLI" "$@"
-    return $?
-  fi
   if command -v repo-harness-hook >/dev/null 2>&1; then
     repo-harness-hook "$@"
-    return $?
-  fi
-  if command -v repo-harness >/dev/null 2>&1; then
-    repo-harness "$@"
     return $?
   fi
   return 127

@@ -18,6 +18,15 @@ Campaign execution moved to the existing [repo-harness](../SKILL.md), [repo-harn
 
 - Remove shipped research scripts: `axr7-consumer-e2e.ts`, `session-context-packet-panel.ts`, `benchmark-general-repo-reader.ts`, `run-bdd2-evals.ts`, `c9-collaboration-canary.ts`, `hook-dispatch-diet-report.ts`, `route-nl-vs-ts-eval.ts`, `loop-engine-cutover-gate.ts`, `run-debug-ground-truth-eval.ts`, `mcp-observability-report.ts`, and `akn00-native-execution-admission.ts`.
 - Remove `benchmark:mcp-reader`, `benchmark:debug`, and `check:route-eval`. Retire the BDD2, BDD3, and debug ground-truth data. Keep the hook telemetry reader, CI full-history check, scaffold loader, ME2B, and shared collaboration test dependencies.
+- Remove the six hidden hook commands from `repo-harness`: `circuit-breaker-record`,
+  `prompt-route`, `prompt-guard-decide`, `minimal-change`, `review-rubric`, and
+  `review-subject`. Use `repo-harness-hook` for these commands.
+
+### Changed
+
+- Migrate pending post-edit journal v1 events with
+  `repo-harness state migrate-post-edit-journal-v1 --json`. Hooks keep v1 files
+  until this explicit migration runs.
 
 - Remove empty skill lifecycle hooks, `assets/skill-hooks.json`, and `scripts/run-skill-hook.ts`. Scaffold and template assembly call their tasks directly.
 - Remove `scripts/setup-plugins.sh`. Use `repo-harness install`.
@@ -364,7 +373,7 @@ it rather than beside it.
   A host with only tmux installed fails strict readiness after upgrading.
   Drain reviewers hosted by the previous runtime and rebind terminal endpoints
   before the upgrade — see
-  [`20260909-herdr-runtime-cutover.md`](researches/20260909-herdr-runtime-cutover.md).
+  [`20260909-herdr-runtime-cutover.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md).
 - **`tasks/current.md` is no longer a tracked file.** It was tracked but derived
   entirely from untracked local markers, so one session's snapshot could
   misrepresent itself as mainline truth. It is now untracked and gitignored, the
