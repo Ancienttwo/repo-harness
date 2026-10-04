@@ -509,7 +509,9 @@ describe('candidate-bound global runtime reconciliation', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  // This test copies two runtimes and runs two complete updates.
+  // The full-suite run reached 32.5 seconds; one update is not the full budget.
+  }, 60_000);
 
   test('a candidate failure after projection restores the predecessor adapter through the parent transaction', () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-rollback-'));

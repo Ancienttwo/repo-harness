@@ -62,9 +62,10 @@ function setupRepo(name: string): { readonly root: string; readonly contractPath
   writeFileSync(join(root, "source.txt"), "source\n");
   const contractPath = "tasks/contracts/fixture.contract.md";
   writeFileSync(join(root, contractPath), contract({ protocol: 1, checks: [commandCheck()] }));
+  mkdirSync(join(root, ".ai", "harness", "runs"), { recursive: true });
   git(root, "add", ".");
   git(root, "commit", "-q", "-m", "fixture");
-  return { root, contractPath, counterPath: join(root, "..", `${name}-counter-${Date.now()}.txt`) };
+  return { root, contractPath, counterPath: join(root, ".ai", "harness", "runs", "counter.txt") };
 }
 
 function withRepo(name: string, fn: (repoRoot: string, contractPath: string, counterPath: string) => void): void {
@@ -73,7 +74,6 @@ function withRepo(name: string, fn: (repoRoot: string, contractPath: string, cou
     fn(fixture.root, fixture.contractPath, fixture.counterPath);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
-    rmSync(fixture.counterPath, { force: true });
   }
 }
 
@@ -677,8 +677,11 @@ describe("verification execution lifecycle", () => {
       const secondBash = `${counterPath}-bash-two`;
       const brokenBash = `${counterPath}-bash-broken`;
       try {
+        // Delay only version discovery past the old five-second bound.
         for (const path of [firstBash, secondBash]) {
-          writeFileSync(path, '#!/bin/sh\nexec /bin/bash "$@"\n');
+          writeFileSync(path, `#!/bin/sh
+${path === secondBash ? 'if [ "$1" = --version ]; then sleep 5.1; fi\n' : ''}exec /bin/bash "$@"
+`);
           chmodSync(path, 0o755);
         }
         writeFileSync(brokenBash, "#!/bin/sh\nexit 9\n");
@@ -706,7 +709,8 @@ describe("verification execution lifecycle", () => {
         rmSync(brokenBash, { force: true });
       }
     });
-  }, 30_000);
+  // Three bounded inventory probes need margin within the test deadline.
+  }, 60_000);
 
   test("baseline evidence is historical and only passes with explicit current exact delta", () => {
     withRepo("verification-baseline", (repoRoot, contractPath, counterPath) => {

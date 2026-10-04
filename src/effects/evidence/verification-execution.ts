@@ -236,7 +236,8 @@ function versionOf(command: string, args: readonly string[], env: NodeJS.Process
       encoding: "utf8",
       env,
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: 5_000,
+      // File workers share CPU and process startup. Keep discovery bounded under load.
+      timeout: 15_000,
     }).trim();
     if (!version) throw new Error("empty version output");
     return version;

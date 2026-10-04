@@ -243,7 +243,8 @@ describe('fleet board collector', () => {
       })}\n`);
       const registryBefore = readFileSync(join(home, 'registered-repos.json'), 'utf8');
       const statusBefore = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
-      const result = await collectFleetBoard({ env: { ...process.env, REPO_HARNESS_HOME: home }, timeout_ms: 1_000 });
+      // Real Git and readiness reads share process startup with the file pool.
+      const result = await collectFleetBoard({ env: { ...process.env, REPO_HARNESS_HOME: home }, timeout_ms: 15_000 });
       expect(result.repositories[0]).toMatchObject({ repository_id: repositoryId, status: 'ok' });
       expect(result.repositories[0]?.cards).toHaveLength(1);
       // The label is the digest's own preimage: the same sprint row cell the
@@ -265,7 +266,8 @@ describe('fleet board collector', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 10_000);
+  // The 15-second collector bound needs setup and assertion time as well.
+  }, 30_000);
 
   test('bounds ten independent repository reads and isolates the damaged tenth row', async () => {
     const repos = Array.from({ length: 10 }, (_, index) => repo(index));

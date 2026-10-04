@@ -176,9 +176,10 @@ describe('ME-2B runtime inventory does not grant probe support', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'me2b-discovery-'));
     try {
       const executable = join(fixture, 'codex');
+      // Exercise inventory latency past the old five-second bound.
       writeFileSync(executable, `#!/bin/sh
 case "$*" in
-  --version) echo 'codex-cli 0.154.0' ;;
+  --version) sleep 5.1; echo 'codex-cli 0.154.0' ;;
   'sandbox --help') echo 'inventory help' ;;
   *) exit 91 ;;
 esac
@@ -190,7 +191,8 @@ esac
       expect(me2bProbeSupport('codex-cli 0.149.0')).toEqual({ status: 'registered', adapter_id: 'codex-cli-0.149.0-launch-only/v1' });
       expect(me2bProbeSupport('codex-cli 0.149.1').status).toBe('unavailable');
     } finally { rmSync(fixture, { recursive: true, force: true }); }
-  });
+  // Two 15-second probes need test-runner margin under file-worker load.
+  }, 60_000);
 
   test('failed help discovery is an IO failure, not proof of a read-only sandbox denial', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'me2b-discovery-failure-'));
