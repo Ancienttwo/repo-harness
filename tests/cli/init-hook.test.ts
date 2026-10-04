@@ -12,6 +12,7 @@ import type { DoctorReport } from '../../src/cli/commands/doctor';
 import type { StatusReport } from '../../src/cli/commands/status';
 import { planAdoption } from '../../src/core/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
+import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -116,10 +117,9 @@ function baseToolingReport(tools: ToolingReport['tools'] = {}): ToolingReport {
 describe('init-hook command', () => {
   test('prints one leftover summary without listing or changing retired bytes', () => {
     withTempHome((home, repo) => {
-      const oldShim = join(ROOT, 'tests/fixtures/upgrade-v0.10-home/.repo-harness/hook-shim.sh');
       const target = join(home, '.repo-harness/hook-shim.sh');
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
-      const original = readFileSync(oldShim, 'utf8');
+      const original = readUpgradeFixture('upgrade-v0.10-home', '.repo-harness/hook-shim.sh').toString('utf8');
       writeFileSync(target, original);
       const report = runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });

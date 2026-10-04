@@ -4,272 +4,311 @@
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "scripts/hook-shim.sh",
-    "blob_sha": "cf8a262262545f6adeef10f096e582843f26896e"
+    "blob_sha": "cf8a262262545f6adeef10f096e582843f26896e",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/AGENTS.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/AGENTS.md",
-    "blob_sha": "4d824dbacead201b0ccd2dfced950c651cc96d7e"
+    "blob_sha": "4d824dbacead201b0ccd2dfced950c651cc96d7e",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/CLAUDE.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/CLAUDE.md",
-    "blob_sha": "4d824dbacead201b0ccd2dfced950c651cc96d7e"
+    "blob_sha": "4d824dbacead201b0ccd2dfced950c651cc96d7e",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/anti-simplification.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/anti-simplification.sh",
-    "blob_sha": "f32673ba3fa08282a6346b07fe9ab44a94d828d4"
+    "blob_sha": "f32673ba3fa08282a6346b07fe9ab44a94d828d4",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/changelog-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/changelog-guard.sh",
-    "blob_sha": "e78596fc56f76e66933ec7d5ff5596528aec3169"
+    "blob_sha": "e78596fc56f76e66933ec7d5ff5596528aec3169",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/codex-delegation-advisor.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/codex-delegation-advisor.sh",
-    "blob_sha": "2e1c886a7cf5275fcb7efcbb218f35ff8d324f84"
+    "blob_sha": "2e1c886a7cf5275fcb7efcbb218f35ff8d324f84",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/first-principles-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/first-principles-guard.sh",
-    "blob_sha": "f7d0819fb40d3317042636716873d533fcb61530"
+    "blob_sha": "f7d0819fb40d3317042636716873d533fcb61530",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/hook-input.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/hook-input.sh",
-    "blob_sha": "921a2875f983ef8a3a33d21d23f3808f319bc096"
+    "blob_sha": "921a2875f983ef8a3a33d21d23f3808f319bc096",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/lib/minimal-change.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/lib/minimal-change.sh",
-    "blob_sha": "8549a1335ade6b1cddaa5667d22db7fb7ccc7b97"
+    "blob_sha": "8549a1335ade6b1cddaa5667d22db7fb7ccc7b97",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/lib/session-state.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/lib/session-state.sh",
-    "blob_sha": "f2743027e78b5f27d65c39a4690fb98f6992db35"
+    "blob_sha": "f2743027e78b5f27d65c39a4690fb98f6992db35",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/lib/workflow-state.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/lib/workflow-state.sh",
-    "blob_sha": "e71415f69af4f394f4956d9b7f9ac72ad7844103"
+    "blob_sha": "e71415f69af4f394f4956d9b7f9ac72ad7844103",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/minimal-change-context.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/minimal-change-context.sh",
-    "blob_sha": "55a13ae0d1cece327585ce75cd312fa7f854debb"
+    "blob_sha": "55a13ae0d1cece327585ce75cd312fa7f854debb",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/minimal-change-observer.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/minimal-change-observer.sh",
-    "blob_sha": "f45fe38824cf185fc39818125c3ccd210456cf5e"
+    "blob_sha": "f45fe38824cf185fc39818125c3ccd210456cf5e",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/post-bash.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/post-bash.sh",
-    "blob_sha": "cf2188302ae6b1730bdfabc7e52767b98004ad68"
+    "blob_sha": "cf2188302ae6b1730bdfabc7e52767b98004ad68",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/post-edit-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/post-edit-guard.sh",
-    "blob_sha": "ca1478e04d167b4db6d206a596c66af4d557b6a4"
+    "blob_sha": "ca1478e04d167b4db6d206a596c66af4d557b6a4",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/post-tool-observer.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/post-tool-observer.sh",
-    "blob_sha": "eafa23878e8649cc878e42cb66de5aecbc9e5593"
+    "blob_sha": "eafa23878e8649cc878e42cb66de5aecbc9e5593",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/pre-edit-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/pre-edit-guard.sh",
-    "blob_sha": "4fa23b4ea0d57abc08b4b8873813972292e20040"
+    "blob_sha": "4fa23b4ea0d57abc08b4b8873813972292e20040",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/prompt-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/prompt-guard.sh",
-    "blob_sha": "6d27b8d00cf1841321ce29f1d671bb20d6936ca0"
+    "blob_sha": "6d27b8d00cf1841321ce29f1d671bb20d6936ca0",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/run-hook.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/run-hook.sh",
-    "blob_sha": "823bb1b4fceb56115e59649092c3c952032ad7ca"
+    "blob_sha": "823bb1b4fceb56115e59649092c3c952032ad7ca",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/security-sentinel.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/security-sentinel.sh",
-    "blob_sha": "cbff414742ea969f9614e52803163ff306d8d3a8"
+    "blob_sha": "cbff414742ea969f9614e52803163ff306d8d3a8",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/session-start-context.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/session-start-context.sh",
-    "blob_sha": "88cd066a89e6c74e5a7438b4c80b7c12ee5dc535"
+    "blob_sha": "88cd066a89e6c74e5a7438b4c80b7c12ee5dc535",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/stop-orchestrator.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/stop-orchestrator.sh",
-    "blob_sha": "fc9528ade1e159d6138c7424db11cd8dce9c9e9e"
+    "blob_sha": "fc9528ade1e159d6138c7424db11cd8dce9c9e9e",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/subagent-return-channel-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/subagent-return-channel-guard.sh",
-    "blob_sha": "e2b9dfbbe21531e98114ef35fee84c5f7383ef6f"
+    "blob_sha": "e2b9dfbbe21531e98114ef35fee84c5f7383ef6f",
+    "mode": 493
   },
   {
     "fixture_path": ".repo-harness/hooks/subagent-start-context.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/subagent-start-context.sh",
-    "blob_sha": "6a505aff8a342fcdbb3c7124b581ea6cb5714499"
+    "blob_sha": "6a505aff8a342fcdbb3c7124b581ea6cb5714499",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/subagent-stop-quality.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/subagent-stop-quality.sh",
-    "blob_sha": "a0e7f6bd8c15f83046d7be68035cdb09f602baa4"
+    "blob_sha": "a0e7f6bd8c15f83046d7be68035cdb09f602baa4",
+    "mode": 420
   },
   {
     "fixture_path": ".repo-harness/hooks/worktree-guard.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/hooks/worktree-guard.sh",
-    "blob_sha": "708cabe11005145cc856f9d5a0090b22a02a5a44"
+    "blob_sha": "708cabe11005145cc856f9d5a0090b22a02a5a44",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-check/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-check/SKILL.md",
-    "blob_sha": "dddcaa8b5a880a5e149cc03cbd033303dd639119"
+    "blob_sha": "dddcaa8b5a880a5e149cc03cbd033303dd639119",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-check/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-check/SKILL.md",
-    "blob_sha": "dddcaa8b5a880a5e149cc03cbd033303dd639119"
+    "blob_sha": "dddcaa8b5a880a5e149cc03cbd033303dd639119",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-gptpro/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-gptpro/SKILL.md",
-    "blob_sha": "50ac2e4fa1b33933ab232a426a38e6ad0c007acd"
+    "blob_sha": "50ac2e4fa1b33933ab232a426a38e6ad0c007acd",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-gptpro/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-gptpro/SKILL.md",
-    "blob_sha": "50ac2e4fa1b33933ab232a426a38e6ad0c007acd"
+    "blob_sha": "50ac2e4fa1b33933ab232a426a38e6ad0c007acd",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-handoff/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-handoff/SKILL.md",
-    "blob_sha": "0e80b14f965f45e8a841aadb03874d049affecf0"
+    "blob_sha": "0e80b14f965f45e8a841aadb03874d049affecf0",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-handoff/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-handoff/SKILL.md",
-    "blob_sha": "0e80b14f965f45e8a841aadb03874d049affecf0"
+    "blob_sha": "0e80b14f965f45e8a841aadb03874d049affecf0",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/skills/repo-harness-plan/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-plan/SKILL.md",
-    "blob_sha": "7e3823ca8ebbe0bc16e2ac74e813eba1f8f99015"
+    "blob_sha": "7e3823ca8ebbe0bc16e2ac74e813eba1f8f99015",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/skills/repo-harness-plan/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "assets/skill-commands/repo-harness-plan/SKILL.md",
-    "blob_sha": "7e3823ca8ebbe0bc16e2ac74e813eba1f8f99015"
+    "blob_sha": "7e3823ca8ebbe0bc16e2ac74e813eba1f8f99015",
+    "mode": 420
   },
   {
     "fixture_path": ".claude/settings.json",
     "tag": "v0.9.2",
     "commit": "76cd77c07052384f4107d0e3cbc293c7781048c1",
     "path": "assets/hooks/settings.template.json",
-    "blob_sha": "2899108c2afd9366d07342714d1c7a3adf016e4d"
+    "blob_sha": "2899108c2afd9366d07342714d1c7a3adf016e4d",
+    "mode": 420
   },
   {
     "fixture_path": ".codex/hooks.json",
     "tag": "v0.9.2",
     "commit": "76cd77c07052384f4107d0e3cbc293c7781048c1",
     "path": "assets/hooks/codex.hooks.template.json",
-    "blob_sha": "5fae691ed17821e5c01b6cab7826ad169138020c"
+    "blob_sha": "5fae691ed17821e5c01b6cab7826ad169138020c",
+    "mode": 420
   },
   {
     "fixture_path": "release-source/SKILL.md",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "SKILL.md",
-    "blob_sha": "f378e8394ba9417ebdc76c0ca97dda396ef9c0f7"
+    "blob_sha": "f378e8394ba9417ebdc76c0ca97dda396ef9c0f7",
+    "mode": 420
   },
   {
     "fixture_path": "release-source/scripts/sync-codex-installed-copies.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "scripts/sync-codex-installed-copies.sh",
-    "blob_sha": "15b0e9cfe9510929cbd84288b729023241c14be1"
+    "blob_sha": "15b0e9cfe9510929cbd84288b729023241c14be1",
+    "mode": 493
   },
   {
     "fixture_path": "release-source/scripts/repo-harness.sh",
     "tag": "v0.10.0",
     "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
     "path": "scripts/repo-harness.sh",
-    "blob_sha": "1fcfef6f41e138acfc3cb2e31d3823089b74ffcc"
+    "blob_sha": "1fcfef6f41e138acfc3cb2e31d3823089b74ffcc",
+    "mode": 493
   }
 ]
