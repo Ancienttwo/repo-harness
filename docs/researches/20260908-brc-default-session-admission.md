@@ -1,5 +1,7 @@
 # BRC default-model session admission
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Campaign session ownership no longer depends on backend model identity. The user-selected ChatGPT model/thinking values remain untouched and `BrowserSessionMeta.model.verified` remains observationally false. No new provider run is performed by this implementation.
 
 The shared campaign browser-session evidence producer requires a completed Oracle result and matching local metadata, exact repository and Chrome profile root/directory, the invocation-owned descriptor's provider session, and actual selected GitHub composer-pill evidence. Initial sessions require no parent; a continuation must name the stored source session's provider identity. Two equal but foreign parent fields are insufficient. Continuation requires source evidence and an unchanged repository/profile binding before reserving budget; adoption checks the same binding before challenge I/O. Invalid source evidence cannot start another unprovable child call.

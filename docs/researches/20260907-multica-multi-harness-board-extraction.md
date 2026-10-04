@@ -1,5 +1,7 @@
 # Multica 多 harness 看板：可萃取机制与适用边界
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## 研究范围与结论
 
 用户要求克隆并研究 `https://github.com/multica-ai` 的多 harness 看板。组织的核心平台为 [multica-ai/multica](https://github.com/multica-ai/multica)，已克隆到 `~/projects/multica`。

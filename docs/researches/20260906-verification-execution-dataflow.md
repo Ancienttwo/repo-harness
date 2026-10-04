@@ -1,5 +1,7 @@
 # 全量测试执行与验收数据流审计
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 本报告记录固定版本诊断、重构设计与验证边界。前半部分属于历史取证；实现和后续纠正见“批准后的实现边界”及其附录。具体提交的验收、部署状态以对应 workflow receipt 和安装读回为准。
 
 ## 取证边界

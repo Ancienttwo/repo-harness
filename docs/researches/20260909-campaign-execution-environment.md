@@ -1,5 +1,7 @@
 # Campaign execution environment supply
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Verified failure boundary
 
 The frozen Codex-only image did not contain repo-harness. A real no-auth container test returned exit 127 before invoking verify-sprint. The prior live worker additionally hit a missing Linux ARM64 Rolldown binding in host-prepared node_modules, before test discovery. A successful Codex version probe proves neither task-tool availability nor platform-native dependency readiness.

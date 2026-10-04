@@ -1,5 +1,7 @@
 # Supervised verifier rejection settlement
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 A native process exit of zero proves process completion, not task acceptance. When both campaign children have exact, complete and inactive supervised terminal evidence, the existing strict verifier response owns its pass/fail verdict. A verifier rejection is sufficient to settle the admitted attempt as controller-owned permanent failure even if the worker did not write its result file. Settlement binds the original invocation identities, child output hashes, terminal receipts and reservation; no worker outcome or result file is synthesized.
 
 A pass, unknown terminal, missing child, malformed verifier response or substituted output cannot produce this failure final. Settlement remains under the group planning lock, honors the original grant expiry, and preserves an existing immutable final on repeated calls. It does not rebind ownership or restart the controller.

@@ -1,5 +1,7 @@
 # GPT Pro Connector 讀回探針（Repair Campaign sprint 第 4 行）
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 > **Date**: 2026-09-02
 > **Sprint**: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md` 第 4 行
 > **Baseline**: `main@a2830db43f7fffbe0535f5b98674f6c4e5aa4f84`

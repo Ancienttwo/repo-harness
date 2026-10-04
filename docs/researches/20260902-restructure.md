@@ -1,5 +1,7 @@
 # 代码重构模式：双仓权威边界与实施 Sprint
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 > contract 字段对照的权威是 arch-context 主干的 `docs/researches/20260902-restructure.md` §0 修订记录；本文 §二十二 是下游对齐记录，只指回它、不独立演化。
 
 > **下游发布读回（2026-09-04）**：上游全部 refactor surface 已随 `archctx@0.5.2` / `archctx-contracts@0.5.2` 发布。公开的 0.5.1 manifest 漏掉 `koffi`，只能视为历史坏包，不得安装。下游 scan 与 verify 继续使用分阶段 feature gate，但两个 stage 都精确绑定 0.5.2；`docs/verification/axr5-archctx-clean-room-readback.json` 是本仓的 packaged readback 证据。正文中的 0.5.0/0.5.1 顺序保留为历史设计记录，不再是执行 pin。

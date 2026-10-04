@@ -2,6 +2,8 @@
 
 # BRC14 fresh main audit readiness
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 只读研究，基于 BRC13 候选 `b9684c3c72a260a8d04a48f2e662e60a78e672bb`。BRC14 仍 pending；本文不构成实现、验收或 campaign activation 证明。
 
 ## 已有权威与实际链条

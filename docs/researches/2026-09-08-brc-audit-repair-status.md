@@ -1,5 +1,7 @@
 # BRC failure, observation and cleanup recovery boundaries
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Scope and authority
 
 The audit repair work targets issues #342–#351 against `33c5012e1185a695fdaf54a7bb84fc613cfb653b`. It preserves BRC6a's trusted revision admission fence. Native fixtures below establish controller behavior from persisted evidence; they do not prove a real paid campaign or trusted active admission.

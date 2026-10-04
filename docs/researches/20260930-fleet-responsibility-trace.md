@@ -2,6 +2,7 @@
 
 > Historical record. PR #482 made the Kanban browser read-only.
 > The unused Task Message request builder and child process are now removed.
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
 评估日期：2026-09-30。范围是 `src/{core,effects}/{fleet,engineers,collaboration,automation,operator}/**/*.ts` 的当前工作树源码；本次只有文档修改，没有启动任何 agent runtime 或验证生产安装。
 

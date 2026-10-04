@@ -1,5 +1,7 @@
 # BRC14 fresh audit runtime
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Implemented boundary
 
 The campaign audit command builds a complete ordered slot snapshot from the published adoption manifest and validated per-Task cleanup. Completed merges must be ancestors of the current target. Unfilled and not-planned slots remain explicit. Immutable snapshots bind the intent, adoption, publication and final main SHA.

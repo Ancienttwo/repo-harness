@@ -1,5 +1,7 @@
 # BRC14/BRC15 Canary 3 收口记录（Owner scope amendment）
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## 结论
 
 **Canary 3（`active/manual`）没有跑通，BRC14 的 fresh audit 从未执行。** 2026-09-09 至 09-10 在 byok-sdk 的 `codex/brc1415-canary` 分支上连续启动了 9 个 campaign，链路走到 worker preparation 之后就停住：前一个 campaign 的容器 worker 实际改出了正确修复，却在 canonical verify 阶段因只读挂载与共享锁的写权限失败，落成 immutable `permanent_failure / verifier_rejected`；最后一个 campaign 的 worker 在拿到 PATH 之后直接 `Executable not found in $PATH: "docker"` 退出。

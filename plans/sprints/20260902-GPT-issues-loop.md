@@ -1,5 +1,7 @@
 # 先定案：**Issue 由 GPT Pro 直接写**
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 在你补充“GPT Pro 对代码仓库只读，Issue 是它唯一可写入的 GitHub surface”之后，最合理的职责分配是：
 
 ```text

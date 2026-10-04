@@ -1,5 +1,7 @@
 # Windows persistence in the protected Task reply chain
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Status: user-approved bounded repair, implemented in an isolated worktree; integrated native CI passed on `e3d86d48`, while canonical verification and acceptance remain pending. This extends the full agent-first Kanban refactor only enough to unblock its existing real Task Inbox lifecycle.
 
 ## Evidence and source ownership

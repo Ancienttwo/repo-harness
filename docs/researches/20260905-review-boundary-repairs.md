@@ -1,5 +1,7 @@
 # Execution boundaries and Stop completion
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Scope: review repairs based on `41f52197`, integrated with main `11a2a6fb`. This document records durable invariants and verified limits, not a release verdict.
 
 ## P1: Authority map

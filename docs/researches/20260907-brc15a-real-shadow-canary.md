@@ -1,5 +1,7 @@
 # BRC15a real GPT shadow canary
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Status: approved replacement run completed real GPT authoring and independent readback; both campaigns are stopped with zero open reservations. Ten Issues cover the expected markers, but zero pass metadata validation and adoption is refused. No qualified adoptable batch was obtained; repair value is unassessed. BRC15a is complete as a negative observation. The Owner subsequently approved continued investment; active acceptance remains gated independently.
 
 The private target is Ancienttwo/repo-harness-brc15a-canary-20260907, seeded from tracked repo-harness 33c5012e1185a695fdaf54a7bb84fc613cfb653b with fresh history and no GitHub workflow automation. Production working-tree changes were excluded. Target initialization commit: 33d692aaa0ab593df0c160082b18fdac02c82e9c. Remote private/main readback passed, initial Issue inventory was empty, and target working tree was clean before mint.

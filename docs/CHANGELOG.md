@@ -10,6 +10,11 @@ All notable changes to this skill are documented here.
 - Remove the v1 initializer question pack and the unused v1/v3 schemas.
 - Remove unused scripts/lib context files, Operator Task Message modules,
   and the old workflow contract install planner.
+- Remove the campaign CLI, engineer acquisition-cutover commands, auto-campaign Skill, container scripts, and Docker sources. Remove campaign fields from the Operator API and UI.
+- Budget board no longer counts campaign grants.
+- Remove campaign execution types and parsers. ProgramAuthorizationV2 uses protocol 2. Old grants require a new operator mint.
+
+Campaign execution moved to the existing [repo-harness](../SKILL.md), [repo-harness-product](../assets/skills/repo-harness-product/SKILL.md), and [repo-harness-check](../assets/skill-commands/repo-harness-check/SKILL.md) Bot skills. They use Herdr/OAR to dispatch and collect work.
 
 - Remove shipped research scripts: `axr7-consumer-e2e.ts`, `session-context-packet-panel.ts`, `benchmark-general-repo-reader.ts`, `run-bdd2-evals.ts`, `c9-collaboration-canary.ts`, `hook-dispatch-diet-report.ts`, `route-nl-vs-ts-eval.ts`, `loop-engine-cutover-gate.ts`, `run-debug-ground-truth-eval.ts`, `mcp-observability-report.ts`, and `akn00-native-execution-admission.ts`.
 - Remove `benchmark:mcp-reader`, `benchmark:debug`, and `check:route-eval`. Retire the BDD2, BDD3, and debug ground-truth data. Keep the hook telemetry reader, CI full-history check, scaffold loader, ME2B, and shared collaboration test dependencies.

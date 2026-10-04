@@ -196,8 +196,7 @@ task。plan、contract、check、review、handoff が持続的な authority で�
 利用に必須ではありません。
 
 **Layer 2 — authorized programs。** セッションより長く生きる作業です。Sprint を
-進める無人 controller、GitHub Issues を author して adopt する repair campaign、
-architecture model に基づく refactor program、複数の Module Engineer が signal と
+進める無人 controller、architecture model に基づく refactor program、複数の Module Engineer が signal と
 handoff をやり取りする collaboration plane などが該当します。各 program は
 operator が mint した authorization で gate され、goal 単位の budget ledger から
 引き当て、更新可能な lease を通じて作業を保持します。詳細は
@@ -221,7 +220,7 @@ Layer 2 は Layer 1 を置き換えるものではありません。program の�
 | **File-backed sessions** | Plan、contract、check、handoff がリポジトリに残るので、新しいセッションはチャットスレッドではなく artifacts から再開します |
 | **Typed hook runtime** | 8 本の共有 managed route と 3 本の Codex 専用 delegation route があり、それぞれが exactly one の typed in-process handler に bind され、edit boundary で fail-closed な guard がかかります |
 | **Plan → Contract → Review** | approved plan から投射された contract、隔離された worktree、構造化された evidence、review 可能な closeout までの 1 本の lifecycle |
-| **Authorized programs** | 自前の authorization、budget ledger、task offer、更新可能な lease を保持する campaign・refactor・automation・collaboration の各 program |
+| **Authorized programs** | 自前の authorization、budget ledger、task offer、更新可能な lease を保持する refactor・automation・collaboration の各 program |
 | **Bounded unattended controller** | step・duration・retry の hard cap 下で動く 1 本の Engineer dispatch loop。各試行の前に budget を予約します |
 | **Progressive context loading** | 安定した約 12KB の root context に、実際に触れるファイルにだけ読み込まれる約 1KB の capability contract が加わります |
 | **CodeGraph integration** | caller・callee・definition などの構造的なクエリに、grep-and-read を繰り返す代わりに事前構築された index が答えます |
@@ -343,20 +342,17 @@ program とは、セッションより長く生きる作業のことです。ど
 3 つの primitive から始まり、最初の 1 つがなければ起動できません。
 
 ```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV1
+repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
 repo-harness automation grant list   # digests held for this repository
 repo-harness automation budget show          # the enforceable per-goal ledger
 repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
 ```
 
-- **Authorization。** operator が mint した `ProgramAuthorizationV1` が harness
+- **Authorization。** operator が mint した `ProgramAuthorizationV2` が harness
   home の gate store に置かれます。認証されていない起動経路は存在せず、program
   が自分の actor を導出することもありません。すべてのレコードの author は
   `--authorization-id` から解決されます。
-- **Budget。** provider 呼び出し、campaign step、adoption observation、heartbeat
-  の実行、worker acquisition は、作業が記録される前にすべて goal 単位の ledger
-  に対して予約を行います。`budget repair` はロックされた reconciliation を
-  再実行するだけであり、予約も課金も cap の変更も行いません。
+- **Budget。** Agent turn、worker acquisition、runner invocation は実行前に予算を予約します。`budget repair` は上限を変更しません。
 - **Lease。** 保持された作業には、更新間隔・最大 TTL・閉じた evidence source の
   集合を伴う更新可能な lease が付きます。liveness が証明できない状態は、黙って
   reclaim するのではなく attention を要求します。
@@ -390,21 +386,7 @@ repo-harness engineer board                   # read-only organization attention
 Sprint task ID は backlog schema v2 の下で不変の identity です。古い backlog
 には `repo-harness sprint migrate-schema` を一度実行してください。
 
-### Development campaign
-
-```bash
-repo-harness campaign audit          # budgeted read-only group audit
-repo-harness campaign author         # persist an IssueBatchIntentV1, open the GPT Pro authoring lane
-repo-harness campaign adopt          # exact-SHA readback, seal authoring, publish a repair batch
-repo-harness campaign step           # hand one adopted task to its local planning session
-repo-harness campaign prepare-resume # zero-provider resume request from stored evidence
-```
-
-seed された repair program です。group を audit し、その Issues を GPT Pro lane
-経由で author し、exact な SHA readback に対して adopt し、adopt 済みの各 task
-を通常の plan → contract → review lifecycle へ step させます。`prepare-resume`
-は、provider に接続することなく、保存された adoption・continuation・budget の
-evidence から resume request を再構成します。
+Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
 ### Refactor Mode
 
@@ -598,7 +580,6 @@ Canonical な rule-owner package は `assets/skills/` と
 | `repo-harness-architecture` | harness 全体の refresh を伴わない architecture docs、drift request、diagram |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup、bridge handoff。explicit setup 限定 |
-| `auto-campaign` | Bot：明示的に承認した campaign を一回実行する。 |
 | `obsidian-memory` | Bot：明示的な依頼で記憶を読む、または保存する。 |
 | `repo-harness-test` | Worker：ソースのテストと実際の fixture。 |
 | `merge-gate`(external) | exact-candidate な final gate。repo-harness は merge-gate Skill を同梱しません — [external tooling](docs/reference-configs/external-tooling.md) を参照 |
@@ -606,10 +587,10 @@ Canonical な rule-owner package は `assets/skills/` と
 Bot skills は範囲、委任、承認を決めます。Worker skills は作業を実行します。
 
 Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
-`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-ship`, `obsidian-memory`, `repo-harness-cross-review`,
 `repo-harness-chatgpt`. Worker: `repo-harness-setup`,
 `repo-harness-test`, and `repo-harness-architecture`.
-`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` は明示的な呼び出しが必要です。
+`obsidian-memory`, and `repo-harness-ship` は明示的な呼び出しが必要です。
 通常の作業には短い brief と PR の説明を使います。PRD、Sprint、Goal は依頼された製品作業に使います。
 
 planning chain は意図的に層を分けています。

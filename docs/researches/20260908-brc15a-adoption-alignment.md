@@ -1,5 +1,7 @@
 # BRC15a authoring/adoption alignment
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 The real shadow canary created ten Issues but admitted none. Its evidence remains in the independent `brc15a-real-shadow-canary` package; this correction does not revise its receipts or acceptance.
 
 ## Authoring contract

@@ -1,5 +1,7 @@
 # Repository automation supervision homepage
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 AKN-05a consumes the AKN-04d2 repository observation from the production browser. `AutomationSummary.tsx` owns the abortable read and original-record presentation; `App.tsx` supplies the selected repository and explicit refresh generation. The existing `repository-snapshot.ts` decoder validates the complete protocol2 envelope and exact repository identity before React sees evidence.
 
 ## Observation and authority

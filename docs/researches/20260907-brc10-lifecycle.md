@@ -1,5 +1,7 @@
 # BRC10 campaign invocation and recovery
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Implementation baseline: main `a3fb4db2b9f411d6e7bc5184807275e9aa471378`. Acceptance is owned by the BRC10 lifecycle work-package; the Sprint row remains pending until that package finishes.
 
 ## Entry and authority

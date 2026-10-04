@@ -1,5 +1,7 @@
 # BRC10 provider terminal evidence readiness
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Status: historical design investigation. The parent has specified and implemented the producer/fence/recovery boundary in [BRC10 lifecycle](20260907-brc10-lifecycle.md); final acceptance remains with that work-package. The gaps below describe the pre-implementation baseline, not prerequisites delegated to the user.
 
 Source baseline: `22e009e6fd401d0fc51fe79c041c5f5a4e42ca65` (PR #337), based on accepted main `188ae3529695623022c015c0cae0f7ec0b1304a4`. This investigation does not extend PR #337's supervised-renewal acceptance to reclaim or recovery.

@@ -20,4 +20,4 @@
 
 Kanban 只读观看进度、阻碍、候选和证据，反馈/改需求/催办/审批跟进回 Bot；session CLI 保留直接开发。基线 operator browser write 为 task-message POST，阶段 B 实施删除实际写入口并验证 write inventory=0，此文档不声称已完成。
 
-campaign 后续按 [正式 Plan](../../PLAN.md)先盘点并冻结准入，再删除专用代码和 Docker；阶段 D 等 **#476/#474 合并且 Aimpact 看过盘点**。保留有真实其他消费者的 task-agent、contract、ordinary/selected acquisition、lease/budget/idempotence/receipt/cleanup primitives。未知 writer 不 reset budget、不重复派工；任何删除文件或改依赖前先报告停下。此 Skill 不执行退役或扩大授权。
+Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../../../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../../../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../../../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.

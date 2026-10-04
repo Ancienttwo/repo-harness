@@ -2,6 +2,8 @@
 
 # BRC13 closeout readiness
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Research only, main baseline `188ae352`. BRC13 implementation remains pending behind BRC10; this file is a preparation artifact for the later owning contract.
 
 The inspected source has publication reconciliation and merge/absorption predicates, budgeted GitHub comment/close, Claim/Lease readers, and ordinary worktree cleanup. It does not yet have a campaign closeout intent, actual provider merge receipt, complete CleanupReceipt, multi-Task Issue closure aggregation, exact remote deletion consumer, or cleanup-pending gate on the next group.

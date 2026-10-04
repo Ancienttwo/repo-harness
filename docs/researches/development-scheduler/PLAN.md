@@ -41,8 +41,8 @@ Bot 负责对话、目标/验收、派工、跟进和结果收集；worker 实�
 |---|---|---|
 | **A 精简文档** | Skill 约为原来的 1/3；Plan 与两份 references 对齐批准规则；格式、链接、仓库检查；commit/push/Draft PR | 本次已批准，只在当前 worktree 执行 |
 | **B Kanban 只读** | 删除实际 browser 写入口，保留进度/阻碍/候选/证据 GET 与刷新；write inventory=0，GET 不写 authority | 后续实施授权；不依赖新 store |
-| **C campaign 盘点与冻结准入** | 列出实际消费者、存量任务/资源/在途写入与恢复证据；停止新 campaign admission，已知 owned 工作有界收集/排空，未知 writer 留阻塞 | 后续实施授权；将盘点交 Aimpact 看过 |
-| **D 删除 campaign 专用代码与 Docker** | 按盘点删专用面，保留共用 primitives；针对真实消费者验证，无新双读/双写或空壳 | **#476 与 #474 均合并，且 Aimpact 已看过 C 的盘点**；删除文件/改依赖前先报告停下 |
+| **C 历史盘点** | 已记录消费者、存量状态和未知边界。冻结设计未实施。 | Owner 于 2026-10-04 选择完整退役，替代后续冻结实施。 |
+| **D campaign 子系统已退役** | 删除 CLI、Skill、Operator campaign 字段、budget 分支、专用 source、Docker 和测试。保留普通共享 primitives。 | Owner 于 2026-10-04 取消原 gate，并批准完整退役。#474 closed unmerged 不再是准入条件。 |
 
 ### B：只读 Kanban
 
@@ -52,22 +52,13 @@ Bot 负责对话、目标/验收、派工、跟进和结果收集；worker 实�
 
 在目标 worker 只读核验版本、live grant/lease/owner、containers、request/outbox、pending mutations 与旧 common-dir runs。policy off 或 tracked tasks/campaigns 缺失不证明无存量。列出每个拟删面的生产/测试/脚本/CI/docs/dependency 引用、非 campaign 消费者及调用链，确定保留/删除边界与恢复材料。
 
-冻结新准入后保留已知 owned 工作的结果、session 和终态；未知 writer 不能拆锁、重置额度或重复派工。盘点和冻结不授权删除，Aimpact 看过盘点以及 #476/#474 合并是 D 的硬门槛；#473/#477 不在任务 A 操作范围。
+冻结新准入后保留已知 owned 工作的结果、session 和终态；未知 writer 不能拆锁、重置额度或重复派工。原 D gate 已由 Owner 于 2026-10-04 取消。新的决定授权完整退役。未知 writer 和原有磁盘证据仍保留。
 
-### D：专用面与共用边界
+### D：已退役
 
-以下是 C 的盘点入口，不是已经完成的零消费者证明：
+Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
-| 面 | 删除候选与必须保留的边界 |
-|---|---|
-| campaign 编排 | 专用 group/slot、GPTPro author lane、successor/fresh-audit、专有 CLI/UI/Skill/schema；task-agent 与普通 contract 仍有真实消费者 |
-| acquisition | `src/effects/fleet/acquire.ts`、`src/effects/engineers/scheduling-acquire-next.ts`、`src/cli/commands/engineer.ts` 中 campaign admission/R2/proof/capacity/cutover；保留 ordinary/selected acquisition、authority 与幂等 |
-| automation/state/operator | 专用 budget/projection/store 与 campaign 卡片/控制动作；有真实其他消费者的 lease/budget/idempotence/receipt/cleanup 保留，不迁到新 store |
-| helpers/adoption/policy | `scripts/contract-run.ts` 及镜像、`scripts/ensure-task-workflow.sh`、standard-plan、policy、Skill manifest 中专有 activation/handoff；保留共用执行、安全、结果收集与恢复 |
-| 架构与历史 | 退役后的活跃专用模型/投影按当时授权更新；不可变历史 audit 保留索引，不为历史展示保留产品双读 |
-| Docker | `deploy/campaign-container/`、`scripts/build-campaign-image.sh`、`scripts/run-campaign-preflight.ts`、`scripts/cleanup-campaign-container.ts`、`src/effects/automation/campaign-container.ts`、runtime 专用 container/image 与 `BRC_CAMPAIGN_IMAGE` 引用；同步处理专用依赖、测试、CI、文档 |
-
-旧 campaign store 已使用 Git common dir，campaign runtime 直接 Docker 下 Codex exec，不能把它们描述为单纯 worktree 状态或现成 task-agent 薄 consumer。generic review/OAR 路径也不证明 campaign 已迁移；合并门槛满足后仍核验实际安装与消费者。没有真实其他消费者的 campaign-only 机制随专用实现删除，不以“保留安全”为名留 image/脚本空壳。
+普通 task-agent、contract、ordinary/selected acquisition、grant、budget、lease 和 evidence 仍由原权威拥有。磁盘上的旧 campaign 状态不再读取，也不删除。没有兼容 parser、迁移权威或新的 Bot 实现。
 
 ## 验证、回滚与证据边界
 

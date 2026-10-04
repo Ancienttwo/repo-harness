@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:c022eb5f01f2bdeb84713ae560d122badf0523983df27de89386765fa0842584" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a1e757d7792d15c956d3f576a67a1193c72fdace763f0966a9c1ffdf7ddc6690" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:dc89fd5a6b1ff18a7492285765bcef3e7b44da61d7a91cc3806e23727339c7cd" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:2fe2769ee51a0500f845c9fff7e39fbc26d07f16fea396c1b016fe44c7450301" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -63,14 +63,6 @@
       {
         "id": "capability.runtime-harness.delegated-runs",
         "name": "Read-only Delegated Runs",
-        "type": "Software System",
-        "tags": [
-          "capability"
-        ]
-      },
-      {
-        "id": "capability.runtime-harness.development-campaign",
-        "name": "Development Campaign",
         "type": "Software System",
         "tags": [
           "capability"
@@ -295,14 +287,6 @@
       {
         "id": "component.delegated-runs.primary",
         "name": "Read-only Delegated Run Journal",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
-        "id": "component.development-campaign.journal",
-        "name": "Development Campaign Journal",
         "type": "Component",
         "tags": [
           "component"
@@ -569,42 +553,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.development-campaign.automation-budget",
-        "sourceId": "capability.runtime-harness.development-campaign",
-        "destinationId": "capability.runtime-harness.automation-budget",
-        "description": "depends_on"
-      },
-      {
-        "id": "relation.development-campaign.collaboration",
-        "sourceId": "capability.runtime-harness.development-campaign",
-        "destinationId": "capability.runtime-harness.collaboration",
-        "description": "depends_on"
-      },
-      {
-        "id": "relation.development-campaign.engineer-scheduling",
-        "sourceId": "capability.runtime-harness.development-campaign",
-        "destinationId": "capability.runtime-harness.engineer-scheduling",
-        "description": "depends_on"
-      },
-      {
-        "id": "relation.development-campaign.external-source-intake",
-        "sourceId": "capability.runtime-harness.development-campaign",
-        "destinationId": "capability.runtime-harness.external-source-intake",
-        "description": "depends_on"
-      },
-      {
-        "id": "relation.development-campaign.integration-acceptance",
-        "sourceId": "capability.runtime-harness.development-campaign",
-        "destinationId": "capability.runtime-harness.integration-acceptance",
-        "description": "depends_on"
-      },
-      {
-        "id": "relation.development-campaign.journal",
-        "sourceId": "capability.runtime-harness.development-campaign",
-        "destinationId": "component.development-campaign.journal",
-        "description": "calls"
-      },
-      {
         "id": "relation.engineer-bindings.primary",
         "sourceId": "capability.runtime-harness.engineer-bindings",
         "destinationId": "component.engineer-bindings.primary",
@@ -816,7 +764,6 @@
         "capability.runtime-harness.bound-task-freezes",
         "capability.runtime-harness.collaboration",
         "capability.runtime-harness.delegated-runs",
-        "capability.runtime-harness.development-campaign",
         "capability.runtime-harness.engineer-bindings",
         "capability.runtime-harness.engineer-messages",
         "capability.runtime-harness.engineer-scheduling",
@@ -845,7 +792,6 @@
         "component.collaboration.primary",
         "component.contract-assets.primary",
         "component.delegated-runs.primary",
-        "component.development-campaign.journal",
         "component.engineer-bindings.primary",
         "component.engineer-messages.primary",
         "component.engineer-scheduling.primary",

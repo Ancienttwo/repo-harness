@@ -1,5 +1,7 @@
 # Campaign acquisition cap and completion
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Campaign successful acquisitions count admitted tasks. Reaching the cap must reject another acquisition without revoking the remaining dispatch/provider budget needed to finish admitted tasks. Non-campaign autonomous loops retain their original eager global exhaustion behavior.
 
 The observed cap1 run charged one successful acquisition and immediately sealed budget_exhausted; dispatch_attempt then failed before worker execution. Root cause: budget-store.ts exhaustionRefusal treated acquisition equality as global exhaustion, and reservation admission also persisted a global stop for acquisition-only cap refusals. The core reservation evaluator already rejects increments exceeding the cap under the serialized store lock.

@@ -1,5 +1,7 @@
 # 一个 PR 拆完 + 兜底机制
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 > 状态：#483 源码实施完成，等待用户审阅Draft。当前请求已批准代码与SOP精简，global prompts最后备份再改；PR保持Draft，不合并、不发布、不执行生产操作或清理其他worktree。分类依据是Aimpact 05:14批准的四道硬门禁标准，代码基线 `cc1fc8ee`。本文件不伪装为已执行的contract或AcceptanceReceipt。
 
 ## 目标与完成条件

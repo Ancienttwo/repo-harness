@@ -1,5 +1,7 @@
 # Inactive branch consolidation — 2026-09-10
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 This history integration starts from main `3c570360543fe5b93378bec81c2a7d4f68f10663`. The operator requested merging and cleaning every inactive branch and worktree, excluding the primary Operator checkout and `codex/campaign-reconciliation-recovery`. Their working files and local task state are outside this integration.
 
 ## Content disposition

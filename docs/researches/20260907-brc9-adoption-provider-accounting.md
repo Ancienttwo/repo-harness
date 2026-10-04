@@ -1,5 +1,7 @@
 # Active adoption provider accounting and terminal proofs
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 The accepted shadow package at ce5e42d3 retains strict terminal freshness: `readCampaignAuthoringBudgetTerminal` and `verifyCampaignAuthoringBudgetTerminal` require the terminal's digest to equal the current complete ledger. Shadow completes its final observation step and seals under one run lock. A later GitHub read makes that old terminal stale, including on shadow replay.
 
 Active adoption has a different ordering requirement: observe, seal authoring, then observe again for source drift before publication. Every actual GitHub identity/page invocation now enters the existing campaign provider executor, with admission before I/O and returned evidence before usage. Unresolved outcomes keep their reservation and prevent another invocation. The campaign ledger remains the only counting authority.

@@ -1,5 +1,7 @@
 # C0 — Collaboration / Delivery Two-Plane Authority Freeze
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 > **Last Updated**: 2026-08-30
 > **Scope**: `capability.runtime-harness.collaboration` boundary against the existing Task / Lease / Publication / Acceptance delivery authorities
 > **Baseline**: `main@a490a5ef76b439228a4b3282934c29ba15090cdf`

@@ -1,5 +1,7 @@
 # BRC9 acquisition accounting
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 The campaign CLI calls `runCampaignAcquisition` directly, so the generic automation controller's acquisition accounting did not cover this runtime path. Real acquisition controls reproduced both missing successful-acquisition usage and missing reservations after an unknown effect.
 
 `src/effects/automation/campaign-acquisition.ts` now serializes the short reservation/acquisition/result/usage transaction with the existing campaign mutation lock. Worker execution happens after release. This preserves parallel worker capacity without weakening the budget's rule against a different unresolved reservation. At higher load the serialized acquisition transaction limits admission throughput; it does not serialize live workers.
