@@ -7,7 +7,7 @@
 
 ## 2026-06-12 docs/architecture 真相来源闭环(queue engine + freshness gate)
 
-- Full report: `docs/researches/20260612-architecture-doc-truth-loop.md`(plan 记录: `plans/archive/plan-20260612-0255-architecture-doc-truth-loop.md`;执行权威 sprint: `tasks/sprints/20260612-0256-architecture-doc-loop.sprint.md`)。
+- Full report: [20260612-architecture-doc-truth-loop.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260612-architecture-doc-truth-loop.md)(plan 记录: `plans/archive/plan-20260612-0255-architecture-doc-truth-loop.md`;执行权威 sprint: `tasks/sprints/20260612-0256-architecture-doc-loop.sprint.md`)。
 - Conclusion(方向已批准):架构文档体系只有写入端没有消费端——27 个 pending request 自 2026-05-28/29 堆积,`docs/architecture/index.md` 受控段已损坏(条目落入 `## Review Backlog`、同秒重复行)。修复方向是 per-capability dirty card(`requests/<capability_id>.md`)+ index Pending 段全派生(BEGIN/END 标记内 reindex 重写)+ 切片关账门禁(`freshness_gate` advisory→strict)。
 - 根因(已验证):`architecture-drift.sh:456` 无锚点 append-to-EOF;`prune_superseded_pending_lines` 于 2026-06-10(`a4ad852`)引入、晚于 backlog 且只删行不归档;并发 PostToolUse 在 grep-dedup 与 append 之间竞态。处置:删除 append+prune 状态机,换"扫目录、重写受控块"派生模型。
 - 隐藏契约:`post-edit-guard.sh:47` grep `[ArchitectureDrift] Request:` 前缀触发 contract-sync 链(新 queue CLI 必须保留该前缀);`archive-architecture-request.sh` 只解析 `> **Status**:` 首行(卡片格式零改动兼容);`pi_install_helpers` 只装平铺文件(禁止 scripts/lib 共享库);hooks 字节 parity 测试强制 `.ai/hooks` 与 `assets/hooks` 镜像同 slice 落地。
@@ -15,7 +15,7 @@
 
 ## 2026-06-12 Loop-in-Hook vs NLAH/Loop-Engineering 架构对比
 
-- Full report: `docs/researches/20260612-loop-in-hook-vs-nlah-loop-engineering.md` (sources: arXiv 2603.25723 full text, Addy Osmani *Loop Engineering* 2026-06-08, `_ref/teach-fireworks` note).
+- Full report: [20260612-loop-in-hook-vs-nlah-loop-engineering.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260612-loop-in-hook-vs-nlah-loop-engineering.md) (sources: arXiv 2603.25723 full text, Addy Osmani *Loop Engineering* 2026-06-08, `_ref/teach-fireworks` note).
 - Conclusion (hypothesis, medium confidence): the file-backed spine and acceptance-tightening gates are exactly the modules the NLAH paper validates (+4.8/+5.5); the weak axes are the TS prompt-intent classifier (code interpreting natural language — the inverse of the paper's validated division of labor), the absence of a delegation surface (contracts are ~80% of an agent-call κ but only gate humans), and the missing scheduled heartbeat.
 - Guardrails from the same evidence: verifier rubric drift (−8.4 OSWorld) and multi-candidate search are dominated; Full IHR costs ~13.6× prompt tokens for solved-set replacement, so any delegation layer needs explicit budget caps.
 - First proof point before any implementation: routing A/B eval (TS verdict vs ~1KB state-snapshot + NL decision table) on the existing `benchmark:skills` scaffolding. No code changes shipped with this entry.

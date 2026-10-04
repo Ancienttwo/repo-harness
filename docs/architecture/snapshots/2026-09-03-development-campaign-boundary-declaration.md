@@ -9,7 +9,7 @@
 > **PRD**: `plans/prds/20260902-2238-gpt-pro-seeded-repair-campaign.prd.md`
 > **Sprint**: `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
 > **Plan**: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
-> **Research**: `docs/researches/20260903-repair-campaign-authority-freeze.md`
+> **Research**: [20260903-repair-campaign-authority-freeze.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260903-repair-campaign-authority-freeze.md)
 
 ## Decision
 

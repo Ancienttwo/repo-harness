@@ -3,7 +3,7 @@
 > **Date**: 2026-08-08
 > **From**: repo-harness 側(本 repo)
 > **To**: arch-context 側(`Ancienttwo/arch-context`),由 owner 平行開工
-> **前置協議**: `docs/researches/20260705-archcontext-capability-filing-handover.md`(§1 責任分界已批准;§7 覆核:gating 條件 1、2 已滿足,條件 3 source 層已對齊)
+> **前置協議**: [20260705-archcontext-capability-filing-handover.md](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260705-archcontext-capability-filing-handover.md)(§1 責任分界已批准;§7 覆核:gating 條件 1、2 已滿足,條件 3 source 層已對齊)
 > **背景結論**: repo-harness 對 `docs/architecture/modules/**` 沒有任何內容 writer——只有一次性 stub(`capability-config.ts:311`,existsSync 即 return)、drift request 卡片、本地 CLAUDE/AGENTS 合約塊。模組文檔實質內容全靠 agent closeout 手寫。按 §1 分界,「架構/代碼真值投影到 `docs/architecture/**`」歸 arch-context;本 handoff 把該職責落成可執行需求。
 
 ## 1. 分工邊界(本輪)

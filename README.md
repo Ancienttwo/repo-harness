@@ -76,7 +76,7 @@ Install herdr from [herdr.dev](https://herdr.dev/) and verify `herdr --version`.
 Persistent review hosting requires POSIX process groups; on Windows use WSL.
 Missing or unusable herdr blocks host readiness. Before upgrading from tmux,
 drain existing reviewers using the previous version and explicitly rebind terminal
-endpoints. See [runtime cutover](docs/researches/20260909-herdr-runtime-cutover.md).
+endpoints. See [runtime cutover](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md).
 
 ### 2. Bootstrap the host runtime
 
@@ -400,7 +400,7 @@ records. Handoff adoption is deliberately non-exclusive: it grants no Task,
 Claim, or Lease.
 
 The substrate keeps one Module Engineer and one writer. Bounded read-only Workers exchange untrusted signals and explicit handoffs. The source-checkout C9 canary is retired. Its historical result did not support multiple reader seats. Shared collaboration runtime tests remain active. Persistent same-capability `EngineerSeatV2`, an independent Review marketplace, and unattended Merge remain inactive.
-See [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
+See [`20260830-c9-real-multi-agent-canary.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### External source intake
 

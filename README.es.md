@@ -82,7 +82,7 @@ Instala herdr desde [herdr.dev](https://herdr.dev/) y verifica
 POSIX; en Windows usa WSL. Un herdr ausente o inutilizable bloquea la readiness
 del host. Antes de actualizar desde tmux, drena los reviewers existentes con la
 versión anterior y vuelve a enlazar explícitamente los endpoints de terminal.
-Ver [runtime cutover](docs/researches/20260909-herdr-runtime-cutover.md).
+Ver [runtime cutover](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md).
 
 ### 2. Bootstrap del runtime del host
 
@@ -423,7 +423,7 @@ coordinación acotados. La adopción de handoff es deliberadamente no exclusiva:
 no otorga ninguna Task, Claim ni Lease.
 
 El sistema mantiene un Module Engineer y un writer. Los Workers read-only intercambian señales no fiables y handoffs explícitos. El canary C9 está retirado. Su resultado histórico no admitió varios reader seats. Las pruebas del runtime de colaboración siguen activas. Los `EngineerSeatV2` persistentes, el Review marketplace independiente y el Merge sin supervisión siguen inactivos.
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
+[`20260830-c9-real-multi-agent-canary.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### Intake de fuentes externas
 

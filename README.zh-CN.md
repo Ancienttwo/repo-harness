@@ -76,7 +76,7 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 常驻 review hosting 依赖 POSIX process group；Windows 上请走 WSL。herdr 缺失或
 不可用会直接挡住 host readiness。从 tmux 升级之前，先用旧版本把已有的 reviewer
 drain 掉，并显式重新绑定 terminal endpoint。见
-[runtime cutover](docs/researches/20260909-herdr-runtime-cutover.md)。
+[runtime cutover](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md)。
 
 ### 2. 引导 host runtime
 
@@ -379,7 +379,7 @@ repo-harness collaboration packet build|read
 Handoff adoption 刻意做成非独占：它不授予 Task、Claim 或 Lease。
 
 底层保持一个 Module Engineer 和一个 writer。有界的 read-only Worker 交换不受信任的 signal 和显式 handoff。C9 source-checkout canary 已退休。历史结果不支持多个 reader seat。共享 collaboration runtime 测试保留。常驻的同 capability `EngineerSeatV2`、独立的 Review marketplace 和无人值守 Merge 仍处于关闭状态。
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md)。
+[`20260830-c9-real-multi-agent-canary.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260830-c9-real-multi-agent-canary.md)。
 
 ### 外部来源接入
 

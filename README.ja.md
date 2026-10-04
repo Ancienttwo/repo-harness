@@ -80,7 +80,7 @@ Windows では WSL を使用します。herdr が存在しない、または利�
 host readiness が block されます。tmux からアップグレードする前に、既存の
 reviewer を以前のバージョンで drain し、terminal endpoint を明示的に rebind
 してください。詳細は
-[runtime cutover](docs/researches/20260909-herdr-runtime-cutover.md) を参照して
+[runtime cutover](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md) を参照して
 ください。
 
 ### 2. host runtime を bootstrap する
@@ -417,7 +417,7 @@ coordination record を publish します。handoff の adoption は意図的に
 non-exclusive であり、Task も Claim も Lease も付与しません。
 
 Module Engineer と writer はそれぞれ一つです。有界の read-only Worker が信頼されていない signal と明示的な handoff を交換します。C9 canary は廃止しました。過去の結果は複数の reader seat を支持しません。共有 collaboration runtime のテストは保持します。同じ capability の常駐 `EngineerSeatV2`、独立した Review marketplace、無人 Merge は無効のままです。
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md)。
+[`20260830-c9-real-multi-agent-canary.md`](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260830-c9-real-multi-agent-canary.md)。
 
 ### External source intake
 
