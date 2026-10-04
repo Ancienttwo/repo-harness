@@ -1,3 +1,5 @@
+import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/notify-status';
+import { readNotifyStatus, type NotifyStatusReadInput } from './notify-status';
 import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
 import { isDecisionCursor } from '../../core/operator/decision-inventory';
 import { readOperatorAutomationSummary, type AutomationSummaryReadInput } from './automation-summary';
@@ -67,6 +69,7 @@ export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][
  * exist, and duplicating its shape here would be a second opinion about it.
  */
 export const OPERATOR_COLLABORATION_SNAPSHOT_ROUTE = /^\/api\/v1\/collaboration\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
+export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../dist/operator-ui',
@@ -97,6 +100,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
+  Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
 ] as const);
 
@@ -113,6 +117,7 @@ export interface OperatorServerOptions {
   readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
   readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
+  readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -1463,6 +1468,20 @@ export async function startOperatorServer(
 
     if (pathname === OPERATOR_FLEET_SNAPSHOT_PATH) {
       await handleFleetSnapshot(request, response, headOnly);
+      return;
+    }
+
+    if (pathname === OPERATOR_NOTIFY_STATUS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Notify status accepts no query selectors.'), headOnly);
+        return;
+      }
+      try {
+        const status = decodeNotifyStatus(await (options.read_notify_status ?? readNotifyStatus)({ env: options.env }));
+        sendJson(response, 200, status, headOnly);
+      } catch {
+        sendRefusal(request, response, 503, errorBody('notify_status_unavailable', 'Notify status is unavailable.'), headOnly);
+      }
       return;
     }
 
