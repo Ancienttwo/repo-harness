@@ -15,6 +15,7 @@ import {
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_HEALTH_PATH,
+  OPERATOR_NOTIFY_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
   OPERATOR_TASK_DIFF_ROUTE,
@@ -77,6 +78,7 @@ describe('operator structural write boundary', () => {
       'task_context',
       'task_activity',
       'task_diff',
+      'notify_status',
       'static_asset',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
@@ -86,6 +88,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
+    expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
