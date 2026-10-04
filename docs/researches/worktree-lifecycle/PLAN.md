@@ -73,6 +73,8 @@ Sandbox 的实际要求：
 
 创建位置只使用一个 repo-harness root authority：沿用现有 `REPO_HARNESS_HOME`，默认 `~/.repo-harness`，追加 `/worktrees`；`start --path` 保留显式override，MCP已有root override保留显式语义。`repo-key` 由 canonical Git common-dir身份的稳定hash决定，避免同名repo/不同clone碰撞；不同slug仍由已有task命名管理。新默认不使用 CODEX_HOME，不跟随每个provider改目录。废弃未被消费的 template配置时做一次性迁移并移除，不继续双authority；本次不动policy。
 
+采用新 root 前，必须解析 canonical path，并确认它不在任何已注册 checkout 内。创建目标必须与其他已注册 checkout 路径分离。两边都检查 ancestor 关系。共享 root 可以容纳独立的 sibling checkout，不能形成嵌套 checkout。删除前重新读取 Git topology。若候选内还有已注册 checkout，拒绝删除。路径或 topology 检查不完整时，只报告。
+
 10x规模先失效的是逐树PR/network探测与依赖目录扫描，不是Git登记容量。一次读topology、一次`ls-remote`、一次所有开放PR和各运行Herdr session snapshot，再逐候选检查status；目录深扫仅inventory/迁移审计做。apply串行、单树失败不阻塞其他报告，不增daemon或新调度队列。
 
 ## 生命周期与回收条件
@@ -93,11 +95,14 @@ Sandbox 的实际要求：
 registered linked checkout of this exact Git common-dir
 AND exact path is managed, or explicitly selected legacy path
 AND terminal task / explicit legacy cleanup scope
+AND canonical candidate path is disjoint from every other registered checkout
+    (neither path may be an ancestor of the other)
 AND not primary, current cwd (or its ancestor), locked or in-use
 AND clean tracked/index/untracked + clean/inspectable submodules
 AND ignored data is reproducible or its audit handoff is already preserved
 AND (HEAD is ancestor of frozen main OID
-     OR HEAD is reachable from freshly verified configured remote branch tip)
+     OR a retained local branch protects HEAD, and HEAD is reachable
+        from a freshly verified configured remote branch tip)
 AND policy retention allows it
 ```
 
@@ -107,7 +112,7 @@ AND policy retention allows it
 
 1. 远端证明不能只检查“有upstream”、`git branch -r`或PR状态。批量`ls-remote --heads <remote>`冻结OID；same-tip可直接证明，ahead tip需本地对象+ancestry证明，缺对象/权限/network失败记unknown。apply前重查远端没有删除/force-update、HEAD与main没移动。失败只报告；GC不为资格自动fetch/push。
 2. squash合入后 branch通常不是main祖先。当前`absorbed`可供解释，但不能独自让新GC删除。满足同名远端推送证明时才可回收；远端branch已删且不满足ancestry的树继续报告。未来发布顺序应先本地回收再删除远端branch；本GC本身不删远端。
-3. 一律保留本地branch ref，使“已推送但未合”不依赖远端永久保存；GC不变成branch清理器。detached树仅接受main ancestry，或显式管理的远端ref证明；不以commit-message/patch相似度判断。
+3. 一律保留本地branch ref，使“已推送但未合”不依赖远端永久保存；GC不变成branch清理器。detached树仅接受冻结的 protected main OID ancestry。仅有远端可达证明不能让 detached 树进入回收。远端删除或 force-push 后，该树没有本地 branch ref 保全提交。不以 commit-message 或 patch 相似度判断。
 4. dirty包括ignored以外的tracked/index/untracked及submodule变化。ignored env、`_ops`、session home、handoff、reports或未知文件也可能是唯一副本：先保全或报告；只允许既有policy明确的可重建产物（如node_modules）消失。只枚举路径不打印秘密内容，无`--force`、`--discard-scaffold-only`、`git clean`、`reset`或`rm -rf`fallback。
 5. `done`/`idle`pane仍是使用者。遍历所有running本机Herdr endpoint的pane cwd/foreground cwd与workspace.checkout_path；同时查existing binding、claims和本机进程cwd。snapshot/进程检查不可用记unknown。用户明确活跃树继续保护，task完成不能撤销其他人的保留。
 6. GC不关闭未知/attached pane。任务自己的close/cancel先沿用created ownership primitives，审计handoff包含task、HEAD、pane/session/endpoint及结果证据定位；workspace清理只能走既有`cleanupTaskWorktree`并读回。任何cleanup_pending阻断Git删除。
@@ -173,3 +178,9 @@ repo-harness worktree gc --repo <primary> --older-than 7d --apply
 | `git diff --check` | 0 |
 
 `init --dry-run` 给出 source checkout owns its surfaces 的 low warning、0 operations；inspector为audit，drift_signals/required_decisions均none。task-sync判本次没有需同步的substantive repo changes；本PR保持只含请求的研究文档，不额外创建tasks/plan/contract。检查证明文档分支完整性，不证明未来GC已实现。
+
+## 2026-10-05 审查补充
+
+真实 Git fixture 证明：父 checkout 忽略嵌套 checkout 时，非 force 的 `git worktree remove` 仍能删除嵌套目录。Git registration 随后留为 prunable。上面的路径分离规则在创建和删除两处阻断这个条件。这个试验只用了临时仓库。
+
+统一 root、GC 和旧树迁移仍是未实施的目标。目标、取舍、入口和 revisit trigger 记录在 [deferred-goal ledger](../../../tasks/todos.md#deferred-worktree-lifecycle-implementation)。本研究不授予实现或删除权限。
