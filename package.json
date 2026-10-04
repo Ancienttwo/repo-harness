@@ -37,10 +37,8 @@
     "node": ">=24 <26"
   },
   "scripts": {
-    "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
     "benchmark:harness": "bun scripts/run-harness-profile-benchmark.ts",
-    "benchmark:debug": "bun scripts/run-debug-ground-truth-eval.ts",
     "test": "bun run test:core --timeout 60000",
     "test:core": "bash scripts/lib/ci-run-tests.sh core",
     "test:integration": "bash scripts/lib/ci-run-tests.sh integration",
@@ -56,7 +54,6 @@
     "check:archctx-integration": "bun scripts/axr5-archctx-clean-room.ts",
     "check:state-boundaries": "bun scripts/check-state-boundaries.ts",
     "check:context-map": "bun scripts/check-context-map.ts",
-    "check:route-eval": "bun scripts/route-nl-vs-ts-eval.ts --check-ts-arm",
     "check:ci": "bash scripts/check-ci.sh",
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",

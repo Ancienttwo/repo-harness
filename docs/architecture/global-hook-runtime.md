@@ -100,9 +100,9 @@ The active threshold may be exceeded by the last record or concurrent appends;
 individual records larger than 8 MiB are rejected by the non-authoritative sink.
 No elapsed-time retention setting or operator configuration is required.
 
-The diet report and benchmark read the retained archive plus active file,
-streaming UTF-8 lines. Report samples describe retained history, not lifetime
-history. An explicitly selected custom diet-report log remains a single file.
+The telemetry reader and the harness profile benchmark read the retained archive
+plus the active file as UTF-8 lines. Samples describe retained history, not
+lifetime history. An explicitly selected custom telemetry log is a single file.
 Rotation/retention and snapshot file opening share the existing owner-fenced
 lock; appends remain O_APPEND, and a renamed inode is never truncated. Readers
 open their descriptors under that lock and consume them unlocked, so subsequent
@@ -126,7 +126,9 @@ observer. Consumers must inspect `complete_metrics` and
 `incomplete_metrics`; they must not turn an unobserved file count into proof of
 complete filesystem coverage or infer provider calls from the event record.
 Telemetry append failure never changes hook safety, while malformed, duplicate,
-or incomplete records fail closed in the diet report.
+or incomplete records must not be used as complete runtime evidence.
+The telemetry reader reports invalid input, mixed protocols, and duplicate IDs.
+The one-time diet report script is retired.
 
 ## P3 — Design decision
 

@@ -56,8 +56,8 @@ explicitly switches the hook path.
 
 ## Controlled Output Vocabulary
 
-When this table is used for the `route-nl-vs-ts` eval, the output JSON must use
-these exact string values. Do not invent shorter synonyms such as
+The retired shadow evaluation used these exact string values in its output
+JSON. This vocabulary remains historical reference. Do not invent shorter synonyms such as
 `enter_done_gate`, `capture_pending_plan`, or `scaffold_contract`.
 
 Allowed `intent` values:
@@ -95,18 +95,12 @@ Allowed `action` values:
 - `done_evidence_contract_block`
 - `done_gate`
 
-## CI Gate
+## Current Checks
 
-`bun run check:route-eval` (`scripts/route-nl-vs-ts-eval.ts --check-ts-arm`, wired
-as the `[ci] route eval (TS arm)` step in `scripts/check-ci.sh`) replays every
-`ROUTE_SCENARIOS` entry through the TypeScript prompt guard, prints one line per
-scenario plus an intent/action coverage summary, and exits non-zero on any
-mismatch or on coverage below the pinned `REQUIRED_INTENT_COVERAGE` /
-`REQUIRED_ACTION_COVERAGE` constants. The TS arm is the pinned oracle: it runs
-on every PR without a provider, and a classifier change that moves any covered
-intent or action fails CI. The NL arm stays operator-invoked through
-`evals/evals.json`, because it needs a live agent reading this table; its
-`--decisions` / `--check-report` modes and the report protocol are unchanged.
+The NL/TS shadow evaluation and its standing gate are retired.
+`tests/cli/prompt-intents.test.ts` and `tests/cli/prompt-guard-decision.test.ts`
+check the runtime classifier and decision engine. This table is historical
+research guidance. It does not replace the TypeScript runtime authority.
 
 ## Decision Rules
 

@@ -1,5 +1,7 @@
 # Hook Dispatch Diet Report
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 - Protocol: `loop-engine-hook-diet-report/v2`
 - Generated: 2026-07-21T09:05:32.215Z
 - Runtime authority: `hook-events.jsonl` (available)

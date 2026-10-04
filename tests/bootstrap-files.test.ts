@@ -127,6 +127,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(evaluator).toContain("disposable clone/worktree");
     expect(evaluator).toContain("--run-adoption-profile");
     expect(evaluator).toContain("Workspace-write is disposable-only");
+    expect(evaluator).toContain("debug-ground-truth profile is also retired");
+    expect(evaluator).not.toContain("bun run benchmark:debug");
 
     const routing = read("docs/reference-configs/agentic-development-flow.md");
     expect(routing).toContain("Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty");

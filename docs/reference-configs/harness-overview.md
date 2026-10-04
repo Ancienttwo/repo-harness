@@ -122,13 +122,10 @@ The two current evidence owners are:
   proof of complete filesystem coverage. The telemetry append itself is
   excluded from write amplification metrics and is non-authoritative: append
   failure never changes hook safety.
-- `scripts/hook-dispatch-diet-report.ts` combines that event authority with
-  static route topology and synthetic subprocess probes. Runtime distributions
-  and route coverage include sample count, p50, and p95; missing, malformed,
-  mixed-protocol, duplicate, or target-incomplete records fail closed. Synthetic
-  probe distributions retain total, p50, p95, p99, and max latency. The
-  SessionStart token estimate remains labeled `utf8_bytes_div_4`; it is a
-  context-budget indicator, not provider billing usage.
+- `readHookEventTelemetry` in `src/cli/hook/event-telemetry.ts` reads the
+  active log and its owned archives. It validates records and reports malformed
+  input, mixed protocols, and duplicate event IDs. The HRD-08 measurement
+  script is retired. Its removal does not change runtime telemetry.
 - `scripts/run-skill-evals.ts` for end-to-end benchmark duration, changed-file
   evidence, graders, and provider-structured usage. Claude single-result JSON
   and Codex JSONL are parsed independently. Raw output remains an artifact, and

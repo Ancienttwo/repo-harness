@@ -1,5 +1,7 @@
 # repo-harness 门禁盘点与分类
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > 状态：#483 源码实施完成、Draft待用户审阅；历史盘点基线保持不变，下面的实施摘要区分已改代码与运行限制。任务依据：Aimpact 05:14 批准的文档盘点；观察日期 2026-10-03（Asia/Singapore）。源码基线 `cc1fc8ee8eaec3f52c0eb0636b53133f7162b105`，分支 `codex/gate-audit`。实施见 [PLAN.md](PLAN.md)。
 
 ## 结论与统计口径
@@ -59,7 +61,7 @@
 | C03 | check:hooks — [scripts/sync-hook-sources.ts](../../../scripts/sync-hook-sources.ts) | hook authoring/projection 漂移 | 无证据 | 无证据 | 降级为只记录 | 生成 hook 变更时验证一次；普通变更只记录/每日检查 |
 | C04 | check:helpers — [scripts/sync-helper-sources.ts](../../../scripts/sync-helper-sources.ts) | source helpers 与安装投影漂移 | 无证据 | 无证据 | 降级为只记录 | helper 变更时验证一次 |
 | C05 | check:reference-configs — [scripts/sync-reference-configs.ts](../../../scripts/sync-reference-configs.ts) | 运行指南与 assets 模板不同步 | 无证据 | 无证据 | 降级为只记录 | 指南变更时验证一次 |
-| C06 | check:route-eval — [scripts/route-nl-vs-ts-eval.ts](../../../scripts/route-nl-vs-ts-eval.ts) | TS/NL routing 判定差异 | 无证据 | 无证据 | 删除 | 旧 evals/checks p4：拆除中；删除旧闸，保留必要 routing 回归于受影响测试 |
+| C06 | check:route-eval — [scripts/route-nl-vs-ts-eval.ts](https://github.com/Ancienttwo/repo-harness/blob/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4/scripts/route-nl-vs-ts-eval.ts) | TS/NL routing 判定差异 | 无证据 | 无证据 | 删除 | 旧 evals/checks p4：拆除中；删除旧闸，保留必要 routing 回归于受影响测试 |
 | C07 | check:deploy-sql / SQL order — [scripts/check-deploy-sql-order.sh](../../../scripts/check-deploy-sql-order.sh) | SQL 序号、根路径、布局错误 | 无证据 | 无证据 | 降级为只记录 | deploy SQL 改动时并入 H01；真正执行属于 H04 |
 | C08 | check:context-files — [scripts/check-context-files.sh](../../../scripts/check-context-files.sh) | agent context 尺寸与受控结构失真 | 无证据 | 无证据 | 降级为只记录 | 超长/结构变更写报告，不阻日常编辑 |
 | C09 | check:architecture-sync — [scripts/check-architecture-sync.sh](../../../scripts/check-architecture-sync.sh) | pending drift 与索引失配 | ≥1次真实状态漂移拒绝（E04；非产品bug） | 无证据 | 降级为只记录 | drift 自动队列；相关模型消费者回归归 H01；不等人归档才能 Stop |
@@ -84,8 +86,8 @@
 | C28 | check-skill-version — [scripts/check-skill-version.ts](../../../scripts/check-skill-version.ts) | manifest/版本stamp错配 | 无证据 | 无证据 | 降级为只记录 | 版本改动归一次 H01；发布readback归 H04 |
 | C29 | benchmark:skills / effectiveness authority — [scripts/run-skill-evals.ts](../../../scripts/run-skill-evals.ts) | dry-run冒充效果证据 | 无证据 | 无证据 | 删除 | 旧 evals/checks p4：拆除中；删除旧流程闸，保留按需效果评测而非日常阻断 |
 | C30 | benchmark:harness / report validation — [scripts/validate-harness-profile-benchmark.ts](../../../scripts/validate-harness-profile-benchmark.ts) | 部分矩阵、伪造 subject或 stale benchmark | 无证据 | 无证据 | 删除 | 旧 evals/checks p4：拆除中；移除验收必跑矩阵，历史数据仍注明原证据限制 |
-| C31 | benchmark:debug / truth / routing evals — [scripts/run-debug-ground-truth-eval.ts](../../../scripts/run-debug-ground-truth-eval.ts) | 无真实复现/ground-truth污染 | 无证据 | 无证据 | 删除 | 旧 evals/checks p4：拆除中；debug按需复现，不凭命名扩大删除范围 |
-| C32 | loop-engine cutover gate — [scripts/loop-engine-cutover-gate.ts](../../../scripts/loop-engine-cutover-gate.ts) | cutover parity或样本不足 | 无证据 | 无证据 | 删除 | 一次性切换证据按风险选；完成后删除常驻gate要求 |
+| C31 | benchmark:debug / truth / routing evals — [scripts/run-debug-ground-truth-eval.ts](https://github.com/Ancienttwo/repo-harness/blob/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4/scripts/run-debug-ground-truth-eval.ts) | 无真实复现/ground-truth污染 | 无证据 | 无证据 | 删除 | 旧 evals/checks p4：拆除中；debug按需复现，不凭命名扩大删除范围 |
+| C32 | loop-engine cutover gate — [scripts/loop-engine-cutover-gate.ts](https://github.com/Ancienttwo/repo-harness/blob/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4/scripts/loop-engine-cutover-gate.ts) | cutover parity或样本不足 | 无证据 | 无证据 | 删除 | 一次性切换证据按风险选；完成后删除常驻gate要求 |
 | C33 | factor-lab-check — [scripts/factor-lab-check.sh](../../../scripts/factor-lab-check.sh) | 候选因子资料/registry不一致 | 无证据 | 无证据 | 降级为只记录 | 仅该领域显式报告，不作为repo全局闸 |
 | G01 | primary WorktreeGuard — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | 主checkout编辑与其他任务冲突 | 无证据 | 无证据 | 删除 | 删除 primary 一律禁写；冲突才自动隔离；H01保证主线 publication |
 | G02 | MainLoopDispatchGuard — [src/cli/hook/mutation-guard.ts](../../../src/cli/hook/mutation-guard.ts) | parent亲写代码绕过指定worker | 无证据 | 无证据 | 删除 | 按责任记录，无强制角色层级 |

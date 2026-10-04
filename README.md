@@ -417,16 +417,8 @@ Several Module Engineers read one Work Exchange and publish bounded coordination
 records. Handoff adoption is deliberately non-exclusive: it grants no Task,
 Claim, or Lease.
 
-The substrate keeps one Module Engineer and one writer while bounded read-only
-Workers exchange untrusted signals and explicit handoffs. Run the source-checkout
-live gate with `bun scripts/c9-collaboration-canary.ts --live`; it creates
-isolated disposable repositories for three matched baseline/treatment traces and
-records provider-authoritative Codex token usage, context size, signal reuse,
-handoff adoption, writer count, and delivery-plane digests. The accepted C9
-result is deliberately a negative multi-seat decision: the three-reader
-treatment preserved authority and reused state, but did not outproduce the
-single-reader baseline. Persistent same-capability `EngineerSeatV2`, an
-independent Review marketplace, and unattended Merge remain inactive. See
+The substrate keeps one Module Engineer and one writer. Bounded read-only Workers exchange untrusted signals and explicit handoffs. The source-checkout C9 canary is retired. Its historical result did not support multiple reader seats. Shared collaboration runtime tests remain active. Persistent same-capability `EngineerSeatV2`, an independent Review marketplace, and unattended Merge remain inactive.
+
 [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### External source intake
@@ -621,9 +613,8 @@ paths are symlink-backed runtime entrypoints rebuilt by
 `scripts/sync-codex-installed-copies.sh`.
 
 `bun run check:ci` is the single CI-equivalent gate; `bun run check:release` only
-adds the npm unpublished-version preflight before delegating to it. Governance
-and functional checks run as independent CI jobs, and `bun run check:route-eval`
-holds a pinned coverage floor over every prompt-guard intent and action.
+adds the npm unpublished-version preflight before delegating to it.
+Runtime routing regressions stay in affected tests. The old routing eval gate is retired.
 
 ```bash
 bun run check:ci                    # the whole gate

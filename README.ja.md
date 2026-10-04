@@ -434,19 +434,9 @@ repo-harness collaboration packet build|read
 coordination record を publish します。handoff の adoption は意図的に
 non-exclusive であり、Task も Claim も Lease も付与しません。
 
-substrate は Module Engineer と writer をそれぞれ 1 つに保ちつつ、範囲の限られた
-read-only な Worker が untrusted な signal と明示的な handoff をやり取りします。
-source checkout での live gate は `bun scripts/c9-collaboration-canary.ts --live`
-で実行します。これは 3 組の baseline/treatment trace のために隔離された
-使い捨てリポジトリを作成し、provider-authoritative な Codex token usage、context
-size、signal reuse、handoff adoption、writer count、delivery-plane digest を記録
-します。受け入れられた C9 の結果は意図的に negative な multi-seat 判断です。
-3-reader の treatment は authority を保ち state を再利用したものの、
-single-reader の baseline を上回る産出はしませんでした。持続的な同一 capability
-の `EngineerSeatV2`、独立した Review marketplace、無人の Merge は inactive の
-ままです。詳細は
-[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md)
-を参照してください。
+Module Engineer と writer はそれぞれ一つです。有界の read-only Worker が信頼されていない signal と明示的な handoff を交換します。C9 canary は廃止しました。過去の結果は複数の reader seat を支持しません。共有 collaboration runtime のテストは保持します。 同じ capability の常駐 `EngineerSeatV2`、独立した Review marketplace、無人 Merge は無効のままです。
+
+[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### External source intake
 
@@ -651,9 +641,8 @@ Claude/Codex skill path は `scripts/sync-codex-installed-copies.sh` によっ�
 
 `bun run check:ci` が唯一の CI-equivalent gate であり、
 `bun run check:release` はそこへ委譲する前に npm の unpublished-version
-preflight を追加するだけです。Governance と functional の checks は独立した
-CI job として走り、`bun run check:route-eval` はすべての prompt-guard intent と
-action に対して固定された coverage floor を保ちます。
+preflight を追加するだけです。
+Runtime routing の回帰テストは保持します。旧 routing eval gate は廃止しました。
 
 ```bash
 bun run check:ci                    # the whole gate

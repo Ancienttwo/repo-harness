@@ -1,5 +1,7 @@
 # C9 Real Multi-Agent Canary and Multi-Seat Decision
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > Date: 2026-08-30
 > Subject: final C9 work package on the accepted C7/C8 integration base `f8c63a7adb9b73a687501a7e36336797305398b1`
 > Runtime: `codex-cli 0.150.1`, `gpt-5.6-luna`, read-only sandbox

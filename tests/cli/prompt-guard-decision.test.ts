@@ -11,6 +11,8 @@ import {
   type PromptGuardState,
 } from '../../src/cli/hook/prompt-guard-decision';
 
+import { runPromptGuardVerdictFromPrompt } from '../../src/cli/commands/prompt-guard-decision';
+
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 const HOOK_ENTRY = join(import.meta.dir, '../..', 'src/cli/hook-entry.ts');
 
@@ -231,4 +233,32 @@ describe('prompt-guard decision engine', () => {
     expect(res.status).toBe(0);
     expect(res.stdout.trim()).toBe('plan_capture_missing_active_advice');
   }, 30_000);
+});
+
+// These state-dependent runtime cases survive the retired NL/TS evaluation.
+test.each([
+  { id: 'stale-active-marker', prompt: '开始执行', overrides: { plan: 'stale_marker' }, intent: 'general_execution', action: 'stale_active_plan_advice' },
+  { id: 'general-execution-spec-missing', prompt: '开始执行', overrides: { spec: 'missing' }, intent: 'general_execution', action: 'spec_block' },
+  { id: 'linked-worktree-execution', prompt: '开始执行', overrides: { worktree: 'linked_target' }, intent: 'general_execution', action: 'worktree_execution_advice' },
+  { id: 'approved-plan-incomplete-evidence', prompt: '开始执行', overrides: { plan: 'approved', contractPath: 'present', evidence: 'incomplete' }, intent: 'general_execution', action: 'evidence_contract_block' },
+  { id: 'done-contract-path-missing', prompt: '/done', overrides: { plan: 'draft' }, intent: 'done', action: 'done_contract_path_missing' },
+] as const)('historical state routing remains covered: $id', ({ prompt, overrides, intent, action }) => {
+  const snapshot = state(overrides);
+  const previous = { ...process.env };
+  try {
+    Object.assign(process.env, {
+      PROMPT_GUARD_SPEC_STATE: snapshot.spec,
+      PROMPT_GUARD_PLAN_STATE: snapshot.plan,
+      PROMPT_GUARD_PENDING_STATE: snapshot.pending,
+      PROMPT_GUARD_WORKTREE_STATE: snapshot.worktree,
+      PROMPT_GUARD_CONTRACT_STATE: snapshot.contract,
+      PROMPT_GUARD_CONTRACT_PATH_STATE: snapshot.contractPath,
+      PROMPT_GUARD_EVIDENCE_STATE: snapshot.evidence,
+    });
+    const verdict = runPromptGuardVerdictFromPrompt(prompt);
+    expect(verdict.intent).toBe(intent);
+    expect(verdict.action).toBe(action);
+  } finally {
+    process.env = previous;
+  }
 });

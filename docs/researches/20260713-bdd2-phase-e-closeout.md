@@ -1,5 +1,7 @@
 # BDD² Phase E Terminal Closeout
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > **Decision date**: 2026-07-13
 > **Merged**: PR #66, commit `0cf69cf` ("eval: close BDD2 Phase E with terminal E3 authority (#66)")
 > **Terminal gate**: `evals/bdd2/reports/phase-e3-gate.md`

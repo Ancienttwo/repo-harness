@@ -442,18 +442,8 @@ Varios Module Engineers leen un mismo Work Exchange y publican registros de
 coordinación acotados. La adopción de handoff es deliberadamente no exclusiva:
 no otorga ninguna Task, Claim ni Lease.
 
-El sustrato mantiene un solo Module Engineer y un solo writer mientras Workers
-acotados de solo lectura intercambian señales no confiables y handoffs
-explícitos. Ejecuta el live gate del source checkout con
-`bun scripts/c9-collaboration-canary.ts --live`; crea repositorios desechables
-aislados para tres trazas emparejadas de baseline/treatment y registra el uso de
-tokens de Codex autoritativo del provider, el tamaño de contexto, la reutilización
-de señales, la adopción de handoff, el conteo de writers y los digests del plano
-de entrega. El resultado C9 aceptado es deliberadamente una decisión negativa
-sobre multi-seat: el treatment de tres lectores preservó la autoridad y reutilizó
-estado, pero no produjo más que el baseline de un solo lector. El
-`EngineerSeatV2` persistente de misma capability, un marketplace de Review
-independiente y el Merge desatendido siguen inactivos. Ver
+El sistema mantiene un Module Engineer y un writer. Los Workers read-only intercambian señales no fiables y handoffs explícitos. El canary C9 está retirado. Su resultado histórico no admitió varios reader seats. Las pruebas del runtime de colaboración siguen activas. Los `EngineerSeatV2` persistentes, el Review marketplace independiente y el Merge sin supervisión siguen inactivos.
+
 [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### Intake de fuentes externas
@@ -659,9 +649,8 @@ reconstruidos por `scripts/sync-codex-installed-copies.sh`.
 
 `bun run check:ci` es el único gate equivalente a CI; `bun run check:release`
 solo añade el preflight de unpublished-version de npm antes de delegar a ese
-mismo gate. Los checks de governance y funcionales corren como jobs de CI
-independientes, y `bun run check:route-eval` sostiene un piso de cobertura
-fijado sobre cada intent y action de prompt-guard.
+mismo gate.
+Las pruebas afectadas cubren el routing del runtime. El antiguo gate de routing eval está retirado.
 
 ```bash
 bun run check:ci                    # the whole gate

@@ -388,9 +388,9 @@ regressions verify these separate boundaries.
 - Native Explore remains host-owned informal capability. Formal explorer work
   resolves to the complete repo-owned persona; no alias, wrapper, inherited
   prompt, incremental merge, or second authored authority participates.
-- BDD2 remains an independent sealed evaluation authority. The harness
-  evaluator must fail closed on `evals/bdd2/**` or
-  `scripts/run-bdd2-evals.ts`, and this work-package does not modify either.
+- BDD2 and BDD3 evaluation data and the BDD2 runner are retired. The harness
+  evaluator must fail closed on requests for `evals/bdd2/**` or
+  `scripts/run-bdd2-evals.ts`. It uses only the skills and adoption profiles.
 - The first 10x failure would be adding persona names without updating package,
   policy seeds, projections, readiness, and HOME installation together. Exact
   six-role lists, all-source preflight, tarball assertions, and temporary-HOME

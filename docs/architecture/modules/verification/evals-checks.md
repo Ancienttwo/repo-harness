@@ -115,11 +115,12 @@ authority; missing or malformed evidence fails closed.
 
 criterion 执行结束后，`verify-sprint` 重新计算完整 context。若 command 在执行期间改变 source、target、contract、goal 或 toolchain，独立 `criterion_context` guard fail-closed，不能以新 subject 配旧执行结果生成 AcceptanceReceipt。10x 下 cache 文件数量随 exact subject × criterion 线性增长，最先需要治理的是 ignored runtime evidence retention，而不是正确性边界；跨 repository/remote cache 仍明确不在此模块职责内。
 
-### Hidden-ground-truth debug evaluation v1
+### Retired debug evaluation
 
-`scripts/run-debug-ground-truth-eval.ts` owns a second, eval-only diagnostic profile. It is intentionally separate from both the immutable 3×9 profile benchmark and `run-skill-evals.ts`: public scenarios and trusted fixtures enter a disposable workspace assigned to the trusted stub, while `evals/debug-hunt/ground-truth.json` is omitted from its callback arguments and workspace. The deterministic grader copies the original fixture again before replaying the oracle, so workspace edits cannot turn a diagnostic claim into a pass. Per-case `provider_status` (`submitted`, `no_submission`, `error`) remains distinct from `grading_status` (`pass`, `fail`, `ungraded`, `error`, `no_submission`), with hashes binding the runner, public scenarios, fixture set, hidden truth, submission, and grader inputs.
-
-This profile changes no `/hunt` or `root-cause-prover` runtime behavior. Its v1 execution surface is trusted TypeScript/Bun fixtures and the deterministic in-process `stub`; the injectable callback is a test seam, not an untrusted-provider process boundary. Hostile code, Docker/gVisor, live-provider claims, patch generation, and a replacement for the canonical profile benchmark are outside this capability contract. The first 10x bottleneck is provider cost plus disposable fixture provisioning; the declared manifest and provenance hashes permit later sharding without exposing a second answer-key authority.
+The debug ground-truth runner, profile, and answer-key data are retired.
+This removal does not change `/hunt` or `root-cause-prover` behavior.
+Debug work still requires a real reproduction and affected runtime tests.
+The skill and adoption evaluation profiles remain available.
 
 ### Change Assessment v1 final-subject gate
 

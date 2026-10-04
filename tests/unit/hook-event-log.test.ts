@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createHookEventTelemetry, HOOK_EVENT_TELEMETRY_PATH } from '../../src/cli/hook/event-telemetry';
-import { readHookEventTelemetry } from '../../scripts/hook-dispatch-diet-report';
+import { readHookEventTelemetry } from '../../src/cli/hook/event-telemetry';
 import { readHookMetrics } from '../../scripts/run-harness-profile-benchmark';
 import { appendHookEventLog, HOOK_LOG_ARCHIVE_BYTES, readHookEventLog } from '../../src/effects/hook-event-log';
 
@@ -136,6 +136,31 @@ describe('bounded hook event history', () => {
     expect(report.records.map(r => r.event_id)).toEqual([first.event_id, second.event_id]);
     expect(report.invalidRecordCount).toBe(0);
     expect(report.duplicateEventIdCount).toBe(0);
+  });
+
+  test('reader preserves malformed, invalid, mixed and duplicate diagnostics', () => {
+    const root = fixture();
+    const record = emit(root);
+    const variants = [
+      { ...record, protocol: 'old/v1' },
+      { ...record, started_at: 'invalid' },
+      { ...record, route_id: 'missing-route' },
+      { ...record, measurement: { ...record.measurement, opaque_steps: [1] } },
+      { ...record, steps: [{ name: 'bad', execution: 'in_process', started_at: record.started_at, elapsed_ms: -1, exit_code: 0, output_bytes: null }] },
+    ];
+    writeFileSync(join(root, 'invalid.jsonl'), ['{', ...[record, record, ...variants].map(value => JSON.stringify(value))].join('\n'));
+    const report = readHookEventTelemetry(root, 'invalid.jsonl');
+    expect(report.records.map(value => value.event_id)).toEqual([record.event_id, record.event_id]);
+    expect(report.sampleCount).toBe(8);
+    expect(report.invalidRecordCount).toBe(6);
+    expect(report.malformedRecordCount).toBe(1);
+    expect(report.mixedProtocol).toBe(true);
+    expect(report.duplicateEventIdCount).toBe(1);
+    expect(report.missing).toBe(false);
+    expect(readHookEventTelemetry(root, 'absent.jsonl')).toEqual({
+      records: [], sampleCount: 0, invalidRecordCount: 0, malformedRecordCount: 0,
+      mixedProtocol: false, duplicateEventIdCount: 0, missing: true,
+    });
   });
 
   test('an explicit custom report file does not include the default history', () => {
