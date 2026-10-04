@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Window } from 'happy-dom';
 import { OperatorApp } from '../../src/operator-web/App';
-import { PipelineBoardPanel, type PipelineBoardReader } from '../../src/operator-web/PipelineBoard';
+import { PipelineBoardPanel, pipelineCardKey, type PipelineBoardReader } from '../../src/operator-web/PipelineBoard';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import { projectSnapshotViewState } from '../../src/operator-web/types';
@@ -98,6 +98,14 @@ describe('pipeline board panel', () => {
     expect(markup).not.toContain('<form');
     expect(markup).not.toContain('/Users/');
     expect(markup).not.toContain('http');
+  });
+
+  test('card keys stay distinct when host or task values contain the delimiter', () => {
+    const first = card({ source_host: 'max', task: `x:${REPOSITORY_ID}:y` });
+    const second = card({ source_host: `max:${REPOSITORY_ID}:x`, task: 'y' });
+    const joined = (c: PipelineCard) => `${c.source_host}:${c.repository_id}:${c.task}`;
+    expect(joined(first)).toBe(joined(second));
+    expect(pipelineCardKey(first)).not.toBe(pipelineCardKey(second));
   });
 
   test('renders an unknown server value as its own text', () => {

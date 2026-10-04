@@ -29,7 +29,7 @@ async function fetchPipelineBoard(signal: AbortSignal): Promise<PipelineBoardV2>
 
 /** The canonical parent key, never the display id. */
 export function pipelineCardKey(card: PipelineCard): string {
-  return `${card.source_host}:${card.repository_id}:${card.task}`;
+  return JSON.stringify([card.source_host, card.repository_id, card.task]);
 }
 
 /**
