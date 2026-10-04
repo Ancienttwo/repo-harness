@@ -214,40 +214,6 @@ function classify(
   return { ownership: 'unowned', proof: null, reason: fingerprints.length > 0 ? 'Current bytes do not match the declared retired generated asset.' : 'No ownership proof.' };
 }
 
-/** Apply the copy writer's contract filters to its content hash without writes. */
-export function projectedManagedTreeHash(source: string): string {
-  if (!stat(source)?.isDirectory()) throw new Error(`upgrade source is not a regular directory: ${source}`);
-  const excludes = loadWorkflowContractAsset<Contract>().installedCopyExcludes;
-  if (!excludes || !excludes.every((pattern) => typeof pattern === 'string')) throw new Error('installed copy exclusions are missing from the workflow contract');
-  const patterns = excludes.map((pattern) => ({
-    directory: pattern.endsWith('/'),
-    basename: !pattern.replace(/\/$/, '').includes('/'),
-    glob: new Bun.Glob(`${pattern.replace(/\/$/, '').includes('/') ? '**/' : ''}${pattern.replace(/\/$/, '')}`),
-  }));
-  const entries: { path: string; type: 'file' | 'symlink' }[] = [];
-  const walk = (directory: string, prefix: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name === '.repo-harness-owner.json') continue;
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (patterns.some((pattern) => (!pattern.directory || entry.isDirectory()) && pattern.glob.match(pattern.basename ? entry.name : path))) continue;
-      const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) walk(absolute, path);
-      else if (entry.isFile()) entries.push({ path, type: 'file' });
-      else if (entry.isSymbolicLink()) entries.push({ path, type: 'symlink' });
-      else throw new Error(`unsupported installed-copy source entry: ${path}`);
-    }
-  };
-  walk(source, '');
-  entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
-  const digest = createHash('sha256');
-  for (const entry of entries) {
-    const path = join(source, entry.path);
-    if (entry.type === 'symlink') digest.update(`L\0${entry.path}\0${readlinkSync(path)}\0`);
-    else { digest.update(`F\0${entry.path}\0`); digest.update(readFileSync(path)); digest.update('\0'); }
-  }
-  return `sha256:${digest.digest('hex')}`;
-}
-
 /** Revalidate a refresh source against the same copy projection used by staging. */
 export function hashUpgradeSource(sourcePath: string, packageRoot: string): string | null {
   const root = resolve(packageRoot);
@@ -255,7 +221,11 @@ export function hashUpgradeSource(sourcePath: string, packageRoot: string): stri
   if (path === root ? !stat(root)?.isDirectory() : !isLegacyPathSafe(root, path, false)) return null;
   const entry = stat(path);
   if (entry?.isFile()) return hash(readFileSync(path));
-  if (entry?.isDirectory()) return projectedManagedTreeHash(path);
+  if (entry?.isDirectory()) {
+    const excludes = loadWorkflowContractAsset<Contract>().installedCopyExcludes;
+    if (!excludes || !excludes.every((pattern) => typeof pattern === 'string')) throw new Error('installed copy exclusions are missing from the workflow contract');
+    return hashManagedTree(path, { excludes });
+  }
   return null;
 }
 

@@ -164,6 +164,10 @@ for removal. This flag still requires ownership proof. Unknown artifacts stay.
 The third-party `codex@openai-codex` Claude plugin and user rule lines in
 `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
 
+Project cleanup supports regular files and host hook entries. Project
+directories and symlinks remain report-only. Global cleanup supports verified
+owned directories and links.
+
 Cleanup keeps changed and unowned files. It also keeps current global typed
 hook adapters and user hook entries. It backs up each target before removal.
 Apply exits 0 when all eligible operations succeed, even if report items remain.

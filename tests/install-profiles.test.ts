@@ -12,6 +12,7 @@ import {
   INSTALL_PROFILES,
   installProfileHostMutationPaths,
   installedProfileStatus,
+  hashManagedTree,
   planInstallProfile,
   PROFILE_COMPONENTS,
   profileEnablesCodegraph,
@@ -20,6 +21,7 @@ import {
   readLegacyInstalledProfileForMigration,
   readInstalledProfile,
   recordVerifiedAgentFleetOwnership,
+  recordRefreshedInstallOwnership,
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
@@ -112,6 +114,45 @@ function writeManagedHostSurfaces(
 }
 
 describe('install profiles', () => {
+  test('one managed tree hash matches the actual copy projection with embedded Git metadata', () => withHome((env) => {
+    const source = join(env.HOME!, 'release-skill');
+    const copied = join(env.HOME!, 'copied-skill');
+    cpSync(join(ROOT, 'tests/fixtures/upgrade-v0.19.5-home/.codex/skills/repo-harness-cross-review'), source, { recursive: true });
+    expect(spawnSync('git', ['init', '-q', source], { env }).status).toBe(0);
+    const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh'),
+      '--stage-owned-copy', source, copied, 'canonical-skill'], {
+      env: { ...env, AGENTIC_DEV_SOURCE_ROOT: ROOT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(join(source, '.git'))).toBe(true);
+    expect(existsSync(join(copied, '.git'))).toBe(false);
+    const marker = JSON.parse(readFileSync(join(copied, '.repo-harness-owner.json'), 'utf8'));
+    const excludes: string[] = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8')).installedCopyExcludes;
+    expect(hashManagedTree(source, { excludes })).toBe(marker.content_hash);
+    expect(hashManagedTree(copied)).toBe(marker.content_hash);
+    expect(hashManagedTree(source)).not.toBe(marker.content_hash);
+  }));
+
+  test('refresh retains a markerless owned directory receipt with no selected components', () => withHome((env) => {
+    const path = join(env.HOME!, '.codex/skills/repo-harness-cross-review');
+    cpSync(join(ROOT, 'tests/fixtures/upgrade-v0.19.5-home/.codex/skills/repo-harness-cross-review'), path, { recursive: true });
+    const previousHash = hashManagedTree(path);
+    writePath(join(env.HOME!, '.repo-harness/install-state.json'), JSON.stringify({
+      protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+      transaction_id: 'owned-before-refresh', applied_at: '2026-09-30T00:00:00Z', previous: null,
+      ownership_manifest: [{ components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+        path, type: 'directory-copy', content_hash: previousHash, managed_marker: 'transaction-created-directory', symlink_target: null }],
+    }));
+    rmSync(path, { recursive: true });
+    cpSync(join(ROOT, 'assets/skills/repo-harness-cross-review'), path, { recursive: true });
+    expect(existsSync(join(path, '.repo-harness-owner.json'))).toBe(false);
+    expect(() => recordRefreshedInstallOwnership([path], env)).not.toThrow();
+    const refreshed = readInstalledProfile(env)!.ownership_manifest.find((surface) => surface.path === path)!;
+    expect(refreshed.components).toEqual([]);
+    expect(refreshed.content_hash).toBe(hashManagedTree(path));
+    expect(refreshed.content_hash).not.toBe(previousHash);
+    expect(refreshed.managed_marker).toBe('transaction-created-directory');
+  }));
   test('steady-state vocabulary is minimal/full with protocol 2 and exact 8/12 hook projections', () => withHome((env) => {
     expect(INSTALL_PROFILES).toEqual(['minimal', 'full']);
     expect(Object.keys(PROFILE_COMPONENTS)).toEqual(['minimal', 'full']);

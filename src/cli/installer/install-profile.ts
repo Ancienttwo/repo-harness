@@ -260,16 +260,25 @@ function adapterHasRequiredProjection(path: string, host: HookHost, profile: Ins
   }
 }
 
-export function hashManagedTree(root: string): string {
+/** Hash one selected tree. No excludes means the complete ownership proof. */
+export function hashManagedTree(root: string, options: { readonly excludes?: readonly string[] } = {}): string {
+  const patterns = (options.excludes ?? []).map((pattern) => ({
+    directory: pattern.endsWith('/'),
+    basename: !pattern.replace(/\/$/, '').includes('/'),
+    glob: new Bun.Glob(`${pattern.replace(/\/$/, '').includes('/') ? '**/' : ''}${pattern.replace(/\/$/, '')}`),
+  }));
   const entries: Array<{ path: string; type: 'file' | 'symlink' }> = [];
   const visit = (directory: string, prefix: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (entry.name === OWNER_MARKER) continue;
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (patterns.some((pattern) => (!pattern.directory || entry.isDirectory())
+        && pattern.glob.match(pattern.basename ? entry.name : relative))) continue;
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute, relative);
       else if (entry.isFile()) entries.push({ path: relative, type: 'file' });
       else if (entry.isSymbolicLink()) entries.push({ path: relative, type: 'symlink' });
+      else if (options.excludes !== undefined) throw new Error(`unsupported installed-copy source entry: ${relative}`);
     }
   };
   visit(root, '');
@@ -351,8 +360,9 @@ function captureManagedFile(
 function captureOwnedPath(
   path: string,
   components: readonly InstallComponent[],
+  options: { readonly allowEmptyComponents?: boolean } = {},
 ): ManagedInstallSurface | null {
-  if (components.length === 0 || (!existsSync(path) && !lstatExists(path))) return null;
+  if ((components.length === 0 && !options.allowEmptyComponents) || (!existsSync(path) && !lstatExists(path))) return null;
   const stat = lstatSync(path);
   if (stat.isSymbolicLink()) {
     return {
@@ -598,10 +608,9 @@ export function recordRefreshedInstallOwnership(
   const selected = new Set(paths);
   const ownershipManifest = current.ownership_manifest.map((surface) => {
     if (!selected.has(surface.path)) return surface;
-    // Retired facade receipts may retain ownership with no selected component.
-    // The existing marker authority can capture their newly refreshed tree.
-    const refreshed = captureOwnedPath(surface.path, surface.components)
-      ?? captureDirectoryOrLink(surface.path, surface.components);
+    // Existing receipts keep ownership even when no component is selected.
+    // Recapture bytes without requiring or inventing a new owner marker.
+    const refreshed = captureOwnedPath(surface.path, surface.components, { allowEmptyComponents: true });
     if (!refreshed || refreshed.type !== surface.type) throw new Error(`cannot refresh install ownership: ${surface.path}`);
     return { ...surface, content_hash: refreshed.content_hash, symlink_target: refreshed.symlink_target };
   });
