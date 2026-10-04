@@ -224,7 +224,9 @@ export function loadHarnessScenarioManifest(path = DEFAULT_MANIFEST): HarnessSce
 }
 
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): string {
-  const result = spawnSync(command, args, { cwd, env, encoding: 'utf-8' });
+  // Immutable benchmark bases must not retain background Git writers.
+  const commandArgs = command === 'git' ? ['-c', 'maintenance.auto=false', ...args] : args;
+  const result = spawnSync(command, commandArgs, { cwd, env, encoding: 'utf-8' });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || `${command} failed`);
   return result.stdout.trim();
 }
@@ -999,12 +1001,12 @@ export function parsePorcelainPaths(output: string): string[] {
 }
 
 export function benchmarkChangedFiles(workspace: string, baselineRevision?: string): string[] {
-  const status = spawnSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: workspace, encoding: 'utf-8' });
+  const status = spawnSync('git', ['-c', 'maintenance.auto=false', 'status', '--porcelain=v1', '-uall', '-z'], { cwd: workspace, encoding: 'utf-8' });
   if (status.status !== 0) throw new Error(status.stderr || status.stdout || 'git status failed');
   const paths = new Set(parsePorcelainPaths(status.stdout));
   if (baselineRevision) {
     const committed = spawnSync(
-      'git', ['diff', '--name-only', '--no-renames', '-z', baselineRevision, '--'],
+      'git', ['-c', 'maintenance.auto=false', 'diff', '--name-only', '--no-renames', '-z', baselineRevision, '--'],
       { cwd: workspace, encoding: 'utf-8' },
     );
     if (committed.status !== 0) throw new Error(committed.stderr || committed.stdout || 'git baseline diff failed');
