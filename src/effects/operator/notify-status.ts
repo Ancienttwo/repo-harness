@@ -1,7 +1,7 @@
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { parseEnv } from 'node:util';
+import { parseEnv, promisify } from 'node:util';
 import {
   NOTIFY_PLUGIN_ID,
   type NotifyConfigKey,
@@ -9,6 +9,8 @@ import {
   type NotifyPresence,
   type NotifyStatusV1,
 } from '../../core/operator/notify-status';
+
+const runFile = promisify(execFile);
 
 export interface NotifyStatusReadInput {
   readonly env?: NodeJS.ProcessEnv;
@@ -25,18 +27,20 @@ interface HerdrPluginList {
 
 interface HerdrPluginLog {
   readonly finished_unix_ms?: unknown;
-  readonly status?: unknown;
   readonly stderr?: unknown;
 }
 
-function herdrJson(args: readonly string[], env: NodeJS.ProcessEnv): unknown {
-  const result = spawnSync('herdr', [...args], {
-    env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.error || result.status !== 0 || result.signal) return null;
-  const raw = result.stdout.trim();
-  const start = raw.indexOf('{');
-  if (start < 0) return null;
+// The server answers other requests while Herdr runs, so these reads must not block.
+async function herdr(args: readonly string[], env: NodeJS.ProcessEnv): Promise<string | null> {
+  try {
+    const { stdout } = await runFile('herdr', [...args], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
+    return stdout.trim();
+  } catch { return null; }
+}
+
+function json(raw: string | null): unknown {
+  const start = raw?.indexOf('{') ?? -1;
+  if (raw === null || start < 0) return null;
   try { return JSON.parse(raw.slice(start)); }
   catch { return null; }
 }
@@ -63,40 +67,43 @@ function configPresence(dir: string | null): Record<NotifyConfigKey, NotifyPrese
   }
 }
 
-function lastDelivery(env: NodeJS.ProcessEnv): NotifyDeliveryV1 {
-  const value = herdrJson(['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env) as
-    | { readonly result?: { readonly logs?: readonly HerdrPluginLog[] } } | null;
-  const logs = value?.result?.logs;
+/**
+ * The shipped plugin writes one stderr line per channel attempt:
+ * `<CHANNEL>: HTTP <status>` or `<CHANNEL>: delivery failed.`. One event can try
+ * several channels; it succeeded only when every attempt returned 2xx.
+ */
+function lastDelivery(raw: string | null): NotifyDeliveryV1 {
+  const logs = (json(raw) as { readonly result?: { readonly logs?: readonly HerdrPluginLog[] } } | null)?.result?.logs;
   if (!Array.isArray(logs)) return { at: null, result: 'missing' };
   for (let index = logs.length - 1; index >= 0; index -= 1) {
     const entry = logs[index];
     const stderr = typeof entry?.stderr === 'string' ? entry.stderr : '';
-    const match = stderr.match(/\[webhook-notify\] ([A-Z]+): HTTP (\d+)/);
-    if (!match) continue;
+    const attempts = [...stderr.matchAll(/\[webhook-notify\] [A-Z]+: (?:HTTP (\d{3})|delivery failed\.)/gu)];
+    if (attempts.length === 0) continue;
     const finished = entry?.finished_unix_ms;
     const at = typeof finished === 'number' && Number.isSafeInteger(finished) ? new Date(finished).toISOString() : null;
-    const status = Number(match[2]);
-    return { at, result: entry?.status === 'succeeded' && status >= 200 && status < 300 ? 'succeeded' : 'failed' };
+    const ok = attempts.every(attempt => attempt[1] !== undefined && Number(attempt[1]) >= 200 && Number(attempt[1]) < 300);
+    return { at, result: ok ? 'succeeded' : 'failed' };
   }
   return { at: null, result: 'missing' };
 }
 
 /** Read plugin install, enable, config presence, and the last recorded delivery. Values stay out. */
-export function readNotifyStatus(input: NotifyStatusReadInput = {}): NotifyStatusV1 {
+export async function readNotifyStatus(input: NotifyStatusReadInput = {}): Promise<NotifyStatusV1> {
   const env = { ...process.env, ...input.env };
-  const listed = herdrJson(['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env) as
-    | { readonly result?: HerdrPluginList } | null;
-  const plugin = listed?.result?.plugins?.find(item => item.plugin_id === NOTIFY_PLUGIN_ID) ?? null;
+  const [listed, dir, logs] = await Promise.all([
+    herdr(['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env),
+    herdr(['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env),
+    herdr(['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env),
+  ]);
+  const plugins = (json(listed) as { readonly result?: HerdrPluginList } | null)?.result?.plugins;
+  const plugin = Array.isArray(plugins) ? plugins.find(item => item.plugin_id === NOTIFY_PLUGIN_ID) ?? null : null;
   const root = typeof plugin?.plugin_root === 'string' ? plugin.plugin_root : '';
   let linked: NotifyStatusV1['linked'] = 'missing';
   if (root && isAbsolute(root)) {
     try { linked = lstatSync(`${root}/herdr-plugin.toml`).isFile() ? 'linked' : 'missing'; }
     catch { linked = 'missing'; }
   }
-  const dirResult = spawnSync('herdr', ['plugin', 'config-dir', NOTIFY_PLUGIN_ID], {
-    env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const dir = dirResult.status === 0 ? dirResult.stdout.trim() : '';
   const configDir = dir && isAbsolute(dir) && !/[\r\n\x00]/.test(dir) ? dir : null;
   return {
     protocol: 1,
@@ -105,7 +112,7 @@ export function readNotifyStatus(input: NotifyStatusReadInput = {}): NotifyStatu
     linked,
     enabled: plugin ? (plugin.enabled === true ? 'enabled' : 'disabled') : 'missing',
     config: configPresence(configDir),
-    last_delivery: lastDelivery(env),
+    last_delivery: lastDelivery(logs),
     observed_at: (input.now ?? new Date()).toISOString(),
   };
 }

@@ -117,7 +117,7 @@ export interface OperatorServerOptions {
   readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
   readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
-  readonly read_notify_status?: (input: NotifyStatusReadInput) => NotifyStatusV1;
+  readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -1477,7 +1477,7 @@ export async function startOperatorServer(
         return;
       }
       try {
-        const status = decodeNotifyStatus((options.read_notify_status ?? readNotifyStatus)({ env: options.env }));
+        const status = decodeNotifyStatus(await (options.read_notify_status ?? readNotifyStatus)({ env: options.env }));
         sendJson(response, 200, status, headOnly);
       } catch {
         sendRefusal(request, response, 503, errorBody('notify_status_unavailable', 'Notify status is unavailable.'), headOnly);

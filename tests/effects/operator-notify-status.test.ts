@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { readNotifyStatus } from '../../src/effects/operator/notify-status';
+import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
+import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
 const SECRET = 'fixture-secret-key-must-not-leak';
@@ -49,7 +53,7 @@ if (args[0] === 'plugin' && args[1] === 'list') {
 }
 
 describe('notify plugin status', () => {
-  test('reports link, enable, config presence, and the last recorded delivery without secret values', () => {
+  test('reports link, enable, config presence, and the last recorded delivery without secret values', async () => {
     const f = fixture();
     try {
       f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
@@ -57,7 +61,7 @@ describe('notify plugin status', () => {
         { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '' },
         { finished_unix_ms: 1_700_000_200_000, status: 'failed', stderr: '[webhook-notify] SLACK: HTTP 500\n' },
       ] } });
-      const status = readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
+      const status = await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
       expect(status).toMatchObject({
         linked: 'linked',
         enabled: 'enabled',
@@ -70,12 +74,12 @@ describe('notify plugin status', () => {
     } finally { f.cleanup(); }
   });
 
-  test('a missing plugin, config, or delivery stays missing and does not invent a success', () => {
+  test('a missing plugin, config, or delivery stays missing and does not invent a success', async () => {
     const f = fixture();
     try {
       f.env.FIXTURE_LINKED = '0';
       f.env.FIXTURE_CONFIG_FAIL = '1';
-      const status = readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
+      const status = await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
       expect(status.linked).toBe('missing');
       expect(status.enabled).toBe('missing');
       expect(status.config).toEqual({ WEBHOOK_URL: 'missing', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' });
@@ -83,28 +87,62 @@ describe('notify plugin status', () => {
     } finally { f.cleanup(); }
   });
 
-  test('a linked plugin can be disabled, and an omitted Slack value is missing', () => {
+  test('a linked plugin can be disabled, and an omitted Slack value is missing', async () => {
     const f = fixture();
     try {
       writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\n`, { mode: 0o600 });
       f.env.FIXTURE_ENABLED = '0';
-      const status = readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
+      const status = await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
       expect(status.enabled).toBe('disabled');
       expect(status.config.SLACK_WEBHOOK_URL).toBe('missing');
       expect(JSON.stringify(status)).not.toContain(SECRET);
     } finally { f.cleanup(); }
   });
 
-  test('a config symlink is not followed', () => {
+  test('a config symlink is not followed', async () => {
     const f = fixture();
     try {
       const outside = join(f.root, 'outside.env');
       writeFileSync(outside, `WEBHOOK_URL='https://hidden.example'\nWEBHOOK_KEY='hidden-secret'\n`);
       rmSync(join(f.config, '.env'));
       symlinkSync(outside, join(f.config, '.env'));
-      const status = readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
+      const status = await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
       expect(status.config.WEBHOOK_URL).toBe('missing');
       expect(JSON.stringify(status)).not.toContain('hidden');
+    } finally { f.cleanup(); }
+  });
+
+  test('a failed attempt in the newest delivery event marks it failed, even after a success', async () => {
+    const f = fixture();
+    try {
+      for (const [stderr, result] of [
+        ['[webhook-notify] WEBHOOK: delivery failed.\n', 'failed'],
+        ['[webhook-notify] WEBHOOK: HTTP 200\n[webhook-notify] SLACK: HTTP 404\n', 'failed'],
+        ['[webhook-notify] WEBHOOK: HTTP 200\n[webhook-notify] SLACK: delivery failed.\n', 'failed'],
+        ['[webhook-notify] WEBHOOK: HTTP 202\n[webhook-notify] SLACK: HTTP 200\n', 'succeeded'],
+      ] as const) {
+        f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+          { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+          { finished_unix_ms: 1_700_000_300_000, status: 'succeeded', stderr },
+          { finished_unix_ms: 1_700_000_400_000, status: 'failed', stderr: '[webhook-notify] Invalid config, event, or state.\n' },
+        ] } });
+        const status = await readNotifyStatus({ env: f.env });
+        expect(status.last_delivery).toEqual({ at: '2023-11-14T22:18:20.000Z', result });
+      }
+    } finally { f.cleanup(); }
+  });
+
+  test('a status read from a secret-bearing config renders no secret value in the panel', async () => {
+    const f = fixture();
+    try {
+      const status = await readNotifyStatus({ env: f.env });
+      const markup = renderToStaticMarkup(createElement(NotifyStatusPanel, { initialStatus: status, t: key => translate('en', key) }));
+      expect(markup).toContain('WEBHOOK_KEY');
+      expect(markup).toContain('configured');
+      expect(markup).not.toContain(SECRET);
+      expect(markup).not.toContain(SLACK);
+      expect(markup).not.toContain('bot.example');
+      expect(markup).not.toContain(f.config);
     } finally { f.cleanup(); }
   });
 
@@ -114,7 +152,6 @@ describe('notify plugin status', () => {
       port: 0,
       static_root: f.root,
       env: f.env,
-      read_notify_status: () => readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') }),
     });
     try {
       const response = await fetch(`${server.url}/api/v1/notify/status`);
