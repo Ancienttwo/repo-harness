@@ -96,3 +96,10 @@ Audit evidence and closure rationale: [20260907-deferred-goal-ledger-reconciliat
 ## Update preflight for a corrupt Bun global manifest
 
 - Deferred: `repo-harness update` could detect a stray `"": "."` dependency in `~/.bun/install/global/package.json` before `bun add -g` fails with `refusing to install dependency with unsafe name`, and print repair guidance (reported with #457). Not fixed with the #457 fleet-ownership repair because it is a separate preflight with its own Bun-owned file boundary and no failing repo-harness behavior to reproduce. Revisit when the Bun global manifest shape is observed again in an update failure or an update preflight work-package opens.
+
+## Deferred worktree lifecycle implementation
+
+- Goal: use one managed root for new task worktrees. Add exact-path GC and a separate legacy migration step. See [the research plan](../docs/researches/worktree-lifecycle/PLAN.md).
+- Tradeoff: keep existing checkout paths and cleanup behavior while the creation and deletion safeguards have no implementation proof. Keep local branch refs. Detached candidates require protected main ancestry.
+- Revisit trigger: the user selects this work for implementation, or current task closeout leaves a verified eligible checkout without an owned cleanup path.
+- Entry points: `scripts/contract-worktree.sh`, `scripts/ship-worktrees.sh`, `src/cli/mcp/coding-workspaces.ts`, and `src/effects/terminal/task-session.ts`. Prove canonical path separation at creation and deletion before enabling GC.
