@@ -599,8 +599,8 @@ describe("init command cutover", () => {
     const repo = tempRepo();
     try {
       const result = spawnSync("bun", [CLI, "init", "--repo", repo, "--interactive"], { cwd: ROOT, encoding: "utf-8" });
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain("user-level runtime state");
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("unknown option");
       expect(existsSync(join(repo, ".ai"))).toBe(false);
     } finally {
       cleanup(repo);

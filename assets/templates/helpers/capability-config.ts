@@ -31,7 +31,6 @@ type Args = {
   createPrefix: boolean;
   createArchitectureModule: boolean;
   createWorkstream: boolean;
-  syncContracts: boolean;
   dryRun: boolean;
   format: Format;
 };
@@ -65,7 +64,6 @@ function usage(): never {
       "  --create-prefix                  Create the prefix directory when missing",
       "  --create-architecture-module     Create a minimal architecture module when missing",
       "  --create-workstream              Create a durable workstream ledger",
-      "  --no-sync-contracts              Only update the registry",
       "  --dry-run                        Print planned changes without writing",
       "  --format text|json               Output format (default: text)",
     ].join("\n")
@@ -90,7 +88,6 @@ function parseArgs(argv: string[]): Args {
     createPrefix: false,
     createArchitectureModule: false,
     createWorkstream: false,
-    syncContracts: true,
     dryRun: false,
     format: "text",
   };
@@ -139,9 +136,6 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--create-workstream":
         args.createWorkstream = true;
-        break;
-      case "--no-sync-contracts":
-        args.syncContracts = false;
         break;
       case "--dry-run":
         args.dryRun = true;
@@ -290,30 +284,6 @@ function validateRegistry(repo: string): void {
   runChecked(repo, process.execPath, [helperPath("capability-resolver.ts"), "validate", "--repo", repo, "--format", "text"]);
 }
 
-function syncContracts(repo: string, capability: Capability): void {
-  const event = {
-    ts: new Date().toISOString(),
-    file_path: capability.prefixes[0],
-    severity: "medium",
-    functional_block: capability.prefixes[0],
-    capability_id: capability.id,
-    matched_prefix: capability.prefixes[0],
-    architecture_domain: capability.domain,
-    architecture_capability: capability.name,
-    architecture_module: capability.architecture_module,
-    workstream_dir: capability.workstream_dir,
-    contract_agents: capability.contract_files.agents,
-    contract_claude: capability.contract_files.claude,
-    lsp_profile: capability.lsp_profile,
-    change_type: "capability-config",
-    request_file: "none",
-    spawn_recommended: false,
-    contract_sync_required: true,
-  };
-
-  runChecked(repo, "bash", [helperPath("context-contract-sync.sh"), "sync-event", "--json", JSON.stringify(event)]);
-}
-
 function createArchitectureModule(repo: string, capability: Capability): void {
   const path = resolve(repo, capability.architecture_module);
   if (existsSync(path)) return;
@@ -369,14 +339,12 @@ function main(): void {
   const { status, capability } = upsertCapability(registry, requestedCapability);
   actions.push(`${status}:${capability.id}`);
 
-  if (args.syncContracts) actions.push(`sync-contracts:${capability.contract_files.agents},${capability.contract_files.claude}`);
   if (args.createArchitectureModule) actions.push(`create-architecture-module:${capability.architecture_module}`);
   if (args.createWorkstream) actions.push(`create-workstream:${capability.workstream_dir}`);
   actions.push("validate:capability-registry");
 
   if (!args.dryRun) {
     if (status === "added") writeRegistry(repo, registry);
-    if (args.syncContracts) syncContracts(repo, capability);
     if (args.createArchitectureModule) createArchitectureModule(repo, capability);
     if (args.createWorkstream) createWorkstream(repo, capability);
     validateRegistry(repo);

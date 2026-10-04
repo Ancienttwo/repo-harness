@@ -5,7 +5,6 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
-const SYNC_SCRIPT = join(ROOT, "scripts/context-contract-sync.sh");
 
 const SYNC_CONTRACT_ARGS = [
   "sync-contract-files",
@@ -53,30 +52,6 @@ function makeFixture(agentsContent: string): string {
   mkdirSync(join(cwd, "apps/web"), { recursive: true });
   writeFileSync(join(cwd, "apps/web/AGENTS.md"), agentsContent);
   return cwd;
-}
-
-function runShellSyncEvent(cwd: string, requestFile: string) {
-  const event = JSON.stringify({
-    functional_block: "apps/web",
-    capability_id: "apps-web",
-    matched_prefix: "apps/web",
-    file_path: "apps/web/routes.ts",
-    severity: "medium",
-    change_type: "source-change",
-    request_file: requestFile,
-    ts: "2026-07-06T15:13:43+0800",
-    architecture_domain: "apps-web",
-    architecture_capability: "web",
-    architecture_module: "docs/architecture/modules/apps-web/web.md",
-    workstream_dir: "tasks/workstreams/apps-web/web",
-    contract_agents: "apps/web/AGENTS.md",
-    contract_claude: "apps/web/CLAUDE.md",
-    lsp_profile: "typescript-lsp",
-  });
-  return spawnSync("bash", [SYNC_SCRIPT, "sync-event", "--json", event], {
-    cwd,
-    encoding: "utf-8",
-  });
 }
 
 describe("contract block rewrite hardening", () => {
@@ -148,44 +123,4 @@ describe("contract block rewrite hardening", () => {
     }
   }, 30_000);
 
-  test.each([
-    ['missing END', ['intro', '<!-- BEGIN ARCHITECTURE CONTRACT -->', 'old', 'human tail'].join('\n')],
-    ['reversed markers', ['<!-- END ARCHITECTURE CONTRACT -->', 'human', '<!-- BEGIN ARCHITECTURE CONTRACT -->'].join('\n')],
-    ['balanced markers', ['intro', '<!-- BEGIN ARCHITECTURE CONTRACT -->', 'old', '<!-- END ARCHITECTURE CONTRACT -->', 'outro'].join('\n')],
-  ])('observation-only shell sync preserves %s and does not create a sibling contract', (_name, original) => {
-    const cwd = makeFixture(original!);
-    try {
-      const result = runShellSyncEvent(cwd, 'none');
-      expect(result.status).toBe(0);
-      expect(readFileSync(join(cwd, 'apps/web/AGENTS.md'), 'utf8')).toBe(original!);
-      expect(existsSync(join(cwd, 'apps/web/CLAUDE.md'))).toBe(false);
-    } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
-
-  test("shell observation does not rewrite agent context for an archived request", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "context-sync-shell-fallback-"));
-    const requestFile = "docs/architecture/requests/apps-web.md";
-    try {
-      mkdirSync(join(cwd, "apps/web"), { recursive: true });
-      mkdirSync(join(cwd, "docs/architecture/requests/archive/2026"), { recursive: true });
-      writeFileSync(join(cwd, "apps/web/AGENTS.md"), "# Web Context\n");
-      writeFileSync(
-        join(cwd, "docs/architecture/requests/archive/2026/apps-web.md"),
-        [
-          "# Architecture Queue Card: apps-web",
-          "",
-          "> **Status**: Resolved",
-          "",
-        ].join("\n"),
-      );
-
-      const res = runShellSyncEvent(cwd, requestFile);
-      expect(res.status).toBe(0);
-      const agents = readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8");
-      expect(agents).toBe("# Web Context\n");
-      expect(agents).not.toContain(`Pending architecture request: \`${requestFile}\``);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 30_000);
 });

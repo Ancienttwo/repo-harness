@@ -2011,7 +2011,9 @@ exit 0
     expect(res.stdout).toContain('--with-obsidian-skills');
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
-    expect(res.stdout).toContain('Deprecated: use repo-harness init --repo <path>');
+    expect(res.stdout).not.toContain('--repo <path>');
+    expect(res.stdout).not.toContain('--dry-run');
+    expect(res.stdout).not.toContain('--interactive');
   }, 30_000);
 
   test('CLI install defaults non-interactively to full with its selected optional ecosystems', () => {

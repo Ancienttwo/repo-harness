@@ -213,7 +213,7 @@ describe("Hook contracts", () => {
   // HRD-05: post-edit-guard.sh's per-edit task-handoff regeneration
   // ("[TaskHandoff]") is retired -- deferred to Stop's existing unconditional
   // handoff refresh instead of reprinted per edit -- so that assertion does
-  // not carry over. architecture-queue/context-contract-sync move from a
+  // not carry over. architecture-queue moves from a
   // synchronous `run_repo_harness_helper` call to deferred Stop-time
   // consumption (`runRepoHarnessHelper`, same helper names as CLI args).
   test("mutation-observed preserves doc drift and disables automatic contract verification", () => {
@@ -221,7 +221,6 @@ describe("Hook contracts", () => {
     expect(script).toContain("[DocDrift]");
     expect(script).toContain("[DeployAsset]");
     expect(script).toContain("'architecture-queue'");
-    expect(script).toContain("'context-contract-sync'");
     expect(script).not.toContain("sync-brain-docs");
     expect(read("assets/templates/helpers/archive-architecture-request.sh")).toContain("[ArchitectureArchive]");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
@@ -241,7 +240,6 @@ describe("Hook contracts", () => {
   test("architecture drift helpers should keep detection and context sync separated", () => {
     const eventHelper = read("assets/templates/helpers/architecture-event.ts");
     const drift = read("assets/templates/helpers/architecture-queue.sh");
-    const sync = read("assets/templates/helpers/context-contract-sync.sh");
     const workstream = read("assets/templates/helpers/workstream-sync.sh");
 
     expect(eventHelper).toContain("sync-context-map");
@@ -252,14 +250,10 @@ describe("Hook contracts", () => {
     expect(drift).toContain(".ai/harness/architecture/events.jsonl");
     expect(eventHelper).toContain("repo-harness run workstream-sync");
     expect(drift).not.toContain("BEGIN ARCHITECTURE CONTRACT");
-    expect(sync).toContain("observation-only");
-    expect(sync).toContain("no agent/capability block or workstream was written");
-    expect(sync).not.toContain("BEGIN ARCHITECTURE CONTRACT");
     expect(eventHelper).toContain("Mermaid fenced block");
     expect(eventHelper).toContain("only architecture diagram artifact");
     expect(eventHelper).not.toContain("architecture HTML");
     expect(workstream).toContain("tasks/workstreams");
-    expect(workstream).toContain("context-contract-sync.sh");
   });
 
 

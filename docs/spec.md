@@ -233,7 +233,7 @@ AcceptanceReceipt field.
 ## Acceptance Scenarios
 
 - An existing repo can adopt the harness, generate workflow files, and pass
-  `repo-harness run check-task-workflow --strict`.
+  `repo-harness run check-task-workflow`.
 - A standard downstream init or migration does not create repo-local
   repo-harness helper scripts under `scripts/` or `.ai/harness/scripts/`.
 - A sprint row can expand into a plan, contract, notes, review, latest trace,

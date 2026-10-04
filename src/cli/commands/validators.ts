@@ -1,5 +1,5 @@
 /**
- * Shared CLI validators for `--target`, `--location`, `--mode`, and `--brain-mode`.
+ * Shared CLI validators for `--target`, `--location`, `--mode`.
  *
  * Extracted from repeated inline checks in src/cli/index.ts so every command
  * that accepts these flags validates consistently in one place.
@@ -53,22 +53,6 @@ export function assertAdoptionMode(raw: string, commandName: string): AdoptionMo
   }
   console.error(
     `repo-harness ${commandName}: invalid --mode "${raw}" (expected: ${VALID_MODES.join(', ')})`,
-  );
-  process.exit(2);
-}
-
-// ---------------------------------------------------------------------------
-// Brain mode
-// ---------------------------------------------------------------------------
-
-const VALID_BRAIN_MODES: readonly string[] = ['skip', 'manifest-only'];
-
-export function assertBrainMode(raw: string, commandName: string): string {
-  if (VALID_BRAIN_MODES.includes(raw)) {
-    return raw;
-  }
-  console.error(
-    `repo-harness ${commandName}: invalid --brain-mode "${raw}" (expected: ${VALID_BRAIN_MODES.join(', ')})`,
   );
   process.exit(2);
 }

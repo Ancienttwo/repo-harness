@@ -114,7 +114,7 @@ or refreshed. It never creates an application stack; new projects and modules us
 
 ```bash
 repo-harness init
-bash scripts/check-task-workflow.sh --strict
+bash scripts/check-task-workflow.sh
 bun test
 ```
 

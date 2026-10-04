@@ -450,34 +450,13 @@ STAMP_EOF
     echo -e "${GREEN}Version stamp written to $stamp_file${NC}"
 }
 
-# Run a skill lifecycle hook (if bun is available)
-run_skill_hook() {
-    local event="$1"
-    local hook_script="$SCRIPT_DIR/run-skill-hook.ts"
-
-    if command_exists bun && [ -f "$hook_script" ]; then
-        bun "$hook_script" "$event" --context "{\"projectName\":\"$PROJECT_NAME\",\"stack\":\"$STACK\"}" 2>&1 || {
-            if [[ "$event" == pre-* ]]; then
-                echo -e "${RED}Pre-hook $event failed, aborting.${NC}"
-                return 1
-            else
-                echo -e "${YELLOW}Post-hook $event warning (non-fatal).${NC}"
-            fi
-        }
-    fi
-}
-
 # Main execution
 main() {
-    run_skill_hook "pre-init" || exit 1
-
     check_package_manager
     create_project
     create_structure
     install_dev_tools
     write_version_stamp
-
-    run_skill_hook "post-init"
 
     echo ""
     echo -e "${GREEN}=== Project initialized successfully! ===${NC}"

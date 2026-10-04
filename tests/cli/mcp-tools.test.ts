@@ -176,8 +176,7 @@ describe('mcp tools', () => {
       expect(denied.error.code).toBe('POLICY_DENIED');
 
       writeFileSync(join(repoRoot, '.env'), 'OPENAI_API_KEY=sk-testsecret\n');
-      const fullDiskCtx = { ...ctx, policy: getMcpPolicy('planner', { fullDiskRead: true }) };
-      const absolute = await jsonTool(fullDiskCtx, 'read_workflow_file', { path: join(repoRoot, '.env') });
+      const absolute = await jsonTool(ctx, 'read_workflow_file', { path: join(repoRoot, '.env') });
       expect(absolute.error.code).toBe('POLICY_DENIED');
     });
   });

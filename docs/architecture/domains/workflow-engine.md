@@ -27,4 +27,4 @@ verify without a live service.
 
 - `bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts`
 - `repo-harness init --repo . --dry-run`
-- `bash scripts/check-task-workflow.sh --strict`
+- `bash scripts/check-task-workflow.sh`

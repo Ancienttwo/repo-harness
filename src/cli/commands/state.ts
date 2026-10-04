@@ -22,7 +22,6 @@ import {
 import { resolveBoard } from '../../effects/state/resolve-board';
 import { resolveContinuationEnvelope } from '../../effects/state/resolve-continuation-envelope';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
-import { migrateLegacyActivePlan } from '../hook/legacy-active-plan-migration';
 
 export interface StateCommandOptions {
   readonly targetPath?: readonly string[];
@@ -310,21 +309,6 @@ export function buildStateCommand(): Command {
         canonicalTargetRef: () => readCanonicalTargetRef(repoRoot),
         resolveBoard,
       }));
-    });
-
-  state
-    .command('migrate-legacy-active-plan')
-    .description('One-shot migration of the retired .claude/.active-plan marker')
-    .requiredOption('--json', 'Output the migration result as JSON')
-    .action(() => {
-      try {
-        process.stdout.write(`${JSON.stringify(migrateLegacyActivePlan(), null, 2)}\n`);
-        process.exitCode = 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`${message}\n`);
-        process.exitCode = 1;
-      }
     });
 
   return state;

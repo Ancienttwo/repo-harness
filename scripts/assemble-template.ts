@@ -9,7 +9,6 @@
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { runHooks } from "./run-skill-hook";
 
 // ============================================================================
 // Types
@@ -1017,31 +1016,6 @@ export function assembleTemplate(options: AssemblyOptions): string {
   return assembled;
 }
 
-/**
- * Async wrapper that runs lifecycle hooks around assembleTemplate().
- * Use this from CLI or scripts that support async. Tests can use sync assembleTemplate().
- */
-export async function assembleTemplateWithHooks(options: AssemblyOptions): Promise<string> {
-  const hookContext = {
-    planType: options.planType,
-    target: options.target ?? "claude",
-    quickMode: options.quickMode ?? false,
-  };
-
-  // Pre-assemble hook (sync — failure aborts)
-  const preResult = await runHooks("pre-assemble", hookContext);
-  if (!preResult.success) {
-    throw new Error("pre-assemble hook failed, aborting assembly");
-  }
-
-  const output = assembleTemplate(options);
-
-  // Post-assemble hook (advisory — failure is warning only)
-  await runHooks("post-assemble", { ...hookContext, outputLength: output.length });
-
-  return output;
-}
-
 // ============================================================================
 // CLI
 // ============================================================================
@@ -1163,7 +1137,7 @@ if (import.meta.main) {
       cloudflareNative: parsed.cloudflare,
     };
 
-    const output = await assembleTemplateWithHooks(options);
+    const output = assembleTemplate(options);
     console.log(output);
   } catch (error) {
     console.error("Error:", error instanceof Error ? error.message : error);

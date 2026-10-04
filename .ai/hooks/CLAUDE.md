@@ -37,5 +37,5 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .archcont
 ## Refresh Hints
 
 - `bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts`
-- `bash scripts/check-task-workflow.sh --strict`
+- `bash scripts/check-task-workflow.sh`
 <!-- END CAPABILITY CONTEXT -->

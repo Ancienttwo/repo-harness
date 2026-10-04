@@ -336,18 +336,11 @@ export interface CapabilityResolution {
   readonly outOfRepoPathCount: number;
 }
 
-// Deterministic "declared" signal for a missing registry file: a repo commits
-// to the capability-registry system by naming it in policy.json's
-// .context.capability_registry_file (written by ensure-task-workflow.sh /
-// project-init-lib.sh at adoption time; see
-// tests/create-project-dirs.runtime.test.ts). A repo that never adopted the
-// system has no such reference, so a missing capabilities.json there is
-// "absent" (today's no-signal behavior, unchanged). A repo that DID declare
-// it but whose registry file is missing is "invalid" -- fail closed with a
-// structured blocker instead of a silent capabilityCount=0. Repair: rerun
-// `repo-harness run check-task-workflow` (ensure-task-workflow.sh scaffolds a
-// default capabilities.json when the declared path is missing) or hand-fix
-// corrupt JSON directly.
+// Policy declares capability registry authority. Adoption and init, plus the
+// explicit capability commands, write the registry and its policy reference.
+// A declared missing or invalid registry fails closed. Restore the declared
+// registry through those writers, or repair its JSON explicitly. Workflow
+// diagnostics and ensure-task-workflow do not repair registry contents.
 function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
   const declared = policyValue(policy, '.context.capability_registry_file');
   if (declared === POLICY_FIELD_ABSENT) return false;

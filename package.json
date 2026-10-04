@@ -63,7 +63,7 @@
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
     "check:architecture-sync": "repo-harness run check-architecture-sync",
     "check:task-sync": "repo-harness run check-task-sync",
-    "check:task-workflow": "repo-harness run check-task-workflow --strict",
+    "check:task-workflow": "repo-harness run check-task-workflow",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_BUNDLED_CLI_VERSION=\"\\\"$npm_package_version\\\"\" && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_BUNDLED_CLI_VERSION dist/hook-entry.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",
     "prepack": "bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2",

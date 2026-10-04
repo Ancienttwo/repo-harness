@@ -707,7 +707,7 @@ function renderRequiredFollowUp(event: ArchitectureEvent): string {
     "- When a visual materially improves the explanation, add an evidence-backed Mermaid fenced block to the architecture module or snapshot Markdown.",
     "- Mermaid Markdown is the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only for authoring and review.",
     `- If this starts or advances durable execution, run \`repo-harness run workstream-sync ensure --block "${functionalBlock}" --request "${requestFile}"\`.`,
-    "- After the snapshot or diagram is produced, run `repo-harness run context-contract-sync sync-latest` so the local architecture contract block links to the latest artifacts.",
+    "- Inspect the architecture model and update real boundaries when needed. Read module documents on demand.",
   ].join("\n");
 }
 
@@ -1298,7 +1298,7 @@ function renderContractBlock(args: Args): string {
 function replaceContractBlock(source: string, block: string): string {
   // Refuse to rewrite when markers are unbalanced: a lazy regex over a file
   // with a missing END or duplicate BEGIN would silently duplicate the block
-  // or pair the wrong markers. Mirrors the guard in context-contract-sync.sh.
+  // or pair the wrong markers.
   const begins = source.match(/^<!-- BEGIN ARCHITECTURE CONTRACT -->[ \t]*$/gm)?.length ?? 0;
   const ends = source.match(/^<!-- END ARCHITECTURE CONTRACT -->[ \t]*$/gm)?.length ?? 0;
   const balanced =

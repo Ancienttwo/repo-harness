@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -611,15 +612,39 @@ describe("init command", () => {
     expect(res.stdout).toContain("--no-codegraph");
   }, 30_000);
 
-  test("CLI update rejects repo refresh flags with an init hint", () => {
+  test("CLI update rejects retired repo refresh flags", () => {
     const res = spawnSync("bun", [CLI, "update", "--repo", ".", "--json"], {
       cwd: ROOT,
       encoding: "utf-8",
     });
 
-    expect(res.status).toBe(2);
-    expect(res.stderr).toContain("repo-harness update no longer refreshes repositories");
-    expect(res.stderr).toContain("repo-harness init --repo <path>");
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("unknown option");
+  }, 30_000);
+
+  test.each([
+    ['init', '--configure-codegraph', []],
+    ['init', '--brain-root', ['unused']],
+    ['init', '--brain-mode', ['manifest-only']],
+    ['init', '--interactive', []],
+    ['update', '--repo', ['.']],
+    ['update', '--dry-run', []],
+    ['update', '--interactive', []],
+  ] as const)('retired %s %s fails before any repository or host write', (command, flag, values) => {
+    const tmp = join(tmpdir(), `retired-cli-option-${command}-${flag.slice(2)}-${Date.now()}`);
+    const repo = join(tmp, 'repo');
+    const home = join(tmp, 'home');
+    try {
+      mkdirSync(repo, { recursive: true }); mkdirSync(home);
+      const result = spawnSync('bun', [CLI, command, flag, ...values], {
+        cwd: repo, encoding: 'utf8', env: { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, '.repo-harness'), BUN_RUNTIME_TRANSPILER_CACHE_PATH: join(tmp, 'bun-cache') },
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('unknown option');
+      expect(result.stderr).toContain(flag);
+      expect(readdirSync(repo)).toEqual([]);
+      expect(readdirSync(home)).toEqual([]);
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
   }, 30_000);
 
   test("CLI init rejects user-level brain configuration flags", () => {
@@ -631,8 +656,8 @@ describe("init command", () => {
         encoding: "utf-8",
       });
 
-      expect(res.status).toBe(2);
-      expect(res.stderr).toContain("brain configuration writes user-level state");
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("unknown option");
       expect(existsSync(join(tmp, ".repo-harness"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

@@ -10,7 +10,6 @@ source:
   include:
     - "assets/hooks/**"
     - ".ai/hooks/**"
-    - "scripts/run-skill-hook.ts"
     - "src/cli/installer/**"
     - "src/cli/hook/**"
     - "src/cli/hook-entry.ts"
@@ -30,4 +29,4 @@ extensions:
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts"
-    - "bash scripts/check-task-workflow.sh --strict"
+    - "bash scripts/check-task-workflow.sh"

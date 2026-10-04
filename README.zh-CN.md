@@ -112,7 +112,7 @@ application stack；新项目和新模块改用 `repo-harness-setup` 的 scaffol
 
 ```bash
 repo-harness init
-bash scripts/check-task-workflow.sh --strict
+bash scripts/check-task-workflow.sh
 bun test
 ```
 

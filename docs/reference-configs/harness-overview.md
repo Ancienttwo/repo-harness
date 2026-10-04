@@ -99,7 +99,7 @@ Required v1 fields:
 - `commands`, `guards`, `handoffs`, `files_changed`, and `allowed_paths_check`
 - `external_acceptance`, `failure_class`, and `next_step`
 
-`repo-harness run check-task-workflow --strict` validates the latest trace shape when a non-empty latest checks file exists. `repo-harness run harness-trace-grade --run <trace> --strict` applies the local graders used for workflow regression checks: active plan resolves, contract profile is valid, Human Review Card passes, command evidence exists, and changed files stay inside allowed paths.
+`repo-harness run check-task-workflow` reports read-only JSON diagnostics. It does not grant workflow permission. `repo-harness run harness-trace-grade --run <trace> --strict` applies the local graders used for workflow regression checks: active plan resolves, contract profile is valid, Human Review Card passes, command evidence exists, and changed files stay inside allowed paths.
 
 ## Harness Cost Evidence and SLOs
 

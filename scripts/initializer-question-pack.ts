@@ -45,7 +45,7 @@ export interface WebappRenderingModelChoice extends ProfileChoice {
 }
 
 interface InitializerQuestionPackBase {
-  version: "initializer-question-pack.v2" | "initializer-question-pack.v3" | "initializer-question-pack.v4";
+  version: "initializer-question-pack.v4";
   goal: string;
   decisionPoints: DecisionPoint[];
   planTiers: {
@@ -71,16 +71,6 @@ interface InitializerQuestionPackBase {
   handoffProfiles: Record<string, ProfileChoice>;
 }
 
-export interface InitializerQuestionPackV2 extends InitializerQuestionPackBase {
-  version: "initializer-question-pack.v2";
-}
-
-export interface InitializerQuestionPackV3 extends InitializerQuestionPackBase {
-  version: "initializer-question-pack.v3";
-  recoveryProfiles: Record<string, ProfileChoice>;
-  stateProfiles: Record<string, ProfileChoice>;
-}
-
 export interface InitializerQuestionPackV4 extends InitializerQuestionPackBase {
   version: "initializer-question-pack.v4";
   recoveryProfiles: Record<string, ProfileChoice>;
@@ -90,7 +80,7 @@ export interface InitializerQuestionPackV4 extends InitializerQuestionPackBase {
   webappRenderingModels: Record<string, WebappRenderingModelChoice>;
 }
 
-export type InitializerQuestionPack = InitializerQuestionPackV2 | InitializerQuestionPackV3 | InitializerQuestionPackV4;
+export type InitializerQuestionPack = InitializerQuestionPackV4;
 
 const PACK_PATH = join(import.meta.dir, "..", "assets", "initializer-question-pack.v4.json");
 
@@ -101,11 +91,7 @@ export function loadQuestionPack(path: string = PACK_PATH): InitializerQuestionP
 
   const parsed = JSON.parse(readFileSync(path, "utf-8")) as InitializerQuestionPack;
   const version = parsed.version;
-  if (
-    version !== "initializer-question-pack.v2" &&
-    version !== "initializer-question-pack.v3" &&
-    version !== "initializer-question-pack.v4"
-  ) {
+  if (version !== "initializer-question-pack.v4") {
     throw new Error(`Unsupported question pack version: ${version}`);
   }
 
@@ -147,20 +133,12 @@ export function getDecisionPointsByBatch(
 export function getAiNativeProfileIds(
   pack: InitializerQuestionPack = loadQuestionPack()
 ): string[] {
-  if (pack.version !== "initializer-question-pack.v4") {
-    return ["none"];
-  }
-
   return Object.keys(pack.aiNativeProfiles).sort();
 }
 
 export function getWebappRenderingModelIds(
   pack: InitializerQuestionPack = loadQuestionPack()
 ): string[] {
-  if (pack.version !== "initializer-question-pack.v4") {
-    return ["none"];
-  }
-
   return Object.keys(pack.webappRenderingModels).sort();
 }
 

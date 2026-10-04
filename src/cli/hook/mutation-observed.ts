@@ -1,14 +1,11 @@
 /**
  * Mutation observed — HRD-05 in-process journal handler for `PostToolUse.edit`.
  *
- * Replaces the retired `assets/hooks/post-edit-guard.sh` (253 lines) and
- * `assets/hooks/minimal-change-observer.sh` (18 lines): instead of multiple
- * durable projections per edit (a `.claude/.task-handoff.md` rewrite, a
- * `workflow_write_handoff` regeneration, a synchronous architecture-queue
- * record + context-contract-sync + capability-context cascade, a synchronous
- * contract-verification run, and a synchronous minimal-change signals
- * report), a qualifying edit now writes AT MOST ONE small journal event
- * (append-only, one file per event) carrying dirty bits. The deferred
+ * A qualifying edit writes at most one durable journal event carrying dirty
+ * bits. Deferred consumers update projections and observe architecture changes.
+ * The queue and capability-context calls share one deadline. Removing the
+ * no-op middle step leaves its time available to capability context. No delay
+ * or reserved budget is added. The deferred
  * consumers (`consumePendingPostEditEvents`, invoked at Stop by
  * `runtime.ts`, and `pendingPostEditJournalSection`, surfaced at
  * SessionStart) consume deferred changes; contract verification reads execution
@@ -715,7 +712,7 @@ function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv, t
  * `run_architecture_queue_sync()` port (post-edit-guard.sh:49-96), now
  * invoked per path of the Stop-time drift changed set (see
  * `architecture-drift.ts`) instead of per journal event. The
- * context-contract-sync + capability-context cascade is gated on
+ * capability-context follow-up is gated on
  * architecture-queue's OWN real-time output matching
  * `/^\[ArchitectureDrift\] Request:/m` -- replicated here exactly, against
  * the (still same, unmodified) `architecture-queue.sh record` command's real
@@ -744,12 +741,6 @@ export function processArchitectureCascade(
     return { ok: false, error: `legacy architecture cascade failed for ${filePath}: architecture-queue exited ${result.status}` };
   }
   if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
-    const contextBudget = remaining();
-    if (contextBudget <= 0) return expired();
-    const contextSync = runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest'], contextBudget);
-    if (contextSync.status !== 0) {
-      return { ok: false, error: `legacy architecture cascade failed for ${filePath}: context-contract-sync exited ${contextSync.status}` };
-    }
     const capabilityBudget = remaining();
     if (capabilityBudget <= 0) return expired();
     const capabilityContext = runCapabilityContextRequest(repoRoot, env, capabilityBudget);

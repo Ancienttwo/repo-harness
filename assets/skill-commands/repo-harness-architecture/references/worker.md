@@ -19,7 +19,7 @@ Worker reference. Use only within the assigned architecture scope.
 7. Verify with:
    - `repo-harness run check-architecture-sync`
    - `repo-harness run capability-resolver validate --repo <repo> --format text`
-   - `repo-harness run check-task-workflow --strict` when repo workflow surfaces changed
+   - `repo-harness run check-task-workflow` when repo workflow surfaces changed
 
 ## Coverage and Agent-owned registration
 

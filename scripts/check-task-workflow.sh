@@ -2,8 +2,7 @@
 set -euo pipefail
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --strict) echo '[workflow] --strict is diagnostic only; no workflow-stage permission is enforced.' ;;
-    --help|-h) echo 'Usage: check-task-workflow [--strict] (read-only diagnostics)'; exit 0 ;;
+    --help|-h) echo 'Usage: check-task-workflow (read-only diagnostics)'; exit 0 ;;
     *) echo "[workflow] unknown argument: $1" >&2; exit 2 ;;
   esac
   shift

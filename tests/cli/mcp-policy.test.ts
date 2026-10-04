@@ -65,6 +65,9 @@ describe('mcp policy and paths', () => {
       });
 
       const executor = getMcpPolicy('executor');
+      expect(executor.allowAbsoluteRead).toBe(false);
+      expect(executor.readGlobs).not.toContain('**');
+      expect(executor.execution.fixedWorkflowCheck).toBe(true);
       expect(resolveMcpPath(tmp, 'tasks/secrets/token.txt', executor, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, '.ai/harness/nested/private.key', executor, 'read')).toMatchObject({ ok: false });
     } finally {
@@ -72,7 +75,7 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('broad read policy keeps deny globs while accepting authorized absolute reads', () => {
+  test('scoped read policy keeps deny globs and permits workflow files', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-full-disk-'));
     const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-full-disk-outside-'));
     try {
@@ -84,14 +87,17 @@ describe('mcp policy and paths', () => {
       const normal = getMcpPolicy('planner');
       expect(resolveMcpPath(tmp, join(tmp, '.env'), normal, 'read')).toMatchObject({ ok: false });
 
-      const fullDisk = getMcpPolicy('planner', { fullDiskRead: true });
-      expect(resolveMcpPath(tmp, join(tmp, '.env'), fullDisk, 'read')).toMatchObject({ ok: false });
-      expect(resolveMcpPath(tmp, join(tmp, 'plans/prds/readme.md'), fullDisk, 'read')).toMatchObject({
+      const scoped = getMcpPolicy('planner');
+      expect(scoped.allowAbsoluteRead).toBe(false);
+      expect(scoped.readGlobs).not.toContain('**');
+      expect(scoped.execution.fixedWorkflowCheck).toBe(true);
+      expect(resolveMcpPath(tmp, join(tmp, '.env'), scoped, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'plans/prds/readme.md', scoped, 'read')).toMatchObject({
         ok: true,
         relativePath: 'plans/prds/readme.md',
       });
-      expect(resolveMcpPath(tmp, join(tmp, 'plans/prds/new.md'), fullDisk, 'write')).toMatchObject({ ok: false });
-      expect(resolveMcpPath(tmp, join(outside, 'note.md'), fullDisk, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, join(tmp, 'plans/prds/new.md'), scoped, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, join(outside, 'note.md'), scoped, 'read')).toMatchObject({ ok: false });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
@@ -179,6 +185,9 @@ describe('mcp policy and paths', () => {
       writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
 
       const executor = getMcpPolicy('executor');
+      expect(executor.allowAbsoluteRead).toBe(false);
+      expect(executor.readGlobs).not.toContain('**');
+      expect(executor.execution.fixedWorkflowCheck).toBe(true);
       const executorTools = buildMcpToolDefinitions(executor).map((tool) => tool.name);
       expect(executor.capabilities).toMatchObject({
         workspaceReader: false,

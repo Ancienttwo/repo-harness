@@ -19,10 +19,8 @@ Existing repositories should use:
 npx -y repo-harness init
 ```
 
-The retired `scripts/setup-plugins.sh` path remains a compatibility shim that
-delegates to `repo-harness install`. It must not reinstall Claude marketplace
-plugins, Superpowers, `feature-dev`, `frontend-design`, `code-simplifier`,
-`hookify`, or LSP plugin bundles.
+Use `repo-harness install` for global setup. The legacy plugin setup script is removed.
+Global setup does not install retired Claude marketplace plugin bundles.
 
 Project creation moved to the branch command `repo-harness-scaffold`; it is not
 the main existing-repo adoption path.

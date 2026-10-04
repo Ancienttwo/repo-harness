@@ -14,7 +14,7 @@ when present.
    - Discuss the product direction with the user from two named perspectives before writing anything: product (problem, users, success criteria, acceptance scenarios, non-goals) and architecture (capabilities touched, dependency order, risks, slice granularity).
    - Run `repo-harness run sprint-backlog init --slug <slug> --title <title>`, then fill `## PRD`, `## Architecture Notes`, and the ordered `## Backlog` table from the upper-layer PRD or source spec; every row needs a concrete machine-checkable acceptance line and a mode (`contract` or `inline`).
    - The backlog is schema 2 (`> **Backlog Schema**: 2`): the row shape is `| # | ID | Status | Task | Mode | Acceptance | Plan |` and the `ID` cell is the persisted immutable task identity. `sprint-backlog init` mints the first row's id; mint each additional row's id with `od -An -tx1 -N32 /dev/urandom | tr -d ' \n'`. Never edit, copy, or regenerate an existing `ID` — editing the Task text is a rename that keeps identity, which is the whole point of the column.
-   - Present the draft sprint to the user. Only after explicit approval set `> **Status**: Approved`; `check-task-workflow.sh --strict` rejects placeholder PRDs, placeholder acceptance lines, and duplicate backlog rows.
+   - Present the draft sprint to the user. Only after explicit approval set `> **Status**: Approved`; Inspect the PRD, acceptance lines, and backlog rows for complete data.
 2. Route `from-prd` when the user gives `plans/prds/*.prd.md`:
    - Read the PRD `Problem`, `Users`, `Success Criteria`, `Acceptance Scenarios`, and `Non-goals`; summarize them into the Sprint `## PRD` section and set `> **Source PRD**:` to the PRD path.
    - Derive backlog rows from `Module Behaviors (P0)` and acceptance scenario groups. Preserve dependency order and make every acceptance line traceable to a PRD acceptance scenario.
@@ -39,7 +39,7 @@ Each `contract` row's `tasks/contracts/<stem>.contract.md` is the authoritative 
 ## Failure Modes
 
 - If no sprint file exists and the user asked for `run` or `status`, report that no sprint is active and route to `plan`.
-- If the backlog table is malformed or `check-task-workflow.sh --strict` rejects the sprint, stop and fix the sprint file before starting any task.
+- If the backlog table is malformed, fix the sprint file before starting a task. Use `check-task-workflow.sh` for read-only diagnostics.
 - If `start-task` fails after the plan was captured, report the orphan plan path and stop instead of retrying blindly.
 - If a task contract is already executing in this worktree, finish or archive it first; never stack a second backlog task on top of it.
 

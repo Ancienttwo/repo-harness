@@ -197,7 +197,7 @@ flowchart LR
 | inspection-migration -> contract-assets | `scripts/lib/project-init-lib.sh` 生成并写入下游 registry 模式的 `.ai/context/capabilities.json` 与模板契约文件（新仓库默认 `capability_source: "registry"`，与本仓库自身的 archcontext 权威无关） |
 | adoption -> contract-assets | `src/core/adoption/source-checkout.ts` 以 `assets/workflow-contract.v1.json` 判定源码 checkout；`src/core/adoption/standard-plan.ts` 指向 `package:assets/templates/helpers` |
 | adoption -> mcp-sidecar | `src/cli/commands/adoption-plan.ts` 导入 `../../effects/repo-registry` 的 `registerRepoHarnessRepo` |
-| hook-adapters -> contract-assets | `src/cli/hook/mutation-observed.ts` 以 `capability-context request` 驱动 context-contract-sync 级联，而不是自带第二份 capability-resolver |
+| hook-adapters -> contract-assets | `src/cli/hook/mutation-observed.ts` 以 `capability-context request` 消费架构队列的 request，而不是自带第二份 capability-resolver |
 | hook-adapters -> action-commands | `src/cli/installer/install-profile.ts` 读取 `assets/skill-commands/manifest.json` 并按名取用各命令源目录 |
 | engineer-scheduling -> engineer-bindings | `src/effects/engineers/scheduling-acquire.ts` 重验精确 Engineer 合同后，通过 `delegateScheduledEngineerAcquire` 调用既有 ME-0B acquire authority |
 | engineer-messages -> engineer-bindings | `src/effects/engineers/module-inbox.ts` 在 send、delivery 与 ACK 边界调用 `readEngineerBindingStatus` 重验精确 Binding |
@@ -210,7 +210,7 @@ flowchart LR
 
 虚线 gate 边来自每个 capability 在 capability 权威里自己声明的 `verification_hints`
 （例如 `tests/cli/adoption-plan.test.ts`、`tests/hook-runtime.test.ts`、`tests/cli/mcp-reader-tools.test.ts`），
-以及 `bun test` 与 `scripts/check-task-workflow.sh --strict` 这两个全仓闸门。
+以及 `bun test` 全仓测试和 `scripts/check-task-workflow.sh` 只读诊断。
 
 contract-assets 内部还有一条投影关系而不是跨 capability 边：`scripts/sync-helper-sources.ts`
 把 `scripts/` 下的 helper 单向投影成 `assets/templates/helpers/` 的打包副本，源与投影两端同属
@@ -247,7 +247,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - `scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
 - `scripts/capability-resolver.ts` resolves changed paths to capabilities with longest-prefix matching.
 - `scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
-- `scripts/context-contract-sync.sh` keeps only the controlled architecture block in capability `AGENTS.md` and `CLAUDE.md` files aligned.
+- Read architecture documents on demand. Update real boundaries explicitly.
 - `scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic diagrams live as Mermaid fenced blocks in the relevant architecture module or snapshot Markdown.
 - Mermaid fenced blocks are the only architecture diagram artifacts; agents must not generate standalone HTML.
@@ -302,9 +302,9 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 ## Review Backlog
 
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
-- Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
+- Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:dc89fd5a6b1ff18a7492285765bcef3e7b44da61d7a91cc3806e23727339c7cd" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7b5ba76b597099f090f745c4b130b3a7caa7b5d489a7acf50d2f5bcd3ee528fe" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:d0415e26fdd5bf81e27d71a74f40796aacd33fb2f30d8730cba52a720f16f1af" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7b5ba76b597099f090f745c4b130b3a7caa7b5d489a7acf50d2f5bcd3ee528fe" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z

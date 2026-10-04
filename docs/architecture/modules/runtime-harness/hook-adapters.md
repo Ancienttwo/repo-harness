@@ -1,8 +1,8 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:132d8cab10d94dc2d5add313cea2a2cfa120b63b2d180ff084f4d9a0fae044bf" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:49427c6729ca7883ed1d9f6f3b23ac6c4ed307748a6344c0e24a4bed00b701ce" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:32ef471ddaa8ad7f165a8b7f1a88c6821cc3d30ed980d5b1ebb378762a329203" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:82fb9eead149262e3bbe721e44d305bb5698ba3f09707e0b0d24023d08ba9f05" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
-> **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
+> **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -35,7 +35,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`50–100` 個文件 / `10k–20k` 行
-- 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
+- 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -89,7 +89,7 @@ sequenceDiagram
 | `subagent` handler 复用 4 条 route | 避免四份近似实现，代价是该 handler 必须在内部按 `context.event` 分支（`handler-registry.ts:49` 的窄化断言即此处的类型缝合点） |
 | `hook-entry.ts` 与完整 commander CLI 分离 | 热路径不冷加载非 hook 命令模块（文件头 `:5` 明写理由），代价是子命令分派在 entry 里手写成一串 `if` |
 | 保留 `workflow-state.sh` 作为 operator helper | 保住 workflow-state 契约的 parity，代价是仓库里长期存在 1,884 行 × 2 份 Bash；它没有事件入口，所以不构成第二 dispatcher |
-| `assets/skill-hooks.json` 保留 7 个空事件 | 零开销的扩展点，但已自标 `deprecated-zero-overhead`；不删除是因为 `scripts/init-project.sh` 与 `assemble-template.ts` 仍在调用其 runner |
+| 空 lifecycle hooks 已移除 | Scaffold 和 template assembly 直接执行各自任务。它们不再调用空 runner。 |
 
 ### 3.3 10x 规模下先垮的点
 
@@ -106,7 +106,7 @@ sequenceDiagram
 
 按实测的可证伪顺序：
 
-1. **Stop 的串行级联。** 一次 Stop 最多可拉起 `architecture-queue` + `context-contract-sync` + `capability-context` + `verify-contract` 四类 `spawnSync`，逐 pending event 串行。这是唯一已经贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s，而 host 的 30s adapter timeout 就在旁边。10x 之前它就会先撞墙 —— 它已经吃掉近一半的实测 hook 时间。
+1. **Stop 的串行级联。** 旧采样覆盖四类串行调用。当前 cascade 只调用 `architecture-queue` 和 `capability-context`。二者共享同一 deadline。已移除的 stub 不再消耗预算。这是唯一已经贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s，而 host 的 30s adapter timeout 就在旁边。10x 之前它就会先撞墙 —— 它已经吃掉近一半的实测 hook 时间。
 2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。
 3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。§3.2 那条"编辑热路径近乎零成本"的权衡只对 `PostToolUse.edit`（0.8%、p50 13ms）成立，对 PreToolUse 一侧不成立。
 4. **SessionStart 上下文预算是全有或全无。** 七个 provider（resume、capability-context-pending、architecture-queue-pending、pending-plan-capture、current-status-snapshot、active-sprint、tooling-update-advisory）在 `session-context.ts:1345-1351` 被 `appendBlock` 拼成**一整块** priority-5 的 `session-start-context.sh` section。`budgetSessionContext` 的裁剪粒度是 section（`session-context-budget.ts:437`），不是 provider —— 超预算时整块被丢掉、只留一行 `[ContextRef:session-start-context.sh]` 占位。所以这里不存在"低优先级 provider 先被牺牲"，而是七块内容一起消失。延迟本身不是瓶颈（4.6%、p95 711ms）。
@@ -256,7 +256,7 @@ does not inspect legacy command shapes, so there is no dual-read path.
   replay the same range on the next Stop. For the disabled projection provider,
   acknowledgment covers the complete legacy cascade: the runner must resolve,
   every primary `architecture-queue` invocation must succeed, and every
-  request-triggered `context-contract-sync` / `capability-context` follow-up
+  request-triggered `capability-context` follow-up
   must succeed. Stop remains advisory and reports a bounded diagnostic, while
   the manual drain exits non-zero; neither path advances the cursor after a
   partial cascade. Both callers persist a frozen legacy batch in
@@ -296,7 +296,7 @@ capabilities.json 的 `verification_hints`：
 
 ```bash
 bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts
-bash scripts/check-task-workflow.sh --strict
+bash scripts/check-task-workflow.sh
 ```
 
 本模块历史记录的补充验证命令：

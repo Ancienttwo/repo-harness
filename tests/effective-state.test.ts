@@ -14,7 +14,6 @@ import {
   resolveEffectiveState,
 } from '../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
-import { migrateLegacyActivePlan } from '../src/cli/hook/legacy-active-plan-migration';
 import {
   CONTRACT,
   PLAN,
@@ -160,34 +159,11 @@ describe('effective state resolver', () => {
     });
   }, 30_000);
 
-  test('performs legacy migration only through the explicit one-shot command', () => {
+  test('legacy-only marker is not state authority', () => {
     withRepo((cwd) => {
       write(cwd, '.claude/.active-plan', `${PLAN}\n`);
       rmSync(join(cwd, '.ai/harness/active-plan'));
       expect(resolveEffectiveState(cwd, Date.now(), { targetPaths: ['src/index.ts'] }).authoritative_plan).toBeNull();
-      const migrated = migrateLegacyActivePlan(cwd);
-      expect(migrated).toMatchObject({ migrated: true, plan: PLAN });
-      expect(readFileSync(join(cwd, '.ai/harness/active-plan'), 'utf-8').trim()).toBe(PLAN);
-      expect(() => readFileSync(join(cwd, '.claude/.active-plan'), 'utf-8')).toThrow();
-      expect(resolveFixtureState(cwd).authoritative_plan?.path).toBe(PLAN);
-    });
-  }, 30_000);
-
-  test('explicit legacy migration fails closed on a real authority conflict', () => {
-    withRepo((cwd) => {
-      write(cwd, '.claude/.active-plan', 'plans/plan-other.md\n');
-      expect(() => migrateLegacyActivePlan(cwd)).toThrow('conflicts with canonical');
-    });
-  }, 30_000);
-
-  test('explicit legacy migration fails closed when a canonical marker is unreadable', () => {
-    withRepo((cwd) => {
-      write(cwd, '.claude/.active-plan', `${PLAN}\n`);
-      const marker = join(cwd, '.ai/harness/active-plan');
-      rmSync(marker);
-      mkdirSync(marker);
-      expect(() => migrateLegacyActivePlan(cwd)).toThrow();
-      expect(readFileSync(join(cwd, '.claude/.active-plan'), 'utf-8')).toContain(PLAN);
     });
   }, 30_000);
 

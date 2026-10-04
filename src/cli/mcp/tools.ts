@@ -143,10 +143,6 @@ function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; br
   };
 }
 
-function isFullDiskRead(ctx: McpToolContext): boolean {
-  return ctx.policy.allowAbsoluteRead === true && ctx.policy.readGlobs.includes('**');
-}
-
 function isDiscoverableHarnessRepo(path: string): boolean {
   return existsSync(join(path, '.ai', 'harness', 'policy.json')) || existsSync(join(path, 'tasks', 'current.md'));
 }
@@ -266,7 +262,6 @@ function authorizedDiscoveryRoots(ctx: McpToolContext): string[] {
 function isAuthorizedDiscoveryRoot(ctx: McpToolContext, root: string): boolean {
   const canonical = canonicalDirectory(root);
   if (!canonical) return false;
-  if (isFullDiskRead(ctx)) return true;
   return authorizedDiscoveryRoots(ctx).some((authorized) => isPathInside(authorized, canonical));
 }
 
@@ -1255,7 +1250,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const codexConfig = existsSync(join(target.repoRoot, '.codex', 'config.toml'));
         audit(ctx, name, 'ok', args);
         return textResult({
-          status: isRepoHarnessAdopted(target.repoRoot) ? 'ready_local' : ctx.policy.allowAbsoluteRead ? 'ready_user' : 'not_adopted',
+          status: isRepoHarnessAdopted(target.repoRoot) ? 'ready_local' : 'not_adopted',
           repo: target.repoRoot,
           profile: ctx.policy.profile,
           mcp: {
@@ -1450,7 +1445,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         if (!target.ok) return target.result;
         const result = runHelper({
           helper: 'check-task-workflow',
-          args: ['--strict'],
+          args: [],
           cwd: target.repoRoot,
           stdio: 'pipe',
           timeoutMs: 60_000,
