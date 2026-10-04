@@ -407,6 +407,19 @@ describe("D6 redaction: typed-field exemption (EPC-05 gatekeeper CRITICAL fix)",
     expect(result.required_oracles[0]?.id).toContain("sha256:");
   });
 
+  test("native check IDs retain identity while known secrets and unrelated IDs stay redacted", () => {
+    const id = "package-test-packages-client-tests-requires-package-config-test-ts";
+    const payload = { check_id: id, result: { id }, results: [{ id }], evaluation: { unmet_check_ids: [id] } };
+    expect(redactPayloadStrings(payload, [])).toEqual(payload);
+    const secret = redactPayloadStrings(payload, [id]);
+    expect(JSON.stringify(secret)).not.toContain(id);
+    const untyped = { unrelated: { id }, results: { attacker: { id } }, unmet_check_ids: { attacker: id } };
+    const masked = redactPayloadStrings(untyped, []) as typeof untyped;
+    expect(masked.unrelated.id).not.toBe(id);
+    expect(masked.results.attacker.id).not.toBe(id);
+    expect(masked.unmet_check_ids.attacker).not.toBe(id);
+  });
+
   test("array entries that are whole-value safe repo-relative paths are exempt too (allowed_paths/files_changed)", () => {
     const result = redactPayloadStrings(
       { allowed_paths: [LONG_SLUG_CONTRACT_PATH, "scripts/verify-sprint.sh"] },

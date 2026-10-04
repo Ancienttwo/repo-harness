@@ -5,7 +5,6 @@ tasks/archive/
 
 # Runtime evidence/cache surfaces. Use explicit paths or rg -uu when auditing.
 .ai/harness/archive/
-.ai/harness/checks/latest.json
 .ai/harness/checks/*.latest.json
 .ai/harness/checks/*.latest.md
 .ai/harness/failures/latest.jsonl

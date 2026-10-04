@@ -50,6 +50,7 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 
 - Pin `@botiverse/oar` to exact version `0.18.0`. Require Node `>=24 <26`.
   ArchContext and its contracts remain pinned to `0.6.1`. (#481, #507)
+- Keep the whole runtime checks cache directory private in Git and installed copies. Keep legacy cache bytes in place without restoring a reader.
 - Make Kanban read-only. Use CLI or MCP for task messages. (#482)
 - Split Bot decisions from worker execution. Restore P1/P2/P3 due diligence
   and standalone host instructions. Limit plans to the requested scope.

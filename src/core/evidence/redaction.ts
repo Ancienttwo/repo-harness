@@ -19,7 +19,7 @@
  * ledger (a real `verify-sprint` run against this package's own,
  * realistic-length contract slug).
  *
- * Four typed exemptions from entropy redaction are applied structurally --
+ * Typed exemptions from entropy redaction are applied structurally --
  * classified BEFORE the entropy pass runs, never a post-hoc unhash:
  *
  *   1. Declared hash: a whole string value matching
@@ -61,6 +61,9 @@
  *      one while preserving those hashes creates a self-inconsistent
  *      verification envelope. This is deliberately not a general `id`
  *      exemption. Known-secret matching still runs first.
+ *   5. Verification check IDs: the ledger check_id, native result IDs, and
+ *      unmet_check_ids entries are contract identifiers. Hashing an ID breaks
+ *      result lookup. These positions skip entropy matching only.
  *
  * All exemptions skip ONLY the entropy pattern. The secret-value denylist
  * check (`findKnownSecretSpans`) still runs unconditionally over every
@@ -148,6 +151,16 @@ export function isChangeAssessmentOracleIdPath(path: readonly string[]): boolean
     && /^(?:0|[1-9][0-9]*)$/.test(arrayIndex);
 }
 
+function isVerificationCheckIdPath(path: readonly string[]): boolean {
+  if (path.length === 1 && path[0] === "check_id") return true;
+  if (path.length === 2 && path[0] === "result" && path[1] === "id") return true;
+  const index = path.at(-1);
+  if (path.at(-2) === "unmet_check_ids" && index !== undefined && /^(?:0|[1-9][0-9]*)$/.test(index)) return true;
+  const resultIndex = path.at(-2);
+  return path.at(-3) === "results" && path.at(-1) === "id"
+    && resultIndex !== undefined && /^(?:0|[1-9][0-9]*)$/.test(resultIndex);
+}
+
 /** Structural classification: does this leaf (key + value) qualify for
  * either typed exemption? Computed once, up front -- see the module doc
  * comment's "order of operations" note (classify first, then redact the
@@ -174,7 +187,8 @@ export function isEntropyExemptLeaf(
     || isDeclaredPathArrayEntry(path, value)
     || looksLikeSafeRepoRelativePath(value)
     || isRepoHarnessProtocolIdentifier(key, value)
-    || isChangeAssessmentOracleIdPath(path);
+    || isChangeAssessmentOracleIdPath(path)
+    || isVerificationCheckIdPath(path);
 }
 
 interface Span {

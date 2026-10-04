@@ -849,8 +849,9 @@ describe('durable architecture projection orchestration', () => {
     expect(readPendingPostEditEvents(f.repoRoot)[0]).toMatchObject({
       schema_version: 2,
       dirty: { 'contract-verification': true },
-      payload: { contract_verification: { contract_file: 'tasks/contracts/legacy.contract.md' } },
+      payload: {},
     });
+    expect(readPendingPostEditEvents(f.repoRoot)[0]?.payload).not.toHaveProperty('contract_verification');
     expect(migratePendingPostEditJournalV1(f.repoRoot, 100)).toEqual({ migrated: 0, remaining: 0 });
     writeFileSync(path, `${JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), schema_version: 1 })}\n`);
     expect(migratePendingPostEditJournalV1(f.repoRoot, 100)).toEqual({ migrated: 1, remaining: 0 });

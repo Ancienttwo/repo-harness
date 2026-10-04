@@ -16,7 +16,7 @@ import { copyHelpers } from "./helpers/helper-script-fixture";
 import { run as scriptRun, tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
 import { hashVerificationPlan, parseVerificationPlanFromContractText } from "../src/core/evidence/verification-plan";
-import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
+import { evaluateVerificationContract, executeVerificationContract } from "../src/effects/evidence/verification-execution";
 import { seedAcceptanceFixture } from "./helpers/verification-plan-fixture";
 import { recordFixtureAcceptance } from "./helpers/repo-fixture";
 
@@ -52,9 +52,14 @@ test("native Completed archive validates real execution and acceptance before mu
       `try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2), { authorityHome: ${JSON.stringify(home)} })); }`,
       "catch (error) { console.error(error.message); process.exit(1); }",
     ].join("\n"));
+    const cli = join(runtime, "repo-harness-cli.sh");
+    const quotedCli = [process.execPath, join(ROOT, "src/cli/index.ts")]
+      .map(value => "'" + value.replaceAll("'", "'\\''") + "'").join(" ");
+    writeFileSync(cli, `#!/bin/bash\nprintf '%s\\n' "$*" >> "$0.calls"\nexec ${quotedCli} "$@"\n`);
+    chmodSync(cli, 0o755);
     const args = ["--plan", "plans/plan-demo.md", "--outcome", "Completed"];
     const env = { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath,
-      REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh") };
+      REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"), REPO_HARNESS_CLI_BIN: cli };
     const missing = run(join(runtime, "archive-workflow.sh"), args, root, env);
     expect(missing.status, missing.stdout + missing.stderr).toBe(1);
     expect(missing.stderr).toContain("explicit native report");
@@ -64,6 +69,52 @@ test("native Completed archive validates real execution and acceptance before mu
     expect(existsSync(join(root, "plans/archive/plan-demo.md"))).toBe(true);
     expect(existsSync(join(root, verification))).toBe(true);
     expect(existsSync(join(root, ".ai/harness/evidence/events/log.jsonl"))).toBe(true);
+    expect(readFileSync(`${cli}.calls`, "utf8")).toContain("architecture-projection policy --json");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+}, 60_000);
+
+test("empty Verification Plan refuses Completed admission before archive mutation", async () => {
+  const { root, home, contract, verification } = seedAcceptanceFixture("archive-empty-plan");
+  try {
+    const plan = "plans/plan-demo.md";
+    writeFileSync(join(root, "tasks/todos.md"), "# Deferred Goal Ledger\n");
+    writeFileSync(join(root, plan), readFileSync(join(root, plan), "utf8") + `\n> **Task Contract**: ${contract}\n`);
+    writeFileSync(join(root, contract), readFileSync(join(root, contract), "utf8")
+      .replace("> **Status**: Active", "> **Status**: Active\n> **Review File**: tasks/reviews/demo.review.md"));
+    expect(executeVerificationContract({ repoRoot: root, contractPath: contract, reportFile: verification }).passed).toBe(true);
+    const assessment = runProcess(process.execPath, [join(ROOT, "scripts/change-assessment.ts"), "prepare", "--contract", contract], root);
+    expect(assessment.status, assessment.stderr).toBe(0);
+    await recordFixtureAcceptance({ root, authorityHome: home, contract, verification,
+      disposition: "external_pass", reviewer: "Claude", source: "generic-review", actor: null,
+      summary: "Fixture opinion on the nonempty executed plan.", findings: [] });
+    const { acceptanceReceiptPath } = await import("../scripts/acceptance-receipt");
+    const receiptPath = acceptanceReceiptPath(root, home);
+    const receiptBytes = readFileSync(receiptPath, "utf8");
+    const source = readFileSync(join(root, contract), "utf8");
+    const fence = String.fromCharCode(96).repeat(3);
+    const empty = source.slice(0, source.indexOf("## Verification Plan"))
+      + `## Verification Plan\n\n${fence}json\n{"protocol":1,"checks":[]}\n${fence}\n`;
+    writeFileSync(join(root, contract), empty);
+    expect(evaluateVerificationContract({ repoRoot: root, contractPath: contract })).toMatchObject({ reason: "empty_plan", passed: false, status: "missing", results: [] });
+    const runtime = join(root, ".ai/harness/runs/archive-test-helpers");
+    mkdirSync(runtime, { recursive: true });
+    copyFileSync(join(ROOT, "scripts/archive-workflow.sh"), join(runtime, "archive-workflow.sh"));
+    writeFileSync(join(runtime, "acceptance-receipt.ts"), [
+      `import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, "scripts/acceptance-receipt.ts"))};`,
+      `try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2), { authorityHome: ${JSON.stringify(home)} })); }`,
+      "catch (error) { console.error(error.message); process.exit(1); }",
+    ].join("\n"));
+    const before = Object.fromEntries([plan, contract, "tasks/reviews/demo.review.md", "tasks/todos.md"].map(path => [path, readFileSync(join(root, path), "utf8")]));
+    const result = run(join(runtime, "archive-workflow.sh"), ["--plan", plan, "--outcome", "Completed", "--verification", verification], root,
+      { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath, REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh") });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("AcceptanceReceipt gate failed");
+    for (const [path, content] of Object.entries(before)) expect(readFileSync(join(root, path), "utf8")).toBe(content);
+    expect(existsSync(join(root, "plans/archive"))).toBe(false);
+    expect(readFileSync(receiptPath, "utf8")).toBe(receiptBytes);
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

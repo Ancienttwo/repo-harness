@@ -62,7 +62,7 @@ repos.
 ## Core Invariants
 
 - Durable truth lives in repo files: `plans/`, `tasks/contracts/`,
-  `tasks/reviews/`, `tasks/notes/`, `.ai/harness/checks/latest.json`,
+  `tasks/reviews/`, `tasks/notes/`, `.ai/harness/evidence/events/log.jsonl`,
   `.ai/harness/runs/*.json`, and `.ai/harness/handoff/`.
 - Helper implementation is package-owned for adopted downstream repositories;
   root `scripts/` in this repository are self-hosted source/runtime only.
@@ -158,7 +158,7 @@ repos.
 | `plans/prds/`, `plans/sprints/`, `plans/plan-*.md` | Planner | Decision-complete work packages |
 | `tasks/contracts/*.contract.md` | Implementer | Allowed paths, delegation, and exit criteria |
 | `tasks/reviews/*.review.md` | Evaluator | Human Review Card, evidence, risk, acceptance |
-| `.ai/harness/checks/latest.json` | Verifier | Current structured gate result |
+| `.ai/harness/evidence/events/log.jsonl` | Verification Plan executor | Accepted execution events bind immutable runs |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
 | `repo-harness automation budget show --run <id>` | Package runtime | Read-only operator projection of one automation run's budget, consumption, and stop receipt |

@@ -619,7 +619,7 @@ describe("verification execution lifecycle", () => {
       const report = executeVerificationContract({ repoRoot, contractPath, env });
       const projected = projectReportThroughEvidenceWriter(repoRoot, report);
 
-      expect(projected.results[0]!.id).not.toBe(LONG_CHECK_ID);
+      expect(projected.results[0]!.id).toBe(LONG_CHECK_ID);
       expect(validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report: projected, env }).valid).toBe(true);
       const tampered = {
         ...projected,

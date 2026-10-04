@@ -673,3 +673,45 @@ The protocol change and this explicit amendment are verified by
 ## AKN-04a Fleet protocol revision (2026-09-22)
 
 The placement cutover changes the existing Fleet board wire protocol from 4 to 5; its authority membership and store ownership remain unchanged. The earlier inventory digest `sha256:e7b3dce11c70ddd47b7dbd6cbd96f54b92de24863d373426e01adf8be595e787` above records the prior freeze. The current inventory, differing in that protocol value, is `sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162`. The closed inventory regression remains required; this explicit revision does not retroactively change any earlier acceptance or establish a new delivery authority.
+
+
+## PR #523 publication version amendment (2026-10-05)
+
+The owner-approved checks report retirement changes the publication receipt to
+protocol 2. It replaces the two retired evidence fields with
+`candidate_diff_fingerprint`. The publication ID hash basis stays at version 1.
+Create intent and prepare stay at protocol 1. Their durable bytes stay unchanged.
+This amendment supersedes the earlier publication inventory row. Earlier digest
+records remain history. It does not change collaboration inclusion rules.
+
+| Domain | Protocol | Wire kind | Independent store root |
+|---|---|---|---|
+| Publication receipt | 2 | `repo-harness-publication-receipt` | `repo-harness/publications/v1` |
+| Publication identity | 1 | None; ID hash basis only | None |
+| Publication create intent | 1 | `repo-harness-publication-create-intent` | None; embedded in the existing ship journal |
+| Publication prepare | 1 | `repo-harness-publication-prepare` | None; operation hand-off envelope |
+
+The receipt keeps its existing store root so an old same-ID receipt is refused.
+No store is moved or migrated. The identity domain emits no separate wire kind.
+Each existing wire kind belongs to exactly one inventory entry. The source
+module owns all four entries. Its protocol value multiset is `[1, 1, 1, 2]`.
+Publication lineage and integration observation keep protocol 1.
+All other inventory entries and versions stay unchanged.
+
+The previous inventory digest was
+`sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162`.
+The amended inventory digest is
+`sha256:5b8c7a3b3f996a41873fe11e7a242dbd4accc47f5c1a0e42a4ef0f0f9da87fcb`.
+The machine guard keeps the exact protocol map, source export completeness,
+unique wire kinds, store-root convention and delegation invariants.
+No assertion is removed or relaxed.
+
+These source-byte digests were read at PR #523 revision `c2e17d18`.
+The receipt module owns the version split. Lifecycle and readiness use the V2
+receipt type. Their own protocol constants do not change.
+
+| File | sha256 |
+|---|---|
+| `src/core/publication/publication-receipt.ts` | `sha256:34da4c2d2243c03ac33c7060fc8ae32748d0ea12e69f64f0fbd7423c84c2b7d4` |
+| `src/core/publication/publication-lifecycle.ts` | `sha256:16dff3283f0afa0decfbf83e20300aed30177bd873eb781168e7b3d3426905a5` |
+| `src/core/publication/merge-readiness.ts` | `sha256:ababf458eeb1a79145749347e47296acf798db24344934cae18211a2e5b5823c` |

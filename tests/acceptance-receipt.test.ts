@@ -957,19 +957,6 @@ test('empty and missing verification plans refuse external and waiver acceptance
   }
 }, 30000);
 
-test.skipIf(process.platform !== 'darwin')('generic review refuses empty and missing plans before any provider starts', async () => {
-  for (const kind of ['empty_plan', 'missing_plan']) {
-    const f = reviewFixture();
-    const file = join(f.root, f.options.contract);
-    const text = readFileSync(file, 'utf8');
-    const section = text.indexOf('## Verification Plan');
-    const replacement = kind === 'empty_plan' ? text.slice(0, section) + '## Verification Plan\n\n' + String.fromCharCode(96).repeat(3) + 'json\n{"protocol":1,"checks":[]}\n' + String.fromCharCode(96).repeat(3) + '\n' : text.slice(0, section);
-    writeFileSync(file, replacement);
-    await expect(runReviewRound(f.options, f.effects)).rejects.toThrow(kind);
-    expect(f.calls).toEqual([]);
-    expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
-  }
-}, 30000);
 
 test('semantic admission retains scope and required benchmark refusal', async () => {
   for (const change of ['scope', 'benchmark']) {

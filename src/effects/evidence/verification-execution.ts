@@ -557,7 +557,7 @@ function currentResult(context: PreparedContext, check: VerificationCheck): Veri
   if (!result || result.id !== check.id) return null;
   if (!result.passed && result.exit_code === 0 && !result.timed_out && result.signal === null) return null;
   const projected = { ...result, execution: result.passed ? "reused" as const : "executed" as const };
-  const materialized = redactPayloadStrings(projected as unknown as JsonValue, collectDenylistSecretValues()) as unknown as VerificationExecutionResult;
+  const materialized = (redactPayloadStrings({ result: projected } as unknown as JsonValue, collectDenylistSecretValues()) as unknown as { result: VerificationExecutionResult }).result;
   return matchingImmutableExecution(context, check, materialized, false, true) ? projected : null;
 }
 
@@ -753,10 +753,10 @@ function matchingImmutableExecution(
     const stored = readValidRunResult(context, payload);
     if (!stored || (requirePass && !stored.passed)) return false;
     const normalized = { ...result, execution: "executed" as const };
-    const ledgerProjection = redactPayloadStrings(
-      stored as unknown as JsonValue,
+    const ledgerProjection = (redactPayloadStrings(
+      { result: stored } as unknown as JsonValue,
       collectDenylistSecretValues(),
-    );
+    ) as unknown as { result: JsonValue }).result;
     return canonicalize(normalized as unknown as JsonValue) === canonicalize(ledgerProjection);
   });
 }
@@ -868,10 +868,10 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
     if (!evaluated.passed) {
       throw new Error(`verification report baseline result is not backed by immutable evidence: ${check.id}`);
     }
-    const projectedExpected = redactPayloadStrings(
-      evaluated as unknown as JsonValue,
+    const projectedExpected = (redactPayloadStrings(
+      { result: evaluated } as unknown as JsonValue,
       collectDenylistSecretValues(),
-    );
+    ) as unknown as { result: JsonValue }).result;
     if (canonicalize(result as unknown as JsonValue) !== canonicalize(projectedExpected)) {
       throw new Error(`verification report baseline result was altered: ${check.id}`);
     }
