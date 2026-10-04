@@ -39,6 +39,8 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 
 ### Changed
 
+- Keep user global hook commands that only contain a retired hook path during upgrade cleanup.
+
 - Replace the old Codex goal MCP names with task-goal commands.
 - Retire the Codex plugin review provider, App-thread execution backend, and
   headless Claude planning surface. Codex review uses the explicit Codex provider;

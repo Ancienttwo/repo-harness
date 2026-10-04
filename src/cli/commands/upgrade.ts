@@ -258,7 +258,8 @@ function applyLocked(
       }
       if (targetItems[0]!.surface === 'hook-entry') {
         const config = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
-        const stripped = stripLegacyHookEntries(config, { location: targetItems[0]!.location });
+        const location = targetItems[0]!.location;
+        const stripped = stripLegacyHookEntries(config, location === 'global' ? { location, home: options.home, repoHarnessHome: options.repoHarnessHome } : { location });
         if (stripped.removed.length === 0) continue;
         nextContent = formatJson(stripped.config);
       }
@@ -367,13 +368,14 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     }
     const home = resolve(opts.home ?? opts.env?.HOME ?? process.env.HOME ?? homedir());
     const packageRoot = resolve(opts.packageRoot ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
+    const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env, HOME: home };
     const options: PlannerOptions = { scope, cwd, home, packageRoot,
+      ...(env.REPO_HARNESS_HOME ? { repoHarnessHome: env.REPO_HARNESS_HOME } : {}),
       ...(apply && opts.includeStateArtifacts === true ? { includeStateArtifacts: true } : {}) };
     const items = supportedItems(planLegacyLeftovers(options).items);
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))] };
     if (!apply || !items.some(removable)) return emptyResult;
-    const env = { ...process.env, ...opts.env, HOME: home };
     return withRuntimeHostTransactionLock(env, (lock) => {
       const underHostLock = supportedItems(planLegacyLeftovers(options).items);
       const paths = [...new Set(underHostLock.filter((item) => item.location === 'project' && removable(item)).map((item) => item.path))].sort();

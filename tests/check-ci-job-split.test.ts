@@ -39,6 +39,17 @@ describe('single affected verification and daily fallback', () => {
     expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]))).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });
 
+  test('canonical changelog uses the docs policy and keeps real consumer coverage', () => {
+    expect(selectAffectedTests(['docs/CHANGELOG.md'], new Map())).toEqual([]);
+    const sources = new Map([
+      ['tests/release-notes.test.ts', "readFileSync('docs/CHANGELOG.md');"],
+    ]);
+    expect(selectAffectedTests(['docs/CHANGELOG.md'], sources)).toEqual(['tests/release-notes.test.ts']);
+    for (const path of ['CHANGELOG.md', 'RELEASE.md', 'release/CHANGELOG.md', 'unknown/product.conf']) {
+      expect(() => selectAffectedTests([path], new Map())).toThrow('coverage is unknown');
+    }
+  });
+
   test('workflow confines full and matrix jobs to fixed main daily snapshots', () => {
     const { jobs } = workflow;
     expect(workflow.on.schedule).toEqual([{ cron: '0 19 * * *' }]);

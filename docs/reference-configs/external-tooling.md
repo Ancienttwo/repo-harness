@@ -172,6 +172,11 @@ snapshots. Backup manifests list original paths. Project transactions use
 `repo-harness init rollback`; global backups require manual target replacement from each snapshot.
 Do not overlay directory contents. Restore symlinks verbatim.
 
+Global upgrade backups stay in `~/.repo-harness/transactions/install-*`.
+The upgrade transaction uses `beginInstallHostTransaction(..., { retainBackup: true })`.
+It keeps these backups after success or rollback. The tool never deletes these
+retained backups. The user must remove old backups when they are no longer needed.
+
 The cross-review skill is **harness-owned**; its routing source lives in
 `assets/skills/repo-harness-cross-review/`. Explicit independent review uses
 the persistent fleet deep-reasoner task-agent and existing OAR host in Herdr.

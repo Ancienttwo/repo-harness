@@ -144,6 +144,134 @@ describe('upgrade with real release bytes', () => {
     expect(result.items.some((item) => item.ownership !== 'owned-clean' && item.action === 'report')).toBe(true);
   }));
 
+  test('global cleanup keeps user commands that contain retired hook paths', () => sandbox((opts) => {
+    const shim = join(opts.home, '.repo-harness/hook-shim.sh');
+    const userCommands = [
+      'echo .ai/hooks/run-hook.sh',
+      'echo .claude/hooks/run-hook.sh',
+      `echo ${shim}`,
+      `${shim} --user-option`,
+      `bash "${shim}"`,
+      'repo-harness hook Stop --route user',
+    ];
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      const path = join(opts.home, name);
+      const settings = JSON.parse(readFileSync(path, 'utf8'));
+      const userHooks = userCommands.map((command) => ({ type: 'command', command }));
+      settings.hooks.Stop = [{ matcher: 'user', hooks: [...userHooks, { type: 'command', command: shim }] }];
+      writeFileSync(path, JSON.stringify(settings));
+    }
+    const plan = planLegacyLeftovers({ ...opts, scope: 'global' });
+    expect(plan.items.filter((item) => userCommands.includes(item.hookCommand!))).toEqual([]);
+    expect(plan.items.filter((item) => item.hookCommand === shim)).toHaveLength(2);
+    expect(plan.items.some((item) => item.hookEvent === 'SessionStart')).toBe(true);
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true });
+    expect(result.exitCode).toBe(0);
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      const settings = JSON.parse(readFileSync(join(opts.home, name), 'utf8'));
+      expect(settings.hooks.Stop).toEqual([{
+        matcher: 'user', hooks: userCommands.map((command) => ({ type: 'command', command })),
+      }]);
+      expect(settings.hooks.SessionStart).toBeUndefined();
+    }
+  }));
+
+  test.each(['default', 'custom', 'custom-trailing-slash', 'custom-relative'])('global cleanup removes real installer shim commands from %s REPO_HARNESS_HOME', (kind) => sandbox((opts) => {
+    const base = join(opts.home, kind === 'default' ? '.repo-harness' : 'custom-runtime');
+    const harnessHome = kind === 'custom-trailing-slash' ? `${base}/` : kind === 'custom-relative' ? 'custom-runtime' : base;
+    const shim = `${harnessHome}/hook-shim.sh`;
+    const installer = join(opts.home, 'v0.10-installer/scripts/repo-harness.sh');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source/scripts/repo-harness.sh', installer);
+    const generated = spawnSync('bash', ['-c', 'source "$1" help >/dev/null; build_hooks_json', 'release-installer', installer], {
+      env: { ...process.env, HOME: opts.home, REPO_HARNESS_HOME: harnessHome }, encoding: 'utf8',
+    });
+    expect(generated.status, generated.stderr).toBe(0);
+    const hooks: Record<string, { hooks: { type: string; command: string }[] }[]> = JSON.parse(generated.stdout);
+    const legacy = Object.values(hooks).flatMap((blocks) => blocks.flatMap((block) => block.hooks.map((hook) => hook.command)));
+    expect(legacy).toHaveLength(11);
+    expect(legacy).toContain(`bash ${shim} session-start-context.sh`);
+    const user = [
+      `echo ${legacy[0]}`,
+      `${legacy[0]} --user-option`,
+      `bash ${shim} user-owner.sh`,
+      ': repo-harness-managed-hook-v1; repo-harness-hook Stop --route default',
+    ].map((command) => ({ type: 'command', command }));
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      put(join(opts.home, name), JSON.stringify({ owner: 'user', hooks: {
+        ...hooks, Stop: [...hooks.Stop, { matcher: 'user', hooks: user }],
+      } }));
+    }
+    const env = { REPO_HARNESS_HOME: harnessHome };
+    const plan = runUpgrade({ ...opts, env, scope: 'global' });
+    expect(plan.items.filter((item) => legacy.includes(item.hookCommand!))).toHaveLength(22);
+    expect(plan.items.filter((item) => user.some((hook) => hook.command === item.hookCommand))).toEqual([]);
+    const result = runUpgrade({ ...opts, env, scope: 'global', apply: true });
+    expect(result.exitCode).toBe(0);
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      expect(JSON.parse(readFileSync(join(opts.home, name), 'utf8'))).toEqual({
+        owner: 'user', hooks: { Stop: [{ matcher: 'user', hooks: user }] },
+      });
+    }
+  }));
+
+  test('global cleanup removes four early installer shim hooks and keeps user mentions', () => sandbox((opts) => {
+    const release = spawnSync('git', ['show', 'v0.1.2:scripts/repo-harness.sh'], { cwd: ROOT, encoding: 'utf8' });
+    expect(release.status, release.stderr).toBe(0);
+    const installer = join(opts.home, 'release-source/scripts/repo-harness.sh');
+    put(installer, release.stdout);
+    const generated = spawnSync('bash', ['-c', 'source "$1" help >/dev/null; build_hooks_json', 'early-release-installer', installer], {
+      env: { ...process.env, HOME: opts.home }, encoding: 'utf8',
+    });
+    expect(generated.status, generated.stderr).toBe(0);
+    const hooks: Record<string, { hooks: { type: string; command: string }[] }[]> = JSON.parse(generated.stdout);
+    const names = ['trace-event.sh', 'context-pressure-hook.sh', 'autoresearch-advisory.sh', 'finalize-handoff.sh'];
+    const legacy = Object.values(hooks).flatMap((blocks) => blocks.flatMap((block) => block.hooks.map((hook) => hook.command)));
+    const early = legacy.filter((command) => names.some((name) => command.endsWith(` ${name}`)));
+    expect([...new Set(early)].sort()).toEqual(names.map((name) => `bash ${opts.home}/.repo-harness/hook-shim.sh ${name}`).sort());
+    const user = [...new Set(early)].flatMap((command) => [`echo ${command}`, `${command} --user-option`])
+      .map((command) => ({ type: 'command', command }));
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      put(join(opts.home, name), JSON.stringify({ owner: 'user', hooks: {
+        ...hooks, Stop: [...hooks.Stop, { matcher: 'user', hooks: user }],
+      } }));
+    }
+    const plan = runUpgrade({ ...opts, scope: 'global' });
+    expect(plan.items.filter((item) => early.includes(item.hookCommand!))).toHaveLength(early.length * 2);
+    expect(plan.items.filter((item) => user.some((hook) => hook.command === item.hookCommand))).toEqual([]);
+    expect(runUpgrade({ ...opts, scope: 'global', apply: true }).exitCode).toBe(0);
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      expect(JSON.parse(readFileSync(join(opts.home, name), 'utf8'))).toEqual({
+        owner: 'user', hooks: { Stop: [{ matcher: 'user', hooks: user }] },
+      });
+    }
+  }));
+
+  test('global cleanup removes only full legacy typed command forms', () => sandbox((opts) => {
+    const legacy = [
+      'HOOK_HOST=codex repo-harness hook PreToolUse --route edit',
+      'HOOK_HOST=claude repo-harness hook SessionStart --route default',
+      'repo-harness hook Stop --route quality',
+    ];
+    const user = [
+      ...legacy.flatMap((command) => [`echo ${command}`, `${command}; echo user`, `${command}\n`]),
+      'repo-harness hook Stop --route user',
+      'HOOK_HOST=other repo-harness hook Stop --route quality',
+      'HOOK_HOST=codex repo-harness hook Unknown --route default',
+    ].map((command) => ({ type: 'command', command }));
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      put(join(opts.home, name), JSON.stringify({ hooks: { Stop: [{ matcher: 'mixed', hooks: [
+        ...legacy.map((command) => ({ type: 'command', command })), ...user,
+      ] }] } }));
+    }
+    const plan = runUpgrade({ ...opts, scope: 'global' });
+    expect(plan.items.filter((item) => legacy.includes(item.hookCommand!))).toHaveLength(6);
+    expect(plan.items.filter((item) => user.some((hook) => hook.command === item.hookCommand))).toEqual([]);
+    expect(runUpgrade({ ...opts, scope: 'global', apply: true }).exitCode).toBe(0);
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      expect(JSON.parse(readFileSync(join(opts.home, name), 'utf8')).hooks.Stop).toEqual([{ matcher: 'mixed', hooks: user }]);
+    }
+  }, false));
+
   test('a second apply removes nothing and changes no bytes', () => sandbox((opts) => {
     expect(runUpgrade({ ...opts, apply: true }).exitCode).toBe(0);
     const beforeHome = tree(opts.home); const beforeRepo = tree(opts.cwd);
