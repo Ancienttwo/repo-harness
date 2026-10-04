@@ -1,5 +1,5 @@
 import { startOperatorServer } from '../../src/effects/operator/server';
-import { describe, expect, test, mock } from 'bun:test';
+import { describe, expect, test, mock, onTestFinished } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,6 +10,7 @@ import { buildAutomationBudget, sealAutomationMetricSupport, sealProgramAuthoriz
 import { buildAutomationControllerRun } from '../../src/core/automation/controller';
 import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
+import { AUTOMATION_TEST_CLOCK_SEAM_ENV, __resetAutomationClockForTests, __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
 import { publishAutomationBudget, readAutomationBudgetBoardSlice } from '../../src/effects/automation/budget-store';
 import { startAutomationControllerRun } from '../../src/effects/automation/controller-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -84,6 +85,15 @@ describe('original automation observation', () => {
 
   test('reads real grant/budget/controller records without locks or changed bytes', () => {
     const f = fixture();
+    const previousClockSeam = process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV];
+    const observedAt = new Date();
+    process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = '1';
+    __setAutomationClockForTests(() => new Date(observedAt));
+    onTestFinished(() => {
+      __resetAutomationClockForTests();
+      if (previousClockSeam === undefined) delete process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV];
+      else process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = previousClockSeam;
+    });
     try {
       const before = files(f.base); denyLocks = true;
       const value = readOperatorAutomationSummary(f.input);

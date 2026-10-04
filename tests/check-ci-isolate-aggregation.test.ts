@@ -46,6 +46,8 @@ function writeTestFile(dir: string, name: string, passing: boolean): string {
 function gateEnv(overrides: Record<string, string>): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.BUN_TEST_JOBS;
+  // Bun hides pass lines in agent environments, even with onlyFailures=false.
+  for (const key of ["CLAUDECODE", "REPL_ID", "AGENT"]) delete env[key];
   return { ...env, ...overrides };
 }
 

@@ -107,7 +107,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
   test('final-content detection includes provider commits made after the arm baseline', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-committed-final-content-'));
     const git = (...args: string[]) => {
-      const result = Bun.spawnSync(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+      const result = Bun.spawnSync(['git', '-c', 'maintenance.auto=false', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
       expect(result.exitCode).toBe(0);
       return result.stdout.toString().trim();
     };
@@ -132,7 +132,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-workspace-overlay-'));
     const source = join(dir, 'source');
     const target = join(dir, 'target');
-    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', '-c', 'maintenance.auto=false', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
     try {
       mkdirSync(source);
       expect(git(source, 'init', '-q', '--initial-branch=source-seed').exitCode).toBe(0);
@@ -178,7 +178,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-strict-linked-worktree-'));
     const primary = join(dir, 'primary');
     const linked = join(dir, 'linked');
-    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', '-c', 'maintenance.auto=false', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
     try {
       mkdirSync(primary);
       expect(git(primary, 'init', '-q', '--initial-branch=source-seed').exitCode).toBe(0);
@@ -201,7 +201,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-profile-linked-workspaces-'));
     const source = join(dir, 'source');
     const home = join(dir, 'base-home');
-    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', '-c', 'maintenance.auto=false', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
     try {
       mkdirSync(source);
       mkdirSync(home);
@@ -457,7 +457,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       join(source, 'src/cli/hook-entry.ts'),
     ];
     const git = (...args: string[]) => {
-      const result = Bun.spawnSync(['git', ...args], { cwd: source, stdout: 'pipe', stderr: 'pipe' });
+      const result = Bun.spawnSync(['git', '-c', 'maintenance.auto=false', ...args], { cwd: source, stdout: 'pipe', stderr: 'pipe' });
       expect(result.exitCode).toBe(0);
       return result.stdout.toString().trim();
     };
