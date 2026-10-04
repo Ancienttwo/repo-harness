@@ -24,6 +24,6 @@ Owns the workflow-engine-inspection-migration capability boundary declared in .a
 
 ## Refresh Hints
 
-- `bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts`
+- `bun run test:files tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts`
 - `bun src/cli/index.ts init --repo . --dry-run`
 <!-- END CAPABILITY CONTEXT -->

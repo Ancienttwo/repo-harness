@@ -2,10 +2,34 @@
 # Sourceable CI test-loop library. Sourcing must have no side effects so the
 # loop can be exercised directly without running the whole gate.
 
+# Create native paths before Bun caches its startup environment.
+_ci_run_bun_tests_in_temporary_home() {
+  local isolation_module="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-home-isolation.mjs"
+  node -e '
+    const fs = require("node:fs");
+    const { spawnSync } = require("node:child_process");
+    const { createTemporaryTestEnvironment } = require(process.argv[1]);
+    const { env, home, temp } = createTemporaryTestEnvironment(process.env);
+    let status = 1;
+    try {
+      const result = spawnSync("bun", ["test", ...process.argv.slice(2)], {
+        env,
+        stdio: "inherit",
+      });
+      if (result.error) console.error("[ci] test process failed to start: " + result.error.message);
+      status = result.status ?? 1;
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+    process.exit(status);
+  ' "$isolation_module" --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}" "$@"
+}
+
 run_bun_test_file() {
   local file="$1"
   echo "[ci] test $file"
-  bun test --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}" "$file"
+  _ci_run_bun_tests_in_temporary_home "$file"
 }
 
 # Bounded job pool for isolate mode. Only the parent prints, replaying each
@@ -22,7 +46,7 @@ _ci_run_bun_test_pool() {
   local total="${#files[@]}"
 
   local tmpdir
-  if ! tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/rh-ci-jobs.XXXXXX" 2>/dev/null)"; then
+  if ! tmpdir="$(mktemp -d "/tmp/rh-ci-jobs.XXXXXX" 2>/dev/null)"; then
     echo "[ci] job pool could not create a temporary directory" >&2
     return 1
   fi
@@ -144,7 +168,7 @@ _ci_run_bun_test_pool() {
 
 run_bun_tests() {
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
-    bun test --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}"
+    _ci_run_bun_tests_in_temporary_home "$@"
     return
   fi
 

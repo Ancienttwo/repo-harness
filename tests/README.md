@@ -15,7 +15,7 @@ Tests are IMMUTABLE ASSETS. Implementation is DISPOSABLE.
 ## Running Tests
 
 ```bash
-bun test              # Run all tests
-bun test --coverage   # With coverage
-bun test --watch      # Watch mode
+bun run test:full      # Run all tests. The owner schedules local full runs.
+bun run test:coverage  # With coverage
+bun run test:files <affected tests> --watch # Watch mode
 ```

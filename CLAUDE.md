@@ -28,7 +28,7 @@
 
 ## Testing
 - Run `bun run check:type` plus tests covering the changed behavior once after the implementation is stable.
-- Use `bun test <affected tests> --timeout 60000 --max-concurrency 1`; extend existing coverage before creating a new test file.
+- Use `bun run test:files <affected tests> --timeout 60000 --max-concurrency 1`; extend existing coverage before creating a new test file.
 - Select tests by observable risk and owning runtime boundary, including error/recovery paths when affected.
 - Mechanical prose changes need link/scope validation, not new product tests; do not test incidental formatting.
 - Reviewers consume the recorded command, result, revision and environment; they do not rerun passing checks to claim ownership.
