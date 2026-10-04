@@ -180,7 +180,8 @@ describe('upgrade with real release bytes', () => {
     const base = join(opts.home, kind === 'default' ? '.repo-harness' : 'custom-runtime');
     const harnessHome = kind === 'custom-trailing-slash' ? `${base}/` : kind === 'custom-relative' ? 'custom-runtime' : base;
     const shim = `${harnessHome}/hook-shim.sh`;
-    const installer = join(FIXTURES, 'upgrade-v0.10-home/release-source/scripts/repo-harness.sh');
+    const installer = join(opts.home, 'v0.10-installer/scripts/repo-harness.sh');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source/scripts/repo-harness.sh', installer);
     const generated = spawnSync('bash', ['-c', 'source "$1" help >/dev/null; build_hooks_json', 'release-installer', installer], {
       env: { ...process.env, HOME: opts.home, REPO_HARNESS_HOME: harnessHome }, encoding: 'utf8',
     });
