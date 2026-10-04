@@ -2,13 +2,18 @@
 
 All notable changes to this skill are documented here.
 
-## [0.20.0] - Unreleased
+## [0.20.0] - 2026-10-05
 
 This preparation covers `v0.19.5..ffe70133`.
+Additional merged changes through `363009be` are included below.
+
 The earlier `281e6555` commit prepared this version but did not publish it.
 No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 
 ### Added
+
+- Document a safe worktree lifecycle and a dated checkout inventory.
+  Garbage collection and migration remain unimplemented. (#480)
 
 - Persistent Herdr task-agent lifecycle and CLI commands for task-scoped execution,
   protected result collection, and repository-scoped workspace cleanup.
@@ -38,6 +43,12 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
   proof for state removal. Keep third-party plugins and user rule lines.
 
 ### Changed
+
+- Require explicit Change Assessment preparation after native verification
+  and before review or acceptance. Missing or stale evidence still fails closed.
+  Empty or missing Verification Plans cannot pass. (#523)
+- Align the Herdr 0.9.3 floor, current reference commands, coding MCP tool counts,
+  and generated task-flow guidance with their owning runtime surfaces. (#521)
 
 - Keep user global hook commands that only contain a retired hook path during upgrade cleanup.
 
@@ -81,6 +92,18 @@ No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
 - Remove `check-task-sync --validate-waivers-only` and `check-task-workflow --strict`. Use `check-task-workflow` for read-only diagnostics. Old downstream strict calls fail with exit 2. Adoption or init removes only the exact `repo-harness run check-task-workflow --strict` package entry. Other forms need an explicit user edit. Custom commands stay unchanged.
 
 ### Fixed
+
+- Match complete historical installer hook commands during upgrade cleanup.
+  Keep user commands that only mention retired paths. Reject existing directories
+  and dangling symlinks in stage-owned-copy. Keep retained backups. (#520)
+- Check notify plugin inventory before config directory creation. Refuse invalid
+  or non-local sources. Stop foreign local ownership before link or enable.
+  Keep Herdr as the config-path authority. (#521)
+- Isolate the CI governance preflight fixture from shared-checkout context files.
+  Keep the real context scanner and the intended failure boundary. (#526)
+- Read exact legacy hashed check IDs at immutable validation and provenance
+  boundaries. Keep current plain-ID writes and all execution bindings. Historical
+  evidence does not bypass a current toolchain mismatch. (#527)
 
 - Sample the MCP working baseline after request delivery before accepting an idle
   observation, and keep observation cancellation separate from result collection.
@@ -136,6 +159,24 @@ Campaign execution moved to the existing [repo-harness](../SKILL.md), [repo-harn
   ownership and byte checks. Normal update reports leftovers and does not clean.
 - Pipeline phase 1 records observations. Automatic dispatch, merge, cleanup,
   test-slot control, and plugin delivery governance remain deferred.
+
+- The earlier long-ID restriction above describes the initial cutover.
+  Exact legacy-ID reads now supersede that restriction. Current execution,
+  snapshot, contract, and toolchain checks still apply. (#527)
+
+### Earlier merged work covered by this release
+
+- Persistent Herdr task-agent, task-goal, and protected result cutover. (#464)
+- Corrected 0.19.5 release history and the 0.20.0 preparation filing. (#465, #522)
+- Canonical host invariants, Pi extraction research, and fleet responsibility trace. (#466)
+- First-offer staleness coverage and trusted server-time observation preparation. (#467, #468)
+- Request-delivery working baselines and observed-idle completion checks. (#469)
+- Durable selected-acquisition receipts and earlier R2 campaign membership guards.
+  Campaign execution is retired in this release. (#470, #472)
+- Verified leftover inventory, proof-bound refresh, and explicit backup transactions. (#511)
+- Unused surfaces, research tools, hooks, migrations, flags, and campaign retirement.
+  Keep explicit post-edit migration and the published research archive.
+  (#510, #512, #513, #514, #517)
 
 ## [0.19.5] - 2026-09-30
 
