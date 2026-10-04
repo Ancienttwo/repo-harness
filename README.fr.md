@@ -277,7 +277,7 @@ flowchart TD
   NextTask --> UserTask
 
   UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
   LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -439,18 +439,7 @@ Plusieurs Module Engineers lisent un même Work Exchange et publient des
 enregistrements de coordination bornés. L'adoption d'un handoff est
 délibérément non exclusive : elle n'accorde ni Task, ni Claim, ni Lease.
 
-Le substrat conserve un seul Module Engineer et un seul writer pendant que des
-Workers read-only bornés échangent des signaux non fiables et des handoffs
-explicites. Lancez le live gate en source-checkout avec
-`bun scripts/c9-collaboration-canary.ts --live` ; il crée des dépôts jetables
-isolés pour trois traces baseline/treatment appariées et enregistre l'usage de
-tokens Codex faisant autorité côté provider, la taille de contexte, la
-réutilisation de signaux, l'adoption de handoffs, le nombre de writers et les
-digests du delivery plane. Le résultat C9 accepté est délibérément une décision
-multi-seat négative : le treatment à trois lecteurs a préservé l'autorité et
-réutilisé l'état, mais n'a pas produit plus que la baseline à un seul lecteur.
-Un `EngineerSeatV2` persistant de même capability, une marketplace de Review
-indépendante et un Merge non supervisé restent inactifs. Voir
+Le système conserve un Module Engineer et un writer. Les Workers read-only échangent des signaux non fiables et des handoffs explicites. Le canary C9 est retiré. Son résultat historique ne permet pas plusieurs reader seats. Les tests du runtime de collaboration restent actifs. Les `EngineerSeatV2` persistants, le Review marketplace indépendant et le Merge sans supervision restent inactifs.
 [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
 
 ### Intake de sources externes
@@ -654,9 +643,7 @@ reconstruits par `scripts/sync-codex-installed-copies.sh`.
 
 `bun run check:ci` est le gate unique équivalent CI ; `bun run check:release`
 ajoute seulement le preflight npm unpublished-version avant de lui déléguer.
-Les checks de gouvernance et fonctionnels tournent comme des jobs CI
-indépendants, et `bun run check:route-eval` maintient un plancher de couverture
-épinglé sur chaque intent et action des prompt guards.
+Les tests concernés vérifient le routing du runtime. Le gate de routing eval est retiré.
 
 ```bash
 bun run check:ci                    # the whole gate

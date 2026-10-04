@@ -1,5 +1,7 @@
 # BDD3-EA1 Direction Adjudication
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > **Decision date**: 2026-07-13
 > **Method**: Dual-track adjudication (external cross-model review + independent internal file-verified cross-check)
 > **Prior state**: `docs/researches/20260713-bdd2-phase-e-closeout.md` (BDD² Phase E terminal closeout, all treatments Kill)

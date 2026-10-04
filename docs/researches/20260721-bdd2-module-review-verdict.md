@@ -1,5 +1,7 @@
 # BDD² Module Review Verdict — need fit and external-skill orchestration boundary
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > **Date**: 2026-07-21
 > **Method**: explorer evidence map (cited file:line sweep of product surfaces, runtime chain, sealed eval reports) + deep-reasoner analysis on primary files + orchestrator adjudication. Conversational review; this note records the durable conclusions and the follow-through decision.
 

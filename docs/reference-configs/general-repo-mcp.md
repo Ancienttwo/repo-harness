@@ -263,15 +263,9 @@ dead-letter failure in that same event log, and returns the new `snapshot_id`,
 `index_revision`, `index_state`, refresh strategy, and optional mutation lag when
 called with `mutation_id`.
 
-For large-repo reader baselines:
-
-```bash
-bun run benchmark:mcp-reader -- --entries 10000 --json
-```
-
-Use `--entries all` for the full 10k/100k/500k fixture sequence when the local
-machine can spend the filesystem time. Recorded results live in
-`docs/researches/20260623-general-repo-reader-performance-baseline.md`.
+The one-time large-repo reader benchmark is retired. Its historical results
+remain in `docs/researches/20260623-general-repo-reader-performance-baseline.md`.
+Use the affected MCP reader tests for current behavior checks.
 
 ## Server Profiles and Dev Runner
 

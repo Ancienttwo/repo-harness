@@ -685,7 +685,7 @@ validated repo/HOME into inspector and init dry-run. Guarded skills overrides
 the ordinary sibling workspace default with a repo-internal workspace, and both
 profiles scrub inherited repo-harness source/helper overrides. The guard rejects source
 checkout and real HOME in either argument position; the role returns BLOCKED
-when the guard fails and must not access the independent `evals/bdd2/**` authority. The opus
+when the guard fails and must fail closed on requests for the retired `evals/bdd2/**` corpus. The opus
 family projects to Terra by default with effort carried through unchanged; the only effort
 remaps are the three explicit per-agent overrides above, and any unmapped model/effort
 combination remains a hard error.

@@ -11,6 +11,9 @@ All notable changes to this skill are documented here.
 - Remove unused scripts/lib context files, Operator Task Message modules,
   and the old workflow contract install planner.
 
+- Remove shipped research scripts: `axr7-consumer-e2e.ts`, `session-context-packet-panel.ts`, `benchmark-general-repo-reader.ts`, `run-bdd2-evals.ts`, `c9-collaboration-canary.ts`, `hook-dispatch-diet-report.ts`, `route-nl-vs-ts-eval.ts`, `loop-engine-cutover-gate.ts`, `run-debug-ground-truth-eval.ts`, `mcp-observability-report.ts`, and `akn00-native-execution-admission.ts`.
+- Remove `benchmark:mcp-reader`, `benchmark:debug`, and `check:route-eval`. Retire the BDD2, BDD3, and debug ground-truth data. Keep the hook telemetry reader, CI full-history check, scaffold loader, ME2B, and shared collaboration test dependencies.
+
 ## [0.20.0] - 2026-10-01
 
 ### Added

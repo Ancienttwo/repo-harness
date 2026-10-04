@@ -1,5 +1,7 @@
 # HRD-09 Legacy Retirement Evidence
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > **Date**: 2026-07-21
 > **Scope**: `hook-runtime-diet` / HRD-09
 > **Source contract**: `tasks/contracts/20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.contract.md`

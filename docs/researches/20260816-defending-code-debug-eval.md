@@ -1,5 +1,7 @@
 # Defending-code reference harness: debug evaluation extraction
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 ## Decision
 
 Do not vendor Anthropic's reference harness or add its proactive vulnerability-finding runtime to `/hunt`. Extract only the evaluation patterns that strengthen the existing reactive debug evidence contract: answer-key omission from the evaluated inputs, false-positive control, and fresh independent replay.

@@ -1,5 +1,7 @@
 # Pi 个人 Harness 十个 package 的萃取评估
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 评估日期：2026-09-30。来源文章：[@chasen_liao《当我从放弃 Claude Code 转向 Pi 并且搭建了自己的一套 Coding Harness 才知道什么叫做效率》](https://x.com/chasen_liao/status/2092963119337476137)（X Article，发布于 2026-08-27，正文经 `api.fxtwitter.com` 取得）。package 基线是 2026-09-30 当天 npm 最新版，用 `npm pack` 解包后阅读 README、docs 和关键源码。这次只做了源码与文档对比：没有安装或运行任何 Pi package，也没有做性能测量。
 
 ## 结论

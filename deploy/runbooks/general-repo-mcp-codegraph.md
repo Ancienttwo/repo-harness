@@ -10,14 +10,16 @@ Run the normal readiness checks from the repo root:
 ```bash
 bash scripts/ensure-codegraph.sh --sync
 repo-harness setup check --target codex --check-updates --json
-bun scripts/mcp-observability-report.ts --repo . --out .ai/harness/runs/mcp-observability-report.json
 ```
 
 Expected results:
 
 - CodeGraph reports ready and `index=up-to-date`.
 - Setup check exits 0 with no failed checks.
-- Observability report exits 0 when no alert thresholds fire.
+- MCP responses report index state and manifest completeness.
+
+The one-time MCP observability report script is retired. Read current tool
+response metadata and `.ai/harness/mcp/index-events.jsonl` for diagnostics.
 
 ## Index Stale
 
@@ -25,7 +27,7 @@ Symptoms:
 
 - setup check reports CodeGraph `index=stale`;
 - tool responses include `snapshot_state: "index_lagging"`;
-- observability alert `index-lag-threshold` fires.
+- index events report an outstanding invalidation.
 
 Actions:
 
@@ -58,7 +60,7 @@ Actions:
 Symptoms:
 
 - tool response has `partial:true` with walker errors;
-- observability alert `manifest-incomplete` fires.
+- a manifest page contains walker errors.
 
 Actions:
 
@@ -74,7 +76,7 @@ Actions:
 Symptoms:
 
 - write tools return `REVISION_CONFLICT`;
-- `write_conflicts` increases in the observability report.
+- a mutation response reports a revision conflict.
 
 Actions:
 
@@ -89,7 +91,7 @@ Symptoms:
 
 - `refresh_repo_index` reports failure;
 - `.ai/harness/mcp/index-events.jsonl` contains a dead-letter event;
-- observability alert `reindex-dead-letter` fires.
+- the latest refresh event records a failure.
 
 Actions:
 
@@ -105,7 +107,7 @@ If sync succeeds, call `refresh_repo_index` again with the original
 - PR links for security, observability, and documentation modules.
 - `bun test` summary.
 - `bun run check:type`.
-- observability report output and report path.
+- MCP response metadata and index event evidence.
 - setup check JSON summary.
 - hosted GitHub checks for the module PR.
 - registered repository access modes used for any mutation acceptance evidence.

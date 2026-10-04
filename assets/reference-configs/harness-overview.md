@@ -105,12 +105,12 @@ Required v1 fields:
 
 Harness cost reports separate measured values from unavailable telemetry. A
 metric is authoritative only when its named source exposes that value directly;
-missing or incomplete event metrics keep `runtime_evidence.available: false`.
+missing or incomplete event metrics remain unavailable.
 Reports must not derive model calls from turns, subagents from tool-name text,
 billing tokens from byte counts, or hidden legacy-script I/O from local
 heuristics.
 
-The two current evidence owners are:
+The current evidence sources and their reader are:
 
 - `.ai/harness/runs/hook-events.jsonl` is the sole hook runtime telemetry
   authority. `src/cli/hook/runtime.ts` appends exactly one
@@ -122,20 +122,21 @@ The two current evidence owners are:
   proof of complete filesystem coverage. The telemetry append itself is
   excluded from write amplification metrics and is non-authoritative: append
   failure never changes hook safety.
-- `scripts/hook-dispatch-diet-report.ts` combines that event authority with
-  static route topology and synthetic subprocess probes. Runtime distributions
-  and route coverage include sample count, p50, and p95; missing, malformed,
-  mixed-protocol, duplicate, or target-incomplete records fail closed. Synthetic
-  probe distributions retain total, p50, p95, p99, and max latency. The
-  SessionStart token estimate remains labeled `utf8_bytes_div_4`; it is a
-  context-budget indicator, not provider billing usage.
+- `readHookEventTelemetry` in `src/cli/hook/event-telemetry.ts` reads the
+  active log and its owned archives. It validates records and reports malformed
+  input, mixed protocols, and duplicate event IDs. The HRD-08 measurement
+  script is retired. Its removal does not change runtime telemetry.
 - `scripts/run-skill-evals.ts` for end-to-end benchmark duration, changed-file
   evidence, graders, and provider-structured usage. Claude single-result JSON
   and Codex JSONL are parsed independently. Raw output remains an artifact, and
   absent or malformed usage makes only the usage fields unavailable; it does
   not rewrite agent exit or grader status.
 
-Current SLOs:
+Historical HRD-08 report targets:
+
+The retired diet reporter measured these targets. No current report owns their
+SLO measurements. Existing runtime tests still check their named invariants.
+These targets are not a standing gate.
 
 - Runtime entry: exactly one per eligible host event.
 - Direct runtime-dispatch child processes: at most one per event. This does not

@@ -1,44 +1,39 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { REPO_ROOT, sha256File, validateEvaluation, verifyEvidenceProjection } from "../scripts/run-bdd2-evals";
 
-describe("BDD2 Phase E3 evaluation contract", () => {
-  test("historical Phase E and E2 reports remain frozen", () => {
-    const evaluation = validateEvaluation();
-    expect(evaluation.manifest.historical_reports.length).toBeGreaterThanOrEqual(13);
-    for (const ref of evaluation.manifest.historical_reports) expect(sha256File(join(REPO_ROOT, ref.path))).toBe(ref.sha256);
-  }, 30_000);
+const REPO_ROOT = join(import.meta.dir, "..");
 
-  test("Browser and ImageGen appendices remain first-class tracked evidence", () => {
-    const evaluation = validateEvaluation();
-    expect(Object.keys(evaluation.manifest.experiments.EB3.appendices ?? {})).toHaveLength(6);
-    expect(Object.keys(evaluation.manifest.experiments.EI3.appendices ?? {})).toHaveLength(6);
-  }, 30_000);
-
+describe("retired research and evaluation surfaces", () => {
   test("current Behavior Audit and Phase P surfaces are absent", () => {
-    const evaluation = validateEvaluation();
-    expect(JSON.stringify(evaluation.manifest)).not.toContain('"A3"');
     const changedProductSurface = ["assets/skill-commands/repo-harness-bdd", "src/cli/commands/bdd.ts", "src/cli/mcp/behavior-tools.ts"];
     for (const path of changedProductSurface) expect(() => readFileSync(join(REPO_ROOT, path))).toThrow();
-  }, 30_000);
+  });
 
-  test("I3 gate is frozen but does not encode a post-reveal outcome", () => {
-    const evaluation = validateEvaluation();
-    expect(evaluation.manifest.i3.prerequisite).toEqual({ shape: "Pass", any_adapter: "Pass" });
-    expect(JSON.stringify(evaluation.manifest.i3)).not.toContain("S3_decision");
-  }, 30_000);
+  test("retired batch C tools and data stay absent", () => {
+    const removed = [
+      "scripts/axr7-consumer-e2e.ts",
+      "scripts/session-context-packet-panel.ts",
+      "scripts/benchmark-general-repo-reader.ts",
+      "scripts/run-bdd2-evals.ts",
+      "evals/bdd2",
+      "evals/bdd3",
+      "scripts/c9-collaboration-canary.ts",
+      "scripts/hook-dispatch-diet-report.ts",
+      "scripts/route-nl-vs-ts-eval.ts",
+      "scripts/loop-engine-cutover-gate.ts",
+      "scripts/run-debug-ground-truth-eval.ts",
+      "evals/debug-hunt",
+      "scripts/mcp-observability-report.ts",
+      "scripts/akn00-native-execution-admission.ts",
+    ];
+    for (const path of removed) expect(existsSync(join(REPO_ROOT, path)), path).toBe(false);
+  });
 
-  test("tracked E3 evidence reproduces every terminal decision", () => {
-    const evaluation = validateEvaluation();
-    expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.S3.result.evidence.path)).toEqual({ experiment: "S3", decision: "Kill" });
-    expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.EB3.result.evidence.path)).toEqual({ experiment: "EB3", decision: "Kill" });
-    expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.EI3.result.evidence.path)).toEqual({ experiment: "EI3", decision: "Kill" });
-  }, 30_000);
-
-  test("authoritative evaluation CI checks out the historical source commit", () => {
-    const workflow = readFileSync(join(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
-    const testJob = workflow.slice(workflow.indexOf("  test:"), workflow.indexOf("  mcp-path-matrix:"));
-    expect(testJob).toContain("fetch-depth: 0");
+  test("retired package commands stay absent", () => {
+    const { scripts } = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8"));
+    for (const command of ["benchmark:mcp-reader", "benchmark:debug", "check:route-eval"]) {
+      expect(scripts[command], command).toBeUndefined();
+    }
   });
 });

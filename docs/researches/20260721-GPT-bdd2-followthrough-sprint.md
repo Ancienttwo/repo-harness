@@ -1,5 +1,7 @@
 # Sprint：BDD² Follow-through（最终裁决版）
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > **状态**：Draft，待人类批准后进入执行  
 > **Slug**：`bdd2-followthrough`  
 > **建议分支 / worktree**：`codex/bdd2-followthrough`  

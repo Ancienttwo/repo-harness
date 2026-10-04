@@ -50,3 +50,10 @@ describe('documentation consumer discovery', () => {
     expect(workflow.jobs.documentation).toBeUndefined();
   }, 60_000);
 });
+
+// Keep this full-history guard as required by the retirement brief.
+test('CI test checkout keeps the full Git history', () => {
+  const workflow = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+  const testJob = workflow.slice(workflow.indexOf('  test:'), workflow.indexOf('  mcp-path-matrix:'));
+  expect(testJob).toContain('fetch-depth: 0');
+});

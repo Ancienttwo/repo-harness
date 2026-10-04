@@ -1,5 +1,7 @@
 # Product Shift：Evidence-backed Delivery 与 Research Contribution
 
+> Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+
 > **Status**: Draft — direction synthesized; implementation unapproved
 > **Decision date**: 2026-08-11
 > **Product thesis**: 帮助 1–3 人团队获得成熟工程组织的产品理解与交付可信度
@@ -401,7 +403,7 @@ work package 询问一次、默认不含代码，并优先保证 contribution �
 
 ## 已有反证及其正确含义
 
-[`evals/bdd2/reports/phase-e3-gate.md`](../../evals/bdd2/reports/phase-e3-gate.md)
+[`evals/bdd2/reports/phase-e3-gate.md`](https://github.com/Ancienttwo/repo-harness/blob/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4/evals/bdd2/reports/phase-e3-gate.md)
 否定了 inline Shape、Browser Evidence Adapter 和 ImageGen Prototype Adapter；
 inline Shape 虽减少部分 expansion/omission，却引入四个 paired P0/P1
 protected-concern regressions。

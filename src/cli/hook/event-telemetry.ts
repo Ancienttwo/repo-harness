@@ -1,15 +1,16 @@
 import { createHash, randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { existsSync, readFileSync } from 'fs';
 import type {
   HookEventTelemetryEffectObservation,
   HookEventTelemetryMetric,
   HookEventTelemetryRecord,
   HookEventTelemetryStep,
 } from '../../core/loop/loop-event-protocol';
-import type { HookEvent, RouteHost, RouteId } from './route-registry';
+import { getRoute, type HookEvent, type RouteHost, type RouteId } from './route-registry';
 import { resolveRunIdentity } from './run-identity';
-import { appendHookEventLog } from '../../effects/hook-event-log';
+import { appendHookEventLog, readHookEventLog } from '../../effects/hook-event-log';
 
 export const HOOK_EVENT_TELEMETRY_PROTOCOL = 'loop-engine-hook-event/v1' as const;
 export const HOOK_EVENT_TELEMETRY_PATH = '.ai/harness/runs/hook-events.jsonl';
@@ -34,8 +35,7 @@ const METRICS: readonly HookEventTelemetryMetric[] = [
  * spawns its route instead of running a typed handler in process. It is not a
  * count of every fork under the handler: the Git and Bun plumbing inside
  * session-context, mutation-observed and friends is handler business logic and
- * is deliberately excluded (`scripts/hook-dispatch-diet-report.ts` states the
- * same split in its report legend). `recordDirectChildProcess` therefore has no
+ * is deliberately excluded. `recordDirectChildProcess` therefore has no
  * call site by design -- it is the sentinel that would go non-zero if a route
  * ever regressed to the retired `run-hook.sh` shape, which is why
  * `tests/hook-runtime.test.ts` ("typed handlers do not ... spawn a route
@@ -356,4 +356,78 @@ function isEffectObservation(value: unknown): value is HookEventTelemetryEffectO
     && (observation.last_committed_phase === null
       || (typeof observation.last_committed_phase === 'string'
         && observation.committed_phases.includes(observation.last_committed_phase)));
+}
+
+export interface EventLogReadResult {
+  records: HookEventTelemetryRecord[];
+  sampleCount: number;
+  invalidRecordCount: number;
+  malformedRecordCount: number;
+  mixedProtocol: boolean;
+  duplicateEventIdCount: number;
+  missing: boolean;
+}
+
+function isValidTimestamp(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isValidHookEventTelemetryRecord(value: unknown): value is HookEventTelemetryRecord {
+  if (!isHookEventTelemetryRecord(value)) return false;
+  const candidate = value as HookEventTelemetryRecord;
+  if (!isValidTimestamp(candidate.started_at) || !isValidTimestamp(candidate.completed_at)) return false;
+  if (!(candidate.host === null || candidate.host === "claude" || candidate.host === "codex")) return false;
+  if (!(candidate.session_id === null || typeof candidate.session_id === "string")) return false;
+  if (!(candidate.run_id === null || typeof candidate.run_id === "string")) return false;
+  if (!(candidate.turn_id === null || typeof candidate.turn_id === "string")) return false;
+  if (!getRoute(candidate.event, candidate.route_id)) return false;
+  if (!isStringArray(candidate.measurement.complete_metrics) || !isStringArray(candidate.measurement.incomplete_metrics) ||
+    !isStringArray(candidate.measurement.opaque_steps)) return false;
+  for (const step of candidate.steps) {
+    if (!step || typeof step.name !== "string" || step.name.length === 0 ||
+      (step.execution !== "in_process" && step.execution !== "subprocess") ||
+      !isValidTimestamp(step.started_at) || !finiteNonNegative(step.elapsed_ms) || !Number.isInteger(step.exit_code) ||
+      !(step.output_bytes === null || finiteNonNegative(step.output_bytes))) return false;
+  }
+  return true;
+}
+
+export function readHookEventTelemetry(repo: string, eventsPath = HOOK_EVENT_TELEMETRY_PATH): EventLogReadResult {
+  const path = resolve(repo, eventsPath);
+  const lines = path === resolve(repo, HOOK_EVENT_TELEMETRY_PATH)
+    ? readHookEventLog(path, repo)
+    : existsSync(path) ? readFileSync(path, "utf8").split(/\r?\n/).filter(line => line.trim()) : null;
+  if (lines === null) return { records: [], sampleCount: 0, invalidRecordCount: 0, malformedRecordCount: 0, mixedProtocol: false, duplicateEventIdCount: 0, missing: true };
+  const records: HookEventTelemetryRecord[] = [];
+  const protocols = new Set<string>();
+  const eventIds = new Set<string>();
+  let invalidRecordCount = 0;
+  let malformedRecordCount = 0;
+  let duplicateEventIdCount = 0;
+  let sampleCount = 0;
+  for (const line of lines) {
+    sampleCount += 1;
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { invalidRecordCount += 1; malformedRecordCount += 1; continue; }
+    const protocol = parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).protocol === "string"
+      ? (parsed as Record<string, unknown>).protocol as string : "<missing>";
+    protocols.add(protocol);
+    if (!isValidHookEventTelemetryRecord(parsed)) { invalidRecordCount += 1; continue; }
+    if (eventIds.has(parsed.event_id)) duplicateEventIdCount += 1;
+    eventIds.add(parsed.event_id);
+    records.push(parsed);
+  }
+  return {
+    records,
+    sampleCount,
+    invalidRecordCount,
+    malformedRecordCount,
+    mixedProtocol: protocols.size > 1 || protocols.size === 1 && !protocols.has(HOOK_EVENT_TELEMETRY_PROTOCOL),
+    duplicateEventIdCount,
+    missing: false,
+  };
 }

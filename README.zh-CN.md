@@ -244,7 +244,7 @@ flowchart TD
   NextTask --> UserTask
 
   UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>affected routing tests"]
   LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -394,14 +394,7 @@ repo-harness collaboration packet build|read
 多个 Module Engineer 读同一份 Work Exchange，并发布有界的 coordination 记录。
 Handoff adoption 刻意做成非独占：它不授予 Task、Claim 或 Lease。
 
-底层保持一个 Module Engineer 和一个 writer，同时让有界的只读 Worker 交换不受信任的
-signal 和显式 handoff。用 `bun scripts/c9-collaboration-canary.ts --live` 在
-source checkout 里跑 live gate；它会为三组配对的 baseline/treatment trace 创建隔离
-的一次性仓库，并记录 provider 权威的 Codex token 用量、context 大小、signal 复用、
-handoff adoption、writer 数量和 delivery-plane digest。被接受的 C9 结论刻意是一个
-否定性的 multi-seat 决定：三读者的 treatment 保住了 authority 也复用了状态，产出
-却没有超过单读者 baseline。常驻的同 capability `EngineerSeatV2`、独立的 Review
-marketplace 和无人值守 Merge 仍然处于关闭状态。见
+底层保持一个 Module Engineer 和一个 writer。有界的 read-only Worker 交换不受信任的 signal 和显式 handoff。C9 source-checkout canary 已退休。历史结果不支持多个 reader seat。共享 collaboration runtime 测试保留。常驻的同 capability `EngineerSeatV2`、独立的 Review marketplace 和无人值守 Merge 仍处于关闭状态。
 [`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md)。
 
 ### 外部来源接入
@@ -591,9 +584,8 @@ symlink-backed 的 runtime entrypoint，由 `scripts/sync-codex-installed-copies
 重建。
 
 `bun run check:ci` 是唯一的 CI-equivalent gate；`bun run check:release` 只是在委托
-给它之前，多加一步 npm unpublished-version preflight。治理类和功能类检查作为独立的
-CI job 运行，`bun run check:route-eval` 对每个 prompt-guard intent 和 action 守住
-一条钉死的覆盖率下限。
+给它之前，多加一步 npm unpublished-version preflight。
+Runtime routing 回归保留在受影响测试中。旧 routing eval gate 已退休。
 
 ```bash
 bun run check:ci                    # the whole gate

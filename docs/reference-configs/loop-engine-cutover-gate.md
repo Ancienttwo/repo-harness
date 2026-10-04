@@ -1,39 +1,10 @@
-# Loop Engine Cutover Gate
+# Loop Engine Cutover History
 
-This gate is the row 7 guardrail for replacing the TypeScript prompt-intent
-classifier with the natural-language decision table. It does not perform the
-cutover; it decides whether cutover is allowed.
+The one-time cutover evaluator and its standing gate are retired.
+This removal does not establish G2 completion or permit a classifier cutover.
+`src/cli/hook/prompt-intents.ts` and `src/cli/hook/prompt-guard-decision.ts`
+remain the runtime authority. Their affected tests remain active.
 
-## G2 Rule
-
-Cutover is eligible only when both are true:
-
-- Row 3 second G1 evidence is `go`.
-- A shadow divergence report reaches G2: at least 100 prompts or 14 days of
-  shadow coverage, zero critical route divergence, and phase-probe timing at or
-  below baseline.
-
-When the shadow report is missing or no-go, the TypeScript classifier remains
-the runtime authority. `src/cli/hook/prompt-intents.ts` and
-`src/cli/hook/prompt-guard-decision.ts` must not be deleted before G2 passes.
-
-## Command
-
-```bash
-bun scripts/loop-engine-cutover-gate.ts --repo . --json --out .ai/harness/runs/loop-engine-07-cutover-gate.json
-```
-
-The report uses `protocol: "loop-engine-cutover-gate/v1"` and records:
-
-- `g1.status`
-- `shadow.status`
-- `classifier_guardrail.present`
-- `cutover.allowed`
-- `cutover.reason`
-
-## Current Sprint Meaning
-
-For this sprint state, row 3 is `go` but no shadow divergence report exists.
-Therefore the expected row 7 report is blocked with
-`missing_shadow_divergence_report`, and the runtime TypeScript classifier stays
-authoritative.
+The old proposal required second G1 evidence and a shadow divergence report.
+The last recorded state had no shadow divergence report. It did not permit
+cutover. A future classifier change needs current evidence for its own scope.
