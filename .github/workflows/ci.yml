@@ -180,36 +180,26 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
-      - name: Isolate the native test home
+      - name: Run the native path tests
         shell: bash
-        run: |
-          node -e '
-            const fs = require("node:fs"), path = require("node:path");
-            const root = path.resolve("/tmp");
-            fs.mkdirSync(root, { recursive: true });
-            const canonical = fs.realpathSync(root);
-            const home = fs.mkdtempSync(path.join(canonical, "rh-test-home-"));
-            const temp = fs.mkdtempSync(path.join(canonical, "rh-test-tmp-"));
-            const env = { HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp };
-            fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(env).map(([key, value]) => key + "=" + value).join("\n") + "\n");
-          '
-      - env:
+        env:
           REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: '1'
-        run: >-
-          bun test --timeout 60000 --max-concurrency 1
-          tests/preload-home-isolation.test.ts
-          tests/cli/mcp-workspaces.test.ts tests/cli/mcp-reader-tools.test.ts
-          tests/cli/mcp-policy.test.ts tests/cli/mcp-http.test.ts tests/cli/mcp-oauth.test.ts
-          tests/cli/mcp-stdio.test.ts tests/effects/fleet-collector-process.test.ts
-          tests/effects/operator-task-diff.test.ts tests/effects/operator-task-context.test.ts
-          tests/effects/operator-task-activity.test.ts tests/effects/task-inbox.test.ts
-          tests/effects/task-reply.test.ts tests/effects/task-inbox-layout-migration.test.ts
+        run: |
+          source scripts/lib/ci-run-tests.sh
+          BUN_TEST_ISOLATE_FILES=0 run_bun_tests \
+          tests/preload-home-isolation.test.ts \
+          tests/cli/mcp-workspaces.test.ts tests/cli/mcp-reader-tools.test.ts \
+          tests/cli/mcp-policy.test.ts tests/cli/mcp-http.test.ts tests/cli/mcp-oauth.test.ts \
+          tests/cli/mcp-stdio.test.ts tests/effects/fleet-collector-process.test.ts \
+          tests/effects/operator-task-diff.test.ts tests/effects/operator-task-context.test.ts \
+          tests/effects/operator-task-activity.test.ts tests/effects/task-inbox.test.ts \
+          tests/effects/task-reply.test.ts tests/effects/task-inbox-layout-migration.test.ts \
           tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts
 
   required:
     name: Required / CI
     if: always() && github.event_name == 'pull_request'
-    needs: [selection, verify]
+    needs: [selection, verify, test-home-isolation]
     runs-on: ubuntu-latest
     steps:
       - name: Consume the single candidate verification
@@ -217,5 +207,6 @@ jobs:
           SELECTION_RESULT: ${{ needs.selection.result }}
           COVERAGE_MODE: ${{ needs.selection.outputs.mode }}
           VERIFY_RESULT: ${{ needs.verify.result }}
+          HOME_ISOLATION_RESULT: ${{ needs.test-home-isolation.result }}
         run: |
-          [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ]
+          [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ] && [ "$HOME_ISOLATION_RESULT" = success ]

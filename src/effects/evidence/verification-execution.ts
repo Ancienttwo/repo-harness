@@ -371,7 +371,7 @@ function cacheKey(context: PreparedContext, check: VerificationCheck): string {
 }
 
 function displayCommand(check: VerificationCheck): string {
-  return redactProcessOutput(check.kind === "command" ? check.command : `bun test -- ${check.path}`);
+  return redactProcessOutput(check.kind === "command" ? check.command : `bun run test -- ${check.path}`);
 }
 
 function resolveExecutionCwd(repoRoot: string, cwd: string): string {

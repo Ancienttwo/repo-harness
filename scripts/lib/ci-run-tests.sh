@@ -4,18 +4,16 @@
 
 # Create native paths before Bun caches its startup environment.
 _ci_run_bun_tests_in_temporary_home() {
+  local isolation_module="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-home-isolation.mjs"
   node -e '
-    const fs = require("node:fs"), path = require("node:path");
+    const fs = require("node:fs");
     const { spawnSync } = require("node:child_process");
-    const root = path.resolve("/tmp");
-    fs.mkdirSync(root, { recursive: true });
-    const canonical = fs.realpathSync(root);
-    const home = fs.mkdtempSync(path.join(canonical, "rh-test-home-"));
-    const temp = fs.mkdtempSync(path.join(canonical, "rh-test-tmp-"));
+    const { createTemporaryTestEnvironment } = require(process.argv[1]);
+    const { env, home, temp } = createTemporaryTestEnvironment(process.env);
     let status = 1;
     try {
-      const result = spawnSync("bun", ["test", ...process.argv.slice(1)], {
-        env: { ...process.env, HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp },
+      const result = spawnSync("bun", ["test", ...process.argv.slice(2)], {
+        env,
         stdio: "inherit",
       });
       if (result.error) console.error("[ci] test process failed to start: " + result.error.message);
@@ -25,7 +23,7 @@ _ci_run_bun_tests_in_temporary_home() {
       fs.rmSync(temp, { recursive: true, force: true });
     }
     process.exit(status);
-  ' -- --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}" "$@"
+  ' "$isolation_module" --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}" "$@"
 }
 
 run_bun_test_file() {
