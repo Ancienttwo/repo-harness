@@ -4,6 +4,12 @@ This command group implements phase 1 R1-R4.
 It records facts. It does not control live work.
 A ledger failure is a telemetry gap. Existing work continues under its existing rules.
 
+This guide describes the observer implementation boundary.
+It is not a generated capability projection.
+The reviewed architecture model retains its existing capability inventory.
+Observer coverage in that model is not claimed by this phase 1 PR.
+Publishing a new capability needs its reviewed component, relations, flow and projection together.
+
 ## Store configuration
 
 The authority host is the kitos Mac mini. The default database is
