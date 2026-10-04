@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree } from '../../cli/installer/install-profile';
-import { isRepoHarnessManagedHookCommand, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
+import { stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
 import { loadWorkflowContractAsset } from '../adoption/workflow-contract-asset';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../skill-surface/catalog';
@@ -182,23 +182,16 @@ function historicalCommands(actions: readonly RetirementAction[]): Set<string> {
   return new Set(actions.flatMap((action) => action.surface === 'hook-entry' ? [...(action.commands ?? [])] : []));
 }
 
-function retiredHook(command: unknown, location: 'project' | 'global', commands: ReadonlySet<string>): command is string {
-  if (typeof command !== 'string') return false;
-  if (commands.has(command)) return true;
-  if (!isRepoHarnessManagedHookCommand(command)) return false;
-  // Current user-level typed adapters remain the execution authority.
-  return location === 'project' || !command.includes('repo-harness-hook ');
-}
-
 export function stripLegacyHookEntries(
   value: unknown,
-  options: { readonly location?: 'project' | 'global' } = {},
+  options: { readonly location?: 'project' } | { readonly location: 'global'; readonly home: string } = {},
 ): { config: Record<string, unknown>; removed: readonly { event: string; command: string }[] } {
   if (!record(value)) throw new Error('hook settings must be a JSON object');
   if (value.hooks === undefined) return { config: { ...value }, removed: [] };
   if (!record(value.hooks)) throw new Error('managed hook config must be an object keyed by event');
   const commands = historicalCommands(actionsOf());
   const location = options.location ?? 'project';
+  const shimCommand = options.location === 'global' ? join(resolve(options.home), '.repo-harness/hook-shim.sh') : undefined;
   // Keep the existing merger as the owner of managed-entry removal.
   const managed = location === 'project' ? stripRepoHarnessManagedHooks(value.hooks) : { hooks: value.hooks, removed: [] };
   const hooks: Record<string, unknown> = {};
@@ -210,7 +203,8 @@ export function stripLegacyHookEntries(
       if (!record(block) || !Array.isArray(block.hooks)) { kept.push(block); continue; }
       const entries = block.hooks.filter((entry: unknown) => {
         const command = record(entry) ? entry.command : undefined;
-        if (!retiredHook(command, location, commands)) return true;
+        // Global settings need a full historical command or the exact host shim path.
+        if (typeof command !== 'string' || (!commands.has(command) && command !== shimCommand)) return true;
         removed.push({ event, command });
         return false;
       });
@@ -497,7 +491,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
         add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'unowned', proof: null, action: 'report', reason: 'Invalid hook settings; preserve current bytes.' });
         continue;
       }
-      const stripped = stripLegacyHookEntries(value, { location });
+      const stripped = stripLegacyHookEntries(value, location === 'global' ? { location, home: options.home } : { location });
       for (const entry of stripped.removed) add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'owned-clean', proof: 'managed-hook', action: 'strip-entry', expectedContentHash: hash(readFileSync(path)), hookEvent: entry.event, hookCommand: entry.command });
     }
   }

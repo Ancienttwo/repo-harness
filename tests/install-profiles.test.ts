@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
@@ -133,6 +133,41 @@ describe('install profiles', () => {
     expect(hashManagedTree(copied)).toBe(marker.content_hash);
     expect(hashManagedTree(source)).not.toBe(marker.content_hash);
   }));
+
+  test('stage-owned-copy refuses an existing destination without changing it', () => {
+    const home = mkdtempSync('/tmp/repo-harness-stage-existing-');
+    try {
+      const source = join(home, 'source');
+      const dest = join(home, 'destination');
+      writePath(join(source, 'SKILL.md'), 'source bytes\n');
+      writePath(join(dest, 'SKILL.md'), 'user bytes\n');
+      const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh'),
+        '--stage-owned-copy', source, dest, 'canonical-skill'], {
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), AGENTIC_DEV_SOURCE_ROOT: ROOT }, encoding: 'utf8',
+      });
+      expect(result.status, result.stderr).toBe(2);
+      expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe('user bytes\n');
+      expect(existsSync(join(dest, '.repo-harness-owner.json'))).toBe(false);
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
+
+  test('stage-owned-copy refuses a dangling symlink destination without changing it', () => {
+    const home = mkdtempSync('/tmp/repo-harness-stage-symlink-');
+    try {
+      const source = join(home, 'source');
+      const dest = join(home, 'destination');
+      const target = join(home, 'missing-target');
+      writePath(join(source, 'SKILL.md'), 'source bytes\n');
+      symlinkSync(target, dest);
+      const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh'),
+        '--stage-owned-copy', source, dest, 'canonical-skill'], {
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), AGENTIC_DEV_SOURCE_ROOT: ROOT }, encoding: 'utf8',
+      });
+      expect(result.status, result.stderr).toBe(2);
+      expect(readlinkSync(dest)).toBe(target);
+      expect(existsSync(target)).toBe(false);
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
 
   test('refresh retains a markerless owned directory receipt with no selected components', () => withHome((env) => {
     const path = join(env.HOME!, '.codex/skills/repo-harness-cross-review');

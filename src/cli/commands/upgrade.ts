@@ -258,7 +258,8 @@ function applyLocked(
       }
       if (targetItems[0]!.surface === 'hook-entry') {
         const config = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
-        const stripped = stripLegacyHookEntries(config, { location: targetItems[0]!.location });
+        const location = targetItems[0]!.location;
+        const stripped = stripLegacyHookEntries(config, location === 'global' ? { location, home: options.home } : { location });
         if (stripped.removed.length === 0) continue;
         nextContent = formatJson(stripped.config);
       }

@@ -144,6 +144,38 @@ describe('upgrade with real release bytes', () => {
     expect(result.items.some((item) => item.ownership !== 'owned-clean' && item.action === 'report')).toBe(true);
   }));
 
+  test('global cleanup keeps user commands that contain retired hook paths', () => sandbox((opts) => {
+    const shim = join(opts.home, '.repo-harness/hook-shim.sh');
+    const userCommands = [
+      'echo .ai/hooks/run-hook.sh',
+      'echo .claude/hooks/run-hook.sh',
+      `echo ${shim}`,
+      `${shim} --user-option`,
+      `bash "${shim}"`,
+      'repo-harness hook Stop --route user',
+    ];
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      const path = join(opts.home, name);
+      const settings = JSON.parse(readFileSync(path, 'utf8'));
+      const userHooks = userCommands.map((command) => ({ type: 'command', command }));
+      settings.hooks.Stop = [{ matcher: 'user', hooks: [...userHooks, { type: 'command', command: shim }] }];
+      writeFileSync(path, JSON.stringify(settings));
+    }
+    const plan = planLegacyLeftovers({ ...opts, scope: 'global' });
+    expect(plan.items.filter((item) => userCommands.includes(item.hookCommand!))).toEqual([]);
+    expect(plan.items.filter((item) => item.hookCommand === shim)).toHaveLength(2);
+    expect(plan.items.some((item) => item.hookEvent === 'SessionStart')).toBe(true);
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true });
+    expect(result.exitCode).toBe(0);
+    for (const name of ['.claude/settings.json', '.codex/hooks.json']) {
+      const settings = JSON.parse(readFileSync(join(opts.home, name), 'utf8'));
+      expect(settings.hooks.Stop).toEqual([{
+        matcher: 'user', hooks: userCommands.map((command) => ({ type: 'command', command })),
+      }]);
+      expect(settings.hooks.SessionStart).toBeUndefined();
+    }
+  }));
+
   test('a second apply removes nothing and changes no bytes', () => sandbox((opts) => {
     expect(runUpgrade({ ...opts, apply: true }).exitCode).toBe(0);
     const beforeHome = tree(opts.home); const beforeRepo = tree(opts.cwd);
