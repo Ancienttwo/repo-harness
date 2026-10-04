@@ -163,12 +163,29 @@ const AUTHORITY_INVENTORY: readonly AuthorityEntry[] = [
     plane: 'publication',
     authority: 'publication-receipt',
     protocol: publicationReceipt.PUBLICATION_RECEIPT_PROTOCOL,
-    kinds: [
-      publicationReceipt.PUBLICATION_RECEIPT_KIND,
-      publicationReceipt.PUBLICATION_CREATE_INTENT_KIND,
-      publicationReceipt.PUBLICATION_PREPARE_KIND,
-    ],
+    kinds: [publicationReceipt.PUBLICATION_RECEIPT_KIND],
     storeRoot: PUBLICATION_RECEIPTS_RELATIVE_PATH,
+  },
+  {
+    plane: 'publication',
+    authority: 'publication-identity',
+    protocol: publicationReceipt.PUBLICATION_IDENTITY_PROTOCOL,
+    kinds: [],
+    storeRoot: null,
+  },
+  {
+    plane: 'publication',
+    authority: 'publication-create-intent',
+    protocol: publicationReceipt.PUBLICATION_CREATE_INTENT_PROTOCOL,
+    kinds: [publicationReceipt.PUBLICATION_CREATE_INTENT_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'publication',
+    authority: 'publication-prepare',
+    protocol: publicationReceipt.PUBLICATION_PREPARE_PROTOCOL,
+    kinds: [publicationReceipt.PUBLICATION_PREPARE_KIND],
+    storeRoot: null,
   },
   {
     plane: 'publication',
@@ -296,7 +313,7 @@ const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
   {
     module: 'src/core/publication/publication-receipt.ts',
     exports: publicationReceipt,
-    authorities: ['publication-receipt'],
+    authorities: ['publication-receipt', 'publication-identity', 'publication-create-intent', 'publication-prepare'],
   },
   {
     module: 'src/core/publication/publication-lifecycle.ts',
@@ -497,12 +514,14 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
  * Frozen at `main@a490a5ef76b439228a4b3282934c29ba15090cdf`, then deliberately
  * advanced by the approved R1 provider-neutral Agent Runtime work package when
  * FleetBoardSnapshot moved to protocol 3, then by the approved Operator delivery
- * evidence package for protocol 4. A change here is an authority change:
+ * evidence package for protocol 4 and AKN-04a for protocol 5. PR #523 now
+ * splits publication receipt 2 from identity/create-intent/prepare 1.
+ * A change here is an authority change:
  * it must be justified by the work package that caused it, not silently
  * re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:1b8694114cc2a95e7730522623f6f6e1ffb84b237e6de5ad7857637bd5974162';
+  'sha256:5b8c7a3b3f996a41873fe11e7a242dbd4accc47f5c1a0e42a4ef0f0f9da87fcb';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
@@ -740,7 +759,10 @@ describe('C0 delivery-plane authority baseline', () => {
       'fleet-offers': 1,
       'fleet-board': 5,
       'task-freeze-receipt': 1,
-      'publication-receipt': 1,
+      'publication-receipt': 2,
+      'publication-identity': 1,
+      'publication-create-intent': 1,
+      'publication-prepare': 1,
       'publication-lineage': 1,
       'publication-integration-observation': 1,
       'merge-readiness': 1,

@@ -21,7 +21,6 @@ PLAN_LOOP:
   REVIEW_DIR: tasks/reviews/
   NOTES_DIR: tasks/notes/
   POLICY_FILE: .ai/harness/policy.json
-  CHECKS_FILE: .ai/harness/checks/latest.json
   HANDOFF_FILE: .ai/harness/handoff/current.md
   EVENTS_FILE: .ai/harness/events.jsonl
   RUNS_DIR: .ai/harness/runs/

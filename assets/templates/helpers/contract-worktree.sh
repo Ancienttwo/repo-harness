@@ -2099,6 +2099,16 @@ cleanup_worktree() {
     echo "[ContractWorktree] Worktree already absent, skipping: $branch_name"
   fi
 
+  if [[ -n "$worktree_path" ]]; then
+    # The current cleanup owner cannot retain the native ledger, runs, and
+    # virtual-tree objects. Keep the worktree until that retention is proven.
+    if [[ -s "$worktree_path/.ai/harness/evidence/events/log.jsonl" ]] \
+      || [[ -n "$(find "$worktree_path/.ai/harness/runs" -maxdepth 1 -type f -name 'verification-*.json' -print -quit 2>/dev/null)" ]]; then
+      echo "contract-worktree: native verification evidence retention is unavailable; preserve worktree before cleanup" >&2
+      return 1
+    fi
+  fi
+
   if [[ "$dry_run" -eq 1 ]]; then
     echo "[ContractWorktree] dry-run cleanup slug=$slug target=$target_branch"
     if [[ "$repair_needed" -eq 1 ]]; then

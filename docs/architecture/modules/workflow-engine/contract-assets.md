@@ -432,7 +432,7 @@ regressions verify these separate boundaries.
   UserWaiverGrant records that owner decision against stable contract/goal
   authority. The host-owned AcceptanceReceipt is the exact closeout authority;
   its closed dispositions are `external_pass`, `user_waiver`, and `reject`.
-- `verify-sprint --prepare-acceptance` freezes canonical verification evidence.
+- `verification-plan execute` records declared checks in an explicitly selected native report.
   Receipt verification binds that evidence, normalized implementation content,
   goal, contract, benchmark evidence, reviewed paths, and target revision.
   Semantic changes invalidate the receipt and require fresh evidence, while an
@@ -455,7 +455,7 @@ regressions verify these separate boundaries.
   `runtime-evidence-receipt.ts` into the npm package with the other canonical
   helpers.
 - The contract declaration is only oracle intent. Final-subject selection is
-  recomputed at prepare-acceptance from policy `review_base`, and the result is
+  recomputed by the acceptance owner from policy `review_base`, and the result is
   bound through verification evidence while protocol-2 AcceptanceReceipt stays
   the single merge authority.
 

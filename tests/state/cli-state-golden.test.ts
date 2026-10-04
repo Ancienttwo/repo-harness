@@ -65,7 +65,7 @@ function contentRevision(sourceHashes: Readonly<Record<string, string>>): string
 
 function assertExactHashContract(state: EffectiveState, cwd: string): void {
   for (const [path, value] of Object.entries(state.source_hashes)) {
-    if (path === 'review_subject' || path === 'authority_revision') continue;
+    if (path === 'review_subject' || path === 'authority_revision' || path === 'evidence_revision') continue;
     expect(value).toBe(sourceHash(cwd, path));
   }
   // LSC-04: authority_revision now composes policy/capability-registry/
@@ -91,6 +91,9 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
   });
   expect(state.source_hashes.authority_revision).toBe(expectedAuthorityRevision);
   expect(state.authority_revision).toBe(expectedAuthorityRevision);
+  // Execution, assessment, and acceptance facts are an effect observation.
+  // They have no shared source file. Their digest still binds the state.
+  expect(state.source_hashes.evidence_revision).toBe(state.evidence_revision);
   expect(state.state_revision).toBe(contentRevision(state.source_hashes));
 }
 
@@ -104,11 +107,17 @@ const DYNAMIC_HASH_KEYS = new Set([
   // active-worktree marker's tmpdir path) in the executing-fresh-evidence
   // scenario, which cascades into projection_revision.
   'projection_revision',
+  // Native execution IDs and owner receipt times vary for each real run.
+  'evidence_revision',
+  'progress_token',
 ]);
 
 function normalize(value: unknown, cwd: string, key = ''): unknown {
   if (typeof value === 'string') {
     const rooted = value.replaceAll(cwd, '<repo>');
+    if (key === 'execution_id') return '<execution-id>';
+    if (key === 'run_file') return '.ai/harness/runs/<execution-run>.json';
+    if (key === 'path' && rooted.endsWith('/acceptance.latest.json')) return '<acceptance-receipt>';
     if (DYNAMIC_HASH_KEYS.has(key) && /^sha256:[0-9a-f]{64}$/.test(rooted)) {
       return `sha256:<dynamic:${key}>`;
     }

@@ -105,8 +105,8 @@ export interface EffectiveStateV1 {
   };
   readonly checks: EffectiveStateSource & {
     readonly status: string | null;
-    readonly failure_class?: string;
-    readonly artifact_repair?: 'authorized' | 'required';
+    readonly reason?: string | null;
+    readonly result_refs?: readonly { readonly execution_id: string | null; readonly run_file: string | null }[];
   };
   readonly active_sprint: EffectiveStateSource;
   readonly worktree: EffectiveStateSource & {

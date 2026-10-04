@@ -237,7 +237,7 @@ describe("Output Quality Gates", () => {
       expect(output).toContain("`repo-harness run verify-sprint`");
       expect(output).not.toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
     }
-    expect(agents).toContain(".ai/harness/checks/latest.json");
+    expect(agents).not.toContain(".ai/harness/checks/latest.json");
     expect(agents).toContain("Create a plan file for follow-up work only when the plan rule requires one");
     expect(claude).toContain(".ai/harness/active-plan");
     expect(claude).toContain(".ai/harness/active-worktree");

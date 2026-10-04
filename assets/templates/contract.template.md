@@ -50,10 +50,9 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Deferred-goal ledger: `tasks/todos.md`
 - Review file: `{{REVIEW_FILE}}`
 - Notes file: `{{NOTES_FILE}}`
-- Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: run the checks in the Verification Plan, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+- Completion gate: run the checks in the Verification Plan, run `repo-harness run change-assessment prepare --contract <contract>` from the execution repository before semantic review, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
 
 ## Change Assessment
 
@@ -148,8 +147,8 @@ exit_criteria:
 ```
 
 Author the actual checks using [Testing Policy and Artifact Standards](../../docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards).
-The empty array is not permission to omit required repository checks: retain it
-only when no executable criterion applies and explain why in Acceptance Notes.
+The empty array is draft data. It cannot prove execution acceptance.
+Declare actual checks before execution acceptance.
 Prefer existing covering tests; creating a task-named test or adding typecheck
 is not a template requirement. For each selected check declare `id`, `kind`,
 `cwd`, `phase`, `cost`, `evidence_policy`, `necessity`, `inputs.env`, and its

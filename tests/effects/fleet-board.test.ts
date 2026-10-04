@@ -117,8 +117,7 @@ function createReviewingProviderFixture(
     const receipt = buildPublicationReceipt({
       repo_id: repoId, task_id: taskId, task_revision: taskRevision, claim_id: claimId, generation: 1,
       target_ref: 'main', base_sha: base, branch: 'codex/fleet-provider', head_sha: head, tree_sha: tree,
-      review_subject_sha256: `sha256:${'1'.repeat(64)}`,
-      verification_evidence_sha256: `sha256:${'2'.repeat(64)}`,
+      candidate_diff_fingerprint: `sha256:${'1'.repeat(64)}`,
       merge_seal_sha256: `sha256:${'3'.repeat(64)}`,
       provider: 'github', provider_repo_id: 'R_fleet_provider', pr_number: index + 1,
       pr_url: `https://example.invalid/pr/${index + 1}`, created_at: '2026-08-23T00:00:00.000Z',

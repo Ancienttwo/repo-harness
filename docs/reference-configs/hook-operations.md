@@ -152,7 +152,7 @@ snapshot shares Stop's `run-` prefix, and a missing verification record makes
 `baseline_with_delta` criterion permanently because a rerun only mints a new
 execution id. Retention therefore never reasons about what to keep: it deletes
 only records with Stop's own run-summary shape -- a `run_id` plus
-`checks_file`, `handoff_file`, `policy_file`, and `context_map_file`, every one
+`handoff_file`, `policy_file`, and `context_map_file`, every one
 a pointer the next Stop recomputes -- and leaves every other shape to its owner.
 The shape, not `reason`: that field is free-form operator text.
 

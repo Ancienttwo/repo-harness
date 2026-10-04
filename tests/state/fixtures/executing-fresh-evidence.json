@@ -16,10 +16,10 @@
     "state_version": 3,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:d47a6db34690d8f06c48754bcfebc48cd85231cd31268fedf43f67222a3afd2e",
-    "evidence_revision": "sha256:5f586921b92ee1360adb134c92b95604e57580f977d10ff3c3db6277417aa925",
+    "subject_revision": "sha256:4459ef309e345480baa948b4d9aa3218e602b5222c8e833ebed2271c4369b324",
+    "evidence_revision": "sha256:<dynamic:evidence_revision>",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:5ea59b9cae7e4fa4fe8cc17184ff761ab503aab92ec995383ae2c58cda0c7578",
+    "progress_token": "sha256:<dynamic:progress_token>",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -59,34 +59,41 @@
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
       ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
-      ".ai/harness/checks/latest.json": "sha256:993a2a3c1e8de4f8e8af21e842bbc35a0c0debc0f6db18552cc0271a7c35c655",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
-      ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
+      ".ai/harness/policy.json": "sha256:16d3ad0d134dee7ae6dc15b5dc5b7813bc2d41320f5542f4de8ff95983d3346d",
       ".ai/harness/sprint/active-sprint": "sha256:a9f63c09a80ac033d6c3c3a1078aa2e85f5e192e87ccc51506a382e7ea180aa5",
       "plans/plan-20260712-2327-effective-fixture.md": "sha256:b2320675859fb4584b5602730cf3c21388f92b26d360c6fefff820b331395d50",
-      "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:de393bedcbc7440719eacbf5a7c660f7e6eb49b59d6b76a1ac67d32d762f6215",
+      "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:38d9a3ec85ca2b4cb4343e067c9797dbabaf8f2c308529a5ce4d92609c5a3c16",
       "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
-      "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:1df85c5627c25fe5876c0c245e1940dafe5f61f5dee5aa317fd810b68b8f759e",
-      "review_subject": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
-      "authority_revision": "sha256:<dynamic:authority_revision>"
+      "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:8e468d1ce0e7b5afdfcc355be64578106fac1f9b31184e74ca905b4a05e58e88",
+      "review_subject": "sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183",
+      "authority_revision": "sha256:<dynamic:authority_revision>",
+      "evidence_revision": "sha256:<dynamic:evidence_revision>"
     },
     "review": {
       "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
       "freshness": "fresh",
       "recommendation": "pass",
-      "recorded_subject_sha256": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
-      "recorded_target_revision": "bac30e34a2b4f987a16eb85c3000de8cce37f32c"
+      "recorded_subject_sha256": "sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183",
+      "recorded_target_revision": "4772d6f8ee4c4a4e077f7e0d28409de8c9aa459a"
     },
     "external_acceptance": {
-      "path": ".ai/harness/checks/latest.json",
+      "path": "<acceptance-receipt>",
       "freshness": "fresh",
-      "status": "external_pass"
+      "status": "user_waiver"
     },
     "checks": {
-      "path": ".ai/harness/checks/latest.json",
+      "path": null,
       "freshness": "fresh",
-      "status": "pass"
+      "status": "passed",
+      "reason": null,
+      "result_refs": [
+        {
+          "execution_id": "<execution-id>",
+          "run_file": ".ai/harness/runs/<execution-run>.json"
+        }
+      ]
     },
     "active_sprint": {
       "path": null,

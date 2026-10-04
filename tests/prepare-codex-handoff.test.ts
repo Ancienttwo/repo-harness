@@ -22,14 +22,12 @@ describe("prepare-codex-handoff helper integration", () => {
     try {
       copyHelpers(cwd);
       mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
-      mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(cwd, ".ai/hooks/lib/workflow-state.sh")
       );
       writeFileSync(join(cwd, "AGENTS.md"), "# AGENTS\n");
-      writeFileSync(join(cwd, ".ai/harness/checks/latest.json"), "{}\n");
       writeFileSync(
         join(cwd, "tasks/todos.md"),
         "# Deferred Goal Ledger\n\n> **Status**: Backlog\n> **Updated**: test\n> **Scope**: Medium/long-term goals deferred from active plan execution\n\n## Deferred Goals\n\n| Goal | Why Deferred | Tradeoff | Revisit Trigger |\n|------|--------------|----------|-----------------|\n"
@@ -53,6 +51,7 @@ describe("prepare-codex-handoff helper integration", () => {
       const global = readFileSync(join(codexHome, "handoffs", handoffs[0]), "utf-8");
       expect(global).toContain("Filesystem-first fallback handoffs");
       expect(global).toContain("### Repo Handoff");
+      expect(global).not.toContain(".ai/harness/checks/latest.json");
       expect(global).not.toContain("context_budget");
       expect(global).not.toContain("### Context Budget");
     } finally {

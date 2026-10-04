@@ -276,7 +276,7 @@ flowchart TD
   PostHooks --> ArchQueue["Architecture queue<br/>architecture-queue.sh record/reindex<br/>check-architecture-sync.sh"]
   ArchQueue --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
-  Verify --> Checks["Structured evidence<br/>.ai/harness/checks/latest.json<br/>.ai/harness/runs/*.json"]
+  Verify --> Checks["Structured evidence<br/>.ai/harness/evidence/events/log.jsonl<br/>.ai/harness/runs/*.json"]
   Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
   CheckReview --> External["External acceptance advice<br/>or explicit manual override"]
   External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
@@ -486,7 +486,7 @@ Index-stale、CodeGraph-down 和 rollback 操作见
 先看 `tasks/reviews/<task>.review.md`。它的 `## Human Review Card` 是一屏决策面：
 verdict、change type、intended vs actual files、commands passed、external
 acceptance、residual risk、reviewer action、rollback。然后再检查 active contract、
-`.ai/harness/checks/latest.json` 里的最新 trace，以及实际改动的文件。只有当 review
+Verification Plan execution records 里的最新 trace，以及实际改动的文件。只有当 review
 建议 pass、card 的 verdict 是 pass，且 external acceptance 是 pass、`not_required`
 或明确的 override 时，才能接受这次交付。
 
@@ -500,7 +500,7 @@ Agent 会先读 source artifact，再读派生出来的摘要：
 | 当前用户 prompt 和引用的文件 | `tasks/reviews/<task>.review.md` 的 Human Review Card |
 | `AGENTS.md` / `CLAUDE.md` | 改动的文件和 diff |
 | `.ai/harness/active-plan` 里的 active plan | Active contract 的 allowed paths 和 exit criteria |
-| `tasks/contracts/` 里的 active contract | `.ai/harness/checks/latest.json` 和 run trace |
+| `tasks/contracts/` 里的 active contract | Verification Plan execution records 和 run trace |
 | `.ai/harness/handoff/` 里的最新 handoff | 残余风险和 rollback |
 
 `tasks/current.md` 是一份被 ignore 的本地 orientation snapshot，不是 tracked 文件。

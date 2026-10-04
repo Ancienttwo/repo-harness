@@ -2,15 +2,23 @@
   "schema": "repo-harness-epc-retired-surfaces.v1",
   "generated_by": "EPC-09 Program closeout (drift + residue deliverable)",
   "description": "Checked-in enumeration of every writer/placeholder retired by EPC-05/07/08's authority cutovers (R5: same-package cutover). tests/evidence-residue-scan.test.ts consumes this file directly -- the enumerated surface and the scan that checks it cannot drift apart. scan_roots/scan_extensions bound the sweep; each surface's own patterns must return zero hits outside its documented allowed_exceptions.",
-  "scan_roots": ["src", "scripts", ".ai/hooks", "assets"],
-  "scan_extensions": [".ts", ".sh"],
+  "scan_roots": [
+    "src",
+    "scripts",
+    ".ai/hooks",
+    "assets"
+  ],
+  "scan_extensions": [
+    ".ts",
+    ".sh"
+  ],
   "surfaces": [
     {
       "id": "verify-sprint-direct-cp",
       "surface": "scripts/verify-sprint.sh direct checks/latest.json authoring via cp",
       "retiring_package": "EPC-05",
       "retired_at_pr": "#121",
-      "description": "verify-sprint.sh used to cp its computed checks report straight onto checks/latest.json (both the normal-path report and the finalize-acceptance path). checks/latest.json is now materialized exclusively from the evidence ledger by src/effects/evidence/checks-materializer.ts via its single call site scripts/emit-verify-evidence.ts.",
+      "description": "The direct checks report writer is retired. The old emitter and materializer are also removed. Declared checks use native execution records.",
       "patterns": [
         "cp\\s+\"\\$checks_report\"\\s+\"\\$checks_file\"",
         "cp\\s+\"\\$finalized_checks\"\\s+\"\\$checks_file\""
@@ -22,7 +30,7 @@
       "surface": "workflow_ensure_harness_surface's {} placeholder bootstrap for checks/latest.json",
       "retiring_package": "EPC-05",
       "retired_at_pr": "#121",
-      "description": "workflow_ensure_harness_surface (.ai/hooks/lib/workflow-state.sh, canonical mirror assets/hooks/lib/workflow-state.sh) used to seed checks/latest.json with a literal {} placeholder whenever the file did not already exist. A missing file is now genuine absence, never a placeholder this library papers over -- see the EPC-05 code comment left in place directly above the deletion site.",
+      "description": "The placeholder bootstrap is retired. Missing native execution evidence never passes.",
       "patterns": [
         "printf \"\\{\\}\\\\\\\\n\" > \"\\$\\(workflow_checks_file\\)\""
       ],

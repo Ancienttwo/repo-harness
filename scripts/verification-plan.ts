@@ -66,7 +66,7 @@ async function main(argv: readonly string[]): Promise<number> {
       const unexpected = Object.keys(parsed.values).filter((key) => !["repo", "contract", "report-file"].includes(key));
       if (unexpected.length > 0) throw new Error(`evaluate does not accept: ${unexpected.map((key) => `--${key}`).join(", ")}`);
       const report = execution.evaluateVerificationContract({ repoRoot, contractPath });
-      if (reportFile) execution.writeVerificationExecutionReport(repoRoot, reportFile, report);
+      if (reportFile && report.kind === "verification_execution_report") execution.writeVerificationExecutionReport(repoRoot, reportFile, report);
       writeJson(report);
       return report.passed ? 0 : 1;
     }

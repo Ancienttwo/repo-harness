@@ -14,7 +14,7 @@
 - Task contract done gate: `tasks/contracts/` (legacy name: sprint contract).
 - Evaluator verdicts: `tasks/reviews/`.
 - Implementation notes: `tasks/notes/`.
-- Structured checks: `.ai/harness/checks/latest.json`.
+- Structured checks: Verification Plan execution records.
 - Session handoff: `.ai/harness/handoff/current.md`.
 - Harness policy: `.ai/harness/policy.json`.
 - Context map: `.ai/context/context-map.json`.

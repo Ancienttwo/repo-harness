@@ -159,34 +159,13 @@ workflow_ensure_harness_surface() {
     "tasks/notes" \
     "$(dirname "$(workflow_context_map_file)")" \
     "$(dirname "$(workflow_policy_file)")" \
-    "$(dirname "$(workflow_checks_file)")" \
     "$(dirname "$(workflow_handoff_file)")" \
     "$(dirname "$(workflow_resume_packet_file)")" \
     "$(dirname "$(workflow_failure_log_file)")" \
     "$(dirname "$(workflow_pending_orchestration_file)")" \
     "$(workflow_runs_dir)"
 
-  # EPC-05: no {} bootstrap for checks/latest.json here anymore -- it is now
-  # materialized exclusively from the evidence ledger
-  # (src/effects/evidence/checks-materializer.ts); a missing file is genuine
-  # absence, not a placeholder this library should paper over. Every existing
-  # consumer of workflow_checks_file's content already treats "missing or
-  # empty" as its own fail-closed branch (workflow_checks_pass,
-  # workflow_acceptance_receipt_status, workflow_next_action's `[[ ! -f
-  # "$checks_file" ]]` check above), so removing this bootstrap changes no
-  # consumer's observable pass/fail outcome -- only which message they print.
-  #
-  # EPC-07: the same reasoning now applies to handoff/resume -- this was an
-  # undeclared fifth writer (Phase A inventory finding: any
-  # workflow_append_event/workflow_write_run_summary call, reachable from
-  # unrelated event-logging paths, silently planted a one-line placeholder
-  # here before the real materializer ever ran). Recovery views now render a
-  # typed minimal state even with no checkpoint published yet (see
-  # scripts/recovery-view-cli.ts / src/effects/evidence/recovery-materializer.ts),
-  # so the placeholder is redundant and reintroduces exactly the
-  # silently-satisfied-expectation risk EPC-05 already closed for
-  # checks/latest.json. A missing handoff/resume file is genuine absence
-  # until the single materializer runs.
+  # Recovery materialization owns handoff and resume files. Missing files stay absent.
   [[ -f "$(workflow_failure_log_file)" ]] || : > "$(workflow_failure_log_file)"
   [[ -f "$(workflow_events_file)" ]] || : > "$(workflow_events_file)"
 }
@@ -654,8 +633,7 @@ workflow_cleanup_candidate() {
 }
 
 workflow_next_action() {
-  local active_plan task_state total done next_pending contract_file review_file checks_file checks_error
-  local acceptance_status acceptance_state acceptance_reviewer acceptance_source acceptance_message expected_source
+  local active_plan task_state total done next_pending contract_file review_file checks_error
   local target current_branch slug candidate branch worktree command message
 
   active_plan="$(get_active_plan || true)"
@@ -674,29 +652,18 @@ workflow_next_action() {
 
     contract_file="$(workflow_active_contract || true)"
     review_file="$(workflow_active_review || true)"
-    checks_file="$(workflow_checks_file)"
 
     if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
       printf 'check\t/check\tStage the completed module diff first; then regenerate the active sprint contract and run /check.\n'
       return 0
     fi
 
-    if [[ ! -f "$checks_file" ]]; then
-      expected_source="$(workflow_acceptance_expected_source 2>/dev/null || printf 'the contract reviewer')"
-      printf 'check\t/check\tStage the completed module diff first; run verify-sprint --prepare-acceptance, obtain semantic acceptance via %s, and record the typed AcceptanceReceipt.\n' "$expected_source"
+    if ! checks_error="$(repo-harness run verification-plan evaluate --repo "$PWD" --contract "$contract_file" 2>&1)"; then
+      printf 'check\t/check\tVerification evidence is missing or failed. Declare and execute the Verification Plan. %s\n' "$checks_error"
       return 0
     fi
-
-    acceptance_status="$(workflow_acceptance_receipt_status "$checks_file")"
-    IFS=$'\t' read -r acceptance_state acceptance_reviewer acceptance_source acceptance_message <<< "$acceptance_status"
-    if [[ "$acceptance_state" != "pass" ]]; then
-      expected_source="$(workflow_acceptance_expected_source 2>/dev/null || printf 'the contract reviewer')"
-      printf 'check\t/check\t%s Record a typed AcceptanceReceipt via %s, then run verify-sprint.\n' "${acceptance_message:-AcceptanceReceipt is missing.}" "$expected_source"
-      return 0
-    fi
-
-    if ! checks_error="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
-      printf 'check\t/check\tStage the completed module diff first; then resolve check evidence: %s\n' "$checks_error"
+    if ! checks_error="$(repo-harness run acceptance-receipt inspect-current --contract "$contract_file" 2>&1)"; then
+      printf 'check\t/check\tSemantic acceptance is missing or stale. %s\n' "$checks_error"
       return 0
     fi
 
@@ -1182,9 +1149,6 @@ workflow_active_notes() {
   workflow_preferred_or_legacy_path "${notes_dir}/${stem}.notes.md" "${notes_dir}/${slug}.notes.md"
 }
 
-workflow_checks_file() {
-  workflow_repo_relative_path "$(workflow_policy_get '.harness.checks_file' '.ai/harness/checks/latest.json')" '.ai/harness/checks/latest.json' '.ai/harness/'
-}
 
 workflow_handoff_file() {
   workflow_repo_relative_path "$(workflow_policy_get '.harness.handoff_file' '.ai/harness/handoff/current.md')" '.ai/harness/handoff/current.md' '.ai/harness/'
@@ -1332,7 +1296,6 @@ workflow_write_run_summary() {
       --arg active_contract "${active_contract:-}" \
       --arg active_review "${active_review:-}" \
       --arg active_notes "${active_notes:-}" \
-      --arg checks_file "$(workflow_checks_file)" \
       --arg handoff_file "$(workflow_handoff_file)" \
       --arg policy_file "$(workflow_policy_file)" \
       --arg context_map_file "$(workflow_context_map_file)" \
@@ -1344,7 +1307,6 @@ workflow_write_run_summary() {
         active_contract: $active_contract,
         active_review: $active_review,
         active_notes: $active_notes,
-        checks_file: $checks_file,
         handoff_file: $handoff_file,
         policy_file: $policy_file,
         context_map_file: $context_map_file
@@ -1356,7 +1318,7 @@ workflow_write_run_summary() {
   # record by its shape, so a short fallback would make every jq-less host's
   # summaries permanently unreclaimable.
   cat > "$output_file" <<EOF_RUN
-{"generated_at":"$(workflow_json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")","run_id":"$(workflow_json_escape "$run_id")","reason":"$(workflow_json_escape "$reason")","active_plan":"$(workflow_json_escape "${active_plan:-}")","active_contract":"$(workflow_json_escape "${active_contract:-}")","active_review":"$(workflow_json_escape "${active_review:-}")","active_notes":"$(workflow_json_escape "${active_notes:-}")","checks_file":"$(workflow_json_escape "$(workflow_checks_file)")","handoff_file":"$(workflow_json_escape "$(workflow_handoff_file)")","policy_file":"$(workflow_json_escape "$(workflow_policy_file)")","context_map_file":"$(workflow_json_escape "$(workflow_context_map_file)")"}
+{"generated_at":"$(workflow_json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")","run_id":"$(workflow_json_escape "$run_id")","reason":"$(workflow_json_escape "$reason")","active_plan":"$(workflow_json_escape "${active_plan:-}")","active_contract":"$(workflow_json_escape "${active_contract:-}")","active_review":"$(workflow_json_escape "${active_review:-}")","active_notes":"$(workflow_json_escape "${active_notes:-}")","handoff_file":"$(workflow_json_escape "$(workflow_handoff_file)")","policy_file":"$(workflow_json_escape "$(workflow_policy_file)")","context_map_file":"$(workflow_json_escape "$(workflow_context_map_file)")"}
 EOF_RUN
 }
 
@@ -1508,154 +1470,7 @@ workflow_acceptance_expected_source() {
 # lines and as trailing content after a value, and never end the direct-child
 # scope.
 workflow_contract_evidence_requirement() {
-  local contract_file="${1:-}"
-  local marked line block="" in_block=0
-  # Plain-text sentinels, not control-character escapes: some awk
-  # implementations (e.g. macOS's one-true-awk) parse "\x" hex escapes with a
-  # greedy, variable-length digit count, so "\x01BEGIN\x01" silently corrupts
-  # into garbage because B/E are themselves valid hex digits.
-  local begin_marker="@@workflow_contract_evidence_requirement:begin@@"
-  local end_marker="@@workflow_contract_evidence_requirement:end@@"
-
-  [[ -n "$contract_file" && -f "$contract_file" ]] || return 1
-  # The markers become control records after awk flattens fenced yaml blocks.
-  # Reject either literal in source data before that transformation; otherwise
-  # an exact marker line inside a yaml fence could truncate or restart the
-  # parser stream and hide a conflicting declaration.
-  if grep -Fqx -- "$begin_marker" "$contract_file" || grep -Fqx -- "$end_marker" "$contract_file"; then
-    return 1
-  fi
-  # This parser intentionally accepts only the canonical unquoted contract
-  # keys. A quoted YAML spelling is semantically the same key; accepting an
-  # unquoted declaration while ignoring a quoted duplicate would turn a
-  # contradictory contract into an apparently unambiguous one.
-  if awk '
-    /^```yaml[[:space:]]*$/ { in_block = 1; next }
-    /^```[[:space:]]*$/ && in_block == 1 { in_block = 0; next }
-    in_block == 1 && ($0 ~ /^[[:space:]]*["\047](evidence_requirements|benchmark)["\047][[:space:]]*:/ || $0 ~ /^[[:space:]]*(evidence_requirements|benchmark)[[:space:]]+:/) { found = 1; exit }
-    END { exit found ? 0 : 1 }
-  ' "$contract_file"; then
-    return 1
-  fi
-
-  marked="$(
-    awk -v begin_marker="$begin_marker" -v end_marker="$end_marker" '
-      /^```yaml[[:space:]]*$/ { print begin_marker; in_block = 1; next }
-      /^```[[:space:]]*$/ && in_block == 1 { print end_marker; in_block = 0; next }
-      in_block == 1 { print }
-    ' "$contract_file"
-  )"
-
-  # Pass 1: count every `evidence_requirements:` LINE across all yaml blocks
-  # (not merely how many blocks contain one -- two such lines in a single
-  # block must also fail closed), and remember the single declaring block
-  # plus that line's own indent so pass 2 can compute its direct-child scope.
-  local total_count=0 declaration_block="" er_indent=-1 trimmed block_has_match=0
-  while IFS= read -r line; do
-    if [[ "$line" == "$begin_marker" ]]; then
-      in_block=1
-      block=""
-      block_has_match=0
-      continue
-    fi
-    if [[ "$line" == "$end_marker" ]]; then
-      in_block=0
-      [[ "$block_has_match" -eq 1 ]] && declaration_block="$block"
-      continue
-    fi
-    [[ "$in_block" -eq 1 ]] || continue
-    block+="$line"$'\n'
-    # A `#` only starts a comment when it is the first character on the line
-    # or is preceded by whitespace (standard YAML comment syntax); requiring
-    # `[[:space:]]*` (zero or more) here would strip an inline `#` glued
-    # directly onto a scalar value (e.g. "not_applicable#required"), silently
-    # truncating a malformed value into a valid-looking one instead of
-    # letting it fail the required|not_applicable case match below.
-    trimmed="$(printf '%s' "$line" | sed -E 's/(^|[[:space:]])#.*$//; s/[[:space:]]+$//')"
-    if [[ "$trimmed" =~ ^([[:space:]]*)evidence_requirements:[[:space:]]*$ ]]; then
-      total_count=$((total_count + 1))
-      block_has_match=1
-      er_indent=${#BASH_REMATCH[1]}
-    fi
-  done <<< "$marked"
-
-  [[ "$total_count" -eq 1 ]] || return 1
-
-  # Pass 2: within the single declaring block, scan forward from the
-  # evidence_requirements: line. Comments never end the scope and are never
-  # scope content. The scope ends at the first non-comment line whose indent
-  # is <= the declaring line's own indent. Only a DIRECT child counts:
-  # child_indent is fixed by the first non-comment line seen inside the
-  # scope (whatever indent step the author used), and benchmark: must land
-  # at exactly that indent -- a deeper indent (nested under some other key)
-  # stays in-scope for the dedent-exit check but never itself matches, so
-  # "evidence_requirements: -> other_key: -> benchmark: x" fails closed
-  # (benchmark_count stays 0) instead of being silently accepted.
-  local seen_declaration=0 benchmark_count=0 value="" rest indent child_indent=-1
-  while IFS= read -r line; do
-    # A `#` only starts a comment when it is the first character on the line
-    # or is preceded by whitespace (standard YAML comment syntax); requiring
-    # `[[:space:]]*` (zero or more) here would strip an inline `#` glued
-    # directly onto a scalar value (e.g. "not_applicable#required"), silently
-    # truncating a malformed value into a valid-looking one instead of
-    # letting it fail the required|not_applicable case match below.
-    trimmed="$(printf '%s' "$line" | sed -E 's/(^|[[:space:]])#.*$//; s/[[:space:]]+$//')"
-    [[ "$trimmed" =~ ^([[:space:]]*)(.*)$ ]]
-    indent=${#BASH_REMATCH[1]}
-    rest="${BASH_REMATCH[2]}"
-    [[ -n "$rest" ]] || continue
-
-    if [[ "$seen_declaration" -eq 0 ]]; then
-      if [[ "$indent" -eq "$er_indent" && "$rest" == "evidence_requirements:" ]]; then
-        seen_declaration=1
-      fi
-      continue
-    fi
-
-    if [[ "$indent" -le "$er_indent" ]]; then
-      break
-    fi
-    if [[ "$child_indent" -eq -1 ]]; then
-      child_indent="$indent"
-    fi
-    if [[ "$indent" -eq "$child_indent" ]] && [[ "$rest" =~ ^benchmark:[[:space:]]*(.+)$ ]]; then
-      benchmark_count=$((benchmark_count + 1))
-      value="$(workflow_strip_quotes "${BASH_REMATCH[1]}")"
-    fi
-  done <<< "$declaration_block"
-
-  [[ "$benchmark_count" -eq 1 ]] || return 1
-
-  case "$value" in
-    required|not_applicable)
-      printf '%s' "$value"
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-workflow_acceptance_receipt_status() {
-  local checks_file="${1:-$(workflow_checks_file)}"
-  local status reviewer source message
-  if [[ -z "$checks_file" || ! -s "$checks_file" || ! -x "$(command -v jq 2>/dev/null || true)" ]]; then
-    printf 'missing\t-\t-\tVerified AcceptanceReceipt evidence is missing.\n'
-    return 0
-  fi
-  status="$(jq -r '.acceptance_receipt.status // "missing"' "$checks_file" 2>/dev/null || printf missing)"
-  reviewer="$(jq -r '.acceptance_receipt.reviewer // "-"' "$checks_file" 2>/dev/null || printf -)"
-  source="$(jq -r '.acceptance_receipt.source // "-"' "$checks_file" 2>/dev/null || printf -)"
-  message="$(jq -r '.acceptance_receipt.message // "AcceptanceReceipt is unavailable."' "$checks_file" 2>/dev/null || printf 'AcceptanceReceipt is unavailable.')"
-  printf '%s\t%s\t%s\t%s\n' "$status" "$reviewer" "$source" "$message"
-}
-
-workflow_acceptance_receipt_pass() {
-  local row status
-  row="$(workflow_acceptance_receipt_status "${1:-}")"
-  status="${row%%$'\t'*}"
-  [[ "$status" == "pass" ]]
+  repo-harness run acceptance-receipt evidence-requirement --contract "$1"
 }
 
 workflow_benchmark_evidence_json() {
@@ -1685,139 +1500,6 @@ workflow_benchmark_subject_sha256() {
   local json
   json="$(workflow_benchmark_evidence_json || true)"
   workflow_json_field "$json" "benchmark_subject_sha256"
-}
-
-workflow_benchmark_evidence_checks_match() {
-  local checks_file="$1"
-  local evidence_status="" evidence_recorded="" subject_recorded="" contract_recorded="" evidence_current="" subject_current="" runtime="" row="" requirement=""
-  if command -v jq >/dev/null 2>&1; then
-    evidence_status="$(jq -r '.benchmark_evidence.status // empty' "$checks_file" 2>/dev/null || true)"
-    evidence_recorded="$(jq -r '.benchmark_evidence.report_sha256 // empty' "$checks_file" 2>/dev/null || true)"
-    subject_recorded="$(jq -r '.benchmark_evidence.benchmark_subject_sha256 // empty' "$checks_file" 2>/dev/null || true)"
-    contract_recorded="$(jq -r '.contract.file // .contract // empty' "$checks_file" 2>/dev/null || true)"
-  else
-    if command -v node >/dev/null 2>&1; then runtime="node"
-    elif command -v bun >/dev/null 2>&1; then runtime="bun"
-    else
-      echo "Cannot validate benchmark evidence without jq, node, or bun."
-      return 1
-    fi
-    row="$("$runtime" - "$checks_file" <<'JS_EOF' 2>/dev/null || true
-const fs = require('fs');
-const parsed = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const value = parsed.benchmark_evidence || {};
-const contractValue = parsed.contract;
-const contractFile = typeof contractValue === 'string'
-  ? contractValue
-  : (contractValue && typeof contractValue.file === 'string' ? contractValue.file : '');
-process.stdout.write(`${typeof value.status === 'string' ? value.status : ''}\t${typeof value.report_sha256 === 'string' ? value.report_sha256 : ''}\t${typeof value.benchmark_subject_sha256 === 'string' ? value.benchmark_subject_sha256 : ''}\t${contractFile}`);
-JS_EOF
-)"
-    IFS=$'\t' read -r evidence_status evidence_recorded subject_recorded contract_recorded <<< "$row"
-  fi
-
-  # Applicability is a reviewed contract declaration, not an inference from
-  # report-file presence; an unresolvable declaration fails closed here rather
-  # than falling through to the status-only branches below.
-  requirement="$(workflow_contract_evidence_requirement "$contract_recorded" 2>/dev/null || true)"
-  if [[ -z "$requirement" ]]; then
-    echo "Contract evidence requirement is missing or invalid: ${contract_recorded:-missing}."
-    return 1
-  fi
-
-  case "$evidence_status" in
-    present)
-      if [[ "$requirement" != "required" ]]; then
-        echo "Structured checks record benchmark evidence status present, but the contract declares $requirement."
-        return 1
-      fi
-      # Only invoked on the required+present path: not_applicable must never
-      # trigger the validator, even to compute a fingerprint whose result the
-      # not_applicable branch below wouldn't use -- report presence must not
-      # create a validation requirement by itself, per invariant 1.
-      evidence_current="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
-      subject_current="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
-      if [[ -z "$evidence_recorded" || -z "$subject_recorded" || -z "$evidence_current" || -z "$subject_current" || "$evidence_current" != "$evidence_recorded" || "$subject_current" != "$subject_recorded" ]]; then
-        echo "Structured checks are stale for benchmark evidence (report=${evidence_recorded:-missing}/${evidence_current:-unavailable}, subject=${subject_recorded:-missing}/${subject_current:-unavailable})."
-        return 1
-      fi
-      ;;
-    not_applicable)
-      if [[ "$requirement" != "not_applicable" ]]; then
-        echo "Structured checks record benchmark evidence status not_applicable, but the contract declares $requirement."
-        return 1
-      fi
-      ;;
-    *)
-      echo "Structured checks have invalid or legacy benchmark evidence status: ${evidence_status:-missing}."
-      return 1
-      ;;
-  esac
-}
-
-workflow_checks_pass() {
-  local checks_file="${1:-}"
-  local contract_file="${2:-}"
-  local review_file="${3:-}"
-  local status source exit_code check_contract check_review
-
-  if [[ -z "$checks_file" || ! -s "$checks_file" ]]; then
-    echo "Structured checks file is missing or empty: ${checks_file:-"(none)"}"
-    return 1
-  fi
-
-  if command -v jq >/dev/null 2>&1; then
-    status="$(jq -r '.status // empty' "$checks_file" 2>/dev/null || true)"
-    source="$(jq -r '.source // empty' "$checks_file" 2>/dev/null || true)"
-    exit_code="$(jq -r '.exit_code // empty' "$checks_file" 2>/dev/null || true)"
-    check_contract="$(jq -r '.contract.file // .contract // empty' "$checks_file" 2>/dev/null || true)"
-    check_review="$(jq -r '.review.file // .review // empty' "$checks_file" 2>/dev/null || true)"
-
-    if [[ "$status" != "pass" ]]; then
-      echo "Structured checks are not passing in $checks_file (status=${status:-missing})."
-      return 1
-    fi
-    if [[ "$source" != "verify-sprint" ]]; then
-      echo "Structured checks must come from verify-sprint, got ${source:-missing}."
-      return 1
-    fi
-    if [[ "$exit_code" != "0" ]]; then
-      echo "Structured checks did not record a zero verify-sprint exit code (exit_code=${exit_code:-missing})."
-      return 1
-    fi
-    if [[ -n "$contract_file" && "$check_contract" != "$contract_file" ]]; then
-      echo "Structured checks are stale for contract ${check_contract:-missing}; expected $contract_file."
-      return 1
-    fi
-    if [[ -n "$review_file" && "$check_review" != "$review_file" ]]; then
-      echo "Structured checks are stale for review ${check_review:-missing}; expected $review_file."
-      return 1
-    fi
-    workflow_benchmark_evidence_checks_match "$checks_file" || return 1
-    return 0
-  fi
-
-  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"pass"' "$checks_file"; then
-    echo "Structured checks are not passing in $checks_file."
-    return 1
-  fi
-  if ! grep -Eq '"source"[[:space:]]*:[[:space:]]*"verify-sprint"' "$checks_file"; then
-    echo "Structured checks must come from verify-sprint."
-    return 1
-  fi
-  if ! grep -Eq '"exit_code"[[:space:]]*:[[:space:]]*0' "$checks_file"; then
-    echo "Structured checks did not record a zero verify-sprint exit code."
-    return 1
-  fi
-  if [[ -n "$contract_file" ]] && ! grep -Fq "\"file\":\"$contract_file\"" "$checks_file" && ! grep -Fq "\"file\": \"$contract_file\"" "$checks_file"; then
-    echo "Structured checks do not reference current contract $contract_file."
-    return 1
-  fi
-  if [[ -n "$review_file" ]] && ! grep -Fq "\"file\":\"$review_file\"" "$checks_file" && ! grep -Fq "\"file\": \"$review_file\"" "$checks_file"; then
-    echo "Structured checks do not reference current review $review_file."
-    return 1
-  fi
-  workflow_benchmark_evidence_checks_match "$checks_file" || return 1
 }
 
 workflow_contract_allows_path() {

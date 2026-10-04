@@ -12,6 +12,8 @@ import {
 } from "fs";
 import { join } from "path";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
+import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
+import { nativeVerificationPlan } from "./state/effective-state-fixture";
 
 // Regression guard for the squash-merge absorption predicate in the cleanup
 // branch of `scripts/contract-worktree.sh`. See:
@@ -71,6 +73,50 @@ function copyHelpers(cwd: string) {
 }
 
 describe("contract-worktree cleanup squash-merge absorption", () => {
+  test("cleanup preserves an ignored native ledger and executed run until retention exists", () => {
+    const cwd = tmpWorkspace("cleanup-native-evidence");
+    const worktreePath = `${cwd}-wt-native-evidence`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/worktrees/\n.ai/harness/evidence/\n.ai/harness/runs/\n");
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      const contract = "tasks/contracts/native.contract.md";
+      writeFileSync(join(cwd, contract), "# Native Contract\n" + nativeVerificationPlan());
+      writeFileSync(join(cwd, "feature.txt"), "fixture\n");
+      commitAll(cwd, "native cleanup fixture");
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/native-evidence"], cwd).status).toBe(0);
+      const report = executeVerificationContract({ repoRoot: worktreePath, contractPath: contract });
+      expect(report.passed).toBe(true);
+      if (report.kind !== "verification_execution_report") throw new Error(report.reason);
+      expect(report.results).toHaveLength(1);
+      expect(report.results[0]!.execution).toBe("executed");
+      const runPath = join(worktreePath, report.results[0]!.run_file!);
+      const ledgerPath = join(worktreePath, ".ai/harness/evidence/events/log.jsonl");
+      const runBytes = readFileSync(runPath, "utf8");
+      const ledgerBytes = readFileSync(ledgerPath, "utf8");
+      expect(ledgerBytes.length).toBeGreaterThan(0);
+      expect(run("git", ["status", "--porcelain"], worktreePath).stdout).toBe("");
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      const metadataPath = join(cwd, ".ai/harness/worktrees/native-evidence.json");
+      const metadata = '{"slug":"native-evidence"}\n';
+      writeFileSync(metadataPath, metadata);
+      for (const dryRun of [true, false]) {
+        const result = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "native-evidence", ...(dryRun ? ["--dry-run"] : [])], cwd);
+        expect(result.status, result.stdout + result.stderr).toBe(1);
+        expect(result.stderr).toContain("native verification evidence retention is unavailable");
+        expect(existsSync(worktreePath)).toBe(true);
+        expect(readFileSync(runPath, "utf8")).toBe(runBytes);
+        expect(readFileSync(ledgerPath, "utf8")).toBe(ledgerBytes);
+        expect(readFileSync(metadataPath, "utf8")).toBe(metadata);
+        expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/native-evidence"], cwd).status).toBe(0);
+      }
+    } finally {
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   for (const blockedFirst of [true, false]) {
     for (const refusal of ["dirty", "locked", "unreadable"]) {
       for (const dryRun of [false, true]) {

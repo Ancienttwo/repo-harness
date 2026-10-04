@@ -1,5 +1,11 @@
-import { artifactRepairPath } from '../../core/state/artifact-repair';
-import { readFileSync, readdirSync, realpathSync, statSync } from 'fs';
+import {
+  acceptanceReceiptPath,
+  inspectAcceptanceCurrentBinding,
+  inspectAcceptanceEvidence,
+} from '../../../scripts/acceptance-receipt';
+import { evaluateVerificationContract } from '../evidence/verification-execution';
+import type { EffectiveStateInputs } from '../../core/state/project-effective-state';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { isAbsolute, posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
@@ -293,7 +299,6 @@ const ACTIVE_SPRINT_MARKER = '.ai/harness/sprint/active-sprint';
 const HANDOFF_PATH = '.ai/harness/handoff/current.md';
 const RESUME_PATH = '.ai/harness/handoff/resume.md';
 const CURRENT_SNAPSHOT_PATH = 'tasks/current.md';
-const CHECKS_PATH = '.ai/harness/checks/latest.json';
 
 /**
  * `source_hashes` keys the stability contract's re-read comparison ignores:
@@ -308,7 +313,7 @@ const CHECKS_PATH = '.ai/harness/checks/latest.json';
  */
 const NON_AUTHORITY_SOURCE_HASH_KEYS: ReadonlySet<string> = new Set([
   'review_subject',
-  CHECKS_PATH,
+  'evidence_revision',
   CURRENT_SNAPSHOT_PATH,
   HANDOFF_PATH,
   RESUME_PATH,
@@ -644,9 +649,70 @@ function resolveEffectiveStateUnlocked(
   const reviewPath = planPath ? deriveReviewPath(planPath, planText, contractText) : null;
   const reviewText = readText(cwd, reviewPath);
   const reviewSubjectSha256 = reviewSubject.status === 'ok' ? reviewSubject.review_subject_sha256 : null;
-  const checksText = readText(cwd, CHECKS_PATH);
-  const repairPath = artifactRepairPath(checksText);
-  const artifactRepairText = readText(cwd, repairPath);
+  // One execution evaluation per unlocked collection. The owner returns
+  // missing/empty plans before tree capture. This path never runs commands.
+  let verification: EffectiveStateInputs['verification'] = {
+    freshness: 'missing', status: null, reason: 'missing_contract', resultRefs: [],
+  };
+  let acceptance: EffectiveStateInputs['acceptance'] = {
+    path: null, freshness: planPath && contractText ? 'missing' : 'not_applicable', disposition: null,
+  };
+  let executionFingerprint = sha256('missing:execution');
+  let assessmentFingerprint = sha256('missing:assessment');
+  let acceptanceFingerprint = sha256('missing:acceptance');
+  const authorityHome = process.env.HOME;
+  if (contractPath && contractText) {
+    try {
+      const outcome = evaluateVerificationContract({ repoRoot: cwd, contractPath });
+      executionFingerprint = sha256(JSON.stringify(outcome));
+      if (outcome.kind === 'verification_unavailable') {
+        verification = { freshness: 'missing', status: outcome.status, reason: outcome.reason, resultRefs: [] };
+      } else {
+        const relationValid = markdownHeader(contractText, 'Plan') === planPath
+          && !conflictingSources.includes('plan_contract_relationship')
+          && !conflictingSources.includes('contract_plan_relationship');
+        verification = {
+          freshness: relationValid && reviewSubject.status === 'ok'
+            ? outcome.status === 'missing' ? 'missing' : 'fresh'
+            : 'stale',
+          status: outcome.status,
+          reason: null,
+          resultRefs: outcome.results.map(({ execution_id, run_file }) => ({ execution_id, run_file })),
+        };
+        if (outcome.passed && relationValid && reviewSubject.status === 'ok') {
+          try {
+            const evidence = inspectAcceptanceEvidence({
+              root: cwd, contract: contractPath, contractContent: contractText,
+              report: outcome, subject: reviewSubject, current: true,
+            });
+            assessmentFingerprint = evidence.fingerprint;
+            try {
+              if (!authorityHome) throw new Error('Acceptance authority HOME is unavailable');
+              const receipt = inspectAcceptanceCurrentBinding({
+                root: cwd, authorityHome,
+                contract: contractPath, subject: reviewSubject, evidence,
+              });
+              acceptance = {
+                path: acceptanceReceiptPath(cwd, authorityHome),
+                freshness: 'fresh', disposition: receipt.disposition,
+              };
+              acceptanceFingerprint = sha256(JSON.stringify(receipt));
+            } catch (error) {
+              const path = authorityHome ? acceptanceReceiptPath(cwd, authorityHome) : null;
+              acceptance = { path, freshness: path ? existsSync(path) ? 'stale' : 'missing' : 'unavailable', disposition: null };
+              acceptanceFingerprint = sha256(String(error));
+            }
+          } catch (error) {
+            verification = { ...verification, freshness: 'stale', reason: String(error) };
+            assessmentFingerprint = sha256(String(error));
+          }
+        }
+      }
+    } catch (error) {
+      verification = { freshness: 'unavailable', status: null, reason: String(error), resultRefs: [] };
+      executionFingerprint = sha256(String(error));
+    }
+  }
   const sprintPath = readTrimmed(cwd, ACTIVE_SPRINT_MARKER);
   const taskId = planPath ? artifactStemFromPlan(planPath, planText) : null;
 
@@ -674,8 +740,9 @@ function resolveEffectiveStateUnlocked(
     target_rev: reviewSubject.status === 'ok' ? sha256(reviewSubject.target_rev) : sha256('unavailable:target-rev'),
   });
   const evidenceRevision = contentRevision({
-    ...(repairPath ? { artifact_repair: artifactRepairText !== null ? sha256(artifactRepairText) : sha256('missing:artifact-repair') } : {}),
-    checks: checksText !== null ? sha256(checksText) : sha256('missing:checks'),
+    execution: executionFingerprint,
+    assessment: assessmentFingerprint,
+    acceptance: acceptanceFingerprint,
     review: reviewText !== null ? sha256(reviewText) : sha256('missing:review'),
     // Bound to the subject: evidence recomputed against a new subject is
     // distinguishable from stale evidence even if checks/review bytes match.
@@ -699,8 +766,6 @@ function resolveEffectiveStateUnlocked(
     ...(planPath ? [planPath] : []),
     ...(contractPath ? [contractPath] : []),
     ...(reviewPath ? [reviewPath] : []),
-    CHECKS_PATH,
-    ...(repairPath ? [repairPath] : []),
     ACTIVE_SPRINT_MARKER,
     ...(sprintPath ? [sprintPath] : []),
     HANDOFF_PATH,
@@ -710,6 +775,7 @@ function resolveEffectiveStateUnlocked(
   const collected = collectStateInputs(cwd, sourcePaths, {
     ...(reviewSubjectSha256 ? { review_subject: reviewSubjectSha256 } : {}),
     authority_revision: authorityRevision,
+    evidence_revision: evidenceRevision,
   });
   const sourceHashes = collected.sourceHashes;
   const stateRevision = collected.stateRevision;
@@ -739,9 +805,8 @@ function resolveEffectiveStateUnlocked(
       targetRevision: reviewSubject.status === 'ok' ? reviewSubject.target_rev : null,
       targetOverlapCount: reviewSubject.status === 'ok' ? reviewSubject.target_overlap_count : 0,
     },
-    checksPath: CHECKS_PATH,
-    checksText,
-    artifactRepairText,
+    verification,
+    acceptance,
     sprintPath,
     sprintExists: Boolean(sprintPath && fileExists(cwd, sprintPath)),
     activeWorktreePath: ACTIVE_WORKTREE_MARKER,

@@ -46,7 +46,7 @@ function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
     guidance: null,
     blockers: [],
     allowed_paths: ['src/fixture.ts'],
-    checks: { path: '.ai/harness/checks/latest.json', freshness: 'fresh', status: 'pass' },
+    checks: { path: null, freshness: 'fresh', status: 'passed', reason: null, result_refs: [] },
     authoritative_plan: { path: 'plans/plan-fixture.md', status: 'executing' },
     contract: { path: 'tasks/contracts/fixture.contract.md', status: 'Active', plan: 'plans/plan-fixture.md' },
     active_sprint: { path: null, freshness: 'missing' },

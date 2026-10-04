@@ -49,7 +49,7 @@ export interface VerificationPlan {
 }
 
 export class VerificationPlanValidationError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly reason: "missing_plan" | "invalid_plan" = "invalid_plan") {
     super(message);
     this.name = "VerificationPlanValidationError";
   }
@@ -217,6 +217,9 @@ function hasNonEmptyLegacyExecutableLists(contractText: string): boolean {
 
 export function parseVerificationPlanFromContractText(contractText: string): VerificationPlan {
   const matches = [...contractText.matchAll(PLAN_BLOCK)];
+  if (matches.length === 0 && !/^## Verification Plan\s*$/m.test(contractText) && !hasNonEmptyLegacyExecutableLists(contractText)) {
+    throw new VerificationPlanValidationError("contract Verification Plan is missing; contract must contain exactly one ## Verification Plan fenced json block (found 0)", "missing_plan");
+  }
   if (matches.length !== 1) {
     fail(`contract must contain exactly one ## Verification Plan fenced json block (found ${matches.length})`);
   }

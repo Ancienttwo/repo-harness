@@ -62,7 +62,7 @@ import {
   publicationSha256,
   publicationReceiptDigest,
   stablePublicationJson,
-  type PublicationReceiptV1,
+  type PublicationReceiptV2,
 } from '../../core/publication/publication-receipt';
 
 export type FeedbackErrorCode =
@@ -152,7 +152,7 @@ interface ProviderIdentity {
 }
 
 interface CurrentPublicationSnapshot {
-  readonly receipt: PublicationReceiptV1;
+  readonly receipt: PublicationReceiptV2;
   readonly lease_raw: string;
   readonly record: LeaseOwnerRecord;
 }
@@ -261,7 +261,7 @@ function identityBytes(identity: ProviderIdentity): string {
   return JSON.stringify(identity);
 }
 
-function observeIdentity(receipt: PublicationReceiptV1, input: FeedbackObservationInput): ProviderIdentity {
+function observeIdentity(receipt: PublicationReceiptV2, input: FeedbackObservationInput): ProviderIdentity {
   const repo = asObject(ghJson(input, ['repo', 'view', '--json', 'id']), 'provider repository');
   const pr = asObject(ghJson(input, [
     'pr', 'view', String(receipt.pr_number), '--json',
@@ -298,7 +298,7 @@ function requiredMergeability(value: unknown): FeedbackMergeability {
   return value;
 }
 
-function assertStableIdentity(identity: ProviderIdentity, receipt: PublicationReceiptV1): void {
+function assertStableIdentity(identity: ProviderIdentity, receipt: PublicationReceiptV2): void {
   if (identity.head_sha !== receipt.head_sha) {
     throw new FeedbackError('head_moved', 'provider PR head does not match the publication receipt');
   }
@@ -370,7 +370,7 @@ function checkRunState(run: Record<string, unknown>): { readonly status: string;
   return Object.freeze({ status, conclusion });
 }
 
-function checkSuiteIds(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: FeedbackObservationInput): readonly string[] {
+function checkSuiteIds(identity: ProviderIdentity, receipt: PublicationReceiptV2, input: FeedbackObservationInput): readonly string[] {
   const ids: string[] = [];
   let after: string | null = null;
   let pageCount = 0;
@@ -394,7 +394,7 @@ function checkSuiteIds(identity: ProviderIdentity, receipt: PublicationReceiptV1
   return ids;
 }
 
-function failedCheckEvents(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+function failedCheckEvents(identity: ProviderIdentity, receipt: PublicationReceiptV2, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const events: FeedbackEventV1[] = [];
   for (const suiteId of checkSuiteIds(identity, receipt, input)) {
     let after: string | null = null;
@@ -436,7 +436,7 @@ function failedCheckEvents(identity: ProviderIdentity, receipt: PublicationRecei
   return events;
 }
 
-function unresolvedReviewEvents(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+function unresolvedReviewEvents(identity: ProviderIdentity, receipt: PublicationReceiptV2, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const events: FeedbackEventV1[] = [];
   let after: string | null = null;
   let pageCount = 0;
@@ -478,7 +478,7 @@ function unresolvedReviewEvents(identity: ProviderIdentity, receipt: Publication
  * connection itself so each CHANGES_REQUESTED decision is keyed by GitHub's
  * stable review object ID and pagination cannot silently hide another review.
  */
-function changesRequestedReviewEvents(identity: ProviderIdentity, receipt: PublicationReceiptV1, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+function changesRequestedReviewEvents(identity: ProviderIdentity, receipt: PublicationReceiptV2, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const events: FeedbackEventV1[] = [];
   let after: string | null = null;
   let pageCount = 0;
@@ -524,7 +524,7 @@ function changesRequestedReviewEvents(identity: ProviderIdentity, receipt: Publi
  * intake operation repeats this entire observation once when either provider
  * identity read changes; partial pages and unknown enums are never accepted.
  */
-export function observeGitHubFeedback(receipt: PublicationReceiptV1, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+export function observeGitHubFeedback(receipt: PublicationReceiptV2, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const before = observeIdentity(receipt, input);
   const events = [
     ...failedCheckEvents(before, receipt, input),
@@ -688,8 +688,8 @@ export function showGitHubFeedback(input: ShowGitHubFeedbackInput): ShowGitHubFe
   });
 }
 
-function cachedPublicationReceipt(repoRoot: string, publicationId: string, gitBin: string): PublicationReceiptV1 {
-  let receipt: PublicationReceiptV1 | null;
+function cachedPublicationReceipt(repoRoot: string, publicationId: string, gitBin: string): PublicationReceiptV2 {
+  let receipt: PublicationReceiptV2 | null;
   try {
     receipt = readPublicationReceiptCache(repoRoot, publicationId, gitBin);
   } catch (error) {
@@ -1041,7 +1041,6 @@ export interface FeedbackRepairEnvironment {
   readonly gh_bin?: string;
   readonly git_bin?: string;
   readonly merge_seal_path?: string;
-  readonly checks_path?: string;
 }
 
 export interface ReopenFeedbackRepairInput extends FeedbackRepairEnvironment {
@@ -1137,7 +1136,7 @@ function actionableFeedbackFacts(events: readonly FeedbackEventV1[]): {
 
 function materialForPublication(
   repoRoot: string,
-  receipt: PublicationReceiptV1,
+  receipt: PublicationReceiptV2,
   gitBin: string,
 ): FeedbackMaterial {
   const events = readFeedbackEvents(repoRoot, receipt.publication_id, gitBin);
@@ -1278,7 +1277,7 @@ function samePreparedProof(left: RepairDispatchProofV1, right: RepairDispatchPro
 }
 
 interface PreparedRepairDispatch {
-  readonly source: { readonly offer: RepairOfferV1; readonly receipt: PublicationReceiptV1; readonly material: FeedbackMaterial };
+  readonly source: { readonly offer: RepairOfferV1; readonly receipt: PublicationReceiptV2; readonly material: FeedbackMaterial };
   readonly proof: RepairDispatchProofV1;
   readonly recover_successor: boolean;
 }
@@ -1390,7 +1389,7 @@ function trustedSourceReceiptForOffer(
   repoRoot: string,
   offer: RepairOfferV1,
   gitBin: string,
-): PublicationReceiptV1 {
+): PublicationReceiptV2 {
   const receipt = cachedPublicationReceipt(repoRoot, offer.publication_id, gitBin);
   if (offer.task_id !== receipt.task_id) {
     throw new FeedbackError('repair_offer_stale', 'repair offer task does not match the immutable source publication');
@@ -1407,7 +1406,7 @@ function withTrustedSourceTaskLock<T>(
   repoRoot: string,
   offer: RepairOfferV1,
   gitBin: string,
-  run: (receipt: PublicationReceiptV1) => T,
+  run: (receipt: PublicationReceiptV2) => T,
 ): T {
   const located = trustedSourceReceiptForOffer(repoRoot, offer, gitBin);
   return withTaskLock(repoRoot, located.task_id, () => {
@@ -1519,7 +1518,6 @@ export function reopenFeedbackRepair(input: ReopenFeedbackRepairInput): Feedback
         gh_bin: input.gh_bin,
         git_bin: input.git_bin,
         merge_seal_path: input.merge_seal_path,
-        checks_path: input.checks_path,
       });
     } catch (error) {
       return mapLifecycleError(error, 'cannot reopen feedback repair');
@@ -1551,7 +1549,6 @@ export function takeoverFeedbackRepair(input: TakeoverFeedbackRepairInput): Feed
         gh_bin: input.gh_bin,
         git_bin: input.git_bin,
         merge_seal_path: input.merge_seal_path,
-        checks_path: input.checks_path,
       });
     } catch (error) {
       return mapLifecycleError(error, 'cannot take over feedback repair');

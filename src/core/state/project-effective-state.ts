@@ -1,4 +1,3 @@
-import { artifactHash, validArtifactRepair } from './artifact-repair';
 import { createHash } from 'crypto';
 import type {
   WorkflowProfile,
@@ -54,9 +53,17 @@ export interface EffectiveStateInputs {
   readonly reviewPath: string | null;
   readonly reviewText: string | null;
   readonly reviewSubject: EffectiveStateReviewSubject;
-  readonly checksPath: string;
-  readonly checksText: string | null;
-  readonly artifactRepairText?: string | null;
+  readonly verification: {
+    readonly freshness: FreshnessState;
+    readonly status: string | null;
+    readonly reason: string | null;
+    readonly resultRefs: readonly { readonly execution_id: string | null; readonly run_file: string | null }[];
+  };
+  readonly acceptance: {
+    readonly path: string | null;
+    readonly freshness: FreshnessState;
+    readonly disposition: string | null;
+  };
   readonly sprintPath: string | null;
   readonly sprintExists: boolean;
   readonly activeWorktreePath: string;
@@ -140,58 +147,11 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   }
   if (reviewFreshness === 'stale') staleSources.push('review');
 
-  let failureClass: string | null = null;
-  let checksStatus: string | null = null;
-  let checksPlan: string | null = null;
-  let checksFingerprint: string | null = null;
-  let acceptanceStatus: string | null = null;
-  let acceptanceDisposition: string | null = null;
-  if (input.checksText) {
-    try {
-      const checks = JSON.parse(input.checksText) as {
-        status?: unknown;
-        failure_class?: unknown;
-        active_plan?: unknown;
-        review_subject_sha256?: unknown;
-        acceptance_receipt?: { status?: unknown; disposition?: unknown };
-      };
-      failureClass = typeof checks.failure_class === 'string' ? checks.failure_class : null;
-      checksStatus = typeof checks.status === 'string' ? checks.status : null;
-      checksPlan = typeof checks.active_plan === 'string' ? checks.active_plan : null;
-      checksFingerprint = typeof checks.review_subject_sha256 === 'string'
-        ? checks.review_subject_sha256
-        : null;
-      acceptanceStatus = typeof checks.acceptance_receipt?.status === 'string'
-        ? checks.acceptance_receipt.status
-        : null;
-      acceptanceDisposition = typeof checks.acceptance_receipt?.disposition === 'string'
-        ? checks.acceptance_receipt.disposition
-        : null;
-    } catch {
-      staleSources.push('checks');
-    }
-  }
-  const checksFreshness: FreshnessState = !input.checksText
-    ? 'missing'
-    : checksPlan &&
-        input.planPath &&
-        checksPlan === input.planPath &&
-        input.reviewSubject.available &&
-        checksFingerprint === input.reviewSubject.reviewSubjectSha256
-      ? 'fresh'
-      : 'stale';
-
-  const acceptanceApplicable = Boolean(input.planPath && input.contractText);
-  const externalFreshness: FreshnessState = !acceptanceApplicable
-    ? 'not_applicable'
-    : !input.checksText
-      ? 'missing'
-    : checksFreshness === 'fresh' && acceptanceStatus === 'pass' &&
-        (acceptanceDisposition === 'external_pass' || acceptanceDisposition === 'user_waiver')
-      ? 'fresh'
-      : 'stale';
+  const checksStatus = input.verification.status;
+  const checksFreshness = input.verification.freshness;
+  const externalFreshness = input.acceptance.freshness;
   if (externalFreshness === 'stale') staleSources.push('external_acceptance');
-  if (checksFreshness === 'stale' && !staleSources.includes('checks')) staleSources.push('checks');
+  if (checksFreshness === 'stale') staleSources.push('checks');
 
   const sprintFreshness: FreshnessState = !input.sprintPath
     ? 'not_applicable'
@@ -248,26 +208,13 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   const workflowProfile = input.riskResolution.ok ? input.riskResolution.profile : null;
 
   const blockers = conflictingSources.map((source) => `conflict:${source}`);
-  if (checksFreshness === 'fresh' && checksStatus && checksStatus !== 'pass') {
-    blockers.push(failureClass === 'missing_artifact' ? 'checks_artifact_invalid' : 'checks_failed');
+  if (checksFreshness === 'fresh' && checksStatus === 'failed') {
+    blockers.push('checks_failed');
   }
   if (!input.riskResolution.ok) {
     blockers.push(`workflow_profile:${input.riskResolution.code.toLowerCase()}`);
   }
   if (input.capabilityRegistryInvalid) blockers.push('capability_registry:invalid');
-
-  const artifactRepairValid = checksFreshness === 'fresh' && failureClass === 'missing_artifact'
-    && checksStatus !== null && checksStatus !== 'pass' && input.contractPath !== null
-    && input.contractText !== null && input.checksText !== null
-    && validArtifactRepair(input.artifactRepairText, {
-      contract_path: input.contractPath,
-      contract_sha256: artifactHash(input.contractText),
-      checks_sha256: artifactHash(input.checksText),
-      subject_revision: input.subjectRevision,
-    });
-  const artifactRepairAuthorized = artifactRepairValid && input.unsafeEditTargetPathCount === 0
-    && input.editTargetPaths.length > 0
-    && input.editTargetPaths.every(path => path === input.contractPath);
 
   // Progress token: one deterministic content hash over exactly the audit's
   // recipe. It composes revisions and values the resolver/projector already
@@ -310,7 +257,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
         if (input.isolatedContractWorktree) satisfiedRequirements.push('isolated_contract_worktree');
         if (reviewFreshness === 'fresh') satisfiedRequirements.push('fresh_review');
         if (externalFreshness === 'fresh') satisfiedRequirements.push('external_acceptance');
-        if (checksFreshness === 'fresh') {
+        if (checksFreshness === 'fresh' && checksStatus === 'passed') {
           satisfiedRequirements.push('fresh_checks', 'subject_bound_targeted_evidence');
         }
         if (input.reviewSubject.available) satisfiedRequirements.push('candidate_revision_precondition');
@@ -343,7 +290,6 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
             satisfiedRequirements,
             hardBlockers: blockers,
             checksFailedRepairAuthorized,
-            artifactRepairAuthorized,
           },
         });
       })()
@@ -394,13 +340,16 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
       recorded_target_revision: recordedTarget,
     },
     external_acceptance: {
-      path: acceptanceApplicable ? input.checksPath : null,
+      path: input.acceptance.path,
       freshness: externalFreshness,
-      status: acceptanceDisposition,
+      status: input.acceptance.disposition,
     },
-    checks: { path: input.checksPath, freshness: checksFreshness, status: checksStatus,
-      ...(failureClass !== null ? { failure_class: failureClass } : {}),
-      ...(failureClass === 'missing_artifact' ? { artifact_repair: artifactRepairValid ? 'authorized' as const : 'required' as const } : {}),
+    checks: {
+      path: null,
+      freshness: checksFreshness,
+      status: checksStatus,
+      reason: input.verification.reason,
+      result_refs: input.verification.resultRefs,
     },
     active_sprint: { path: input.sprintPath, freshness: sprintFreshness },
     worktree: {

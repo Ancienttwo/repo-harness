@@ -22,7 +22,7 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
   the active plan.
 - Sprint done definitions live in `tasks/contracts/` and `tasks/reviews/`.
 - Structured verification and resumable state live in
-  `.ai/harness/checks/latest.json` and `.ai/harness/handoff/current.md`.
+  Verification Plan execution records and `.ai/harness/handoff/current.md`.
 - `tasks/todos.md` is the deferred-goal ledger; durable progress lives in
   `tasks/workstreams/` and release history in `docs/CHANGELOG.md`.
 - `scripts/check-task-sync.sh` observes the diff.

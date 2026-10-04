@@ -1,12 +1,38 @@
 import { afterEach, expect, test } from 'bun:test';
-import { readFileSync, rmSync } from 'fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
-import { reviewSessionOptions } from '../src/effects/review/generic-review';
+import { reviewSessionOptions, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
+import { acceptanceReceiptPath } from '../scripts/acceptance-receipt';
+import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
 import { ensureSessionDirectory, nextSessionRound, writeSessionArtifact } from '../src/effects/terminal/task-session';
 import { tmpWorkspace, run } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+test('generic review refuses empty and missing plans before any provider starts on every platform', async () => {
+  for (const reason of ['empty_plan', 'missing_plan']) {
+    const { root, home, contract, verification } = seedAcceptanceFixture('gp');
+    roots.push(root, home);
+    const reviewerRepo = join(home, 'reviewer');
+    execFileSync('git', ['-C', root, 'worktree', 'add', '-qb', 'incomplete-plan-reviewer', reviewerRepo]);
+    const file = join(root, contract), source = readFileSync(file, 'utf8');
+    const beforePlan = source.slice(0, source.indexOf('## Verification Plan'));
+    const fence = String.fromCharCode(96).repeat(3);
+    writeFileSync(file, reason === 'empty_plan' ? beforePlan + `## Verification Plan\n\n${fence}json\n{"protocol":1,"checks":[]}\n${fence}\n` : beforePlan);
+    const calls: string[] = [];
+    const effects: ReviewEffects = {
+      owner: () => { calls.push('owner'); throw new Error('provider lookup must not run'); },
+      installation: async () => { calls.push('installation'); throw new Error('provider probe must not run'); },
+      start: async () => { calls.push('start'); throw new Error('provider start must not run'); },
+    };
+    await expect(runReviewRound({ repoRoot: root, contract, verification, reviewerRepo, authorityHome: home,
+      endpoint: { session: 'private-gp', home }, parentPane: 'fixture-owner-pane',
+      admitSession: () => { calls.push('admit'); } }, effects)).rejects.toThrow(reason);
+    expect(calls).toEqual([]);
+    expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
+  }
+}, 60_000);
 const identity = { request_id: 'r', context_sha256: 'domain-context', subject_sha256: 'subject', actual_harness: 'claude' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-model' };
 const finding = { id: 'f', severity: 'P1' as const, status: 'new' as const, message: '[fixture opinion] fix the fence' };
 const fail = { ...identity, verdict: 'FAIL', summary: '[fixture opinion] revise', findings: [finding] };

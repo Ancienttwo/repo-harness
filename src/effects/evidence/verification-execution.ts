@@ -8,6 +8,7 @@ import { canonicalize } from "../../core/evidence/canonical-json";
 import type { EvidenceEventRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {
+  VerificationPlanValidationError,
   fingerprintVerificationCheck,
   fingerprintVerificationCheckExecution,
   hashVerificationPlan,
@@ -85,6 +86,17 @@ export interface VerificationExecutionReport {
   readonly evaluation: VerificationEvaluation;
   readonly results: readonly VerificationExecutionResult[];
 }
+
+export interface VerificationUnavailable {
+  readonly kind: "verification_unavailable";
+  readonly status: "missing";
+  readonly passed: false;
+  readonly reason: "missing_plan" | "empty_plan";
+  readonly contract: string;
+  readonly results: readonly [];
+}
+
+export type VerificationContractOutcome = VerificationExecutionReport | VerificationUnavailable;
 
 export interface VerificationContractInput {
   readonly repoRoot: string;
@@ -298,10 +310,19 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
   return { hash, providerId: `verification-execution/${hash}` };
 }
 
-function prepare(input: VerificationContractInput): PreparedContext {
+function prepare(input: VerificationContractInput): PreparedContext | VerificationUnavailable {
   const repoRoot = resolve(input.repoRoot);
   const contract = resolveContract(repoRoot, input.contractPath);
-  const plan = parseVerificationPlanFromContractText(contract.text);
+  let plan: VerificationPlan;
+  try {
+    plan = parseVerificationPlanFromContractText(contract.text);
+  } catch (error) {
+    if (!(error instanceof VerificationPlanValidationError) || error.reason !== "missing_plan") throw error;
+    return { kind: "verification_unavailable", status: "missing", passed: false,
+      reason: "missing_plan", contract: input.contractPath, results: [] };
+  }
+  if (plan.checks.length === 0) return { kind: "verification_unavailable", status: "missing", passed: false,
+    reason: "empty_plan", contract: input.contractPath, results: [] };
   const env = input.env ?? process.env;
   const toolchain = resolveToolchain(env);
   return {
@@ -498,7 +519,7 @@ function payloadOf(repoRoot: string, event: EvidenceEventRecord): ExecutionPaylo
 
 function executionEvents(context: PreparedContext): readonly { event: EvidenceEventRecord; payload: ExecutionPayload }[] {
   return readAcceptedEvents(context.repoRoot).accepted.flatMap((event) => {
-    if (event.event_type !== EVENT_TYPE || event.producer !== PRODUCER) return [];
+    if (event.event_type !== EVENT_TYPE || event.producer !== PRODUCER || event.trust_class !== "authoritative_machine") return [];
     const payload = payloadOf(context.repoRoot, event);
     if (!payload || payload.contract_path !== context.contractPath) return [];
     return [{ event, payload }];
@@ -527,13 +548,22 @@ function readValidRunResult(context: PreparedContext, payload: ExecutionPayload)
   }
 }
 
-function reusableResult(context: PreparedContext, check: VerificationCheck): VerificationExecutionResult | null {
+function currentResult(context: PreparedContext, check: VerificationCheck): VerificationExecutionResult | null {
   const key = cacheKey(context, check);
   const matches = executionEvents(context).filter(({ payload }) => payload.cache_key === key);
   const winner = matches[matches.length - 1];
-  if (!winner || !winner.payload.passed) return null;
+  if (!winner) return null;
   const result = readValidRunResult(context, winner.payload);
-  return result?.passed && result.id === check.id ? { ...result, execution: "reused" } : null;
+  if (!result || result.id !== check.id) return null;
+  if (!result.passed && result.exit_code === 0 && !result.timed_out && result.signal === null) return null;
+  const projected = { ...result, execution: result.passed ? "reused" as const : "executed" as const };
+  const materialized = (redactPayloadStrings({ result: projected } as unknown as JsonValue, collectDenylistSecretValues()) as unknown as { result: VerificationExecutionResult }).result;
+  return matchingImmutableExecution(context, check, materialized, false, true) ? projected : null;
+}
+
+function reusableResult(context: PreparedContext, check: VerificationCheck): VerificationExecutionResult | null {
+  const result = currentResult(context, check);
+  return result?.passed ? result : null;
 }
 
 function priorExecutionExists(context: PreparedContext, check: VerificationCheck): boolean {
@@ -649,17 +679,19 @@ function evaluatePrepared(context: PreparedContext): VerificationExecutionReport
   const current = new Map<string, VerificationExecutionResult>();
   for (const check of context.plan.checks) {
     if (check.evidence_policy !== "current_exact") continue;
-    current.set(check.id, reusableResult(context, check) ?? missingResult(context, check, "current exact execution is missing"));
+    current.set(check.id, currentResult(context, check) ?? missingResult(context, check, "current exact execution is missing"));
   }
   const results = context.plan.checks.map((check) => check.evidence_policy === "current_exact"
     ? current.get(check.id)!
     : baselineResult(context, check, current));
-  return buildReport(context, results, results.every((result) => result.passed) ? "passed" : "missing");
+  return buildReport(context, results, results.every((result) => result.passed) ? "passed"
+    : results.some(result => result.execution === "executed" && !result.passed) ? "failed" : "missing");
 }
 
 /** Read-only evidence evaluation. This function never invokes a check command. */
-export function evaluateVerificationContract(input: VerificationContractInput): VerificationExecutionReport {
-  return evaluatePrepared(prepare(input));
+export function evaluateVerificationContract(input: VerificationContractInput): VerificationContractOutcome {
+  const context = prepare(input);
+  return "kind" in context ? context : evaluatePrepared(context);
 }
 
 function objectValue(value: unknown, field: string): Record<string, unknown> {
@@ -686,8 +718,13 @@ function matchingImmutableExecution(
   check: VerificationCheck,
   result: VerificationExecutionResult,
   requirePass = true,
+  current = false,
 ): boolean {
   return executionEvents(context).some(({ event, payload }) => {
+    if (current && (payload.contract_hash !== context.contractHash
+      || payload.toolchain_hash !== context.toolchainHash
+      || payload.inputs_hash !== declaredEnvironmentHash(check, context.env))) return false;
+    if (payload.contract_hash !== context.contractHash) return false;
     if (payload.plan_hash !== context.planHash
       || payload.check_fingerprint !== fingerprintVerificationCheck(check)
       || payload.execution_spec_hash !== fingerprintVerificationCheckExecution(check)
@@ -716,10 +753,10 @@ function matchingImmutableExecution(
     const stored = readValidRunResult(context, payload);
     if (!stored || (requirePass && !stored.passed)) return false;
     const normalized = { ...result, execution: "executed" as const };
-    const ledgerProjection = redactPayloadStrings(
-      stored as unknown as JsonValue,
+    const ledgerProjection = (redactPayloadStrings(
+      { result: stored } as unknown as JsonValue,
       collectDenylistSecretValues(),
-    );
+    ) as unknown as { result: JsonValue }).result;
     return canonicalize(normalized as unknown as JsonValue) === canonicalize(ledgerProjection);
   });
 }
@@ -739,6 +776,7 @@ interface MaterializedVerificationInput {
   readonly contractText?: string;
   readonly report: unknown;
   readonly env?: NodeJS.ProcessEnv;
+  readonly current?: boolean;
 }
 
 export function validateMaterializedVerificationExecutionReport(input: MaterializedVerificationInput): VerificationExecutionReportValidation {
@@ -767,6 +805,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   const repoRoot = resolve(input.repoRoot);
   const contractText = input.contractText ?? resolveContract(repoRoot, input.contractPath).text;
   const plan = parseVerificationPlanFromContractText(contractText);
+  if (plan.checks.length === 0) throw new Error("verification evidence is unavailable: empty_plan");
   const planHash = hashVerificationPlan(plan);
   if (target.plan_hash !== planHash) throw new Error("verification report plan hash does not match current contract authority");
   const env = input.env ?? process.env;
@@ -817,7 +856,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
       if (result.target !== "current_exact" || (result.execution !== "executed" && result.execution !== "reused")) {
         throw new Error(`verification report exact result has invalid disposition: ${check.id}`);
       }
-      if (!matchingImmutableExecution(context, check, result, requirePass)) {
+      if (!matchingImmutableExecution(context, check, result, requirePass, input.current ?? false)) {
         throw new Error(`verification report exact result is not backed by immutable evidence: ${check.id}`);
       }
     }
@@ -829,10 +868,10 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
     if (!evaluated.passed) {
       throw new Error(`verification report baseline result is not backed by immutable evidence: ${check.id}`);
     }
-    const projectedExpected = redactPayloadStrings(
-      evaluated as unknown as JsonValue,
+    const projectedExpected = (redactPayloadStrings(
+      { result: evaluated } as unknown as JsonValue,
       collectDenylistSecretValues(),
-    );
+    ) as unknown as { result: JsonValue }).result;
     if (canonicalize(result as unknown as JsonValue) !== canonicalize(projectedExpected)) {
       throw new Error(`verification report baseline result was altered: ${check.id}`);
     }
@@ -1043,17 +1082,23 @@ function executeCheck(
   }
 }
 
+/** The existing report writer and direct readers consume the same ledger-safe projection. */
+export function materializeVerificationExecutionReport(report: VerificationExecutionReport): VerificationExecutionReport {
+  return redactPayloadStrings(report as unknown as JsonValue, collectDenylistSecretValues()) as unknown as VerificationExecutionReport;
+}
+
 export function writeVerificationExecutionReport(
   repoRoot: string,
   relativePath: string,
-  report: VerificationExecutionReport,
+  report: VerificationContractOutcome,
 ): void {
+  if (report.kind !== "verification_execution_report") throw new Error(`verification evidence is unavailable: ${report.reason}`);
   const outputPath = isAbsolute(relativePath) ? relativePath : resolve(repoRoot, relativePath);
-  writeFileDurably(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileDurably(outputPath, `${JSON.stringify(materializeVerificationExecutionReport(report), null, 2)}\n`);
 }
 
 /** The only command-spawning Verification Plan effect. */
-export function executeVerificationContract(input: ExecuteVerificationContractInput): VerificationExecutionReport {
+export function executeVerificationContract(input: ExecuteVerificationContractInput): VerificationContractOutcome {
   if (input.forceReason !== undefined && input.forceReason.trim().length === 0) {
     throw new Error("forceReason must be non-empty when provided");
   }
@@ -1061,6 +1106,7 @@ export function executeVerificationContract(input: ExecuteVerificationContractIn
   if (!Number.isSafeInteger(budgetMs) || budgetMs < 1) throw new Error("timeoutMs must be a positive integer");
   const deadlineMs = Date.now() + budgetMs;
   const context = prepare(input);
+  if ("kind" in context) return context;
   const results = new Map<string, VerificationExecutionResult>();
   let waiting = false;
   let needsPlan = false;

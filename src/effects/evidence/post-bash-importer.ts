@@ -10,7 +10,7 @@
  * illegal for every other trust class (frozen D3/D4,
  * `### Frozen decisions (EPC-00, 2026-07-22)`).
  *
- * `src/effects/evidence/verify-producer.ts` (EPC-02) is a pattern
+ * the retired verify producer (EPC-02) is a pattern
  * reference only -- this module does not import from it and keeps its own
  * private git/contract helpers. Per the sprint's R4 wave-qualification
  * rule, parallel evidence producers share no store writer, projection
@@ -95,7 +95,7 @@ export interface PostBashObservationInput {
   /**
    * Repo-relative path to the contract already resolved by the caller.
    * Falls back to `.ai/harness/active-plan` resolution when omitted (same
-   * convention as `src/effects/evidence/verify-producer.ts`).
+   * convention as the retired verify producer).
    */
   readonly contractPath?: string;
 }
@@ -166,7 +166,7 @@ function lastCommitTouching(repoRoot: string, relativePath: string): string | nu
   return sha.length > 0 ? sha : null;
 }
 
-/** `.ai/harness/policy.json#worktree_strategy.review_base` (pattern reference: `verify-producer.ts`'s `resolveReviewBaseRef`). Defaults to `HEAD` so a fixture/standalone repo without a policy file still resolves. */
+/** `.ai/harness/policy.json#worktree_strategy.review_base` (pattern reference: the retired verify producer's `resolveReviewBaseRef`). Defaults to `HEAD` so a fixture/standalone repo without a policy file still resolves. */
 function resolveReviewBaseRef(repoRoot: string): string {
   const policyPath = join(repoRoot, ".ai/harness/policy.json");
   if (!existsSync(policyPath)) return "HEAD";
@@ -218,7 +218,7 @@ function workspaceId(repoRoot: string): string {
   return `ws-${sha256Hex(real).slice(0, 12)}`;
 }
 
-/** Extract the `allowed_paths:` list from the contract's fenced ```yaml block (pattern reference: `verify-producer.ts`'s `parseContractAllowedPaths`). */
+/** Extract the `allowed_paths:` list from the contract's fenced ```yaml block (pattern reference: the retired verify producer's `parseContractAllowedPaths`). */
 function parseContractAllowedPaths(contractText: string): readonly string[] {
   const yamlBlockPattern = /```yaml\r?\n([\s\S]*?)\r?\n```/g;
   let match: RegExpExecArray | null;

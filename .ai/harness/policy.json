@@ -109,7 +109,6 @@
   },
   "harness": {
     "policy_file": ".ai/harness/policy.json",
-    "checks_file": ".ai/harness/checks/latest.json",
     "handoff_file": ".ai/harness/handoff/current.md",
     "failure_log_file": ".ai/harness/failures/latest.jsonl",
     "events_file": ".ai/harness/events.jsonl",
@@ -184,7 +183,6 @@
       "promotion": "archive on workflow close; promote only repeated or durable findings"
     },
     "evidence": {
-      "latest": ".ai/harness/checks/latest.json",
       "snapshots_dir": ".ai/harness/runs",
       "cache_globs": [
         ".ai/harness/checks/*.latest.json",

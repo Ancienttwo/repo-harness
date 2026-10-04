@@ -98,7 +98,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Sprint review: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Current checks: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
@@ -132,7 +132,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 
 ## Handoff
 
-- Checks file: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Session handoff: `.ai/harness/handoff/current.md`
 
 ## Promotion Gate
@@ -166,7 +166,7 @@ PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 > **Plan**: {{PLAN_FILE}}
 > **Contract**: {{CONTRACT_FILE}}
 > **Notes File**: {{NOTES_FILE}}
-> **Checks File**: {{CHECKS_FILE}}
+> **Verification**: Select the native execution report explicitly.
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
 > **Review Rubric Version**: 2
@@ -277,7 +277,7 @@ PI_TEMPLATE_IMPLEMENTATION_NOTES=$(cat <<'EOF_TEMPLATE_IMPLEMENTATION_NOTES'
 
 ## Evidence Links
 
-- Checks: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 
 ## Promotion Candidates
@@ -1534,7 +1534,6 @@ pi_write_harness_policy() {
   },
   "harness": {
     "policy_file": ".ai/harness/policy.json",
-    "checks_file": ".ai/harness/checks/latest.json",
     "handoff_file": ".ai/harness/handoff/current.md",
     "failure_log_file": ".ai/harness/failures/latest.jsonl",
     "events_file": ".ai/harness/events.jsonl",
@@ -1587,7 +1586,6 @@ pi_write_harness_policy() {
       "promotion": "archive on workflow close; promote only repeated or durable findings"
     },
     "evidence": {
-      "latest": ".ai/harness/checks/latest.json",
       "snapshots_dir": ".ai/harness/runs",
       "cache_globs": [".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"],
       "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
@@ -2138,7 +2136,6 @@ pi_ensure_harness_state_surface() {
     "$target_dir/docs/architecture/diagrams" \
     "$target_dir/.ai/harness/runs"
 
-  [[ -f "$target_dir/.ai/harness/checks/latest.json" ]] || printf "{}\n" > "$target_dir/.ai/harness/checks/latest.json"
   [[ -f "$target_dir/.ai/harness/handoff/current.md" ]] || printf "# Harness Handoff\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/current.md"
   [[ -f "$target_dir/.ai/harness/handoff/resume.md" ]] || printf "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/resume.md"
   [[ -f "$target_dir/.ai/context/capability-source-map.json" ]] || printf '{\n  "version": 1,\n  "capabilities": {}\n}\n' > "$target_dir/.ai/context/capability-source-map.json"

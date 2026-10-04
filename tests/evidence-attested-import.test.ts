@@ -20,7 +20,7 @@ import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
 import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
-import { emptyVerificationEvaluation, withEmptyVerificationPlan } from "./helpers/verification-plan-fixture";
+import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
 
 function git(repoRoot: string, args: readonly string[]): string {
   return execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf-8" });
@@ -372,6 +372,7 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
 describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
   const cwdStack: string[] = [];
   const cleanupDirs: string[] = [];
+  const verificationReport = ".ai/harness/runs/attested-import.report.json";
 
   afterEach(() => {
     while (cwdStack.length > 0) process.chdir(cwdStack.pop()!);
@@ -399,38 +400,29 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     return { ...basis, evidence_sha256: `sha256:${createHash("sha256").update(stableJson(basis)).digest("hex")}` };
   }
 
-  function writePassingChecks(root: string): void {
+  function writeNativeVerification(root: string): void {
     const subject = buildReviewSubject(root, { targetRef: "main" });
     expect(subject.status).toBe("ok");
+    const report = executeVerificationContract({
+      repoRoot: root,
+      contractPath: "tasks/contracts/fixture-cli.contract.md",
+      reportFile: verificationReport,
+    });
+    if (report.kind !== "verification_execution_report" || !report.passed) {
+      throw new Error("fixture tracked feature check must execute successfully");
+    }
     writeFileSync(
-      join(root, ".ai", "harness", "checks", "latest.json"),
-      JSON.stringify(
-        {
-          schema: "repo-harness-run-trace.v1",
-          source: "verify-sprint",
-          status: "pass",
-          exit_code: 0,
-          active_plan: "plans/plan-fixture.md",
-          review_subject_sha256: subject.review_subject_sha256,
-          benchmark_evidence: { status: "not_applicable", report_sha256: "not-applicable" },
-          commands: [{ name: "verify-sprint", status: "pass", exit_code: 0 }],
-          guards: [
-            { name: "contract", status: "pass" },
-            { name: "review", status: "pass" },
-            { name: "allowed_paths", status: "pass" },
-            { name: "change_assessment", status: "pass" },
-          ],
-          contract: {
-            file: "tasks/contracts/fixture-cli.contract.md",
-            execution_evaluation: emptyVerificationEvaluation(root, "tasks/contracts/fixture-cli.contract.md"),
-          },
-          review: { file: "tasks/reviews/fixture-cli.review.md" },
-          change_assessment: changeAssessmentEvidence(root),
-        },
-        null,
-        2,
-      ) + "\n",
+      join(root, ".ai/harness/checks/change-assessment.latest.json"),
+      JSON.stringify(changeAssessmentEvidence(root), null, 2) + "\n",
     );
+  }
+
+  function ledgerState(root: string) {
+    return {
+      bytes: readFileSync(join(root, ".ai/harness/evidence/events/log.jsonl")),
+      accepted: readAcceptedEvents(root).accepted,
+      genesis: readGenesisRecord(root),
+    };
   }
 
   /** Real git fixture mirroring tests/acceptance-receipt.test.ts's makeFixture, self-contained here since that file is out of this package's allowed_paths. */
@@ -446,7 +438,7 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     mkdirSync(join(root, "plans"), { recursive: true });
     mkdirSync(join(root, "tasks", "contracts"), { recursive: true });
     mkdirSync(join(root, "tasks", "reviews"), { recursive: true });
-    writeFileSync(join(root, ".gitignore"), ".ai/harness/checks/\n.ai/harness/evidence/\n");
+    writeFileSync(join(root, ".gitignore"), ".ai/harness/checks/\n.ai/harness/evidence/\n.ai/harness/runs/\n");
     writeFileSync(
       join(root, ".ai", "harness", "policy.json"),
       JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2) + "\n",
@@ -456,15 +448,48 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     git(root, ["commit", "-q", "-m", "base"]);
 
     git(root, ["checkout", "-q", "-b", "codex/fixture-cli"]);
+    writeFileSync(join(root, "feature.txt"), "candidate\n");
     writeFileSync(join(root, "plans", "plan-fixture.md"), "# Plan: fixture-cli\n\n> **Status**: Executing\n");
     writeFileSync(
       join(root, "tasks", "contracts", "fixture-cli.contract.md"),
-      withEmptyVerificationPlan([
+      [
         "# Task Contract: fixture-cli",
         "",
         "> **Status**: Active",
         "> **Plan**: plans/plan-fixture.md",
         "> **Owner**: fixture-owner",
+        "",
+        "## Allowed Paths",
+        "",
+        "```yaml",
+        "allowed_paths:",
+        "  - feature.txt",
+        "  - plans/",
+        "  - tasks/",
+        "```",
+        "",
+        "## Evidence Requirements",
+        "",
+        "```yaml",
+        "evidence_requirements:",
+        "  benchmark: not_applicable",
+        "```",
+        "",
+        "## Verification Plan",
+        "",
+        "```json",
+        JSON.stringify({ protocol: 1, checks: [{
+          id: "feature-content",
+          kind: "command",
+          command: 'test "$(cat feature.txt)" = candidate',
+          cwd: ".",
+          phase: "verification",
+          cost: "normal",
+          evidence_policy: "current_exact",
+          necessity: "Read and validate the tracked candidate file.",
+          inputs: { env: [] },
+        }] }),
+        "```",
         "",
         "## Acceptance Policy",
         "",
@@ -478,12 +503,12 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
         '{"protocol":1,"oracles":[]}',
         "```",
         "",
-      ].join("\n")),
+      ].join("\n"),
     );
     writeFileSync(join(root, "tasks", "reviews", "fixture-cli.review.md"), "# Review\n\n> **Recommendation**: pass\n");
     git(root, ["add", "-A"]);
     git(root, ["commit", "-q", "-m", "candidate"]);
-    writePassingChecks(root);
+    writeNativeVerification(root);
 
     return { root, home };
   }
@@ -500,7 +525,7 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
       root,
       authorityHome: home,
       contract: liveContract,
-      verification: ".ai/harness/checks/latest.json",
+      verification: verificationReport,
       disposition: "external_pass",
       reviewer: "Claude",
       source: "generic-review",
@@ -569,12 +594,13 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     process.chdir(root);
 
     const reviewResultFile = join(home, 'fixture-review-result.json');
-    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, contract: 'tasks/contracts/fixture-cli.contract.md', verification: '.ai/harness/checks/latest.json', reviewer: 'Claude', disposition: 'external_pass', summary: 'cli wiring dogfood fixture', findings: [] })));
+    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, contract: 'tasks/contracts/fixture-cli.contract.md', verification: verificationReport, reviewer: 'Claude', disposition: 'external_pass', summary: 'cli wiring dogfood fixture', findings: [] })));
+    const before = ledgerState(root);
     const exitCode = await runAcceptanceReceiptCli(
       [
         "record", "--review-result", reviewResultFile,
         "--contract", "tasks/contracts/fixture-cli.contract.md",
-        "--verification", ".ai/harness/checks/latest.json",
+        "--verification", verificationReport,
         "--disposition", "external_pass",
         "--reviewer", "Claude",
         "--source", "generic-review",
@@ -584,7 +610,12 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     );
     expect(exitCode).toBe(0);
 
-    const { accepted } = readAcceptedEvents(root);
+    const after = ledgerState(root);
+    expect(after.accepted.slice(0, before.accepted.length)).toEqual(Array.from(before.accepted));
+    expect(after.bytes.subarray(0, before.bytes.length)).toEqual(before.bytes);
+    expect(after.genesis).toEqual(before.genesis);
+    const accepted = after.accepted.slice(before.accepted.length);
+    expect(after.accepted.length).toBe(before.accepted.length + 1);
     expect(accepted.length).toBe(1);
     expect(accepted[0]!.trust_class).toBe("external_attested");
     expect(accepted[0]!.event_type).toBe("acceptance_receipt.attested_import");
@@ -596,12 +627,13 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     process.chdir(root);
 
     const reviewResultFile = join(home, 'fixture-review-result.json');
-    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, contract: 'tasks/contracts/fixture-cli.contract.md', verification: '.ai/harness/checks/latest.json', reviewer: 'Claude', disposition: 'reject', summary: 'rejected in cli wiring fixture', findings: [{ severity: 'P1', message: 'blocking issue' }] })));
+    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, contract: 'tasks/contracts/fixture-cli.contract.md', verification: verificationReport, reviewer: 'Claude', disposition: 'reject', summary: 'rejected in cli wiring fixture', findings: [{ severity: 'P1', message: 'blocking issue' }] })));
+    const before = ledgerState(root);
     const exitCode = await runAcceptanceReceiptCli(
       [
         "record", "--review-result", reviewResultFile,
         "--contract", "tasks/contracts/fixture-cli.contract.md",
-        "--verification", ".ai/harness/checks/latest.json",
+        "--verification", verificationReport,
         "--disposition", "reject",
         "--reviewer", "Claude",
         "--source", "generic-review",
@@ -612,7 +644,12 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     );
     // Existing, pre-EPC-04 behavior: reject still exits 1 (unaffected by this package's wiring).
     expect(exitCode).toBe(1);
-    expect(readGenesisRecord(root)).toBeNull();
+    const after = ledgerState(root);
+    expect(after.genesis).toEqual(before.genesis);
+    expect(after.bytes).toEqual(before.bytes);
+    expect(Array.from(after.accepted)).toEqual(Array.from(before.accepted));
+    expect(after.accepted.slice(before.accepted.length)).toHaveLength(0);
+    expect(after.accepted.filter(event => event.event_type === "acceptance_receipt.attested_import")).toHaveLength(0);
   }, 30_000);
 
   test("archived user waiver imports selected contract and leaves projection sealed", async () => {
@@ -621,11 +658,12 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     cwdStack.push(process.cwd());
     process.chdir(root);
 
+    const before = ledgerState(root);
     const exitCode = await runAcceptanceReceiptCli(
       [
         "record",
         "--contract", archivedContract,
-        "--verification", ".ai/harness/checks/latest.json",
+        "--verification", verificationReport,
         "--disposition", "user_waiver",
         "--review", archivedReview,
       ],
@@ -635,7 +673,12 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
 
     const receipt = JSON.parse(readFileSync(acceptanceReceiptPath(root, home), "utf-8"));
     expect(receipt.contract_file).toBe(liveContract);
-    const { accepted } = readAcceptedEvents(root);
+    const after = ledgerState(root);
+    expect(after.accepted.slice(0, before.accepted.length)).toEqual(Array.from(before.accepted));
+    expect(after.bytes.subarray(0, before.bytes.length)).toEqual(before.bytes);
+    expect(after.genesis).toEqual(before.genesis);
+    const accepted = after.accepted.slice(before.accepted.length);
+    expect(after.accepted.length).toBe(before.accepted.length + 1);
     expect(accepted.length).toBe(1);
     expect(accepted[0]!.trust_class).toBe("human_acceptance");
     expect(accepted[0]!.subject_identity.contract_hash).toBe(
@@ -646,7 +689,7 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
       '"kind": "repo-harness-archive-projection-receipt"',
     );
     expect(await runAcceptanceReceiptCli(
-      ["verify", "--contract", archivedContract, "--verification", ".ai/harness/checks/latest.json"],
+      ["verify", "--contract", archivedContract, "--verification", verificationReport],
       { authorityHome: home },
     )).toBe(0);
   }, 30_000);

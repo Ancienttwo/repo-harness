@@ -30,7 +30,7 @@ Record only artifacts selected for this task. Omit unused optional contract, rev
 - Sprint review: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Current checks: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; State resolution does not read `.claude/.active-plan`. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
@@ -64,7 +64,7 @@ Record only artifacts selected for this task. Omit unused optional contract, rev
 
 ## Handoff
 
-- Checks file: `.ai/harness/checks/latest.json`
+- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Session handoff: `.ai/harness/handoff/current.md`
 
 ## Promotion Gate

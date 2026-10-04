@@ -40,7 +40,7 @@ function parseOracle(value: unknown, index: number): DeclaredReviewOracle {
 /**
  * Strict contract parser for the per-work-package oracle declaration. The
  * block is authority owned by the active contract; absent or malformed data is
- * an error at prepare-acceptance rather than an implicit empty-oracle fallback.
+ * an error at acceptance rather than an implicit empty-oracle fallback.
  */
 export function parseChangeAssessmentContract(contractText: string): ChangeAssessmentContract {
   const section = contractText.match(/^## Change Assessment[ \t]*\r?\n+```json[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/m);

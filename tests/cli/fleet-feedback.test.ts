@@ -1,3 +1,4 @@
+import { candidate, helperFingerprint } from '../../scripts/merge-gate';
 import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
@@ -5,7 +6,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
+  realpathSync, readFileSync,
   rmSync,
   writeFileSync,
 } from 'fs';
@@ -58,7 +59,6 @@ const CLI = resolve(import.meta.dir, '../../src/cli/index.ts');
 const CLAIM = 'claim-feedback-cli';
 const SPRINT = 'plans/sprints/feedback-cli.sprint.md';
 const TASK = 'repair provider feedback from CLI';
-const REVIEW_SUBJECT = `sha256:${'3'.repeat(64)}`;
 
 const roots: string[] = [];
 
@@ -140,7 +140,6 @@ interface Fixture {
   readonly generation: number;
   readonly headSha: string;
   readonly baseSha: string;
-  readonly checksPath: string;
   readonly sealPath: string;
 }
 
@@ -166,9 +165,6 @@ function fixture(): Fixture {
   const taskRevision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
   git(root, 'switch', '-c', 'codex/feedback-cli');
   writeFileSync(join(root, 'feature.txt'), 'feedback\n');
-  mkdirSync(join(root, '.ai/harness/checks'), { recursive: true });
-  const checksPath = join(root, '.ai/harness/checks/latest.json');
-  writeFileSync(checksPath, JSON.stringify({ status: 'pass', review_subject_sha256: REVIEW_SUBJECT }) + '\n');
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'add feedback fixture change');
 
@@ -177,11 +173,16 @@ function fixture(): Fixture {
   const treeSha = git(root, 'rev-parse', 'HEAD^{tree}');
   const sealPath = join(root, 'seal.json');
   const sealBytes = `${JSON.stringify({
-    protocol: 1,
+    protocol: 2,
+    repository_root: realpathSync(root),
+    base_ref: 'main',
+    helper_fingerprint: helperFingerprint(root),
+    pr_number: 7,
+    sealed_at: '2026-08-23T06:30:00Z',
     kind: 'repo-harness-merge-seal',
     base_sha: baseSha,
     head_sha: headSha,
-    acceptance_subject_sha256: REVIEW_SUBJECT,
+    diff_fingerprint: candidate(root, 'main').diffFingerprint,
   })}\n`;
   writeFileSync(sealPath, sealBytes);
 
@@ -196,8 +197,7 @@ function fixture(): Fixture {
     branch: 'codex/feedback-cli',
     head_sha: headSha,
     tree_sha: treeSha,
-    review_subject_sha256: REVIEW_SUBJECT,
-    verification_evidence_sha256: publicationSha256(readFileSync(checksPath)),
+    candidate_diff_fingerprint: candidate(root, 'main').diffFingerprint,
     merge_seal_sha256: publicationSha256(sealBytes),
     provider: 'github',
     provider_repo_id: 'R_feedback_cli',
@@ -255,7 +255,6 @@ function fixture(): Fixture {
     generation: 1,
     headSha,
     baseSha,
-    checksPath,
     sealPath,
   };
 }
@@ -291,8 +290,7 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     branch: 'codex/feedback-cli-ambiguous',
     head_sha: source.head_sha,
     tree_sha: source.tree_sha,
-    review_subject_sha256: source.review_subject_sha256,
-    verification_evidence_sha256: source.verification_evidence_sha256,
+    candidate_diff_fingerprint: source.candidate_diff_fingerprint,
     merge_seal_sha256: source.merge_seal_sha256,
     provider: source.provider,
     provider_repo_id: source.provider_repo_id,
@@ -347,7 +345,6 @@ function runCli(fixture: Fixture, args: readonly string[], envOverrides: Record<
       REPO_HARNESS_GH_BIN: fixture.fakeGh,
       REPO_HARNESS_GIT_BIN: 'git',
       REPO_HARNESS_PUBLICATION_SEAL_PATH: fixture.sealPath,
-      REPO_HARNESS_PUBLICATION_CHECKS_PATH: fixture.checksPath,
       GH_BODY_FILE: join(fixture.root, 'pr-body.md'),
       ...envOverrides,
     },
@@ -433,8 +430,7 @@ function prepareCompletionPublication(subject: Fixture) {
     branch: source.branch,
     head_sha: completionHead,
     tree_sha: completionTree,
-    review_subject_sha256: source.review_subject_sha256,
-    verification_evidence_sha256: source.verification_evidence_sha256,
+    candidate_diff_fingerprint: source.candidate_diff_fingerprint,
     merge_seal_sha256: source.merge_seal_sha256,
     provider: source.provider,
     provider_repo_id: source.provider_repo_id,

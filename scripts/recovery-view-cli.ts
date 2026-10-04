@@ -334,7 +334,6 @@ interface WorkflowContext {
   readonly recentCommandsText: string;
   readonly supersedes: string;
   readonly paths: {
-    readonly checks: string;
     readonly handoff: string;
     readonly resume: string;
     readonly policyFile: string;
@@ -348,7 +347,6 @@ interface WorkflowContext {
 function buildContext(repoRoot: string, reason: string, codexHome: string): WorkflowContext {
   const now = new Date();
   const config = policy(repoRoot);
-  const checks = safeHarnessPath(nestedString(config, ["harness", "checks_file"]), ".ai/harness/checks/latest.json");
   const handoff = safeHarnessPath(nestedString(config, ["harness", "handoff_file"]), ".ai/harness/handoff/current.md");
   const resume = safeHarnessPath(nestedString(config, ["handoff_resume", "resume_packet_file"]), ".ai/harness/handoff/resume.md");
   const policyFile = ".ai/harness/policy.json";
@@ -385,7 +383,7 @@ function buildContext(repoRoot: string, reason: string, codexHome: string): Work
     changed,
     recentCommandsText: recentCommands(repoRoot),
     supersedes: supersededPlan(repoRoot),
-    paths: { checks, handoff, resume, policyFile, contextMap, researchDir, todoFile },
+    paths: { handoff, resume, policyFile, contextMap, researchDir, todoFile },
     globalHandoffPath: latestGlobalHandoff(codexHome),
   };
 }
@@ -583,7 +581,6 @@ function renderHandoff(context: WorkflowContext, evidence: Evidence, contractPat
     `- Contract: ${context.artifacts.contract || "(none)"}`,
     `- Review: ${context.artifacts.review || "(none)"}`,
     `- Notes: ${context.artifacts.notes || "(none)"}`,
-    `- Checks: ${context.paths.checks}`,
     `- Resume Packet: ${context.paths.resume}`,
     `- Policy: ${context.paths.policyFile}`,
     `- Context Map: ${context.paths.contextMap}`,
@@ -631,7 +628,6 @@ function renderResume(context: WorkflowContext, evidence: Evidence, contractPath
     `- ${context.paths.todoFile}`,
     `- ${context.artifacts.notes || "(none)"}`,
     `- ${context.paths.researchDir}/`,
-    `- ${context.paths.checks}`,
     "",
     "Conditional first reads:",
     `- Active plan: ${context.artifacts.plan || "(none)"}`,
@@ -650,7 +646,6 @@ function renderResume(context: WorkflowContext, evidence: Evidence, contractPath
     "",
     `- Repo handoff: ${context.paths.handoff}`,
     `- Resume packet: ${context.paths.resume}`,
-    `- Checks: ${context.paths.checks}`,
     `- Todo: ${context.paths.todoFile}`,
     `- Research: ${context.paths.researchDir}/`,
     `- Plan: ${context.artifacts.plan || "(none)"}`,

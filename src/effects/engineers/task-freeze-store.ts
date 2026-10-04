@@ -1,3 +1,6 @@
+import { inspectAcceptanceEvidence } from '../../../scripts/acceptance-receipt';
+import { evaluateVerificationContract } from '../evidence/verification-execution';
+import { markdownHeader, planContractRelationshipConflicts } from '../../core/state/artifact-parsers';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import {
@@ -27,6 +30,7 @@ import {
 import { canonicalEngineerJson } from '../../core/engineers/profile-binding';
 import type { WorkEnvelopeV1 } from '../fleet/acquire';
 import { resolveGitCommonDirectory } from '../git/common-directory';
+import { repoPath } from '../state/collect-state-inputs';
 import { buildReviewSubject, resolvePolicyReviewBase } from '../review/diff-fingerprint';
 import { withTaskLock } from '../state/coordination-lease-store';
 import { readLease } from '../state/coordination-lease-store';
@@ -39,7 +43,6 @@ import {
 import { loadEngineerProfile } from './profile-store';
 
 const FREEZE_ROOT = 'repo-harness/engineers/v1/task-freezes';
-const CHECKS_FILE = '.ai/harness/checks/latest.json';
 const TASK_ID = /^[0-9a-f]{64}$/u;
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 
@@ -115,37 +118,26 @@ function openQuestionsBytes(worktree: string, unitRef: string): { bytes: Buffer;
   return { bytes: Buffer.from(`${section}\n`, 'utf8'), present: section !== '- None.' };
 }
 
-function checksObservation(worktree: string, unitRef: string): { bytes: Buffer; verified: boolean } {
-  const path = join(worktree, CHECKS_FILE);
-  const bytes = regularBytes(path, 'missing\n');
-  if (bytes.equals(Buffer.from('missing\n'))) return { bytes, verified: false };
+function checksObservation(worktree: string, unitRef: string, contractPath: string): { bytes: Buffer; verified: boolean } {
   try {
-    const value = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
-    const contract = value.contract;
-    const changeAssessment = value.change_assessment;
-    const assessment = changeAssessment && typeof changeAssessment === 'object' && !Array.isArray(changeAssessment)
-      ? (changeAssessment as Record<string, unknown>).assessment
-      : null;
+    const plan = regularBytes(repoPath(worktree, unitRef), 'missing\n').toString('utf8');
+    const contract = regularBytes(repoPath(worktree, contractPath), 'missing\n').toString('utf8');
+    if (markdownHeader(contract, 'Plan') !== unitRef
+      || planContractRelationshipConflicts(unitRef, contractPath, plan, contract).length > 0) {
+      return { bytes: Buffer.from('invalid:plan-contract-relation\n'), verified: false };
+    }
+    const report = evaluateVerificationContract({ repoRoot: worktree, contractPath });
+    if (!report.passed) return { bytes: Buffer.from(canonicalEngineerJson(report)), verified: false };
     const base = resolvePolicyReviewBase(worktree);
-    const targetRef = base.ok ? base.targetRef : null;
-    const subject = targetRef === null ? null : buildReviewSubject(worktree, { targetRef });
-    const verified = value.status === 'pass'
-      && !!contract
-      && typeof contract === 'object'
-      && !Array.isArray(contract)
-      && (contract as Record<string, unknown>).file === unitRef.replace(/^plans\/plan-/, 'tasks/contracts/').replace(/\.md$/u, '.contract.md')
-      && !!subject
-      && subject.status === 'ok'
-      && !!assessment
-      && typeof assessment === 'object'
-      && !Array.isArray(assessment)
-      && value.review_subject_sha256 === subject.review_subject_sha256
-      && (assessment as Record<string, unknown>).review_subject_sha256 === subject.review_subject_sha256
-      && (assessment as Record<string, unknown>).target_ref === targetRef
-      && (assessment as Record<string, unknown>).target_revision === subject.target_rev;
-    return { bytes, verified };
-  } catch {
-    return { bytes, verified: false };
+    if (!base.ok) return { bytes: Buffer.from(canonicalEngineerJson(report)), verified: false };
+    const subject = buildReviewSubject(worktree, { targetRef: base.targetRef });
+    if (subject.status !== 'ok') return { bytes: Buffer.from(canonicalEngineerJson(report)), verified: false };
+    const evidence = inspectAcceptanceEvidence({
+      root: worktree, contract: contractPath, contractContent: contract, report, subject, current: true,
+    });
+    return { bytes: Buffer.from(canonicalEngineerJson(evidence)), verified: true };
+  } catch (error) {
+    return { bytes: Buffer.from(canonicalEngineerJson({ unavailable: String(error) })), verified: false };
   }
 }
 
@@ -243,7 +235,7 @@ function readTaskFreezeSnapshot(
   const tree = gitText(worktree, ['rev-parse', 'HEAD^{tree}']);
   const diff = gitBuffer(worktree, ['diff', '--binary', '--no-ext-diff', 'HEAD', '--']);
   const inventory = untrackedInventory(worktree);
-  const checks = checksObservation(worktree, actor.unit_ref);
+  const checks = checksObservation(worktree, actor.unit_ref, envelope.plan.contract_path);
   const hypotheses = openQuestionsBytes(worktree, actor.unit_ref);
   const writerGrant = dependencies.read_writer_grant?.(repoRoot, taskId) ?? null;
   return Object.freeze({

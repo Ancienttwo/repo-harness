@@ -306,7 +306,7 @@ flowchart TD
   PostHooks --> ArchQueue["Architecture queue<br/>architecture-queue.sh record/reindex<br/>check-architecture-sync.sh"]
   ArchQueue --> Verify["Run verification<br/>tests plus repo workflow checks"]
 
-  Verify --> Checks["Structured evidence<br/>.ai/harness/checks/latest.json<br/>.ai/harness/runs/*.json"]
+  Verify --> Checks["Structured evidence<br/>.ai/harness/evidence/events/log.jsonl<br/>.ai/harness/runs/*.json"]
   Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
   CheckReview --> External["External acceptance advice<br/>or explicit manual override"]
   External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
@@ -534,7 +534,7 @@ index-stale・CodeGraph-down・rollback operation は
 `## Human Review Card` が 1 画面の意思決定 surface であり、verdict、change
 type、想定/実際の変更ファイル、通過した commands、external acceptance、残余
 リスク、reviewer action、rollback を載せています。続いて active contract、
-`.ai/harness/checks/latest.json` の最新 trace、変更ファイルを確認します。
+Verification Plan execution records の最新 trace、変更ファイルを確認します。
 review が pass を推奨し、card の verdict が pass で、external acceptance が
 pass・`not_required`・明示的な override のいずれかのときだけ accept します。
 
@@ -549,7 +549,7 @@ Agent は派生した summary より先に、source artifacts を読みます。
 | 現在のユーザー prompt と参照ファイル | `tasks/reviews/<task>.review.md` の Human Review Card |
 | `AGENTS.md` / `CLAUDE.md` | 変更ファイルと diff |
 | `.ai/harness/active-plan` の active plan | active contract の allowed paths と exit criteria |
-| `tasks/contracts/` の active contract | `.ai/harness/checks/latest.json` と run trace |
+| `tasks/contracts/` の active contract | Verification Plan execution records と run trace |
 | `.ai/harness/handoff/` の latest handoff | 残余リスクと rollback |
 
 `tasks/current.md` は ignore されるローカルな orientation snapshot であり、

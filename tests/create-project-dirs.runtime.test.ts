@@ -118,7 +118,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(gitignore).not.toContain("docs/researches");
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/workflow-contract.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/brain-manifest.json"))).toBe(true);
@@ -395,6 +395,7 @@ describe("create-project-dirs runtime smoke", () => {
         report_path: ".ai/harness/checks/minimal-change.latest.json",
         event_dedupe: true,
       });
+      expect(policy.information_lifecycle.evidence.cache_globs).toEqual([".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"]);
       expect(policy.minimal_change.protected_concerns).toContain("security");
       expect(policy.minimal_change.protected_concerns).toContain("tests");
       expect(policy.tasks.notes_dir).toBe("tasks/notes");

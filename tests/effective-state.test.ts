@@ -9,6 +9,8 @@ import {
   writeFileSync,
 } from 'fs';
 import { basename, join } from 'path';
+import { revokeUserWaiverGrant } from '../scripts/acceptance-receipt';
+import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import {
   buildStateSnapshot,
   resolveEffectiveState,
@@ -19,10 +21,97 @@ import {
   PLAN,
   commitFixture,
   createEffectiveStateFixture,
+  makeFreshEvidence,
+  nativeVerificationPlan,
   resolveFixtureState,
   withRepo,
   writeFixture as write,
 } from './state/effective-state-fixture';
+
+describe('native effective-state evidence', () => {
+  test('reads executed facts and refuses a revoked user waiver', () => {
+    withRepo(cwd => {
+      makeFreshEvidence(cwd, Date.now());
+      const fresh = resolveFixtureState(cwd);
+      expect(fresh.checks.path).toBeNull();
+      expect(fresh.checks.status).toBe('passed');
+      expect(fresh.checks.freshness).toBe('fresh');
+      expect(fresh.checks.result_refs?.[0]?.run_file).toStartWith('.ai/harness/runs/');
+      expect(fresh.external_acceptance.freshness).toBe('fresh');
+      expect(fresh.external_acceptance.status).toBe('user_waiver');
+      revokeUserWaiverGrant({ root: cwd, authorityHome: process.env.HOME! });
+      const revoked = resolveFixtureState(cwd);
+      expect(revoked.checks.freshness).toBe('fresh');
+      expect(revoked.external_acceptance.freshness).toBe('stale');
+      expect(revoked.evidence_revision).not.toBe(fresh.evidence_revision);
+      expect(revoked.authority_revision).toBe(fresh.authority_revision);
+    });
+  });
+
+  test('missing, empty, and malformed plans remain non-passing observations', () => {
+    withRepo(cwd => {
+      const original = readFileSync(join(cwd, CONTRACT), 'utf8');
+      const missing = resolveFixtureState(cwd);
+      expect(missing.checks.status).toBe('missing');
+      expect(missing.checks.reason).toBe('missing_plan');
+      expect(missing.checks.freshness).toBe('missing');
+      write(cwd, CONTRACT, original + '\n## Verification Plan\n\n```json\n{"protocol":1,"checks":[]}\n```\n');
+      const empty = resolveFixtureState(cwd);
+      expect(empty.checks.status).toBe('missing');
+      expect(empty.checks.reason).toBe('empty_plan');
+      expect(empty.checks.freshness).toBe('missing');
+      write(cwd, CONTRACT, original + '\n## Verification Plan\n\n```json\n{"protocol":1,"checks":"bad"}\n```\n');
+      const malformed = resolveFixtureState(cwd);
+      expect(malformed.checks.freshness).toBe('unavailable');
+      expect(malformed.checks.status).toBeNull();
+      expect(malformed.checks.reason).toContain('VerificationPlanValidationError');
+      expect(existsSync(join(cwd, '.ai/harness/evidence/events/log.jsonl'))).toBe(false);
+      expect(existsSync(join(cwd, '.ai/harness/runs'))).toBe(false);
+      expect(existsSync(join(cwd, '.ai/harness/checks/latest.json'))).toBe(false);
+    });
+  });
+
+  test('tree churn, plan relation, and direct assessment changes cannot preserve fresh evidence', () => {
+    withRepo(cwd => {
+      makeFreshEvidence(cwd, Date.now());
+      const original = readFileSync(join(cwd, CONTRACT), 'utf8');
+      const fresh = resolveFixtureState(cwd);
+      write(cwd, 'feature.txt', 'unverified\n');
+      const churned = resolveFixtureState(cwd);
+      expect(churned.checks.freshness).toBe('missing');
+      expect(churned.external_acceptance.freshness).not.toBe('fresh');
+      expect(churned.evidence_revision).not.toBe(fresh.evidence_revision);
+      write(cwd, 'feature.txt', 'fixture\n');
+      write(cwd, CONTRACT, original.replace(`> **Plan**: ${PLAN}`, '> **Plan**: plans/plan-other.md'));
+      const mismatch = resolveFixtureState(cwd);
+      expect(mismatch.blockers).toContain('conflict:contract_plan_relationship');
+      expect(mismatch.checks.freshness).toBe('stale');
+      write(cwd, CONTRACT, original);
+      const assessmentPath = '.ai/harness/checks/change-assessment.latest.json';
+      const assessment = JSON.parse(readFileSync(join(cwd, assessmentPath), 'utf8'));
+      assessment.selection_packet.target_revision = '0'.repeat(40);
+      write(cwd, assessmentPath, JSON.stringify(assessment));
+      const stale = resolveFixtureState(cwd);
+      expect(stale.checks.freshness).toBe('stale');
+      expect(stale.external_acceptance.freshness).not.toBe('fresh');
+    });
+  });
+
+  test('a genuine current failed run remains a negative fact', () => {
+    withRepo(cwd => {
+      write(cwd, 'feature.txt', 'wrong\n');
+      write(cwd, CONTRACT, readFileSync(join(cwd, CONTRACT), 'utf8') + nativeVerificationPlan());
+      const result = executeVerificationContract({ repoRoot: cwd, contractPath: CONTRACT });
+      expect(result.passed).toBe(false);
+      expect(result.status).toBe('failed');
+      const state = resolveFixtureState(cwd);
+      expect(state.checks.status).toBe('failed');
+      expect(state.checks.freshness).toBe('fresh');
+      expect(state.blockers).toContain('checks_failed');
+      expect(state.external_acceptance.freshness).not.toBe('fresh');
+    });
+  });
+});
 
 describe('effective state resolver', () => {
   test('fails closed when artifact-derived paths escape the repository', () => {

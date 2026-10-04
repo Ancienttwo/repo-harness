@@ -31,7 +31,7 @@
  * Deleting either evidence class strands an acceptance with no operator exit, so
  * this sweep never reasons about what to keep. It deletes only files whose
  * content is the run-summary record `stop-handler.ts` itself writes: a `run_id`
- * plus the four resolved projection paths. Every field in that record is a
+ * plus the three resolved projection paths. Every field in that record is a
  * pointer recomputed from live policy on the next Stop, which is what makes the
  * record disposable; the other two shapes carry results. Anything else in the
  * directory -- including a shape a fourth writer adds later -- belongs to its
@@ -51,7 +51,7 @@ export const RUN_SUMMARY_RETENTION_COUNT = 200;
 /** The resolved projection paths every run summary carries; see
  * `stop-handler.ts`'s `runSummaryContent` and `workflow_write_run_summary`.
  * Present together only in that record. */
-const STOP_SUMMARY_PATH_FIELDS = ['checks_file', 'handoff_file', 'policy_file', 'context_map_file'] as const;
+const STOP_SUMMARY_PATH_FIELDS = ['handoff_file', 'policy_file', 'context_map_file'] as const;
 
 export interface RunSummaryRetentionInput {
   readonly repoRoot: string;

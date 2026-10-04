@@ -153,7 +153,7 @@ export type UserWaiverGrant = {
   issued_at: string;
 };
 
-type ReviewSubject = {
+export type ReviewSubject = {
   status: 'ok' | 'unknown';
   scope: 'normalized-final-content';
   target_ref: string;
@@ -451,186 +451,148 @@ export function acceptancePolicySource(): 'generic-review' {
   return 'generic-review';
 }
 
-async function currentSubject(root: string, targetRef?: string, targetRevision?: string): Promise<ReviewSubject> {
-  const modulePath = join(PACKAGE_ROOT, 'src', 'effects', 'review', 'diff-fingerprint.ts');
-  const module = await import(pathToFileURL(modulePath).href) as {
-    buildReviewSubject: (repoRoot: string, opts: { targetRef: string; targetRevision?: string }) => ReviewSubject;
-    resolvePolicyReviewBase: (repoRoot: string) => { ok: true; targetRef: string } | { ok: false; reason: string };
-  };
+function currentSubject(root: string, targetRef?: string, targetRevision?: string): ReviewSubject {
+  const module = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/diff-fingerprint.ts')) as typeof import('../src/effects/review/diff-fingerprint');
   const reviewBase = module.resolvePolicyReviewBase(root);
-  if (!reviewBase.ok) fail(`policy review base is unavailable: ${reviewBase.reason}`);
-  if (targetRef !== undefined && targetRef !== reviewBase.targetRef) {
-    fail('AcceptanceReceipt target ref is stale against workflow policy');
-  }
-  const subject = module.buildReviewSubject(root, {
-    targetRef: targetRef ?? reviewBase.targetRef,
-    targetRevision,
-  });
-  if (subject.status !== 'ok' || !/^sha256:[0-9a-f]{64}$/.test(subject.review_subject_sha256)) {
-    fail('current normalized review subject is unavailable');
-  }
+  if (!reviewBase.ok) fail('policy review base is unavailable: ' + reviewBase.reason);
+  if (targetRef !== undefined && targetRef !== reviewBase.targetRef) fail('AcceptanceReceipt target ref is stale against workflow policy');
+  const subject = module.buildReviewSubject(root, { targetRef: targetRef ?? reviewBase.targetRef, targetRevision });
+  if (subject.status !== 'ok' || !/^sha256:[0-9a-f]{64}$/.test(subject.review_subject_sha256)) fail('current normalized review subject is unavailable');
   return subject;
 }
 
-async function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string, contractPath: string, contractContent: string): Promise<{
-  fingerprint: string;
-  benchmark: string;
-}> {
-  let value: unknown;
-  try {
-    value = JSON.parse(content);
-  } catch (error) {
-    fail(`verification evidence is invalid JSON: ${(error as Error).message}`);
-  }
-  if (!isRecord(value)) fail('verification evidence must be an object');
-  if (value.review_subject_sha256 !== subject.review_subject_sha256) fail('verification evidence is stale for the current subject');
-  const declaredContractPath = isRecord(value.contract) && typeof value.contract.file === 'string' ? value.contract.file : null;
-  const activeContractSlug = (path: string): string | null => {
-    const name = basename(path);
-    if (!path.startsWith('tasks/contracts/') || !name.endsWith('.contract.md')) return null;
-    return name.slice(0, -'.contract.md'.length).replace(/^\d{8}-\d{4}-/u, '');
-  };
-  const archivedContractSlug = (path: string): string | null => {
-    const match = /^contract-\d{8}-\d{4}-(.+)\.md$/u.exec(basename(path));
-    return path.startsWith('tasks/archive/') ? (match?.[1] ?? null) : null;
-  };
-  const parsedProjection = parseArchiveProjection(contractContent);
-  const projectedContractSource = parsedProjection?.entries.find((entry) => entry.kind === 'contract')?.source ?? null;
-  const archivedContractProjection = declaredContractPath !== null && (
-    projectedContractSource === declaredContractPath
-    || (parsedProjection === null
-      && archivedContractSlug(contractPath) !== null
-      && archivedContractSlug(contractPath) === activeContractSlug(declaredContractPath))
-  );
-  if (!declaredContractPath || (declaredContractPath !== contractPath && !archivedContractProjection)) {
-    fail('verification evidence contract is stale for the active acceptance contract');
-  }
-  if (value.status !== 'pass' || value.exit_code !== 0 || value.source !== 'verify-sprint') {
-    fail('verification evidence is not a passing verify-sprint result');
-  }
-  if (!Array.isArray(value.commands) || value.commands.some((entry) => !isRecord(entry) || entry.status !== 'pass' || entry.exit_code !== 0)) {
-    fail('verification evidence contains a failing command');
-  }
-  const guards = Array.isArray(value.guards) ? value.guards : [];
-  const guardStatus = (name: string): unknown => {
-    const guard = guards.find((entry) => isRecord(entry) && entry.name === name);
-    return isRecord(guard) ? guard.status : undefined;
-  };
-  for (const name of ['contract', 'review', 'allowed_paths', 'change_assessment']) {
-    if (guardStatus(name) !== 'pass') fail(`verification evidence guard ${name} is not pass`);
-  }
-  if (!isRecord(value.change_assessment) || value.change_assessment.status !== 'pass') {
-    fail('verification evidence change assessment is not passing');
-  }
-  const assessment = value.change_assessment;
-  const assessmentBasis = {
-    schema: assessment.schema,
-    status: assessment.status,
-    assessment: assessment.assessment,
-    selection_packet: assessment.selection_packet,
-  };
-  if (typeof assessment.evidence_sha256 !== 'string' || assessment.evidence_sha256 !== sha256(stableJson(assessmentBasis))) {
-    fail('verification evidence change assessment fingerprint is stale');
-  }
-  const assessmentPath = join(PACKAGE_ROOT, 'src', 'core', 'review', 'change-assessment.ts');
-  const assessmentModule = await import(pathToFileURL(assessmentPath).href) as {
-    validateChangeAssessment: (value: unknown) => {
-      assessment_sha256: string;
-      status: 'ready' | 'blocked';
-    };
-    validateReviewSelectionPacket: (value: unknown) => {
-      status: 'ready' | 'blocked';
-      review_subject_sha256: string;
-      target_ref: string;
-      target_revision: string;
-    };
-    validateReviewSelectionPacketAgainstAssessment: (value: unknown, assessment: unknown) => {
-      status: 'ready' | 'blocked';
-      assessment_sha256: string;
-      review_subject_sha256: string;
-      target_ref: string;
-      target_revision: string;
-    };
-  };
-  const assessmentEffectsPath = join(PACKAGE_ROOT, 'src', 'effects', 'review', 'change-assessment.ts');
-  const assessmentEffects = await import(pathToFileURL(assessmentEffectsPath).href) as {
-    prepareChangeAssessment: (args: { repoRoot: string; contractPath: string; targetRevision?: string }) => {
-      assessment: { status: 'ready' | 'blocked' | 'degraded'; assessment_sha256?: string };
-      packet: unknown;
-    };
-  };
-  let packet: ReturnType<typeof assessmentModule.validateReviewSelectionPacketAgainstAssessment>;
-  try {
-    const declared = assessmentModule.validateChangeAssessment(assessment.assessment);
-    const selfBoundPacket = assessmentModule.validateReviewSelectionPacket(assessment.selection_packet);
-    if (
-      selfBoundPacket.review_subject_sha256 !== subject.review_subject_sha256
-      || selfBoundPacket.target_ref !== subject.target_ref
-      || selfBoundPacket.target_revision !== subject.target_rev
-    ) {
-      fail('verification evidence change assessment packet is stale for the current subject');
+/** The contract owns benchmark applicability. Missing or ambiguous declarations refuse. */
+export function acceptanceBenchmarkRequirement(contractContent: string): 'required' | 'not_applicable' {
+  const blocks = [...contractContent.matchAll(/^\x60\x60\x60yaml[ \t]*\r?\n([\s\S]*?)\r?\n\x60\x60\x60[ \t]*$/gm)];
+  const declarations: unknown[] = [];
+  for (const block of blocks) {
+    const text = block[1]!;
+    // Admit the existing canonical key spelling and reject duplicate data before YAML can overwrite it.
+    if (/^\s*["'](?:evidence_requirements|benchmark)["']\s*:|^\s*(?:evidence_requirements|benchmark)\s+:/m.test(text)
+      || /^\s*(?:---|\.\.\.)\s*$/m.test(text)) fail('contract evidence requirements use an unsupported key or document form');
+    for (const line of text.split(/\r?\n/)) {
+      if (/^\s*evidence_requirements:/.test(line) && !/^\s*evidence_requirements:[ \t]*(?:#[^\n]*)?$/.test(line)) fail('contract evidence requirements must use a canonical block mapping');
+      if (/^\s*benchmark:/.test(line) && !/^\s*benchmark:[ \t]*(["']?)(required|not_applicable)\1[ \t]*(?:#[^\n]*)?$/.test(line)) fail('contract benchmark requirement must use a canonical scalar');
     }
-    const recomputed = assessmentEffects.prepareChangeAssessment({
-      repoRoot: root,
-      contractPath,
-      targetRevision: subject.target_rev,
-    });
-    if (recomputed.assessment.status === 'degraded' || !('assessment_sha256' in recomputed.assessment)) {
-      fail('verification evidence Change Assessment base is unavailable');
-    }
-    if (declared.assessment_sha256 !== recomputed.assessment.assessment_sha256) {
-      fail('verification evidence Change Assessment does not match current base assessment');
-    }
-    packet = assessmentModule.validateReviewSelectionPacketAgainstAssessment(assessment.selection_packet, recomputed.assessment);
-  } catch (error) {
-    fail(`verification evidence change assessment is invalid: ${(error as Error).message}`);
+    const keys = [...text.matchAll(/^\s*(evidence_requirements|benchmark):/gm)].map(match => match[1]);
+    if (keys.filter(key => key === 'evidence_requirements').length > 1 || keys.filter(key => key === 'benchmark').length > 1) fail('contract evidence requirements are ambiguous');
+    let parsed: unknown;
+    try { parsed = Bun.YAML.parse(text); }
+    catch (error) { fail('contract evidence requirements are invalid: ' + (error as Error).message); }
+    if (isRecord(parsed) && Object.hasOwn(parsed, 'evidence_requirements')) declarations.push(parsed.evidence_requirements);
   }
-  if (packet.status !== 'ready' || packet.review_subject_sha256 !== subject.review_subject_sha256 || packet.target_ref !== subject.target_ref || packet.target_revision !== subject.target_rev) {
-    fail('verification evidence change assessment packet is stale for the current subject');
-  }
-  if (!isRecord(assessment.assessment) || assessment.assessment.assessment_sha256 !== packet.assessment_sha256) {
-    fail('verification evidence change assessment does not bind its packet');
-  }
-  const benchmark = isRecord(value.benchmark_evidence) && value.benchmark_evidence.status === 'not_applicable'
-    ? 'not-applicable'
-    : isRecord(value.benchmark_evidence) && typeof value.benchmark_evidence.report_sha256 === 'string'
-      ? value.benchmark_evidence.report_sha256
-      : 'not-applicable';
-  const executionEvaluation = isRecord(value.contract) ? value.contract.execution_evaluation : undefined;
-  const executionModulePath = join(PACKAGE_ROOT, 'src', 'effects', 'evidence', 'verification-execution.ts');
-  const executionModule = await import(pathToFileURL(executionModulePath).href) as {
-    validateMaterializedVerificationExecutionReport: (input: {
-      repoRoot: string;
-      contractPath: string;
-      contractText: string;
-      report: unknown;
-    }) => { valid: true };
-  };
+  if (declarations.length !== 1 || !isRecord(declarations[0])) fail('contract evidence requirements are missing or ambiguous');
+  const requirement = declarations[0].benchmark;
+  if (requirement !== 'required' && requirement !== 'not_applicable') fail('contract benchmark requirement must be required or not_applicable');
+  return requirement;
+}
+
+function verificationReportFile(root: string, requested: string): { path: string; content: string } {
+  if (isAbsolute(requested) || requested.includes('\\') || requested.split('/').some(part => part === '..' || part === '.')
+    || !requested.startsWith('.ai/harness/runs/')) fail('AcceptanceReceipt verification_file is unsafe: use an explicit repository-relative report under .ai/harness/runs/');
+  const absolute = resolve(root, requested);
+  if (!existsSync(absolute)) fail('verification evidence is missing: ' + requested);
+  if (lstatSync(absolute).isSymbolicLink() || !lstatSync(absolute).isFile()
+    || realpathSync(absolute) !== absolute) fail('verification evidence must be a regular non-symlink report');
+  return readRegular(root, requested, 'verification evidence');
+}
+
+export interface AcceptanceEvidence {
+  readonly fingerprint: string;
+  readonly benchmark: string;
+}
+
+/** Validate owner facts supplied by a current evaluator, without another tree capture. */
+export function inspectAcceptanceEvidence(args: {
+  root: string;
+  contract: string;
+  contractContent?: string;
+  report: unknown;
+  subject: ReviewSubject;
+  env?: NodeJS.ProcessEnv;
+  current?: boolean;
+  assessmentContract?: string;
+}): AcceptanceEvidence {
+  const root = realpathSync(args.root);
+  const contractContent = args.contractContent ?? readRegular(root, args.contract, 'contract').content;
+  if (isRecord(args.report) && args.report.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + args.report.reason);
+  const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../src/effects/evidence/verification-execution');
+  let report: import('../src/effects/evidence/verification-execution').VerificationExecutionReport;
   try {
-    executionModule.validateMaterializedVerificationExecutionReport({
-      repoRoot: root,
-      contractPath: declaredContractPath,
+    report = execution.validateMaterializedVerificationExecutionReport({ repoRoot: root, contractPath: args.contract,
       contractText: contractContent,
-      report: executionEvaluation,
-    });
-  } catch (error) {
-    fail(`verification execution evidence is invalid: ${(error as Error).message}`);
+      report: args.current && isRecord(args.report) && args.report.kind === 'verification_execution_report'
+        ? execution.materializeVerificationExecutionReport(args.report as unknown as import('../src/effects/evidence/verification-execution').VerificationExecutionReport)
+        : args.report,
+      env: args.env, current: args.current }).report;
+  } catch (error) { fail('verification execution evidence is invalid: ' + (error as Error).message); }
+  const subject = args.subject;
+  const parsers = requireFromHelper(join(PACKAGE_ROOT, 'src/core/state/artifact-parsers.ts')) as typeof import('../src/core/state/artifact-parsers');
+  const allowed = parsers.parseAllowedPaths(contractContent);
+  if (!allowed.length) fail('contract Allowed Paths are missing or malformed');
+  if (subject.status !== 'ok') fail('current normalized review subject is unavailable');
+  for (const path of subject.paths) if (!parsers.contractAllowsPath(args.contract, allowed, path)) fail('contract Allowed Paths refuse reviewed path: ' + path);
+  const assessmentFile = readRegular(root, '.ai/harness/checks/change-assessment.latest.json', 'Change Assessment');
+  let assessment: unknown;
+  try { assessment = JSON.parse(assessmentFile.content); } catch { fail('verification evidence Change Assessment is invalid JSON'); }
+  if (!isRecord(assessment) || assessment.schema !== 'repo-harness-change-assessment-evidence.v1' || assessment.status !== 'pass') fail('verification evidence change assessment is not passing');
+  const assessmentBasis = { schema: assessment.schema, status: assessment.status, assessment: assessment.assessment, selection_packet: assessment.selection_packet };
+  if (assessment.evidence_sha256 !== sha256(stableJson(assessmentBasis))) fail('verification evidence change assessment fingerprint is stale');
+  const core = requireFromHelper(join(PACKAGE_ROOT, 'src/core/review/change-assessment.ts')) as typeof import('../src/core/review/change-assessment');
+  const effects = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/change-assessment.ts')) as typeof import('../src/effects/review/change-assessment');
+  let packet: ReturnType<typeof core.validateReviewSelectionPacketAgainstAssessment>;
+  try {
+    const declared = core.validateChangeAssessment(assessment.assessment);
+    const selfBoundPacket = core.validateReviewSelectionPacket(assessment.selection_packet);
+    if (selfBoundPacket.review_subject_sha256 !== subject.review_subject_sha256 || selfBoundPacket.target_ref !== subject.target_ref
+      || selfBoundPacket.target_revision !== subject.target_rev) fail('verification evidence change assessment packet is stale for the current subject');
+    const recomputed = effects.prepareChangeAssessment({ repoRoot: root, contractPath: args.assessmentContract ?? args.contract, targetRevision: subject.target_rev });
+    if (recomputed.assessment.status === 'degraded') fail('verification evidence Change Assessment base is unavailable');
+    if (declared.assessment_sha256 !== recomputed.assessment.assessment_sha256) fail('verification evidence Change Assessment does not match current base assessment');
+    packet = core.validateReviewSelectionPacketAgainstAssessment(assessment.selection_packet, recomputed.assessment);
+  } catch (error) { fail('verification evidence change assessment is invalid: ' + (error as Error).message); }
+  if (packet.status !== 'ready') fail('verification evidence change assessment packet is blocked');
+  let benchmark = 'not-applicable';
+  if (acceptanceBenchmarkRequirement(contractContent) === 'required') {
+    const validator = requireFromHelper(join(PACKAGE_ROOT, 'scripts/run-harness-profile-benchmark.ts')) as typeof import('./run-harness-profile-benchmark');
+    const reportPath = readRegular(root, 'evals/harness/reports/profile-comparison.json', 'required benchmark report').path;
+    const validated = validator.validateHarnessBenchmarkReport(join(root, reportPath), true);
+    const binding = readRegular(root, relative(root, validator.reportByteBindingPath(join(root, reportPath))), 'benchmark byte binding');
+    benchmark = sha256(binding.content);
+    if (!validated.authoritative) fail('required benchmark report is not authoritative');
   }
-  const canonical = {
-    schema: value.schema,
-    active_plan: value.active_plan,
-    contract_file: isRecord(value.contract) ? value.contract.file : undefined,
-    contract_status: guardStatus('contract'),
-    review_file: isRecord(value.review) ? value.review.file : undefined,
-    review_status: guardStatus('review'),
-    allowed_paths_status: guardStatus('allowed_paths'),
-    review_subject_sha256: value.review_subject_sha256,
-    change_assessment: assessment,
-    benchmark_evidence: value.benchmark_evidence,
-    commands: value.commands,
-    execution_evaluation: executionEvaluation,
-  };
-  return { fingerprint: sha256(stableJson(canonical)), benchmark };
+  const results = report.results.map(result => ({ ...result, execution: result.execution === 'reused' ? 'executed' : result.execution }));
+  const target = { contract: report.target.contract, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
+  return { fingerprint: sha256(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
+}
+
+function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string, contractPath: string,
+  contractContent: string, historical = false): AcceptanceEvidence {
+  let report: unknown;
+  try { report = JSON.parse(content); } catch (error) { fail('verification evidence is invalid JSON: ' + (error as Error).message); }
+  const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../src/effects/evidence/verification-execution');
+  if (!historical) {
+    if (!isRecord(report) || !isRecord(report.target) || report.target.contract !== contractPath) fail('verification evidence contract is stale for the active acceptance contract');
+    const current = execution.evaluateVerificationContract({ repoRoot: root, contractPath });
+    if (current.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + current.reason);
+    if (!current.passed) fail('verification evidence is stale: current passing evaluation is unavailable');
+    if (!isRecord(report) || !isRecord(report.target) || report.target.snapshot_hash !== current.target.snapshot_hash
+      || report.target.plan_hash !== current.target.plan_hash) fail('verification evidence is stale for the current source snapshot');
+  }
+  let declaredContract = contractPath;
+  let originalContract = contractContent;
+  if (historical) {
+    if (!isRecord(report) || !isRecord(report.target) || typeof report.target.contract !== 'string'
+      || typeof report.target.tree_hash !== 'string' || !/^[0-9a-f]{40,64}$/.test(report.target.tree_hash)) fail('historical verification report target is invalid');
+    declaredContract = report.target.contract;
+    if (unsafeRepoRelativePath(declaredContract)) fail('historical verification contract path is unsafe');
+    const runtime = resolveProtectedGitRuntime();
+    const blob = spawnSync(runtime.gitBin, ['-C', root, 'show', report.target.tree_hash + ':' + declaredContract], { encoding: 'utf8', env: runtime.env });
+    if (blob.status !== 0) fail('historical verification original contract bytes are unavailable');
+    originalContract = blob.stdout;
+    if (authorityFingerprint(originalContract) !== authorityFingerprint(contractContent)) fail('historical verification original contract authority is stale');
+  }
+  return inspectAcceptanceEvidence({ root, contract: declaredContract, contractContent: originalContract, report, subject, current: !historical, assessmentContract: contractPath });
 }
 
 function stateRoot(authorityHome: string): string {
@@ -1399,6 +1361,7 @@ export async function acceptanceContext(args: {
   root: string;
   contract: string;
   verification: string;
+  authorityHome?: string;
 }) {
   const root = realpathSync(args.root);
   const contract = readRegular(root, args.contract, 'contract');
@@ -1407,9 +1370,15 @@ export async function acceptanceContext(args: {
   const goalPath = markdownHeader(contract.content, 'Plan');
   if (!owner || !goalPath) fail('contract Owner and Plan headers are required');
   const goal = readRegular(root, goalPath, 'goal');
-  const verification = readRegular(root, args.verification, 'verification evidence');
+  const verification = verificationReportFile(root, args.verification);
   const subject = await currentSubject(root);
-  const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
+  const historical = contractCarriesArchiveProjection(contract.content);
+  if (historical) {
+    if (!args.authorityHome) fail('historical acceptance requires the recorded archive authority');
+    const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
+    verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
+  }
+  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content, historical);
   return { root, contract, policy, owner, goal, verification, subject, evidence };
 }
 
@@ -1668,27 +1637,48 @@ export async function verifyAcceptance(args: {
   const goal = readRegular(root, goalPath, 'goal');
   verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
   const verificationPath = args.verification ?? receipt.verification_file;
-  const verification = readRegular(root, verificationPath, 'verification evidence');
+  const verification = verificationReportFile(root, verificationPath);
   const subject = await currentSubject(root, receipt.target_ref, receipt.target_revision);
   if (subject.review_subject_sha256 !== receipt.subject_sha256) fail('AcceptanceReceipt semantic subject is stale');
-  const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
-  if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
-  verifyReviewResult(root,args.authorityHome,receipt,authorityFingerprint(stableJson([
-    receipt.contract_sha256,receipt.goal_sha256,subject.review_subject_sha256,evidence.fingerprint,subject.target_rev,
+  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content, contract.path !== receipt.contract_file || contractCarriesArchiveProjection(contract.content));
+  return inspectAcceptanceCurrentBinding({ root, authorityHome: args.authorityHome, contract: contract.path, subject, evidence });
+}
+
+/** The synchronous acceptance owner rule shared by verify and state inspection. */
+export function inspectAcceptanceCurrentBinding(args: {
+  root: string;
+  authorityHome: string;
+  contract: string;
+  subject: ReviewSubject;
+  evidence: AcceptanceEvidence;
+}): AcceptanceReceipt {
+  const root = realpathSync(args.root);
+  const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
+  const contract = readRegular(root, args.contract, 'contract');
+  const goal = readRegular(root, resolveArchived(root, receipt.goal_file, 'plans', receipt.goal_sha256), 'goal');
+  verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
+  if (contract.path !== receipt.contract_file && !contractCarriesArchiveProjection(contract.content)
+    && !contract.path.startsWith('tasks/archive/')) fail('AcceptanceReceipt contract path is stale');
+  const subject = args.subject;
+  if (subject.review_subject_sha256 !== receipt.subject_sha256 || subject.target_ref !== receipt.target_ref
+    || subject.target_rev !== receipt.target_revision || stableJson(subject.paths) !== stableJson(receipt.reviewed_paths)) fail('AcceptanceReceipt semantic subject is stale');
+  const diff = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/diff-fingerprint.ts')) as typeof import('../src/effects/review/diff-fingerprint');
+  const base = diff.resolvePolicyReviewBase(root);
+  if (!base.ok || base.targetRef !== receipt.target_ref) fail('AcceptanceReceipt target ref is stale against workflow policy');
+  if (args.evidence.fingerprint !== receipt.verification_evidence_sha256 || args.evidence.benchmark !== receipt.benchmark_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
+  verifyReviewResult(root, args.authorityHome, receipt, authorityFingerprint(stableJson([
+    authorityFingerprint(contract.content), authorityFingerprint(goal.content), subject.review_subject_sha256, args.evidence.fingerprint, subject.target_rev,
   ])));
-  // The gate's one synchronous rule set. Readers outside this module do not
-  // run it: they read the AcceptanceVerificationObservationV1 written below.
-  const policyVerdict = validateAcceptanceReceiptAgainstPolicy({
-    receipt,
-    repositoryRoot: root,
-    expectedContractFile: receipt.contract_file,
-    contractContent: contract.content,
-    goalContent: goal.content,
-    waiverGrant: receipt.disposition === 'user_waiver'
-      ? verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path })
-      : null,
-  });
-  if (!policyVerdict.ok) fail(policyVerdict.reason);
+  const verdict = validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: root, expectedContractFile: receipt.contract_file,
+    contractContent: contract.content, goalContent: goal.content,
+    waiverGrant: receipt.disposition === 'user_waiver' ? verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path }) : null });
+  if (!verdict.ok) fail(verdict.reason);
+  const observation = readAcceptanceVerificationObservation(root, args.authorityHome, receipt.contract_file, receipt.contract_sha256);
+  if (!observation || observation.acceptance_receipt_sha256 !== sha256(readFileSync(acceptanceReceiptPath(root, args.authorityHome)))
+    || observation.goal_file !== receipt.goal_file || observation.goal_sha256 !== receipt.goal_sha256
+    || observation.target_ref !== receipt.target_ref || observation.target_revision !== receipt.target_revision
+    || observation.subject_sha256 !== receipt.subject_sha256 || observation.verification_evidence_sha256 !== receipt.verification_evidence_sha256
+    || observation.disposition !== receipt.disposition) fail('AcceptanceVerificationObservation is missing or stale');
   return receipt;
 }
 
@@ -1863,8 +1853,21 @@ function option(argv: string[], name: string, required = true): string | undefin
 
 export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}): Promise<number> {
   const command = argv[0];
+  if (command === 'evidence-requirement') {
+    process.stdout.write(acceptanceBenchmarkRequirement(readRegular(realpathSync(process.cwd()), option(argv, '--contract')!, 'contract').content));
+    return 0;
+  }
   const root = repositoryRoot();
   const authorityHome = opts.authorityHome ?? userInfo().homedir;
+  if (command === 'inspect-current') {
+    const contract = option(argv, '--contract')!;
+    const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../src/effects/evidence/verification-execution');
+    const report = execution.evaluateVerificationContract({ repoRoot: root, contractPath: contract });
+    const subject = currentSubject(root);
+    const evidence = inspectAcceptanceEvidence({ root, contract, report, subject, current: true });
+    console.log(JSON.stringify(inspectAcceptanceCurrentBinding({ root, authorityHome, contract, subject, evidence })));
+    return 0;
+  }
   if (command === 'path') {
     console.log(acceptanceReceiptPath(root, authorityHome));
     return 0;

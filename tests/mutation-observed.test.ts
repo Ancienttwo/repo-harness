@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   consumePendingPostEditEvents,
   pendingPostEditJournalSection,
@@ -269,9 +269,9 @@ describe('mutation-observed: dirty-bit derivation', () => {
       const targetEvent = events.find((e) => e.changed_paths.includes('src/target.ts'))!;
       const otherEvent = events.find((e) => e.changed_paths.includes('src/other.ts'))!;
       expect(targetEvent.dirty['contract-verification']).toBe(false);
-      expect(targetEvent.payload.contract_verification).toBeUndefined();
+      expect(Reflect.get(targetEvent.payload, "contract_verification")).toBeUndefined();
       expect(otherEvent.dirty['contract-verification']).toBe(false);
-      expect(otherEvent.payload.contract_verification).toBeUndefined();
+      expect(Reflect.get(otherEvent.payload, "contract_verification")).toBeUndefined();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -333,7 +333,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     }
   }, 30_000);
 
-  test('checkpoint is true for tasks/todos.md, plans/*.md, tasks/reviews/*.review.md, and .ai/harness/checks/latest.json, false otherwise', () => {
+  test('checkpoint is true for tasks/todos.md, plans/*.md, tasks/reviews/*.review.md,, false otherwise', () => {
     const cwd = tmpWorkspace('mo-checkpoint-bit');
     try {
       initRepo(cwd);
@@ -343,7 +343,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
         ['plans/plan-20260101-0000-demo.md', true],
         ['plans/nested/plan-x.md', true],
         ['tasks/reviews/demo.review.md', true],
-        ['.ai/harness/checks/latest.json', true],
+        ['.ai/harness/checks/latest.json', false],
         ['src/unrelated.ts', false],
         ['tasks/notes/demo.notes.md', false],
       ];
@@ -702,6 +702,70 @@ describe('mutation-observed: gitignore coverage (gate round-1 second widening)',
       const status = spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' });
       expect(status.status).toBe(0);
       expect(status.stdout.trim()).toBe('');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+
+describe("mutation does not author acceptance evidence", () => {
+  // Ordinary edits no longer schedule contract verification. Retain the
+  // no-independent-authoring invariant at the actual mutation handler.
+  test("ordinary mutation never schedules contract verification or authors acceptance checks", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "materializer-mutation-observed-redirect-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd });
+      execFileSync("git", ["config", "user.email", "mutation-observed-redirect@example.com"], { cwd });
+      execFileSync("git", ["config", "user.name", "mutation-observed-redirect"], { cwd });
+      writeFileSync(join(cwd, "README.md"), "# fixture\n");
+      execFileSync("git", ["add", "."], { cwd });
+      execFileSync("git", ["commit", "-q", "-m", "seed"], { cwd });
+
+      const contractPath = "tasks/contracts/redirect-fixture.contract.md";
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      writeFileSync(
+        join(cwd, contractPath),
+        [
+          "# Contract",
+          "",
+          "> **Status**: Pending",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - src/target.ts",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      const planPath = "plans/plan-20260722-0000-mutation-observed-redirect-fixture.md";
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(
+        join(cwd, planPath),
+        ["# Plan: fixture", "", "> **Status**: Executing", `> **Task Contract**: ${contractPath}`, ""].join("\n"),
+      );
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), planPath);
+      writeFileSync(join(cwd, ".ai/harness/active-worktree"), `${cwd}\n`);
+
+      const collector: MutationObservedCollector = {
+        getRepoRoot: () => cwd,
+        getWorktreeOwnership: () => ({ current: cwd, owner: null, ownedByCurrent: false }),
+        getActivePlanMarker: () => planPath,
+      };
+      const result = runMutationObserved({
+        collector,
+        input: JSON.stringify({ tool_input: { file_path: "src/target.ts" } }),
+      });
+      expect(result.exitCode).toBe(0);
+
+      const events = readPendingPostEditEvents(cwd);
+      for (const event of events) {
+        expect(event.dirty["contract-verification"]).toBe(false);
+        expect(Reflect.get(event.payload, "contract_verification")).toBeUndefined();
+      }
+      expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

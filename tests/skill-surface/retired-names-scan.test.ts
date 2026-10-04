@@ -118,7 +118,6 @@ const R1_PROVENANCE_ENUM_FILES = [
   "scripts/plan-to-todo.sh",
   "scripts/capture-plan.sh",
   "scripts/lib/project-init-lib.sh",
-  "src/effects/evidence/checks-materializer.ts",
   "assets/templates/contract.template.md",
   "assets/templates/helpers/acceptance-receipt.ts",
   "assets/templates/helpers/classify-historical-plans.ts",

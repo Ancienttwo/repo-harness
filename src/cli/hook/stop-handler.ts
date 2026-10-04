@@ -151,7 +151,7 @@ function formatOffset(date: Date): string {
 // metadataValue/declaredPath/latestTrace moved to
 // src/effects/evidence/recovery-materializer.ts's buildRecoveryContext --
 // single source of truth for the workflow context every recovery view
-// needs. `latestTrace` (checks/latest.json's `run_file` field folded
+// needs. `latestTrace` (the retired checks report's `run_file` field folded
 // directly into a handoff line) is retired outright: it was a single-hop
 // violation (re-deriving an evidence claim from checks/* instead of the
 // checkpoint); the materializer's Evidence/Provenance sections replace it.
@@ -429,7 +429,6 @@ function projection(repoRoot: string, activePlan: string | null, env: NodeJS.Pro
     active_contract: context.artifacts.contract,
     active_review: context.artifacts.review,
     active_notes: context.artifacts.notes,
-    checks_file: context.paths.checks,
     handoff_file: context.paths.handoff,
     policy_file: context.paths.policyFile,
     context_map_file: context.paths.contextMap,

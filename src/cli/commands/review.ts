@@ -11,7 +11,7 @@ export function buildReviewCommand(): Command {
     if (operation === 'round') child.requiredOption('--reviewer-repo <path>', 'Dedicated linked reviewer checkout')
       .requiredOption('--herdr-endpoint <file>', 'JSON {endpoint:{session,configPath?,home?},parent_pane}')
       .option('--harness <kind>', 'Explicit claude or codex; no fallback for an explicit override')
-      .option('--verification <path>', 'Prepared verification report', '.ai/harness/checks/latest.json')
+      .requiredOption('--verification <path>', 'Native verification report under .ai/harness/runs/')
       .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms');
     child.action(async opts => {
       try {

@@ -6,7 +6,7 @@
 
 - **PRODUCT TRUTH**: `docs/spec.md`
 - **EXECUTION TRUTH**: `plans/`
-- **DONE TRUTH**: `tasks/contracts/`, `tasks/reviews/`, `tasks/notes/`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`
+- **DONE TRUTH**: `tasks/contracts/`, `tasks/reviews/`, `tasks/notes/`, Verification Plan execution records, `.ai/harness/runs/`
 - **MUTABLE LAYER**: `src/`
 
 #### Response Protocol (Concise)

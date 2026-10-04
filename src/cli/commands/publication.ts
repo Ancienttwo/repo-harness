@@ -176,7 +176,6 @@ function lifecycleEnvironment() {
     gh_bin: process.env.REPO_HARNESS_GH_BIN,
     git_bin: process.env.REPO_HARNESS_GIT_BIN,
     merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
-    checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
   } as const;
 }
 
@@ -207,7 +206,6 @@ export function buildPublicationCommand(): Command {
           create_intent: parseCreateIntent(options.createIntent),
           create_intent_journal_path: options.createIntentJournal,
           merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
-          checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
         });
         process.stdout.write(`${canonicalPublicationJournalEvidence(result.receipt)}\n`);
       } catch (error) {
@@ -231,7 +229,6 @@ export function buildPublicationCommand(): Command {
           branch: options.branch,
           target_branch: options.target,
           merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
-          checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
         });
         process.stdout.write(`${canonicalPublicationPrepareEnvelopeBytes(result)}\n`);
       } catch (error) {
@@ -282,7 +279,6 @@ export function buildPublicationCommand(): Command {
           repo_root: process.cwd(),
           pr_number: pr,
           merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
-          checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, receipt: result.receipt, cache_path: result.cache_path })}\n`);
       } catch (error) {
@@ -414,7 +410,6 @@ export function buildPublicationCommand(): Command {
           gh_bin: process.env.REPO_HARNESS_GH_BIN,
           git_bin: process.env.REPO_HARNESS_GIT_BIN,
           merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
-          checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
         });
         process.stdout.write(`${JSON.stringify(verdict)}\n`);
       } catch (error) { outputError(error); }
