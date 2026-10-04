@@ -1,0 +1,49 @@
+{
+  "source_revision": "e853649e",
+  "contract_path": "t3.contract.md",
+  "contract": "# Task Contract: fx\n\n## Verification Plan\n\n```json\n{\"protocol\":1,\"checks\":[{\"id\":\"package-test-packages-client-tests-requires-package-config-test-ts\",\"kind\":\"package_test\",\"path\":\"packages/client/tests/requires-package-config.test.ts\",\"cwd\":\".\",\"phase\":\"verification\",\"cost\":\"normal\",\"evidence_policy\":\"current_exact\",\"necessity\":\"fixture\",\"inputs\":{\"env\":[]}}]}\n```\n\n## Evidence Requirements\n\n```yaml\nevidence_requirements:\n  benchmark: not_applicable\n```\n",
+  "ledger": "{\"kind\":\"evidence_genesis\",\"schema_version\":1,\"worktree_id\":\"t3\",\"ledger_epoch_start_sha\":\"5228d4ea0d7987cf6fb73be216d5b9cc638817c3\",\"created_at\":\"2026-10-04T19:14:18.158Z\"}\n{\"kind\":\"evidence_event\",\"schema_version\":1,\"worktree_id\":\"t3\",\"event_id\":\"evt-01M445D8XFGRHY5AR334SBP3Q8\",\"correlation_run_id\":\"vx-4f90e08c1c5446919c05\",\"event_type\":\"verification_execution.result\",\"trust_class\":\"authoritative_machine\",\"producer\":\"verification-execution\",\"subject_identity\":{\"authority_commit\":\"8de6273e002112cf517c8651b0f897192d0cbdd2\",\"base_commit\":\"8de6273e002112cf517c8651b0f897192d0cbdd2\",\"target_commit\":\"073a432c99a56d87306ebbe0c0afee40f12b16e5\",\"scope_hash\":\"sha256:b4459afb2934c5b1c6ee51867053e31f1ee207140228898b56f63f4b62460300\",\"subject_hash\":\"sha256:64bc9ab061ce920daac030736dd6eba3a2e35520864046dfe442192bd5029f02\",\"contract_hash\":\"sha256:424c16c4e8023dc9513ad83c36f7e7cf14b68bc98f5258d797f3f17669488010\",\"command_hash\":\"sha256:46bbf36246da7c409e2d1711e88c658eee521de5e8c57abe586e928bf81fb294\",\"env_provider_id\":\"verification-execution/sha256:4b092b538165ef606e259e9818ade4856341d3c07cd1aba4ca7010fdcd6979d1\"},\"idempotency_key\":\"sha256:73fe57b33bcc66606e504edec9988735a5264db67be97ef1e753f25311ccdf42\",\"payload_hash\":\"sha256:a15bb1666b427a9dbd402567f71fd1f82a98db9b54e77dfaa39d2b5772e82794\",\"payload\":{\"protocol\":1,\"contract_path\":\"t3.contract.md\",\"contract_hash\":\"sha256:424c16c4e8023dc9513ad83c36f7e7cf14b68bc98f5258d797f3f17669488010\",\"plan_hash\":\"sha256:b4459afb2934c5b1c6ee51867053e31f1ee207140228898b56f63f4b62460300\",\"check_id\":\"sha256:11909f483f62fb4a6e81e5f9fb21e6a4ec5a794af0f32bff1b4845e27f9e70a0\",\"check_fingerprint\":\"sha256:46bbf36246da7c409e2d1711e88c658eee521de5e8c57abe586e928bf81fb294\",\"execution_spec_hash\":\"sha256:763b2f776598b43a25bfcc1d95464d474c7c2473315507caf82ad26a72cae531\",\"inputs_hash\":\"sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\",\"toolchain_hash\":\"sha256:4b092b538165ef606e259e9818ade4856341d3c07cd1aba4ca7010fdcd6979d1\",\"snapshot_hash\":\"sha256:64bc9ab061ce920daac030736dd6eba3a2e35520864046dfe442192bd5029f02\",\"cache_key\":\"sha256:8a262259878a59bb136f3c7351567946b0b16d524599894b55c528ce9959cfd6\",\"execution_id\":\"vx-4f90e08c1c5446919c05\",\"run_file\":\".ai/harness/runs/verification-vx-4f90e08c1c5446919c05.json\",\"run_record_hash\":\"sha256:7888d946f4f64f56741ce76633f7cbb191ede3e175551bb34681245a9fa30114\",\"passed\":true},\"created_at\":\"2026-10-04T19:14:18.159Z\"}\n",
+  "run_file": ".ai/harness/runs/verification-vx-4f90e08c1c5446919c05.json",
+  "run_record": "{\n  \"protocol\": 1,\n  \"kind\": \"verification_execution_record\",\n  \"execution_id\": \"vx-4f90e08c1c5446919c05\",\n  \"cache_key\": \"sha256:8a262259878a59bb136f3c7351567946b0b16d524599894b55c528ce9959cfd6\",\n  \"result\": {\n    \"id\": \"package-test-packages-client-tests-requires-package-config-test-ts\",\n    \"kind\": \"package_test\",\n    \"target\": \"current_exact\",\n    \"passed\": true,\n    \"message\": \"check passed\",\n    \"duration_ms\": 425,\n    \"timed_out\": false,\n    \"exit_code\": 0,\n    \"signal\": null,\n    \"execution\": \"executed\",\n    \"cache_key\": \"sha256:8a262259878a59bb136f3c7351567946b0b16d524599894b55c528ce9959cfd6\",\n    \"command\": \"/Users/chris/.bun/bin/bun run --cwd packages/client test -- tests/requires-package-config.test.ts\",\n    \"force_reason\": null,\n    \"execution_id\": \"vx-4f90e08c1c5446919c05\",\n    \"run_file\": \".ai/harness/runs/verification-vx-4f90e08c1c5446919c05.json\",\n    \"failure_log_file\": null\n  }\n}\n",
+  "report": {
+    "protocol": 1,
+    "kind": "verification_execution_report",
+    "target": {
+      "contract": "t3.contract.md",
+      "plan_hash": "sha256:b4459afb2934c5b1c6ee51867053e31f1ee207140228898b56f63f4b62460300",
+      "snapshot_hash": "sha256:64bc9ab061ce920daac030736dd6eba3a2e35520864046dfe442192bd5029f02",
+      "tree_hash": "073a432c99a56d87306ebbe0c0afee40f12b16e5",
+      "head_commit": "8de6273e002112cf517c8651b0f897192d0cbdd2"
+    },
+    "passed": true,
+    "status": "passed",
+    "evaluation": {
+      "requirements_hash": "sha256:b4459afb2934c5b1c6ee51867053e31f1ee207140228898b56f63f4b62460300",
+      "snapshot_hash": "sha256:64bc9ab061ce920daac030736dd6eba3a2e35520864046dfe442192bd5029f02",
+      "exact_passed": 1,
+      "baseline_passed": 0,
+      "unmet_check_ids": [],
+      "snapshot_changed_during_execution": false
+    },
+    "results": [
+      {
+        "id": "package-test-packages-client-tests-requires-package-config-test-ts",
+        "kind": "package_test",
+        "target": "current_exact",
+        "passed": true,
+        "message": "check passed",
+        "duration_ms": 425,
+        "timed_out": false,
+        "exit_code": 0,
+        "signal": null,
+        "execution": "reused",
+        "cache_key": "sha256:8a262259878a59bb136f3c7351567946b0b16d524599894b55c528ce9959cfd6",
+        "command": "/Users/chris/.bun/bin/bun run --cwd packages/client test -- tests/requires-package-config.test.ts",
+        "force_reason": null,
+        "execution_id": "vx-4f90e08c1c5446919c05",
+        "run_file": ".ai/harness/runs/verification-vx-4f90e08c1c5446919c05.json",
+        "failure_log_file": null
+      }
+    ]
+  }
+}

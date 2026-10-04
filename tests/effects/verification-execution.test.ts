@@ -4,7 +4,9 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, wr
 import { tmpdir } from "os";
 import { join } from "path";
 
+import legacyHashedCheckFixture from "../fixtures/evidence/legacy-hashed-check-id.json";
 import type { JsonValue } from "../../src/core/evidence/types";
+import { redactPayloadStrings } from "../../src/core/evidence/redaction";
 import { appendEvidenceEvent, readAcceptedEvents } from "../../src/effects/evidence/event-log";
 import { buildEvidenceEvent } from "../../src/effects/evidence/event-writer";
 import {
@@ -12,6 +14,7 @@ import {
   evaluateVerificationContract,
   executeVerificationContract,
   validateMaterializedVerificationExecutionReport,
+  verificationOutcomeProvenance,
 } from "../../src/effects/evidence/verification-execution";
 
 const CLI = join(import.meta.dir, "..", "..", "scripts", "verification-plan.ts");
@@ -127,6 +130,91 @@ describe("Git virtual tree snapshot", () => {
 });
 
 describe("verification execution lifecycle", () => {
+  test("reads the unchanged e853649e hashed-id ledger and its real run record", () => {
+    const fixture = legacyHashedCheckFixture;
+    withRepo("verification-base-legacy-id", (repoRoot) => {
+      writeFileSync(join(repoRoot, fixture.contract_path), fixture.contract);
+      mkdirSync(join(repoRoot, ".ai/harness/evidence/events"), { recursive: true });
+      const ledger = join(repoRoot, ".ai/harness/evidence/events/log.jsonl");
+      writeFileSync(ledger, fixture.ledger);
+      writeFileSync(join(repoRoot, fixture.run_file), fixture.run_record);
+      const input = { repoRoot, contractPath: fixture.contract_path, report: fixture.report };
+      expect(readAcceptedEvents(repoRoot).accepted).toHaveLength(1);
+      expect(validateMaterializedVerificationExecutionReport(input).valid).toBe(true);
+      expect(verificationOutcomeProvenance(input, fixture.report.results[0].id).result.passed).toBe(true);
+      expect(readFileSync(ledger, "utf8")).toBe(fixture.ledger);
+      expect(readFileSync(join(repoRoot, fixture.run_file), "utf8")).toBe(fixture.run_record);
+      // Exact evaluation must reject this older runner's different toolchain.
+      expect(evaluateVerificationContract({ repoRoot, contractPath: fixture.contract_path }).passed).toBe(false);
+    });
+  }, 30_000);
+
+  test("reads a legacy hashed check id only when its immutable execution matches", () => {
+    withRepo("verification-legacy-id", (repoRoot, contractPath, counterPath) => {
+      const id = "package-test-packages-client-tests-requires-package-config-test-ts";
+      writeFileSync(join(repoRoot, contractPath), contract({
+        protocol: 1,
+        checks: [commandCheck({ id })],
+      }));
+      const env = { ...process.env, COUNTER_PATH: counterPath };
+      const executed = executeVerificationContract({ repoRoot, contractPath, env });
+      const event = readAcceptedEvents(repoRoot).accepted.find(item => item.event_type === "verification_execution.result")!;
+      const payload = event.payload as Record<string, JsonValue>;
+      expect(payload.check_id).toBe(id);
+      expect(executed.passed).toBe(true);
+
+      // e853649e used the same entropy pass without the check_id exemption.
+      // Keep the real run and all bindings. Rebuild only its ledger envelope.
+      const legacyId = (redactPayloadStrings({ id }, []) as { id: string }).id;
+      expect(legacyId).toBe("sha256:11909f483f62fb4a6e81e5f9fb21e6a4ec5a794af0f32bff1b4845e27f9e70a0");
+      const ledger = join(repoRoot, ".ai/harness/evidence/events/log.jsonl");
+      const genesis = readFileSync(ledger, "utf8").split("\n")[0]! + "\n";
+      const writeLegacy = (checkId: string, overrides: Record<string, JsonValue> = {}) => {
+        writeFileSync(ledger, genesis);
+        appendEvidenceEvent(repoRoot, {
+          worktreeId: event.worktree_id,
+          eventType: event.event_type,
+          producer: event.producer,
+          trustClass: event.trust_class,
+          correlationRunId: event.correlation_run_id,
+          subjectIdentity: event.subject_identity,
+          payload: { kind: "json", value: { ...payload, check_id: checkId, ...overrides } },
+        });
+      };
+      writeLegacy(legacyId);
+      const legacyBytes = readFileSync(ledger, "utf8");
+      const evaluated = evaluateVerificationContract({ repoRoot, contractPath, env });
+      expect(evaluated.status).toBe("passed");
+      expect(evaluated.passed).toBe(true);
+      expect(evaluated.results[0]!.id).toBe(id);
+      expect(evaluated.results[0]!.execution_id).toBe(executed.results[0]!.execution_id);
+      expect(validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report: evaluated, env }).valid).toBe(true);
+      expect(verificationOutcomeProvenance({ repoRoot, contractPath, report: evaluated, env }, id).result.passed).toBe(true);
+      expect(executeVerificationContract({ repoRoot, contractPath, env }).results[0]!.execution).toBe("reused");
+      expect(readFileSync(ledger, "utf8")).toBe(legacyBytes);
+      expect(readFileSync(counterPath, "utf8").trim().split("\n")).toHaveLength(1);
+
+      for (const [checkId, overrides] of [
+        [`${id}-different`, {}],
+        [`sha256:${"0".repeat(64)}`, {}],
+        [legacyId, { execution_id: "vx-mismatch" }],
+        [legacyId, { run_record_hash: `sha256:${"0".repeat(64)}` }],
+        [legacyId, { check_fingerprint: `sha256:${"0".repeat(64)}` }],
+        [legacyId, { toolchain_hash: `sha256:${"0".repeat(64)}` }],
+        [legacyId, { passed: false }],
+      ] as const) {
+        writeLegacy(checkId, overrides);
+        expect(evaluateVerificationContract({ repoRoot, contractPath, env }).passed).toBe(false);
+        expect(() => validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report: evaluated, env }))
+          .toThrow("not backed by immutable evidence");
+      }
+
+      writeLegacy(legacyId);
+      writeFileSync(join(repoRoot, "source.txt"), "changed\n");
+      expect(evaluateVerificationContract({ repoRoot, contractPath, env }).passed).toBe(false);
+    });
+  }, 30_000);
+
   test("an admitted long check id reuses one exact expensive execution", () => {
     withRepo("verification-long-id-reuse", (repoRoot, contractPath, counterPath) => {
       writeFileSync(join(repoRoot, contractPath), contract({
