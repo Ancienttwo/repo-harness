@@ -139,11 +139,44 @@ looks wrong, stop and read
 ```bash
 repo-harness update          # reconcile CLI, mandatory deps, profile tooling, and CodeGraph
 repo-harness update --check  # read-only repair guidance, no writes
+repo-harness upgrade         # check retired leftovers; no writes
+repo-harness upgrade --apply # back up and remove only proven owned leftovers
 repo-harness uninstall --dry-run # preview owned user configuration cleanup
 repo-harness uninstall           # remove owned configuration; preserve user changes/history
 repo-harness mcp uninstall --dry-run # preview independent MCP setup cleanup
 repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP services
 ```
+
+`update` and `setup check` print one leftover count. `update` does not apply
+cleanup. Run `upgrade --json` for ownership and proof per item. Use
+`--scope project|global|all` to select the scan (default: `all`). Project scope
+requires a Git repository. Check exits 1 when any leftover remains.
+
+`upgrade --apply` also refreshes old owned copies of still-shipped skills from
+this package. It refreshes the project workflow-state helper and contract
+template only when an old ownership hash matches. It keeps changed copies.
+Update continues to report counts only. This puts destructive changes and copy
+replacement under the same explicit, backed-up transaction.
+
+Old merge-gate state, v0.10.0 archives, and older backups are report-only by
+default. Use `upgrade --apply --include-state-artifacts` to select these artifacts
+for removal. This flag still requires ownership proof. Unknown artifacts stay.
+The third-party `codex@openai-codex` Claude plugin and user rule lines in
+`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
+
+Cleanup keeps changed and unowned files. It also keeps current global typed
+hook adapters and user hook entries. It backs up each target before removal.
+Apply exits 0 when all eligible operations succeed, even if report items remain.
+A second apply with no eligible items changes no bytes. The command prints the
+backup paths and records nonempty runs in
+`~/.repo-harness/upgrade-cleanup.log.jsonl`.
+
+For project rollback, use the printed `repo-harness init rollback` command.
+For global rollback, replace each target with its numbered snapshot at the
+original path in the backup manifest. Do not overlay directory contents.
+Restore symlinks verbatim. There is no `install --restore-transaction` command.
+Keep the backup until you verify the cleanup. Homes from the older v3.x–v5.x
+release line have no supported historical proof and remain report-only.
 
 ## Why repo-harness
 

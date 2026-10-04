@@ -1,0 +1,1671 @@
+#!/bin/bash
+set -euo pipefail
+
+helper_source="${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}"
+helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
+case "$helper_dir" in
+  */assets/templates/helpers)
+    package_root="$(cd "$helper_dir/../../.." && pwd)"
+    ;;
+  */scripts)
+    package_root="$(cd "$helper_dir/.." && pwd)"
+    ;;
+  *)
+    echo "check-agent-tooling.sh cannot resolve repo-harness package root from helper path: $helper_source" >&2
+    exit 1
+    ;;
+esac
+AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"
+if [[ ! -d "$AGENT_FLEET_SOURCE_DIR" ]]; then
+  echo "check-agent-tooling.sh missing packaged agent fleet source: $AGENT_FLEET_SOURCE_DIR" >&2
+  exit 1
+fi
+export REPO_HARNESS_AGENT_FLEET_SOURCE_DIR="$AGENT_FLEET_SOURCE_DIR"
+
+if command -v node >/dev/null 2>&1; then
+  RUNTIME_BIN="$(command -v node)"
+elif command -v bun >/dev/null 2>&1; then
+  RUNTIME_BIN="$(command -v bun)"
+elif [[ -x "${HOME}/.bun/bin/bun" ]]; then
+  RUNTIME_BIN="${HOME}/.bun/bin/bun"
+else
+  echo "check-agent-tooling.sh requires node or bun" >&2
+  exit 1
+fi
+
+exec "$RUNTIME_BIN" - "$@" <<'NODE_EOF'
+const fs = require("fs");
+const crypto = require("crypto");
+const os = require("os");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const argv = process.argv.slice(2);
+let jsonOutput = false;
+let checkUpdates = false;
+let strictReadiness = false;
+let hostMode = "both";
+
+function usage() {
+  console.log(`Usage: scripts/check-agent-tooling.sh [--json] [--check-updates] [--strict-readiness] [--host claude|codex|both]`);
+}
+
+for (let index = 0; index < argv.length; index += 1) {
+  const arg = argv[index];
+  if (arg === "--json") {
+    jsonOutput = true;
+    continue;
+  }
+  if (arg === "--check-updates") {
+    checkUpdates = true;
+    continue;
+  }
+  if (arg === "--strict-readiness") {
+    strictReadiness = true;
+    continue;
+  }
+  if (arg === "--host") {
+    const next = argv[index + 1];
+    if (!next) {
+      console.error("--host requires claude, codex, or both");
+      process.exit(1);
+    }
+    hostMode = next;
+    index += 1;
+    continue;
+  }
+  if (arg === "--help" || arg === "-h") {
+    usage();
+    process.exit(0);
+  }
+  console.error(`Unknown argument: ${arg}`);
+  usage();
+  process.exit(1);
+}
+
+if (!["claude", "codex", "both"].includes(hostMode)) {
+  console.error(`Unsupported host: ${hostMode}`);
+  process.exit(1);
+}
+
+const HOME = os.homedir();
+const REPO_ROOT = process.cwd();
+const SELECTED_HOSTS = hostMode === "both" ? ["claude", "codex"] : [hostMode];
+const WAZA_SOURCE_REPO = "tw93/Waza";
+const WAZA_SOURCE_URL = "https://github.com/tw93/Waza.git";
+const WAZA_RAW_BASE_URL = "https://raw.githubusercontent.com/tw93/Waza/main";
+const WAZA_MANAGED_SKILLS = ["think", "hunt", "check", "health"];
+const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
+const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
+const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
+const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
+const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
+const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
+const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
+const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
+const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
+const CODEGRAPH_LOCAL_INSTALL_COMMAND = "bun install";
+const CODEGRAPH_ENSURE_COMMAND = [
+  "scripts/ensure-codegraph.sh",
+].find((relPath) => fs.existsSync(path.join(REPO_ROOT, relPath)));
+const CODEGRAPH_ENSURE_BASH_COMMAND = CODEGRAPH_ENSURE_COMMAND
+  ? `bash ${CODEGRAPH_ENSURE_COMMAND}`
+  : null;
+const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
+const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
+const WAZA_STAGING_RULES_DIR = path.join(WAZA_STAGING_ROOT, "rules");
+let timeoutBin;
+const HOSTS = {
+  claude: {
+    label: "Claude Code",
+    agentLabel: "Claude Code",
+    skillsDir: path.join(HOME, ".claude", "skills"),
+    configPath: path.join(HOME, ".claude", "settings.json"),
+    agentsDir: path.join(HOME, ".claude", "agents"),
+  },
+  codex: {
+    label: "Codex",
+    agentLabel: "Codex",
+    skillsDir: path.join(HOME, ".codex", "skills"),
+    configPath: path.join(HOME, ".codex", "config.toml"),
+    agentsDir: path.join(HOME, ".codex", "agents"),
+  },
+};
+
+function readText(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch (_error) {
+    return "";
+  }
+}
+
+function readJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function fileIsExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function detectTimeoutBin() {
+  if (timeoutBin !== undefined) return timeoutBin;
+  timeoutBin = resolvePathCommand("timeout") || "";
+  return timeoutBin;
+}
+
+function commandCapability(command, requiredFor, owner, required = false) {
+  const binPath = resolvePathCommand(command);
+  return {
+    name: command,
+    status: binPath ? "present" : "missing",
+    path: binPath,
+    owner,
+    required,
+    required_for: requiredFor,
+  };
+}
+
+function detectSymlinkCapability() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "repo-harness-symlink-check-"));
+  const source = path.join(tmpDir, "source");
+  const link = path.join(tmpDir, "link");
+  try {
+    fs.writeFileSync(source, "ok\n");
+    fs.symlinkSync(source, link);
+    return {
+      name: "symlink",
+      status: "supported",
+      path: null,
+      owner: "platform-filesystem",
+      required: false,
+      required_for: "installed-copy link mode and host skill aliasing; copy mode remains the fallback",
+    };
+  } catch (error) {
+    return {
+      name: "symlink",
+      status: "unsupported",
+      path: null,
+      owner: "platform-filesystem",
+      required: false,
+      required_for: "installed-copy link mode and host skill aliasing; copy mode remains the fallback",
+      reason: String(error?.message || error),
+    };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function run(command, args, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 0;
+  const externalTimeout = timeoutMs > 0 ? detectTimeoutBin() : "";
+  const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+  const spawnCommand = externalTimeout || command;
+  const spawnArgs = externalTimeout ? ["--kill-after=1s", `${timeoutSeconds}s`, command, ...args] : args;
+  const result = spawnSync(spawnCommand, spawnArgs, {
+    cwd: options.cwd ?? REPO_ROOT,
+    encoding: "utf8",
+    env: { ...process.env, ...(options.env ?? {}) },
+    timeout: externalTimeout ? timeoutMs + 1000 : timeoutMs,
+  });
+
+  return {
+    ok: result.status === 0 && !result.error,
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    error: result.error ? String(result.error.message || result.error) : "",
+    timed_out: result.error?.code === "ETIMEDOUT" || result.status === 124,
+  };
+}
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function sha1(text) {
+  return crypto.createHash("sha1").update(text).digest("hex");
+}
+
+function sha1Buffer(buffer) {
+  return crypto.createHash("sha1").update(buffer).digest("hex");
+}
+
+function parseSkillVersion(text) {
+  const match = text.match(/^\s*version:\s*["']?([^"'\n]+)["']?/m);
+  return match ? match[1].trim() : null;
+}
+
+function resolveRealPath(filePath) {
+  try {
+    return fs.realpathSync(filePath);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function readSkillFile(filePath) {
+  const content = readText(filePath);
+  if (!content) {
+    return {
+      exists: false,
+      version: null,
+      hash: null,
+    };
+  }
+
+  return {
+    exists: true,
+    version: parseSkillVersion(content),
+    hash: sha1(content),
+  };
+}
+
+function readFileHash(filePath) {
+  try {
+    return {
+      exists: true,
+      hash: sha1Buffer(fs.readFileSync(filePath)),
+    };
+  } catch (_error) {
+    return {
+      exists: false,
+      hash: null,
+    };
+  }
+}
+
+function collectDirectoryHashes(dirPath) {
+  try {
+    if (!fs.statSync(dirPath).isDirectory()) return null;
+  } catch (_error) {
+    return null;
+  }
+
+  const files = {};
+  function visit(currentDir, relativeDir) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch (_error) {
+      return;
+    }
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      let stat;
+      try {
+        stat = fs.statSync(absolutePath);
+      } catch (_error) {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        visit(absolutePath, relativePath);
+      } else if (stat.isFile()) {
+        files[relativePath] = sha1Buffer(fs.readFileSync(absolutePath));
+      }
+    }
+  }
+
+  visit(dirPath, "");
+  return files;
+}
+
+function compareFileMaps(localFiles, referenceFiles) {
+  const missing = [];
+  const extra = [];
+  const changed = [];
+  const localKeys = new Set(Object.keys(localFiles || {}));
+  const referenceKeys = new Set(Object.keys(referenceFiles || {}));
+
+  for (const key of [...referenceKeys].sort()) {
+    if (!localKeys.has(key)) {
+      missing.push(key);
+    } else if (localFiles[key] !== referenceFiles[key]) {
+      changed.push(key);
+    }
+  }
+
+  for (const key of [...localKeys].sort()) {
+    if (!referenceKeys.has(key)) {
+      extra.push(key);
+    }
+  }
+
+  return { missing, extra, changed };
+}
+
+function inspectDirectorySync(localDir, stagingDir) {
+  const localFiles = collectDirectoryHashes(localDir);
+  const stagingFiles = collectDirectoryHashes(stagingDir);
+
+  if (!localFiles && !stagingFiles) {
+    return {
+      status: "unknown",
+      missing_files: [],
+      extra_files: [],
+      changed_files: [],
+    };
+  }
+
+  if (!localFiles && stagingFiles) {
+    return {
+      status: "missing-local",
+      missing_files: Object.keys(stagingFiles).sort(),
+      extra_files: [],
+      changed_files: [],
+    };
+  }
+
+  if (localFiles && !stagingFiles) {
+    return {
+      status: "unknown",
+      missing_files: [],
+      extra_files: [],
+      changed_files: [],
+    };
+  }
+
+  const diff = compareFileMaps(localFiles, stagingFiles);
+  const clean = diff.missing.length === 0 && diff.extra.length === 0 && diff.changed.length === 0;
+  return {
+    status: clean ? "synced" : "drift",
+    missing_files: diff.missing,
+    extra_files: diff.extra,
+    changed_files: diff.changed,
+  };
+}
+
+function summarizeWazaStatus(hostStatuses) {
+  const values = Object.values(hostStatuses);
+  const fullCount = values.filter((entry) => entry.status === "present").length;
+  const installedCount = values.reduce((count, entry) => count + entry.installed_skills.length, 0);
+  if (fullCount === values.length) return "present";
+  if (installedCount > 0) return "partial";
+  return "missing";
+}
+
+function fetchWazaUpstreamSkills() {
+  if (!checkUpdates) {
+    return {
+      status: "not-checked",
+      reason: "Update checks were skipped.",
+      skills: {},
+      rules: {},
+    };
+  }
+
+  const skills = {};
+  const rules = {};
+  const failures = [];
+
+  for (const skill of WAZA_MANAGED_SKILLS) {
+    const url = `${WAZA_RAW_BASE_URL}/skills/${skill}/SKILL.md`;
+    const result = run("curl", ["-fsSL", "--max-time", "5", url], { timeoutMs: 7000 });
+    if (!result.ok || !result.stdout) {
+      failures.push(`skills/${skill}/SKILL.md`);
+      continue;
+    }
+
+    skills[skill] = {
+      version: parseSkillVersion(result.stdout),
+      hash: sha1(result.stdout),
+      source_url: url,
+    };
+  }
+
+  for (const rule of WAZA_SHARED_RULES) {
+    const url = `${WAZA_RAW_BASE_URL}/rules/${rule}`;
+    const result = run("curl", ["-fsSL", "--max-time", "5", url], { timeoutMs: 7000 });
+    if (!result.ok || !result.stdout) {
+      failures.push(`rules/${rule}`);
+      continue;
+    }
+
+    rules[rule] = {
+      hash: sha1(result.stdout),
+      source_url: url,
+    };
+  }
+
+  if (failures.length > 0) {
+    return {
+      status: "unknown",
+      reason: `Unable to fetch upstream Waza files for: ${failures.join(", ")}.`,
+      skills,
+      rules,
+    };
+  }
+
+  return {
+    status: "fetched",
+    reason: "Fetched upstream Waza SKILL.md and shared rule files from GitHub raw URLs.",
+    skills,
+    rules,
+  };
+}
+
+function hostUsesStagingSkillSymlinks(host) {
+  const meta = HOSTS[host];
+  const presentSkillDirs = WAZA_MANAGED_SKILLS
+    .map((skill) => path.join(meta.skillsDir, skill))
+    .filter((skillDir) => fs.existsSync(skillDir));
+
+  if (presentSkillDirs.length === 0) return false;
+
+  const stagingRealPath = resolveRealPath(WAZA_STAGING_DIR) || WAZA_STAGING_DIR;
+  return presentSkillDirs.every((skillDir) => {
+    const realPath = resolveRealPath(skillDir);
+    return realPath
+      ? realPath.startsWith(`${WAZA_STAGING_DIR}${path.sep}`) || realPath.startsWith(`${stagingRealPath}${path.sep}`)
+      : false;
+  });
+}
+
+function resolveWazaRulePath(host, rule) {
+  const meta = HOSTS[host];
+  const hostRulesPath = path.join(path.dirname(meta.skillsDir), "rules", rule);
+  if (fs.existsSync(hostRulesPath)) return hostRulesPath;
+  if (hostUsesStagingSkillSymlinks(host)) {
+    return path.join(WAZA_STAGING_RULES_DIR, rule);
+  }
+  return hostRulesPath;
+}
+
+function wazaHostRuntimeRoot(host) {
+  return host === "claude" ? "~/.claude" : "~/.codex";
+}
+
+function buildWazaHostSyncCommand(host) {
+  const root = wazaHostRuntimeRoot(host);
+  const skillsList = WAZA_MANAGED_SKILLS.join(" ");
+  const rulesList = WAZA_SHARED_RULES.join(" ");
+  return `mkdir -p ${root}/skills ${root}/rules; for d in ${skillsList}; do if [ ! -L ${root}/skills/$d ]; then rsync -a --delete ~/.agents/skills/$d/ ${root}/skills/$d/; fi; done; for f in ${rulesList}; do cp ~/.agents/rules/$f ${root}/rules/$f; done`;
+}
+
+function buildWazaHostVerifyCommand(host) {
+  const root = wazaHostRuntimeRoot(host);
+  const skillsList = WAZA_MANAGED_SKILLS.join(" ");
+  const rulesList = WAZA_SHARED_RULES.join(" ");
+  return `for d in ${skillsList}; do diff -qr ~/.agents/skills/$d ${root}/skills/$d; done; for f in ${rulesList}; do cmp -s ~/.agents/rules/$f ${root}/rules/$f; done`;
+}
+
+function inspectWazaSharedRule(host, rule, upstreamRules) {
+  const localFile = resolveWazaRulePath(host, rule);
+  const stagingFile = path.join(WAZA_STAGING_RULES_DIR, rule);
+  const local = readFileHash(localFile);
+  const staging = readFileHash(stagingFile);
+  const upstream = upstreamRules[rule] || null;
+
+  return {
+    name: rule,
+    path: localFile,
+    real_path: resolveRealPath(localFile),
+    present: local.exists,
+    hash: local.hash,
+    staging_present: staging.exists,
+    staging_hash: staging.hash,
+    staging_sync: local.exists && staging.exists
+      ? (local.hash === staging.hash ? "synced" : "drift")
+      : staging.exists
+        ? "missing-local"
+        : "unknown",
+    upstream_hash: upstream?.hash || null,
+    stale_status: !checkUpdates
+      ? "not-checked"
+      : upstream?.hash && local.exists
+        ? (local.hash === upstream.hash ? "up-to-date" : "stale")
+        : upstream?.hash
+          ? "missing-local"
+          : "unknown",
+  };
+}
+
+function inspectWazaSkill(host, skill, skillLock, skillItems, upstreamSkills) {
+  const meta = HOSTS[host];
+  const skillDir = path.join(meta.skillsDir, skill);
+  const skillFile = path.join(skillDir, "SKILL.md");
+  const stagingFile = path.join(WAZA_STAGING_DIR, skill, "SKILL.md");
+  const stagingDir = path.join(WAZA_STAGING_DIR, skill);
+  const local = readSkillFile(skillFile);
+  const staging = readSkillFile(stagingFile);
+  const directorySync = inspectDirectorySync(skillDir, stagingDir);
+  const upstream = upstreamSkills[skill] || null;
+  let symlinkTarget = null;
+
+  try {
+    const stat = fs.lstatSync(skillDir);
+    if (stat.isSymbolicLink()) {
+      symlinkTarget = fs.readlinkSync(skillDir);
+    }
+  } catch (_error) {
+    symlinkTarget = null;
+  }
+
+  const skillCliItem = skillItems.find((item) => item.name === skill);
+  const skillCliAgents = Array.isArray(skillCliItem?.agents) ? skillCliItem.agents : [];
+  const sourceLock = skillLock?.skills?.[skill] || null;
+
+  return {
+    name: skill,
+    path: skillFile,
+    real_path: resolveRealPath(skillFile),
+    symlink_target: symlinkTarget,
+    present: local.exists,
+    version: local.version,
+    hash: local.hash,
+    source_locked: sourceLock?.source === WAZA_SOURCE_REPO,
+    source_repo: sourceLock?.source || null,
+    skills_cli_agents: skillCliAgents,
+    staging_present: staging.exists,
+    staging_version: staging.version,
+    staging_hash: staging.hash,
+    staging_sync: directorySync.status,
+    staging_missing_files: directorySync.missing_files,
+    staging_extra_files: directorySync.extra_files,
+    staging_changed_files: directorySync.changed_files,
+    upstream_version: upstream?.version || null,
+    upstream_hash: upstream?.hash || null,
+    stale_status: !checkUpdates
+      ? "not-checked"
+      : upstream?.hash && local.exists
+        ? (local.hash === upstream.hash ? "up-to-date" : "stale")
+        : upstream?.hash
+          ? "missing-local"
+          : "unknown",
+  };
+}
+
+function detectWaza() {
+  const skillLockPath = path.join(HOME, ".agents", ".skill-lock.json");
+  const skillLock = readJson(skillLockPath);
+  const skillsResult = run("bunx", ["skills", "ls", "-g", "--json"], { timeoutMs: 1500 });
+  const skillItems = skillsResult.ok ? parseJson(skillsResult.stdout) || [] : [];
+  const wazaEntries = Object.entries(skillLock?.skills || {}).filter(([, meta]) => meta?.source === WAZA_SOURCE_REPO);
+  const upstream = fetchWazaUpstreamSkills();
+  const hostStatuses = {};
+
+  for (const host of SELECTED_HOSTS) {
+    const skills = WAZA_MANAGED_SKILLS.map((skill) => inspectWazaSkill(host, skill, skillLock, skillItems, upstream.skills));
+    const sharedRules = WAZA_SHARED_RULES.map((rule) => inspectWazaSharedRule(host, rule, upstream.rules));
+    const installedSkills = skills.filter((entry) => entry.present).map((entry) => entry.name);
+    const missingSkills = skills.filter((entry) => !entry.present).map((entry) => entry.name);
+    const driftSkills = skills.filter((entry) => entry.staging_sync === "drift").map((entry) => entry.name);
+    const unsyncedSkills = skills
+      .filter((entry) => entry.staging_sync === "drift" || entry.staging_sync === "missing-local")
+      .map((entry) => entry.name);
+    const staleSkills = skills.filter((entry) => entry.stale_status === "stale").map((entry) => entry.name);
+    const installedSharedRules = sharedRules.filter((entry) => entry.present).map((entry) => entry.name);
+    const missingSharedRules = sharedRules.filter((entry) => !entry.present).map((entry) => entry.name);
+    const driftSharedRules = sharedRules.filter((entry) => entry.staging_sync === "drift").map((entry) => entry.name);
+    const unsyncedSharedRules = sharedRules
+      .filter((entry) => entry.staging_sync === "drift" || entry.staging_sync === "missing-local")
+      .map((entry) => entry.name);
+    const staleSharedRules = sharedRules
+      .filter((entry) => entry.stale_status === "stale" || entry.stale_status === "missing-local")
+      .map((entry) => entry.name);
+    const status = missingSkills.length === 0 ? "present" : installedSkills.length > 0 ? "partial" : "missing";
+    const stagingSync = status === "missing"
+      ? "missing"
+      : unsyncedSkills.length > 0 || unsyncedSharedRules.length > 0
+        ? "drift"
+        : skills.every((entry) => entry.staging_sync === "synced") && sharedRules.every((entry) => entry.staging_sync === "synced")
+          ? "synced"
+          : "unknown";
+    const staleStatus = !checkUpdates
+      ? "not-checked"
+      : staleSkills.length > 0 || staleSharedRules.length > 0
+        ? "stale"
+        : skills.every((entry) => entry.stale_status === "up-to-date") && sharedRules.every((entry) => entry.stale_status === "up-to-date")
+          ? "up-to-date"
+          : "unknown";
+    const sharedRulesStagingSync = unsyncedSharedRules.length > 0
+      ? "drift"
+      : sharedRules.every((entry) => entry.staging_sync === "synced")
+        ? "synced"
+        : "unknown";
+    const sharedRulesStaleStatus = !checkUpdates
+      ? "not-checked"
+      : staleSharedRules.length > 0
+        ? "stale"
+        : sharedRules.every((entry) => entry.stale_status === "up-to-date")
+          ? "up-to-date"
+          : "unknown";
+
+    hostStatuses[host] = {
+      label: HOSTS[host].label,
+      path: HOSTS[host].skillsDir,
+      status,
+      present: status === "present",
+      installed_skills: installedSkills,
+      missing_skills: missingSkills,
+      drift_skills: driftSkills,
+      stale_skills: staleSkills,
+      shared_rules: installedSharedRules,
+      missing_shared_rules: missingSharedRules,
+      drift_shared_rules: driftSharedRules,
+      stale_shared_rules: staleSharedRules,
+      shared_rules_staging_sync: sharedRulesStagingSync,
+      shared_rules_stale_status: sharedRulesStaleStatus,
+      versions: Object.fromEntries(skills.filter((entry) => entry.present).map((entry) => [entry.name, entry.version])),
+      staging_sync: stagingSync,
+      stale_status: staleStatus,
+      skills,
+      shared_rule_details: sharedRules,
+      reason: status === "present"
+        ? `Detected all ${WAZA_MANAGED_SKILLS.length} Waza skills for ${HOSTS[host].label} from the real host skill path.`
+        : status === "partial"
+          ? `Detected ${installedSkills.length}/${WAZA_MANAGED_SKILLS.length} Waza skills for ${HOSTS[host].label}; missing ${missingSkills.join(", ")}.`
+          : `No Waza skills detected at ${HOSTS[host].skillsDir}.`,
+    };
+  }
+
+  const staleSkillSet = new Set();
+  const staleRuleSet = new Set();
+  for (const host of Object.values(hostStatuses)) {
+    for (const skill of host.stale_skills) staleSkillSet.add(skill);
+    for (const rule of host.stale_shared_rules) staleRuleSet.add(rule);
+  }
+  const updateStatus = !checkUpdates
+    ? "not-checked"
+    : upstream.status === "unknown"
+      ? "unknown"
+      : staleSkillSet.size > 0 || staleRuleSet.size > 0
+        ? "update-available"
+        : "up-to-date";
+  const updateReason = !checkUpdates
+    ? "Update checks were skipped."
+    : upstream.status === "unknown"
+      ? upstream.reason
+      : staleSkillSet.size > 0 || staleRuleSet.size > 0
+        ? `Upstream Waza files differ for: ${[
+            ...[...staleSkillSet].sort().map((skill) => `skills/${skill}/SKILL.md`),
+            ...[...staleRuleSet].sort().map((rule) => `rules/${rule}`),
+          ].join(", ")}.`
+        : "Local Waza SKILL.md and shared rule files match upstream GitHub raw content.";
+
+  const status = summarizeWazaStatus(hostStatuses);
+  const installCommand = `bunx skills add tw93/Waza -g -a ${
+    hostMode === "both" ? "claude-code codex" : hostMode === "claude" ? "claude-code" : "codex"
+  } -s think hunt check health -y`;
+  const syncCommand = SELECTED_HOSTS.map((host) => buildWazaHostSyncCommand(host)).join(" && ");
+  const verifyCommand = SELECTED_HOSTS.map((host) => buildWazaHostVerifyCommand(host)).join(" && ");
+
+  return {
+    name: "waza",
+    status,
+    reason: status === "present"
+      ? `Detected Waza in all requested real host paths (${SELECTED_HOSTS.join(", ")}).`
+      : status === "partial"
+        ? "Waza is installed for some requested host paths or only partially installed."
+        : "No managed Waza skills were found in the requested real host paths.",
+    source_lock_file: fs.existsSync(skillLockPath) ? skillLockPath : null,
+    source_repo: WAZA_SOURCE_REPO,
+    source_url: WAZA_SOURCE_URL,
+    managed_skills: WAZA_MANAGED_SKILLS,
+    shared_rules: WAZA_SHARED_RULES,
+    primary_host: "codex",
+    codex_primary_path: path.join(HOME, ".codex", "skills"),
+    staging_cache_path: WAZA_STAGING_DIR,
+    staging_rules_path: WAZA_STAGING_RULES_DIR,
+    sync_mode: "codex-first-copy-from-staging",
+    host_drift_policy: "report-per-host-directory-rule-staging-and-upstream-drift",
+    skills_cli_status: skillsResult.ok ? "available" : skillsResult.timed_out ? "timed-out" : "unavailable",
+    source_lock_entries: wazaEntries.map(([name]) => name).sort(),
+    upstream_status: upstream.status,
+    upstream_reason: upstream.reason,
+    upstream_skills: upstream.skills,
+    upstream_rules: upstream.rules,
+    hosts: hostStatuses,
+    update_status: updateStatus,
+    update_reason: updateReason,
+    install_command: installCommand,
+    stage_command: installCommand,
+    sync_command: syncCommand,
+    verify_command: verifyCommand,
+    upgrade_command: `${installCommand} && ${syncCommand}`,
+    impact: {
+      complex_tasks: "unaffected",
+      simple_tasks: status === "present" ? "full" : status === "partial" ? "degraded" : "missing",
+      knowledge_tasks: "unaffected",
+    },
+  };
+}
+
+function detectRuntimeCapabilities(waza) {
+  return {
+    bun: commandCapability(
+      "bun",
+      "repo-harness-owned global installs, local package dependency install, and test/runtime execution",
+      "repo-harness",
+      true
+    ),
+    npm: commandCapability(
+      "npm",
+      "npm registry readbacks, publish gates, and opt-in update checks; not used for repo-harness-owned global install repair",
+      "npm-registry",
+      false
+    ),
+    npx: commandCapability(
+      "npx",
+      "no repo-harness usage; Skills CLI bootstrap/update for Waza and Mermaid runs through bunx instead",
+      "npm-registry",
+      false
+    ),
+    skills_cli: {
+      name: "skills_cli",
+      status: waza.skills_cli_status === "available" ? "available" : waza.skills_cli_status,
+      path: null,
+      owner: "external-skills-cli",
+      required: false,
+      required_for: "Waza/Mermaid external skill bootstrap; repo-harness reports this as an explicit exception boundary",
+      command: "bunx skills ls -g --json",
+    },
+    bash: commandCapability(
+      "bash",
+      "repo-harness helper scripts, migration, setup checks, and contract verification wrappers",
+      "repo-harness",
+      true
+    ),
+    rsync: commandCapability(
+      "rsync",
+      "Waza staging-to-Codex sync and installed-copy runtime mirroring",
+      "platform-filesystem",
+      false
+    ),
+    symlink: detectSymlinkCapability(),
+  };
+}
+
+function inspectCodexAutomationSkill(skill) {
+  const skillFile = path.join(HOSTS.codex.skillsDir, skill, "SKILL.md");
+  const local = readSkillFile(skillFile);
+
+  return {
+    name: skill,
+    path: skillFile,
+    real_path: resolveRealPath(skillFile),
+    present: local.exists,
+    version: local.version,
+    hash: local.hash,
+  };
+}
+
+function detectCodexAutomationProfile() {
+  const skills = CODEX_AUTOMATION_SKILLS.map((skill) => inspectCodexAutomationSkill(skill));
+  const installedSkills = skills.filter((entry) => entry.present).map((entry) => entry.name);
+  const missingSkills = skills.filter((entry) => !entry.present).map((entry) => entry.name);
+  const status = missingSkills.length === 0 ? "present" : installedSkills.length > 0 ? "partial" : "missing";
+
+  return {
+    name: "codex_automation_profile",
+    status,
+    reason: status === "present"
+      ? "Detected all required Codex automation skills from the Codex runtime path."
+      : status === "partial"
+        ? `Detected ${installedSkills.length}/${CODEX_AUTOMATION_SKILLS.length} required Codex automation skills; missing ${missingSkills.join(", ")}.`
+        : "No required Codex automation skills were found in the Codex runtime path.",
+    required_skills: CODEX_AUTOMATION_SKILLS,
+    optional_skills: [],
+    mode: "codex-runtime-reference",
+    source: HOSTS.codex.skillsDir,
+    routes: {
+      workflow_health: "waza:health",
+      review_gate: "waza:check",
+      architecture_diagram: "mermaid",
+    },
+    vendoring_policy: "do-not-vendor-skill-body",
+    installed_skills: installedSkills,
+    missing_skills: missingSkills,
+    skills,
+  };
+}
+
+function resolveManagedAgents() {
+  const policy = readJson(path.join(REPO_ROOT, ".ai", "harness", "policy.json"));
+  const configured = policy?.external_tooling?.agent_fleet?.managed_agents;
+  if (Array.isArray(configured) && configured.length > 0 && configured.every((entry) => typeof entry === "string")) {
+    return configured;
+  }
+  return AGENT_FLEET_DEFAULT_MANAGED;
+}
+
+function agentFleetFileExtension(host) {
+  return host === "codex" ? "toml" : "md";
+}
+
+function inspectAgentFleetFile(host, agent) {
+  const meta = HOSTS[host];
+  const filePath = path.join(meta.agentsDir, `${agent}.${agentFleetFileExtension(host)}`);
+  const local = readFileHash(filePath);
+  return {
+    name: agent,
+    path: filePath,
+    present: local.exists,
+    hash: local.hash,
+  };
+}
+
+function readAgentFleetSource(agent) {
+  const sourcePath = path.join(AGENT_FLEET_SOURCE_DIR, `${agent}.md`);
+  const source = readFileHash(sourcePath);
+  if (!source.exists) {
+    return { status: "source-missing", path: sourcePath, hash: null };
+  }
+  return { status: "read", path: sourcePath, hash: source.hash };
+}
+
+function detectAgentFleetHost(host, managedAgents) {
+  const meta = HOSTS[host];
+  const files = managedAgents.map((agent) => inspectAgentFleetFile(host, agent));
+  const installedAgents = files.filter((entry) => entry.present).map((entry) => entry.name);
+  const missingAgents = files.filter((entry) => !entry.present).map((entry) => entry.name);
+  const status = missingAgents.length === 0 ? "present" : installedAgents.length > 0 ? "partial" : "missing";
+
+  let updateStatus = "not-checked";
+  let updateReason = "Update checks were skipped.";
+  const driftAgents = [];
+  const syncedAgents = [];
+  const sourceMissingAgents = [];
+
+  if (checkUpdates) {
+    if (host === "claude") {
+      for (const entry of files) {
+        if (!entry.present) continue;
+        const source = readAgentFleetSource(entry.name);
+        if (source.status === "source-missing") {
+          sourceMissingAgents.push(entry.name);
+          continue;
+        }
+        if (source.hash === entry.hash) {
+          syncedAgents.push(entry.name);
+        } else {
+          driftAgents.push(entry.name);
+        }
+      }
+
+      if (driftAgents.length > 0) {
+        updateStatus = "drift";
+        updateReason = `Installed Claude agent definitions differ from the packaged repo-harness fleet source for: ${driftAgents.join(", ")}.`;
+      } else if (sourceMissingAgents.length > 0) {
+        updateStatus = "unknown";
+        updateReason = `Packaged repo-harness fleet source is missing files for: ${sourceMissingAgents.join(", ")}.`;
+      } else if (syncedAgents.length > 0) {
+        updateStatus = "synced";
+        updateReason = "Installed Claude agent definitions match the packaged repo-harness fleet source.";
+      } else {
+        updateStatus = "not-checked";
+        updateReason = "No installed Claude agent definitions to compare.";
+      }
+    } else {
+      updateStatus = "not-applicable";
+      updateReason = "Codex agent definitions are generated artifacts derived from the packaged repo-harness fleet source; readiness checks presence while installer golden tests prove generation.";
+    }
+  }
+
+  return {
+    label: meta.agentLabel,
+    status,
+    installed_agents: installedAgents,
+    missing_agents: missingAgents,
+    agents: files,
+    update_status: updateStatus,
+    update_reason: updateReason,
+    drift_agents: driftAgents,
+    synced_agents: syncedAgents,
+    source_missing_agents: sourceMissingAgents,
+  };
+}
+
+function detectCodexNativeRoleRouting() {
+  if (!SELECTED_HOSTS.includes("codex")) {
+    return {
+      status: "not-applicable",
+      reason: "Codex was not selected for this tooling report.",
+      evidence_path: null,
+    };
+  }
+
+  const stateRoot = path.join(REPO_ROOT, ".ai", "harness", "delegation");
+  const statePath = path.join(stateRoot, "latest.json");
+  if (!fs.existsSync(statePath)) {
+    return {
+      status: "unverified",
+      reason: "No repo-scoped SubagentStart role/model evidence has been recorded.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  const state = readJson(statePath);
+  if (!state || typeof state !== "object") {
+    return {
+      status: "invalid",
+      reason: "The repo-scoped delegation evidence file is not valid JSON.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  const routingState = state.native_role_routing;
+  if (routingState === undefined) {
+    return {
+      status: "unverified",
+      reason: "The latest delegation state predates native role/model evidence capture.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+  if (!routingState || typeof routingState !== "object") {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence state is malformed.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  function resolveEvidenceDirectory(relative) {
+    if (typeof relative !== "string" || !relative.trim() || path.isAbsolute(relative)) return null;
+    const stateRootStat = fs.lstatSync(stateRoot);
+    if (stateRootStat.isSymbolicLink() || !stateRootStat.isDirectory()) return null;
+    const root = fs.realpathSync(stateRoot);
+    const resolved = path.resolve(root, relative);
+    if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) return null;
+    let current = root;
+    for (const segment of path.relative(root, resolved).split(path.sep)) {
+      current = path.join(current, segment);
+      if (!fs.existsSync(current)) return { path: resolved, exists: false };
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return null;
+      const canonical = fs.realpathSync(current);
+      if (!canonical.startsWith(`${root}${path.sep}`)) return null;
+    }
+    return { path: current, exists: true };
+  }
+
+  const currentEvidence = resolveEvidenceDirectory(routingState.evidence_dir);
+  if (!currentEvidence) {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence directory is missing or unsafe.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  function observationFiles(directory) {
+    if (!fs.existsSync(directory)) return [];
+    try {
+      const stat = fs.lstatSync(directory);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return null;
+      const entries = fs.readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.name.endsWith(".json"));
+      if (entries.some((entry) => !entry.isFile())) return null;
+      return entries.map((entry) => path.join(directory, entry.name)).sort();
+    } catch {
+      return null;
+    }
+  }
+
+  function latestRecordedDirectory() {
+    const resolvedRoot = resolveEvidenceDirectory("role-routing");
+    if (!resolvedRoot || !resolvedRoot.exists) return null;
+    const routingRoot = resolvedRoot.path;
+    try {
+      const entries = fs.readdirSync(routingRoot, { withFileTypes: true });
+      if (entries.some((entry) => !entry.isDirectory())) return { invalid: true };
+      const candidates = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(routingRoot, entry.name))
+        .map((directory) => ({ directory, files: observationFiles(directory) }))
+        .filter((entry) => entry.files === null || entry.files.length > 0);
+      if (candidates.some((entry) => entry.files === null)) return { invalid: true };
+      const ranked = candidates
+        .map((entry) => ({
+          ...entry,
+          latestMtime: Math.max(...entry.files.map((file) => fs.statSync(file).mtimeMs)),
+        }))
+        .sort((left, right) => right.latestMtime - left.latestMtime || left.directory.localeCompare(right.directory));
+      return ranked[0] || null;
+    } catch {
+      return { invalid: true };
+    }
+  }
+
+  let evidenceDir = currentEvidence.path;
+  let files = observationFiles(evidenceDir);
+  if (files === null) {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence directory cannot be read safely.",
+      evidence_path: evidenceDir,
+      observations: [],
+    };
+  }
+  if (files.length === 0) {
+    const previous = latestRecordedDirectory();
+    if (previous?.invalid) {
+      return {
+        status: "invalid",
+        reason: "Stored native role/model evidence contains an unsafe entry.",
+        evidence_path: path.join(stateRoot, "role-routing"),
+        observations: [],
+      };
+    }
+    if (previous) {
+      evidenceDir = previous.directory;
+      files = previous.files;
+    }
+  }
+  if (files.length === 0) {
+    return {
+      status: "unverified",
+      reason: "No authoritative SubagentStart role/model observation has been recorded.",
+      evidence_path: evidenceDir,
+      observations: [],
+    };
+  }
+
+  const bounded = (value, pattern) => typeof value === "string"
+    && value.length > 0
+    && value.length <= 128
+    && !/[\u0000-\u001f\u007f]/.test(value)
+    && pattern.test(value);
+  const validDate = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
+  function configDigestMatches(observation) {
+    if (!/^[a-f0-9]{64}$/.test(observation.config_sha256 || "")) return false;
+    const roots = [path.join(REPO_ROOT, ".codex", "agents")];
+    const codexHome = process.env.CODEX_HOME || (process.env.HOME ? path.join(process.env.HOME, ".codex") : "");
+    if (codexHome) roots.push(path.join(codexHome, "agents"));
+    try {
+      const stat = fs.lstatSync(observation.config_path);
+      if (stat.isSymbolicLink() || !stat.isFile()) return false;
+      const canonicalFile = fs.realpathSync(observation.config_path);
+      const withinAllowedRoot = roots.some((root) => {
+        if (!fs.existsSync(root)) return false;
+        const rootStat = fs.lstatSync(root);
+        if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) return false;
+        const canonicalRoot = fs.realpathSync(root);
+        return canonicalFile.startsWith(`${canonicalRoot}${path.sep}`);
+      });
+      if (!withinAllowedRoot) return false;
+      const currentDigest = crypto.createHash("sha256").update(fs.readFileSync(canonicalFile)).digest("hex");
+      return currentDigest === observation.config_sha256;
+    } catch {
+      return false;
+    }
+  }
+  const observations = [];
+  for (const file of files) {
+    const observation = readJson(file);
+    const commonValid = observation
+      && typeof observation === "object"
+      && observation.schema_version === 1
+      && observation.required === true
+      && ["verified", "unavailable", "mismatch", "unverified", "invalid"].includes(observation.status)
+      && typeof observation.reason === "string"
+      && observation.reason.trim().length > 0
+      && observation.reason.length <= 512
+      && !/[\u0000-\u001f\u007f]/.test(observation.reason)
+      && bounded(observation.agent_id, /^[A-Za-z0-9._:-]+$/)
+      && bounded(observation.turn_id, /^[A-Za-z0-9._:-]+$/)
+      && validDate(observation.checked_at);
+    let semanticValid = commonValid;
+    if (semanticValid && ["verified", "mismatch"].includes(observation.status)) {
+      semanticValid = bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/)
+        && observation.agent_type !== "default"
+        && bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/)
+        && bounded(observation.configured_model, /^[A-Za-z0-9._-]+$/)
+        && typeof observation.config_path === "string"
+        && path.isAbsolute(observation.config_path)
+        && configDigestMatches(observation)
+        && (observation.status === "verified"
+          ? observation.observed_model === observation.configured_model
+          : observation.observed_model !== observation.configured_model);
+    } else if (semanticValid && observation.status === "unavailable") {
+      semanticValid = observation.agent_type === "default"
+        && bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/)
+        && observation.configured_model === null
+        && observation.config_path === null
+        && observation.config_sha256 === null;
+    } else if (semanticValid && observation.status === "unverified") {
+      const agentTypeValid = observation.agent_type === null
+        || bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/);
+      const observedModelValid = observation.observed_model === null
+        || bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/);
+      semanticValid = agentTypeValid
+        && observedModelValid
+        && (observation.agent_type === null || observation.observed_model === null)
+        && observation.configured_model === null
+        && observation.config_path === null
+        && observation.config_sha256 === null;
+    }
+    if (!semanticValid) {
+      return {
+        status: "invalid",
+        reason: "A native role/model observation is structurally or semantically invalid.",
+        evidence_path: evidenceDir,
+        observations: [],
+      };
+    }
+    observations.push({ ...observation, evidence_path: file });
+  }
+
+  const precedence = ["invalid", "mismatch", "unavailable", "unverified", "verified"];
+  const status = precedence.find((candidate) => observations.some((entry) => entry.status === candidate)) || "invalid";
+  const counts = Object.fromEntries(precedence.map((candidate) => [
+    candidate,
+    observations.filter((entry) => entry.status === candidate).length,
+  ]));
+  const reason = observations.length === 1
+    ? observations[0].reason
+    : `Aggregated ${observations.length} child observations: ${precedence.map((key) => `${key}=${counts[key]}`).join(", ")}.`;
+  return {
+    status,
+    reason,
+    evidence_path: evidenceDir,
+    observations,
+  };
+}
+
+function detectAgentFleet() {
+  const managedAgents = resolveManagedAgents();
+  const hosts = {};
+  for (const host of SELECTED_HOSTS) {
+    hosts[host] = detectAgentFleetHost(host, managedAgents);
+  }
+
+  const values = Object.values(hosts);
+  const presentCount = values.filter((entry) => entry.status === "present").length;
+  const anyInstalled = values.some((entry) => entry.installed_agents.length > 0);
+  const status = values.length > 0 && presentCount === values.length
+    ? "present"
+    : anyInstalled
+      ? "partial"
+      : "missing";
+
+  return {
+    name: "agent_fleet",
+    status,
+    reason: status === "present"
+      ? "Detected all repo-harness managed agent definitions on the requested hosts."
+      : status === "partial"
+        ? "Some repo-harness managed agent definitions are missing on the requested hosts."
+        : "No repo-harness managed agent definitions were found on the requested hosts.",
+    managed_agents: managedAgents,
+    source: AGENT_FLEET_SOURCE_LABEL,
+    install_command: AGENT_FLEET_INSTALL_COMMAND,
+    native_role_routing: detectCodexNativeRoleRouting(),
+    hosts,
+  };
+}
+
+function detectCodeGraphMcp(host) {
+  const meta = HOSTS[host];
+  const content = readText(meta.configPath);
+  function claudeEntryResult(entry, source) {
+    if (!entry || typeof entry !== "object") return null;
+    if (entry.alwaysLoad === true) {
+      return {
+        status: "configured",
+        always_load: true,
+        tool_search: "always-load",
+        reason: `${source} contains a codegraph MCP server entry with alwaysLoad=true.`,
+      };
+    }
+    return {
+      status: "deferred",
+      always_load: false,
+      tool_search: "deferred",
+      reason: `${source} contains a codegraph MCP server entry, but alwaysLoad is not true; Claude Code MCP Tool Search may defer CodeGraph tools.`,
+    };
+  }
+  function claudeTextFallback(source, sourcePath) {
+    return {
+      status: "deferred",
+      always_load: false,
+      tool_search: "unknown",
+      reason: `${source} contains a codegraph MCP server entry at ${sourcePath}, but alwaysLoad could not be verified.`,
+    };
+  }
+
+  if (!content) {
+    if (host === "claude") {
+      const claudeRootConfig = path.join(HOME, ".claude.json");
+      const rootJson = readJson(claudeRootConfig);
+      const rootEntry = claudeEntryResult(rootJson?.mcpServers?.codegraph, `Claude root config at ${claudeRootConfig}`);
+      if (rootEntry) return rootEntry;
+      const rootContent = readText(claudeRootConfig);
+      if (/codegraph/i.test(rootContent)) {
+        return claudeTextFallback("Claude root config", claudeRootConfig);
+      }
+    }
+
+    return {
+      status: "missing",
+      reason: `No ${meta.label} config found at ${meta.configPath}.`,
+    };
+  }
+
+  if (host === "codex") {
+    if (/\[mcp_servers\.codegraph\]/.test(content)) {
+      return {
+        status: "configured",
+        reason: "Codex config contains a codegraph MCP server entry.",
+      };
+    }
+
+    return {
+      status: "missing",
+      reason: "Codex config does not contain a codegraph MCP server entry.",
+    };
+  }
+
+  const settingsJson = readJson(meta.configPath);
+  const settingsEntry = claudeEntryResult(settingsJson?.mcpServers?.codegraph, `Claude settings at ${meta.configPath}`);
+  if (settingsEntry) return settingsEntry;
+  if (/"mcpServers"\s*:\s*{[\s\S]*"codegraph"/i.test(content)) {
+    return claudeTextFallback("Claude settings", meta.configPath);
+  }
+
+  const claudeRootConfig = path.join(HOME, ".claude.json");
+  const rootJson = readJson(claudeRootConfig);
+  const rootEntry = claudeEntryResult(rootJson?.mcpServers?.codegraph, `Claude root config at ${claudeRootConfig}`);
+  if (rootEntry) return rootEntry;
+  const rootContent = readText(claudeRootConfig);
+  if (/"mcpServers"\s*:\s*{[\s\S]*"codegraph"/i.test(rootContent)) {
+    return claudeTextFallback("Claude root config", claudeRootConfig);
+  }
+
+  return {
+    status: "missing",
+    reason: "Claude config does not contain a codegraph MCP server entry.",
+  };
+}
+
+function parseCodeGraphProjectStatus(output) {
+  if (/Not initialized/i.test(output)) return "not-initialized";
+  if (/Index is up to date/i.test(output)) return "up-to-date";
+  if (/Pending Changes/i.test(output) || /Run "codegraph sync/i.test(output)) return "stale";
+  if (/CodeGraph Status/i.test(output)) return "unknown";
+  return "unavailable";
+}
+
+function resolvePathCommand(command) {
+  const pathValue = process.env.PATH || "";
+  for (const dir of pathValue.split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, command);
+    if (fileIsExecutable(candidate)) return candidate;
+  }
+  return null;
+}
+
+function codeGraphPackageDeclared() {
+  const pkg = readJson(path.join(REPO_ROOT, "package.json"));
+  if (!pkg || typeof pkg !== "object") return false;
+  return Boolean(
+    pkg.devDependencies?.[CODEGRAPH_PACKAGE] ||
+      pkg.dependencies?.[CODEGRAPH_PACKAGE] ||
+      pkg.optionalDependencies?.[CODEGRAPH_PACKAGE]
+  );
+}
+
+function codeGraphPlatformPackageName() {
+  return `${CODEGRAPH_PACKAGE}-${process.platform}-${process.arch}`;
+}
+
+function codeGraphPlatformBundleBin() {
+  if (process.platform === "win32") return null;
+  return path.join(REPO_ROOT, "node_modules", codeGraphPlatformPackageName(), "bin", "codegraph");
+}
+
+function resolveCodeGraphBinary() {
+  const allowRepoLocal = process.env.AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL !== "0";
+  const allowGlobal = process.env.AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL !== "0";
+  const localCandidates = [];
+  const localOverride = process.env.AGENTIC_DEV_CODEGRAPH_LOCAL_BIN;
+  const globalOverride = process.env.AGENTIC_DEV_CODEGRAPH_GLOBAL_BIN;
+
+  if (localOverride) localCandidates.push(localOverride);
+  if (allowRepoLocal) {
+    localCandidates.push(codeGraphPlatformBundleBin());
+    localCandidates.push(path.join(REPO_ROOT, "node_modules", ".bin", "codegraph"));
+  }
+
+  let localBinPath = null;
+  for (const candidate of localCandidates) {
+    if (candidate && fileIsExecutable(candidate)) {
+      localBinPath = candidate;
+      break;
+    }
+  }
+
+  let globalBinPath = null;
+  if (allowGlobal) {
+    if (globalOverride && fileIsExecutable(globalOverride)) {
+      globalBinPath = globalOverride;
+    } else if (!globalOverride) {
+      globalBinPath = resolvePathCommand("codegraph");
+    }
+  }
+
+  if (localBinPath) {
+    return {
+      source: "local",
+      bin_path: localBinPath,
+      local_bin_path: localBinPath,
+      global_bin_path: globalBinPath,
+      global_fallback_used: false,
+    };
+  }
+
+  if (globalBinPath) {
+    return {
+      source: "global",
+      bin_path: globalBinPath,
+      local_bin_path: null,
+      global_bin_path: globalBinPath,
+      global_fallback_used: true,
+    };
+  }
+
+  return {
+    source: "missing",
+    bin_path: null,
+    local_bin_path: null,
+    global_bin_path: null,
+    global_fallback_used: false,
+  };
+}
+
+function codeGraphVersion(binPath) {
+  if (!binPath) return null;
+  const result = run(binPath, ["--version"], { timeoutMs: 1000 });
+  if (result.ok) return result.stdout.trim() || null;
+  if (result.timed_out) {
+    const retry = run(binPath, ["--version"], { timeoutMs: 1000 });
+    if (retry.ok) return retry.stdout.trim() || null;
+  }
+  return null;
+}
+
+function detectCodeGraph() {
+  const resolution = resolveCodeGraphBinary();
+  const cliPresent = Boolean(resolution.bin_path);
+  const version = codeGraphVersion(resolution.bin_path);
+  const globalVersion = resolution.global_bin_path && resolution.global_bin_path !== resolution.bin_path
+    ? codeGraphVersion(resolution.global_bin_path)
+    : resolution.source === "global"
+      ? version
+      : null;
+  const localVersion = resolution.source === "local" ? version : null;
+  const packageDeclared = codeGraphPackageDeclared();
+  const mcpHosts = {};
+
+  for (const host of SELECTED_HOSTS) {
+    mcpHosts[host] = {
+      label: HOSTS[host].label,
+      ...detectCodeGraphMcp(host),
+    };
+  }
+
+  const selectedMcpConfigured = SELECTED_HOSTS.every((host) => mcpHosts[host]?.status === "configured");
+  const statusResult = cliPresent ? run(resolution.bin_path, ["status", "."], { timeoutMs: 1500 }) : null;
+  const statusOutput = `${statusResult?.stdout || ""}\n${statusResult?.stderr || ""}`;
+  const projectIndexStatus = cliPresent ? parseCodeGraphProjectStatus(statusOutput) : "unavailable";
+  const indexInitialized = fs.existsSync(path.join(REPO_ROOT, ".codegraph"))
+    || ["up-to-date", "stale", "unknown"].includes(projectIndexStatus);
+  const updateResult = cliPresent && checkUpdates
+    ? run("npm", ["view", CODEGRAPH_PACKAGE, "version", "--json"], { timeoutMs: 3000 })
+    : null;
+  const latestVersion = updateResult?.ok ? (parseJson(updateResult.stdout) || updateResult.stdout.trim().replace(/^"|"$/g, "")) : null;
+  const updateStatus = !checkUpdates
+    ? "not-checked"
+    : latestVersion && version
+      ? (String(latestVersion) === String(version) ? "up-to-date" : "update-available")
+      : "unknown";
+  const localDependencyMissing = packageDeclared && resolution.source === "global";
+  const status = !cliPresent
+    ? "missing"
+    : localDependencyMissing || !selectedMcpConfigured || projectIndexStatus === "not-initialized" || projectIndexStatus === "unavailable"
+      ? "partial"
+      : projectIndexStatus === "stale" || projectIndexStatus === "unknown"
+        ? "warning"
+        : "present";
+
+  return {
+    name: "codegraph",
+    status,
+    reason: !cliPresent
+      ? "CodeGraph CLI is not installed."
+      : localDependencyMissing
+        ? "CodeGraph global fallback is present, but this repo declares a local dev dependency that is not installed."
+      : !selectedMcpConfigured
+        ? "CodeGraph CLI is present, but one or more selected host MCP configs are missing or deferred."
+        : projectIndexStatus === "not-initialized"
+          ? "CodeGraph CLI and MCP are present, but this repo has not been indexed."
+          : projectIndexStatus === "unavailable"
+            ? "CodeGraph CLI and MCP are present, but project index status could not be read."
+          : projectIndexStatus === "stale"
+            ? "CodeGraph is configured, but this repo index has pending changes."
+            : projectIndexStatus === "unknown"
+              ? "CodeGraph is configured, but this repo index status is unknown."
+            : "CodeGraph CLI, selected host MCP config, and project index are ready.",
+    package: CODEGRAPH_PACKAGE,
+    primary_host: "codex",
+    cli_present: cliPresent,
+    source: resolution.source,
+    bin_path: resolution.bin_path,
+    local_bin_path: resolution.local_bin_path,
+    global_bin_path: resolution.global_bin_path,
+    global_fallback_used: resolution.global_fallback_used,
+    version,
+    local_version: localVersion,
+    global_version: globalVersion,
+    dependency_declared: packageDeclared,
+    drift: localVersion && globalVersion && localVersion !== globalVersion
+      ? { local: localVersion, global: globalVersion, using: resolution.source }
+      : null,
+    latest_version: latestVersion,
+    update_status: updateStatus,
+    update_reason: !checkUpdates
+      ? "Update checks were skipped."
+      : updateResult?.timed_out
+        ? "CodeGraph npm version check timed out."
+        : latestVersion && version
+          ? (String(latestVersion) === String(version) ? "Local CodeGraph matches npm latest." : "npm reports a newer CodeGraph version.")
+          : "CodeGraph update status is unknown.",
+    mcp_hosts: mcpHosts,
+    project_index: {
+      status: projectIndexStatus,
+      initialized: indexInitialized,
+      path: path.join(REPO_ROOT, ".codegraph"),
+      command: "codegraph status .",
+    },
+    install_command: packageDeclared ? CODEGRAPH_LOCAL_INSTALL_COMMAND : CODEGRAPH_GLOBAL_INSTALL_COMMAND,
+    ensure_command: packageDeclared ? CODEGRAPH_ENSURE_BASH_COMMAND : null,
+    mcp_install_command: CODEGRAPH_MCP_CONFIGURE_COMMAND,
+    init_command: packageDeclared && CODEGRAPH_ENSURE_BASH_COMMAND ? `${CODEGRAPH_ENSURE_BASH_COMMAND} --init` : "codegraph init -i .",
+    sync_command: packageDeclared && CODEGRAPH_ENSURE_BASH_COMMAND ? `${CODEGRAPH_ENSURE_BASH_COMMAND} --sync` : "codegraph sync .",
+    upgrade_command: packageDeclared && CODEGRAPH_ENSURE_BASH_COMMAND ? `bun update @colbymchenry/codegraph && ${CODEGRAPH_ENSURE_BASH_COMMAND} --sync` : `bun add -g ${CODEGRAPH_PACKAGE}@latest && codegraph sync .`,
+    uninstall_command: "codegraph uninstall --target codex --location global --yes",
+    readiness: {
+      required_for: "codex-agent-code-navigation",
+      hook_policy: "do-not-block-hooks",
+      user_setup: "one-terminal-command-or-authorized-agent-action",
+    },
+    impact: {
+      code_navigation: status === "present" ? "full" : status === "warning" ? "stale-index" : "missing",
+      hook_correctness: "unaffected",
+    },
+  };
+}
+
+const wazaReport = detectWaza();
+const report = {
+  generated_at: new Date().toISOString(),
+  repo_root: REPO_ROOT,
+  hosts: SELECTED_HOSTS,
+  check_updates: checkUpdates,
+  runtime_capabilities: detectRuntimeCapabilities(wazaReport),
+  tools: {
+    waza: wazaReport,
+    codex_automation_profile: detectCodexAutomationProfile(),
+    agent_fleet: detectAgentFleet(),
+    codegraph: detectCodeGraph(),
+  },
+};
+
+const strictFailures = [];
+if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
+  strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
+}
+if (strictReadiness && ["missing", "partial"].includes(report.tools.agent_fleet.status)) {
+  strictFailures.push(`Agent fleet readiness is ${report.tools.agent_fleet.status}: ${report.tools.agent_fleet.reason}`);
+}
+if (
+  strictReadiness
+  && ["unavailable", "mismatch", "invalid"].includes(report.tools.agent_fleet.native_role_routing.status)
+) {
+  const routing = report.tools.agent_fleet.native_role_routing;
+  strictFailures.push(`Codex native role routing is ${routing.status}: ${routing.reason}`);
+}
+
+function printText(result) {
+  console.log("External Tooling Report");
+  console.log(`Hosts: ${result.hosts.join(", ")}`);
+  console.log("");
+
+  console.log("Runtime capabilities");
+  for (const capability of Object.values(result.runtime_capabilities || {})) {
+    const required = capability.required ? "required" : "optional";
+    const pathBits = capability.path ? ` at ${capability.path}` : "";
+    console.log(`  - ${capability.name}: ${capability.status} (${required})${pathBits}`);
+    console.log(`    owner=${capability.owner}; required_for=${capability.required_for}`);
+  }
+  console.log("");
+
+  const waza = result.tools.waza;
+  console.log(`Waza [${waza.status}]`);
+  console.log(`  - Source lock: ${waza.source_lock_file || "not found"}`);
+  console.log(`  - Primary: ${waza.primary_host} (${waza.codex_primary_path})`);
+  console.log(`  - Staging: ${waza.staging_cache_path}`);
+  console.log(`  - Skills CLI: ${waza.skills_cli_status}`);
+  for (const host of SELECTED_HOSTS) {
+    const entry = waza.hosts[host];
+    const versionBits = Object.entries(entry.versions)
+      .map(([name, version]) => `${name}@${version || "unknown"}`)
+      .join(", ");
+    console.log(`  - ${entry.label}: ${entry.status}, ${entry.installed_skills.length}/${waza.managed_skills.length} skills, sync=${entry.staging_sync}, stale=${entry.stale_status}`);
+    if (versionBits) {
+      console.log(`    versions: ${versionBits}`);
+    }
+    console.log(`    shared rules: ${entry.shared_rules.length}/${waza.shared_rules.length}, sync=${entry.shared_rules_staging_sync}, stale=${entry.shared_rules_stale_status}`);
+    if (entry.missing_skills.length) {
+      console.log(`    missing: ${entry.missing_skills.join(", ")}`);
+    }
+    if (entry.drift_skills.length) {
+      console.log(`    drift: ${entry.drift_skills.join(", ")}`);
+    }
+    if (entry.stale_skills.length) {
+      console.log(`    stale: ${entry.stale_skills.join(", ")}`);
+    }
+    if (entry.missing_shared_rules.length) {
+      console.log(`    missing shared rules: ${entry.missing_shared_rules.join(", ")}`);
+    }
+    if (entry.drift_shared_rules.length) {
+      console.log(`    drift shared rules: ${entry.drift_shared_rules.join(", ")}`);
+    }
+    if (entry.stale_shared_rules.length) {
+      console.log(`    stale shared rules: ${entry.stale_shared_rules.join(", ")}`);
+    }
+  }
+  console.log(`  - Updates: ${waza.update_status} (${waza.update_reason})`);
+  console.log(`  - Impact: simple=${waza.impact.simple_tasks}`);
+  console.log(`  - Install: ${waza.install_command}`);
+  console.log(`  - Stage: ${waza.stage_command}`);
+  console.log(`  - Sync hosts: ${waza.sync_command}`);
+  console.log(`  - Verify: ${waza.verify_command}`);
+  console.log("");
+
+  const codexAutomation = result.tools.codex_automation_profile;
+  console.log(`Codex automation profile [${codexAutomation.status}]`);
+  console.log(`  - Required: ${codexAutomation.required_skills.join(", ")}`);
+  console.log(`  - Source: ${codexAutomation.source}`);
+  console.log(`  - Mode: ${codexAutomation.mode}`);
+  if (codexAutomation.missing_skills.length) {
+    console.log(`  - Missing: ${codexAutomation.missing_skills.join(", ")}`);
+  }
+  console.log(`  - Routes: health=${codexAutomation.routes.workflow_health}, check=${codexAutomation.routes.review_gate}, diagram=${codexAutomation.routes.architecture_diagram}`);
+  console.log(`  - Vendoring: ${codexAutomation.vendoring_policy}`);
+  console.log("");
+
+  const agentFleet = result.tools.agent_fleet;
+  console.log(`Agent fleet [${agentFleet.status}]`);
+  console.log(`  - Managed: ${agentFleet.managed_agents.join(", ")}`);
+  for (const host of SELECTED_HOSTS) {
+    const entry = agentFleet.hosts[host];
+    console.log(`  - ${entry.label}: ${entry.status}, ${entry.installed_agents.length}/${agentFleet.managed_agents.length} agents`);
+    if (entry.missing_agents.length) {
+      console.log(`    missing: ${entry.missing_agents.join(", ")}`);
+    }
+    if (entry.update_status !== "not-checked") {
+      console.log(`    updates: ${entry.update_status} (${entry.update_reason})`);
+    }
+  }
+  console.log(`  - Install: ${agentFleet.install_command}`);
+  if (SELECTED_HOSTS.includes("codex")) {
+    console.log(`  - Codex native role routing: ${agentFleet.native_role_routing.status} (${agentFleet.native_role_routing.reason})`);
+  }
+  console.log("");
+
+  const codegraph = result.tools.codegraph;
+  console.log(`CodeGraph [${codegraph.status}]`);
+  console.log(`  - CLI: ${codegraph.cli_present ? `present${codegraph.version ? ` (v${codegraph.version})` : ""} via ${codegraph.source}` : "missing"}`);
+  if (codegraph.drift) {
+    console.log(`  - Drift: local=${codegraph.drift.local}, global=${codegraph.drift.global}, using=${codegraph.drift.using}`);
+  }
+  for (const host of SELECTED_HOSTS) {
+    const entry = codegraph.mcp_hosts[host];
+    const suffix = entry.tool_search ? ` (${entry.tool_search})` : "";
+    console.log(`  - ${entry.label} MCP: ${entry.status}${suffix}`);
+  }
+  console.log(`  - Project index: ${codegraph.project_index.status}`);
+  console.log(`  - Updates: ${codegraph.update_status} (${codegraph.update_reason})`);
+  console.log(`  - Impact: code-navigation=${codegraph.impact.code_navigation}, hooks=${codegraph.impact.hook_correctness}`);
+  console.log(`  - Install deps: ${codegraph.install_command}`);
+  if (codegraph.ensure_command) {
+    console.log(`  - Ensure: ${codegraph.ensure_command}`);
+  }
+  console.log(`  - Init index: ${codegraph.init_command}`);
+  console.log(`  - Sync index: ${codegraph.sync_command}`);
+}
+
+if (jsonOutput) {
+  console.log(JSON.stringify(report, null, 2));
+} else {
+  printText(report);
+}
+
+if (strictFailures.length > 0) {
+  for (const failure of strictFailures) {
+    console.error(`[readiness] ${failure}`);
+  }
+  process.exit(2);
+}
+NODE_EOF

@@ -15,6 +15,7 @@
     "target": "ES2022",
     "types": ["bun"]
   },
+  "exclude": ["tests/fixtures/upgrade-*/**"],
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",

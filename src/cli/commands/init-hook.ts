@@ -20,6 +20,7 @@ import {
   type StatusReport,
 } from './status';
 import type { InstallTargetSpec } from './install';
+import { planLegacyLeftovers } from '../../core/upgrade/legacy-inventory';
 import { planAdoption } from '../../core/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
 
@@ -61,6 +62,7 @@ export interface InitHookReport {
   summary: { ok: number; warn: number; fail: number; na: number; needs_agent: number };
   checks: InitHookCheck[];
   agent_actions: InitHookAction[];
+  leftovers?: { total: number; removable: number };
 }
 
 export interface ToolingReport {
@@ -732,6 +734,7 @@ export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
     ...legacyChecks(cwd, target, checkUpdates, actions),
   ];
 
+  const legacyItems = planLegacyLeftovers({ scope: 'all', cwd, home: opts.env?.HOME ?? process.env.HOME ?? os.homedir(), packageRoot: REPO_ROOT }).items;
   const summary = summarize(checks);
   return {
     version: 1,
@@ -741,6 +744,7 @@ export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
     summary,
     checks,
     agent_actions: actions,
+    leftovers: { total: legacyItems.length, removable: legacyItems.filter((item) => item.action !== 'report').length },
   };
 }
 
@@ -752,6 +756,9 @@ export function formatInitHook(report: InitHookReport, asJson = false): string {
   lines.push(
     `summary: ${report.summary.ok} ok, ${report.summary.warn} warn, ${report.summary.fail} fail, ${report.summary.na} n/a, ${report.summary.needs_agent} needs-agent`,
   );
+  if (report.leftovers) {
+    lines.push(`${report.leftovers.total} leftovers (${report.leftovers.removable} removable). Run: repo-harness upgrade`);
+  }
   lines.push('');
   lines.push('Checks:');
   for (const check of report.checks) {

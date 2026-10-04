@@ -1,0 +1,1096 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERIFICATION_BUDGET_MS=600000
+
+now_ms() {
+  if command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(String(Date.now()))'
+  elif command -v bun >/dev/null 2>&1; then
+    bun -e 'process.stdout.write(String(Date.now()))'
+  else
+    printf '%s000' "$(date +%s)"
+  fi
+}
+
+usage() {
+  cat <<'USAGE_EOF'
+Usage: scripts/verify-contract.sh --contract <contract-file> [--strict] [--quiet] [--read-only] [--report-file <path>]
+
+Options:
+  --contract <path>     Contract markdown file with a YAML exit_criteria block
+  --strict              Exit with code 1 when any criteria fail
+  --quiet               Suppress per-check logs; only print on failure or status change
+  --read-only           Do not rewrite the contract Status header; tests_pass and
+                        commands_succeed still execute for verification
+  --report-file <path>  Write structured JSON results for downstream tooling
+USAGE_EOF
+}
+
+strip_quotes() {
+  local value="$1"
+  value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  if [[ "$value" =~ ^\".*\"$ ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" =~ ^\'.*\'$ ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "$value"
+}
+
+resolve_bun_bin() {
+  if [[ -n "${BUN_BIN:-}" ]] && [[ -x "${BUN_BIN}" ]]; then
+    printf '%s' "$BUN_BIN"
+    return 0
+  fi
+
+  if command -v bun >/dev/null 2>&1; then
+    command -v bun
+    return 0
+  fi
+
+  if [[ -x "${HOME}/.bun/bin/bun" ]]; then
+    printf '%s' "${HOME}/.bun/bin/bun"
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_run_id() {
+  if [[ -n "${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-}}}" ]]; then
+    printf '%s' "${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-}}}"
+    return
+  fi
+
+  printf 'run-%s-%s' "$(date '+%Y%m%dT%H%M%S')" "$$"
+}
+
+read_contract_status() {
+  local file="$1"
+  awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*: */, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
+}
+
+read_contract_review_file() {
+  local file="$1"
+  local line=""
+  local value=""
+
+  line="$(grep -m 1 -E '^> \*\*Review File\*\*:' "$file" || true)"
+  [[ -n "$line" ]] || return 0
+
+  if [[ "$line" == *\`* ]]; then
+    value="${line#*\`}"
+    value="${value%%\`*}"
+  else
+    value="${line#*> **Review File**:}"
+  fi
+
+  printf '%s' "$value" | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+read_contract_task_profile() {
+  local file="$1"
+  awk '/^> \*\*Task Profile\*\*:/ {sub(/^.*> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
+}
+
+contract_allowed_paths() {
+  local file="$1"
+  awk '
+    BEGIN { in_block = 0; block = ""; found = 0 }
+    /^```yaml[[:space:]]*$/ {
+      in_block = 1
+      block = ""
+      next
+    }
+    /^```[[:space:]]*$/ && in_block == 1 {
+      if (!found && block ~ /(^|[[:space:]])allowed_paths:/) {
+        printf "%s", block
+        found = 1
+      }
+      in_block = 0
+      block = ""
+      next
+    }
+    in_block == 1 {
+      block = block $0 ORS
+    }
+  ' "$file" | awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    /^[[:space:]]*allowed_paths:[[:space:]]*$/ { in_paths = 1; next }
+    in_paths && /^[^[:space:]]/ { exit }
+    in_paths && /^[[:space:]]*-[[:space:]]*/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      gsub(/^["'\''`]+|["'\''`]+$/, "", line)
+      print trim(line)
+    }
+  '
+}
+
+# Extracts the body of the markdown `## Root Cause Evidence` section (everything between
+# that heading and the next `##` heading), mirroring contract-run.ts's sectionBody().
+contract_root_cause_section() {
+  local file="$1"
+  awk '
+    BEGIN { in_section = 0 }
+    /^## Root Cause Evidence[[:space:]]*$/ {
+      in_section = 1
+      next
+    }
+    in_section == 1 && /^##[[:space:]]/ {
+      exit
+    }
+    in_section == 1 {
+      print
+    }
+  ' "$file"
+}
+
+# Extracts the inline value of a `- <field>: <value>` bullet from a Root Cause Evidence
+# section body. Prints nothing (empty string) when the field is absent.
+root_cause_field() {
+  local section="$1"
+  local field="$2"
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^-[[:space:]]*${field}:[[:space:]]*(.+)$ ]]; then
+      printf '%s' "${BASH_REMATCH[1]}" | sed -E 's/[[:space:]]+$//'
+      return 0
+    fi
+  done <<< "$section"
+  printf ''
+}
+
+# Verbatim placeholder text from the contract template's `## Root Cause Evidence`
+# section (assets/templates/contract.template.md and its mirrors); a field still equal
+# to this text has not been filled in. Kept in sync with contract-run.ts's
+# ROOT_CAUSE_PLACEHOLDER by the shared tests/fixtures/root-cause/ fixtures rather than a
+# shared library (see plan YAGNI: no cross-implementation parsing library).
+root_cause_placeholder() {
+  local field="$1"
+  case "$field" in
+    root_cause)
+      printf '%s' 'one sentence naming file:line/condition (testable, not "a state issue").'
+      ;;
+    repro)
+      printf '%s' 'the command or UI path that reproduces the symptom.'
+      ;;
+    regression_guard)
+      printf '%s' 'path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).'
+      ;;
+    pre_fix_failure_artifact)
+      printf '%s' 'path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see H2/H3).'
+      ;;
+  esac
+}
+
+is_concrete_root_cause_field() {
+  local value="$1"
+  local field="$2"
+  [[ -n "$value" ]] || return 1
+  [[ "$value" != *"{{"*"}}"* ]] || return 1
+  local placeholder
+  placeholder="$(root_cause_placeholder "$field")"
+  [[ "$value" != "$placeholder" ]]
+}
+
+# Bugfix-only pre-fix failure evidence gate (see docs/reference-configs/sprint-contracts.md
+# "Root Cause Evidence Gate"). Mirrors contract-run.ts's checkRootCauseEvidence: all four
+# fields must be concrete, regression_guard must be listed under exit_criteria.tests_pass
+# (the already-populated $tests_pass array), and pre_fix_failure_artifact must exist and
+# show a genuine failure via a non-zero PRE_FIX_EXIT= line plus the regression_guard path
+# string — never a "fail" substring match, since a passing bun run's own summary line
+# contains "0 fail".
+check_root_cause_evidence() {
+  local contract_file="$1"
+  local section root_cause repro regression_guard pre_fix_artifact
+  section="$(contract_root_cause_section "$contract_file")"
+  root_cause="$(root_cause_field "$section" "root_cause")"
+  repro="$(root_cause_field "$section" "repro")"
+  regression_guard="$(root_cause_field "$section" "regression_guard")"
+  pre_fix_artifact="$(root_cause_field "$section" "pre_fix_failure_artifact")"
+
+  if is_concrete_root_cause_field "$root_cause" "root_cause"; then
+    pass "root_cause_evidence" "root_cause" "Root Cause Evidence: root_cause is concrete"
+  else
+    fail "root_cause_evidence" "root_cause" "Root Cause Evidence: root_cause is empty or still a template placeholder"
+  fi
+
+  if is_concrete_root_cause_field "$repro" "repro"; then
+    pass "root_cause_evidence" "repro" "Root Cause Evidence: repro is concrete"
+  else
+    fail "root_cause_evidence" "repro" "Root Cause Evidence: repro is empty or still a template placeholder"
+  fi
+
+  local regression_guard_concrete=0
+  if is_concrete_root_cause_field "$regression_guard" "regression_guard"; then
+    regression_guard_concrete=1
+    pass "root_cause_evidence" "regression_guard" "Root Cause Evidence: regression_guard is concrete"
+  else
+    fail "root_cause_evidence" "regression_guard" "Root Cause Evidence: regression_guard is empty or still a template placeholder"
+  fi
+
+  local pre_fix_artifact_concrete=0
+  if is_concrete_root_cause_field "$pre_fix_artifact" "pre_fix_failure_artifact"; then
+    pre_fix_artifact_concrete=1
+    pass "root_cause_evidence" "pre_fix_failure_artifact" "Root Cause Evidence: pre_fix_failure_artifact is concrete"
+  else
+    fail "root_cause_evidence" "pre_fix_failure_artifact" "Root Cause Evidence: pre_fix_failure_artifact is empty or still a template placeholder"
+  fi
+
+  if [[ "$regression_guard_concrete" -eq 1 ]]; then
+    local found=0
+    local tp
+    for tp in "${tests_pass[@]+"${tests_pass[@]}"}"; do
+      if [[ "$tp" == "$regression_guard" ]]; then
+        found=1
+        break
+      fi
+    done
+    if [[ "$found" -eq 1 ]]; then
+      pass "root_cause_evidence" "regression_guard_in_tests_pass" "Root Cause Evidence: regression_guard $regression_guard is listed under exit_criteria.tests_pass"
+    else
+      fail "root_cause_evidence" "regression_guard_in_tests_pass" "Root Cause Evidence: regression_guard $regression_guard is not listed under exit_criteria.tests_pass"
+    fi
+  fi
+
+  if [[ "$pre_fix_artifact_concrete" -eq 1 ]]; then
+    if [[ ! -f "$pre_fix_artifact" ]]; then
+      fail "root_cause_evidence" "pre_fix_failure_artifact_exists" "Root Cause Evidence: pre_fix_failure_artifact does not exist: $pre_fix_artifact"
+    else
+      pass "root_cause_evidence" "pre_fix_failure_artifact_exists" "Root Cause Evidence: pre_fix_failure_artifact exists: $pre_fix_artifact"
+
+      local exit_line="" exit_value=""
+      exit_line="$(grep -E '^PRE_FIX_EXIT=[0-9]+[[:space:]]*$' "$pre_fix_artifact" | tail -1 || true)"
+      if [[ -n "$exit_line" ]]; then
+        exit_value="$(printf '%s' "$exit_line" | sed -E 's/^PRE_FIX_EXIT=([0-9]+).*/\1/')"
+      fi
+      if [[ -n "$exit_value" && "$exit_value" != "0" ]]; then
+        pass "root_cause_evidence" "pre_fix_failure_artifact_exit" "Root Cause Evidence: pre_fix_failure_artifact shows PRE_FIX_EXIT=$exit_value"
+      else
+        fail "root_cause_evidence" "pre_fix_failure_artifact_exit" "Root Cause Evidence: pre_fix_failure_artifact is missing a non-zero PRE_FIX_EXIT= line: $pre_fix_artifact"
+      fi
+
+      if [[ "$regression_guard_concrete" -eq 1 ]]; then
+        if grep -qF -- "$regression_guard" "$pre_fix_artifact"; then
+          pass "root_cause_evidence" "pre_fix_failure_artifact_references_guard" "Root Cause Evidence: pre_fix_failure_artifact references the regression_guard path"
+        else
+          fail "root_cause_evidence" "pre_fix_failure_artifact_references_guard" "Root Cause Evidence: pre_fix_failure_artifact does not reference the regression_guard path $regression_guard"
+        fi
+      fi
+    fi
+  fi
+}
+
+review_recommends_pass() {
+  local review_file="$1"
+  [[ -n "$review_file" && -f "$review_file" ]] || return 1
+  grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass[[:space:]]*$' "$review_file"
+}
+
+review_manual_check_evidence() {
+  local review_file="$1"
+  local manual_check="$2"
+  [[ -n "$review_file" && -f "$review_file" ]] || {
+    printf 'missing\t'
+    return 0
+  }
+
+  awk -v wanted="$manual_check" '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    /^##[[:space:]]+Manual Check Evidence[[:space:]]*$/ {
+      in_section = 1
+      next
+    }
+    in_section && /^##[[:space:]]+/ {
+      exit
+    }
+    !in_section {
+      next
+    }
+    /^[[:space:]]*-[[:space:]]*\[[xX ]\][[:space:]]*/ {
+      if (found) {
+        exit
+      }
+      candidate = $0
+      checked = (candidate ~ /^[[:space:]]*-[[:space:]]*\[[xX]\]/)
+      sub(/^[[:space:]]*-[[:space:]]*\[[xX ]\][[:space:]]*/, "", candidate)
+      if (trim(candidate) == wanted) {
+        found = 1
+        selected_checked = checked
+      }
+      next
+    }
+    found && /^[[:space:]]*-[[:space:]]*Evidence:[[:space:]]*/ {
+      evidence = $0
+      sub(/^[[:space:]]*-[[:space:]]*Evidence:[[:space:]]*/, "", evidence)
+      evidence = trim(evidence)
+    }
+    END {
+      if (!found) {
+        printf "missing\t"
+      } else if (!selected_checked) {
+        printf "unchecked\t%s", evidence
+      } else if (evidence == "") {
+        printf "missing_evidence\t"
+      } else {
+        printf "checked\t%s", evidence
+      }
+    }
+  ' "$review_file"
+}
+
+is_concrete_manual_evidence() {
+  local evidence="$1"
+  local normalized
+  evidence="$(printf '%s' "$evidence" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -n "$evidence" ]] || return 1
+  [[ "$evidence" != *"{{"*"}}"* ]] || return 1
+  normalized="$(printf '%s' "$evidence" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    pending|pending:*|todo|todo:*|tbd|tbd:*|unavailable|unavailable:*|unknown|unknown:*|n/a|n/a:*|na|none|none:*|not\ run|not\ run:*|not\ executed|not\ executed:*|not\ available|not\ available:*|...|"concrete observation, command output, screenshot path, or reviewer note")
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+review_score() {
+  local review_file="$1"
+  local dimension="$2"
+
+  [[ -n "$review_file" && -f "$review_file" ]] || return 1
+
+  awk -F'|' -v wanted="$dimension" '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    BEGIN { wanted = tolower(wanted) }
+    /^\|/ {
+      dim = tolower(trim($2))
+      score = trim($3)
+      if (dim == wanted && match(score, /[0-9]+/)) {
+        print substr(score, RSTART, RLENGTH)
+        exit
+      }
+    }
+  ' "$review_file"
+}
+
+update_contract_status() {
+  local file="$1"
+  local status="$2"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v next_status="$status" '
+    BEGIN { updated = 0 }
+    {
+      if (!updated && $0 ~ /^> \*\*Status\*\*:/) {
+        print "> **Status**: " next_status
+        updated = 1
+        next
+      }
+      print
+    }
+    END {
+      if (!updated) {
+        print ""
+        print "> **Status**: " next_status
+      }
+    }
+  ' "$file" > "$tmp_file"
+
+  mv "$tmp_file" "$file"
+}
+
+append_result() {
+  local kind="$1"
+  local target="$2"
+  local passed="$3"
+  local message="$4"
+  local duration_ms="${5:-null}"
+  local timed_out="${6:-false}"
+  local exit_code="${7:-null}"
+  local signal="${8:-null}"
+  RESULT_KINDS+=("$kind")
+  RESULT_TARGETS+=("$target")
+  RESULT_PASSED+=("$passed")
+  RESULT_MESSAGES+=("$message")
+  RESULT_DURATIONS+=("$duration_ms")
+  RESULT_TIMED_OUT+=("$timed_out")
+  RESULT_EXIT_CODES+=("$exit_code")
+  RESULT_SIGNALS+=("$signal")
+}
+
+log_check() {
+  local prefix="$1"
+  local message="$2"
+
+  if [[ "$quiet" -eq 1 ]]; then
+    return
+  fi
+
+  echo "[$prefix] $message"
+}
+
+pass() {
+  local kind="$1"
+  local target="$2"
+  local message="$3"
+  total=$((total + 1))
+  append_result "$kind" "$target" "true" "$message"
+  log_check "PASS" "$message"
+}
+
+fail() {
+  local kind="$1"
+  local target="$2"
+  local message="$3"
+  total=$((total + 1))
+  failed=$((failed + 1))
+  append_result "$kind" "$target" "false" "$message"
+  log_check "FAIL" "$message"
+}
+
+record_timed_result() {
+  local kind="$1" target="$2" passed="$3" message="$4" duration_ms="$5" timed_out="$6" exit_code="$7" signal="${8:-null}"
+  total=$((total + 1))
+  if [[ "$passed" != "true" ]]; then failed=$((failed + 1)); fi
+  append_result "$kind" "$target" "$passed" "$message" "$duration_ms" "$timed_out" "$exit_code" "$signal"
+  if [[ "$passed" == "true" ]]; then log_check "PASS" "$message"; else log_check "FAIL" "$message"; fi
+}
+
+is_evidence_producer_command() {
+  local cmd="$1"
+  case "$cmd" in
+    *benchmark:harness*|*run-harness-profile-benchmark*|*" codex exec "*|codex\ exec\ *|*" claude -p "*|claude\ -p\ *) return 0 ;;
+  esac
+  if [[ "$cmd" =~ (^|[[:space:]])adopt([[:space:]]|$) ]]; then return 0; fi
+  if [[ "$cmd" =~ (^|[[:space:]])install([[:space:]]|$) && "$cmd" != *"--dry-run"* ]]; then return 0; fi
+  return 1
+}
+
+run_bounded() {
+  local log_path="$1" result_path="$2"
+  shift 2
+  local runner="$SCRIPT_DIR/run-bounded-verifier-command.ts"
+  [[ -f "$runner" ]] || return 127
+  "$bun_bin" "$runner" \
+    --deadline-ms "$verification_deadline_ms" \
+    --log "$log_path" \
+    --result "$result_path" \
+    -- "$@"
+}
+
+write_report() {
+  local report_path="$1"
+  local idx
+
+  [[ -n "$report_path" ]] || return 0
+
+  mkdir -p "$(dirname "$report_path")"
+
+  {
+    echo "{"
+    printf '  "contract": "%s",\n' "$(json_escape "$contract_file")"
+    printf '  "run_id": "%s",\n' "$(json_escape "$run_id")"
+    printf '  "previous_status": "%s",\n' "$(json_escape "$previous_status")"
+    printf '  "next_status": "%s",\n' "$(json_escape "$next_status")"
+    printf '  "failure_class": "%s",\n' "$(json_escape "$failure_class")"
+    printf '  "quiet": %s,\n' "$([[ "$quiet" -eq 1 ]] && echo true || echo false)"
+    printf '  "strict": %s,\n' "$([[ "$strict" -eq 1 ]] && echo true || echo false)"
+    printf '  "read_only": %s,\n' "$([[ "$read_only" -eq 1 ]] && echo true || echo false)"
+    printf '  "executes_contract_commands": %s,\n' "$([[ "$executes_contract_commands" -eq 1 ]] && echo true || echo false)"
+    printf '  "budget_ms": %s,\n' "$VERIFICATION_BUDGET_MS"
+    printf '  "total_duration_ms": %s,\n' "$(( $(now_ms) - verification_started_ms ))"
+    printf '  "timed_out": %s,\n' "$([[ "$verification_budget_exhausted" -eq 1 ]] && echo true || echo false)"
+    printf '  "total": %s,\n' "$total"
+    printf '  "failed": %s,\n' "$failed"
+    echo '  "results": ['
+    for idx in "${!RESULT_KINDS[@]}"; do
+      if [[ "$idx" -gt 0 ]]; then
+        echo ","
+      fi
+      printf '    {"kind":"%s","target":"%s","passed":%s,"message":"%s","duration_ms":%s,"timed_out":%s,"exit_code":%s,"signal":%s}' \
+        "$(json_escape "${RESULT_KINDS[$idx]}")" \
+        "$(json_escape "${RESULT_TARGETS[$idx]}")" \
+        "${RESULT_PASSED[$idx]}" \
+        "$(json_escape "${RESULT_MESSAGES[$idx]}")" \
+        "${RESULT_DURATIONS[$idx]}" \
+        "${RESULT_TIMED_OUT[$idx]}" \
+        "${RESULT_EXIT_CODES[$idx]}" \
+        "${RESULT_SIGNALS[$idx]}"
+    done
+    echo
+    echo "  ]"
+    echo "}"
+  } > "$report_path"
+}
+
+contract_file=""
+strict=0
+quiet=0
+read_only=0
+report_file=""
+run_id="$(resolve_run_id)"
+failure_class=""
+executes_contract_commands=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --contract)
+      [[ -n "${2:-}" ]] || { echo "Error: --contract requires a value" >&2; usage; exit 2; }
+      contract_file="$2"
+      shift 2
+      ;;
+    --strict)
+      strict=1
+      shift
+      ;;
+    --quiet)
+      quiet=1
+      shift
+      ;;
+    --read-only)
+      read_only=1
+      shift
+      ;;
+    --report-file)
+      [[ -n "${2:-}" ]] || { echo "Error: --report-file requires a value" >&2; usage; exit 2; }
+      report_file="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$contract_file" ]]; then
+  echo "Error: --contract is required" >&2
+  usage
+  exit 2
+fi
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+verification_started_ms="$(now_ms)"
+verification_deadline_ms="$((verification_started_ms + VERIFICATION_BUDGET_MS))"
+verification_budget_exhausted=0
+
+if [[ ! -f "$contract_file" ]]; then
+  echo "[ContractVerify] Contract file not found: $contract_file" >&2
+  exit 2
+fi
+
+previous_status="$(read_contract_status "$contract_file")"
+previous_status="${previous_status:-Pending}"
+
+yaml_block="$(
+  awk '
+    BEGIN { in_block = 0; block = ""; found = 0 }
+    /^```yaml[[:space:]]*$/ {
+      in_block = 1
+      block = ""
+      next
+    }
+    /^```[[:space:]]*$/ && in_block == 1 {
+      if (block ~ /(^|[[:space:]])exit_criteria:/) {
+        printf "%s", block
+        found = 1
+        exit
+      }
+      in_block = 0
+      block = ""
+      next
+    }
+    in_block == 1 {
+      block = block $0 ORS
+    }
+  ' "$contract_file"
+)"
+
+if [[ -z "$yaml_block" ]]; then
+  next_status="Pending"
+  if [[ "$read_only" -eq 0 ]]; then
+    update_contract_status "$contract_file" "$next_status"
+  fi
+  total=0
+  failed=0
+  failure_class="missing_artifact"
+  RESULT_KINDS=()
+  RESULT_TARGETS=()
+  RESULT_PASSED=()
+  RESULT_MESSAGES=()
+  RESULT_DURATIONS=()
+  RESULT_TIMED_OUT=()
+  RESULT_EXIT_CODES=()
+  RESULT_SIGNALS=()
+  write_report "$report_file"
+  if [[ "$quiet" -eq 0 ]]; then
+    echo "[ContractVerify] No YAML exit criteria block found in $contract_file"
+  elif [[ "$previous_status" != "$next_status" ]]; then
+    echo "[ContractVerify] status ${previous_status} -> ${next_status}"
+  fi
+  if [[ "$strict" -eq 1 ]]; then
+    exit 1
+  fi
+  exit 0
+fi
+
+declare -a files_exist=()
+declare -a tests_pass=()
+declare -a commands_succeed=()
+declare -a artifacts_exist=()
+declare -a contain_paths=()
+declare -a contain_patterns=()
+declare -a files_not_exist=()
+declare -a not_contain_paths=()
+declare -a not_contain_patterns=()
+declare -a qa_dimensions=()
+declare -a qa_mins=()
+declare -a manual_checks=()
+
+section=""
+pending_path=""
+pending_dimension=""
+review_file="$(read_contract_review_file "$contract_file" || true)"
+task_profile="$(read_contract_task_profile "$contract_file" || true)"
+declare -a allowed_paths=()
+while IFS= read -r allowed_path; do
+  [[ -n "$allowed_path" ]] && allowed_paths+=("$allowed_path")
+done < <(contract_allowed_paths "$contract_file")
+
+while IFS= read -r raw_line; do
+  line="$(printf '%s' "$raw_line" | sed -E 's/[[:space:]]+$//')"
+  trimmed="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//')"
+
+  [[ -z "$trimmed" ]] && continue
+  [[ "$trimmed" =~ ^# ]] && continue
+  [[ "$trimmed" == "exit_criteria:" ]] && continue
+
+  case "$trimmed" in
+    files_exist:)
+      section="files_exist"
+      pending_path=""
+      continue
+      ;;
+    tests_pass:)
+      section="tests_pass"
+      pending_path=""
+      continue
+      ;;
+    commands_succeed:)
+      section="commands_succeed"
+      pending_path=""
+      continue
+      ;;
+    artifacts_exist:)
+      section="artifacts_exist"
+      pending_path=""
+      continue
+      ;;
+    files_contain:)
+      section="files_contain"
+      pending_path=""
+      continue
+      ;;
+    files_not_exist:)
+      section="files_not_exist"
+      pending_path=""
+      continue
+      ;;
+    files_not_contain:)
+      section="files_not_contain"
+      pending_path=""
+      continue
+      ;;
+    qa_scores:)
+      section="qa_scores"
+      pending_path=""
+      pending_dimension=""
+      continue
+      ;;
+    manual_checks:)
+      section="manual_checks"
+      pending_path=""
+      continue
+      ;;
+  esac
+
+  case "$section" in
+    files_exist|commands_succeed|files_not_exist|artifacts_exist|manual_checks)
+      if [[ "$trimmed" =~ ^-[[:space:]]*(.+)$ ]]; then
+        item="$(strip_quotes "${BASH_REMATCH[1]}")"
+        [[ -n "$item" ]] || continue
+        if [[ "$section" == "files_exist" ]]; then
+          files_exist+=("$item")
+        elif [[ "$section" == "commands_succeed" ]]; then
+          commands_succeed+=("$item")
+        elif [[ "$section" == "artifacts_exist" ]]; then
+          artifacts_exist+=("$item")
+        elif [[ "$section" == "manual_checks" ]]; then
+          manual_checks+=("$item")
+        else
+          files_not_exist+=("$item")
+        fi
+      fi
+      ;;
+    tests_pass)
+      if [[ "$trimmed" =~ ^-[[:space:]]*path:[[:space:]]*(.+)$ ]]; then
+        item="$(strip_quotes "${BASH_REMATCH[1]}")"
+        [[ -n "$item" ]] && tests_pass+=("$item")
+      fi
+      ;;
+    files_contain|files_not_contain)
+      if [[ "$trimmed" =~ ^-[[:space:]]*path:[[:space:]]*(.+)$ ]]; then
+        pending_path="$(strip_quotes "${BASH_REMATCH[1]}")"
+      elif [[ "$trimmed" =~ ^pattern:[[:space:]]*(.+)$ ]]; then
+        pattern="$(strip_quotes "${BASH_REMATCH[1]}")"
+        if [[ -n "$pending_path" ]]; then
+          if [[ "$section" == "files_contain" ]]; then
+            contain_paths+=("$pending_path")
+            contain_patterns+=("$pattern")
+          else
+            not_contain_paths+=("$pending_path")
+            not_contain_patterns+=("$pattern")
+          fi
+          pending_path=""
+        fi
+      fi
+      ;;
+    qa_scores)
+      if [[ "$trimmed" =~ ^-[[:space:]]*dimension:[[:space:]]*(.+)$ ]]; then
+        pending_dimension="$(strip_quotes "${BASH_REMATCH[1]}")"
+      elif [[ "$trimmed" =~ ^dimension:[[:space:]]*(.+)$ ]]; then
+        pending_dimension="$(strip_quotes "${BASH_REMATCH[1]}")"
+      elif [[ "$trimmed" =~ ^min:[[:space:]]*([0-9]+)$ ]]; then
+        if [[ -n "$pending_dimension" ]]; then
+          qa_dimensions+=("$pending_dimension")
+          qa_mins+=("${BASH_REMATCH[1]}")
+          pending_dimension=""
+        fi
+      fi
+      ;;
+  esac
+done <<< "$yaml_block"
+if ((${#tests_pass[@]} || ${#commands_succeed[@]})); then
+  executes_contract_commands=1
+fi
+
+total=0
+failed=0
+RESULT_KINDS=()
+RESULT_TARGETS=()
+RESULT_PASSED=()
+RESULT_MESSAGES=()
+RESULT_DURATIONS=()
+RESULT_TIMED_OUT=()
+RESULT_EXIT_CODES=()
+RESULT_SIGNALS=()
+
+case "$task_profile" in
+  "")
+    pass "task_profile" "(legacy)" "task_profile missing: legacy contract accepted"
+    ;;
+  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix|frontend)
+    pass "task_profile" "$task_profile" "task_profile: $task_profile"
+    ;;
+  *)
+    fail "task_profile" "$task_profile" "unsupported task_profile: $task_profile"
+    ;;
+esac
+
+if [[ "$task_profile" == "bugfix" ]]; then
+  check_root_cause_evidence "$contract_file"
+fi
+
+if [[ -n "$task_profile" ]]; then
+  for path in "${allowed_paths[@]+"${allowed_paths[@]}"}"; do
+    case "$task_profile:$path" in
+      ledger-closeout:src/*|ledger-closeout:src/|ledger-closeout:tests/*|ledger-closeout:tests/|ledger-closeout:.ai/hooks/*|ledger-closeout:.ai/hooks/|ledger-closeout:assets/hooks/*|ledger-closeout:assets/hooks/)
+        fail "allowed_paths" "$path" "ledger-closeout profile cannot allow runtime code or hook paths by default: $path"
+        ;;
+      docs-only:src/*|docs-only:src/|docs-only:tests/*|docs-only:tests/)
+        fail "allowed_paths" "$path" "docs-only profile cannot allow src/ or tests/ by default: $path"
+        ;;
+      eval-only:src/*|eval-only:src/)
+        fail "allowed_paths" "$path" "eval-only profile cannot allow runtime src/ by default: $path"
+        ;;
+    esac
+  done
+fi
+
+if [[ "$task_profile" == "frontend" ]]; then
+  frontend_design_brief_found=0
+  for path in "${files_exist[@]+"${files_exist[@]}"}"; do
+    base="$(basename "$path")"
+    base_lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$path" == docs/design/* || "$base_lower" == *design* ]]; then
+      frontend_design_brief_found=1
+      break
+    fi
+  done
+  if ((! frontend_design_brief_found)); then
+    fail "files_exist" "(frontend)" "frontend profile requires a design brief artifact in files_exist"
+  fi
+fi
+
+if ((${#files_exist[@]})); then
+  for path in "${files_exist[@]}"; do
+    if [[ -e "$path" ]]; then
+      pass "files_exist" "$path" "files_exist: $path"
+    else
+      fail "files_exist" "$path" "files_exist: $path"
+    fi
+  done
+fi
+
+if ((${#artifacts_exist[@]})); then
+  for path in "${artifacts_exist[@]}"; do
+    if [[ -e "$path" ]]; then
+      pass "artifacts_exist" "$path" "artifacts_exist: $path"
+    else
+      fail "artifacts_exist" "$path" "artifacts_exist: $path"
+    fi
+  done
+fi
+
+if [[ "$executes_contract_commands" -eq 1 ]]; then
+  bun_bin="$(resolve_bun_bin || true)"
+else
+  bun_bin=""
+fi
+
+if ((${#tests_pass[@]})); then
+  test_index=0
+  for path in "${tests_pass[@]}"; do
+    if [[ ! -f "$path" ]]; then
+      fail "tests_pass" "$path" "tests_pass file missing: $path"
+      continue
+    fi
+
+    if [[ -z "$bun_bin" ]]; then
+      fail "tests_pass" "$path" "tests_pass cannot run (bun not found): $path"
+      continue
+    fi
+
+    result_path="$tmp_dir/test-${test_index}.json"
+    log_path="$tmp_dir/test-${test_index}.log"
+    set +e
+    run_bounded "$log_path" "$result_path" "$bun_bin" test "$path"
+    bounded_exit=$?
+    set -e
+    bounded_duration="$(sed -nE 's/.*"duration_ms":([0-9]+).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_timed_out="$(sed -nE 's/.*"timed_out":(true|false).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_signal="$(sed -nE 's/.*"signal":("[^"]*"|null).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_duration="${bounded_duration:-0}"
+    bounded_timed_out="${bounded_timed_out:-false}"
+    bounded_signal="${bounded_signal:-null}"
+    if [[ "$bounded_exit" -eq 0 ]]; then
+      record_timed_result "tests_pass" "$path" true "tests_pass: $path (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
+    else
+      record_timed_result "tests_pass" "$path" false "tests_pass: $path (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+    fi
+    test_index=$((test_index + 1))
+    if [[ "$bounded_timed_out" == "true" ]]; then
+      verification_budget_exhausted=1
+      break
+    fi
+  done
+fi
+
+if ((${#commands_succeed[@]})) && [[ "$verification_budget_exhausted" -eq 0 ]]; then
+  command_index=0
+  for cmd in "${commands_succeed[@]}"; do
+    if is_evidence_producer_command "$cmd"; then
+      record_timed_result "commands_succeed" "$cmd" false "commands_succeed forbidden evidence producer: $cmd" 0 false 126
+      command_index=$((command_index + 1))
+      continue
+    fi
+    if [[ -z "$bun_bin" ]]; then
+      fail "commands_succeed" "$cmd" "commands_succeed cannot run bounded (bun not found): $cmd"
+      continue
+    fi
+    result_path="$tmp_dir/command-${command_index}.json"
+    log_path="$tmp_dir/command-${command_index}.log"
+    set +e
+    run_bounded "$log_path" "$result_path" env -u BASH_ENV bash --noprofile --norc -c "$cmd"
+    bounded_exit=$?
+    set -e
+    bounded_duration="$(sed -nE 's/.*"duration_ms":([0-9]+).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_timed_out="$(sed -nE 's/.*"timed_out":(true|false).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_signal="$(sed -nE 's/.*"signal":("[^"]*"|null).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_duration="${bounded_duration:-0}"
+    bounded_timed_out="${bounded_timed_out:-false}"
+    bounded_signal="${bounded_signal:-null}"
+    if [[ "$bounded_exit" -eq 0 ]]; then
+      record_timed_result "commands_succeed" "$cmd" true "commands_succeed: $cmd (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
+    else
+      record_timed_result "commands_succeed" "$cmd" false "commands_succeed: $cmd (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+    fi
+    command_index=$((command_index + 1))
+    if [[ "$bounded_timed_out" == "true" ]]; then
+      verification_budget_exhausted=1
+      break
+    fi
+  done
+fi
+
+if ((${#qa_dimensions[@]})); then
+  for idx in "${!qa_dimensions[@]}"; do
+    dimension="${qa_dimensions[$idx]}"
+    min_score="${qa_mins[$idx]}"
+    score="$(review_score "$review_file" "$dimension" || true)"
+
+    if [[ "$score" =~ ^[0-9]+$ && "$score" -ge "$min_score" ]]; then
+      pass "qa_scores" "$dimension" "qa_scores: $dimension ${score}/${min_score}"
+    else
+      fail "qa_scores" "$dimension" "qa_scores: $dimension score ${score:-missing} < $min_score"
+    fi
+  done
+fi
+
+if ((${#manual_checks[@]})); then
+  for check in "${manual_checks[@]}"; do
+    case "$check" in
+      "Evaluator review file recommends pass")
+        if review_recommends_pass "$review_file"; then
+          pass "manual_checks" "$check" "manual_checks: $check"
+        else
+          fail "manual_checks" "$check" "manual_checks: $check"
+        fi
+        ;;
+      *)
+        evidence_row="$(review_manual_check_evidence "$review_file" "$check")"
+        evidence_status="${evidence_row%%$'\t'*}"
+        evidence=""
+        if [[ "$evidence_row" == *$'\t'* ]]; then
+          evidence="${evidence_row#*$'\t'}"
+        fi
+        case "$evidence_status" in
+          checked)
+            if is_concrete_manual_evidence "$evidence"; then
+              pass "manual_checks" "$check" "manual_checks: exact checked evidence recorded for $check"
+            else
+              fail "manual_checks" "$check" "manual_checks evidence is placeholder-only: $check"
+            fi
+            ;;
+          unchecked)
+            fail "manual_checks" "$check" "manual_checks evidence is unchecked: $check"
+            ;;
+          missing_evidence)
+            fail "manual_checks" "$check" "manual_checks checked item has no evidence: $check"
+            ;;
+          *)
+            fail "manual_checks" "$check" "manual_checks exact evidence item is missing: $check"
+            ;;
+        esac
+        ;;
+    esac
+  done
+fi
+
+if ((${#contain_paths[@]})); then
+  for idx in "${!contain_paths[@]}"; do
+    path="${contain_paths[$idx]}"
+    pattern="${contain_patterns[$idx]}"
+
+    if [[ ! -f "$path" ]]; then
+      fail "files_contain" "$path" "files_contain missing file: $path"
+      continue
+    fi
+
+    if grep -Eq "$pattern" "$path"; then
+      pass "files_contain" "$path" "files_contain: $path =~ $pattern"
+    else
+      fail "files_contain" "$path" "files_contain: $path !~ $pattern"
+    fi
+  done
+fi
+
+if ((${#files_not_exist[@]})); then
+  for path in "${files_not_exist[@]}"; do
+    if [[ ! -e "$path" ]]; then
+      pass "files_not_exist" "$path" "files_not_exist: $path"
+    else
+      fail "files_not_exist" "$path" "files_not_exist: $path"
+    fi
+  done
+fi
+
+if ((${#not_contain_paths[@]})); then
+  for idx in "${!not_contain_paths[@]}"; do
+    path="${not_contain_paths[$idx]}"
+    pattern="${not_contain_patterns[$idx]}"
+
+    if [[ ! -f "$path" ]]; then
+      pass "files_not_contain" "$path" "files_not_contain missing file: $path"
+      continue
+    fi
+
+    if grep -Eq "$pattern" "$path"; then
+      fail "files_not_contain" "$path" "files_not_contain: $path =~ $pattern"
+    else
+      pass "files_not_contain" "$path" "files_not_contain: $path !~ $pattern"
+    fi
+  done
+fi
+
+next_status="Fulfilled"
+if [[ "$total" -eq 0 ]]; then
+  next_status="Pending"
+elif [[ "$failed" -gt 0 ]]; then
+  next_status="Partial"
+  if [[ "$verification_budget_exhausted" -eq 1 ]]; then
+    failure_class="verification_budget"
+  else
+    failure_class="contract_failure"
+  fi
+fi
+
+if [[ "$read_only" -eq 0 ]]; then
+  update_contract_status "$contract_file" "$next_status"
+fi
+write_report "$report_file"
+
+if [[ "$quiet" -eq 1 ]]; then
+  if [[ "$failed" -gt 0 || "$previous_status" != "$next_status" ]]; then
+    echo "[ContractVerify] total=$total failed=$failed status=${previous_status}->${next_status}"
+  fi
+else
+  echo "[ContractVerify] total=$total failed=$failed status=$next_status"
+fi
+
+if [[ "$strict" -eq 1 && "$failed" -gt 0 ]]; then
+  exit 1
+fi

@@ -206,7 +206,7 @@ function transactionDirFor(): string {
   return `${BACKUP_ROOT}/${Date.now()}-${process.pid}-${transactionSequence}`;
 }
 
-function withTargetLock<T>(targetPath: string, fn: () => T): T {
+export function withTargetLock<T>(targetPath: string, fn: () => T): T {
   const lockPath = `${targetPath}${LOCK_SUFFIX}`;
   let fd: number | null = null;
   let locked = false;

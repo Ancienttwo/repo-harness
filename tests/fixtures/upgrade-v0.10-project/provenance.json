@@ -1,0 +1,541 @@
+[
+  {
+    "fixture_path": ".ai/hooks/AGENTS.md",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/AGENTS.md",
+    "blob_sha": "4d824dbacead201b0ccd2dfced950c651cc96d7e"
+  },
+  {
+    "fixture_path": ".ai/hooks/CLAUDE.md",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/CLAUDE.md",
+    "blob_sha": "4d824dbacead201b0ccd2dfced950c651cc96d7e"
+  },
+  {
+    "fixture_path": ".ai/hooks/anti-simplification.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/anti-simplification.sh",
+    "blob_sha": "f32673ba3fa08282a6346b07fe9ab44a94d828d4"
+  },
+  {
+    "fixture_path": ".ai/hooks/changelog-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/changelog-guard.sh",
+    "blob_sha": "e78596fc56f76e66933ec7d5ff5596528aec3169"
+  },
+  {
+    "fixture_path": ".ai/hooks/codex-delegation-advisor.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/codex-delegation-advisor.sh",
+    "blob_sha": "2e1c886a7cf5275fcb7efcbb218f35ff8d324f84"
+  },
+  {
+    "fixture_path": ".ai/hooks/first-principles-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/first-principles-guard.sh",
+    "blob_sha": "f7d0819fb40d3317042636716873d533fcb61530"
+  },
+  {
+    "fixture_path": ".ai/hooks/hook-input.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/hook-input.sh",
+    "blob_sha": "921a2875f983ef8a3a33d21d23f3808f319bc096"
+  },
+  {
+    "fixture_path": ".ai/hooks/lib/minimal-change.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/lib/minimal-change.sh",
+    "blob_sha": "8549a1335ade6b1cddaa5667d22db7fb7ccc7b97"
+  },
+  {
+    "fixture_path": ".ai/hooks/lib/session-state.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/lib/session-state.sh",
+    "blob_sha": "f2743027e78b5f27d65c39a4690fb98f6992db35"
+  },
+  {
+    "fixture_path": ".ai/hooks/lib/workflow-state.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/lib/workflow-state.sh",
+    "blob_sha": "e71415f69af4f394f4956d9b7f9ac72ad7844103"
+  },
+  {
+    "fixture_path": ".ai/hooks/minimal-change-context.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/minimal-change-context.sh",
+    "blob_sha": "55a13ae0d1cece327585ce75cd312fa7f854debb"
+  },
+  {
+    "fixture_path": ".ai/hooks/minimal-change-observer.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/minimal-change-observer.sh",
+    "blob_sha": "f45fe38824cf185fc39818125c3ccd210456cf5e"
+  },
+  {
+    "fixture_path": ".ai/hooks/post-bash.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/post-bash.sh",
+    "blob_sha": "cf2188302ae6b1730bdfabc7e52767b98004ad68"
+  },
+  {
+    "fixture_path": ".ai/hooks/post-edit-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/post-edit-guard.sh",
+    "blob_sha": "ca1478e04d167b4db6d206a596c66af4d557b6a4"
+  },
+  {
+    "fixture_path": ".ai/hooks/post-tool-observer.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/post-tool-observer.sh",
+    "blob_sha": "eafa23878e8649cc878e42cb66de5aecbc9e5593"
+  },
+  {
+    "fixture_path": ".ai/hooks/pre-edit-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/pre-edit-guard.sh",
+    "blob_sha": "4fa23b4ea0d57abc08b4b8873813972292e20040"
+  },
+  {
+    "fixture_path": ".ai/hooks/prompt-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/prompt-guard.sh",
+    "blob_sha": "6d27b8d00cf1841321ce29f1d671bb20d6936ca0"
+  },
+  {
+    "fixture_path": ".ai/hooks/run-hook.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/run-hook.sh",
+    "blob_sha": "823bb1b4fceb56115e59649092c3c952032ad7ca"
+  },
+  {
+    "fixture_path": ".ai/hooks/security-sentinel.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/security-sentinel.sh",
+    "blob_sha": "cbff414742ea969f9614e52803163ff306d8d3a8"
+  },
+  {
+    "fixture_path": ".ai/hooks/session-start-context.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/session-start-context.sh",
+    "blob_sha": "88cd066a89e6c74e5a7438b4c80b7c12ee5dc535"
+  },
+  {
+    "fixture_path": ".ai/hooks/stop-orchestrator.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/stop-orchestrator.sh",
+    "blob_sha": "fc9528ade1e159d6138c7424db11cd8dce9c9e9e"
+  },
+  {
+    "fixture_path": ".ai/hooks/subagent-return-channel-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/subagent-return-channel-guard.sh",
+    "blob_sha": "e2b9dfbbe21531e98114ef35fee84c5f7383ef6f"
+  },
+  {
+    "fixture_path": ".ai/hooks/subagent-start-context.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/subagent-start-context.sh",
+    "blob_sha": "6a505aff8a342fcdbb3c7124b581ea6cb5714499"
+  },
+  {
+    "fixture_path": ".ai/hooks/subagent-stop-quality.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/subagent-stop-quality.sh",
+    "blob_sha": "a0e7f6bd8c15f83046d7be68035cdb09f602baa4"
+  },
+  {
+    "fixture_path": ".ai/hooks/worktree-guard.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/hooks/worktree-guard.sh",
+    "blob_sha": "708cabe11005145cc856f9d5a0090b22a02a5a44"
+  },
+  {
+    "fixture_path": "scripts/architecture-event.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/architecture-event.ts",
+    "blob_sha": "181681531978bf3449b373e31c86c4bfadf7c2e0"
+  },
+  {
+    "fixture_path": "scripts/architecture-queue.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/architecture-queue.sh",
+    "blob_sha": "1dff2784c26c8dcf02080af43564e99cb468294b"
+  },
+  {
+    "fixture_path": "scripts/archive-architecture-request.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/archive-architecture-request.sh",
+    "blob_sha": "d4b2a1e1779d3fae59e419b9b1b6591d6f05fea8"
+  },
+  {
+    "fixture_path": "scripts/archive-workflow.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/archive-workflow.sh",
+    "blob_sha": "c069507697dc5fb135c4293c4ed99181fc9aa9f6"
+  },
+  {
+    "fixture_path": "scripts/capability-config.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/capability-config.ts",
+    "blob_sha": "6e8376b6308e845481718cc0fd1ff0b0d8d1049f"
+  },
+  {
+    "fixture_path": "scripts/capability-resolver.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/capability-resolver.ts",
+    "blob_sha": "3eea3107d4b61f3fa69abdc49aa84f974874f5d5"
+  },
+  {
+    "fixture_path": "scripts/capture-plan.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/capture-plan.sh",
+    "blob_sha": "70c4e5ab68b0ef5cf0b1da2701ab98696ef4b97f"
+  },
+  {
+    "fixture_path": "scripts/check-agent-tooling.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-agent-tooling.sh",
+    "blob_sha": "72877388d1646e97b8e6b50811ad6e639697f713"
+  },
+  {
+    "fixture_path": "scripts/check-architecture-sync.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-architecture-sync.sh",
+    "blob_sha": "5556e6f6ec1603aa2a20d5e5a850a05e85c72fab"
+  },
+  {
+    "fixture_path": "scripts/check-brain-manifest.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-brain-manifest.sh",
+    "blob_sha": "fdd144d7b556ec197030a5b5408c8f5351df2cd2"
+  },
+  {
+    "fixture_path": "scripts/check-context-files.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-context-files.sh",
+    "blob_sha": "1fd6452bf4b095f8bc2b92a478828c1a45c8171a"
+  },
+  {
+    "fixture_path": "scripts/check-deploy-sql-order.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-deploy-sql-order.sh",
+    "blob_sha": "495197fa948c3eda47f3e462ed9a95e38d7043d9"
+  },
+  {
+    "fixture_path": "scripts/check-skill-version.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-skill-version.ts",
+    "blob_sha": "5c2fded9d6dca58a57c517b4b43d0fc91de3f116"
+  },
+  {
+    "fixture_path": "scripts/check-task-sync.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-task-sync.sh",
+    "blob_sha": "94f2f1f54b25f1d3cc36bcdcbd9ac3f54bc9982e"
+  },
+  {
+    "fixture_path": "scripts/check-task-workflow.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/check-task-workflow.sh",
+    "blob_sha": "05ed254385887b91119a0b0303bd6cf0449282a3"
+  },
+  {
+    "fixture_path": "scripts/codex-handoff-resume.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/codex-handoff-resume.sh",
+    "blob_sha": "00521e65ad0aebd822cd0c9ba5e27a2d75ecb476"
+  },
+  {
+    "fixture_path": "scripts/context-contract-sync.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/context-contract-sync.sh",
+    "blob_sha": "2727118fd72234314546a8c7be01f198b914e5e3"
+  },
+  {
+    "fixture_path": "scripts/contract-run.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/contract-run.ts",
+    "blob_sha": "f41ccb379acc6b19012809d12024b9fd7c9fff34"
+  },
+  {
+    "fixture_path": "scripts/contract-worktree.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/contract-worktree.sh",
+    "blob_sha": "2d6462a3f8c41075ced6e8dd88d13abdc31bce01"
+  },
+  {
+    "fixture_path": "scripts/ensure-task-workflow.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/ensure-task-workflow.sh",
+    "blob_sha": "59a5b531e24cf59f17efe3d2f85d6eac3b74c823"
+  },
+  {
+    "fixture_path": "scripts/factor-lab-check.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/factor-lab-check.sh",
+    "blob_sha": "da964192120f9839bb977425a082ba9666b92df8"
+  },
+  {
+    "fixture_path": "scripts/factor-lab-new.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/factor-lab-new.sh",
+    "blob_sha": "81402bf0139bb30478224e2eb64c496a83d525e3"
+  },
+  {
+    "fixture_path": "scripts/factor-lab-promote.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/factor-lab-promote.sh",
+    "blob_sha": "eda0adb21660dc7c99442e2ddd9dd605b1587e92"
+  },
+  {
+    "fixture_path": "scripts/factor-lab-reject.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/factor-lab-reject.sh",
+    "blob_sha": "54258ff5798e422225390e4d609e2c05840f3dc2"
+  },
+  {
+    "fixture_path": "scripts/harness-trace-grade.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/harness-trace-grade.sh",
+    "blob_sha": "bae0a195d30c0bd39bb02de21a6d390d091c1fe0"
+  },
+  {
+    "fixture_path": "scripts/heartbeat-triage.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/heartbeat-triage.sh",
+    "blob_sha": "5084e5a88b09aadc6e673a000c38b5542ef24c56"
+  },
+  {
+    "fixture_path": "scripts/inspect-project-state.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/inspect-project-state.ts",
+    "blob_sha": "706ef2ddc69247374cf57a4a29325f341bbab086"
+  },
+  {
+    "fixture_path": "scripts/install-agent-fleet.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/install-agent-fleet.sh",
+    "blob_sha": "64fa9ebfdc8e1219336197e3547b56f1f3cb6886"
+  },
+  {
+    "fixture_path": "scripts/maintenance-triage.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/maintenance-triage.sh",
+    "blob_sha": "ff6af96fafd919c4ed24cf5524003a6604fae5fe"
+  },
+  {
+    "fixture_path": "scripts/merge-gate.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/merge-gate.ts",
+    "blob_sha": "19ec2c9ad9c1a3059cd0792c11b59b43d4ccb9bd"
+  },
+  {
+    "fixture_path": "scripts/new-plan.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/new-plan.sh",
+    "blob_sha": "55a82a7a233ad75a3005a2cbf9b940492caad446"
+  },
+  {
+    "fixture_path": "scripts/new-spec.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/new-spec.sh",
+    "blob_sha": "d44e2d4e76026c616257180e173948fcae5ad2cf"
+  },
+  {
+    "fixture_path": "scripts/new-sprint.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/new-sprint.sh",
+    "blob_sha": "1b53131134c7ea26a8a040572d41bbf35f54f0bb"
+  },
+  {
+    "fixture_path": "scripts/plan-to-todo.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/plan-to-todo.sh",
+    "blob_sha": "9992cd6d814e954a41964bea8b9e7c30e97b9f4c"
+  },
+  {
+    "fixture_path": "scripts/prepare-codex-handoff.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/prepare-codex-handoff.sh",
+    "blob_sha": "a49080433a3bf7bad946d1f3e8d1c563d6b417b8"
+  },
+  {
+    "fixture_path": "scripts/prepare-handoff.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/prepare-handoff.sh",
+    "blob_sha": "40729d78084c5966ef2225f8add5f960059646f9"
+  },
+  {
+    "fixture_path": "scripts/refresh-current-status.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/refresh-current-status.sh",
+    "blob_sha": "a974161920c07e910b3a2601df9ad32b8e05d4aa"
+  },
+  {
+    "fixture_path": "scripts/run-bounded-verifier-command.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/run-bounded-verifier-command.ts",
+    "blob_sha": "95efc51e0266d2bcde8e57fe126b74e1960f1d90"
+  },
+  {
+    "fixture_path": "scripts/select-agent-context-blocks.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/select-agent-context-blocks.sh",
+    "blob_sha": "3914542a2dc69d6568fd3b0b06602e7c328c9147"
+  },
+  {
+    "fixture_path": "scripts/ship-worktrees.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/ship-worktrees.sh",
+    "blob_sha": "72e19241f2ab97c914cfe70dbc2d0bdfbb79abbf"
+  },
+  {
+    "fixture_path": "scripts/sprint-backlog.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/sprint-backlog.sh",
+    "blob_sha": "0eaf037dc3461753df022bf7fdf6a94e384d5e47"
+  },
+  {
+    "fixture_path": "scripts/summarize-failures.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/summarize-failures.sh",
+    "blob_sha": "bf28df5e38646409284c5dc1945195c6d6f05a69"
+  },
+  {
+    "fixture_path": "scripts/switch-plan.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/switch-plan.sh",
+    "blob_sha": "1ff607d4a8e93b292a73fd335486a956dec105b1"
+  },
+  {
+    "fixture_path": "scripts/sync-brain-docs.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/sync-brain-docs.sh",
+    "blob_sha": "fc1a88f5a4116c4874f6a471fa92d450e7e74f75"
+  },
+  {
+    "fixture_path": "scripts/validate-harness-profile-benchmark.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/validate-harness-profile-benchmark.ts",
+    "blob_sha": "4889ffedf3d9d3a269618385b8d0fc817e924b38"
+  },
+  {
+    "fixture_path": "scripts/verify-contract.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/verify-contract.sh",
+    "blob_sha": "84f9905139481c70769c4665b897e8242095e9c5"
+  },
+  {
+    "fixture_path": "scripts/verify-sprint.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/verify-sprint.sh",
+    "blob_sha": "d2298c0e0df51e18c5dafc13a105bd3ea12241b5"
+  },
+  {
+    "fixture_path": "scripts/workflow-contract.ts",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/workflow-contract.ts",
+    "blob_sha": "cf4d99020dd6349628fed8639ec883309ead1213"
+  },
+  {
+    "fixture_path": "scripts/workstream-sync.sh",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/helpers/workstream-sync.sh",
+    "blob_sha": "694a3b01a39d24c0dd82f2462f71fc5ae024adc5"
+  },
+  {
+    "fixture_path": ".claude/templates/contract.template.md",
+    "tag": "v0.10.0",
+    "commit": "9d4448494d919858de34f0a2169b5b029bd429f2",
+    "path": "assets/templates/contract.template.md",
+    "blob_sha": "99a9b589c49043b96767efdd256d950bc793bcc4"
+  },
+  {
+    "fixture_path": ".claude/settings.json",
+    "tag": "v0.9.2",
+    "commit": "76cd77c07052384f4107d0e3cbc293c7781048c1",
+    "path": "assets/hooks/settings.template.json",
+    "blob_sha": "2899108c2afd9366d07342714d1c7a3adf016e4d"
+  },
+  {
+    "fixture_path": ".codex/hooks.json",
+    "tag": "v0.9.2",
+    "commit": "76cd77c07052384f4107d0e3cbc293c7781048c1",
+    "path": "assets/hooks/codex.hooks.template.json",
+    "blob_sha": "5fae691ed17821e5c01b6cab7826ad169138020c"
+  }
+]
