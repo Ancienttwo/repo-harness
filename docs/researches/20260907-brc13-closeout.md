@@ -1,5 +1,7 @@
 # BRC13 Issue closure and exact cleanup
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Implementation reference. Delivery and exact acceptance evidence are recorded in the associated contract review and notes.
 
 The implementation uses the existing campaign planning journal, one automation budget store, publication reconciliation and contract-worktree cleanup. The transaction starts from a durable completed worker antecedent and the current reviewing Lease. It joins canonical adoption slots to immutable Issue ids; every mapped Task must supply actual merged-PR evidence before the Issue closes.

@@ -1,5 +1,7 @@
 # Reconciliation validation and terminal campaign acknowledgment
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 A reconciliation decision must never become immutable before its usage event is known to be valid. `prepareUsageCommit` checks the exact stored reservation, resolution, open-run preconditions and complete event schema. The caller then publishes the reconciliation decision followed by that same validated event. The decision still precedes the charge, so interruption cannot replace an operator's reserved charge with a cheaper observed outcome.
 
 Late settlement does not reactivate an exhausted budget. The next projection retains the original stop receipt and `budget_exhausted` state while adding the event's charge. The original receipt remains the historical stopping observation; it is not rewritten to include a later settlement.

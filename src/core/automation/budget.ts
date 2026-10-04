@@ -1,7 +1,7 @@
 /**
  * Per-goal automation budget authority.
  *
- * The authorization and limit schema is the host-owned `ProgramAuthorizationV1`
+ * The authorization and limit schema is the host-owned `ProgramAuthorizationV2`
  * / `ProgramBudgetLimitV1` pair specified by the guarded-merge unattended
  * automation PRD. `AutomationBudgetV1` is a thin projection of one exact grant
  * onto one automation run: it never re-states the grant's fields, it embeds the
@@ -13,19 +13,16 @@
  * and reconciliation live in `src/effects/automation/budget-store.ts`.
  */
 import { createHash } from 'crypto';
-import { validateLeaseLivenessPolicy, type LeaseLivenessPolicyV1 } from '../state/lease-liveness';
 
 export const AUTOMATION_BUDGET_PROTOCOL = 1 as const;
+export const PROGRAM_AUTHORIZATION_PROTOCOL = 2 as const;
 
 export const PROGRAM_AUTHORIZATION_KIND = 'repo-harness-program-authorization' as const;
 export const AUTOMATION_METRIC_SUPPORT_KIND = 'repo-harness-automation-metric-support' as const;
 export const AUTOMATION_BUDGET_KIND = 'repo-harness-automation-budget' as const;
 export const AUTOMATION_RESERVATION_KIND = 'repo-harness-automation-reservation' as const;
-export const CAMPAIGN_AUTOMATION_RESERVATION_KIND = 'repo-harness-campaign-automation-reservation' as const;
 /** The PRD's wire kind for a budget consumption event; this ledger does not mint a second one. */
 export const AUTOMATION_USAGE_EVENT_KIND = 'repo-harness-program-budget-event' as const;
-export const CAMPAIGN_STEP_ADMISSION_KIND = 'repo-harness-campaign-budget-step-admission' as const;
-export const CAMPAIGN_STEP_COMPLETION_KIND = 'repo-harness-campaign-budget-step-completion' as const;
 export const AUTOMATION_BUDGET_CURRENT_KIND = 'repo-harness-automation-budget-current' as const;
 export const AUTOMATION_STOP_RECEIPT_KIND = 'repo-harness-automation-stop-receipt' as const;
 export const AUTOMATION_REFUSAL_KIND = 'repo-harness-automation-budget-refusal' as const;
@@ -237,7 +234,7 @@ function assertNullableCount(value: unknown, label: string, minimum: number): nu
 }
 
 // ---------------------------------------------------------------------------
-// PRD schema: ProgramBudgetLimitV1 / ProgramAuthorizationV1
+// PRD schema: ProgramBudgetLimitV1 / ProgramAuthorizationV2
 // ---------------------------------------------------------------------------
 
 /**
@@ -277,89 +274,8 @@ export function validateProgramBudgetLimit(value: ProgramBudgetLimitV1): Program
   });
 }
 
-export interface CampaignTransientRetryPolicyV1 {
-  readonly max_consecutive_failures: number;
-  readonly initial_backoff_ms: number;
-  readonly maximum_backoff_ms: number;
-}
-
-export function validateCampaignTransientRetryPolicy(value: unknown): CampaignTransientRetryPolicyV1 {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('campaign transient_retry must be an object');
-  const policy = value as Record<string, unknown>;
-  if (JSON.stringify(Object.keys(policy).sort()) !== JSON.stringify(['initial_backoff_ms', 'max_consecutive_failures', 'maximum_backoff_ms'])) invalid('campaign transient_retry fields are invalid');
-  const initial = assertCount(policy.initial_backoff_ms, 'transient_retry.initial_backoff_ms', 1);
-  const maximum = assertCount(policy.maximum_backoff_ms, 'transient_retry.maximum_backoff_ms', 1);
-  if (maximum < initial) invalid('transient_retry maximum backoff is below initial backoff');
-  return Object.freeze({ max_consecutive_failures: assertCount(policy.max_consecutive_failures, 'transient_retry.max_consecutive_failures', 1), initial_backoff_ms: initial, maximum_backoff_ms: maximum });
-}
-
-export interface ProgramAuthorizationCampaignV1 {
-  readonly campaign_id: string;
-  readonly group_count: 1 | 2 | 3;
-  readonly issues_per_group: number;
-  readonly allowed_issue_kinds: readonly ['bugfix', 'test_gap'];
-  readonly max_parallel_tasks: 1 | 2 | 3;
-  readonly max_authoring_rounds_per_group: number;
-  readonly max_controller_steps: number;
-  readonly max_provider_calls: number;
-  readonly transient_retry?: CampaignTransientRetryPolicyV1;
-  readonly liveness_policy?: LeaseLivenessPolicyV1;
-  readonly issue_author: 'gpt_pro';
-  readonly local_parent_host: 'claude' | 'codex';
-  readonly chrome_profile_directory: string;
-  readonly require_fresh_main_audit: true;
-}
-
-function validateProgramAuthorizationCampaign(value: unknown): ProgramAuthorizationCampaignV1 | null {
-  if (value === null) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) invalid('program authorization campaign must be an object or null');
-  const campaign = value as Record<string, unknown>;
-  const expected = ['allowed_issue_kinds', 'campaign_id', 'chrome_profile_directory', 'group_count', 'issue_author', 'issues_per_group', 'local_parent_host', 'max_authoring_rounds_per_group', 'max_controller_steps', 'max_parallel_tasks', 'max_provider_calls', 'require_fresh_main_audit'];
-  if (Object.hasOwn(campaign, 'transient_retry')) expected.push('transient_retry');
-  if (Object.hasOwn(campaign, 'liveness_policy')) expected.push('liveness_policy');
-  expected.sort();
-  if (JSON.stringify(Object.keys(campaign).sort()) !== JSON.stringify(expected)) invalid('program authorization campaign fields are invalid');
-  if (![1, 2, 3].includes(campaign.group_count as number)) invalid('program authorization campaign group_count must be 1, 2, or 3');
-  if (!Number.isSafeInteger(campaign.issues_per_group) || (campaign.issues_per_group as number) < 1 || (campaign.issues_per_group as number) > 10) {
-    invalid('program authorization campaign issues_per_group must be an integer from 1 to 10');
-  }
-  if (JSON.stringify(campaign.allowed_issue_kinds) !== JSON.stringify(['bugfix', 'test_gap'])) {
-    invalid('program authorization campaign allowed_issue_kinds must be exactly ["bugfix","test_gap"]');
-  }
-  if (![1, 2, 3].includes(campaign.max_parallel_tasks as number)) invalid('program authorization campaign max_parallel_tasks must be 1, 2, or 3');
-  if (!Number.isSafeInteger(campaign.max_authoring_rounds_per_group) || (campaign.max_authoring_rounds_per_group as number) < 1) {
-    invalid('program authorization campaign max_authoring_rounds_per_group must be a positive integer');
-  }
-  if (campaign.issue_author !== 'gpt_pro') invalid('program authorization campaign issue_author must be gpt_pro');
-  if (campaign.local_parent_host !== 'claude' && campaign.local_parent_host !== 'codex') invalid('program authorization campaign local_parent_host is invalid');
-  if (campaign.require_fresh_main_audit !== true) invalid('program authorization campaign require_fresh_main_audit must be true');
-  return Object.freeze({
-    ...(Object.hasOwn(campaign, 'transient_retry') ? { transient_retry: validateCampaignTransientRetryPolicy(campaign.transient_retry) } : {}),
-    ...(Object.hasOwn(campaign, 'liveness_policy') ? { liveness_policy: validateLeaseLivenessPolicy(campaign.liveness_policy) } : {}),
-    campaign_id: assertIdentifier(campaign.campaign_id, 'campaign_id'),
-    group_count: campaign.group_count as 1 | 2 | 3,
-    issues_per_group: campaign.issues_per_group as number,
-    allowed_issue_kinds: Object.freeze(['bugfix', 'test_gap']) as readonly ['bugfix', 'test_gap'],
-    max_parallel_tasks: campaign.max_parallel_tasks as 1 | 2 | 3,
-    max_authoring_rounds_per_group: campaign.max_authoring_rounds_per_group as number,
-    max_controller_steps: assertCount(campaign.max_controller_steps, 'campaign max_controller_steps', 1),
-    max_provider_calls: assertCount(campaign.max_provider_calls, 'campaign max_provider_calls', 1),
-    issue_author: 'gpt_pro',
-    local_parent_host: campaign.local_parent_host as 'claude' | 'codex',
-    chrome_profile_directory: typeof campaign.chrome_profile_directory === 'string'
-      && campaign.chrome_profile_directory.trim() === campaign.chrome_profile_directory
-      && campaign.chrome_profile_directory.length > 0
-      && campaign.chrome_profile_directory.length <= 128
-      && !campaign.chrome_profile_directory.includes('/')
-      && !campaign.chrome_profile_directory.includes('\\')
-      ? campaign.chrome_profile_directory
-      : invalid('chrome_profile_directory is invalid'),
-    require_fresh_main_audit: true,
-  });
-}
-
-export interface ProgramAuthorizationV1 {
-  readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
+export interface ProgramAuthorizationV2 {
+  readonly protocol: typeof PROGRAM_AUTHORIZATION_PROTOCOL;
   readonly kind: typeof PROGRAM_AUTHORIZATION_KIND;
   readonly authorization_id: string;
   readonly repository_id: string;
@@ -380,18 +296,17 @@ export interface ProgramAuthorizationV1 {
   readonly contract_scope: AutomationContractScope;
   /** Repo-relative task contract path; required by `task_contract`, forbidden otherwise. */
   readonly contract_path: string | null;
-  readonly campaign: ProgramAuthorizationCampaignV1 | null;
   readonly issued_by: string;
   readonly issued_at: string;
   readonly expires_at: string;
   readonly authorization_sha256: string;
 }
 
-export function validateProgramAuthorization(value: ProgramAuthorizationV1): ProgramAuthorizationV1 {
+export function validateProgramAuthorization(value: ProgramAuthorizationV2): ProgramAuthorizationV2 {
   if (value === null || typeof value !== 'object') invalid('program authorization must be an object');
-  const expected = ['allowed_merge_method', 'allowed_risk_tiers', 'allowed_work_package_ids', 'authorization_id', 'authorization_sha256', 'budget', 'campaign', 'contract_path', 'contract_scope', 'expires_at', 'issued_at', 'issued_by', 'kind', 'max_repair_cycles', 'merge_mode', 'protocol', 'repository_id', 'target_ref', 'target_revision', 'work_graph_revision'];
+  const expected = ['allowed_merge_method', 'allowed_risk_tiers', 'allowed_work_package_ids', 'authorization_id', 'authorization_sha256', 'budget', 'contract_path', 'contract_scope', 'expires_at', 'issued_at', 'issued_by', 'kind', 'max_repair_cycles', 'merge_mode', 'protocol', 'repository_id', 'target_ref', 'target_revision', 'work_graph_revision'];
   if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expected)) invalid('program authorization fields are invalid');
-  if (value.protocol !== AUTOMATION_BUDGET_PROTOCOL) invalid('program authorization protocol is unsupported');
+  if (value.protocol !== PROGRAM_AUTHORIZATION_PROTOCOL) invalid('program authorization protocol is unsupported');
   if (value.kind !== PROGRAM_AUTHORIZATION_KIND) invalid('program authorization kind is unsupported');
   if (value.merge_mode !== 'disabled' && value.merge_mode !== 'manual' && value.merge_mode !== 'auto_merge') {
     invalid('program authorization merge_mode is unsupported');
@@ -417,8 +332,8 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
   const issuedAt = assertTimestamp(value.issued_at, 'issued_at');
   const expiresAt = assertTimestamp(value.expires_at, 'expires_at');
   if (Date.parse(expiresAt) <= Date.parse(issuedAt)) invalid('program authorization expires_at must be after issued_at');
-  const authorization: ProgramAuthorizationV1 = Object.freeze({
-    protocol: AUTOMATION_BUDGET_PROTOCOL,
+  const authorization: ProgramAuthorizationV2 = Object.freeze({
+    protocol: PROGRAM_AUTHORIZATION_PROTOCOL,
     kind: PROGRAM_AUTHORIZATION_KIND,
     authorization_id: assertIdentifier(value.authorization_id, 'authorization_id'),
     repository_id: assertIdentifier(value.repository_id, 'repository_id'),
@@ -433,7 +348,6 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
     budget: validateProgramBudgetLimit(value.budget),
     contract_scope: value.contract_scope,
     contract_path: value.contract_path === null ? null : assertRepoRelativePath(value.contract_path, 'contract_path'),
-    campaign: validateProgramAuthorizationCampaign(value.campaign),
     issued_by: assertIdentifier(value.issued_by, 'issued_by'),
     issued_at: issuedAt,
     expires_at: expiresAt,
@@ -449,16 +363,16 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
 }
 
 export function sealProgramAuthorization(
-  input: Omit<ProgramAuthorizationV1, 'protocol' | 'kind' | 'authorization_sha256'>,
-): ProgramAuthorizationV1 {
+  input: Omit<ProgramAuthorizationV2, 'protocol' | 'kind' | 'authorization_sha256'>,
+): ProgramAuthorizationV2 {
   const draft = {
     ...withoutFields(input, 'protocol', 'kind', 'authorization_sha256'),
-    protocol: AUTOMATION_BUDGET_PROTOCOL,
+    protocol: PROGRAM_AUTHORIZATION_PROTOCOL,
     kind: PROGRAM_AUTHORIZATION_KIND,
     allowed_work_package_ids: [...input.allowed_work_package_ids].sort(),
     budget: validateProgramBudgetLimit(input.budget),
   };
-  return validateProgramAuthorization({ ...draft, authorization_sha256: automationDigest(draft) } as unknown as ProgramAuthorizationV1);
+  return validateProgramAuthorization({ ...draft, authorization_sha256: automationDigest(draft) } as unknown as ProgramAuthorizationV2);
 }
 
 // ---------------------------------------------------------------------------
@@ -685,7 +599,7 @@ export interface AutomationBudgetV1 {
   readonly engineer_id: string | null;
   /** Bound by issues #286/#287; a budget never creates, releases, or steals a claim. */
   readonly claim_id: string | null;
-  readonly authorization: ProgramAuthorizationV1;
+  readonly authorization: ProgramAuthorizationV2;
   readonly contract_sha256: string | null;
   readonly contract_limits: AutomationContractLimitsV1 | null;
   readonly metric_support: AutomationMetricSupportV1;
@@ -708,7 +622,7 @@ export interface BuildAutomationBudgetInput {
   readonly repository_id: string;
   readonly engineer_id: string | null;
   readonly claim_id: string | null;
-  readonly authorization: ProgramAuthorizationV1;
+  readonly authorization: ProgramAuthorizationV2;
   readonly contract_sha256: string | null;
   readonly contract_limits: AutomationContractLimitsV1 | null;
   readonly metric_support: AutomationMetricSupportV1;
@@ -750,7 +664,7 @@ export interface AutomationLimitDerivationResultV1 {
  * a self-consistent object with a raised limit is refused instead of enforced.
  */
 export function deriveAutomationLimits(
-  authorization: ProgramAuthorizationV1,
+  authorization: ProgramAuthorizationV2,
   contractLimits: AutomationContractLimitsV1 | null,
   metricSupport: AutomationMetricSupportV1,
   createdAt: string,
@@ -1025,7 +939,7 @@ export function deriveAutomationConsumption(
   });
 }
 
-export interface GenericAutomationBudgetReservationV1 {
+export interface AutomationBudgetReservationV1 {
   readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
   readonly kind: typeof AUTOMATION_RESERVATION_KIND;
   readonly automation_run_id: string;
@@ -1044,116 +958,15 @@ export interface GenericAutomationBudgetReservationV1 {
   readonly reservation_sha256: string;
 }
 
-export interface CampaignAutomationBudgetReservationV1 {
-  readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
-  readonly kind: typeof CAMPAIGN_AUTOMATION_RESERVATION_KIND;
-  readonly automation_run_id: string;
-  readonly budget_sha256: string;
-  readonly idempotency_key: string;
-  readonly operation: AutomationOperationKind;
-  readonly unit_kind: ProgramUnitKind;
-  readonly unit_id: string;
-  readonly attempt: number;
-  readonly provider: string | null;
-  readonly campaign_context: CampaignAutomationReservationContextV1;
-  readonly step_index: number;
-  readonly reserved: AutomationMetricVectorV1;
-  readonly reserved_at: string;
-  readonly deadline_at: string;
-  readonly previous_ledger_sha256: string;
-  readonly reservation_sha256: string;
-}
-
-export type AutomationBudgetReservationV1 =
-  | GenericAutomationBudgetReservationV1
-  | CampaignAutomationBudgetReservationV1;
 
 const UNIT_KINDS: readonly ProgramUnitKind[] = Object.freeze(['execute', 'review', 'verify', 'integrate', 'merge']);
 const OPERATION_KINDS: readonly AutomationOperationKind[] = Object.freeze(['acquisition', 'dispatch', 'retry', 'provider_invocation', 'dispatch_attempt', 'retry_attempt']);
 const OUTCOMES: readonly AutomationOutcome[] = Object.freeze(['progress', 'no_progress', 'provider_failure', 'transient_failure', 'completed']);
 
-export type CampaignAuthoringOperation = 'initial' | 'fill_missing' | 'edit_issue';
-export type CampaignCloseoutOperation = 'github_comment_attempt' | 'github_close_attempt' | 'git_ref_delete_attempt';
-export type CampaignProviderOperation = CampaignAuthoringOperation | 'challenge' | 'audit' | 'observe_revision' | 'git_read' | 'github_read' | 'github_comment' | 'github_close' | CampaignCloseoutOperation;
-export function campaignProviderForOperation(operation: CampaignProviderOperation): 'github' | 'git' | 'gpt-pro' {
-  switch (operation) {
-    case 'initial': case 'fill_missing': case 'edit_issue': case 'challenge': case 'audit': case 'observe_revision': return 'gpt-pro';
-    case 'github_read': case 'github_comment': case 'github_close': case 'github_comment_attempt': case 'github_close_attempt': return 'github';
-    case 'git_read': case 'git_ref_delete_attempt': return 'git';
-    default: return invalid('unsupported campaign Provider operation');
-  }
-}
-/** A closeout attempt always owns its mutation and one mandatory verification read. */
-export function campaignProviderCallReservation(operation: CampaignProviderOperation): number {
-  campaignProviderForOperation(operation);
-  return operation === 'github_comment_attempt' || operation === 'github_close_attempt' || operation === 'git_ref_delete_attempt' ? 2 : 1;
-}
-export function campaignProviderOperationReservation(operation: CampaignProviderOperation, tokens: Pick<AutomationMetricVectorV1, 'input_tokens' | 'output_tokens' | 'cost_micros'>): AutomationMetricVectorV1 {
-  const calls = campaignProviderCallReservation(operation);
-  return Object.freeze({ ...automationOperationReservation('provider_invocation', tokens), agent_turns: calls, runner_invocations: calls, provider_failures: calls });
-}
-export const CAMPAIGN_AUTHORING_OPERATIONS: readonly CampaignAuthoringOperation[] = Object.freeze(['initial', 'fill_missing', 'edit_issue']);
-export function isCampaignAuthoringOperation(operation: CampaignProviderOperation): operation is CampaignAuthoringOperation {
-  return (CAMPAIGN_AUTHORING_OPERATIONS as readonly string[]).includes(operation);
-}
-
-interface CampaignReservationContextBase {
-  readonly campaign_id: string;
-  readonly group_number: 1 | 2 | 3;
-  readonly intent_sha256: string;
-  readonly step_admission_sha256: string | null;
-}
-
-export type CampaignAutomationReservationContextV1 = (CampaignReservationContextBase & (
-  | { readonly operation: CampaignAuthoringOperation | 'challenge' | 'audit' }
-  | { readonly operation: 'git_read' | 'github_read' | 'github_comment' | 'github_close' | CampaignCloseoutOperation; readonly request_sha256: string }
-)) | { readonly campaign_id: string; readonly group_number: 1; readonly intent_sha256: null; readonly step_admission_sha256: null; readonly operation: 'observe_revision'; readonly request_sha256: string };
-
-const CAMPAIGN_PROVIDER_OPERATIONS: readonly CampaignProviderOperation[] = Object.freeze([
-  'initial',
-  'fill_missing',
-  'edit_issue',
-  'challenge',
-  'audit',
-  'observe_revision',
-  'git_read',
-  'github_read',
-  'github_comment',
-  'github_close',
-  'github_comment_attempt',
-  'github_close_attempt',
-  'git_ref_delete_attempt',
-]);
-
-export function validateCampaignAutomationReservationContext(
-  value: CampaignAutomationReservationContextV1,
-): CampaignAutomationReservationContextV1 {
-  if (value === null || typeof value !== 'object') invalid('campaign reservation context must be an object');
-  if (value.operation === 'observe_revision') {
-    const fields = ['campaign_id', 'group_number', 'intent_sha256', 'operation', 'request_sha256', 'step_admission_sha256'].sort();
-    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(fields) || value.group_number !== 1 || value.intent_sha256 !== null || value.step_admission_sha256 !== null) invalid('revision observation requires first-group standalone request without an issue intent');
-    return Object.freeze({ campaign_id: assertIdentifier(value.campaign_id, 'campaign reservation campaign_id'), group_number: 1, intent_sha256: null, step_admission_sha256: null, operation: 'observe_revision', request_sha256: assertDigest(value.request_sha256, 'revision observation request digest') });
-  }
-  const github = campaignProviderForOperation(value.operation) !== 'gpt-pro';
-  const expected = ['campaign_id', 'group_number', 'intent_sha256', 'operation', 'step_admission_sha256', ...(github ? ['request_sha256'] : [])].sort();
-  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expected)) invalid('campaign reservation context fields are invalid');
-  if (!CAMPAIGN_PROVIDER_OPERATIONS.includes(value.operation)) invalid('campaign reservation operation is unsupported');
-  if (github && value.step_admission_sha256 === null) invalid('GitHub provider reservation requires campaign step admission');
-  return Object.freeze({
-    campaign_id: assertIdentifier(value.campaign_id, 'campaign reservation campaign_id'),
-    group_number: [1, 2, 3].includes(value.group_number) ? value.group_number : invalid('campaign reservation group_number must be 1, 2, or 3'),
-    intent_sha256: typeof value.intent_sha256 === 'string' && /^sha256:[0-9a-f]{64}$/u.test(value.intent_sha256)
-      ? value.intent_sha256
-      : invalid('campaign reservation intent_sha256 must be a canonical message digest'),
-    step_admission_sha256: assertNullableDigest(value.step_admission_sha256, 'campaign step admission digest'),
-    ...(github ? { operation: value.operation, request_sha256: assertDigest((value as { request_sha256: string }).request_sha256, 'campaign provider request digest') } : { operation: value.operation }),
-  }) as CampaignAutomationReservationContextV1;
-}
-
 export function validateAutomationReservation(value: AutomationBudgetReservationV1): AutomationBudgetReservationV1 {
   if (value === null || typeof value !== 'object') invalid('automation reservation must be an object');
   if (value.protocol !== AUTOMATION_BUDGET_PROTOCOL) invalid('automation reservation protocol is unsupported');
-  if (value.kind !== AUTOMATION_RESERVATION_KIND && value.kind !== CAMPAIGN_AUTOMATION_RESERVATION_KIND) {
+  if (value.kind !== AUTOMATION_RESERVATION_KIND) {
     invalid('automation reservation kind is unsupported');
   }
   if (!OPERATION_KINDS.includes(value.operation)) invalid('automation reservation operation is unsupported');
@@ -1179,33 +992,14 @@ export function validateAutomationReservation(value: AutomationBudgetReservation
     'previous_ledger_sha256', 'protocol', 'provider', 'reservation_sha256', 'reserved', 'reserved_at',
     'step_index', 'unit_id', 'unit_kind',
   ];
-  const campaignFields = [...genericFields, 'campaign_context'].sort();
-  const actualFields = Object.keys(value).sort();
-  let reservation: AutomationBudgetReservationV1;
-  if (value.kind === AUTOMATION_RESERVATION_KIND) {
-    if (JSON.stringify(actualFields) !== JSON.stringify(genericFields.sort())) {
-      invalid('generic automation reservation fields are invalid');
-    }
-    reservation = Object.freeze({
-      protocol: AUTOMATION_BUDGET_PROTOCOL,
-      kind: AUTOMATION_RESERVATION_KIND,
-      ...common,
-    });
-  } else {
-    if (JSON.stringify(actualFields) !== JSON.stringify(campaignFields)) {
-      invalid('campaign automation reservation fields are invalid');
-    }
-    const context = validateCampaignAutomationReservationContext(value.campaign_context);
-    if (value.operation !== 'provider_invocation' || value.provider !== campaignProviderForOperation(context.operation)) {
-      invalid('campaign reservation provider does not match its operation');
-    }
-    reservation = Object.freeze({
-      protocol: AUTOMATION_BUDGET_PROTOCOL,
-      kind: CAMPAIGN_AUTOMATION_RESERVATION_KIND,
-      ...common,
-      campaign_context: context,
-    });
+  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(genericFields.sort())) {
+    invalid('generic automation reservation fields are invalid');
   }
+  const reservation: AutomationBudgetReservationV1 = Object.freeze({
+    protocol: AUTOMATION_BUDGET_PROTOCOL,
+    kind: AUTOMATION_RESERVATION_KIND,
+    ...common,
+  });
   if (digestWithout(reservation, 'reservation_sha256') !== reservation.reservation_sha256) {
     invalid('automation reservation digest does not bind its own content');
   }
@@ -1213,31 +1007,15 @@ export function validateAutomationReservation(value: AutomationBudgetReservation
 }
 
 export function sealAutomationReservation(
-  input: Omit<GenericAutomationBudgetReservationV1, 'protocol' | 'kind' | 'reservation_sha256'>,
-): GenericAutomationBudgetReservationV1 {
+  input: Omit<AutomationBudgetReservationV1, 'protocol' | 'kind' | 'reservation_sha256'>,
+): AutomationBudgetReservationV1 {
   const draft = {
     ...withoutFields(input, 'protocol', 'kind', 'reservation_sha256'),
     protocol: AUTOMATION_BUDGET_PROTOCOL,
     kind: AUTOMATION_RESERVATION_KIND,
     reserved: validateAutomationMetricVector(input.reserved, 'reservation reserved'),
   };
-  return validateAutomationReservation({ ...draft, reservation_sha256: automationDigest(draft) } as GenericAutomationBudgetReservationV1) as GenericAutomationBudgetReservationV1;
-}
-
-export function sealCampaignAutomationReservation(
-  input: Omit<CampaignAutomationBudgetReservationV1, 'protocol' | 'kind' | 'reservation_sha256'>,
-): CampaignAutomationBudgetReservationV1 {
-  const draft = {
-    ...withoutFields(input, 'protocol', 'kind', 'reservation_sha256'),
-    protocol: AUTOMATION_BUDGET_PROTOCOL,
-    kind: CAMPAIGN_AUTOMATION_RESERVATION_KIND,
-    campaign_context: validateCampaignAutomationReservationContext(input.campaign_context),
-    reserved: validateAutomationMetricVector(input.reserved, 'reservation reserved'),
-  };
-  return validateAutomationReservation({
-    ...draft,
-    reservation_sha256: automationDigest(draft),
-  } as CampaignAutomationBudgetReservationV1) as CampaignAutomationBudgetReservationV1;
+  return validateAutomationReservation({ ...draft, reservation_sha256: automationDigest(draft) } as AutomationBudgetReservationV1) as AutomationBudgetReservationV1;
 }
 
 // ---------------------------------------------------------------------------
@@ -1446,208 +1224,14 @@ export interface AutomationLedgerFoldV1 {
   readonly last_completed_step_index: number;
   readonly event_count: number;
 }
-
-/**
- * The consecutive no-progress streak is a property of the ordered outcome
- * sequence, so it is folded here rather than stored as a counter that a crash
- * could leave stale.
- */
-export interface CampaignBudgetStepIdentityV1 {
-  readonly automation_run_id: string;
-  readonly campaign_id: string;
-  readonly group_number: 1 | 2 | 3;
-  readonly intent_sha256: string;
-  readonly idempotency_key: string;
-}
-
-interface CampaignBudgetStepEventBase extends CampaignBudgetStepIdentityV1 {
-  readonly protocol: 1;
-  readonly authorization_id: string;
-  readonly budget_sha256: string;
-  readonly step_index: number;
-  readonly previous_ledger_sha256: string;
-  readonly observed_at: string;
-  readonly event_id: string;
-  readonly event_sha256: string;
-}
-
-export interface CampaignBudgetStepAdmissionV1 extends CampaignBudgetStepEventBase {
-  readonly kind: typeof CAMPAIGN_STEP_ADMISSION_KIND;
-}
-
-export interface CampaignBudgetStepCompletionV1 extends CampaignBudgetStepEventBase {
-  readonly kind: typeof CAMPAIGN_STEP_COMPLETION_KIND;
-  readonly admission_sha256: string;
-  readonly outcome: 'progress' | 'no_progress';
-  readonly evidence_refs: readonly AutomationEvidenceRefV1[];
-}
-
-export type CampaignBudgetStepEventV1 = CampaignBudgetStepAdmissionV1 | CampaignBudgetStepCompletionV1;
-export type AutomationLedgerEventV1 = AutomationUsageEventV1 | CampaignBudgetStepEventV1;
-
-export function validateCampaignBudgetStepIdentity(value: CampaignBudgetStepIdentityV1): CampaignBudgetStepIdentityV1 {
-  if (!value || typeof value !== 'object') invalid('campaign step identity must be an object');
-  return Object.freeze({
-    automation_run_id: assertDigest(value.automation_run_id, 'campaign step run'),
-    campaign_id: assertIdentifier(value.campaign_id, 'campaign step campaign'),
-    group_number: [1, 2, 3].includes(value.group_number) ? value.group_number : invalid('campaign step group must be 1, 2 or 3'),
-    intent_sha256: typeof value.intent_sha256 === 'string' && /^sha256:[0-9a-f]{64}$/u.test(value.intent_sha256)
-      ? value.intent_sha256 : invalid('campaign step intent must be a canonical digest'),
-    idempotency_key: assertIdentifier(value.idempotency_key, 'campaign step key'),
-  });
-}
-
-export function campaignBudgetStepKey(value: CampaignBudgetStepIdentityV1): string {
-  return automationDigest(validateCampaignBudgetStepIdentity(value));
-}
-
-export function validateCampaignBudgetStepEvent(value: CampaignBudgetStepEventV1): CampaignBudgetStepEventV1 {
-  if (!value || typeof value !== 'object' || value.protocol !== 1) invalid('campaign step event protocol is invalid');
-  if (value.kind !== CAMPAIGN_STEP_ADMISSION_KIND && value.kind !== CAMPAIGN_STEP_COMPLETION_KIND) invalid('campaign step event kind is invalid');
-  const completion = value.kind === CAMPAIGN_STEP_COMPLETION_KIND;
-  const fields = ['protocol', 'kind', 'automation_run_id', 'campaign_id', 'group_number', 'intent_sha256', 'idempotency_key',
-    'authorization_id', 'budget_sha256', 'step_index', 'previous_ledger_sha256', 'observed_at', 'event_id', 'event_sha256',
-    ...(completion ? ['admission_sha256', 'outcome', 'evidence_refs'] : [])].sort();
-  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(fields)) invalid('campaign step event fields are invalid');
-  const common = {
-    ...validateCampaignBudgetStepIdentity(value), protocol: 1 as const,
-    authorization_id: assertIdentifier(value.authorization_id, 'campaign step authorization'),
-    budget_sha256: assertDigest(value.budget_sha256, 'campaign step budget'),
-    step_index: assertCount(value.step_index, 'campaign step sequence', 1),
-    previous_ledger_sha256: assertDigest(value.previous_ledger_sha256, 'campaign step previous ledger'),
-    observed_at: assertTimestamp(value.observed_at, 'campaign step observed_at'),
-    event_id: assertDigest(value.event_id, 'campaign step event id'),
-    event_sha256: assertDigest(value.event_sha256, 'campaign step event digest'),
-  };
-  let event: CampaignBudgetStepEventV1;
-  if (completion) {
-    if (value.outcome !== 'progress' && value.outcome !== 'no_progress') invalid('campaign step outcome is invalid');
-    if (!Array.isArray(value.evidence_refs) || value.evidence_refs.length === 0) invalid('campaign step completion requires exact evidence');
-    event = Object.freeze({ ...common, kind: CAMPAIGN_STEP_COMPLETION_KIND,
-      admission_sha256: assertDigest(value.admission_sha256, 'campaign step admission digest'),
-      outcome: value.outcome,
-      evidence_refs: Object.freeze(value.evidence_refs.map((ref, i) => assertAutomationEvidenceRef(ref, `campaign step evidence[${i}]`))),
-    });
-  } else event = Object.freeze({ ...common, kind: CAMPAIGN_STEP_ADMISSION_KIND });
-  if (digestWithout(event, 'event_id', 'event_sha256') !== event.event_id || digestWithout(event, 'event_sha256') !== event.event_sha256) {
-    invalid('campaign step event digest does not bind its content');
-  }
-  return event;
-}
-
-export function sealCampaignBudgetStepEvent(
-  input: Omit<CampaignBudgetStepAdmissionV1, 'protocol' | 'event_id' | 'event_sha256'>
-    | Omit<CampaignBudgetStepCompletionV1, 'protocol' | 'event_id' | 'event_sha256'>,
-): CampaignBudgetStepEventV1 {
-  const draft = { ...input, protocol: 1 as const };
-  const identified = { ...draft, event_id: automationDigest(draft) };
-  return validateCampaignBudgetStepEvent({ ...identified, event_sha256: automationDigest(identified) } as CampaignBudgetStepEventV1);
-}
-
-export function validateAutomationLedgerEvent(value: AutomationLedgerEventV1): AutomationLedgerEventV1 {
-  if (!value || typeof value !== 'object') invalid('automation ledger event must be an object');
-  return value.kind === AUTOMATION_USAGE_EVENT_KIND ? validateAutomationUsageEvent(value) : validateCampaignBudgetStepEvent(value);
-}
-
-export interface CampaignBudgetLedgerV1 {
-  readonly controller_steps: number;
-  readonly provider_calls: number;
-  readonly reserved_provider_calls: number;
-  readonly active_step: CampaignBudgetStepAdmissionV1 | null;
-}
-
-/** One fold owns campaign admission identity and counters; callers supply no arithmetic. */
-export function foldCampaignBudgetLedger(
-  budget: AutomationBudgetV1,
-  events: readonly AutomationLedgerEventV1[],
-  reservations: readonly AutomationBudgetReservationV1[],
-): CampaignBudgetLedgerV1 {
-  const campaign = budget.authorization.campaign;
-  if (campaign === null) invalid('campaign ledger requires campaign authorization');
-  const ordered = [...events].sort((a, b) => a.step_index - b.step_index);
-  const reservationByDigest = new Map(reservations.map(r => [r.reservation_sha256, r]));
-  const completedReservations = new Set<string>();
-  const identities = new Set<string>();
-  const groupIntents = new Map<number, string>();
-  const bindIntent = (group: number, intent: string) => {
-    const prior = groupIntents.get(group);
-    if (prior !== undefined && prior !== intent) invalid('campaign group is bound to a different intent');
-    groupIntents.set(group, intent);
-  };
-  for (const r of reservations) if (r.kind === CAMPAIGN_AUTOMATION_RESERVATION_KIND && r.campaign_context.operation !== 'observe_revision') bindIntent(r.campaign_context.group_number, r.campaign_context.intent_sha256);
-  let active: CampaignBudgetStepAdmissionV1 | null = null;
-  let steps = 0;
-  let calls = 0;
-  let chain = AUTOMATION_LEDGER_GENESIS;
-  let index = 0;
-  const assertBinding = (r: CampaignAutomationBudgetReservationV1) => {
-    const c = r.campaign_context;
-    if (c.campaign_id !== campaign.campaign_id || c.group_number > campaign.group_count) invalid('campaign reservation grant binding is invalid');
-    if (c.step_admission_sha256 === null) {
-      if (active !== null) invalid('standalone provider call cannot bypass the active campaign step');
-    } else if (active === null || c.step_admission_sha256 !== active.event_sha256
-      || c.campaign_id !== active.campaign_id || c.group_number !== active.group_number || c.intent_sha256 !== active.intent_sha256) {
-      invalid('provider call does not belong to the active campaign step');
-    }
-  };
-  for (const raw of ordered) {
-    const event = validateAutomationLedgerEvent(raw);
-    if (event.automation_run_id !== budget.automation_run_id || event.step_index !== ++index) invalid('campaign ledger sequence or run binding is invalid');
-    if (event.kind === AUTOMATION_USAGE_EVENT_KIND) {
-      const reservation = reservationByDigest.get(event.reservation_sha256);
-      if (!reservation || completedReservations.has(event.reservation_sha256)
-        || reservation.step_index !== event.step_index || reservation.previous_ledger_sha256 !== chain
-        || reservation.budget_sha256 !== event.budget_sha256) invalid('campaign usage does not resolve its exact reservation');
-      if (reservation.kind === CAMPAIGN_AUTOMATION_RESERVATION_KIND) {
-        assertBinding(reservation);
-        if (event.resolution !== 'reconciled_not_started') calls += campaignProviderCallReservation(reservation.campaign_context.operation);
-      } else if (active !== null) invalid('generic reservation cannot bypass the active campaign step');
-      completedReservations.add(event.reservation_sha256);
-    } else {
-      bindIntent(event.group_number, event.intent_sha256);
-      if (event.authorization_id !== budget.authorization.authorization_id) invalid('campaign step authorization binding is invalid');
-      if (event.campaign_id !== campaign.campaign_id || event.group_number > campaign.group_count
-        || event.previous_ledger_sha256 !== chain) invalid('campaign step grant or ledger binding is invalid');
-      if (event.kind === CAMPAIGN_STEP_ADMISSION_KIND) {
-        const identity = campaignBudgetStepKey(event);
-        if (active !== null || identities.has(identity)) invalid('campaign step is already admitted');
-        active = event;
-        identities.add(identity);
-        steps += 1;
-      } else {
-        if (active === null || event.admission_sha256 !== active.event_sha256
-          || campaignBudgetStepKey(event) !== campaignBudgetStepKey(active)
-          || event.budget_sha256 !== active.budget_sha256 || event.authorization_id !== active.authorization_id) invalid('campaign completion lacks its exact admission');
-        active = null;
-      }
-    }
-    chain = chainAutomationLedgerDigest(chain, event.event_sha256);
-  }
-  if (active !== null && active.budget_sha256 !== budget.budget_sha256) invalid('active campaign step budget binding is invalid');
-  const open = reservations.filter(r => !completedReservations.has(r.reservation_sha256));
-  if (open.length > 1) invalid('more than one campaign external reservation is unresolved');
-  let reservedCalls = 0;
-  for (const r of open) {
-    if (r.step_index !== index + 1 || r.previous_ledger_sha256 !== chain) invalid('campaign open reservation does not occupy the next ledger position');
-    if (r.kind === CAMPAIGN_AUTOMATION_RESERVATION_KIND) { assertBinding(r); reservedCalls += campaignProviderCallReservation(r.campaign_context.operation); }
-    else if (active !== null) invalid('generic reservation cannot bypass the active campaign step');
-  }
-  return Object.freeze({ controller_steps: steps, provider_calls: calls, reserved_provider_calls: reservedCalls, active_step: active });
-}
-
-export function foldAutomationLedger(events: readonly AutomationLedgerEventV1[], campaign = false): AutomationLedgerFoldV1 {
+export function foldAutomationLedger(events: readonly AutomationUsageEventV1[]): AutomationLedgerFoldV1 {
   const ordered = [...events].sort((left, right) => left.step_index - right.step_index);
   let consumed = emptyAutomationMetricVector();
   let streak = 0;
   let lastStep = 0;
   for (const event of ordered) {
-    if (event.kind === AUTOMATION_USAGE_EVENT_KIND) {
-      consumed = addAutomationMetricVectors(consumed, event.consumed);
-      if (!campaign) streak = event.outcome === 'progress' || event.outcome === 'completed' ? 0 : streak + 1;
-    } else {
-      if (!campaign) invalid('generic ledger cannot contain campaign step events');
-      if (event.kind === CAMPAIGN_STEP_COMPLETION_KIND) streak = event.outcome === 'progress' ? 0 : streak + 1;
-    }
+    consumed = addAutomationMetricVectors(consumed, event.consumed);
+    streak = event.outcome === 'progress' || event.outcome === 'completed' ? 0 : streak + 1;
     lastStep = event.step_index;
   }
   return Object.freeze({
@@ -1686,7 +1270,7 @@ export interface AutomationBudgetRefusalV1 {
   readonly refusal_code: AutomationRefusalCode;
   readonly operation: AutomationOperationKind;
   readonly idempotency_key: string;
-  readonly metric: AutomationMetricName | 'controller_steps' | 'provider_calls' | null;
+  readonly metric: AutomationMetricName | null;
   readonly limit: number | null;
   readonly consumed: number | null;
   readonly reserved: number | null;
@@ -1900,7 +1484,7 @@ export interface AutomationStopReceiptV1 {
   readonly budget_sha256: string;
   readonly authorization_id: string;
   readonly refusal_code: AutomationRefusalCode;
-  readonly triggering_metric: AutomationMetricName | 'controller_steps' | 'provider_calls';
+  readonly triggering_metric: AutomationMetricName;
   readonly limit: number | null;
   readonly consumed: number | null;
   readonly reserved: number | null;
@@ -1932,7 +1516,7 @@ export function validateAutomationStopReceipt(value: AutomationStopReceiptV1): A
   if (value.protocol !== AUTOMATION_BUDGET_PROTOCOL) invalid('automation stop receipt protocol is unsupported');
   if (value.kind !== AUTOMATION_STOP_RECEIPT_KIND) invalid('automation stop receipt kind is unsupported');
   if (!Array.isArray(value.in_flight_authority)) invalid('in_flight_authority must be an array');
-  if (!(value.triggering_metric in AUTOMATION_METRIC_LIMIT_FIELDS) && value.triggering_metric !== 'controller_steps' && value.triggering_metric !== 'provider_calls') invalid('stop receipt triggering_metric is unsupported');
+  if (!(value.triggering_metric in AUTOMATION_METRIC_LIMIT_FIELDS)) invalid('stop receipt triggering_metric is unsupported');
   if (!REFUSAL_CODES.includes(value.refusal_code)) invalid('stop receipt refusal_code is unsupported');
   const receipt: AutomationStopReceiptV1 = Object.freeze({
     protocol: AUTOMATION_BUDGET_PROTOCOL,
@@ -1997,25 +1581,4 @@ export function sealAutomationStopReceipt(input: SealAutomationStopReceiptInput)
     issued_at: input.issued_at,
   };
   return validateAutomationStopReceipt({ ...draft, stop_receipt_sha256: automationDigest(draft) } as AutomationStopReceiptV1);
-}
-
-/** Derived from the existing ordered usage ledger; bookkeeping cannot erase failures. */
-export function observeCampaignTransientRetry(events: readonly AutomationLedgerEventV1[], inputPolicy: CampaignTransientRetryPolicyV1, now: string): {
-  readonly consecutive_failures: number; readonly last_failure_at: string | null;
-  readonly next_eligible_at: string | null; readonly state: 'eligible' | 'backoff' | 'exhausted';
-} {
-  const policy = validateCampaignTransientRetryPolicy(inputPolicy);
-  const nowMs = Date.parse(assertTimestamp(now, 'retry observed_at'));
-  let count = 0; let last: string | null = null;
-  for (const event of [...events].sort((a, b) => a.step_index - b.step_index)) {
-    if (event.kind !== AUTOMATION_USAGE_EVENT_KIND || event.resolution === 'reconciled_not_started') continue;
-    if (event.outcome === 'transient_failure') { count++; last = event.observed_at; }
-    else if (event.outcome === 'completed' || (event.provider === 'gpt-pro' && event.outcome === 'progress')) { count = 0; last = null; }
-  }
-  if (last === null) return Object.freeze({ consecutive_failures: count, last_failure_at: null, next_eligible_at: null, state: 'eligible' });
-  const delay = Math.min(policy.maximum_backoff_ms, policy.initial_backoff_ms * 2 ** Math.min(1023, count - 1));
-  const deadline = Date.parse(last) + delay;
-  if (!Number.isSafeInteger(deadline) || !Number.isFinite(new Date(deadline).getTime())) invalid('campaign retry backoff exceeds timestamp range');
-  return Object.freeze({ consecutive_failures: count, last_failure_at: last, next_eligible_at: new Date(deadline).toISOString(),
-    state: count >= policy.max_consecutive_failures ? 'exhausted' : nowMs < deadline ? 'backoff' : 'eligible' });
 }

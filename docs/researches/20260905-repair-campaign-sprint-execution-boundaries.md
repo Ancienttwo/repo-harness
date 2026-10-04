@@ -1,5 +1,7 @@
 # Repair campaign 剩余 Sprint 的执行边界
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Sprint 权威为 `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`；产品边界为对应 PRD。本文解释实现切片之间的约束，运行状态以 Sprint 和各 plan 为准。
 
 ## 2026-09-07 execution amendment

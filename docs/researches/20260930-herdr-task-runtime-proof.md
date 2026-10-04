@@ -1,5 +1,7 @@
 # Herdr task runtime: H0 feasibility and cutover inventory
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Observed 2026-09-30 against origin/main 43b7d72d and Herdr 0.9.1. This is H0 evidence, not a claim that H1–H6 have migrated production.
 
 ## P1: existing authorities

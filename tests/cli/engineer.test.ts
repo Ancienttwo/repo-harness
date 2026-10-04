@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { appendFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -121,32 +120,6 @@ afterEach(() => {
 });
 
 describe('repo-harness engineer CLI', () => {
-  test('operator inner cutover requires inspected inventory and seals completed legacy evidence without replaying it', () => {
-    const root = fixture();
-    const store = join(root, '.git/repo-harness/engineer-scheduling/v1/acquire-next');
-    mkdirSync(store, { recursive: true });
-    const basis = { protocol: 1, kind: 'repo-harness-engineer-acquire-next-receipt', request_sha256: `sha256:${'a'.repeat(64)}`, state: 'completed', result: { ok: false, reason: 'no_eligible_offer' } };
-    const receipt = { ...basis, receipt_sha256: `sha256:${createHash('sha256').update(JSON.stringify(basis)).digest('hex')}` };
-    writeFileSync(join(store, `${'b'.repeat(64)}.json`), JSON.stringify(receipt));
-    const inspected = run(root, ['engineer', 'acquisition-cutover', 'inspect', '--json']);
-    expect(inspected.exitCode, inspected.stderr).toBe(0);
-    const inventory = JSON.parse(inspected.stdout);
-    expect(inventory.entries).toHaveLength(1);
-    expect(JSON.parse(inventory.entries[0].bytes)).toEqual(receipt);
-    const migrate = (digest: string) => run(root, ['engineer', 'acquisition-cutover', 'migrate', '--expected-inventory-sha256', digest, '--quiescence-evidence', 'fixture:old-producers-stopped', '--json']);
-    const changed = migrate(`sha256:${'0'.repeat(64)}`);
-    expect(changed.exitCode).toBe(1);
-    expect(changed.stderr).toContain('inventory changed');
-    const sealed = migrate(inventory.inventory_sha256);
-    expect(sealed.exitCode, sealed.stderr).toBe(0);
-    expect(JSON.parse(sealed.stdout)).toMatchObject({ protocol: 2, migrated_keys: ['b'.repeat(64)] });
-    const replay = migrate(inventory.inventory_sha256);
-    expect(replay.exitCode, replay.stderr).toBe(0);
-    expect(JSON.parse(replay.stdout)).toEqual(JSON.parse(sealed.stdout));
-    expect(run(root, ['engineer', 'acquisition-cutover', 'migrate', '--expected-inventory-sha256', inventory.inventory_sha256]).exitCode).toBe(1);
-    expect(run(root, ['engineer', 'campaign-acquisition-cutover', 'inspect', '--campaign-id', 'missing', '--group-number', '1', '--intent-sha256', `sha256:${'a'.repeat(64)}`, '--json']).stderr).toContain('issue_batch_not_found');
-  });
-
   test('projects the read-only Engineering Overlay and Organization Attention board', () => {
     const root = fixture();
     const registryHome = mkdtempSync(join(tmpdir(), 'repo-harness-engineer-board-home-'));

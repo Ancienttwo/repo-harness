@@ -1,5 +1,7 @@
 # Sprint: GPT Pro-Seeded Bounded Repair Campaign (Phase A)
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 > **Status**: Done
 > **Slug**: `gpt-pro-seeded-repair-campaign`
 > **Created**: 2026-09-02 22:38

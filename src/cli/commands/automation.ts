@@ -3,7 +3,7 @@ import { canonicalRepoPath } from '../../effects/repo-registry';
 
 import { readFileSync } from 'fs';
 
-import { validateProgramAuthorization, type ProgramAuthorizationV1 } from '../../core/automation/budget';
+import { validateProgramAuthorization, type ProgramAuthorizationV2 } from '../../core/automation/budget';
 import {
   AutomationBudgetStoreError,
   listAutomationBudgetRuns,
@@ -96,7 +96,7 @@ export function runAutomationBudgetList(raw: AutomationBudgetRawOptions): void {
 }
 
 /**
- * The operator mint. A `ProgramAuthorizationV1` is a human act, so it enters
+ * The operator mint. A `ProgramAuthorizationV2` is a human act, so it enters
  * the account-level gate store through this verb and nowhere else; the budget
  * store then accepts only grants that resolve here byte for byte.
  */
@@ -104,11 +104,11 @@ export function runAutomationGrantMint(raw: AutomationGrantRawOptions): void {
   const repo = canonicalRepoPath(raw.repo?.trim() || process.cwd());
   const from = raw.from?.trim();
   if (!from) throw new AutomationArgumentError('--from is required');
-  let parsed: ProgramAuthorizationV1;
+  let parsed: ProgramAuthorizationV2;
   try {
-    parsed = validateProgramAuthorization(JSON.parse(readFileSync(from, 'utf8')) as ProgramAuthorizationV1);
+    parsed = validateProgramAuthorization(JSON.parse(readFileSync(from, 'utf8')) as ProgramAuthorizationV2);
   } catch (error) {
-    throw new AutomationArgumentError(`--from is not a valid ProgramAuthorizationV1: ${(error as Error).message}`);
+    throw new AutomationArgumentError(`--from is not a valid ProgramAuthorizationV2: ${(error as Error).message}`);
   }
   const path = mintProgramAuthorization({ repo_root: repo, authorization: parsed });
   process.stdout.write(`${JSON.stringify({
@@ -187,9 +187,9 @@ export function buildAutomationCommand(): Command {
   const grant = new Command('grant').description('Operator-owned automation authorization grants');
   grant
     .command('mint')
-    .description('Store one operator-minted ProgramAuthorizationV1 in the harness home gate store')
+    .description('Store one operator-minted ProgramAuthorizationV2 in the harness home gate store')
     .option('--repo <path>', 'Repository root', '.')
-    .requiredOption('--from <path>', 'Path to a canonical ProgramAuthorizationV1 JSON document')
+    .requiredOption('--from <path>', 'Path to a canonical ProgramAuthorizationV2 JSON document')
     .action((raw: AutomationGrantRawOptions) => {
       try {
         runAutomationGrantMint(raw);

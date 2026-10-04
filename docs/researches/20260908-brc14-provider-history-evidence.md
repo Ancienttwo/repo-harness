@@ -1,5 +1,7 @@
 # BRC14 provider-history revision evidence
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Real observation
 
 On 2026-09-08, Oracle 98bebeb2 completed a new read-only GitHub observation in conversation `6a9fa035-b610-83ea-b000-0ad484e21e65`, provider session `perform-a-fresh-read-only-3`. Explicit GitHub activation and complete prompt submission succeeded. The configured user default was preserved; provider history reported `gpt-6-pro`, while local model verification remains false. Runtime was approximately 1m51s. The fresh grant admitted one provider call; its ledger settled one call with no open reservation. Earlier failed reservations were reconciled conservatively and their budgets remain closed.

@@ -1,5 +1,7 @@
 # BRC failure finalization and supervision repair boundaries
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Current scope
 
 The audit at main 38c26b2 identified five separate defects. This repair worktree starts at e71fb76c; the added BRC6a owner-acceptance documentation did not change the production active-admission guard. Issues #353, #355, #356 and #357 have targeted repair implementations. Issue #354 remains unaccepted pending ownership and completion of the existing Docker containment integration. This document does not grant BRC active or release acceptance.

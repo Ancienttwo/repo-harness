@@ -1,5 +1,5 @@
 /**
- * Where `ProgramAuthorizationV1` grants live.
+ * Where `ProgramAuthorizationV2` grants live.
  *
  * The PRD is explicit that a grant is "stored in REPO_HARNESS_HOME, not
  * candidate branch" and "minted only by operator/Host profile". A grant that
@@ -13,9 +13,10 @@ import { constants, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdir
 import { dirname, join, resolve } from 'path';
 
 import {
+  PROGRAM_AUTHORIZATION_PROTOCOL,
   canonicalAutomationJson,
   validateProgramAuthorization,
-  type ProgramAuthorizationV1,
+  type ProgramAuthorizationV2,
 } from '../../core/automation/budget';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { repoHarnessHome, repoHarnessRepoIdFor } from '../repo-registry';
@@ -129,7 +130,7 @@ function writeCreateOnce(path: string, bytes: string): boolean {
 
 export interface MintProgramAuthorizationInput {
   readonly repo_root: string;
-  readonly authorization: ProgramAuthorizationV1;
+  readonly authorization: ProgramAuthorizationV2;
   readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -151,6 +152,21 @@ export function mintProgramAuthorization(input: MintProgramAuthorizationInput): 
   return path;
 }
 
+function readStoredGrantBytes(repoRoot: string, authorizationSha256: string, env: NodeJS.ProcessEnv): string {
+  const path = grantPath(repoRoot, authorizationSha256, env);
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink()) fail('automation_grant_unsafe', 'stored program authorization is not a regular file');
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if (error instanceof AutomationGrantStoreError) throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      fail('automation_grant_not_found', `no program authorization ${authorizationSha256} is stored for this repository`);
+    }
+    return fail('automation_grant_unavailable', 'cannot read the stored program authorization', error);
+  }
+}
+
 export function listStoredProgramAuthorizations(repoRoot: string, env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const directory = automationGrantStoreDirectory(repoRoot, env);
   if (!existsSync(directory)) return Object.freeze([]);
@@ -159,9 +175,16 @@ export function listStoredProgramAuthorizations(repoRoot: string, env: NodeJS.Pr
       readdirSync(directory)
         .filter((entry) => /^[0-9a-f]{64}\.json$/u.test(entry))
         .map((entry) => entry.replace(/\.json$/u, ''))
+        .filter((digest) => {
+          const raw = JSON.parse(readStoredGrantBytes(repoRoot, digest, env)) as Record<string, unknown>;
+          if (typeof raw?.protocol === 'number' && raw.protocol !== PROGRAM_AUTHORIZATION_PROTOCOL) return false;
+          readStoredProgramAuthorization(repoRoot, digest, env);
+          return true;
+        })
         .sort(),
     );
   } catch (error) {
+    if (error instanceof AutomationGrantStoreError) throw error;
     return fail('automation_grant_unavailable', 'cannot list the automation grant store', error);
   }
 }
@@ -170,23 +193,11 @@ export function readStoredProgramAuthorization(
   repoRoot: string,
   authorizationSha256: string,
   env: NodeJS.ProcessEnv = process.env,
-): ProgramAuthorizationV1 {
-  const path = grantPath(repoRoot, authorizationSha256, env);
-  let raw: string;
+): ProgramAuthorizationV2 {
+  const raw = readStoredGrantBytes(repoRoot, authorizationSha256, env);
+  let parsed: ProgramAuthorizationV2;
   try {
-    const stat = lstatSync(path);
-    if (!stat.isFile() || stat.isSymbolicLink()) fail('automation_grant_unsafe', 'stored program authorization is not a regular file');
-    raw = readFileSync(path, 'utf8');
-  } catch (error) {
-    if (error instanceof AutomationGrantStoreError) throw error;
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      fail('automation_grant_not_found', `no program authorization ${authorizationSha256} is stored for this repository`);
-    }
-    return fail('automation_grant_unavailable', 'cannot read the stored program authorization', error);
-  }
-  let parsed: ProgramAuthorizationV1;
-  try {
-    parsed = validateProgramAuthorization(JSON.parse(raw) as ProgramAuthorizationV1);
+    parsed = validateProgramAuthorization(JSON.parse(raw) as ProgramAuthorizationV2);
   } catch (error) {
     return fail('automation_grant_invalid', `stored program authorization is invalid: ${(error as Error).message}`, error);
   }
@@ -205,7 +216,7 @@ export function readStoredProgramAuthorization(
  */
 export function assertProgramAuthorizationAnchored(
   repoRoot: string,
-  authorization: ProgramAuthorizationV1,
+  authorization: ProgramAuthorizationV2,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   const stored = readStoredProgramAuthorization(repoRoot, authorization.authorization_sha256, env);

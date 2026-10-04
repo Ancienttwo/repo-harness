@@ -1,5 +1,5 @@
 /**
- * The PRD is the single schema source for `ProgramAuthorizationV1`, and issue
+ * The PRD is the single schema source for `ProgramAuthorizationV2`, and issue
  * #282 found it already one field behind the code. A prose claim that two
  * things agree is not a check, so this parses the PRD's own code block and
  * compares its field list to the implemented type's key set.
@@ -9,7 +9,7 @@ import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { sealProgramAuthorization, type ProgramAuthorizationCampaignV1, type ProgramBudgetLimitV1 } from '../../src/core/automation/budget';
+import { sealProgramAuthorization, type ProgramBudgetLimitV1 } from '../../src/core/automation/budget';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const PRD = join(ROOT, 'plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md');
@@ -44,7 +44,7 @@ function prdInterfaceFields(markdown: string, name: string): readonly string[] {
 describe('issue #282 — the PRD schema and the implemented type cannot drift', () => {
   const markdown = readFileSync(PRD, 'utf8');
 
-  test('ProgramAuthorizationV1 declares exactly the implemented key set', () => {
+  test('ProgramAuthorizationV2 declares exactly the implemented key set', () => {
     const implemented = Object.keys(sealProgramAuthorization({
       authorization_id: 'authorization-drift',
       repository_id: 'repo-harness',
@@ -58,22 +58,12 @@ describe('issue #282 — the PRD schema and the implemented type cannot drift', 
       max_repair_cycles: LIMITS.max_repair_cycles,
       budget: LIMITS,
       contract_scope: 'contract_less',
-      contract_path: null, campaign: null,
+      contract_path: null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',
     })).sort();
-    expect([...prdInterfaceFields(markdown, 'ProgramAuthorizationV1')].sort()).toEqual(implemented);
-  });
-
-  test('campaign payload declares exactly the implemented required key set', () => {
-    const campaign: ProgramAuthorizationCampaignV1 = {
-      campaign_id: 'campaign-schema', group_count: 1, issues_per_group: 10,
-      allowed_issue_kinds: ['bugfix', 'test_gap'], max_parallel_tasks: 1,
-      max_authoring_rounds_per_group: 3, max_controller_steps: 8, max_provider_calls: 16,
-      transient_retry: { max_consecutive_failures: 3, initial_backoff_ms: 1, maximum_backoff_ms: 4 }, issue_author: 'gpt_pro', local_parent_host: 'codex', chrome_profile_directory: 'Default', require_fresh_main_audit: true,
-    };
-    expect([...prdInterfaceFields(markdown, 'ProgramAuthorizationCampaignV1')].sort()).toEqual(Object.keys(campaign).sort());
+    expect([...prdInterfaceFields(markdown, 'ProgramAuthorizationV2')].sort()).toEqual(implemented);
   });
 
   test('ProgramBudgetLimitV1 declares exactly the implemented key set', () => {

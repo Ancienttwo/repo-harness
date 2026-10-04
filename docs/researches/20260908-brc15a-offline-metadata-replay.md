@@ -1,5 +1,7 @@
 # BRC15a 原始 metadata 离线复放与 Acceptance 映射
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## 结论
 
 **10/10 预期 slot 标记覆盖，0/10 metadata 合格；本次未获得合格可采纳批次。** 标记的 campaign/group 与原 intent 一致，每个 slot 唯一。此处不是 `complete` slot、`complete` batch、campaign `accepted` 或 active 启动许可。Issue 的真实问题与修复价值未评估，不能从格式拒绝推断为零。

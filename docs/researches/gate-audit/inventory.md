@@ -1,6 +1,7 @@
 # repo-harness 门禁盘点与分类
 
 > Retirement note (2026-10-04): The batch C research and evaluation tools are retired. Commands for those retired tools describe history. They are not current execution instructions. Other tools keep their own current status. Use the [pre-retirement source](https://github.com/Ancienttwo/repo-harness/tree/bb6a657204a7dc4aef1ddfe069c92ec0207f40a4) for removed paths.
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
 > 状态：#483 源码实施完成、Draft待用户审阅；历史盘点基线保持不变，下面的实施摘要区分已改代码与运行限制。任务依据：Aimpact 05:14 批准的文档盘点；观察日期 2026-10-03（Asia/Singapore）。源码基线 `cc1fc8ee8eaec3f52c0eb0636b53133f7162b105`，分支 `codex/gate-audit`。实施见 [PLAN.md](PLAN.md)。
 
@@ -127,7 +128,7 @@
 | L02 | exclusive-directory lock / token / PID / inode — [src/effects/locking/exclusive-directory-lock.ts](../../../src/effects/locking/exclusive-directory-lock.ts) | 并发writer、误删活锁、path替换 | 无证据 | 无证据 | 降级为只记录 | 默认wait 5s、stale空目录30s是配置常量，不是平均卡时；保留fencing |
 | L03 | expensive-run common-dir lock — [src/effects/expensive-run-lock.ts](../../../src/effects/expensive-run-lock.ts) | 多worktree昂贵run并发、孤儿PGID仍活 | 无证据 | 无证据 | 降级为只记录 | 当前reclaimStaleOwner=false；先证明owner与整个supervised进程组死亡，才自动回收 |
 | L04 | Task Lease / liveness / generation / reclaim — [src/effects/state/coordination-lease-reclaim.ts](../../../src/effects/state/coordination-lease-reclaim.ts) | 双owner、stale heartbeat误偷、reviewing/completing被打断 | 无证据 | 无证据 | 降级为只记录 | 复用automaticReclaimLease；锁内重读claim/generation/renewal/evidence，禁止TTL单独释放 |
-| L05 | campaign/group planning/dispatch/budget locks — [src/effects/automation/campaign-planning-store.ts](../../../src/effects/automation/campaign-planning-store.ts) | 重复规划/dispatch、超预算或重入死锁 | 无证据；E05证明1个锁缺陷，非防住事故 | 无证据；hold 6092ms（E05） | 降级为只记录 | 孤儿回收/锁内只做短事务；未drain的legacy state不删，campaign退役另有owner |
+| L05 | campaign/group planning/dispatch/budget locks — src/effects/automation/campaign-planning-store.ts (retired historical path `src/effects/automation/campaign-planning-store.ts`) | 重复规划/dispatch、超预算或重入死锁 | 无证据；E05证明1个锁缺陷，非防住事故 | 无证据；hold 6092ms（E05） | 降级为只记录 | 孤儿回收/锁内只做短事务；未drain的legacy state不删，campaign退役另有owner |
 | L06 | automation grant / budget / reservations — [src/effects/automation/budget-store.ts](../../../src/effects/automation/budget-store.ts) | 未授权长期运行、资源双占/成本失控 | 无证据 | 无证据 | 降级为只记录 | 保留成本上限自动停/settle；只有权限扩大需H03用户批 |
 | L07 | collaboration Principal/Binding/Decision/freeze admission — [src/effects/engineers/verified-context-store.ts](../../../src/effects/engineers/verified-context-store.ts) | 伪身份、旧授权、重复执行、越任务写 | 无证据 | 无证据 | 降级为只记录 | 权限授权归H03；任务决策、R2/freeze前置降为记录，shared writes保持CAS |
 | L08 | publication / inbox / events / adoption / review store locks — [src/effects/locking/exclusive-directory-lock.ts](../../../src/effects/locking/exclusive-directory-lock.ts) | JSON/events写坏、重复提交/收件、锁被替换 | 无证据 | 无证据 | 降级为只记录 | 共享lock primitive的消费者族；保留atomic/fsync/idempotency，自动回收真实孤儿 |

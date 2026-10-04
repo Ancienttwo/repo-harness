@@ -1,5 +1,7 @@
 # Controlled replacement of a stopped, never-adopted successor campaign
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Subject: `src/effects/automation/campaign-authoring-resume.ts`, `src/effects/automation/gpt-pro-issue-authoring.ts`, `src/effects/automation/campaign-fresh-audit.ts`, `src/effects/automation/issue-batch-store.ts`, `src/cli/commands/campaign.ts`.
 
 ## Fact correction: adopt does not move the target tip

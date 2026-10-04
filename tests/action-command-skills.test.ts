@@ -33,7 +33,6 @@ const TARGET_CANONICAL_PACKAGES = [
 ];
 
 const TARGET_FACADE_KIND_PACKAGES = [
-  "auto-campaign",
   "repo-harness-setup",
   "repo-harness-check",
   "repo-harness-product",

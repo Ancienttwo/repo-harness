@@ -1,5 +1,7 @@
 # Task reply intent/commit protocol
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 AKN-03a implements the pure protocol and interrupted-chain oracle from the [Agent-first roadmap, AKN-03](https://github.com/Ancienttwo/repo-harness/blob/e0c032d18fcf826d1fe08334f4fab5f91060a4ba/docs/researches/20260921-agent-first-kanban-implementation-roadmap.md#55-ack之后崩溃恢复读面与副作用分离). AKN-03b adds protected local persistence and restricted Engineer MCP. Native Host admission, notification reconciliation and full Steer acceptance remain open.
 
 ## Source ownership and trust

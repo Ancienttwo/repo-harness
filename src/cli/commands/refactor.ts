@@ -152,7 +152,7 @@ export function buildRefactorCommand(shadowDependencies: RefactorShadowDependenc
   command.command('start')
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--program-id <id>', 'Stable refactor program id')
-    .requiredOption('--authorization-sha256 <digest>', 'Stored ProgramAuthorizationV1 digest')
+    .requiredOption('--authorization-sha256 <digest>', 'Stored ProgramAuthorizationV2 digest')
     .requiredOption('--base-main-sha <digest>', 'Exact program baseline digest')
     .requiredOption('--idempotency-key <key>', 'Stable creation key')
     .option('--observed-at <timestamp>', 'RFC3339 creation time')

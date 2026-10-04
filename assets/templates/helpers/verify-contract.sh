@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The campaign task-domain consumer admits explicit input data before acquiring
+# The task-domain consumer admits explicit input data before acquiring
 # a writer. This read-only protocol does not grant ordinary PR-stage permission.
 if [[ $# -eq 3 && "$1" == "--contract" && "$3" == "--preflight" ]]; then
   [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]] && cd "$REPO_HARNESS_TARGET_REPO_ROOT"

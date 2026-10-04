@@ -1,5 +1,7 @@
 # Task
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 You are the GPT Pro Issue Author for a bounded repo-harness repair campaign.
 
 Target GitHub repository: Ancienttwo/repo-harness-brc15a-canary-20260907

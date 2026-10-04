@@ -537,7 +537,6 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
   if (!selected) throw new Error('unknown fixture repository');
   const observed_at = '2026-09-22T00:00:00.000Z';
   const digest = `sha256:${'b'.repeat(64)}`;
-  const missing = { status: 'missing' as const, observed_at, reason: null, records: [] };
   const known = <T,>(records: T[]) => ({ status: 'known' as const, observed_at, reason: null, records });
   return {
     protocol: 3, kind: 'operator_repository_snapshot', repository_id: repositoryId,
@@ -548,11 +547,10 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
     automation: {
       protocol: 1, repository_id: repositoryId, consistency: 'observed', observed_at,
       native_execution: { status: 'unavailable', reason: 'native_admission_authority_unavailable', turn_ref: null },
-      policy: known([{ mode: 'active', source_ref: 'registered_worktree_policy', policy_sha256: digest }]),
       grants: known([{ authorization_id: 'grant-ui-observation', authorization_sha256: digest,
         target_ref: 'main', target_revision: 'c'.repeat(40), allowed_work_package_ids: ['package-ui'],
         contract_scope: 'task_contract', contract_path: 'tasks/contracts/ui.contract.md', merge_mode: 'manual',
-        issued_at: observed_at, expires_at: '2026-09-22T02:00:00.000Z', campaign_id: 'campaign-ui' }]),
+        issued_at: observed_at, expires_at: '2026-09-22T02:00:00.000Z' }]),
       budgets: known([{ automation_run_id: digest, budget_sha256: digest, budget_revision: 2,
         state: 'reconciliation_required', deadline_at: '2026-09-22T02:00:00.000Z', ledger_sha256: digest,
         slice_sha256: digest, event_count: 3, last_completed_step_index: 1, open_reservation_count: 1,
@@ -563,11 +561,6 @@ export function repositoryObservationFixture(repositoryId = 'repo-harness'): imp
         event_sha256: digest, revision: 3, state: 'executing', operation: 'dispatch_started', observed_at,
         retry_at: null, source_attention_owner: 'operator', typed_reason_status: 'unavailable',
         task_id: selected.cards[0]!.task_id, claim_id: selected.cards[0]!.claim_id, dispatch_id: 'dispatch-ui', runtime_effect_id: 'effect-ui' }]),
-      campaigns: repositoryId === 'repo-console' ? missing : known([{ campaign_id: 'campaign-ui', campaign_sha256: digest,
-        authorization_sha256: digest, current_sha256: digest, event_sha256: digest, revision: 2,
-        state: 'group_running', operation: 'start_group', observed_at, typed_reason_status: 'unavailable', source_attention_owner: 'unavailable',
-        group_decisions: [{ group_number: 1, intent_sha256: digest, last_decision: { receipt_sha256: digest,
-          action: 'observe', outcome: 'no_progress', observed_at, next_check_at: '2026-09-22T00:01:00.000Z' } }] }]),
     },
   };
 }

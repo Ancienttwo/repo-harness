@@ -236,35 +236,14 @@ Policy resolution:
 - exact keys/digest;
 - target movement invalidates grant/eligibility;
 - candidate changes cannot apply to itself.
-### ProgramAuthorizationV1
+### ProgramAuthorizationV2
 
-Campaign `transient_retry` is explicitly authored by the grant owner and required before new campaign effects. Absence preserves historical grant inspection and reconciliation but grants no new execution; no runtime default or automatic grant rewrite is permitted. The existing usage ledger owns the consecutive transient failure count. Verified completed work resets it; successful reads, acquisitions and bookkeeping do not. Admission enforces capped exponential backoff and returns `campaign_retry_exhausted` at the authorized limit. Per-Task user/permanent blockers remain governed by #287.
+The supported grant protocol is 2. Older grants require a new operator mint.
+No old grant parser or automatic migration is provided.
 
 ```ts
-interface CampaignTransientRetryPolicyV1 {
-  max_consecutive_failures: number;
-  initial_backoff_ms: number;
-  maximum_backoff_ms: number;
-}
-
-interface ProgramAuthorizationCampaignV1 {
-  campaign_id: string;
-  group_count: 1 | 2 | 3;
-  issues_per_group: number;
-  allowed_issue_kinds: readonly ["bugfix", "test_gap"];
-  max_parallel_tasks: 1 | 2 | 3;
-  max_authoring_rounds_per_group: number;
-  max_controller_steps: number;
-  max_provider_calls: number;
-  transient_retry?: CampaignTransientRetryPolicyV1;
-  chrome_profile_directory: string;
-  issue_author: "gpt_pro";
-  local_parent_host: "claude" | "codex";
-  require_fresh_main_audit: true;
-}
-
-interface ProgramAuthorizationV1 {
-  protocol: 1;
+interface ProgramAuthorizationV2 {
+  protocol: 2;
   kind: "repo-harness-program-authorization";
   authorization_id: string;
   repository_id: string;
@@ -279,16 +258,12 @@ interface ProgramAuthorizationV1 {
   budget: ProgramBudgetLimitV1;
   contract_scope: "task_contract" | "contract_less";
   contract_path: string | null;
-  campaign: ProgramAuthorizationCampaignV1 | null;
   issued_by: string;
   issued_at: string;
   expires_at: string;
   authorization_sha256: string;
 }
 ```
-`campaign` is required and is either `null` for a non-campaign grant or the
-closed campaign payload above. It is part of the existing authorization digest;
-there is no second campaign authorization protocol and no optional-field fallback.
 `contract_scope` states whether the grant authorizes a run bound to a task
 contract or an explicitly contract-less one; a run with no contract is a
 decision the issuer makes, never a default reached by omission.
@@ -326,8 +301,7 @@ interface ProgramBudgetLimitV1 {
 Acquisitions, runner invocations, and the consecutive no-progress streak are
 the three v1 metrics a controller step needs and the merge program's turn /
 failure / cycle triple does not express. They are part of this type rather than
-a second budget shape: one host-owned limit schema serves both the repair
-campaign and the automation controller. A `null` in the trailing trio means the
+a second budget shape: one host-owned limit schema serves the automation controller. A `null` in the trailing trio means the
 metric is not limited, never that it is unlimited by default -- the seven
 non-nullable limits are mandatory for any unattended run.
 

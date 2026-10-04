@@ -1,5 +1,7 @@
 # Settled failed campaign continuation
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 A stopped adopted campaign can author one fresh continuation using its original Issue identities after every successful acquisition has complete settled failure evidence. The stopped grant, counters, dispatches and claims are never revived or rewritten.
 
 ## Authority and admission

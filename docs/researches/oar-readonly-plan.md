@@ -1,5 +1,7 @@
 # E2 / B：OAR 外层只读隔离实施计划（待 p7 放行）
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## 决策、授权与事实边界
 
 Aimpact 17:35 已选择 **B：外层只读边界包住 OAR host 及其执行树；仅 result_ref 所属输出目录可写；Codex host 环境额外设置 OAR_CODEX_SANDBOX=read-only**。审阅继续在 Herdr 可见 pane 中，由 pane 内 OAR host 打印框架事件。A 只准备本地上游提案。

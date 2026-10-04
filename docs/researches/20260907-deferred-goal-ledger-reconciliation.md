@@ -1,5 +1,7 @@
 # Deferred Goal Ledger 对账
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## 范围与判定
 
 本轮按用户授权核对 `tasks/todos.md` 在 `426f24c869a6fd1a72f74e4a08b4c7fa7ffbcdae` 的 51 条 deferred goals。只修正文档，不实现余下待办，不改 BRC Sprint、合同或生产代码。账本仍是剩余工作的唯一入口；此文保存删除与收窄的依据。

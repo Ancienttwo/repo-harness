@@ -2,6 +2,8 @@
 
 # BRC6a：可信版本读回的证据边界与最小验证方案
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 > Status: Research complete; producer capability unproven; BRC6a remains pending.
 > Subject: repo-harness `33c5012e1185a695fdaf54a7bb84fc613cfb653b`.
 > Scope: source/docs investigation, existing focused tests and disposable Git experiments. No GPT invocation, Issue mutation, runtime change, new receipt schema or activation.

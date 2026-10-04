@@ -198,8 +198,7 @@ entier pour un dépôt en solo, et tout ce qui figure dans
 ce qui suit n'est requis pour l'utiliser.
 
 **Couche 2 — les programmes autorisés.** Du travail de longue durée qui survit
-à une session : un controller non supervisé qui fait avancer un Sprint, une
-campagne de réparation qui rédige et adopte des GitHub Issues, un programme de
+à une session : un controller non supervisé qui fait avancer un Sprint, un programme de
 refactor piloté par le modèle d'architecture, un plan de collaboration où
 plusieurs Module Engineers échangent signaux et handoffs. Chaque programme est
 conditionné à une autorisation frappée par un opérateur, puise dans un budget
@@ -225,7 +224,7 @@ humain aurait écrits.
 | **Sessions file-backed** | Les plans, contracts, checks et handoffs vivent dans le dépôt, si bien qu'une nouvelle session reprend à partir des artifacts plutôt que d'un chat thread |
 | **Runtime de hooks typés** | Huit routes managées partagées, plus trois routes de delegation réservées à Codex, chacune liée à exactement un typed handler in-process, avec des guards fail-closed à la frontière d'édition |
 | **Plan → Contract → Review** | Un seul lifecycle, du plan approuvé au contract projeté, en passant par le worktree isolé et l'evidence structurée, jusqu'à un closeout prêt pour la review |
-| **Programmes autorisés** | Programmes campaign, refactor, automation et collaboration qui portent leur propre authorization, budget ledger, task offers et leases renouvelables |
+| **Programmes autorisés** | Programmes refactor, automation et collaboration qui portent leur propre authorization, budget ledger, task offers et leases renouvelables |
 | **Controller non supervisé borné** | Une boucle de dispatch Engineer sous des caps stricts d'étapes, de durée et de retries, qui réserve du budget avant chaque tentative |
 | **Chargement de contexte progressif** | Un root context stable d'environ 12 Ko, plus des capability contracts d'environ 1 Ko chargés uniquement pour les fichiers réellement touchés |
 | **Intégration CodeGraph** | Requêtes structurelles (callers, callees, définitions) résolues depuis un index pré-construit, au lieu de passes grep-and-read répétées |
@@ -344,21 +343,17 @@ Un programme est un travail qui survit à une session. Chacun d'eux part des
 trois mêmes primitives, et aucun ne peut démarrer sans la première.
 
 ```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV1
+repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
 repo-harness automation grant list   # digests held for this repository
 repo-harness automation budget show          # the enforceable per-goal ledger
 repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
 ```
 
-- **Authorization.** Un `ProgramAuthorizationV1` frappé par un opérateur vit
+- **Authorization.** Un `ProgramAuthorizationV2` frappé par un opérateur vit
   dans le gate store du harness home. Il n'existe aucun chemin de démarrage non
   authentifié, et un programme ne dérive jamais son propre actor — l'auteur de
   chaque enregistrement est résolu depuis `--authorization-id`.
-- **Budget.** Les appels provider, les steps de campaign, les observations
-  d'adoption, l'exécution du heartbeat et l'acquisition par un worker réservent
-  tous contre un ledger par goal avant que le travail ne soit enregistré.
-  `budget repair` ne fait que rejouer une réconciliation verrouillée ; il ne
-  réserve jamais, ne facture jamais, et ne change jamais un cap.
+- **Budget.** Les agent turns, acquisitions et runner invocations réservent le budget avant le travail. `budget repair` conserve les limites.
 - **Lease.** Le travail retenu porte un lease renouvelable avec un intervalle de
   renouvellement, un TTL maximum, et un ensemble fermé de sources d'evidence. Un
   état de liveness non prouvé demande de l'attention plutôt qu'une reprise
@@ -394,21 +389,7 @@ receipt, pas par inférence, et les IDs de Sprint task sont des identités
 immuables sous le backlog schema v2 — lancez une fois
 `repo-harness sprint migrate-schema` sur un backlog plus ancien.
 
-### Campagne de développement
-
-```bash
-repo-harness campaign audit          # budgeted read-only group audit
-repo-harness campaign author         # persist an IssueBatchIntentV1, open the GPT Pro authoring lane
-repo-harness campaign adopt          # exact-SHA readback, seal authoring, publish a repair batch
-repo-harness campaign step           # hand one adopted task to its local planning session
-repo-harness campaign prepare-resume # zero-provider resume request from stored evidence
-```
-
-Un programme de réparation amorcé : auditer un groupe, rédiger ses Issues via la
-lane GPT Pro, les adopter contre un readback à SHA exact, puis faire passer
-chaque tâche adoptée dans le lifecycle ordinaire plan → contract → review.
-`prepare-resume` reconstruit une resume request à partir des evidence stockées
-d'adoption, de continuation et de budget, sans contacter de provider.
+Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
 ### Refactor Mode
 
@@ -601,7 +582,6 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 | `repo-harness-architecture` | Docs d'architecture, drift requests et diagrammes sans rafraîchissement complet du harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Consults Oracle browser/GPT Pro, setup du Connecteur MCP et bridge handoff ; setup explicite uniquement |
-| `auto-campaign` | Bot : exécuter un campaign explicitement autorisé. |
 | `obsidian-memory` | Bot : lire ou écrire la mémoire sur demande explicite. |
 | `repo-harness-test` | Worker : tests du code source et fixtures réelles. |
 | `merge-gate` (externe) | Gate final exact-candidate ; repo-harness ne fournit aucun Skill merge-gate — voir [external tooling](docs/reference-configs/external-tooling.md) |
@@ -609,10 +589,10 @@ bornée pendant que le CLI et les hooks possèdent l'exécution.
 Les Bot skills définissent le périmètre, la délégation et les décisions. Les Worker skills exécutent les étapes.
 
 Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
-`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-ship`, `obsidian-memory`, `repo-harness-cross-review`,
 `repo-harness-chatgpt`. Worker: `repo-harness-setup`,
 `repo-harness-test`, and `repo-harness-architecture`.
-`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` exigent une invocation explicite.
+`obsidian-memory`, and `repo-harness-ship` exigent une invocation explicite.
 Les tâches courantes utilisent un brief court et la description du PR. PRD, Sprint et Goal servent aux travaux produit demandés.
 
 La chaîne de planning est volontairement découpée en couches :

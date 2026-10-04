@@ -1,5 +1,7 @@
 # Repository automation observation
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 AKN-04d2 adds original automation observations to the repository-scoped snapshot. Repository envelope protocol2 requires automation summary protocol1; Fleet5 and Operator6 remain unchanged. Collector start IPC requires protocol2, and a successful result must carry automation (null for global Fleet, exact repository identity for a selected repository). The server and browser reject missing summaries and old envelope/IPC shapes. No alias or old-shape fallback is retained.
 
 ## Original authorities

@@ -2,6 +2,8 @@ RECOMMENDATION: 選 (b)，只救 A 已驗證的 deterministic scan／projection 
 
 # Cutover Closure WIP reconciliation
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 本文是唯讀審計。A 的 worktree 在取證前後均存在，branch/HEAD 固定為 `codex/cutover-closure-gate` / `9cd8290102f90c05ece3044b874e45c59624e50a`；`git rev-list --count 9cd82901..codex/cutover-closure-gate` 為 `0`，所以 A 沒有可 rebase 的 commit。對照 authority 是 B 的新 PRD Module 1 與 C 的 upstream contract；A 只作 implementation evidence，不作新語義 authority。
 
 ## 1. A 的 concern 分解

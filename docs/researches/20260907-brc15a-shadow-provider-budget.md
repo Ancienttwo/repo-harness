@@ -1,5 +1,7 @@
 # BRC15a shadow provider-budget prerequisite
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 This package connects shadow adoption dry-run to the existing campaign budget. It does not complete BRC15a's real GPT canary, establish connector access to an exact revision, or complete BRC9's active adoption, acquisition, repair, and retry requirements.
 
 ## Authority and ordering

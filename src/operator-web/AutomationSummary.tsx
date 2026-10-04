@@ -34,10 +34,6 @@ export function AutomationEvidence({ observation, t }: { readonly observation: O
       <p>{t('automation.nativeExplanation')}</p>
     </div>
     <div className="automation-grid">
-      <Source title={t('automation.policy')} source={summary.policy} t={t}>{(row, index) => <details key={index}><summary>{t('automation.mode')}: <code>{row.mode}</code></summary><dl>
-        <Fact label={t('automation.sourceRef')}><code>{row.source_ref}</code></Fact>
-        <Fact label={t('automation.digest')}><code>{row.policy_sha256}</code></Fact>
-      </dl></details>}</Source>
       <Source title={t('automation.grants')} source={summary.grants} t={t}>{(row) => <details key={row.authorization_id}>
         <summary>{row.authorization_id}</summary><p>{t('automation.grantObservation')}</p><dl>
           <Fact label={t('automation.scope')}><code>{row.contract_scope}</code>{row.contract_path && <code>{row.contract_path}</code>}</Fact>
@@ -46,7 +42,6 @@ export function AutomationEvidence({ observation, t }: { readonly observation: O
           <Fact label={t('automation.issued')}><time dateTime={row.issued_at}>{row.issued_at}</time></Fact>
           <Fact label={t('automation.expires')}><time dateTime={row.expires_at}>{row.expires_at}</time></Fact>
           <Fact label={t('automation.mergeMode')}><code>{row.merge_mode}</code></Fact>
-          <Fact label={t('automation.campaignId')}>{row.campaign_id ?? '—'}</Fact>
           <Fact label={t('automation.digest')}><code>{row.authorization_sha256}</code></Fact>
         </dl></details>}</Source>
       <Source title={t('automation.budgets')} source={summary.budgets} t={t}>{(row) => <details key={row.automation_run_id}>
@@ -82,22 +77,6 @@ export function AutomationEvidence({ observation, t }: { readonly observation: O
           <Fact label={t('automation.revision')}>{row.revision}</Fact>
           <Fact label={t('automation.evidence')}><code>{row.run_sha256}</code><code>{row.current_sha256}</code><code>{row.event_sha256}</code><code>{row.budget_sha256}</code></Fact>
         </dl></details>}</Source>
-      <Source title={t('automation.campaigns')} source={summary.campaigns} t={t}>{(row) => <details key={row.campaign_id}>
-        <summary>{row.campaign_id} · <code>{row.state}</code></summary><dl>
-          <Fact label={t('automation.operation')}><code>{row.operation}</code></Fact>
-          <Fact label={t('automation.observed')}><time>{row.observed_at}</time></Fact>
-          <Fact label={t('automation.owner')}>{t('automation.source.unavailable')}</Fact>
-          <Fact label={t('automation.reason')}>{t('automation.source.unavailable')}</Fact>
-          <Fact label={t('automation.revision')}>{row.revision}</Fact>
-          <Fact label={t('automation.evidence')}><code>{row.campaign_sha256}</code><code>{row.authorization_sha256}</code><code>{row.current_sha256}</code><code>{row.event_sha256}</code></Fact>
-        </dl>{row.group_decisions.map((group) => <section className="automation-decision" key={group.group_number}>
-          <h4>{t('automation.group')} {group.group_number}</h4><dl>
-            <Fact label={t('automation.intent')}><code>{group.intent_sha256}</code></Fact>
-            <Fact label={t('automation.lastDecision')}>{group.last_decision ? <>
-              <code>{group.last_decision.action}</code><code>{group.last_decision.outcome}</code><time>{group.last_decision.observed_at}</time><code>{group.last_decision.receipt_sha256}</code>
-            </> : t('automation.source.missing')}</Fact>
-            <Fact label={t('automation.nextCheck')}>{group.last_decision?.next_check_at ?? t('automation.source.missing')}</Fact>
-          </dl></section>)}</details>}</Source>
     </div>
     <details className="automation-transport"><summary>{t('automation.observationIdentity')}</summary><dl>
       <Fact label={t('automation.reason')}><code>{summary.native_execution.reason}</code></Fact>

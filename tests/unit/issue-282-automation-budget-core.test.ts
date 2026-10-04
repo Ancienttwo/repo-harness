@@ -23,7 +23,6 @@ import {
   foldAutomationLedger,
   requireUnattendedAutomationBudget,
   sealAutomationBudgetCurrent,
-  sealCampaignAutomationReservation,
   sealAutomationMetricSupport,
   sealAutomationReservation,
   sealAutomationStopReceipt,
@@ -69,7 +68,7 @@ function authorization(limits: ProgramBudgetLimitV1 = LIMITS, expiresAt = '2026-
     max_repair_cycles: limits.max_repair_cycles,
     budget: limits,
     contract_scope: 'contract_less',
-    contract_path: null, campaign: null,
+    contract_path: null,
     issued_by: 'ancienttwo',
     issued_at: '2026-09-03T00:00:00.000Z',
     expires_at: expiresAt,
@@ -163,7 +162,7 @@ describe('issue #282 — schema and digest binding', () => {
     expect(JSON.stringify(sealed)).toBe(JSON.stringify(pinnedBase));
   });
 
-  test('reservation kinds strictly discriminate campaign context', () => {
+  test('generic reservation rejects extra fields', () => {
     const generic = sealAutomationReservation({
       automation_run_id: 'a'.repeat(64),
       budget_sha256: 'b'.repeat(64),
@@ -179,35 +178,7 @@ describe('issue #282 — schema and digest binding', () => {
       deadline_at: '2026-09-03T01:00:00.000Z',
       previous_ledger_sha256: AUTOMATION_LEDGER_GENESIS,
     });
-    expect(() => validateAutomationReservation({ ...generic, campaign_context: null } as never))
-      .toThrow(/generic automation reservation fields are invalid/u);
-
-    const campaign = sealCampaignAutomationReservation({
-      automation_run_id: generic.automation_run_id,
-      budget_sha256: generic.budget_sha256,
-      idempotency_key: 'campaign-op',
-      operation: 'provider_invocation',
-      unit_kind: 'execute',
-      unit_id: 'campaign:group:1',
-      attempt: 1,
-      provider: 'gpt-pro',
-      campaign_context: {
-        campaign_id: 'campaign',
-        group_number: 1,
-        intent_sha256: `sha256:${'c'.repeat(64)}`,
-        operation: 'initial',
-      step_admission_sha256: null,
-      },
-      step_index: 1,
-      reserved: generic.reserved,
-      reserved_at: generic.reserved_at,
-      deadline_at: generic.deadline_at,
-      previous_ledger_sha256: generic.previous_ledger_sha256,
-    });
-    const { campaign_context: _removed, ...withoutContext } = campaign;
-    expect(() => validateAutomationReservation(withoutContext as never))
-      .toThrow(/campaign automation reservation fields are invalid/u);
-    expect(() => validateAutomationReservation({ ...campaign, kind: 'repo-harness-automation-reservation' } as never))
+    expect(() => validateAutomationReservation({ ...generic, unknown_context: null } as never))
       .toThrow(/generic automation reservation fields are invalid/u);
   });
 
@@ -762,7 +733,7 @@ describe('issue #282 — operator projection', () => {
 });
 
 
-test('a complete campaign attempt reserves both children and exactly one repair for later attempts', () => {
+test('a complete dispatch attempt reserves both children and exactly one repair for later attempts', () => {
   const unverified = { input_tokens: null, output_tokens: null, cost_micros: null };
   expect(automationOperationReservation('dispatch_attempt', unverified)).toMatchObject({ agent_turns: 2, runner_invocations: 2, repair_cycles: 0, provider_failures: 1 });
   expect(automationOperationReservation('retry_attempt', unverified)).toMatchObject({ agent_turns: 2, runner_invocations: 2, repair_cycles: 1, provider_failures: 1 });

@@ -11,7 +11,7 @@ import { observeRetryEligibility } from '../../src/core/engineers/automation-att
 import { withExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, inspectAcquisitionReceiptCutover, migrateAcquisitionReceipts, requireAcquisitionLedgerV2, EngineerAcquisitionLedgerError, EngineerObservationError, type AcquireSelectedEngineerTaskOptions, type AcquisitionPolicy } from '../../src/effects/engineers/scheduling-acquire-next';
+import { acquireNextScheduledEngineerTask, acquireSelectedEngineerTask, prepareEngineerObservation, readEngineerObservation, requireAcquisitionLedgerV2, EngineerAcquisitionLedgerError, EngineerObservationError, type AcquireSelectedEngineerTaskOptions } from '../../src/effects/engineers/scheduling-acquire-next';
 
 const D = (c: string) => `sha256:${c.repeat(64)}`;
 const principal = Object.freeze({
@@ -114,38 +114,7 @@ describe('issue #280 canonical acquire-next', () => {
 });
 
 
-describe('campaign exact Task selection', () => {
-  test('capacity skips preserve order beyond selection retry count and do not acquire a blocked task', () => {
-    const repo = root();
-    const blocked = ['a', 'b', 'c', 'd'].map(id => ({ ...offer(id, 100), task_id: id.repeat(64) }));
-    const ready = { ...offer('ready', 1), task_id: 'f'.repeat(64) };
-    const visited: string[] = [];
-    const result = acquireNextScheduledEngineerTask({ repo_root: repo, principal, idempotency_key: 'capacity-scan', dependencies: {
-      resolvePrincipal: () => principal, collectOffers: () => document([...blocked, ready]),
-      acquire: input => {
-        visited.push(input.assertion.task_id);
-        return input.assertion.task_id === ready.task_id ? success(ready) : { ok: false, error: 'fleet_acquire_failed', message: 'full', fleet: {
-          ok: false, error: 'fleet_acquire_failed', message: 'full', fleet: { ok: false, error: 'no_eligible_task', reason: 'campaign_capacity_full', message: 'full' },
-        } };
-      },
-    } });
-    expect(result.ok).toBe(true);
-    expect(visited).toEqual([...blocked.map(o => o.task_id), ready.task_id]);
-  });
-
-  test('capacity-only idle can retry the same key after capacity becomes available', () => {
-    const repo = root(); const selected = offer('first', 10); let full = true;
-    const input = { repo_root: repo, principal, idempotency_key: 'temporary-capacity', dependencies: {
-      resolvePrincipal: () => principal, collectOffers: () => document([selected]),
-      acquire: (): any => full ? { ok: false, error: 'fleet_acquire_failed', message: 'full', fleet: {
-        ok: false, error: 'fleet_acquire_failed', message: 'full', fleet: { ok: false, error: 'no_eligible_task', reason: 'campaign_capacity_full', message: 'full' },
-      } } : success(selected),
-    } };
-    expect(acquireNextScheduledEngineerTask(input)).toMatchObject({ ok: false, error: 'engineer_no_eligible_offer' });
-    full = false;
-    expect(acquireNextScheduledEngineerTask(input).ok).toBe(true);
-  });
-
+describe('exact Task membership selection', () => {
   test('filters membership without reordering and binds normalized membership to replay', () => {
     const repo = root(); let mutations = 0;
     const outside = { ...offer('outside', 100), task_id: 'a'.repeat(64) };
@@ -401,20 +370,15 @@ describe('S2 selected acquisition transaction', () => {
       observation_ref: f.prepared.observation_ref, request: { operation: 'selected', session_id: 'session-one', policy: { policy_revision: 'R1' } } });
   });
 
-  test('completed replay skips missing/expired observation and does not repeat effect or callback', () => {
-    const f = selectedFixture(); let callbacks = 0;
-    const policy: AcquisitionPolicy = { policy_id: 'engineer/campaign', policy_revision: 'R2', scope: {
-      campaign_id: 'campaign', group_number: 1, intent_sha256: D('b'), manifest_sha256: D('c'),
-      authorization_revision: D('d'), parent_host: 'codex', parent_session: 'parent',
-    } };
-    const input = { ...f.input, admission_policy: policy, before_acquire: () => {}, accept_acquired: () => { callbacks++; } };
+  test('completed replay skips missing/expired observation and does not repeat effect', () => {
+    const f = selectedFixture();
+    const input = f.input;
     const first = acquireSelectedEngineerTask(input); expect(first.ok).toBeTrue();
     f.time(at + 30_000); unlinkSync(f.obsPath);
     expect(acquireSelectedEngineerTask(input)).toEqual(first);
-    expect(f.effects()).toBe(1); expect(callbacks).toBe(1);
+    expect(f.effects()).toBe(1);
     for (const change of [{ session_id: 'other' }, { observation_ref: D('0') },
-      { assertion: { ...input.assertion, task_revision: 'f'.repeat(64) } },
-      { admission_policy: { ...policy, scope: { ...policy.scope!, manifest_sha256: D('f') } } }]) {
+      { assertion: { ...input.assertion, task_revision: 'f'.repeat(64) } }]) {
       expect(acquireSelectedEngineerTask({ ...input, ...change })).toMatchObject({ error: 'engineer_acquire_next_conflict' });
     }
     f.auth({ ...principal, binding_generation: 2 });
@@ -422,18 +386,13 @@ describe('S2 selected acquisition transaction', () => {
     expect(f.effects()).toBe(1);
   });
 
-  test.each(['effect', 'callback'] as const)('crash at %s leaves pending; missing/expired ref never resets the key', boundary => {
+  test('crash at effect leaves pending; missing/expired ref never resets the key', () => {
     const f = selectedFixture(); let effects = 0;
-    const policy: AcquisitionPolicy = { policy_id: 'engineer/campaign', policy_revision: 'R2', scope: {
-      campaign_id: 'campaign', group_number: 1, intent_sha256: D('b'), manifest_sha256: D('c'),
-      authorization_revision: D('d'), parent_host: 'codex', parent_session: 'parent',
-    } };
-    const input = { ...f.input, admission_policy: policy, before_acquire: () => {},
+    const input = { ...f.input,
       dependencies: { ...f.input.dependencies, acquire: () => {
         effects++; expect(JSON.parse(readFileSync(f.record(), 'utf8')).state).toBe('pending');
-        if (boundary === 'effect') throw Error('effect outcome unknown'); return success(f.selected);
+        throw Error('effect outcome unknown');
       } },
-      accept_acquired: () => { expect(JSON.parse(readFileSync(f.record(), 'utf8')).state).toBe('pending'); throw Error('callback outcome unknown'); },
     };
     expect(() => acquireSelectedEngineerTask(input)).toThrow('outcome unknown');
     expect(JSON.parse(readFileSync(f.record(), 'utf8'))).toMatchObject({ state: 'pending', observation_ref: input.observation_ref });
@@ -485,39 +444,6 @@ describe('S2 selected acquisition transaction', () => {
     expect(f.effects()).toBe(0); expect(existsSync(f.record())).toBeFalse();
   });
 
-  test('R1 completed identity conflicts with R2 before lookup, guard, callback or effect', () => {
-    const f = selectedFixture(); let guarded=0, callbacks=0;
-    const policy: AcquisitionPolicy = { policy_id:'engineer/campaign',policy_revision:'R2',scope:{
-      campaign_id:'campaign',group_number:1,intent_sha256:D('b'),manifest_sha256:D('c'),authorization_revision:D('d'),parent_host:'codex',parent_session:'session-one',
-    } };
-    const input={...f.input,admission_policy:policy,before_acquire:()=>{guarded++;},accept_acquired:()=>{callbacks++;}};
-    expect(acquireSelectedEngineerTask(input).ok).toBeTrue();
-    const receipt=JSON.parse(readFileSync(f.record(),'utf8'));
-    receipt.request.policy.policy_revision='R1';
-    receipt.request_sha256=engineerSha256(canonicalEngineerJson(receipt.request));
-    const {receipt_sha256:_old,...basis}=receipt;
-    const historical={...basis,receipt_sha256:engineerSha256(canonicalEngineerJson(basis))};
-    writeFileSync(f.record(),canonicalEngineerJson(historical)+'\n');
-    const before=readFileSync(f.record(),'utf8');
-    f.time(at+30_000);unlinkSync(f.obsPath);
-    expect(acquireSelectedEngineerTask(input)).toMatchObject({ok:false,error:'engineer_acquire_next_conflict'});
-    expect([f.effects(),guarded,callbacks]).toEqual([1,1,1]);
-    expect(readFileSync(f.record(),'utf8')).toBe(before);
-  });
-
-  test('campaign owner guard refuses the exact snapshot Task before A and retains pending uncertainty', () => {
-    const f=selectedFixture();let guards=0;
-    const input={...f.input,admission_policy:{policy_id:'engineer/campaign',policy_revision:'R2',scope:{
-      campaign_id:'other-group',group_number:2,intent_sha256:D('b'),manifest_sha256:D('c'),authorization_revision:D('d'),parent_host:'codex',parent_session:'session-one',
-    }} as AcquisitionPolicy,before_acquire:()=>{guards++;throw Error('Task absent from owner manifest');},accept_acquired:()=>{throw Error('must not call callback');}};
-    expect(()=>acquireSelectedEngineerTask(input)).toThrow('Task absent from owner manifest');
-    expect(f.effects()).toBe(0);expect(guards).toBe(1);
-    expect(JSON.parse(readFileSync(f.record(),'utf8')).state).toBe('pending');
-    f.time(at+30_000);unlinkSync(f.obsPath);
-    expect(acquireSelectedEngineerTask(input)).toMatchObject({error:'engineer_acquire_next_reconciliation_required'});
-    expect([f.effects(),guards]).toEqual([0,1]);
-  });
-
   test('invalid/incomplete assertions never fall back to automatic selection', () => {
     const f = selectedFixture();
     const { dependency_revision: _missing, ...assertion } = f.input.assertion;
@@ -542,47 +468,6 @@ describe('S2 selected acquisition transaction', () => {
     expect(readFileSync(log,'utf8').trim().split('\n')).toHaveLength(1);
   });
 });
-
-describe('S2 one-shot legacy receipt cutover', () => {
-  function legacy(state: 'pending' | 'completed') {
-    const repo = root(), key = 'legacy-key';
-    const path = join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquire-next', `${engineerSha256(key).slice(7)}.json`);
-    mkdirSync(join(path,'..'), { recursive: true });
-    const basis = { protocol:1, kind:'repo-harness-engineer-acquire-next-receipt', request_sha256:D('a'), state,
-      result:state==='pending'?null:success(offer('first',10)) };
-    const receipt_sha256=engineerSha256(JSON.stringify(basis));
-    const bytes=JSON.stringify({...basis,receipt_sha256})+'\n';writeFileSync(path,bytes);
-    return {repo,key,path,bytes};
-  }
-  test('completed v1 key becomes a v2 terminal fence with exact source evidence, never replayed', () => {
-    const f=legacy('completed');let effects=0;
-    const input={repo_root:f.repo,principal,idempotency_key:f.key,dependencies:{resolvePrincipal:()=>principal,
-      collectOffers:()=>document([offer('first',10)]),acquire:()=>{effects++;return success(offer('first',10));}}};
-    expect(()=>acquireNextScheduledEngineerTask(input)).toThrow('cutover is required');
-    try { acquireNextScheduledEngineerTask(input); throw Error('expected cutover refusal'); } catch (error) {
-      expect(error).toBeInstanceOf(EngineerAcquisitionLedgerError);
-      expect((error as EngineerAcquisitionLedgerError).code).toBe('engineer_acquisition_ledger_cutover_required');
-    }
-    expect(effects).toBe(0); expect(readFileSync(f.path,'utf8')).toBe(f.bytes);
-    const inventory=inspectAcquisitionReceiptCutover(f.repo);
-    const args={repo_root:f.repo,expected_inventory_sha256:inventory.inventory_sha256,quiescence_evidence:'operator:old-producers-stopped'};
-    const seal=migrateAcquisitionReceipts(args);expect(migrateAcquisitionReceipts(args)).toEqual(seal);
-    const fence=JSON.parse(readFileSync(f.path,'utf8'));expect(fence).toMatchObject({protocol:2,state:'fenced',legacy_bytes:f.bytes});
-    expect(acquireNextScheduledEngineerTask(input)).toMatchObject({error:'engineer_acquire_next_conflict'});
-    unlinkSync(f.path);
-    expect(acquireNextScheduledEngineerTask(input)).toMatchObject({error:'engineer_acquire_next_reconciliation_required'});
-    expect(effects).toBe(0);
-  });
-  test.each(['pending','corrupt'] as const)('%s legacy metadata stops activation and preserves unknown evidence', state => {
-    const f=legacy('pending');if(state==='corrupt')writeFileSync(f.path,'broken JSON');
-    const before=readFileSync(f.path,'utf8');
-    expect(()=>migrateAcquisitionReceipts({repo_root:f.repo,expected_inventory_sha256:state==='corrupt'?D('a'):inspectAcquisitionReceiptCutover(f.repo).inventory_sha256,quiescence_evidence:'operator:stopped'})).toThrow();
-    expect(readFileSync(f.path,'utf8')).toBe(before);
-    expect(()=>acquireNextScheduledEngineerTask({repo_root:f.repo,principal,idempotency_key:'new-key',dependencies:{resolvePrincipal:()=>principal}})).toThrow();
-    expect(existsSync(join(f.path,'..','cutover-v2.json'))).toBeFalse();
-  });
-});
-
 
 describe('S2 gatekeeper auto acquisition regressions', () => {
   const ledger = (repo: string) => join(resolveGitCommonDirectory(repo), 'repo-harness/engineer-scheduling/v1/acquire-next');

@@ -1,5 +1,7 @@
 # Campaign 退役只读盘点与新准入冻结设计
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 结论：本次只观察并设计，**未冻结产品准入，也未授权执行删除**。当前 clone 没有可观察的 campaign definition/queue/Lease/锁账本，当前 Docker daemon 没有 campaign 容器；这不是全机器/远端 drain 证明。账号容器 journal 有306目录/908 JSON，其中296 terminal 声称 inactive，10缺 terminal。全部 created.daemon_id 为 `modeled-fixture`，与真实 daemon 不同；这是 fixture 来源证据，不是清理授权。新准入建议在 release 的中心 create effect 硬冻结全新 definition，保留已有精确 replay/recovery；禁止只改候选 checkout policy 或只关 CLI。
 
 ## 绑定、权限和方法

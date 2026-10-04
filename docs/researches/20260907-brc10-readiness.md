@@ -1,5 +1,7 @@
 # BRC10 readiness and prerequisite boundary
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 Status: BRC9 publication `2b611fc9` passed CI 34059698519. BRC10 remains incomplete; its first prerequisite fixes reclaim receipt consumption across observation time. This document does not claim full campaign lifecycle acceptance. The owning Sprint is `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`, rows 11–12 and Execution Dependencies Requiring Resolution.
 
 ## P1 — Existing authority and ownership

@@ -356,8 +356,4 @@ that a file is safe to send.
 - Prefer narrow files over whole-repo dumps.
 - Treat generated ChatGPT output as review input, not authoritative code truth.
 
-### Campaign defaults and explicit GitHub selection
-
-Campaign initial authoring, fill/edit continuation, and readback require `chatgptApp: GitHub`. Oracle must advertise `--browser-app`; otherwise the existing pre-submit capability gate refuses the run. The candidate selects the app from the composer `+` menu and checks the real inline plugin pill at the send boundary. This is distinct from writing `@github` as plain prompt text. No model or thinking value is injected by campaign callers; omitted follow-up values also preserve the current UI default.
-
 Provider identity comes from the invocation-owned `--write-session` descriptor and matching Oracle metadata, not console Session ID text or the requested slug. `meta.oracle.observation` records provider observations of app/model/explicit effort independently. Missing/malformed evidence is recorded as `evidenceError` and cannot verify a model; completed answer capture does not establish backend model identity. `model.verified` remains false in the browser store. A selected app and matching file content likewise do not prove exact Connector revision provenance.

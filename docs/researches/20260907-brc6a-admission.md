@@ -1,5 +1,7 @@
 # BRC6a active admission boundary
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Decision and status
 
 The content challenge is not exact-revision readback. Its three content answers and echoed SHA can match when the provider still sees an older commit with identical sampled content. There is no trusted revision producer in the current Connector transport. BRC6a therefore remains pending; BRC14 fresh audit and BRC15a real canary are not established by this package.

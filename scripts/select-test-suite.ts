@@ -1,23 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// These files own the real campaign, repository, and Herdr integration paths.
+// These files own the real repository and Herdr integration paths.
 export const integrationFiles = new Set([
-  'tests/effects/brc6a-admission.test.ts',
-  'tests/effects/brc10-lifecycle.test.ts',
-  'tests/effects/campaign-acquisition.test.ts',
-  'tests/effects/campaign-acquisition-cap.test.ts',
-  'tests/effects/campaign-authoring-resume.test.ts',
-  'tests/effects/campaign-closeout.test.ts',
-  'tests/effects/campaign-fresh-audit.test.ts',
-  'tests/effects/campaign-planning.test.ts',
-  'tests/effects/campaign-settled-resume.test.ts',
-  'tests/effects/campaign-verifier-failure.test.ts',
-  'tests/effects/campaign-worker.test.ts',
-  'tests/effects/issue-batch-adoption.test.ts',
-  'tests/effects/issue-batch-shadow-budget.test.ts',
-  'tests/cli/repo-root-normalization.test.ts',
-  'tests/campaign-finish-failure-audit.test.ts',
   'tests/herdr-task-lifecycle.test.ts',
   'tests/sprint-claim-concurrency.test.ts',
   'tests/contract-worktree-closeout-journal.test.ts',

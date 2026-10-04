@@ -1,5 +1,7 @@
 # Repository snapshot and collector admission
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 AKN-04d1 adds GET `/api/v1/fleet/repositories/:repository_id/snapshot`. No query selectors are accepted. The route preserves loopback Host/Origin/method checks and no-store behavior. Its protocol1 `operator_repository_snapshot` envelope carries an exact repository ID, server-lifetime UUID epoch, admission generation and the existing Operator6 snapshot. The nested sequence equals the generation and exactly one nested repository matches the requested ID. This is an observation, never write authorization.
 
 ## Authority and lifecycle

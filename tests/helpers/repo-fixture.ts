@@ -58,7 +58,7 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  * The snapshot is restored into the workspace directories the fixture already
  * owns, never copied to a fresh path: `repoHarnessRepoIdFor` hashes the
  * repository root verbatim, so the sealed authorization, registry entry,
- * campaign intent and publication recorded inside a fixture are all bound to
+ * task intent and publication recorded inside a fixture are all bound to
  * that exact path. Restoring in place therefore keeps the returned value valid
  * while giving each caller unshared bytes, which is the same isolation a rebuild
  * provides.

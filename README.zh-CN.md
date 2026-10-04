@@ -174,7 +174,7 @@ contract、checks、review 和 handoff 是持久的 authority；hook 负责把�
 都属于这一层。下面的内容都不是使用它的前提。
 
 **第 2 层 —— authorized programs。** 活得比会话更久的工作：无人值守的 controller
-逐步推进一个 Sprint、一个撰写并 adopt GitHub Issue 的修复 campaign、一个由架构
+逐步推进一个 Sprint、一个由架构
 模型驱动的 refactor program、一个多个 Module Engineer 交换信号与 handoff 的协作
 平面。每个 program 都以 operator 铸造的 authorization 为前提，从 per-goal budget
 ledger 支取额度，并用可续期的 lease 持有工作。见
@@ -198,7 +198,7 @@ ledger 支取额度，并用可续期的 lease 持有工作。见
 | **会话状态落在文件里** | Plan、contract、check 和 handoff 都留在仓库里，新会话从 artifact 而不是聊天线程恢复 |
 | **Typed hook runtime** | 八条共享 managed route 加三条 Codex-only delegation route，每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
 | **Plan → Contract → Review** | 从 approved plan 到 projected contract、隔离 worktree、结构化证据，再到可审查 closeout 的完整生命周期 |
-| **Authorized programs** | Campaign、refactor、automation 和 collaboration program 各自持有 authorization、budget ledger、task offer 和可续期 lease |
+| **Authorized programs** | refactor、automation 和 collaboration program 各自持有 authorization、budget ledger、task offer 和可续期 lease |
 | **有上限的无人值守 controller** | 一条 Engineer dispatch loop，受 step、duration、retry 硬上限约束，每次尝试前先预留 budget |
 | **渐进式 context loading** | 约 12KB 的稳定 root context，加上只为实际改动文件加载的约 1KB capability contract |
 | **CodeGraph 集成** | 用预建索引回答调用者、被调用者、定义位置这类结构化查询，取代反复的 grep-and-read |
@@ -310,19 +310,16 @@ Program 指的是活得比会话更久的工作。它们全都从同样的三个
 就一个也起不来。
 
 ```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV1
+repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
 repo-harness automation grant list   # digests held for this repository
 repo-harness automation budget show          # the enforceable per-goal ledger
 repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
 ```
 
-- **Authorization。** operator 铸造的 `ProgramAuthorizationV1` 存在 harness home
+- **Authorization。** operator 铸造的 `ProgramAuthorizationV2` 存在 harness home
   的 gate store 里。没有未经认证的启动路径，program 也不会自己推导 actor——每条
   记录的作者都由 `--authorization-id` 解析而来。
-- **Budget。** Provider 调用、campaign step、adoption 观测、heartbeat 执行和
-  worker acquisition，都要先对 per-goal ledger 预留额度，工作才会被记录。
-  `budget repair` 只会重跑一次加锁的 reconciliation；它不预留、不扣费，也不改
-  上限。
+- **Budget。** Agent turn、worker acquisition 和 runner invocation 在执行前预留 per-goal 额度。`budget repair` 在现有锁内封存耗尽证据。它不改上限。
 - **Lease。** 被持有的工作带一个可续期的 lease，有续期间隔、最大 TTL 和一组封闭的
   evidence source。liveness 状态无法证明时需要人来看，而不是悄悄回收。
 
@@ -353,20 +350,7 @@ repo-harness engineer board                   # read-only organization attention
 从 receipt authority 解析，不靠推断；backlog schema v2 下 Sprint task ID 是不可变
 身份——较旧的 backlog 跑一次 `repo-harness sprint migrate-schema`。
 
-### 开发 campaign
-
-```bash
-repo-harness campaign audit          # budgeted read-only group audit
-repo-harness campaign author         # persist an IssueBatchIntentV1, open the GPT Pro authoring lane
-repo-harness campaign adopt          # exact-SHA readback, seal authoring, publish a repair batch
-repo-harness campaign step           # hand one adopted task to its local planning session
-repo-harness campaign prepare-resume # zero-provider resume request from stored evidence
-```
-
-一个带种子的修复 program：audit 一个 group，走 GPT Pro lane 撰写它的 Issue，用
-exact SHA readback 去 adopt，然后把每个 adopted task step 进普通的 plan →
-contract → review 生命周期。`prepare-resume` 从存好的 adoption、continuation 和
-budget 证据里重建 resume request，不联系 provider。
+Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
 ### Refactor Mode
 
@@ -544,7 +528,6 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 | `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
 | `repo-harness-cross-review` | Generic acceptance through persistent fleet deep-reasoner task-agent + Herdr review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
-| `auto-campaign` | Bot：执行一次明确授权的 campaign。 |
 | `obsidian-memory` | Bot：明确请求后读取或写入记忆。 |
 | `repo-harness-test` | Worker：源码测试与真实 fixture。 |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
@@ -552,10 +535,10 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和 `assets/skill-comma
 Bot skills 负责范围、委派和验收。Worker skills 负责执行。
 
 Bot: `repo-harness`, `repo-harness-check`, `repo-harness-product`,
-`repo-harness-ship`, `auto-campaign`, `obsidian-memory`, `repo-harness-cross-review`,
+`repo-harness-ship`, `obsidian-memory`, `repo-harness-cross-review`,
 `repo-harness-chatgpt`. Worker: `repo-harness-setup`,
 `repo-harness-test`, and `repo-harness-architecture`.
-`auto-campaign`, `obsidian-memory`, and `repo-harness-ship` 必须显式调用。
+`obsidian-memory`, and `repo-harness-ship` 必须显式调用。
 普通任务使用简短 brief 和 PR 描述。PRD、Sprint、Goal 用于明确请求的产品工作。
 
 规划链路刻意分层：

@@ -186,8 +186,7 @@ and everything in [Task Workflow](#task-workflow) belongs here. Nothing below is
 required to use it.
 
 **Layer 2 — authorized programs.** Long-running work that outlives a session:
-an unattended controller stepping a Sprint, a repair campaign that authors and
-adopts GitHub Issues, a refactor program driven off the architecture model, a
+an unattended controller stepping a Sprint, a refactor program driven off the architecture model, a
 collaboration plane where several Module Engineers exchange signals and
 handoffs. Each program is gated on an operator-minted authorization, draws on a
 per-goal budget ledger, and holds work through renewable leases. See
@@ -211,7 +210,7 @@ same plan, contract, and review artifacts a human would have written.
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
 | **Typed hook runtime** | Eight shared managed routes plus three Codex-only delegation routes, each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
-| **Authorized programs** | Campaign, refactor, automation, and collaboration programs that hold their own authorization, budget ledger, task offers, and renewable leases |
+| **Authorized programs** | Refactor, automation, and collaboration programs that hold their own authorization, budget ledger, task offers, and renewable leases |
 | **Bounded unattended controller** | One Engineer dispatch loop under hard step, duration, and retry caps, reserving budget before each attempt |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
 | **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
@@ -326,20 +325,17 @@ A program is work that outlives a session. Every one of them starts from the
 same three primitives, and none of them can be started without the first.
 
 ```bash
-repo-harness automation grant mint   # store one operator ProgramAuthorizationV1
+repo-harness automation grant mint   # store one operator ProgramAuthorizationV2
 repo-harness automation grant list   # digests held for this repository
 repo-harness automation budget show          # the enforceable per-goal ledger
 repo-harness automation budget repair        # seal a stopped or expired run's exhaustion receipt
 ```
 
-- **Authorization.** An operator-minted `ProgramAuthorizationV1` lives in the
+- **Authorization.** An operator-minted `ProgramAuthorizationV2` lives in the
   harness home gate store. There is no unauthenticated start path, and a program
   never derives its own actor — the author of every record is resolved from
   `--authorization-id`.
-- **Budget.** Provider calls, campaign steps, adoption observations, heartbeat
-  execution, and worker acquisition all reserve against a per-goal ledger before
-  the work is recorded. `budget repair` only re-runs a locked reconciliation; it
-  never reserves, charges, or changes a cap.
+- **Budget.** Agent turns, worker acquisition, and runner invocations reserve against a per-goal ledger before work starts. `budget repair` seals exhaustion under the existing lock. It changes no cap.
 - **Lease.** Held work carries a renewable lease with a renewal interval, a
   maximum TTL, and a closed set of evidence sources. An unproven liveness state
   requires attention instead of reclaiming silently.
@@ -373,21 +369,7 @@ principal. Dependency edges resolve from receipt authorities, not inference, and
 Sprint task IDs are immutable identities under backlog schema v2 — run
 `repo-harness sprint migrate-schema` once on an older backlog.
 
-### Development campaign
-
-```bash
-repo-harness campaign audit          # budgeted read-only group audit
-repo-harness campaign author         # persist an IssueBatchIntentV1, open the GPT Pro authoring lane
-repo-harness campaign adopt          # exact-SHA readback, seal authoring, publish a repair batch
-repo-harness campaign step           # hand one adopted task to its local planning session
-repo-harness campaign prepare-resume # zero-provider resume request from stored evidence
-```
-
-A seeded repair program: audit a group, author its Issues through the GPT Pro
-lane, adopt them against an exact SHA readback, then step each adopted task into
-the ordinary plan → contract → review lifecycle. `prepare-resume` reconstructs
-a resume request from stored adoption, continuation, and budget evidence without
-contacting a provider.
+Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
 
 ### Refactor Mode
 
@@ -575,7 +557,6 @@ control context loading. They do not add a host permission boundary.
 | `repo-harness-check` | Bot | Plan scoped work, review plans, assess recorded checks |
 | `repo-harness-product` | Bot | Requested PRD, Sprint or Goal preparation |
 | `repo-harness-ship` | Bot | Explicit publication and cleanup decisions |
-| `auto-campaign` | Bot | One explicitly authorized campaign turn |
 | `obsidian-memory` | Bot | Explicit memory recall or persistence |
 | `repo-harness-cross-review` | Bot | Generic review; direct advisory runtime retired |
 | `repo-harness-chatgpt` | Bot | Explicit integration mode and advisory decisions |
@@ -584,7 +565,7 @@ control context loading. They do not add a host permission boundary.
 | `repo-harness-architecture` | Worker | Assigned model, projection or diagram work |
 
 Planning is merged into `repo-harness-check`. No separate planning alias remains.
-`auto-campaign`, `obsidian-memory` and `repo-harness-ship` stay installed for their
+`obsidian-memory` and `repo-harness-ship` stay installed for their
 profiles. Both host switches prohibit implicit invocation.
 External runtime skills remain user-owned. `think`, `check` and `geju` guide Bot
 decisions. `hunt`, `health` and `mermaid` supply worker techniques. This change

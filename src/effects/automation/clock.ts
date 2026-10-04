@@ -1,7 +1,7 @@
 /**
  * The automation budget store's time source.
  *
- * The store's caller -- any controller, the CLI, a campaign -- is untrusted for
+ * The store's caller -- any controller or the CLI -- is untrusted for
  * every decision input, and time is a decision input: a backdated timestamp
  * buys a reservation the frozen deadline has already refused. So no public verb
  * accepts a time, and this module is the only place the store asks what time it

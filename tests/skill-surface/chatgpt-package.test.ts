@@ -46,7 +46,6 @@ const REFERENCES = [
   "bridge.md",
   "delegate.md",
   "orchestrate.md",
-  "campaign-issues.md",
 ] as const;
 
 function readSkill(): string {

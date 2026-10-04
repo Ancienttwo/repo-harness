@@ -11,7 +11,6 @@ import {
   AUTOMATION_ENFORCEMENT_ORDER,
   AUTOMATION_METRIC_LIMIT_FIELDS,
   automationDigest,
-  type CampaignBudgetLedgerV1,
   type AutomationBudgetCurrentV1,
   type AutomationBudgetState,
   type AutomationBudgetV1,
@@ -27,7 +26,7 @@ export const AUTOMATION_BUDGET_SLICE_KIND = 'repo-harness-automation-budget-slic
 export type AutomationBudgetAttentionOwner = 'user' | 'agent' | 'none';
 
 export interface AutomationBudgetMetricSliceV1 {
-  readonly metric: AutomationMetricName | 'controller_steps' | 'provider_calls';
+  readonly metric: AutomationMetricName;
   readonly enforced: boolean;
   readonly limit: number | null;
   readonly consumed: number | null;
@@ -38,7 +37,7 @@ export interface AutomationBudgetMetricSliceV1 {
 export interface AutomationStopReceiptSliceV1 {
   readonly stop_receipt_sha256: string;
   readonly refusal_code: AutomationRefusalCode;
-  readonly triggering_metric: AutomationMetricName | 'controller_steps' | 'provider_calls';
+  readonly triggering_metric: AutomationMetricName;
   readonly limit: number | null;
   readonly consumed: number | null;
   readonly reserved: number | null;
@@ -79,7 +78,6 @@ export interface AutomationBudgetBoardSliceV1 {
 }
 
 export interface ProjectAutomationBudgetSliceInput {
-  readonly campaign_ledger?: CampaignBudgetLedgerV1 | null;
   readonly budget: AutomationBudgetV1;
   readonly current: AutomationBudgetCurrentV1;
   readonly stop_receipt: AutomationStopReceiptV1 | null;
@@ -166,18 +164,6 @@ export function projectAutomationBudgetSlice(
     && input.stop_receipt.stop_receipt_sha256 !== input.current.stop_receipt_sha256) {
     throw new Error('automation stop receipt does not match the current projection');
   }
-  const extraMetrics: AutomationBudgetMetricSliceV1[] = [];
-  if (input.budget.authorization.campaign !== null) {
-    const ledger = input.campaign_ledger;
-    if (ledger === null || ledger === undefined) throw new Error('campaign projection requires its validated ledger');
-    const limits = input.budget.authorization.campaign;
-    for (const metric of ['controller_steps', 'provider_calls'] as const) {
-      const consumed = ledger[metric];
-      const reserved = metric === 'provider_calls' ? ledger.reserved_provider_calls : 0;
-      const limit = metric === 'provider_calls' ? limits.max_provider_calls : limits.max_controller_steps;
-      extraMetrics.push(Object.freeze({ metric, enforced: true, limit, consumed, reserved, remaining: Math.max(0, limit - consumed - reserved) }));
-    }
-  }
   const draft = {
     protocol: AUTOMATION_BUDGET_PROTOCOL,
     kind: AUTOMATION_BUDGET_SLICE_KIND,
@@ -191,7 +177,7 @@ export function projectAutomationBudgetSlice(
     unattended: input.budget.unattended,
     state: durableState(input),
     deadline_at: input.budget.deadline_at,
-    metrics: [...AUTOMATION_ENFORCEMENT_ORDER.map((metric) => metricSlice(metric, input)), ...extraMetrics],
+    metrics: AUTOMATION_ENFORCEMENT_ORDER.map((metric) => metricSlice(metric, input)),
     consecutive_no_progress_steps: input.current.consecutive_no_progress_steps,
     last_completed_step_index: input.current.last_completed_step_index,
     open_reservation_count: input.current.open_reservation_sha256s.length,

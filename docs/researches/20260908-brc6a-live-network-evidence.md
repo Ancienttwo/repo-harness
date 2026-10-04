@@ -2,6 +2,8 @@
 
 # BRC6a live response-stream evidence producer
 
+> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04. Use [repo-harness](../../SKILL.md) to dispatch and collect work through Herdr/OAR. Use [repo-harness-product](../../assets/skills/repo-harness-product/SKILL.md) for planning and [repo-harness-check](../../assets/skill-commands/repo-harness-check/SKILL.md) for scope and verification. repo-harness has no campaign runtime.
+
 ## Status and authority
 
 Implementation candidate: Oracle `fbc9ed38b7147d204842a26baa047f63572f7e1f`, based on the accepted history collector `b6f35dcc`. It is isolated in `oracle-wt-brc6a-live-network-evidence`, with no global installation or main merge. This slice makes no GPT calls and reuses no stopped campaign budget.
