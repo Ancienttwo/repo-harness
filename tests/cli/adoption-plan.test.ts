@@ -103,7 +103,7 @@ describe("canonical adoption plan", () => {
       expect(apply.transactionManifestPath).toBeDefined();
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai", "harness", "policy.json"))).toBe(true);
-      expect(existsSync(join(repo, ".ai", "hooks", "lib", "workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(repo, ".ai", "hooks", "lib", "workflow-state.sh"))).toBe(false);
       expect(existsSync(join(repo, ".claude", "templates", "contract.template.md"))).toBe(true);
       expect(existsSync(join(repo, "docs", "reference-configs", "harness-overview.md"))).toBe(true);
       const scripts = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts;

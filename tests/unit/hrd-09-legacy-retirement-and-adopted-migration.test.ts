@@ -114,7 +114,7 @@ describe('HRD-09 terminal runtime migration', () => {
         .migrations.upgrade.actions.find((action: { id?: string }) => action.id === 'legacy-hook-runtime-retirement') as { paths: string[] };
       for (const path of retirement.paths) expect(existsSync(join(repo, path))).toBe(false);
       expect(existsSync(join(repo, '.ai/hooks/custom-owner-hook.sh'))).toBe(true);
-      expect(existsSync(join(repo, '.ai/hooks/lib/workflow-state.sh'))).toBe(true);
+      expect(existsSync(join(repo, '.ai/hooks/lib/workflow-state.sh'))).toBe(false);
       const codexConfig = readFileSync(join(repo, '.codex/hooks.json'), 'utf8');
       expect(codexConfig).not.toContain('run-hook.sh');
       expect(codexConfig).toContain('custom-owner-hook.sh');
