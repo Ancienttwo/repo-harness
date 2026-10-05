@@ -69,7 +69,7 @@ function execute(root:string,name:string) {
   return {report,path:join(root,reportFile)};
 }
 function cli(args:string[],overrides:NodeJS.ProcessEnv={}) {return spawnSync(process.execPath,[CLI,'pipeline',...args],{env:{...env,...overrides},encoding:'utf8',timeout:20000});}
-async function child(script:string,args:string[]=[]) {const proc=spawn(process.execPath,[script,...args],{env,stdio:['ignore','pipe','pipe']});let out='';let err='';proc.stdout.on('data',x=>out+=x);proc.stderr.on('data',x=>err+=x);const code=await new Promise<number|null>(resolve=>proc.on('exit',resolve));return {code,out,err};}
+async function child(script:string,args:string[]=[],childEnv:NodeJS.ProcessEnv=env) {const proc=spawn(process.execPath,[script,...args],{env:childEnv,stdio:['ignore','pipe','pipe']});let out='';let err='';proc.stdout.on('data',x=>out+=x);proc.stderr.on('data',x=>err+=x);const code=await new Promise<number|null>(resolve=>proc.on('exit',resolve));return {code,out,err};}
 function worker(body:string):string {const path=join(scratch,randomUUID()+'.ts');writeFileSync(path,`import {PipelineStore,exportSnapshot} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/store.ts'))};\nimport {mutatePipeline,newPipeline} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/ledger.ts'))};\nimport {ingestEvent} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/ingest.ts'))};\nimport {writeFileSync,existsSync} from 'fs';\nconst s=new PipelineStore();\n${body}\ns.close();\n`);return path;}
 
 test('A1: six tasks in two real repositories preserve imported and host-scoped identity',()=>{
@@ -272,6 +272,31 @@ test('A6: only the highest implementation round qualifies the implementation gat
   const key=start('superseded');const first=persistedRequest(root,key.task,'implement');result(first.request);record(key,'request',{role:'implement'});const second=persistedRequest(root,key.task,'implement',2);record(key,'request',{role:'implement'});ingestEvent(store,snapshot,{snapshot:true});
   expect(projectedRuns(store.read(key),observations(store)).map(r=>[r.round,r.result_state])).toEqual([[1,'validated'],[2,'missing']]);expect(()=>advance(key)).toThrow('Validated result');expect(store.read(key).phase).toBe('implement');
   result(second.request);ingestEvent(store,snapshot,{snapshot:true});advance(key);expect(store.read(key).phase).toBe('cross-review');expect(store.read(key).admission).toBe('gate_qualified');
+});
+
+// The source channel pauses the advance writer after its preflight reads.
+// A second writer commits an invalidating result before the advance takes the lock.
+test('A2: a result invalidated during advance preflight cannot qualify the gate',async()=>{
+  const root=repo('observation-race'),repository_id=taskRepository(root).repository_id;const [arm,paused,resume,channel]=['arm','paused','resume','pause-channel.ts'].map(name=>join(scratch,name));
+  writeFileSync(channel,`import {existsSync,writeFileSync} from 'fs';process.env.REPO_HARNESS_PIPELINES_SOURCE_HOST='source-a';const {validateOnSource}=await import(${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/authority.ts'))});const query=await Bun.stdin.json();if(query.kind==='subject'&&existsSync(${JSON.stringify(arm)})){writeFileSync(${JSON.stringify(paused)},'paused');while(!existsSync(${JSON.stringify(resume)}))await Bun.sleep(5);}console.log(JSON.stringify(validateOnSource(query)));`);
+  const channelEnv={...env,REPO_HARNESS_PIPELINES_SOURCE_HOST:'mini',REPO_HARNESS_PIPELINES_SOURCE_COMMANDS:JSON.stringify({'source-a':[process.execPath,channel]})};
+  const source=new PipelineStore({env:channelEnv});
+  try{
+    const receipt=newPipeline(source,{source_host:'source-a',repository_id,root,adopt_task:'race',backfill:true,phase:'implement',note:'Implementation position is attested'});const key={source_host:'source-a',repository_id,task:receipt.task};
+    const write=(kind:string,payload:unknown)=>mutatePipeline(source,key,{op:'record',kind,payload,state_version:source.read(key).state_version});
+    write('resource',{resources:{branch:'feature'},subject:subject(root),contract_path:'plan.md',base_ref:'main'});
+    const {request}=persistedRequest(root,key.task,'implement');result(request);write('request',{role:'implement'});
+    ingestEvent(source,{host:'source-a',herdr_session:'observer-fixture',result:{panes:[]}},{snapshot:true});expect(projectedRuns(source.read(key),observations(source)).map(r=>r.result_state)).toEqual(['validated']);
+    writeFileSync(arm,'armed');
+    const script=worker(`try{console.log(JSON.stringify(mutatePipeline(s,${JSON.stringify(key)},{op:'advance',to:'cross-review',state_version:${source.read(key).state_version}})))}catch(e){console.log(JSON.stringify({code:e.code}));process.exitCode=e.exit;}`);
+    let exited=false;const running=child(script,[],channelEnv).finally(()=>{exited=true;});
+    while(!existsSync(paused)&&!exited)await Bun.sleep(5);expect(existsSync(paused)).toBe(true);
+    writeSessionArtifact(request.result_ref,{request_id:randomUUID(),context_sha256:request.context_sha256,value:'done'},false);
+    ingestEvent(source,{source:'herdr',agent_status:'done',...key,role:'implement',round:1,request_id:request.request_id,context_sha256:request.context_sha256},{delivery_id:'invalidate'});
+    expect(observations(source).filter(o=>o.kind==='result').at(-1)?.payload.result_state).toBe('invalid');
+    writeFileSync(resume,'resume');const outcome=await running;
+    expect(outcome.out).toContain('gate_not_satisfied');expect(outcome.code).toBe(5);expect(source.read(key).phase).toBe('implement');
+  }finally{source.close();}
 });
 
 test('A6: base, plan and environment movement expire unconsumed evidence and approval',()=>{

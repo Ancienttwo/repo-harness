@@ -114,11 +114,12 @@ export function mutatePipeline(store:PipelineStore,key:Key,input:{op:'record'|'a
   const from=record.phase;let action:()=>void;
   if(input.op==='record')action=prepareRecord(store,record,text(input.kind,'kind'),object(input.payload),input.reconcile??false);
   else {
-    record.runs=projectedRuns(record,observations(store));
     if(!input.to||!PHASES.includes(input.to))throw new PipelineError('usage',2,'Unknown phase');
     const previous=record.observations.slice().reverse().find(o=>o.kind==='subject');
     const observed=previous?observeSubject(store,record,previous.data):null;
     action=()=>{
+      // Ingest does not change the record version. Project runs under the writer lock.
+      record.runs=projectedRuns(record,observations(store));
       if(observed)record.observations.push(observed);
       // T6 consumes the old candidate approval before new base observations.
       if(input.to==='merged') advanceRecord(record,input.to,input.reason);
