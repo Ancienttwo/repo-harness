@@ -288,16 +288,20 @@ function concurrencyObservation(
   graph: ProjectedWorkGraphV1,
   deps: EngineerSchedulingDependencies,
 ): { readonly available: boolean; readonly revision: string } {
+  // Only a proven-free Lease is free capacity. An unknown Lease (for example a
+  // lease directory without a readable owner record) occupies the group until
+  // it is reconciled, and its reason is bound into the revision.
   const active = graph.work_packages
     .filter((candidate) => candidate.concurrency.key === item.concurrency.key)
-    .map((candidate) => ({ candidate, lease: deps.readLease(repoRoot, candidate.task_id).record }))
-    .filter((entry) => entry.lease !== null && entry.lease.state !== 'released')
+    .map((candidate) => ({ candidate, lease: deps.readLease(repoRoot, candidate.task_id) }))
+    .filter((entry) => entry.lease.classification !== 'available' && entry.lease.classification !== 'released')
     .map((entry) => ({
       work_package_id: entry.candidate.work_package_id,
       task_id: entry.candidate.task_id,
-      claim_id: entry.lease!.claim_id,
-      generation: entry.lease!.generation,
-      state: entry.lease!.state,
+      claim_id: entry.lease.record?.claim_id ?? null,
+      generation: entry.lease.record?.generation ?? null,
+      state: entry.lease.classification,
+      unknown_reason: entry.lease.unknown_reason,
     }))
     .sort((left, right) => left.work_package_id.localeCompare(right.work_package_id));
   return Object.freeze({
