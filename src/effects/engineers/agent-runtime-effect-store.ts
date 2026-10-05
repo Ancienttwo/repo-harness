@@ -689,7 +689,9 @@ export function recordEngineerOfferSnapshot(input: RecordEngineerOfferSnapshotIn
     }
     const superseded = existing?.pending && pendingStatus?.current.state === 'intent_persisted' ? existing.pending : null;
     if (existing?.pending && !superseded && pendingStatus && !TERMINAL_STATES.includes(pendingStatus.current.state)) {
-      return Object.freeze({ outcome: 'no_wake' as const, cause: 'wake_in_flight' as const, ledger: publish(existing.pending), status: pendingStatus });
+      // The started wake consumes only its own snapshot. Keep this one
+      // unconsumed so a later observation of it is still due.
+      return Object.freeze({ outcome: 'no_wake' as const, cause: 'wake_in_flight' as const, ledger: existing, status: pendingStatus });
     }
     const capability = readAgentRuntimeCapability(input.repo_root, endpoint.host_id, endpoint.adapter_kind);
     if (capability.capability_sha256 !== input.expected_capability_sha256) fail('agent_runtime_effect_conflict', 'capability digest changed');

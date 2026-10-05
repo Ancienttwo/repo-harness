@@ -520,6 +520,35 @@ describe('issue #281 durable wake store', () => {
     expect(second.ledger.pending!.effect_id).toBe(first.status!.intent.effect_id);
   });
 
+  test('a snapshot that arrives while a wake is in flight stays due after that wake ends', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const first = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    const start = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env });
+    const newer = offers(fx, { taskRevision: '3'.repeat(64) });
+    expect(record(fx, newer, '2026-09-03T10:04:20.000Z')).toMatchObject({ outcome: 'no_wake', cause: 'wake_in_flight' });
+    // The controller step truthfully reports the snapshot it consumed: the first one.
+    recordAgentRuntimeControllerStep({
+      repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id, control_ref: start.action!.control_ref,
+      observed_snapshot_revision: first.ledger.observed.snapshot_revision, observed_at: '2026-09-03T10:04:30.000Z',
+    });
+    expect(observeAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id,
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      observed_at: '2026-09-03T10:04:40.000Z', receipt_wait_exhausted: false,
+    }).current.state).toBe('observed_success');
+    const successor = record(fx, newer, '2026-09-03T10:04:50.000Z');
+    expect(successor.outcome).toBe('wake_prepared');
+    expect(successor.ledger.pending!.snapshot_revision).toBe(newer.snapshot_revision);
+    const due = listDueOfferWakes(fx.repoRoot, { now: '2026-09-03T10:05:00.000Z' });
+    expect(due.map((event) => event.effect_id)).toEqual([successor.status!.intent.effect_id]);
+    const repeat = record(fx, newer, '2026-09-03T10:05:00.000Z');
+    expect(repeat.outcome).toBe('unchanged');
+    expect(repeat.status!.intent.effect_id).toBe(successor.status!.intent.effect_id);
+    expect(startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: successor.status!.intent.effect_id, started_at: '2026-09-03T10:05:10.000Z', env: fx.env }).action)
+      .not.toBeNull();
+  });
+
   test('Binding rotation, capability downgrade and authorization change all fail before the Host action', () => {
     const rotated = fixture();
     record(rotated, emptyOffers(rotated), '2026-09-03T10:03:00.000Z');
