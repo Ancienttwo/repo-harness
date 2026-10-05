@@ -253,6 +253,17 @@ test('A6/A7: complete phase path uses current plan, typed cross review and all c
   expect(()=>advance('cleanup')).toThrow('checklist');
 });
 
+test('A6: only the highest implementation round qualifies the implementation gate',()=>{
+  const root=repo('current-attempt'),repository_id=taskRepository(root).repository_id,snapshot={host:hostname(),herdr_session:'observer-fixture',result:{panes:[]}};
+  const start=(task:string)=>{const receipt=newPipeline(store,{source_host:hostname(),repository_id,root,adopt_task:task,backfill:true,phase:'implement',note:'Implementation position is attested'});const key={source_host:hostname(),repository_id,task:receipt.task};resource(key,root);return key;};
+  const advance=(key:Key)=>mutatePipeline(store,key,{op:'advance',to:'cross-review',state_version:store.read(key).state_version});
+  const planned=start('planning-only');const review=persistedRequest(root,planned.task,'plan-review');result(review.request);record(planned,'request',{role:'plan-review'});ingestEvent(store,snapshot,{snapshot:true});
+  expect(projectedRuns(store.read(planned),observations(store)).map(r=>[r.role,r.result_state])).toEqual([['plan-review','validated']]);expect(()=>advance(planned)).toThrow('Validated result');
+  const key=start('superseded');const first=persistedRequest(root,key.task,'implement');result(first.request);record(key,'request',{role:'implement'});const second=persistedRequest(root,key.task,'implement',2);record(key,'request',{role:'implement'});ingestEvent(store,snapshot,{snapshot:true});
+  expect(projectedRuns(store.read(key),observations(store)).map(r=>[r.round,r.result_state])).toEqual([[1,'validated'],[2,'missing']]);expect(()=>advance(key)).toThrow('Validated result');expect(store.read(key).phase).toBe('implement');
+  result(second.request);ingestEvent(store,snapshot,{snapshot:true});advance(key);expect(store.read(key).phase).toBe('cross-review');expect(store.read(key).admission).toBe('gate_qualified');
+});
+
 test('A6: base, plan and environment movement expire unconsumed evidence and approval',()=>{
   const root=repo('movement'),key=create(root),s=resource(key,root);const report=execute(root,'subject');record(key,'evidence',{evidence:evidence(root,s,'a','pass',report.path),contract_path:'plan.md'});mergeReady(key,s);record(key,'go',go(key,s));
   git(root,'commit','--allow-empty','-qm','base movement');resource(key,root);expect(store.read(key).evidence[0].current).toBe(false);expect(store.read(key).merge.owner_approval?.expired).toBe(true);

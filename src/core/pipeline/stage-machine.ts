@@ -1,4 +1,4 @@
-import { currentSubject, latestPlan, requireGate, requirementPass } from './gates';
+import { currentRun, currentSubject, latestPlan, requireGate, requirementPass } from './gates';
 import { PipelineError, type Phase, type PipelineRecord } from './types';
 
 export function advanceRecord(record:PipelineRecord,to:Phase,reason?:string):void {
@@ -20,7 +20,7 @@ export function advanceRecord(record:PipelineRecord,to:Phase,reason?:string):voi
       const plan=latestPlan(record);const index=plan?record.evidence.indexOf(plan):-1;
       requireGate(index>=0 && record.relations.some(r=>r.rel==='reviews'&&r.to===index && record.evidence[r.from]?.kind==='plan_review' && record.evidence[r.from]?.current),'Review must bind to the current plan');
     } else if(from==='implement'&&to==='cross-review') {
-      requireGate(!!record.resources.branch && (record.runs.some(r=>r.result_state==='validated') || (!!subject?.worktree_clean && record.observations.some(o=>o.kind==='commit'&&o.data.head_sha===subject.head_sha && o.data.base_sha===subject.base_sha))),'Validated result or observed clean commit is required');
+      requireGate(!!record.resources.branch && (currentRun(record,'implement')?.result_state==='validated' || (!!subject?.worktree_clean && record.observations.some(o=>o.kind==='commit'&&o.data.head_sha===subject.head_sha && o.data.base_sha===subject.base_sha))),'Validated result or observed clean commit is required');
     } else if(from==='cross-review'&&to==='test') {
       requireGate(requirementPass(record,'cross_review'),'Cross review checks did not pass');
       const harness=record.runs.filter(r=>r.role==='implement').map(r=>r.harness_kind);

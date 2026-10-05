@@ -1,4 +1,4 @@
-import { equal, PipelineError, type Evidence, type PipelineRecord, type Requirement, type Subject } from './types';
+import { equal, PipelineError, type Evidence, type PipelineRecord, type Requirement, type Run, type Subject } from './types';
 
 export function currentSubject(record:PipelineRecord):Subject|null {
   const observation=record.observations.slice().reverse().find(o=>o.kind==='subject');
@@ -24,4 +24,6 @@ export function requirementPass(record:PipelineRecord,kind:string):boolean {
   });
 }
 export function requireGate(condition:boolean,message:string):void {if(!condition) throw new PipelineError('gate_not_satisfied',5,message);}
+// The highest registered round is the current attempt. Older rounds stay history.
+export function currentRun(record:PipelineRecord,role:string):Run|undefined {return record.runs.filter(r=>r.role===role).sort((a,b)=>b.round-a.round)[0];}
 export function latestPlan(record:PipelineRecord):Evidence|undefined {return record.evidence.filter(e=>e.kind==='plan' && e.current && e.source==='verified').sort((a,b)=>b.execution_order-a.execution_order)[0];}
