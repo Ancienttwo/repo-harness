@@ -225,9 +225,14 @@ describe('repository automation supervision', () => {
     expect(budget.budget_sha256).toMatch(bare);
     expect(controller.run_id).toMatch(bare);
     expect(controller.budget_sha256).toMatch(bare);
+    expect(budget.ledger_sha256).toMatch(bare);
+    expect(budget.slice_sha256).toMatch(bare);
+    expect(budget.stop_receipt?.stop_receipt_sha256).toMatch(bare);
     expect(controller.run_id).toBe(budget.automation_run_id);
     // Controller evidence digests keep the stored sha256: prefix.
-    expect(controller.run_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    for (const value of [controller.run_sha256, controller.current_sha256, controller.event_sha256]) {
+      expect(value).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    }
   });
 
   test('keeps source absence, failure and stale budget metrics distinct', async () => {
