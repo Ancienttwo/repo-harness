@@ -41,7 +41,8 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
-import { acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError } from '../../effects/engineers/scheduling-acquire-next';
+import { acquireSelectedEngineerTask, acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError } from '../../effects/engineers/scheduling-acquire-next';
+import { type ScheduledEngineerAcquireAssertionV1 } from '../../effects/engineers/scheduling-acquire';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
   EngineeringOverlayProjectionError,
@@ -336,6 +337,39 @@ export function buildEngineerCommand(): Command {
       const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
       const result = prepareEngineerObservation({ repo_root: repoRoot, principal });
       emit(result, options.json, `${result.observation_ref} expires ${result.observation.expires_at_ms}`);
+    }));
+
+  engineer
+    .command('acquire')
+    .description('Acquire one exact observed Work Package through its durable transaction')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .requiredOption('--idempotency-key <key>', 'Stable selected transaction key')
+    .requiredOption('--observation-ref <digest>', 'Exact server-produced observation reference')
+    .requiredOption('--assertion-file <path>', 'JSON file containing the complete 13-field assertion')
+    .option('--session-id <id>', 'Host session identity')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      authorizationId: string;
+      idempotencyKey: string;
+      observationRef: string;
+      assertionFile: string;
+      sessionId?: string;
+      json?: boolean;
+    }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = acquireSelectedEngineerTask({
+        repo_root: repoRoot,
+        principal,
+        idempotency_key: options.idempotencyKey,
+        observation_ref: options.observationRef,
+        assertion: jsonOption<ScheduledEngineerAcquireAssertionV1>(readFileSync(options.assertionFile, 'utf8'), 'assertion-file'),
+        session_id: options.sessionId,
+      });
+      emit(result, options.json, result.ok
+        ? `acquired ${result.offer.work_package_id} ${result.envelope.claim_id}`
+        : `${result.error}: ${result.message}`);
+      if (!result.ok) process.exitCode = 1;
     }));
 
   engineer
