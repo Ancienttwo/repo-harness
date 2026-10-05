@@ -833,11 +833,14 @@ function launchClaimFor(repoRoot: string, id: string, intentSha: string): Delega
     if (error instanceof DelegatedRunStoreError && error.code === 'delegated_run_not_found') return null;
     throw error;
   }
-  for (const entry of readdirSync(directory).sort()) {
-    // A concurrent or interrupted writer's staging file is not a committed claim.
-    if (STAGED_IMMUTABLE.test(entry) && lstatSync(join(directory, entry)).isFile()) continue;
-    if (!/^[0-9a-f]{64}\.json$/u.test(entry)) fail('delegated_run_unsafe_path', 'launch claim store contains unexpected entry');
-    const raw = readRegular(join(directory, entry), 'launch claim');
+  const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  for (const entry of entries) {
+    // A concurrent or interrupted writer's staging file is not a committed
+    // claim. The directory entry type avoids a second stat that the writer's
+    // unlink could race.
+    if (entry.isFile() && STAGED_IMMUTABLE.test(entry.name)) continue;
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('delegated_run_unsafe_path', 'launch claim store contains unexpected entry');
+    const raw = readRegular(join(directory, entry.name), 'launch claim');
     let claim: DelegatedRunLaunchClaimV1;
     try { claim = validateDelegatedRunLaunchClaim(JSON.parse(raw.toString('utf8'))); } catch (error) { throw new DelegatedRunStoreError('delegated_run_invalid', 'launch claim is invalid', error); }
     if (claim.dispatch_id === id && claim.intent_sha256 === intentSha) return claim;
