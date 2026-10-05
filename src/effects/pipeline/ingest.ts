@@ -64,16 +64,18 @@ export function ingestEvent(store:PipelineStore,payload:unknown,input:{source?:s
     if(delivery&&store.db.query('SELECT 1 FROM ingest_receipts WHERE source=? AND delivery_id=?').get(source,delivery))return {status:'duplicate'};
     store.assertWritable();
     let appended=0;
-    // Read the log once under the lock. Each append extends this view with the stored row's JSON shape.
-    const logs=observations(store);
+    // Result checks read the log once, lazily, under the lock. Each append
+    // extends the view; rows appended before the first read are already in it.
+    let logs:LogObservation[]|undefined;
+    const view=()=>(logs??=observations(store));
     for(const log of pending) {
       if(log.task) {
         const current=store.read({source_host:log.source_host!,repository_id:log.repository_id!,task:log.task});
-        if(log.kind==='result'&&!projectedRuns(current,[...logs,...pending.filter(o=>o.kind==='enrollment'&&identity(o,keyOf(current)))]).some(r=>r.role===log.role&&r.round===log.round&&r.request_id===log.request_id)){errors++;continue;}
+        if(log.kind==='result'&&!projectedRuns(current,[...view(),...pending.filter(o=>o.kind==='enrollment'&&identity(o,keyOf(current)))]).some(r=>r.role===log.role&&r.round===log.round&&r.request_id===log.request_id)){errors++;continue;}
       }
       if(log.terminal_key&&store.db.query('SELECT 1 FROM observations WHERE terminal_key=?').get(log.terminal_key)){if(!input.snapshot)status='duplicate';continue;}
       store.appendObservation({...(log.task?{key:{source_host:log.source_host!,repository_id:log.repository_id!,task:log.task}}:{}),role:log.role??undefined,round:log.round??undefined,request_id:log.request_id??undefined,kind:log.kind,source:log.source,observed_at:log.observed_at,payload:log.payload,terminal_key:log.terminal_key??undefined});appended++;
-      logs.push({...log,payload:JSON.parse(JSON.stringify(log.payload))});
+      logs?.push({...log,payload:JSON.parse(JSON.stringify(log.payload))});
     }
     boundary?.('observations');
     if(delivery)store.db.query('INSERT INTO ingest_receipts VALUES(?,?,?,?,?)').run(source,delivery,digest(JSON.stringify(event)),new Date().toISOString(),status);
