@@ -505,7 +505,11 @@ describe('operator serve command and HTTP boundary', () => {
       return result.stdout.trim();
     };
     const sprintText = (state: string) => `# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${TASK_ID} | [ ] | ${state} | contract | read only | (pending) |\n`;
-    git(parent, 'init', '-q', '--bare', remote);
+    // Pin the remote HEAD. Without a host `init.defaultBranch` a bare init
+    // keeps `refs/heads/master`; the clone then finds no checkout and the
+    // Fleet read would report an empty-but-ok board instead of the missing
+    // promisor blob this test exists for.
+    git(parent, 'init', '-q', '--bare', '-b', 'main', remote);
     git(remote, 'config', 'uploadpack.allowFilter', 'true');
     git(parent, 'init', '-q', '-b', 'main', source);
     mkdirSync(join(source, 'plans/sprints'), { recursive: true });
@@ -517,6 +521,9 @@ describe('operator serve command and HTTP boundary', () => {
     git(source, 'push', '-q', `file://${remote}`, 'main');
     git(parent, 'clone', '-q', '--filter=blob:none', `file://${remote}`, clone);
     git(clone, 'switch', '-qc', 'work');
+    // The board path starts at this worktree marker. Its absence would end the
+    // read before the promisor blob is touched, so pin the fixture to it.
+    expect(existsSync(join(clone, '.ai/harness/sprint/active-sprint'))).toBe(true);
     writeFileSync(join(source, sprint), sprintText('moved'));
     git(source, 'commit', '-qam', 'moved');
     git(source, 'push', '-q', `file://${remote}`, 'main');
