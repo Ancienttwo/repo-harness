@@ -131,8 +131,11 @@ export function assertNoSymlinkInPath(repoRoot: string, path: string): string | 
   for (const part of rel.split(sep)) {
     if (!part) continue;
     current = resolve(current, part);
-    if (!existsSync(current)) continue;
-    if (lstatSync(current).isSymbolicLink()) return `symlink is not allowed in adoption path: ${path}`;
+    // lstat, not existsSync: existsSync follows links and misses a dangling one.
+    const stat = lstatSync(current, { throwIfNoEntry: false });
+    if (!stat) break;
+    if (stat.isSymbolicLink()) return `symlink is not allowed in adoption path: ${path}`;
+    if (!stat.isDirectory()) break;
   }
   return null;
 }
@@ -456,8 +459,11 @@ type GitIndexRead =
   | { readonly kind: "entry"; readonly entry: GitIndexEntry }
   | { readonly kind: "unsupported"; readonly error: string };
 
-// Reads the single stage-0 index entry for path. Rollback restores this exact
-// entry, because the staged blob can differ from the working-tree bytes.
+const GIT_INDEX_FILE_MODES = new Set(["100644", "100755"]);
+const GIT_OBJECT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+// Reads the single stage-0 regular-file index entry for path. Rollback restores
+// this exact entry, because the staged blob can differ from the working-tree bytes.
 function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
   const listed = runProcess("git", ["-C", repoRoot, "ls-files", "-z", "--stage", "--", path]);
   if (!listed.ok) return { kind: "git_failed", error: listed.stderr || listed.error || "git ls-files failed" };
@@ -465,6 +471,16 @@ function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
   if (records.length === 0) return { kind: "absent" };
   const match = records.length === 1 ? /^(\d{6}) ([0-9a-f]+) 0\t(.*)$/s.exec(records[0]) : null;
   if (!match || match[3] !== path) return { kind: "unsupported", error: `git index entry is unmerged or ambiguous: ${path}` };
+  if (!GIT_INDEX_FILE_MODES.has(match[1])) {
+    return { kind: "unsupported", error: `git index mode ${match[1]} is not a regular file entry: ${path}` };
+  }
+  // An intent-to-add entry lists the empty blob but stages no content. Porcelain v2
+  // reports it with index mode 000000; restoring the blob would stage an empty file.
+  const status = runProcess("git", ["--no-optional-locks", "-C", repoRoot, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--", path]);
+  if (!status.ok) return { kind: "git_failed", error: status.stderr || status.error || "git status failed" };
+  if (status.stdout.split("\0").some((record) => record.startsWith("1 ") && record.split(" ")[4] === "000000")) {
+    return { kind: "unsupported", error: `git index entry is intent-to-add: ${path}` };
+  }
   return { kind: "entry", entry: { mode: match[1], objectId: match[2] } };
 }
 
@@ -584,6 +600,13 @@ function preflightOperation(repoRoot: string, operation: AdoptionOperation): str
 
   if (operation.kind === "remove" && existsSync(target.path) && !lstatSync(target.path).isFile()) {
     return `remove target is not a regular file: ${operation.path}`;
+  }
+
+  // Refuse an index entry that rollback cannot restore exactly before the paired
+  // remove moves the file away.
+  if (operation.kind === "gitUntrack") {
+    const indexed = readGitIndexEntry(repoRoot, operation.path);
+    return indexed.kind === "unsupported" ? indexed.error : null;
   }
 
   if (operation.kind === "mkdir") {
@@ -759,8 +782,8 @@ function isValidManifestOperation(operation: unknown, transactionDir: string): o
   if (op.error !== undefined && typeof op.error !== "string") return false;
   if (op.gitIndexEntry !== undefined) {
     const entry = op.gitIndexEntry as Record<string, unknown> | null;
-    if (typeof entry?.mode !== "string" || !/^\d{6}$/.test(entry.mode)) return false;
-    if (typeof entry.objectId !== "string" || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(entry.objectId)) return false;
+    if (typeof entry?.mode !== "string" || !GIT_INDEX_FILE_MODES.has(entry.mode)) return false;
+    if (typeof entry.objectId !== "string" || !GIT_OBJECT_ID.test(entry.objectId)) return false;
   }
   if (op.backupPath !== undefined) {
     if (typeof op.backupPath !== "string") return false;
@@ -833,7 +856,13 @@ function rollbackGitUntrackOperation(repoRoot: string, operation: FsTransactionM
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return rollbackFailed(operation, "restore_git_index", target.error ?? "invalid git path");
   const recorded = operation.gitIndexEntry;
-  if (!recorded) return rollbackFailed(operation, "restore_git_index", "missing git index entry for untrack rollback");
+  if (!recorded) {
+    return rollbackFailed(
+      operation,
+      "restore_git_index",
+      `transaction manifest predates git index entry recording; check ${operation.path} and run \`git add -- ${operation.path}\` by hand to track it again`,
+    );
+  }
   const current = readGitIndexEntry(repoRoot, operation.path);
   if (current.kind === "git_failed" || current.kind === "unsupported") {
     return rollbackFailed(operation, "restore_git_index", current.error);

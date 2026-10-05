@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
@@ -602,6 +602,157 @@ describe("canonical adoption plan", () => {
       cleanup(repo);
     }
   }, 30_000);
+
+  describe("git untrack fail-closed boundaries", () => {
+    const helper = "scripts/check-task-workflow.sh";
+
+    function helperRepo(): { repo: string; git: (...args: string[]) => ReturnType<typeof spawnSync> } {
+      const repo = tempRepo();
+      mkdirSync(join(repo, "scripts"), { recursive: true });
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" });
+      expect(git("init", "-q").status).toBe(0);
+      return { repo, git };
+    }
+
+    function expectRefusedBeforeMutation(repo: string, git: (...args: string[]) => ReturnType<typeof spawnSync>, message: string): void {
+      const indexBefore = git("ls-files", "--stage", "--", helper).stdout;
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(false);
+      expect(apply.results.find((result) => result.kind === "gitUntrack" && result.path === helper)?.error).toContain(message);
+      expect(existsSync(join(repo, helper))).toBe(true);
+      expect(git("ls-files", "--stage", "--", helper).stdout).toBe(indexBefore);
+    }
+
+    function editManifest(repo: string, manifestPath: string, edit: (operation: Record<string, any>) => void): void {
+      const path = join(repo, manifestPath);
+      const manifest = JSON.parse(readFileSync(path, "utf-8"));
+      edit(manifest.operations.find((operation: Record<string, any>) => operation.kind === "gitUntrack" && operation.path === helper));
+      writeFileSync(path, JSON.stringify(manifest));
+    }
+
+    test("apply refuses an intent-to-add entry before any mutation", () => {
+      const { repo, git } = helperRepo();
+      try {
+        expect(git("add", "-N", helper).status).toBe(0);
+        expectRefusedBeforeMutation(repo, git, "intent-to-add");
+        expect(git("status", "--porcelain=v2", "--", helper).stdout).toContain(" .A N... ");
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+
+    test("apply refuses an unmerged entry before any mutation", () => {
+      const { repo, git } = helperRepo();
+      try {
+        const blob = String(git("hash-object", "-w", helper).stdout).trim();
+        const info = [1, 2, 3].map((stage) => `100644 ${blob} ${stage}\t${helper}\n`).join("");
+        expect(spawnSync("git", ["update-index", "--index-info"], { cwd: repo, input: info }).status).toBe(0);
+        expectRefusedBeforeMutation(repo, git, "unmerged");
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+
+    test("apply refuses an index entry that is not a regular file mode", () => {
+      const { repo, git } = helperRepo();
+      try {
+        const blob = String(spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: repo, input: "link-target", encoding: "utf-8" }).stdout).trim();
+        expect(git("update-index", "--add", "--cacheinfo", `120000,${blob},${helper}`).status).toBe(0);
+        expectRefusedBeforeMutation(repo, git, "120000");
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+
+    test("rollback of a manifest without an index entry fails with a manual re-add step", () => {
+      const { repo, git } = helperRepo();
+      try {
+        expect(git("add", helper).status).toBe(0);
+        const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+        expect(apply.ok).toBe(true);
+        editManifest(repo, apply.transactionManifestPath!, (operation) => { delete operation.gitIndexEntry; });
+        const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+        expect(rollback.ok).toBe(false);
+        expect(rollback.results.find((result) => result.kind === "gitUntrack")?.error).toContain(`git add -- ${helper}`);
+        expect(git("ls-files", "--stage", "--", helper).stdout).toBe("");
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+
+    test("rollback refuses to replace an index entry the user staged after apply", () => {
+      const { repo, git } = helperRepo();
+      try {
+        expect(git("add", helper).status).toBe(0);
+        const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+        expect(apply.ok).toBe(true);
+        writeFileSync(join(repo, helper), "user staged after apply\n");
+        expect(git("add", helper).status).toBe(0);
+        const userEntry = git("ls-files", "--stage", "--", helper).stdout;
+        const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+        expect(rollback.ok).toBe(false);
+        expect(rollback.results.find((result) => result.kind === "gitUntrack")?.error).toContain("changed after apply");
+        expect(git("ls-files", "--stage", "--", helper).stdout).toBe(userEntry);
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+
+    test("rollback fails closed when Git pruned the recorded blob", () => {
+      const { repo, git } = helperRepo();
+      try {
+        const canonical = readFileSync(join(repo, helper), "utf-8");
+        writeFileSync(join(repo, helper), "#!/bin/sh\necho staged only\n");
+        expect(git("add", helper).status).toBe(0);
+        writeFileSync(join(repo, helper), canonical);
+        const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+        expect(apply.ok).toBe(true);
+        expect(git("prune", "--expire=now").status).toBe(0);
+        const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+        expect(rollback.ok).toBe(false);
+        expect(rollback.results.find((result) => result.kind === "gitUntrack")?.error).toContain("recorded git object is missing");
+        expect(git("ls-files", "--stage", "--", helper).stdout).toBe("");
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+
+    test("rollback rejects a manifest whose index entry is not a regular file entry", () => {
+      const { repo, git } = helperRepo();
+      try {
+        expect(git("add", helper).status).toBe(0);
+        const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+        expect(apply.ok).toBe(true);
+        for (const gitIndexEntry of [{ mode: "120000", objectId: "a".repeat(40) }, { mode: "100644", objectId: "not-an-oid" }]) {
+          editManifest(repo, apply.transactionManifestPath!, (operation) => { operation.gitIndexEntry = gitIndexEntry; });
+          const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+          expect(rollback.ok).toBe(false);
+          expect(rollback.results[0]?.error).toContain("invalid transaction manifest");
+        }
+        expect(git("ls-files", "--stage", "--", helper).stdout).toBe("");
+      } finally {
+        cleanup(repo);
+      }
+    }, 30_000);
+  });
+
+  test("apply refuses a dangling symlink at a planned target instead of replacing it", () => {
+    const repo = tempRepo();
+    const outside = tempRepo();
+    try {
+      mkdirSync(join(repo, "docs"), { recursive: true });
+      symlinkSync(join(outside, "spec.md"), join(repo, "docs", "spec.md"));
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(false);
+      expect(apply.results.some((result) => result.error?.includes("symlink is not allowed"))).toBe(true);
+      expect(lstatSync(join(repo, "docs", "spec.md")).isSymbolicLink()).toBe(true);
+      expect(readdirSync(outside)).toEqual([]);
+    } finally {
+      cleanup(repo);
+      cleanup(outside);
+    }
+  });
 });
 
 describe("init command cutover", () => {

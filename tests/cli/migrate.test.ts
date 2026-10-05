@@ -165,4 +165,20 @@ describe('migrate command (Phase 1C)', () => {
       });
     });
   }
+
+  test('--apply refuses a dangling symlink at the backup path before any write', () => {
+    withTempRepo((repo) => {
+      withTempRepo((outside) => {
+        const claudePath = path.join(repo, '.claude/settings.json');
+        fs.mkdirSync(path.dirname(claudePath), { recursive: true });
+        fs.writeFileSync(claudePath, LEGACY_WITH_SIBLING);
+        const escaped = path.join(outside, 'escaped.json');
+        fs.symlinkSync(escaped, `${claudePath}.repo-harness-migrate-backup`);
+
+        expect(() => runMigrate({ cwd: repo, apply: true })).toThrow('symlink is not allowed');
+        expect(fs.existsSync(escaped)).toBe(false);
+        expect(fs.readFileSync(claudePath, 'utf-8')).toBe(LEGACY_WITH_SIBLING);
+      });
+    });
+  });
 });
