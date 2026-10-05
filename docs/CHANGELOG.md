@@ -8,8 +8,17 @@ All notable changes to this skill are documented here.
 
 - Add `repo-harness engineer acquire` to acquire one exact observed Work Package.
   The command checks the full assertion and uses a durable transaction key.
+- Add the `claim_actor_lease_unavailable` error code. Live Claim listing now
+  refuses a receipt whose Lease state is unknown. The receipt store stays valid.
+  Operators repair the Lease, not the receipt store.
 
 ### Changed
+
+- Unknown Leases now occupy a concurrency group. Only a proven-free Lease is
+  free capacity. The unknown reason is part of the concurrency revision.
+- Engineer acquisition reloads the Profile limit and counts live Claims under
+  the Engineer Binding lock before the Fleet mutation. A full Profile refuses
+  with `fleet_acquire_failed`.
 
 - Stop copying `workflow-state.sh` into consumer repositories during adoption.
   Use `repo-harness hook-lib path` to source the installed package library.

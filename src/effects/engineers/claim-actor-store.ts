@@ -178,11 +178,13 @@ export function listLiveClaimActorReceiptsForEngineer(
       if (receipt.engineer_id !== engineerId) continue;
       const read = leaseReader(cwd, taskId);
       // An unknown Lease cannot prove this Claim ended; refuse instead of undercounting.
+      // The receipt itself is valid, so the code names the unavailable Lease
+      // state and points the operator at the Lease, not the receipt store.
       if (read.classification === 'unknown') {
-        throw new EngineerPrincipalError('claim_actor_receipt_invalid', `cannot prove Claim ${claimId} ended: Lease is unknown (${read.unknown_reason})`);
+        throw new EngineerPrincipalError('claim_actor_lease_unavailable', `cannot prove Claim ${claimId} ended: Lease is unknown (${read.unknown_reason})`);
       }
       const lease = read.record;
-      if (lease &&lease.claim_id === claimId && lease.generation === receipt.lease_generation
+      if (lease && lease.claim_id === claimId && lease.generation === receipt.lease_generation
         && lease.task_revision === receipt.task_revision && lease.state !== 'released') receipts.push(receipt);
     }
   }

@@ -220,8 +220,15 @@ describe('ME-0B principal and claim actor protocols', () => {
       // A lease directory without an owner record is the real unknown state.
       expect(createLeaseDirectory(root, work.task_id)).toBeTrue();
       expect(readLease(root, work.task_id)).toMatchObject({ classification: 'unknown', record: null });
-      expect(() => listLiveClaimActorReceiptsForEngineer(root, engineerId)).toThrow(EngineerPrincipalError);
-      expect(() => listLiveClaimActorReceiptsForEngineer(root, engineerId)).toThrow('Lease is unknown');
+      // The unavailable Lease state is named, so the operator repairs the
+      // Lease instead of the valid receipt store.
+      const refusal = (() => {
+        try { listLiveClaimActorReceiptsForEngineer(root, engineerId); return null; }
+        catch (error) { return error as EngineerPrincipalError; }
+      })();
+      expect(refusal).toBeInstanceOf(EngineerPrincipalError);
+      expect(refusal?.code).toBe('claim_actor_lease_unavailable');
+      expect(refusal?.message).toContain('Lease is unknown');
       // Another Engineer's receipts never read this Engineer's Lease state.
       expect(listLiveClaimActorReceiptsForEngineer(root, 'engineer:capability.workflow-engine.contract-assets')).toEqual([]);
     } finally {

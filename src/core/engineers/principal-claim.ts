@@ -90,7 +90,8 @@ export type EngineerPrincipalErrorCode =
   | 'engineer_principal_mismatch'
   | 'engineer_principal_store_corrupt'
   | 'claim_actor_receipt_invalid'
-  | 'claim_actor_receipt_conflict';
+  | 'claim_actor_receipt_conflict'
+  | 'claim_actor_lease_unavailable';
 
 export class EngineerPrincipalError extends Error {
   constructor(readonly code: EngineerPrincipalErrorCode, message: string, readonly cause?: unknown) {
