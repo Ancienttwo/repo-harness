@@ -1398,6 +1398,7 @@ function DetailPane({
   collaboration,
   revisionChangedFrom,
   evidenceGeneration,
+  fleetStaleError,
   readTaskContext,
   readTaskActivity,
   onClose,
@@ -1409,6 +1410,9 @@ function DetailPane({
   readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
   readonly evidenceGeneration: number;
+  /** Set while the Fleet read that produced `card` is stale; the full-screen
+   * pane hides the board's own banner, so the retained facts carry the mark. */
+  readonly fleetStaleError: OperatorApiErrorV1 | null;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
@@ -1496,6 +1500,12 @@ function DetailPane({
           </div>
         </div>
         <div className="detail-pane__body">
+          {fleetStaleError && (
+            <div className="operator-notice operator-notice--danger" role="alert">
+              <Icon name="alert" size={16} />
+              <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={fleetStaleError} t={t} /></span></div>
+            </div>
+          )}
           <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
           <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
           {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
@@ -1772,6 +1782,7 @@ export function OperatorApp({
             collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
             evidenceGeneration={collaborationRefreshGeneration}
+            fleetStaleError={state.kind === 'stale' ? state.error : null}
             readTaskContext={readTaskContext}
             readTaskActivity={readTaskActivity}
             onClose={closeSelection}

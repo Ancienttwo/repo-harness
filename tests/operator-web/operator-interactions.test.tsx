@@ -834,6 +834,24 @@ describe('operator web interactions', () => {
     expect(new URLSearchParams(window.location.search).get('task_revision')).toBeNull();
   });
 
+  test('the task pane marks retained Fleet facts as stale while the Fleet read fails and clears on recovery', async () => {
+    let healthy = true;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      fetchSnapshot={async () => { if (!healthy) throw new Error('fleet offline'); return stableSnapshot; }} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    const dialogStaleNotices = () => Array.from(document.querySelectorAll('[role="dialog"] [role="alert"]'))
+      .filter((node) => node.textContent?.includes('Showing the last successful snapshot'));
+    expect(dialogStaleNotices()).toHaveLength(0);
+    healthy = false;
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    expect(dialogStaleNotices()).toHaveLength(1);
+    healthy = true;
+    await act(async () => buttonWithText('Refresh').click());
+    expect(dialogStaleNotices()).toHaveLength(0);
+  });
+
   test('reveals a newly urgent first group while preserving an explicit collapse', async () => {
     const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
     const lowerPriority = {
