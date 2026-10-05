@@ -38,6 +38,8 @@ export interface SessionContextSection {
   readonly mandatory: boolean;
   readonly actionable: boolean;
   readonly reference?: string;
+  /** Runs only after the host output includes this section verbatim. */
+  readonly onDelivered?: () => void;
 }
 
 export interface SessionContextBudgetEvidence {

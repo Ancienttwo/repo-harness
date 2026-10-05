@@ -32,7 +32,7 @@ describe('hook runtime typed dispatch', () => {
         event: 'PostToolUse',
         routeId: 'bash',
         cwd: root,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }),
+        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
         env: env(root),
       });
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
@@ -40,6 +40,48 @@ describe('hook runtime typed dispatch', () => {
       expect(record.steps).toEqual([expect.objectContaining({ name: 'command-observed', execution: 'in_process', exit_code: 0 })]);
       expect(record.measurement).toMatchObject({ opaque_steps: [] });
       expect((record.measurement as { incomplete_metrics: string[] }).incomplete_metrics).toContain('files_read');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 30_000);
+
+  test('measures and captures Bash output from the Claude PostToolUse tool_response', () => {
+    const root = fixture();
+    try {
+      // Claude Code builds PostToolUse input as { tool_name, tool_input,
+      // tool_response, tool_use_id, duration_ms }; the Bash tool_response is
+      // { stdout, stderr, interrupted, isImage? }.
+      const stdout = `${Array.from({ length: 201 }, (_, index) => `line-${index}`).join('\n')}\n`;
+      const stderr = 'warning: slow test\n';
+      const hostEnv = env(root);
+      delete hostEnv.EXIT_CODE;
+      const result = runHook({
+        event: 'PostToolUse',
+        routeId: 'bash',
+        cwd: root,
+        input: JSON.stringify({
+          session_id: 'claude-session',
+          hook_event_name: 'PostToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'bun test', description: 'Run tests' },
+          tool_response: { stdout, stderr, interrupted: false, isImage: false },
+          tool_use_id: 'toolu_01',
+          duration_ms: 812,
+        }),
+        env: hostEnv,
+      });
+      expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
+      const record = JSON.parse(readFileSync(join(root, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as Record<string, unknown>;
+      const observed = `${stdout}${stderr}`;
+      expect(record).toMatchObject({
+        command: 'bun test',
+        exit_code: 0,
+        status: 'pass',
+        output_line_count: 202,
+        verbosity_class: 'long',
+        suggested_runner: 'raw',
+        raw_output_bytes: Buffer.byteLength(observed),
+      });
+      expect(typeof record.raw_output_path).toBe('string');
+      expect(readFileSync(join(root, record.raw_output_path as string), 'utf8')).toBe(observed);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);
 
@@ -111,7 +153,7 @@ describe('hook runtime typed dispatch', () => {
         event: 'PostToolUse',
         routeId: 'bash',
         cwd: root,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }),
+        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
         env: env(root),
       });
       const record = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim()) as Record<string, unknown>;
