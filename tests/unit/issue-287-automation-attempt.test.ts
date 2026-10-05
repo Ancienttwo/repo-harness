@@ -6,7 +6,7 @@ import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/
 import { readTaskAutomationAttemptCurrent, recordTaskAutomationAttemptOutcome, recordTaskAutomationAttemptStart } from '../../src/effects/engineers/automation-attempt-store';
 const D=(c:string)=>`sha256:${c.repeat(64)}`; const TASK='a'.repeat(64); const REV='b'.repeat(64);
 const policy:WorkPackageRetryPolicyV1={max_automated_attempts:2,retryable_failure_classes:['transient_failure'],backoff:{kind:'exponential',initial_seconds:10,maximum_seconds:60},attention_after_seconds:30,revision_reset:'reset_on_work_package_revision'};
-const identity={repository_id:'repo_0123456789abcdef',sprint_path:'plans/sprints/a.sprint.md',task_id:TASK,task_revision:REV,work_package_id:'work',work_package_revision:D('c'),engineer_id:'engineer:capability.runtime.test',binding_generation:1,claim_id:'11111111-1111-4111-8111-111111111111',lease_generation:1,controller_run_id:D('d'),budget_revision:D('e'),dispatch_id:D('f')} as const;
+const identity={repository_id:'repo_0123456789abcdef',sprint_path:'plans/sprints/a.sprint.md',task_id:TASK,task_revision:REV,work_package_id:'work',work_package_revision:D('c'),engineer_id:'engineer:capability.runtime.test',binding_generation:1,claim_id:'11111111-1111-4111-8111-111111111111',lease_generation:1,controller_run_id:'d'.repeat(64),budget_revision:'e'.repeat(64),dispatch_id:D('f')} as const;
 function root(){const value=mkdtempSync(join(tmpdir(),'attempt-'));execFileSync('git',['init','-q'],{cwd:value});return value;}
 describe('issue #287 automation attempt authority',()=>{
  test('persists one idempotent attempt and enforces backoff and exhaustion',()=>{const repo=root();try{

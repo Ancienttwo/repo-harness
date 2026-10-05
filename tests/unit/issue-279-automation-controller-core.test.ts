@@ -9,7 +9,7 @@ import {
 import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 
 const SHA = `sha256:${'a'.repeat(64)}`;
-const RUN_ID = `sha256:${'b'.repeat(64)}`;
+const RUN_ID = 'b'.repeat(64);
 
 function run() {
   return buildAutomationControllerRun({
@@ -23,7 +23,7 @@ function run() {
       engineer_contract_revision: SHA,
       authorization_revision: 7,
     },
-    budget_sha256: SHA,
+    budget_sha256: 'f'.repeat(64),
     policy: {
       maximum_steps_per_invocation: 8,
       maximum_duration_ms: 60_000,

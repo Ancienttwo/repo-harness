@@ -1,4 +1,3 @@
-import { canonicalMessageDigest } from '../../core/messages/mechanics';
 import { buildAutomationControllerRun, type AutomationControllerPolicyV1 } from '../../core/automation/controller';
 import { workEnvelopeSha256, type EngineerPrincipalV1 } from '../../core/engineers/principal-claim';
 import type { AutomationControllerCurrentV1, AutomationControllerOperation, AutomationControllerPrincipalV1, AutomationControllerStepReceiptV1 } from '../../core/automation/controller';
@@ -132,7 +131,8 @@ export function reconcileAutomationController(repoRoot: string, runId: string, i
   return Object.freeze({ run: status.run, current: next });
 }
 
-function evidence(runId: string, sha256: string) { return Object.freeze([{ ref: `controller-run:${runId}`, sha256 }]); }
+/** Budget evidence carries bare hex digests, so the controller event's `sha256:` digest is projected to its hex value. */
+function evidence(runId: string, eventSha256: string) { return Object.freeze([{ ref: `controller-run:${runId}`, sha256: eventSha256.slice('sha256:'.length) }]); }
 function receipt(operation: AutomationControllerOperation, outcome: string, extra: Partial<AutomationControllerStepReceiptV1> = {}): AutomationControllerStepReceiptV1 {
   return Object.freeze({ operation, outcome, work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [], ...extra });
 }
@@ -257,5 +257,3 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
   }
   return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
 }
-
-export function controllerRunId(input: { readonly repository_id: string; readonly engineer_id: string; readonly budget_sha256: string; readonly idempotency_key: string }): string { return canonicalMessageDigest(input); }

@@ -15,11 +15,11 @@ import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 
 const SHA = `sha256:${'a'.repeat(64)}`;
 function fixture(): string { const root = mkdtempSync(join(tmpdir(), 'controller-store-')); spawnSync('git', ['init', '-q'], { cwd: root }); return root; }
-function definition(runId = `sha256:${'b'.repeat(64)}`) {
+function definition(runId = 'b'.repeat(64)) {
   return buildAutomationControllerRun({
     run_id: runId, repository_id: 'repo_0123456789abcdef',
     principal: { authorization_id: 'authorization-1', engineer_id: 'engineer:capability.runtime-harness.automation', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1, engineer_contract_revision: SHA, authorization_revision: 1 },
-    budget_sha256: SHA,
+    budget_sha256: 'f'.repeat(64),
     policy: { maximum_steps_per_invocation: 4, maximum_duration_ms: 10_000, maximum_transient_retries: 2, initial_backoff_ms: 100, maximum_backoff_ms: 1_000, lease_liveness: buildLeaseLivenessPolicy({ renewal_interval_ms: 1_000, maximum_ttl_ms: 10_000, renewal_actor_kind: 'controller', required_evidence_sources: ['controller'], unproven_behavior: 'require_attention' }) },
     protected_paths: ['plans', 'tasks'],
     created_at: '2026-09-04T00:00:00.000Z',
@@ -34,7 +34,7 @@ describe('issue #279 automation controller store', () => {
       const first = startAutomationControllerRun({ repo_root: root, run: definition(), idempotency_key: 'start-1', observed_at: '2026-09-04T00:00:00.000Z' });
       const replay = startAutomationControllerRun({ repo_root: root, run: definition(), idempotency_key: 'start-1', observed_at: '2026-09-04T00:00:00.000Z' });
       expect(replay.current.current_sha256).toBe(first.current.current_sha256);
-      expect(() => startAutomationControllerRun({ repo_root: root, run: definition(`sha256:${'c'.repeat(64)}`), idempotency_key: 'start-2', observed_at: '2026-09-04T00:00:01.000Z' })).toThrow(AutomationControllerStoreError);
+      expect(() => startAutomationControllerRun({ repo_root: root, run: definition('c'.repeat(64)), idempotency_key: 'start-2', observed_at: '2026-09-04T00:00:01.000Z' })).toThrow(AutomationControllerStoreError);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -42,7 +42,7 @@ describe('issue #279 automation controller store', () => {
     const root = fixture();
     try {
       const modulePath = join(import.meta.dir, '../../src/effects/automation/controller-store.ts');
-      const inputPaths = [definition(), definition(`sha256:${'c'.repeat(64)}`)].map((run, index) => {
+      const inputPaths = [definition(), definition('c'.repeat(64))].map((run, index) => {
         const path = join(root, `input-${index}.json`); writeFileSync(path, JSON.stringify({ repo_root: root, run, idempotency_key: `start-${index}`, observed_at: '2026-09-04T00:00:00.000Z' })); return path;
       });
       const script = `import {readFileSync} from 'fs'; import {startAutomationControllerRun} from ${JSON.stringify(modulePath)}; try { startAutomationControllerRun(JSON.parse(readFileSync(process.argv[1],'utf8'))); process.stdout.write('won'); } catch (e) { process.stdout.write('lost'); }`;

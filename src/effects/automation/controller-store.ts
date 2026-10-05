@@ -22,7 +22,7 @@ import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 const ROOT = 'repo-harness/automation-controllers/v1';
-const RUN_ID = /^sha256:[0-9a-f]{64}$/u;
+const RUN_ID = /^[0-9a-f]{64}$/u;
 
 export class AutomationControllerStoreError extends Error {
   constructor(readonly code: 'automation_controller_not_found' | 'automation_controller_conflict' | 'automation_controller_unsafe_path' | 'automation_controller_persistence_failed', message: string, readonly cause?: unknown) {
@@ -35,7 +35,7 @@ function safeRunId(value: string): string { if (!RUN_ID.test(value)) fail('autom
 function fileKey(value: string): string { return createHash('sha256').update(value, 'utf8').digest('hex'); }
 function shaName(value: string): string { if (!/^sha256:[0-9a-f]{64}$/u.test(value)) fail('automation_controller_unsafe_path', 'digest is invalid'); return value.slice(7); }
 function paths(repoRoot: string, runId: string) {
-  const common = resolveGitCommonDirectory(repoRoot); const root = join(common, ROOT); const name = safeRunId(runId).slice(7); const run = join(root, 'runs', name);
+  const common = resolveGitCommonDirectory(repoRoot); const root = join(common, ROOT); const name = safeRunId(runId); const run = join(root, 'runs', name);
   return { common, root, run, definition: join(run, 'run.json'), current: join(run, 'current.json'), lock: `${ROOT}/locks/runs/${name}.lock` };
 }
 function ensure(path: string): void { mkdirSync(path, { recursive: true, mode: 0o700 }); const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) fail('automation_controller_unsafe_path', `unsafe controller directory: ${path}`); }
@@ -149,5 +149,5 @@ export function readAutomationControllerHeadEvent(repoRootInput: string, runId: 
 export function listAutomationControllerRuns(repoRootInput: string): readonly ReturnType<typeof readAutomationControllerStatus>[] {
   const repoRoot = resolve(repoRootInput); const root = join(resolveGitCommonDirectory(repoRoot), ROOT, 'runs'); if (!existsSync(root)) return Object.freeze([]);
   const entries = readdirSync(root, { withFileTypes: true }); if (entries.some((entry) => !entry.isDirectory() || !/^[0-9a-f]{64}$/u.test(entry.name))) fail('automation_controller_unsafe_path', 'controller run store contains an unexpected entry');
-  return Object.freeze(entries.map((entry) => readAutomationControllerStatus(repoRoot, `sha256:${entry.name}`)).sort((left, right) => left.run.created_at.localeCompare(right.run.created_at) || left.run.run_id.localeCompare(right.run.run_id)));
+  return Object.freeze(entries.map((entry) => readAutomationControllerStatus(repoRoot, entry.name)).sort((left, right) => left.run.created_at.localeCompare(right.run.created_at) || left.run.run_id.localeCompare(right.run.run_id)));
 }
