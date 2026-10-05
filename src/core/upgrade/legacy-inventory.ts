@@ -353,7 +353,7 @@ function scanInstalledSkills(options: LegacyInventoryOptions, actions: readonly 
       }, {});
       const item = refreshItem(options, 'global', path, sourcePath,
         { id: 'stale-installed-skills', historicalFingerprints }, contractPath, manifest, 'skill',
-        pkg.kind === 'facade' ? 'command-facade' : 'canonical-skill');
+        pkg.kind === 'router' ? 'canonical-skill' : 'command-facade');
       if (item && item.reason !== 'Installed copy already matches the current package.') add(item);
     }
   }
