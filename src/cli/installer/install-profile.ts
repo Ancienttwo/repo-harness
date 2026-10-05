@@ -261,8 +261,32 @@ function adapterHasRequiredProjection(path: string, host: HookHost, profile: Ins
   }
 }
 
-/** Hash one selected tree. No excludes means the complete ownership proof. */
-export function hashManagedTree(root: string, options: { readonly excludes?: readonly string[] } = {}): string {
+export interface ManagedTreeOptions {
+  readonly excludes?: readonly string[];
+  readonly includes?: readonly string[];
+}
+
+/** The contract owns the source projection. Target ownership hashes stay complete. */
+export function installedCopyTreeOptions(
+  surface: 'canonical-skill' | 'command-facade',
+  contract: { readonly installedCopyExcludes?: unknown; readonly installedCopyIncludes?: unknown },
+): ManagedTreeOptions {
+  const excludes = contract.installedCopyExcludes;
+  if (!Array.isArray(excludes) || !excludes.every((value) => typeof value === 'string' && !value.includes('\n'))) {
+    throw new Error('installed copy exclusions are missing or invalid');
+  }
+  if (surface === 'command-facade') return { excludes };
+  const includes = contract.installedCopyIncludes;
+  if (!Array.isArray(includes) || includes.length === 0 || !includes.every((value) =>
+    typeof value === 'string' && value.length > 0 && !value.includes('\\') && !value.includes('\n')
+    && value.replace(/\/$/, '').split('/').every((part: string) => part !== '' && part !== '.' && part !== '..'))) {
+    throw new Error('installed copy includes are missing or invalid');
+  }
+  return { excludes, includes };
+}
+
+/** Both source hashes and rsync consume these exact files and links. */
+export function managedTreeEntries(root: string, options: ManagedTreeOptions = {}): Array<{ path: string; type: 'file' | 'symlink' }> {
   const patterns = (options.excludes ?? []).map((pattern) => ({
     directory: pattern.endsWith('/'),
     basename: !pattern.replace(/\/$/, '').includes('/'),
@@ -274,7 +298,12 @@ export function hashManagedTree(root: string, options: { readonly excludes?: rea
       if (entry.name === OWNER_MARKER) continue;
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (patterns.some((pattern) => (!pattern.directory || entry.isDirectory())
-        && pattern.glob.match(pattern.basename ? entry.name : relative))) continue;
+        && pattern.glob.match(pattern.basename ? entry.name : relative))
+        // A declared runtime descendant keeps its excluded parent traversable.
+        && !(entry.isDirectory() && options.includes?.some((include) => include.startsWith(`${relative}/`)))) continue;
+      if (options.includes && !options.includes.some((include) => include.endsWith('/')
+        ? relative.startsWith(include) || `${relative}/` === include || include.startsWith(`${relative}/`)
+        : relative === include || include.startsWith(`${relative}/`))) continue;
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute, relative);
       else if (entry.isFile()) entries.push({ path: relative, type: 'file' });
@@ -284,6 +313,12 @@ export function hashManagedTree(root: string, options: { readonly excludes?: rea
   };
   visit(root, '');
   entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  return entries;
+}
+
+/** Hash one selected tree. No filters means the complete ownership proof. */
+export function hashManagedTree(root: string, options: ManagedTreeOptions = {}): string {
+  const entries = managedTreeEntries(root, options);
   const hash = createHash('sha256');
   for (const entry of entries) {
     const absolute = join(root, entry.path);

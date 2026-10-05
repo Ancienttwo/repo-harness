@@ -37,6 +37,8 @@ export interface UpgradeOptions {
 export interface UpgradeDependencies {
   /** Runs after backup and before the final ownership check. */
   readonly beforeRemove?: (item: LeftoverItem) => void;
+  /** Runs after the real copy, before staging and source fences. */
+  readonly afterStage?: (item: LeftoverItem, staging: string) => void;
 }
 
 export interface UpgradeResult {
@@ -91,7 +93,7 @@ function sourceUnchanged(item: LeftoverItem, options: PlannerOptions): boolean {
   return item.sourcePath !== undefined && item.expectedSourceHash !== undefined
     && (resolve(item.sourcePath) === resolve(options.packageRoot)
       || isLegacyPathSafe(options.packageRoot, item.sourcePath, false))
-    && hashUpgradeSource(item.sourcePath, options.packageRoot) === item.expectedSourceHash;
+    && hashUpgradeSource(item.sourcePath, options.packageRoot, item.sourceSurface) === item.expectedSourceHash;
 }
 
 function refreshDirectory(
@@ -99,6 +101,7 @@ function refreshDirectory(
   options: PlannerOptions,
   env: NodeJS.ProcessEnv,
   onMutation: () => void,
+  dependencies: UpgradeDependencies,
 ): boolean {
   const stagingRoot = mkdtempSync(join(dirname(item.path), '.repo-harness-upgrade-'));
   const staging = join(stagingRoot, 'replacement');
@@ -108,6 +111,7 @@ function refreshDirectory(
       '--stage-owned-copy', item.sourcePath!, staging, item.sourceSurface!], {
       env: { ...env, AGENTIC_DEV_SOURCE_ROOT: options.packageRoot }, stdio: ['ignore', 'pipe', 'pipe'],
     });
+    dependencies.afterStage?.(item, staging);
     if (legacyPathSnapshot(staging)?.contentHash !== item.expectedSourceHash
       || !sourceUnchanged(item, options) || !unchanged(item, options)
       || !planLegacyLeftovers(options).items.some((current) => itemKey(current) === itemKey(item)
@@ -253,7 +257,7 @@ function applyLocked(
           for (const item of targetItems) items[items.indexOf(item)] = { ...item, action: 'report', reason: 'Refresh source changed or is unsafe.' };
           continue;
         }
-        directoryRefresh = legacyPathSnapshot(targetItems[0]!.sourcePath!)?.kind === 'directory';
+        directoryRefresh = lstatSync(targetItems[0]!.sourcePath!).isDirectory();
         if (!directoryRefresh) nextContent = readFileSync(targetItems[0]!.sourcePath!, 'utf-8');
       }
       if (targetItems[0]!.surface === 'hook-entry') {
@@ -274,7 +278,7 @@ function applyLocked(
       }
       if (directoryRefresh) {
         if (!targetItems[0]!.sourceSurface
-          || !refreshDirectory(targetItems[0]!, options, env, () => mutatedPaths.add(path))) {
+          || !refreshDirectory(targetItems[0]!, options, env, () => mutatedPaths.add(path), dependencies)) {
           keptPaths.push(path);
           for (const item of targetItems) items[items.indexOf(item)] = { ...item, action: 'report', reason: 'Source or target changed during staging.' };
           continue;

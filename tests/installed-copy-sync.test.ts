@@ -758,3 +758,138 @@ describe('minimal provider ownership boundary', () => {
     }, 30000);
   }
 });
+
+describe('installed copy file projection', () => {
+  test('installer and upgrade staging copy exactly the shared canonical and facade file lists', async () => {
+    const { hashManagedTree, installedCopyTreeOptions, managedTreeEntries } = await import('../src/cli/installer/install-profile');
+    const { hashUpgradeSource } = await import('../src/core/upgrade/legacy-inventory');
+    const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
+    const shippedFiles: string[] = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).files;
+    expect(contract.installedCopyIncludes.filter((path: string) => path.startsWith('dist/')).sort())
+      .toEqual(shippedFiles.filter(path => path.startsWith('dist/')).sort());
+    const tmp = mkdtempSync('/tmp/rh-copy-projection-');
+    try {
+      const source = join(tmp, 'source');
+      seedSkillSurfaceRuntime(source);
+      const facade = join(source, 'assets/skill-commands/repo-harness-check');
+      const put = (path: string, bytes: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, bytes); };
+      put(join(source, 'SKILL.md'), 'router\n');
+      put(join(source, 'LICENSE'), readFileSync(join(ROOT, 'LICENSE'), 'utf8'));
+      put(join(source, 'references/space and\nnewline.md'), 'reference\n');
+      symlinkSync('space and\nnewline.md', join(source, 'references/link.md'));
+      put(join(facade, 'SKILL.md'), 'facade\n');
+      put(join(facade, 'references/guide.md'), 'guide\n');
+      for (const path of ['dist/hook-entry.js', 'dist/oar-review-host.js', 'dist/operator-ui/index.html']) {
+        put(join(source, path), `shipped runtime ${path}\n`);
+      }
+      const residues = ['.ai/harness/state/effective.json', '.ai/harness/security/scan.json',
+        '.ai/harness/evidence/events/log.jsonl', '.ai/harness/delegation/active.json',
+        'dist/unshipped-build.js', 'plans/untracked.md', 'assets/node_modules/private.txt',
+        'assets/.ai/harness/state/effective.json', 'assets/.ai/harness/security/scan.json',
+        'assets/.ai/harness/evidence/events/log.jsonl', 'assets/.ai/harness/delegation/active.json',
+        'assets/.ai/harness/backups/snapshot.json'];
+      for (const path of residues) put(join(source, path), 'private residue\n');
+      put(join(facade, 'references/retired.md'), 'old shipped guide\n');
+      const env = { ...process.env, HOME: tmp, BUN_INSTALL: join(tmp, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
+        CODEX_SKILLS_ROOT: join(tmp, 'codex'), CLAUDE_SKILLS_ROOT: join(tmp, 'claude'),
+        AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', REPO_HARNESS_INSTALL_PROFILE: 'minimal' };
+      const installed = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], { env, encoding: 'utf8' });
+      expect(installed.status, installed.stdout + installed.stderr).toBe(0);
+      rmSync(join(facade, 'references/retired.md'));
+      const refreshed = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], { env, encoding: 'utf8' });
+      expect(refreshed.status, refreshed.stdout + refreshed.stderr).toBe(0);
+      for (const host of ['codex', 'claude']) {
+        expect(existsSync(join(tmp, host, 'repo-harness-check/references/retired.md'))).toBe(false);
+        expect(existsSync(join(tmp, host, 'repo-harness/assets/skill-commands/repo-harness-check/references/retired.md'))).toBe(false);
+      }
+      for (const [surface, root, name] of [
+        ['canonical-skill', source, 'repo-harness'], ['command-facade', facade, 'repo-harness-check'],
+      ] as const) {
+        const expected = managedTreeEntries(root, installedCopyTreeOptions(surface, contract));
+        expect(expected.length).toBeGreaterThan(0);
+        const staging = join(tmp, `staged-${name}`);
+        const staged = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh'), '--stage-owned-copy', root, staging, surface], { env, encoding: 'utf8' });
+        expect(staged.status, staged.stdout + staged.stderr).toBe(0);
+        for (const copy of [staging, join(tmp, 'codex', name), join(tmp, 'claude', name)]) {
+          expect(managedTreeEntries(copy)).toEqual(expected);
+          expect(hashUpgradeSource(root, source, surface)).toBe(hashManagedTree(copy));
+          for (const entry of expected) {
+            if (entry.type === 'symlink') expect(readlinkSync(join(copy, entry.path))).toBe(readlinkSync(join(root, entry.path)));
+            else expect(readFileSync(join(copy, entry.path))).toEqual(readFileSync(join(root, entry.path)));
+          }
+        }
+      }
+      for (const path of residues) expect(existsSync(join(tmp, 'codex/repo-harness', path))).toBe(false);
+      expect(readFileSync(join(tmp, 'codex/repo-harness/LICENSE'))).toEqual(readFileSync(join(ROOT, 'LICENSE')));
+      expect(existsSync(join(tmp, 'codex/repo-harness/references/link.md'))).toBe(true);
+      for (const path of ['dist/hook-entry.js', 'dist/oar-review-host.js', 'dist/operator-ui/index.html']) {
+        expect(existsSync(join(tmp, 'codex/repo-harness', path))).toBe(true);
+      }
+      expect(() => installedCopyTreeOptions('canonical-skill', { installedCopyExcludes: [] })).toThrow('includes');
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
+  }, 60000);
+});
+
+test('a missing canonical projection fails before changing existing owned copies or links', async () => {
+  const { hashManagedTree } = await import('../src/cli/installer/install-profile');
+  const tmp = mkdtempSync('/tmp/rh-copy-invalid-contract-');
+  try {
+    const source = join(tmp, 'source');
+    seedSkillSurfaceRuntime(source);
+    const writer = join(source, 'scripts/sync-codex-installed-copies.sh');
+    cpSync(join(ROOT, 'scripts/sync-codex-installed-copies.sh'), writer);
+    const contractPath = join(source, 'assets/workflow-contract.v1.json');
+    cpSync(join(ROOT, 'assets/workflow-contract.v1.json'), contractPath);
+    writeFileSync(join(source, 'SKILL.md'), 'router\n');
+    const facade = join(source, 'assets/skill-commands/repo-harness-check');
+    mkdirSync(facade, { recursive: true });
+    writeFileSync(join(facade, 'SKILL.md'), 'facade\n');
+    const env = { ...process.env, HOME: tmp, BUN_INSTALL: join(tmp, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
+      CODEX_SKILLS_ROOT: join(tmp, 'codex'), CLAUDE_SKILLS_ROOT: join(tmp, 'claude'), REPO_HARNESS_INSTALL_PROFILE: 'minimal' };
+    const installed = spawnSync('bash', [writer], { env: { ...env, AGENTIC_DEV_LINK_INSTALLED_COPIES: '0' }, encoding: 'utf8' });
+    expect(installed.status, installed.stdout + installed.stderr).toBe(0);
+    const targets = ['codex/repo-harness', 'claude/repo-harness', 'codex/repo-harness-check', 'claude/repo-harness-check'].map(path => join(tmp, path));
+    const before = targets.map(path => hashManagedTree(path));
+    const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
+    delete contract.installedCopyIncludes;
+    writeFileSync(contractPath, JSON.stringify(contract));
+    for (const mode of ['0', '1']) {
+      const rejected = spawnSync('bash', [writer], { env: { ...env, AGENTIC_DEV_LINK_INSTALLED_COPIES: mode }, encoding: 'utf8' });
+      expect(rejected.status).toBe(1);
+      expect(rejected.stderr).toContain('installed copy includes are missing or invalid');
+      expect(targets.map(path => hashManagedTree(path))).toEqual(before);
+      for (const path of targets) expect(lstatSync(path).isDirectory()).toBe(true);
+    }
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}, 60000);
+
+test('canonical projection keeps every tracked include file and every existing declared package file', async () => {
+  const { managedTreeEntries, installedCopyTreeOptions } = await import('../src/cli/installer/install-profile');
+  const { readdirSync } = await import('fs');
+  const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
+  const includes: string[] = contract.installedCopyIncludes;
+  const packageFiles: string[] = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).files;
+  const projected = new Set(managedTreeEntries(ROOT, installedCopyTreeOptions('canonical-skill', contract)).map(entry => entry.path));
+  const tracked = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' });
+  expect(tracked.status, tracked.stderr).toBe(0);
+  const trackedIncludes = tracked.stdout.split('\0').filter(file => file && includes.some(root =>
+    root.endsWith('/') ? file.startsWith(root) : file === root));
+  expect(trackedIncludes.length).toBeGreaterThan(0);
+  expect(trackedIncludes.filter(file => !projected.has(file))).toEqual([]);
+
+  const existingPackageFiles: string[] = [];
+  const visit = (file: string): void => {
+    const absolute = join(ROOT, file);
+    const entry = lstatSync(absolute);
+    if (entry.isDirectory()) {
+      for (const name of readdirSync(absolute)) visit(`${file.replace(/\/$/, '')}/${name}`);
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      existingPackageFiles.push(file);
+    }
+  };
+  for (const file of packageFiles) {
+    if (existsSync(join(ROOT, file))) visit(file);
+  }
+  expect(existingPackageFiles.length).toBeGreaterThan(0);
+  expect(existingPackageFiles.filter(file => !projected.has(file))).toEqual([]);
+});

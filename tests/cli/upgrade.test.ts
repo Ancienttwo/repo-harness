@@ -552,3 +552,114 @@ describe('legacy workflow-state upgrade report', () => {
     expect(readFileSync(join(opts.home, 'workflow-state.sh'), 'utf8')).toBe('# Library outside the repo\n');
   }, false));
 });
+
+// Use the real v0.10 copy writer to establish ownership. The current writer
+// then stages a real package projection with active worktree residues.
+function projectionSandbox(run: (opts: { cwd: string; home: string; packageRoot: string }, router: string) => void): void {
+  sandbox((opts) => {
+    const oldSource = join(opts.home, 'old-source');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source/SKILL.md', join(oldSource, 'SKILL.md'));
+    const oldInstaller = join(opts.home, 'old-installer');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source', oldInstaller);
+    const installed = spawnSync('bash', [join(oldInstaller, 'scripts/sync-codex-installed-copies.sh')], {
+      env: { ...process.env, HOME: opts.home, AGENTIC_DEV_SOURCE_ROOT: oldSource,
+        CODEX_SKILLS_ROOT: join(opts.home, '.codex/skills'), CLAUDE_SKILLS_ROOT: '',
+        REPO_HARNESS_INSTALL_PROFILE: 'strict', AGENTIC_DEV_LINK_INSTALLED_COPIES: '0' }, encoding: 'utf8',
+    });
+    expect(installed.status, installed.stderr).toBe(0);
+    const packageRoot = join(opts.home, 'active-source');
+    mkdirSync(packageRoot);
+    for (const path of ['src', 'scripts', 'assets', 'references', 'SKILL.md', 'package.json']) {
+      cpSync(join(ROOT, path), join(packageRoot, path), { recursive: true, verbatimSymlinks: true });
+    }
+    put(join(packageRoot, '.ai/harness/state/effective.json'), '{"revision":1}\n');
+    put(join(packageRoot, 'dist/oar-review-host.js'), 'shipped runtime bundle\n');
+    put(join(packageRoot, 'dist/unshipped-build.js'), 'build residue\n');
+    put(join(packageRoot, 'plans/untracked.md'), 'untracked plan\n');
+    run({ ...opts, packageRoot }, join(opts.home, '.codex/skills/repo-harness'));
+  }, false);
+}
+
+describe('upgrade copy projection fences', () => {
+  test('runtime writes and new untracked plans during staging do not abort a real router refresh', () => projectionSandbox((opts, router) => {
+    let staged = false;
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+      afterStage(item) {
+        if (item.path !== router) return;
+        staged = true;
+        put(join(opts.packageRoot, '.ai/harness/state/effective.json'), '{"revision":2}\n');
+        put(join(opts.packageRoot, 'plans/new-untracked.md'), 'new concurrent plan\n');
+        put(join(opts.packageRoot, 'dist/unshipped-build.js'), 'new build residue\n');
+      },
+    });
+    expect(staged).toBe(true);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.refreshedPaths, JSON.stringify(result.items)).toContain(router);
+    expect(readFileSync(join(router, 'SKILL.md'))).toEqual(readFileSync(join(opts.packageRoot, 'SKILL.md')));
+    for (const path of ['.ai/harness/state/effective.json', 'plans/untracked.md', 'plans/new-untracked.md', 'dist/unshipped-build.js']) {
+      expect(existsSync(join(router, path))).toBe(false);
+    }
+    expect(runUpgrade({ ...opts, scope: 'global' }).items.some(item => item.path === router)).toBe(false);
+  }));
+
+  for (const projected of ['SKILL.md', 'dist/oar-review-host.js']) test(`a projected ${projected} edit during staging aborts and preserves the installed bytes`, () => projectionSandbox((opts, router) => {
+    const before = tree(router);
+    let staged = false;
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+      afterStage(item) {
+        if (item.path !== router) return;
+        staged = true;
+        put(join(opts.packageRoot, projected), 'concurrent projected file edit\n');
+      },
+    });
+    expect(staged).toBe(true);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.refreshedPaths).not.toContain(router);
+    expect(result.items.find(item => item.path === router)).toEqual(expect.objectContaining({
+      action: 'report', reason: 'Source or target changed during staging.',
+    }));
+    expect(tree(router)).toEqual(before);
+  }));
+});
+
+test('a non-root provider uses its declared surface for hashing and real staging', async () => {
+  const { hashUpgradeSource } = await import('../../src/core/upgrade/legacy-inventory');
+  projectionSandbox((opts) => {
+    seed('upgrade-v0.19.5-home', opts.home);
+    const provider = join(opts.home, '.codex/skills/repo-harness-cross-review');
+    const source = join(opts.packageRoot, 'assets/skills/repo-harness-cross-review');
+    put(join(source, 'examples/outside-projection.md'), 'source example outside canonical includes\n');
+    const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === provider);
+    expect(planned?.action).toBe('refresh');
+    expect(planned?.sourcePath).toBe(source);
+    expect(planned?.sourceSurface).toBe('canonical-skill');
+    expect(hashUpgradeSource(source, opts.packageRoot, 'canonical-skill'))
+      .not.toBe(hashUpgradeSource(source, opts.packageRoot, 'command-facade'));
+    let staged = false;
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+      afterStage(item, staging) {
+        if (item.path !== provider) return;
+        staged = true;
+        expect(item.sourceSurface).toBe(planned?.sourceSurface);
+        expect(hashUpgradeSource(source, opts.packageRoot, item.sourceSurface)).toBe(hashManagedTree(staging));
+        expect(planned?.expectedSourceHash).toBe(hashManagedTree(staging));
+        put(join(source, 'examples/outside-projection.md'), 'concurrent non-projected example edit\n');
+      },
+    });
+    expect(staged).toBe(true);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.refreshedPaths, JSON.stringify(result.items)).toContain(provider);
+    expect(existsSync(join(provider, 'examples/outside-projection.md'))).toBe(false);
+    expect(readFileSync(join(provider, 'SKILL.md'))).toEqual(readFileSync(join(source, 'SKILL.md')));
+    expect(runUpgrade({ ...opts, scope: 'global' }).items.some(item => item.path === provider)).toBe(false);
+  });
+});
+
+test('directory source hashing rejects missing and invalid surfaces while file hashing needs no surface', async () => {
+  const { hashUpgradeSource, legacyPathSnapshot } = await import('../../src/core/upgrade/legacy-inventory');
+  expect(() => hashUpgradeSource(ROOT, ROOT, undefined)).toThrow('source surface is missing or invalid');
+  expect(() => Reflect.apply(hashUpgradeSource, undefined, [ROOT, ROOT, 'unknown-surface']))
+    .toThrow('source surface is missing or invalid');
+  const file = join(ROOT, 'SKILL.md');
+  expect(hashUpgradeSource(file, ROOT, undefined)).toBe(legacyPathSnapshot(file)?.contentHash ?? null);
+});

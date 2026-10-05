@@ -530,6 +530,20 @@ describe('doctor skill projection', () => {
     expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
   }));
 
+  test('an old global contract without the canonical include set gives an actionable warning', () => withTempHome(home => {
+    const f = seed(home);
+    const contractPath = path.join(home, '.bun/install/global/node_modules/repo-harness/assets/workflow-contract.v1.json');
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    delete contract.installedCopyIncludes;
+    fs.writeFileSync(contractPath, JSON.stringify(contract));
+    const before = fs.readFileSync(contractPath, 'utf8');
+    const result = checkSkillProjection('both', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain('installedCopyIncludes');
+    expect(result.detail).toContain('run: repo-harness update; then run: repo-harness upgrade');
+    expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
+  }));
+
   test('reports invalid path type without replacing the file', () => withTempHome(home => {
     const f = seed(home);
     fs.writeFileSync(f.destination, 'user file\n');

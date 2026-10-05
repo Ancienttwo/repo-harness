@@ -88,17 +88,13 @@ if ! FACADE_SOURCES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facade
   echo "[sync-installed] skill-surface-select facade-sources failed" >&2
   exit 1
 fi
-# The workflow contract owns filters for both read-only projection hashes and
-# the existing rsync writer. Resolve it beside this script, not injected content.
+# Resolve copy authority beside the writer, not from an injected source tree.
 RUNTIME_ROOT="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
-if ! COPY_EXCLUDES="$(bun -e 'const c = await Bun.file(process.argv[1]).json(); if (!Array.isArray(c.installedCopyExcludes) || !c.installedCopyExcludes.every((p) => typeof p === "string" && !p.includes("\n"))) throw new Error("invalid installed copy exclusions"); process.stdout.write(c.installedCopyExcludes.join("\n"));' "$RUNTIME_ROOT/assets/workflow-contract.v1.json")"; then
-  echo "[sync-installed] installed copy exclusions are invalid." >&2
+if ! bun -e 'const { installedCopyTreeOptions } = await import(process.argv[1]); installedCopyTreeOptions("canonical-skill", await Bun.file(process.argv[2]).json());' \
+  "$RUNTIME_ROOT/src/cli/installer/install-profile.ts" "$RUNTIME_ROOT/assets/workflow-contract.v1.json"; then
+  echo "[sync-installed] installed copy projection is invalid." >&2
   exit 1
 fi
-common_excludes=()
-while IFS= read -r copy_exclude; do
-  [[ -n "$copy_exclude" ]] && common_excludes+=("--exclude=$copy_exclude")
-done <<< "$COPY_EXCLUDES"
 
 require_rsync_for_copy_mode() {
   if command -v rsync >/dev/null 2>&1; then
@@ -217,16 +213,22 @@ remove_managed_dest() {
   fi
 }
 
-sync_copy() {
+sync_copy() (
   local dest="$1"
   local source="${2:-$SOURCE_ROOT}"
   local surface="${3:-canonical-skill}"
+  local copy_list
   require_rsync_for_copy_mode
+  copy_list="$(mktemp /tmp/repo-harness-copy-files.XXXXXX)"
+  trap 'rm -f "$copy_list"' EXIT
+  # Resolve and validate the file list before replacing an owned destination.
+  bun "$RUNTIME_ROOT/scripts/skill-surface-select.ts" installed-copy-files "$source" "$surface" \
+    "$RUNTIME_ROOT/assets/workflow-contract.v1.json" > "$copy_list"
   remove_managed_dest "$dest" "$source" "$surface"
   mkdir -p "$dest"
-  rsync -a --delete "${common_excludes[@]}" "$source/" "$dest/"
+  rsync -a --from0 --files-from="$copy_list" "$source/" "$dest/"
   write_owner_marker "$dest" "$surface"
-}
+)
 
 # Internal upgrade staging uses the same projection and marker writer. It
 # accepts only a new destination. The upgrade transaction owns replacement.
@@ -382,14 +384,11 @@ sync_command_facades() {
     facade_src="$SOURCE_ROOT/$source"
     [[ -d "$facade_src" && -f "$facade_src/SKILL.md" ]] || continue
     dest="$root/$name"
-    remove_managed_dest "$dest" "$facade_src" command-facade
     if [[ "$mode" == "link" ]]; then
+      remove_managed_dest "$dest" "$facade_src" command-facade
       create_symlink_or_explain "$facade_src" "$dest"
     else
-      require_rsync_for_copy_mode
-      mkdir -p "$dest"
-      rsync -a --delete "${common_excludes[@]}" "$facade_src/" "$dest/"
-      write_owner_marker "$dest" command-facade
+      sync_copy "$dest" "$facade_src" command-facade
     fi
     synced=$((synced + 1))
   done <<< "$FACADE_SOURCES"

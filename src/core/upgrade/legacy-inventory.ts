@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import { hashManagedTree } from '../../cli/installer/install-profile';
+import { hashManagedTree, installedCopyTreeOptions } from '../../cli/installer/install-profile';
 import { isRepoHarnessLegacyTypedHookCommand, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
 import { loadWorkflowContractAsset } from '../adoption/workflow-contract-asset';
@@ -49,7 +49,7 @@ interface RetirementAction {
   readonly commands?: readonly string[];
   readonly sourcePaths?: Readonly<Record<string, string>>;
 }
-interface Contract { readonly installedCopyExcludes?: readonly string[]; readonly helpers?: { readonly scripts?: readonly string[] }; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
+interface Contract { readonly installedCopyIncludes?: readonly string[]; readonly installedCopyExcludes?: readonly string[]; readonly helpers?: { readonly scripts?: readonly string[] }; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
 interface ManifestSurface {
   readonly authority?: string;
   readonly removal?: string;
@@ -283,16 +283,19 @@ function classify(
 }
 
 /** Revalidate a refresh source against the same copy projection used by staging. */
-export function hashUpgradeSource(sourcePath: string, packageRoot: string): string | null {
+export function hashUpgradeSource(
+  sourcePath: string, packageRoot: string, sourceSurface: LeftoverItem['sourceSurface'],
+): string | null {
   const root = resolve(packageRoot);
   const path = resolve(sourcePath);
   if (path === root ? !stat(root)?.isDirectory() : !isLegacyPathSafe(root, path, false)) return null;
   const entry = stat(path);
   if (entry?.isFile()) return hash(readFileSync(path));
   if (entry?.isDirectory()) {
-    const excludes = loadWorkflowContractAsset<Contract>().installedCopyExcludes;
-    if (!excludes || !excludes.every((pattern) => typeof pattern === 'string')) throw new Error('installed copy exclusions are missing from the workflow contract');
-    return hashManagedTree(path, { excludes });
+    if (sourceSurface !== 'canonical-skill' && sourceSurface !== 'command-facade') {
+      throw new Error('Directory refresh source surface is missing or invalid.');
+    }
+    return hashManagedTree(path, installedCopyTreeOptions(sourceSurface, loadWorkflowContractAsset<Contract>()));
   }
   return null;
 }
@@ -309,7 +312,7 @@ function refreshItem(
   if (!isLegacyPathSafe(root, path)) return { ...base, ownership: 'unowned', proof: null, action: 'report', reason: 'Copy path has a protected symlink or non-directory ancestor.' };
   const snapshot = legacyPathSnapshot(path);
   if (!snapshot) return null;
-  const expectedSourceHash = hashUpgradeSource(sourcePath, options.packageRoot);
+  const expectedSourceHash = hashUpgradeSource(sourcePath, options.packageRoot, sourceSurface);
   if (expectedSourceHash === null || (surface === 'skill' && !stat(sourcePath)?.isDirectory())) return { ...base, ownership: 'unowned', proof: null, action: 'report', reason: 'Package source has a protected symlink or is missing.' };
   // A current source link needs no refresh. No link target is opened here.
   if (snapshot.kind === 'symlink' && resolve(dirname(path), snapshot.symlinkTarget!) === resolve(sourcePath)) return null;
