@@ -7,8 +7,8 @@ All notable changes to this skill are documented here.
 This preparation covers `v0.19.5..ffe70133`.
 Additional merged changes through `363009be` are included below.
 
-The earlier `281e6555` commit prepared this version but did not publish it.
-No `v0.20.0` tag exists. The owner keeps the tag and publication decision.
+The earlier `281e6555` commit was a preparation draft; the release was cut from `0482c621`.
+`v0.20.0` is tagged on `0482c621` and was published to npm on 2026-10-05.
 
 ### Added
 
