@@ -632,7 +632,7 @@ test('a non-root provider uses its declared surface for hashing and real staging
     const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === provider);
     expect(planned?.action).toBe('refresh');
     expect(planned?.sourcePath).toBe(source);
-    expect(planned?.sourceSurface).toBe('canonical-skill');
+    expect(planned?.sourceSurface).toBe('command-facade');
     expect(hashUpgradeSource(source, opts.packageRoot, 'canonical-skill'))
       .not.toBe(hashUpgradeSource(source, opts.packageRoot, 'command-facade'));
     let staged = false;
@@ -643,13 +643,13 @@ test('a non-root provider uses its declared surface for hashing and real staging
         expect(item.sourceSurface).toBe(planned?.sourceSurface);
         expect(hashUpgradeSource(source, opts.packageRoot, item.sourceSurface)).toBe(hashManagedTree(staging));
         expect(planned?.expectedSourceHash).toBe(hashManagedTree(staging));
-        put(join(source, 'examples/outside-projection.md'), 'concurrent non-projected example edit\n');
+        put(join(source, '.DS_Store'), 'concurrent excluded metadata edit\n');
       },
     });
     expect(staged).toBe(true);
     expect(result.exitCode, result.error).toBe(0);
     expect(result.refreshedPaths, JSON.stringify(result.items)).toContain(provider);
-    expect(existsSync(join(provider, 'examples/outside-projection.md'))).toBe(false);
+    expect(existsSync(join(provider, 'examples/outside-projection.md'))).toBe(true);
     expect(readFileSync(join(provider, 'SKILL.md'))).toEqual(readFileSync(join(source, 'SKILL.md')));
     expect(runUpgrade({ ...opts, scope: 'global' }).items.some(item => item.path === provider)).toBe(false);
   });
@@ -663,3 +663,100 @@ test('directory source hashing rejects missing and invalid surfaces while file h
   const file = join(ROOT, 'SKILL.md');
   expect(hashUpgradeSource(file, ROOT, undefined)).toBe(legacyPathSnapshot(file)?.contentHash ?? null);
 });
+
+function nonRouterSkillSandbox(
+  name: 'repo-harness-cross-review' | 'repo-harness-chatgpt',
+  run: (opts: { cwd: string; home: string; packageRoot: string }, source: string, installed: string) => void,
+): void {
+  projectionSandbox((opts) => {
+    const source = join(opts.packageRoot, 'assets/skills', name);
+    const installed = join(opts.home, '.codex/skills', name);
+    const copied = spawnSync('bash', [join(opts.packageRoot, 'scripts/sync-codex-installed-copies.sh'),
+      '--stage-owned-copy', source, installed, 'command-facade'], {
+      env: { ...process.env, HOME: opts.home, BUN_INSTALL: join(opts.home, '.bun'),
+        AGENTIC_DEV_SOURCE_ROOT: opts.packageRoot, AGENTIC_DEV_LINK_INSTALLED_COPIES: '0' }, encoding: 'utf8',
+    });
+    expect(copied.status, copied.stdout + copied.stderr).toBe(0);
+    put(join(source, 'examples/new-resource.md'), 'new non-router resource\n');
+    put(join(source, '.DS_Store'), 'excluded metadata\n');
+    run(opts, source, installed);
+  });
+}
+
+for (const name of ['repo-harness-cross-review', 'repo-harness-chatgpt'] as const) {
+  test(`${name} refresh keeps top-level examples and matches a whole-folder copy with plain excludes`, async () => {
+    const { installedCopyTreeOptions, managedTreeEntries } = await import('../../src/cli/installer/install-profile');
+    nonRouterSkillSandbox(name, (opts, source, installed) => {
+      const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === installed);
+      expect(planned?.action).toBe('refresh');
+      expect(planned?.sourceSurface).toBe('command-facade');
+      // Use the installer's real filesystem primitive as the independent copy.
+      const wholeFolder = join(opts.home, `whole-folder-${name}`);
+      cpSync(source, wholeFolder, { recursive: true });
+      const contract = JSON.parse(readFileSync(join(opts.packageRoot, 'assets/workflow-contract.v1.json'), 'utf8'));
+      const expectedFiles = managedTreeEntries(wholeFolder, installedCopyTreeOptions('command-facade', contract));
+      let staged = false;
+      const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+        afterStage(item, staging) {
+          if (item.path !== installed) return;
+          staged = true;
+          expect(item.sourceSurface).toBe(planned?.sourceSurface);
+          expect(managedTreeEntries(staging)).toEqual(expectedFiles);
+          expect(planned?.expectedSourceHash).toBe(hashManagedTree(staging));
+        },
+      });
+      expect(staged).toBe(true);
+      expect(result.exitCode, result.error).toBe(0);
+      expect(result.refreshedPaths, JSON.stringify(result.items)).toContain(installed);
+      expect(managedTreeEntries(installed)).toEqual(expectedFiles);
+      for (const entry of expectedFiles) {
+        if (entry.type === 'symlink') expect(readlinkSync(join(installed, entry.path))).toBe(readlinkSync(join(wholeFolder, entry.path)));
+        else expect(readFileSync(join(installed, entry.path))).toEqual(readFileSync(join(wholeFolder, entry.path)));
+      }
+      expect(readFileSync(join(installed, 'examples/new-resource.md'), 'utf8')).toBe('new non-router resource\n');
+      expect(existsSync(join(installed, '.DS_Store'))).toBe(false);
+    });
+  });
+
+  test(`${name} projected example edit during staging aborts and keeps installed bytes`, () => {
+    nonRouterSkillSandbox(name, (opts, source, installed) => {
+      const before = tree(installed);
+      let staged = false;
+      const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+        afterStage(item) {
+          if (item.path !== installed) return;
+          staged = true;
+          put(join(source, 'examples/new-resource.md'), 'concurrent projected resource edit\n');
+        },
+      });
+      expect(staged).toBe(true);
+      expect(result.exitCode, result.error).toBe(0);
+      expect(result.refreshedPaths).not.toContain(installed);
+      expect(result.items.find(item => item.path === installed)).toEqual(expect.objectContaining({
+        action: 'report', reason: 'Source or target changed during staging.',
+      }));
+      expect(tree(installed)).toEqual(before);
+    });
+  });
+}
+
+test('router keeps canonical includes while non-projected top-level examples change', () => projectionSandbox((opts, router) => {
+  put(join(opts.packageRoot, 'examples/router-residue.md'), 'router worktree residue\n');
+  const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === router);
+  expect(planned?.sourceSurface).toBe('canonical-skill');
+  let staged = false;
+  const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+    afterStage(item) {
+      if (item.path !== router) return;
+      staged = true;
+      expect(item.sourceSurface).toBe('canonical-skill');
+      put(join(opts.packageRoot, 'examples/router-residue.md'), 'concurrent router residue edit\n');
+    },
+  });
+  expect(staged).toBe(true);
+  expect(result.exitCode, result.error).toBe(0);
+  expect(result.refreshedPaths).toContain(router);
+  for (const path of ['examples/router-residue.md', 'plans/untracked.md', '.ai/harness/state/effective.json', 'dist/unshipped-build.js']) {
+    expect(existsSync(join(router, path))).toBe(false);
+  }
+}));
