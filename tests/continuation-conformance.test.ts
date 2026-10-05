@@ -277,7 +277,7 @@ function installFixture(container: string): Fixture {
   writeFileSync(join(primary, SPRINT), SPRINT_TEXT);
   mkdirSync(join(primary, 'src'), { recursive: true });
   mkdirSync(join(primary, 'tests'), { recursive: true });
-  writeFileSync(join(primary, 'package.json'), JSON.stringify({ scripts: { 'check:type': 'bun typecheck.ts' } }));
+  writeFileSync(join(primary, 'package.json'), JSON.stringify({ scripts: { 'check:type': 'bun typecheck.ts', test: 'bun test' } }));
   writeFileSync(join(primary, 'typecheck.ts'), 'import { readdirSync, readFileSync } from "fs"; for (const name of readdirSync("src").filter(name => name.endsWith(".ts"))) if (!/^export const [a-z_]+ = 1;\\n$/.test(readFileSync(`src/${name}`, "utf8"))) throw Error("invalid source: " + name);\n');
   for (const row of ['row-one', 'row-two']) {
     const plan = `plans/plan-20260803-0000-${row}.md`;

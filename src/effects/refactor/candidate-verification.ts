@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { constants, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeSync } from 'fs';
 import { tmpdir, userInfo } from 'os';
@@ -13,6 +13,7 @@ import { assertCanonicalSprintTaskIdsUniqueAtCommit } from '../state/coordinatio
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { runRefactorVerify, type RefactorArchctxProviderOptions } from './archctx-provider';
 import { appendRefactorProgramEvent, assertRefactorProgramDigest, readRefactorProgramStatus } from './program-store';
+import { evaluateVerificationContract, writeVerificationExecutionReport } from '../evidence/verification-execution';
 import { assertRefactorVerificationRequest, RefactorProviderError, type RefactorVerifyResultV1 } from '../../core/refactor/provider-contract';
 import { evaluateCutoverClosure, type CutoverClosureV1 } from '../../../scripts/cutover-closure';
 import { acceptanceReceiptPath, verifyAcceptance, type AcceptanceReceipt } from '../../../scripts/acceptance-receipt';
@@ -31,10 +32,14 @@ export interface RefactorCandidateVerificationDependencies {
 }
 
 function defaultVerifyContract(root: string, contractPath: string): { reportBytes: Buffer } {
+  const outcome = evaluateVerificationContract({ repoRoot: root, contractPath });
+  if (outcome.kind !== 'verification_execution_report') fail('refactor_candidate_verification_failed', `verification evidence is unavailable: ${outcome.reason}`);
+  if (!outcome.passed) fail('refactor_candidate_verification_failed', `contract Verification Plan is not passing: ${outcome.status}`);
   const temp = mkdtempSync(join(tmpdir(), 'repo-harness-refactor-verify-')); const report = join(temp, 'contract.json');
   try {
-    const result = spawnSync('bash', ['scripts/verify-contract.sh', '--contract', contractPath, '--strict', '--read-only', '--report-file', report], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.status !== 0) fail('refactor_candidate_verification_failed', result.stderr.trim() || result.stdout.trim() || 'verify-contract failed');
+    // The receipt binds the same canonical report bytes that the public
+    // report writer records for an explicitly selected native report.
+    writeVerificationExecutionReport(root, report, outcome);
     return { reportBytes: readFileSync(report) };
   } finally { rmSync(temp, { recursive: true, force: true }); }
 }
