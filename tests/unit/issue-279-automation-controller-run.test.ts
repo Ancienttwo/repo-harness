@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash } from 'crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { createHash, randomUUID } from 'crypto';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -204,6 +204,28 @@ describe('issue #279 bounded controller orchestration', () => {
       expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-3' }, deps).current).toMatchObject({ state: 'completed', attention_owner: 'none', blocker: null });
       expect(chainOperations(root, runId)).toEqual(['start', 'observe', 'begin_acquire', 'acquired', 'begin_dispatch', 'dispatch_started', 'outcome_observed', 'begin_acquire', 'no_offer']);
       expect({ dispatches, outcomes: usages.map((usage) => usage.event.outcome) }).toEqual({ dispatches: 1, outcomes: ['progress', 'progress', 'no_progress'] });
+    });
+  });
+
+  test('an unpublished event temporary does not block the controller, but other event entries still fail closed', () => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      const deps = realBudgetDependencies(root, acquired(root), { current: { state: 'completed', observation_sha256: SHA } }, []);
+      start(root, runId, deps);
+      const events = join(controllerRoot(root), 'events');
+      const published = readFileSync(join(events, readdirSync(events)[0]!));
+      // The store writer stages `.<pid>.<uuid>.tmp` beside its target; an in-flight or crashed write leaves partial bytes there.
+      const staged = join(events, `.${process.pid}.${randomUUID()}.tmp`); const partial = published.subarray(0, published.length >> 1);
+      writeFileSync(staged, partial);
+
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current.state).toBe('executing');
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2', dispatch_id: SHA }, deps).current.state).toBe('observing');
+      expect(readFileSync(staged).equals(partial)).toBe(true);
+
+      const linked = join(events, `.${process.pid}.${randomUUID()}.tmp`); symlinkSync(staged, linked);
+      expect(() => stopAutomationController(root, runId, 'stop', deps)).toThrow('unexpected controller event entry');
+      rmSync(linked); writeFileSync(join(events, 'foreign.json'), '{}\n');
+      expect(() => stopAutomationController(root, runId, 'stop', deps)).toThrow('unexpected controller event entry');
     });
   });
 

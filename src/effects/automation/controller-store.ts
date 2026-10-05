@@ -42,6 +42,8 @@ function paths(repoRoot: string, runId: string) {
 function ensure(path: string): void { mkdirSync(path, { recursive: true, mode: 0o700 }); const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) fail('automation_controller_unsafe_path', `unsafe controller directory: ${path}`); }
 function prepare(value: ReturnType<typeof paths>): void { for (const path of [value.root, join(value.root, 'runs'), join(value.root, 'events'), join(value.root, 'transitions'), join(value.root, 'engineers'), value.run]) ensure(path); }
 function regular(path: string): Buffer { const stat = lstatSync(path); if (!stat.isFile() || stat.isSymbolicLink()) fail('automation_controller_unsafe_path', `unsafe controller file: ${path}`); return readFileSync(path); }
+// atomic() stages `.<pid>.<uuid>.tmp` beside its target. Another run's in-flight write or a crashed write leaves this name in the shared events directory.
+const STAGED = /^\.[0-9]+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 function atomic(path: string, bytes: Buffer): void {
   ensure(dirname(path)); const temp = join(dirname(path), `.${process.pid}.${randomUUID()}.tmp`); let fd: number;
   try { fd = openSync(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); } catch (error) { return fail('automation_controller_persistence_failed', `cannot create controller temporary for ${path}`, error); }
@@ -54,11 +56,18 @@ function parse<T>(path: string, validate: (value: unknown) => T, canonical: (val
   if (!raw.equals(Buffer.from(`${canonical(value)}\n`, 'utf8'))) fail('automation_controller_conflict', `${path} is not canonical`); return value;
 }
 function current(value: ReturnType<typeof paths>): AutomationControllerCurrentV1 | null { return existsSync(value.current) ? parse(value.current, validateAutomationControllerCurrent, canonicalAutomationControllerCurrentBytes) : null; }
+/** Published event files only: a staged regular file is unpublished and inert; every other unexpected entry fails closed. */
+function publishedEventNames(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).filter((entry) => {
+    if (entry.isFile() && STAGED.test(entry.name)) return false;
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
+    return true;
+  }).map((entry) => entry.name);
+}
 function assertNoUnfoldedEvent(value: ReturnType<typeof paths>, runId: string, previous: AutomationControllerCurrentV1 | null): void {
   const directory = join(value.root, 'events');
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
-    const event = parse(join(directory, entry.name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
+  for (const name of publishedEventNames(directory)) {
+    const event = parse(join(directory, name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
     if (event.run_id === runId && event.previous_event_sha256 === (previous?.current_event_sha256 ?? null)
       && event.event_sha256 !== previous?.current_event_sha256) fail('automation_controller_persistence_failed', 'controller has a durable event not folded into current; replay its exact idempotency key');
   }
@@ -137,9 +146,8 @@ export function readAutomationControllerStatus(repoRootInput: string, runId: str
 export function readAutomationControllerAttemptContext(repoRootInput: string, runId: string): NonNullable<AutomationControllerStepReceiptV1['attempt_context']> | null {
   const value = paths(resolve(repoRootInput), runId); if (!existsSync(value.definition) || !existsSync(value.current)) fail('automation_controller_not_found', 'controller run is missing');
   const head = current(value)!; let latest: AutomationControllerEventV1 | null = null;
-  for (const entry of readdirSync(join(value.root, 'events'), { withFileTypes: true })) {
-    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
-    const event = parse(join(value.root, 'events', entry.name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
+  for (const name of publishedEventNames(join(value.root, 'events'))) {
+    const event = parse(join(value.root, 'events', name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
     if (event.run_id === runId && event.revision <= head.revision && event.receipt.attempt_context !== null && (latest === null || event.revision > latest.revision)) latest = event;
   }
   return latest?.receipt.attempt_context ?? null;
