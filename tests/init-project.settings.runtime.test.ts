@@ -50,4 +50,37 @@ describe("init-project settings runtime", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);
+
+  test("create_structure keeps canonical architecture sources trackable and caches ignored", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "init-project-archcontext-"));
+    try {
+      expect(spawnSync("git", ["init", "-q"], { cwd }).status).toBe(0);
+      const res = spawnSync(
+        "/bin/bash",
+        [
+          "-lc",
+          `
+            export REPO_HARNESS_SOURCE_ONLY=1
+            source "${join(ROOT, "scripts/init-project.sh")}" demo vite-tanstack bun >/dev/null
+            create_structure
+          `,
+        ],
+        { cwd, encoding: "utf-8" }
+      );
+      expect(res.status).toBe(0);
+
+      const sources = [".archcontext/manifest.yaml", ".archcontext/product.yaml", ".archcontext/model/nodes/example.yaml"];
+      const cache = ".archcontext/cache/index.json";
+      for (const path of [...sources, cache]) {
+        mkdirSync(join(cwd, path, ".."), { recursive: true });
+        writeFileSync(join(cwd, path), "kind: example\n");
+      }
+      const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all", "--", ".archcontext"], { cwd, encoding: "utf-8" });
+      expect(status.status).toBe(0);
+      const untracked = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3)).sort();
+      expect(untracked).toEqual([...sources].sort());
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
 });

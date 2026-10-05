@@ -34,6 +34,11 @@ const LOCK_SUFFIX = ".repo-harness.lock";
 let atomicWriteSequence = 0;
 let transactionSequence = 0;
 
+export interface GitIndexEntry {
+  readonly mode: string;
+  readonly objectId: string;
+}
+
 export interface ApplyOperationResult {
   readonly id: string;
   readonly kind: AdoptionOperation["kind"];
@@ -42,6 +47,7 @@ export interface ApplyOperationResult {
   readonly status: AdoptionOperationStatus;
   readonly backupPath?: string;
   readonly contentHash?: string;
+  readonly gitIndexEntry?: GitIndexEntry;
   readonly error?: string;
 }
 
@@ -60,6 +66,7 @@ export interface FsTransactionManifestOperation {
   readonly status: AdoptionOperationStatus;
   readonly backupPath?: string;
   readonly contentHash?: string;
+  readonly gitIndexEntry?: GitIndexEntry;
   readonly rollbackStrategy?: string;
   readonly error?: string;
 }
@@ -115,7 +122,7 @@ function unsupportedOperationReason(operation: AdoptionOperation): string {
   return `unsupported operation kind: ${operation.kind}`;
 }
 
-function assertNoSymlinkInPath(repoRoot: string, path: string): string | null {
+export function assertNoSymlinkInPath(repoRoot: string, path: string): string | null {
   const target = resolveInsideRepo(repoRoot, path);
   if (!target.ok || !target.path) return target.error ?? "invalid path";
   const root = resolve(repoRoot);
@@ -124,8 +131,18 @@ function assertNoSymlinkInPath(repoRoot: string, path: string): string | null {
   for (const part of rel.split(sep)) {
     if (!part) continue;
     current = resolve(current, part);
-    if (!existsSync(current)) continue;
-    if (lstatSync(current).isSymbolicLink()) return `symlink is not allowed in adoption path: ${path}`;
+    // lstat, not existsSync: existsSync follows links and misses a dangling one.
+    // Return other lstat errors (for example EACCES) as a refusal, because callers
+    // such as rollback expect a structured result and do not catch a throw.
+    let stat: ReturnType<typeof lstatSync> | undefined;
+    try {
+      stat = lstatSync(current, { throwIfNoEntry: false });
+    } catch (error) {
+      return `cannot inspect adoption path: ${path} (${(error as NodeJS.ErrnoException).code ?? errorMessage(error)})`;
+    }
+    if (!stat) break;
+    if (stat.isSymbolicLink()) return `symlink is not allowed in adoption path: ${path}`;
+    if (!stat.isDirectory()) break;
   }
   return null;
 }
@@ -443,6 +460,37 @@ export function applyRemoveOperation(
   }
 }
 
+type GitIndexRead =
+  | { readonly kind: "git_failed"; readonly error: string }
+  | { readonly kind: "absent" }
+  | { readonly kind: "entry"; readonly entry: GitIndexEntry }
+  | { readonly kind: "unsupported"; readonly error: string };
+
+const GIT_INDEX_FILE_MODES = new Set(["100644", "100755"]);
+const GIT_OBJECT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+// Reads the single stage-0 regular-file index entry for path. Rollback restores
+// this exact entry, because the staged blob can differ from the working-tree bytes.
+function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
+  const listed = runProcess("git", ["-C", repoRoot, "ls-files", "-z", "--stage", "--", path]);
+  if (!listed.ok) return { kind: "git_failed", error: listed.stderr || listed.error || "git ls-files failed" };
+  const records = listed.stdout.split("\0").filter(Boolean);
+  if (records.length === 0) return { kind: "absent" };
+  const match = records.length === 1 ? /^(\d{6}) ([0-9a-f]+) 0\t(.*)$/s.exec(records[0]) : null;
+  if (!match || match[3] !== path) return { kind: "unsupported", error: `git index entry is unmerged or ambiguous: ${path}` };
+  if (!GIT_INDEX_FILE_MODES.has(match[1])) {
+    return { kind: "unsupported", error: `git index mode ${match[1]} is not a regular file entry: ${path}` };
+  }
+  // An intent-to-add entry lists the empty blob but stages no content. Porcelain v2
+  // reports it with index mode 000000; restoring the blob would stage an empty file.
+  const status = runProcess("git", ["--no-optional-locks", "-C", repoRoot, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--", path]);
+  if (!status.ok) return { kind: "git_failed", error: status.stderr || status.error || "git status failed" };
+  if (status.stdout.split("\0").some((record) => record.startsWith("1 ") && record.split(" ")[4] === "000000")) {
+    return { kind: "unsupported", error: `git index entry is intent-to-add: ${path}` };
+  }
+  return { kind: "entry", entry: { mode: match[1], objectId: match[2] } };
+}
+
 export function applyGitUntrackOperation(repoRoot: string, operation: GitUntrackOperation, dryRun = false): ApplyOperationResult {
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid git untrack path");
@@ -450,12 +498,16 @@ export function applyGitUntrackOperation(repoRoot: string, operation: GitUntrack
   if (symlinkError) return failure(operation, symlinkError);
   const preconditionError = checkExpectedFileState(repoRoot, operation);
   if (preconditionError) return failure(operation, preconditionError);
-  const tracked = runProcess("git", ["-C", repoRoot, "ls-files", "--error-unmatch", "--", operation.path]);
-  if (!tracked.ok) return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
+  // A target outside a Git work tree has no index entry to untrack.
+  const indexed = readGitIndexEntry(repoRoot, operation.path);
+  if (indexed.kind === "git_failed" || indexed.kind === "absent") {
+    return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
+  }
+  if (indexed.kind === "unsupported") return failure(operation, indexed.error);
   if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
   const result = runProcess("git", ["-C", repoRoot, "rm", "--cached", "--force", "--quiet", "--", operation.path]);
   return result.ok
-    ? { id: operation.id, kind: operation.kind, path: operation.path, status: "applied" }
+    ? { id: operation.id, kind: operation.kind, path: operation.path, status: "applied", gitIndexEntry: indexed.entry }
     : failure(operation, result.stderr || result.error || "git rm --cached failed");
 }
 
@@ -478,6 +530,7 @@ function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, re
         status: result.status,
         backupPath: result.backupPath,
         contentHash: result.contentHash,
+        gitIndexEntry: result.gitIndexEntry,
         rollbackStrategy: operation?.rollback?.strategy,
         error: result.error,
       };
@@ -554,6 +607,13 @@ function preflightOperation(repoRoot: string, operation: AdoptionOperation): str
 
   if (operation.kind === "remove" && existsSync(target.path) && !lstatSync(target.path).isFile()) {
     return `remove target is not a regular file: ${operation.path}`;
+  }
+
+  // Refuse an index entry that rollback cannot restore exactly before the paired
+  // remove moves the file away.
+  if (operation.kind === "gitUntrack") {
+    const indexed = readGitIndexEntry(repoRoot, operation.path);
+    return indexed.kind === "unsupported" ? indexed.error : null;
   }
 
   if (operation.kind === "mkdir") {
@@ -727,6 +787,11 @@ function isValidManifestOperation(operation: unknown, transactionDir: string): o
   if (op.contentHash !== undefined && typeof op.contentHash !== "string") return false;
   if (op.rollbackStrategy !== undefined && typeof op.rollbackStrategy !== "string") return false;
   if (op.error !== undefined && typeof op.error !== "string") return false;
+  if (op.gitIndexEntry !== undefined) {
+    const entry = op.gitIndexEntry as Record<string, unknown> | null;
+    if (typeof entry?.mode !== "string" || !GIT_INDEX_FILE_MODES.has(entry.mode)) return false;
+    if (typeof entry.objectId !== "string" || !GIT_OBJECT_ID.test(entry.objectId)) return false;
+  }
   if (op.backupPath !== undefined) {
     if (typeof op.backupPath !== "string") return false;
     // A manifest is untrusted file data: pin the restore source to this manifest's
@@ -797,17 +862,32 @@ function rollbackGitUntrackOperation(repoRoot: string, operation: FsTransactionM
   if (symlinkError) return rollbackFailed(operation, "restore_git_index", symlinkError);
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return rollbackFailed(operation, "restore_git_index", target.error ?? "invalid git path");
-  if (!existsSync(target.path) || !lstatSync(target.path).isFile()) {
-    return rollbackFailed(operation, "restore_git_index", "cannot restore git index because the file is absent or not regular");
+  const recorded = operation.gitIndexEntry;
+  if (!recorded) {
+    return rollbackFailed(
+      operation,
+      "restore_git_index",
+      `transaction manifest predates git index entry recording; check ${operation.path} and run \`git add -- ${operation.path}\` by hand to track it again`,
+    );
   }
-  const tracked = runProcess("git", ["-C", repoRoot, "ls-files", "--error-unmatch", "--", operation.path]);
-  if (tracked.ok) {
-    return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "restore_git_index" };
+  const current = readGitIndexEntry(repoRoot, operation.path);
+  if (current.kind === "git_failed" || current.kind === "unsupported") {
+    return rollbackFailed(operation, "restore_git_index", current.error);
   }
-  const restore = runProcess("git", ["-C", repoRoot, "add", "--", operation.path]);
+  if (current.kind === "entry") {
+    return current.entry.mode === recorded.mode && current.entry.objectId === recorded.objectId
+      ? { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "restore_git_index" }
+      : rollbackFailed(operation, "restore_git_index", "git index entry changed after apply; refusing to replace it");
+  }
+  // update-index accepts an absent object, so prove the recorded blob still exists.
+  const object = runProcess("git", ["-C", repoRoot, "cat-file", "-e", `${recorded.objectId}^{blob}`]);
+  if (!object.ok) return rollbackFailed(operation, "restore_git_index", `recorded git object is missing: ${recorded.objectId}`);
+  const restore = runProcess("git", [
+    "-C", repoRoot, "update-index", "--add", "--cacheinfo", `${recorded.mode},${recorded.objectId},${operation.path}`,
+  ]);
   return restore.ok
     ? { id: operation.id, kind: operation.kind, path: operation.path, status: "rolled_back", action: "restore_git_index" }
-    : rollbackFailed(operation, "restore_git_index", restore.stderr || restore.error || "git add failed");
+    : rollbackFailed(operation, "restore_git_index", restore.stderr || restore.error || "git update-index failed");
 }
 
 function readTransactionManifest(repoRoot: string, transaction: string): { manifest?: FsTransactionManifest; rel?: string; error?: string } {
