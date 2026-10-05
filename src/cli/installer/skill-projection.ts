@@ -39,7 +39,11 @@ export interface SkillProjection {
   readonly staged: boolean;
 }
 
-/** The catalog owns selection. Install ownership and doctor share these paths. */
+/**
+ * The catalog owns selection. Install ownership and doctor share these paths.
+ * PR-A covers Waza staging only. Mermaid retains transaction ownership and
+ * stays outside this diagnostic. The Waza provider matches its runtime group.
+ */
 export function expectedSkillProjections(
   catalog: SkillSurfaceCatalog,
   sourceRoot: string,

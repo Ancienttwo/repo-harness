@@ -1027,7 +1027,6 @@ describe('install profiles', () => {
   }), 30_000);
 });
 
-
 describe('skill projection ownership', () => {
   function packageAt(home: string, source: string): string {
     const packageRoot = join(home, '.bun/install/global/node_modules/repo-harness');
@@ -1071,6 +1070,98 @@ describe('skill projection ownership', () => {
         expect(installedProfileStatus(state, activeEnv).drift.surface_drift).toEqual([]);
         expect(readInstalledProfile(activeEnv)?.ownership_manifest).toEqual(state.ownership_manifest);
       } finally { commitInstallHostTransaction(transaction); }
+    }));
+  }
+
+  test('global projection is idempotent and keeps current link ownership', () => withHome(env => {
+    const { canonical, source } = writeManagedHostSurfaces(env, 'full');
+    const packageRoot = packageAt(env.HOME!, source);
+    rmSync(canonical); symlinkSync(packageRoot, canonical);
+    const paths = ['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review'));
+    for (const dest of paths) rmSync(dest, { recursive: true, force: true });
+    expect(syncCrossReviewSkills(packageRoot, 'both', env).every(step => step.status === 'ok')).toBe(true);
+    const first = applyInstallProfile('full', env).state;
+    const links = paths.map(dest => ({ inode: lstatSync(dest).ino, target: readlinkSync(dest) }));
+    const steps = syncCrossReviewSkills(packageRoot, 'both', env);
+    expect(steps).toHaveLength(2);
+    expect(steps.every(step => step.status === 'ok' && step.detail === 'already present')).toBe(true);
+    const second = applyInstallProfile('full', env).state;
+    for (const [index, dest] of paths.entries()) {
+      expect(lstatSync(dest).ino).toBe(links[index]!.inode);
+      expect(readlinkSync(dest)).toBe(links[index]!.target);
+      expect(second.ownership_manifest.find(surface => surface.path === dest)?.type).toBe('symlink');
+    }
+    expect(second.transaction_id).toBe(first.transaction_id);
+    expect(installedProfileStatus(second, env).drift.surface_drift).toEqual([]);
+  }));
+
+  test('review regression: existing checkout links stay user-owned and accepted', () => withHome(env => {
+    const { source } = writeManagedHostSurfaces(env, 'full');
+    mkdirSync(join(source, 'assets/skill-commands'), { recursive: true });
+    cpSync(join(ROOT, 'assets/skill-commands/manifest.json'), join(source, 'assets/skill-commands/manifest.json'));
+    const bundled = join(source, 'assets/skills/repo-harness-cross-review');
+    cpSync(join(ROOT, 'assets/skills/repo-harness-cross-review'), bundled, { recursive: true });
+    const paths = ['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review'));
+    for (const dest of paths) {
+      rmSync(dest, { recursive: true, force: true });
+      mkdirSync(join(dest, '..'), { recursive: true });
+      symlinkSync(bundled, dest);
+    }
+    const transaction = beginInstallHostTransaction(paths, env);
+    try {
+      const steps = syncCrossReviewSkills(source, 'both', env);
+      expect(steps).toHaveLength(2);
+      expect(steps.every(step => step.status === 'ok' && step.detail === 'already present')).toBe(true);
+      const state = applyInstallProfile('full', env, new Date(), transaction).state;
+      expect(state.ownership_manifest.filter(surface => paths.includes(surface.path))).toEqual([]);
+      for (const dest of paths) expect(readlinkSync(dest)).toBe(bundled);
+    } finally { commitInstallHostTransaction(transaction); }
+  }));
+
+  for (const acquisition of ['discovered', 'transaction-created', 'recorded-as-adaptive'] as const) {
+    test(`review regression: ${acquisition} Waza links retire on full to minimal`, () => withHome(env => {
+      writeManagedHostSurfaces(env, 'full');
+      const names = ['think', 'hunt', 'check', 'health'];
+      const paths = ['.codex', '.claude'].flatMap(host => names.map(name => join(env.HOME!, host, 'skills', name)));
+      for (const dest of paths) rmSync(dest, { recursive: true, force: true });
+      const transaction = acquisition === 'transaction-created' ? beginInstallHostTransaction(paths, env) : undefined;
+      try {
+        for (const name of names) {
+          const source = join(env.HOME!, '.agents/skills', name);
+          writePath(join(source, 'SKILL.md'), `# user-staged ${name}\n`);
+          for (const host of ['.codex', '.claude']) {
+            const dest = join(env.HOME!, host, 'skills', name);
+            mkdirSync(join(dest, '..'), { recursive: true });
+            symlinkSync(source, dest);
+          }
+        }
+        const state = applyInstallProfile('full', env, new Date(), transaction).state;
+        for (const dest of paths) {
+          expect(state.ownership_manifest.find(surface => surface.path === dest)?.components).toEqual(['planning-integrations']);
+        }
+        if (acquisition === 'recorded-as-adaptive') {
+          const ledgerPath = join(env.HOME!, '.repo-harness/install-state.json');
+          const legacy = JSON.parse(readFileSync(ledgerPath, 'utf8'));
+          for (const surface of legacy.ownership_manifest) {
+            if (paths.includes(surface.path)) surface.components = ['adaptive-workflow'];
+          }
+          writeFileSync(ledgerPath, JSON.stringify(legacy));
+          const refreshed = applyInstallProfile('full', env).state;
+          for (const dest of paths) {
+            expect(refreshed.ownership_manifest.find(surface => surface.path === dest)?.components).toEqual(['planning-integrations']);
+          }
+        }
+        const removed = prepareInstallProfileSwitch('minimal', env);
+        const minimal = applyInstallProfile('minimal', env).state;
+        for (const dest of paths) {
+          expect(removed).toContain(dest);
+          expect(existsSync(dest)).toBe(false);
+          expect(minimal.ownership_manifest.some(surface => surface.path === dest)).toBe(false);
+        }
+        for (const name of names) {
+          expect(readFileSync(join(env.HOME!, '.agents/skills', name, 'SKILL.md'), 'utf8')).toBe(`# user-staged ${name}\n`);
+        }
+      } finally { if (transaction) commitInstallHostTransaction(transaction); }
     }));
   }
 

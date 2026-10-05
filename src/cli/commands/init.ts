@@ -24,7 +24,6 @@ import {
   mkdirSync,
   lstatSync,
   readFileSync,
-  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -282,14 +281,6 @@ export function resolveOsAccountHome(): string | null {
 
 const DEFAULT_INIT_RUNTIME_DEPENDENCIES: InitRuntimeDependencies = { authorityHome: resolveOsAccountHome };
 
-function samePath(a: string, b: string): boolean {
-  try {
-    return realpathSync(a) === realpathSync(b);
-  } catch {
-    return resolve(a) === resolve(b);
-  }
-}
-
 export { validateRepoAdoptionTarget } from "../repo-adoption/target";
 
 function languageInstruction(preset: ReportingLanguagePreset, custom?: string): string {
@@ -450,7 +441,9 @@ function syncBundledItemsAtHome(
 ): InitStep[] {
   const steps: InitStep[] = [];
   const installed = home ? readInstalledProfile({ ...env, HOME: home }) : null;
-  const useLinks = isBunGlobalPackageSource(sourceRoot, env)
+  const globalRoot = bunGlobalPackageRoot(env);
+  const globalSource = isBunGlobalPackageSource(sourceRoot, env);
+  const useLinks = globalSource
     && (env ?? process.env).AGENTIC_DEV_LINK_INSTALLED_COPIES !== '0';
   for (const { skill, host, step } of skills) {
     if (target !== "both" && target !== host) continue;
@@ -468,11 +461,12 @@ function syncBundledItemsAtHome(
     const dest = join(root, skill);
     const destSkill = join(dest, "SKILL.md");
     mkdirSync(root, { recursive: true });
-    const globalRoot = bunGlobalPackageRoot(env);
     const correctGlobalLink = globalRoot !== null
       && skillLinkMatches(dest, join(globalRoot, 'assets', 'skills', skill));
+    // Keep user links to the current checkout. Discovery does not own them.
     // A stable installed link remains valid when init runs from another source.
-    if (correctGlobalLink && (!isBunGlobalPackageSource(sourceRoot, env) || useLinks)) {
+    if ((!globalSource && skillLinkMatches(dest, source))
+      || (correctGlobalLink && (!globalSource || useLinks))) {
       steps.push({ step, status: 'ok', detail: 'already present' });
       continue;
     }

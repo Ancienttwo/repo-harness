@@ -2238,7 +2238,6 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 
-
 describe('Codex Waza projection', () => {
   for (const mode of ['relative', 'absolute', 'missing', 'unknown-directory'] as const) {
     test(`Waza projection handles ${mode} paths without user-content deletion`, () => {

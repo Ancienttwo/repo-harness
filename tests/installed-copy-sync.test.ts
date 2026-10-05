@@ -726,7 +726,6 @@ root="$1"
   });
 });
 
-
 describe('minimal provider ownership boundary', () => {
   for (const link of [true, false]) {
     test(`minimal sync preserves an unselected provider ${link ? 'link' : 'copy'}`, () => {

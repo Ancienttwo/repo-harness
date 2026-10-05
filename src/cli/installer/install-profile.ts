@@ -471,7 +471,9 @@ function discoverManagedSurfaces(
     for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile)) {
       if (!skillLinkMatches(projection.destination, projection.source)) continue;
       const pkg = catalog.packages.find(pkg => pkg.name === projection.name);
-      const components = projection.name === 'repo-harness'
+      const components = projection.staged
+        ? componentsForTransactionPath(projection.destination)
+        : projection.name === 'repo-harness'
         ? runtimeComponents
         : projection.name === 'repo-harness-check'
           ? desired.filter(component => component === 'scope-worktree-check-guards' || component === 'verifier')
@@ -1268,7 +1270,10 @@ export function applyInstallProfile(
     : [];
   const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(profile, env) : [];
   const ownershipManifest = [...new Map(
-    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned].map((surface) => [
+    // Current verified link projections own their component classification.
+    // Historical records must not restore a retired or wrong component.
+    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
+      ...discovered.filter(surface => surface.type === 'symlink')].map((surface) => [
       `${surface.path}\0${surface.managed_marker ?? surface.type}`,
       surface,
     ]),

@@ -1,6 +1,3 @@
-import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
-import { hashManagedTree, installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
-import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 /**
  * `repo-harness doctor` — read-only readiness diagnostics.
  *
@@ -8,6 +5,10 @@ import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
  * Codex user-level trust state count, and target-aware CodeGraph readiness.
  * Never mutates.
  */
+
+import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
+import { hashManagedTree, installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
+import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -513,13 +514,17 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const profile = installed?.profile ?? 'full';
     const globalRoot = bunGlobalPackageRoot(env);
     const sourceRoot = globalRoot && fs.existsSync(path.join(globalRoot, 'package.json')) ? globalRoot : PACKAGE_ROOT;
-    const manifestPath = path.join(sourceRoot, 'assets', 'skill-commands', 'manifest.json');
-    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
-    if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
-    const contract = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'assets', 'workflow-contract.v1.json'), 'utf8'));
+    const contractPath = path.join(sourceRoot, 'assets', 'workflow-contract.v1.json');
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    if (sourceRoot !== PACKAGE_ROOT && contract.installedCopyExcludes === undefined) {
+      return { id, describe, status: 'warn', detail: `global package contract at ${contractPath} lacks installedCopyExcludes; run: repo-harness update; then run: repo-harness upgrade` };
+    }
     if (!Array.isArray(contract.installedCopyExcludes) || !contract.installedCopyExcludes.every((value: unknown) => typeof value === 'string')) {
       throw new Error('invalid installed copy exclusions');
     }
+    const manifestPath = path.join(sourceRoot, 'assets', 'skill-commands', 'manifest.json');
+    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
+    if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
     let warning = false;
     const details: string[] = [];
     for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile)) {

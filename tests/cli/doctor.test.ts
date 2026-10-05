@@ -478,7 +478,6 @@ describe('doctor command (Phase 1C)', () => {
   }, 15000);
 });
 
-
 describe('doctor skill projection', () => {
   const root = path.resolve(import.meta.dir, '../..');
   function seed(home: string) {
@@ -514,6 +513,56 @@ describe('doctor skill projection', () => {
       if (state === 'dangling link') expect(fs.readlinkSync(f.destination)).toBe(path.join(home, 'missing'));
     }));
   }
+
+  test('review regression: old global contract is an actionable warning', () => withTempHome(home => {
+    const f = seed(home);
+    const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    const contractPath = path.join(packageRoot, 'assets/workflow-contract.v1.json');
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    delete contract.installedCopyExcludes;
+    fs.writeFileSync(contractPath, JSON.stringify(contract));
+    fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.19.5' }));
+    const before = fs.readFileSync(contractPath, 'utf8');
+    const result = checkSkillProjection('both', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain('installedCopyExcludes');
+    expect(result.detail).toContain('run: repo-harness upgrade');
+    expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
+  }));
+
+  test('reports invalid path type without replacing the file', () => withTempHome(home => {
+    const f = seed(home);
+    fs.writeFileSync(f.destination, 'user file\n');
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain(`${f.destination}: invalid path type`);
+    expect(result.detail).toContain(`preserve or move ${f.destination}`);
+    expect(fs.readFileSync(f.destination, 'utf8')).toBe('user file\n');
+  }));
+
+  test('reports source missing and preserves the installed copy', () => withTempHome(home => {
+    const f = seed(home);
+    fs.cpSync(f.source, f.destination, { recursive: true });
+    const before = hashManagedTree(f.destination);
+    fs.rmSync(f.source, { recursive: true });
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain(`${f.destination}: source missing`);
+    expect(result.detail).toContain('run: repo-harness install --profile full --target codex');
+    expect(hashManagedTree(f.destination)).toBe(before);
+  }));
+
+  test('fails closed on a malformed projection contract', () => withTempHome(home => {
+    const f = seed(home);
+    const contractPath = path.join(home, '.bun/install/global/node_modules/repo-harness/assets/workflow-contract.v1.json');
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    contract.installedCopyExcludes = 42;
+    fs.writeFileSync(contractPath, JSON.stringify(contract));
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('invalid installed copy exclusions');
+    expect(result.detail).toContain('repo-harness install --state');
+  }));
 
   test('reports ledger type drift and installedProfileStatus drift without changing the ledger', () => withTempHome(home => {
     const f = seed(home);
@@ -567,7 +616,6 @@ describe('doctor skill projection', () => {
     });
   }), DOCTOR_CHECK_TIMEOUT_MS);
 });
-
 
 test('skill-projection repair commands use supported install arguments', () => {
   withTempHome(home => {
