@@ -550,6 +550,58 @@ describe("canonical adoption plan", () => {
       cleanup(repo);
     }
   }, 30_000);
+
+  test("rollback restores the exact staged helper entry instead of staging working-tree bytes", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, "scripts"), { recursive: true });
+      const helper = "scripts/check-task-workflow.sh";
+      const canonical = readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8");
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      writeFileSync(join(repo, helper), "#!/bin/sh\necho staged custom helper\n");
+      expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
+      writeFileSync(join(repo, helper), canonical);
+      const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" }).stdout;
+      const stagedEntry = git("ls-files", "--stage", "--", helper);
+      const stagedBytes = git("show", `:${helper}`);
+      expect(stagedBytes).toBe("#!/bin/sh\necho staged custom helper\n");
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(apply.results.find((result) => result.kind === "gitUntrack" && result.path === helper)?.status).toBe("applied");
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+      expect(rollback.ok).toBe(true);
+      expect(git("ls-files", "--stage", "--", helper)).toBe(stagedEntry);
+      expect(git("show", `:${helper}`)).toBe(stagedBytes);
+      expect(readFileSync(join(repo, helper), "utf-8")).toBe(canonical);
+    } finally {
+      cleanup(repo);
+    }
+  }, 30_000);
+
+  test("rollback never stages a file the user created at an untracked helper path after apply", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, "scripts"), { recursive: true });
+      const helper = "scripts/check-task-workflow.sh";
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
+      const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" }).stdout;
+      const stagedEntry = git("ls-files", "--stage", "--", helper);
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      writeFileSync(join(repo, helper), "user file created after apply\n");
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+      expect(rollback.ok).toBe(false);
+      expect(rollback.results.find((result) => result.kind === "remove" && result.path === helper)?.error).toContain("occupied");
+      expect(git("ls-files", "--stage", "--", helper)).toBe(stagedEntry);
+      expect(readFileSync(join(repo, helper), "utf-8")).toBe("user file created after apply\n");
+    } finally {
+      cleanup(repo);
+    }
+  }, 30_000);
 });
 
 describe("init command cutover", () => {
