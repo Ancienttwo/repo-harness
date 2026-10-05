@@ -630,12 +630,16 @@ export function buildProgram(): Command {
       }
       const target = assertTarget(rawOpts.target, 'init');
       const mode = assertAdoptionMode(rawOpts.mode ?? 'standard', 'init');
+      // The planner reads documentation authoring env only from its options,
+      // so the public command boundary supplies the real process environment.
+      const env = process.env;
       if (rawOpts.dryRun === true) {
         const plan = runAdoptionPlan({
           repo: rawOpts.repo,
           mode,
           json: rawOpts.json === true,
           explicitRepo: rawOpts.repo !== undefined,
+          env,
         });
         writeAllSync(1, plan.output);
         process.exit(plan.exitCode);
@@ -653,6 +657,7 @@ export function buildProgram(): Command {
         syncCodegraph: rawOpts.syncCodegraph === true,
         mode,
         brainMode: 'skip' as const,
+        env,
       };
       const result = runInit(common);
       if (rawOpts.json === true) {

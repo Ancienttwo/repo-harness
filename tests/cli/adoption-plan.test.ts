@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
@@ -752,6 +752,53 @@ describe("documentation language policy datum", () => {
       cleanup(repo);
     }
   });
+
+  test("public init reads documentation settings from the process environment", () => {
+    const repo = tempRepo();
+    const home = tempRepo();
+    try {
+      const env = {
+        ...process.env,
+        HOME: home,
+        REPO_HARNESS_HOME: join(home, ".repo-harness"),
+        REPO_HARNESS_DOCUMENTATION_LANGUAGE: "zh-CN",
+        REPO_HARNESS_DOCUMENTATION_PROFILE: "full",
+      };
+      const referenceCount = readdirSync(join(ROOT, "assets", "reference-configs")).filter((name) => name.endsWith(".md")).length;
+      const dryRun = spawnSync("bun", [CLI, "init", "--repo", repo, "--dry-run", "--json"], { cwd: ROOT, encoding: "utf-8", env });
+      expect(dryRun.status).toBe(0);
+      const planned = (JSON.parse(dryRun.stdout) as { operations: { path?: string }[] }).operations
+        .filter((operation) => operation.path?.startsWith("docs/reference-configs/"));
+      expect(planned.length).toBe(referenceCount);
+
+      const apply = spawnSync("bun", [CLI, "init", "--repo", repo, "--no-verify", "--no-codegraph", "--json"], { cwd: ROOT, encoding: "utf-8", env });
+      expect(apply.status).toBe(0);
+      const policy = JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf-8"));
+      expect(policy.documentation.language).toBe("zh-CN");
+      expect(policy.documentation.profile).toBe("full");
+      expect(readdirSync(join(repo, "docs", "reference-configs")).filter((name) => name.endsWith(".md")).length).toBe(referenceCount);
+    } finally {
+      cleanup(repo);
+      cleanup(home);
+    }
+  }, 60_000);
+
+  test("public init rejects an invalid exported documentation language before writes", () => {
+    const repo = tempRepo();
+    const home = tempRepo();
+    try {
+      const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), REPO_HARNESS_DOCUMENTATION_LANGUAGE: "zh-TW" };
+      for (const args of [["--dry-run", "--json"], ["--no-verify", "--no-codegraph", "--json"]]) {
+        const result = spawnSync("bun", [CLI, "init", "--repo", repo, ...args], { cwd: ROOT, encoding: "utf-8", env });
+        expect(result.status).not.toBe(0);
+        expect(`${result.stdout}${result.stderr}`).toContain("REPO_HARNESS_DOCUMENTATION_LANGUAGE");
+        expect(readdirSync(repo)).toEqual([]);
+      }
+    } finally {
+      cleanup(repo);
+      cleanup(home);
+    }
+  }, 60_000);
 
   test("generated root context points at the policy field instead of copying its value", () => {
     const repo = tempRepo();
