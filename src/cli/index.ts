@@ -78,7 +78,8 @@ import {
   applyInstallProfile,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
-  installProfileHostMutationPaths,
+  effectiveSkillRoots,
+  installProfileTransactionPaths,
   installedProfileStatus,
   assertInstallProfile,
   planLegacyInstallProfileMigration,
@@ -265,7 +266,7 @@ function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.P
 }
 
 function runtimeHostMutationPaths(env: NodeJS.ProcessEnv): readonly string[] {
-  const paths = [...installProfileHostMutationPaths(env)];
+  const paths = [...installProfileTransactionPaths(env)];
   if (process.platform === 'win32') paths.push(windowsProtectedHelperConfigPath());
   return [...new Set(paths)];
 }
@@ -424,13 +425,9 @@ async function runGlobalRuntimeBootstrap(
     ? planLegacyInstallProfileMigration(profile)
     : planInstallProfile(profile, currentProfile);
   if (rawOpts.dryRun === true) {
-    const home = process.env.HOME ?? homedir();
-    const codexRoot = process.env.CODEX_SKILLS_ROOT || join(home, '.codex', 'skills');
-    const claudeRoot = process.env.CLAUDE_SKILLS_ROOT
-      || (process.env.CODEX_SKILLS_ROOT ? '' : join(home, '.claude', 'skills'));
     const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
-      [codexRoot, claudeRoot],
+      effectiveSkillRoots(),
       true,
       currentProfile?.ownership_manifest,
     );

@@ -454,6 +454,37 @@ describe('upgrade with real release bytes', () => {
     expect(runUpgrade({ ...opts, scope: 'global' }).items.some((item) => item.path === path)).toBe(false);
   }, false));
 
+  test('manifest-owned old-package link refresh retargets the link and keeps a symlink receipt', () => sandbox((opts) => {
+    const path = join(opts.home, '.codex/skills/repo-harness-cross-review');
+    const oldSource = join(opts.home, 'old-package/assets/skills/repo-harness-cross-review');
+    const currentSource = join(ROOT, 'assets/skills/repo-harness-cross-review');
+    const statePath = join(opts.home, '.repo-harness/install-state.json');
+    put(join(oldSource, 'SKILL.md'), '# old package\n');
+    mkdirSync(dirname(path), { recursive: true });
+    symlinkSync(oldSource, path);
+    const receipt = { components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: oldSource } as const;
+    const state = { protocol: 2, package_version: '0.19.5', profile: 'full', components: PROFILE_COMPONENTS.full,
+      transaction_id: 'prior-install', applied_at: '2026-09-30T00:00:00Z', previous: null, ownership_manifest: [receipt] };
+    put(statePath, JSON.stringify(state));
+    expect(runUpgrade({ ...opts, scope: 'global' }).items.find((item) => item.path === path)?.action).toBe('refresh');
+
+    const failed = runUpgrade({ ...opts, scope: 'global', apply: true }, { afterStage(item) {
+      if (item.path === path) put(statePath, JSON.stringify({ ...state, transaction_id: 'concurrent-writer' }));
+    } });
+    expect(failed.exitCode).toBe(1);
+    expect(readlinkSync(path)).toBe(oldSource);
+    put(statePath, JSON.stringify(state));
+
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true });
+    expect(result.exitCode, result.error).toBe(0); expect(result.refreshedPaths).toContain(path);
+    expect(readlinkSync(path)).toBe(currentSource);
+    const current = readInstalledProfile({ ...process.env, HOME: opts.home });
+    expect(current?.ownership_manifest.find((surface) => surface.path === path)).toEqual({ ...receipt, symlink_target: currentSource });
+    const before = tree(opts.home);
+    expect(runUpgrade({ ...opts, scope: 'global', apply: true }).refreshedPaths).toEqual([]);
+    expect(tree(opts.home)).toEqual(before);
+  }, false));
+
   test('state artifact removal needs apply, explicit flag, and matching ownership', () => sandbox((opts) => {
     const gate = join(opts.home, '.repo-harness/gates/project/merge-gate.latest.json');
     const archive = join(opts.home, '.repo-harness/packages/repo-harness-0.10.0-local.tgz');

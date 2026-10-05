@@ -150,6 +150,30 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([null])))).toContain("PACKAGE_NOT_OBJECT");
   });
 
+  test("PACKAGE_NOT_OBJECT: entries before valid packages keep dependency checks on their own packages", () => {
+    const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf-8")) as { packages: unknown[] };
+    const real = validateSkillSurfaceCatalogValue({ ...manifest, packages: [null, ...manifest.packages] });
+    expect(real.status).toBe("invalid");
+    expect(real.diagnostics.map((d) => `${d.code} ${d.path}`)).toEqual(["PACKAGE_NOT_OBJECT packages[0]"]);
+
+    const unknownRequirement = { ...FACADE, requires: ["missing-skill"] };
+    const left = { ...FACADE, name: "left", source: "assets/skill-commands/left", requires: ["right"] };
+    const right = { ...FACADE, name: "right", source: "assets/skill-commands/right", requires: ["left"] };
+    const retiring = { ...FACADE, name: "retiring", source: "assets/skill-commands/retiring", retirementCandidate: { replacement: "gone", note: "n" } };
+    const interleaved = validateSkillSurfaceCatalogValue(
+      catalogValue([null, ROUTER, 42, unknownRequirement, "x", left, right, retiring]),
+    );
+    expect(interleaved.status).toBe("invalid");
+    expect(interleaved.diagnostics.map((d) => `${d.code} ${d.path}`)).toEqual([
+      "PACKAGE_NOT_OBJECT packages[0]",
+      "PACKAGE_NOT_OBJECT packages[2]",
+      "PACKAGE_NOT_OBJECT packages[4]",
+      "UNKNOWN_REQUIREMENT packages[3].requires[0]",
+      "RETIREMENT_REPLACEMENT_UNKNOWN packages[7].retirementCandidate.replacement",
+      "CYCLIC_REQUIREMENT packages[5].requires",
+    ]);
+  });
+
   test("FIELD_REQUIRED: a required string field is missing or blank", () => {
     for (const field of ["name", "kind", "discoverability", "component", "summary"]) {
       const broken = { ...FACADE, [field]: "" };
