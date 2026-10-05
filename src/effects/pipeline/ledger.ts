@@ -65,7 +65,8 @@ function prepareRecord(store:PipelineStore,record:PipelineRecord,kind:string,pay
     const observed=payload.subject?observeSubject(store,record,{subject:decodeSubject(payload.subject),contract_path:text(payload.contract_path,'contract_path'),base_ref:text(payload.base_ref,'base_ref')}):null;
     return ()=>{if(payload.resources) record.resources={...record.resources,...object(payload.resources)};
       if(payload.policy){record.policy=payload.policy;record.flags_attested=record.flags_attested.filter(f=>f!=='policy_unmapped');}
-      if(observed){record.observations.push(observed);refreshValidity(record,currentSubject(record));}
+      if(observed)record.observations.push(observed);
+      if(observed||payload.resources)refreshValidity(record,currentSubject(record));
       if(payload.relations) record.relations.push(...payload.relations);
     };
   }

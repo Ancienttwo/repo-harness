@@ -31,7 +31,7 @@ export function advanceRecord(record:PipelineRecord,to:Phase,reason?:string):voi
       record.merge.phase_entry_facts={base_sha:subject!.base_sha,head_sha:subject!.head_sha};
     } else if(from==='merge-ask'&&to==='merged') {
       const fact=record.merge.external_merge;const go=record.merge.owner_approval;
-      requireGate(!!fact && !!go && !go.expired && go.head_sha===fact.pre_merge_head && go.base_sha===fact.pre_merge_base && go.tree_digest===fact.tree_digest && go.merge_method===fact.method && go.at<=fact.observed_at,'Historical go must cover the recorded merge');
+      requireGate(!!fact && !!go && !go.expired && go.pr===record.resources.pr && go.target_branch===record.resources.pr_base && go.head_sha===fact.pre_merge_head && go.base_sha===fact.pre_merge_base && go.tree_digest===fact.tree_digest && go.merge_method===fact.method && go.at<=fact.observed_at,'Historical go must cover the recorded merge');
       record.merge.owner_approval!.consumed_at=fact!.observed_at;
       record.merge.squash_commit=fact!.squash_commit;
     } else if((from==='merged'||from==='abandoned') && to==='cleanup') {

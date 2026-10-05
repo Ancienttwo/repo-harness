@@ -170,6 +170,16 @@ test('A7: ask/go/revoke and historical go survive B to M; external merge is an o
   const other=create(root,'external');record(other,'external-merge',{squash_commit:merge,pre_merge_head:s.head_sha,pre_merge_base:s.base_sha,tree_digest:s.tree_digest,method:'squash',observed_at:new Date().toISOString()});expect(store.read(other).phase).toBe('merged');expect(store.read(other).admission).toBe('observed');expect(store.read(other).merge.external_merge?.approval_not_recorded).toBe(true);expect(store.read(other).merge.external_merge?.confirmed_deviation).toBe(false);
 });
 
+test('A7: a PR or same-SHA target change expires unconsumed go and refuses its consumption',()=>{
+  const root=repo('destination');git(root,'branch','release');
+  for(const [task,resources] of [['pr',{pr:18}],['target',{pr_base:'release'}]] as const){
+    const key=create(root,task),s=resource(key,root);mergeReady(key,s);record(key,'go',go(key,s));
+    record(key,'resource',{resources});expect(store.read(key).merge.owner_approval).toMatchObject({expired:true,expired_reason:'destination_changed'});
+    record(key,'observation',{kind:'merge_fact',source:'operator',data:{squash_commit:s.head_sha,pre_merge_head:s.head_sha,pre_merge_base:s.base_sha,tree_digest:s.tree_digest,method:'squash',observed_at:new Date().toISOString()}});
+    expect(()=>mutatePipeline(store,key,{op:'advance',to:'merged',state_version:store.read(key).state_version})).toThrow('Historical go');expect(store.read(key).merge.owner_approval?.consumed_at).toBeNull();
+  }
+});
+
 test('A8: notes and go do not refresh source ages; partial and failed refresh retain times',async()=>{
   const root=repo('repo'),key=create(root),s=resource(key,root);const before=readPipelineSnapshot({env});record(key,'observation',{kind:'note',source:'operator',data:{}});mergeReady(key,s);record(key,'go',go(key,s));expect(readPipelineSnapshot({env}).source_observed_at).toEqual(before.source_observed_at);
   const remote=create(root,'remote','unreachable');record(remote,'observation',{kind:'session',source:'registration',data:{role:'implement'}});ingestEvent(store,{host:hostname(),herdr_session:'observer-fixture',result:{panes:[]}},{snapshot:true});expect(readPipelineSnapshot({env}).status).toBe('partial');expect(readPipelineSnapshot({env}).source_observed_at[`${hostname()}:git`]).toBe(before.source_observed_at[`${hostname()}:git`]);
