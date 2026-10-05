@@ -182,8 +182,8 @@ export function validateAutomationControllerRun(value: unknown): AutomationContr
 const TRANSITIONS: Readonly<Record<AutomationControllerState | 'absent', Readonly<Record<string, AutomationControllerState>>>> = Object.freeze({
   absent: Object.freeze({ start: 'created' }),
   created: Object.freeze({ observe: 'observing', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
-  observing: Object.freeze({ begin_acquire: 'acquiring', no_offer: 'completed', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
-  acquiring: Object.freeze({ acquired: 'executing', retry_wait: 'observing', block: 'blocked', exhaust_budget: 'budget_exhausted', require_reconciliation: 'reconciliation_required' }),
+  observing: Object.freeze({ begin_acquire: 'acquiring', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
+  acquiring: Object.freeze({ acquired: 'executing', no_offer: 'completed', retry_wait: 'observing', block: 'blocked', exhaust_budget: 'budget_exhausted', require_reconciliation: 'reconciliation_required' }),
   executing: Object.freeze({ begin_dispatch: 'executing', dispatch_started: 'waiting_for_evidence', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   waiting_for_evidence: Object.freeze({ outcome_observed: 'observing', retry_wait: 'observing', complete: 'completed', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   stopping: Object.freeze({ stop: 'stopped', require_reconciliation: 'reconciliation_required' }),

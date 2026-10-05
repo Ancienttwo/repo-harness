@@ -87,30 +87,58 @@ function publishedBudget(root: string) {
   return budget;
 }
 
+/** Runs `body` against a real published budget, an isolated grant home and the budget store's own test clock. */
+function withPublishedBudget(body: (root: string, budget: ReturnType<typeof publishedBudget>) => void): void {
+  const root = mkdtempSync(join(tmpdir(), 'controller-budget-')); spawnSync('git', ['init', '-q'], { cwd: root });
+  const home = mkdtempSync(join(tmpdir(), 'controller-budget-home-'));
+  const previous = { home: process.env.REPO_HARNESS_HOME, seam: process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] };
+  process.env.REPO_HARNESS_HOME = home; process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = '1';
+  let storeMs = Date.parse('2026-09-04T00:00:00.000Z');
+  __setAutomationClockForTests(() => new Date(storeMs += 1_000));
+  try { body(root, publishedBudget(root)); } finally {
+    __resetAutomationClockForTests();
+    if (previous.home === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = previous.home;
+    if (previous.seam === undefined) delete process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV]; else process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = previous.seam;
+    rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/** Budget read, reservation and usage stay on the real store; only the Engineer, Lease and dispatch effects are external. */
+function realBudgetDependencies(root: string, acquire: unknown, dispatch: unknown, usages: AutomationUsageCommitV1[]) {
+  const { readBudget: _readBudget, reserveBudget: _reserveBudget, appendUsage: _appendUsage, ...external } = dependencies(acquire, dispatch);
+  return { ...external, readDispatchAuthority: () => dispatchAuthority(root) as never,
+    appendUsage: (input: Parameters<typeof appendAutomationUsage>[0]) => { const commit = appendAutomationUsage(input); usages.push(commit); return commit; } };
+}
+
+const controllerRoot = (root: string): string => join(root, '.git', 'repo-harness', 'automation-controllers', 'v1');
+
+/** Operations of the persisted controller chain, oldest first. */
+function chainOperations(root: string, runId: string): string[] {
+  const store = controllerRoot(root);
+  let digest: string | null = (JSON.parse(readFileSync(join(store, 'runs', runId, 'current.json'), 'utf8')) as { current_event_sha256: string }).current_event_sha256;
+  const operations: string[] = [];
+  while (digest !== null) {
+    const event = JSON.parse(readFileSync(join(store, 'events', `${digest.slice('sha256:'.length)}.json`), 'utf8')) as { operation: string; previous_event_sha256: string | null };
+    operations.unshift(event.operation); digest = event.previous_event_sha256;
+  }
+  return operations;
+}
+
+const start = (root: string, runId: string, deps: object, policy = POLICY) => startBoundedAutomationController({ repo_root: root, automation_run_id: runId, authorization_id: principal.auth_subject, idempotency_key: 'start', policy, protected_paths: ['plans', 'tasks'] }, deps);
+
 describe('issue #279 bounded controller orchestration', () => {
   test('starts from a real published budget and charges each usage to its exact controller event', () => {
-    const root = mkdtempSync(join(tmpdir(), 'controller-budget-')); spawnSync('git', ['init', '-q'], { cwd: root });
-    const home = mkdtempSync(join(tmpdir(), 'controller-budget-home-'));
-    const previous = { home: process.env.REPO_HARNESS_HOME, seam: process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] };
-    process.env.REPO_HARNESS_HOME = home; process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = '1';
-    let storeMs = Date.parse('2026-09-04T00:00:00.000Z');
-    __setAutomationClockForTests(() => new Date(storeMs += 1_000));
-    try {
-      const budget = publishedBudget(root);
+    withPublishedBudget((root, budget) => {
       const runId = budget.automation_run_id;
-      const acquisition = acquired(root);
       const usages: AutomationUsageCommitV1[] = [];
-      // Budget read, reservation and usage stay on the real store; only the Engineer, Lease and dispatch effects are external.
-      const { readBudget: _readBudget, reserveBudget: _reserveBudget, appendUsage: _appendUsage, ...external } = dependencies(acquisition, { current: { state: 'completed', observation_sha256: SHA } });
-      const deps = { ...external, readDispatchAuthority: () => dispatchAuthority(root) as never,
-        appendUsage: (input: Parameters<typeof appendAutomationUsage>[0]) => { const commit = appendAutomationUsage(input); usages.push(commit); return commit; } };
+      const deps = realBudgetDependencies(root, acquired(root), { current: { state: 'completed', observation_sha256: SHA } }, usages);
 
-      const started = startBoundedAutomationController({ repo_root: root, automation_run_id: runId, authorization_id: principal.auth_subject, idempotency_key: 'start', policy: POLICY, protected_paths: ['plans', 'tasks'] }, deps);
+      const started = start(root, runId, deps);
       expect({ run_id: started.run.run_id, budget_sha256: started.run.budget_sha256, state: started.current.state }).toEqual({ run_id: runId, budget_sha256: budget.budget_sha256, state: 'created' });
       expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current.state).toBe('executing');
       expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2', dispatch_id: SHA }, deps).current.state).toBe('observing');
 
-      const events = join(root, '.git', 'repo-harness', 'automation-controllers', 'v1', 'events');
+      const events = join(controllerRoot(root), 'events');
       const charged = usages.map((usage) => usage.event.evidence_refs.map((ref) => {
         const event = JSON.parse(readFileSync(join(events, `${ref.sha256}.json`), 'utf8')) as { run_id: string; operation: string; event_sha256: string };
         return { ref: ref.ref, run_id: event.run_id, operation: event.operation, exact: event.event_sha256 === `sha256:${ref.sha256}` };
@@ -121,12 +149,23 @@ describe('issue #279 bounded controller orchestration', () => {
       ]);
       const status = readAutomationBudgetStatus(root, runId);
       expect({ events: status.current.event_count, open: status.current.open_reservation_sha256s, drift: status.drift }).toEqual({ events: 2, open: [], drift: 'none' });
-    } finally {
-      __resetAutomationClockForTests();
-      if (previous.home === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = previous.home;
-      if (previous.seam === undefined) delete process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV]; else process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = previous.seam;
-      rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true });
-    }
+    });
+  });
+
+  test('an empty work queue settles the persisted acquisition boundary as completed after one charge', () => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      const usages: AutomationUsageCommitV1[] = []; let acquisitions = 0;
+      const deps = { ...realBudgetDependencies(root, null, null, usages), acquireNext: () => { acquisitions += 1; return { ok: false, error: 'engineer_no_eligible_offer', message: 'none' } as never; } };
+      start(root, runId, deps);
+
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current).toMatchObject({ state: 'completed', attention_owner: 'none', blocker: null });
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2' }, deps).current.state).toBe('completed');
+      expect(chainOperations(root, runId)).toEqual(['start', 'observe', 'begin_acquire', 'no_offer']);
+      expect({ acquisitions, outcomes: usages.map((usage) => usage.event.outcome) }).toEqual({ acquisitions: 1, outcomes: ['no_progress'] });
+      const status = readAutomationBudgetStatus(root, runId);
+      expect({ events: status.current.event_count, open: status.current.open_reservation_sha256s, drift: status.drift }).toEqual({ events: 1, open: [], drift: 'none' });
+    });
   });
 
   test('persists acquisition before consuming a real WorkEnvelope and dispatches only through the fenced dependency', () => {
