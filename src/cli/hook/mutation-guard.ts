@@ -595,8 +595,14 @@ function normalizeFilePath(repoRoot: string, raw: string): string {
 // apply_patch parsing (hook_get_apply_patch_paths port)
 // ---------------------------------------------------------------------------
 
-const APPLY_PATCH_FILE_LINE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/;
-const APPLY_PATCH_MOVE_LINE = /^\*\*\* Move to: (.+)$/;
+// Matches what codex-cli 0.160.0 applies. It trims a file hunk header with
+// Rust `str::trim` before it matches the marker, so leading and trailing
+// Unicode White_Space is allowed there. That set includes U+0085 and excludes
+// U+FEFF, so JS `\s` does not fit. `*** Move to: ` must start at column 0;
+// only its trailing whitespace is trimmed. Inner path whitespace is kept.
+const PATCH_WS = '[\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]';
+const APPLY_PATCH_FILE_LINE = new RegExp(`^${PATCH_WS}*\\*\\*\\* (?:Add|Update|Delete) File: (.+?)${PATCH_WS}*$`, 's');
+const APPLY_PATCH_MOVE_LINE = new RegExp(`^\\*\\*\\* Move to: (.+?)${PATCH_WS}*$`, 's');
 
 function extractApplyPatchPaths(repoRoot: string, command: string): readonly string[] {
   const paths: string[] = [];

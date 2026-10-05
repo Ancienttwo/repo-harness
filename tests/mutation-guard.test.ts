@@ -205,12 +205,12 @@ function edit(cwd: string, filePath: string, options: { readonly env?: NodeJS.Pr
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
 /** The installed host path: `repo-harness-hook PreToolUse --route edit` in a child process with an isolated HOME. */
-function hostEdit(cwd: string, home: string, toolInput: Record<string, string>) {
+function hostEdit(cwd: string, home: string, toolInput: Record<string, string>, host: 'claude' | 'codex' = 'claude') {
   const result = spawnSync(process.execPath, [HOOK_ENTRY, 'PreToolUse', '--route', 'edit'], {
     cwd,
     encoding: 'utf-8',
-    input: JSON.stringify({ tool_name: 'Edit', tool_input: toolInput }),
-    env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: home, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd },
+    input: JSON.stringify({ tool_name: 'command' in toolInput ? 'apply_patch' : 'Edit', tool_input: toolInput }),
+    env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: home, HOOK_HOST: host, HOOK_REPO_ROOT: cwd },
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -274,6 +274,25 @@ describe('mutation boundaries after workflow cutover', () => {
       const external = hostEdit(cwd, home, { file_path: `${outside}/notes.md` });
       expect(external.status).toBe(0);
       expect(external.stdout).not.toContain('action":"block');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+  test('host edit route checks apply_patch headers that Codex accepts with surrounding whitespace', () => {
+    // codex-cli 0.160.0 trims file hunk headers with Rust str::trim (Unicode
+    // White_Space, including U+0085 that JS \s lacks) before it matches them.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-patch-indent-')));
+    const cwd = join(root, 'repo');
+    const home = join(root, 'home');
+    try {
+      mkdirSync(cwd, { recursive: true }); mkdirSync(home, { recursive: true });
+      initRepo(cwd);
+      for (const [indent, target] of [['  ', '_ops/indented'], ['\t', '_ops/tab'], ['\u0085', '_ops/nel'], ['\u3000', '_ref/ideographic']]) {
+        const command = `*** Begin Patch\n*** Add File: src/okay.ts\n+okay\n${indent}*** Add File: ${target}\n+secret\n*** End Patch`;
+        for (const host of ['claude', 'codex'] as const) {
+          const result = hostEdit(cwd, home, { command }, host);
+          expect({ host, target, status: result.status }).toEqual({ host, target, status: 2 });
+          expect(`${result.stdout}${result.stderr}`).toContain(`${target} is under`);
+        }
+      }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
   test('host edit route keeps a private-path deny when diagnostic I/O fails', () => {
