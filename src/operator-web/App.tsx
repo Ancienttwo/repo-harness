@@ -1708,6 +1708,9 @@ export function OperatorApp({
   useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId,decisionAfter,collaborationRefreshGeneration]), {
     enabled: !initialCollaboration && collaborationRepositoryId !== null,
   });
+  // Organization-only readers stay mounted to keep their last result, but they
+  // poll only while their panel shows; the shared Fleet read keeps running.
+  const organizationActive = activeRepository === null || view === 'organization';
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id,{ key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
 
   return (
@@ -1736,17 +1739,18 @@ export function OperatorApp({
             generation={collaborationRefreshGeneration} read={readTaskHistory} onClose={closeSelection} t={t} />}
 
           {activeRepository && <ObservationTabs view={view} onChange={setView} t={t} />}
-          <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={activeRepository !== null && view !== 'organization'}>
+          <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive}>
           {activeRepository && <AutomationSummary
             repositoryId={activeRepository.repository_id}
             refreshGeneration={collaborationRefreshGeneration}
+            active={organizationActive}
             readObservation={fetchRepositoryObservation}
             t={t}
           />}
           {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
           {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
-          <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} refreshGeneration={collaborationRefreshGeneration} t={t} />
-          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} refreshGeneration={collaborationRefreshGeneration} t={t} />
+          <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} refreshGeneration={collaborationRefreshGeneration} active={organizationActive} t={t} />
+          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} refreshGeneration={collaborationRefreshGeneration} active={organizationActive} t={t} />
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />

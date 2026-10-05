@@ -92,8 +92,10 @@ interface ObservationState {
   readonly status: 'loading' | 'ready' | 'failed'; readonly observation: OperatorRepositorySnapshot | null;
 }
 
-export function AutomationSummary({ repositoryId, refreshGeneration, readObservation = fetchRepositorySnapshot, t }: {
+export function AutomationSummary({ repositoryId, refreshGeneration, active, readObservation = fetchRepositorySnapshot, t }: {
   readonly repositoryId: string; readonly refreshGeneration: number;
+  /** False while the owning panel is hidden; polling pauses and the last result stays. */
+  readonly active: boolean;
   readonly readObservation?: RepositoryObservationReader; readonly t: OperatorTranslate;
 }) {
   const [state, setState] = useState<ObservationState | null>(null);
@@ -117,7 +119,7 @@ export function AutomationSummary({ repositoryId, refreshGeneration, readObserva
       return false;
     }
   }, [repositoryId,refreshGeneration,readObservation]);
-  useObservationRefresh(observe, JSON.stringify([repositoryId,refreshGeneration]));
+  useObservationRefresh(observe, JSON.stringify([repositoryId,refreshGeneration]), { enabled: active });
   // Render-time identity also fences the frame before the replacement effect runs.
   const scoped = state?.repositoryId === repositoryId ? state : null;
   const status = scoped?.refreshGeneration === refreshGeneration ? scoped.status : 'loading';

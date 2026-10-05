@@ -195,6 +195,28 @@ afterEach(async () => {
   window.close();
 });
 
+const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatusV1 = {
+  protocol: 1,
+  kind: 'operator_notify_status',
+  plugin_id: 'aimpact.webhook-notify',
+  linked: 'linked',
+  enabled: 'enabled',
+  config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' },
+  last_delivery: { at: null, result: 'missing' },
+  observed_at: '2026-09-22T00:00:00.000Z',
+};
+const board: import('../../src/core/pipeline/board').PipelineBoardV2 = {
+  projection_version: 'repo-harness.pipeline-board.v2',
+  status: 'ready',
+  generated_at: '2026-09-22T00:00:00.000Z',
+  last_reconciled_at: '2026-09-22T00:00:00.000Z',
+  epoch: 1,
+  commit_seq: 1,
+  source_observed_at: {},
+  coverage: { counted: 0, skipped: 0, errors: 0, registration_incomplete: 0 },
+  cards: [],
+};
+
 function observationClock() {
   const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
   const timers = new Map<number,{at:number;run:()=>void}>();
@@ -270,6 +292,57 @@ describe('bounded observation lifecycle',()=>{
       expect(counts).toEqual({ fleet: 2, repository: 3, context: 3 });
       expect(decisions).toHaveLength(4); expect(decisions.at(-1)).toBe('a'.repeat(64));
       expect(activities).toHaveLength(4); expect(activities.at(-1)).toEqual(query);
+    } finally {
+      await act(async () => root?.unmount()); root = null; clock.restore();
+    }
+  });
+
+  test('Organization-only readers pause behind another tab and read once on return, including a deferred Refresh', async () => {
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const clock = observationClock();
+    const counts = { fleet: 0, repository: 0, notify: 0, pipeline: 0 };
+    const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
+        fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
+        fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
+        readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
+        readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
+      expect(counts).toEqual({ fleet: 0, repository: 1, notify: 1, pipeline: 1 });
+      await tab('delivery');
+      await clock.advance(600_000);
+      expect(counts).toEqual({ fleet: 20, repository: 1, notify: 1, pipeline: 1 });
+      expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('ready');
+      await tab('organization');
+      expect(counts).toEqual({ fleet: 20, repository: 2, notify: 2, pipeline: 2 });
+      await clock.advance(30_000);
+      expect(counts).toEqual({ fleet: 21, repository: 3, notify: 3, pipeline: 3 });
+      await tab('planning');
+      await act(async () => buttonWithText('Refresh').click());
+      expect(counts).toEqual({ fleet: 22, repository: 3, notify: 3, pipeline: 3 });
+      await tab('organization');
+      expect(counts).toEqual({ fleet: 22, repository: 4, notify: 4, pipeline: 4 });
+    } finally {
+      await act(async () => root?.unmount()); root = null; clock.restore();
+    }
+  });
+
+  test('seeded Organization readers that start without a read still read at once on return', async () => {
+    const clock = observationClock();
+    const counts = { notify: 0, pipeline: 0 };
+    const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
+        fetchSnapshot={async () => stableSnapshot}
+        fetchRepositoryObservation={async () => { throw Error('fixture unavailable'); }}
+        initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
+        initialPipelineBoard={board} readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
+      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+      await tab('delivery');
+      await clock.advance(300_000);
+      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+      await tab('organization');
+      expect(counts).toEqual({ notify: 1, pipeline: 1 });
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -945,27 +1018,6 @@ describe('operator web interactions', () => {
   });
 
   test('the page Refresh action also re-requests the Notify and Pipeline panels', async () => {
-    const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatusV1 = {
-      protocol: 1,
-      kind: 'operator_notify_status',
-      plugin_id: 'aimpact.webhook-notify',
-      linked: 'linked',
-      enabled: 'enabled',
-      config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' },
-      last_delivery: { at: null, result: 'missing' },
-      observed_at: '2026-09-22T00:00:00.000Z',
-    };
-    const board: import('../../src/core/pipeline/board').PipelineBoardV2 = {
-      projection_version: 'repo-harness.pipeline-board.v2',
-      status: 'ready',
-      generated_at: '2026-09-22T00:00:00.000Z',
-      last_reconciled_at: '2026-09-22T00:00:00.000Z',
-      epoch: 1,
-      commit_seq: 1,
-      source_observed_at: {},
-      coverage: { counted: 0, skipped: 0, errors: 0, registration_incomplete: 0 },
-      cards: [],
-    };
     let notify = 0;
     let pipeline = 0;
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}

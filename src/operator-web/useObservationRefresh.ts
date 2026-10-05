@@ -3,15 +3,20 @@ import { useCallback, useEffect, useRef } from 'react';
 const OBSERVATION_INTERVAL_MS = 30_000;
 
 /** Owns only request lifetime. Readers retain decoding, source state and errors.
- * A promise must retire before the same loop can start its queued request. */
+ * A promise must retire before the same loop can start its queued request.
+ * A loop that resumes after `enabled` was false reads at once, like a page that
+ * becomes visible again, so work deferred while paused is not lost. */
 export function useObservationRefresh(
   read: (signal: AbortSignal) => Promise<boolean>,
   identity: string,
   { enabled = true, immediate = true }: { readonly enabled?: boolean; readonly immediate?: boolean } = {},
 ): () => void {
   const requestRef = useRef<() => void>(() => {});
+  const pausedRef = useRef(false);
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) { pausedRef.current = true; return; }
+    const resumed = pausedRef.current;
+    pausedRef.current = false;
     let disposed = false;
     let active: AbortController | null = null;
     let latest: AbortController | null = null;
@@ -47,7 +52,7 @@ export function useObservationRefresh(
     };
     requestRef.current = request;
     document.addEventListener('visibilitychange', visibilityChanged);
-    if (immediate) request(); else schedule();
+    if (immediate || resumed) request(); else schedule();
     return () => {
       disposed = true;
       clearTimer(); latest?.abort();
