@@ -276,6 +276,33 @@ describe('mutation boundaries after workflow cutover', () => {
       expect(external.stdout).not.toContain('action":"block');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
+  test.skipIf(process.platform === 'win32')('host edit route allows foreign Win32 drive paths only when no repository entry can alias them', () => {
+    // On a POSIX host a Win32 drive path is not native-absolute. A host that reads
+    // it as relative writes below `<repo>/C:`, so an existing entry there is an alias.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-win32-')));
+    const cwd = join(root, 'repo');
+    const home = join(root, 'home');
+    try {
+      mkdirSync(cwd, { recursive: true }); mkdirSync(home, { recursive: true });
+      initRepo(cwd);
+      mkdirSync(join(cwd, '_ops'), { recursive: true });
+      for (const host of ['claude', 'codex'] as const) {
+        for (const filePath of ['C:/Users/user/notes.md', 'C:\\Users\\user\\notes.md']) {
+          expect({ host, filePath, status: hostEdit(cwd, home, { file_path: filePath }, host).status })
+            .toEqual({ host, filePath, status: 0 });
+        }
+        for (const filePath of ['C:/../_ops/secret.env', 'C:\\..\\_ops\\secret.env']) {
+          const result = hostEdit(cwd, home, { file_path: filePath }, host);
+          expect({ host, filePath, status: result.status }).toEqual({ host, filePath, status: 2 });
+          expect(`${result.stdout}${result.stderr}`).toContain('[RepoScopeGuard]');
+        }
+      }
+      symlinkSync(join(cwd, '_ops'), join(cwd, 'C:'));
+      const aliased = hostEdit(cwd, home, { command: '*** Begin Patch\n*** Add File: C:/secret.env\n+secret\n*** End Patch' }, 'codex');
+      expect(aliased.status).toBe(2);
+      expect(`${aliased.stdout}${aliased.stderr}`).toContain('[RepoScopeGuard]');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
   test('host edit route checks apply_patch headers that Codex accepts with surrounding whitespace', () => {
     // codex-cli 0.160.0 trims file hunk headers with Rust str::trim (Unicode
     // White_Space, including U+0085 that JS \s lacks) before it matches them.

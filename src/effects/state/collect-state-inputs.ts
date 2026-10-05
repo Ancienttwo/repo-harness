@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { readFileSync, realpathSync, statSync } from 'fs';
+import { lstatSync, readFileSync, realpathSync, statSync } from 'fs';
 import { basename, dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
 
@@ -8,15 +8,16 @@ export interface CollectedStateInputs {
   readonly stateRevision: string;
 }
 
-function canonicalTarget(cwd: string, candidate: string): { root: string; target: string } | null {
-  if (
-    !candidate
+function lexicallyUnsafe(candidate: string): boolean {
+  return !candidate
     || candidate.includes('\0')
     || candidate.includes('\n')
     || candidate.includes('\r')
-    || candidate.replaceAll('\\', '/').split('/').includes('..')
-    || (win32.isAbsolute(candidate) && !isAbsolute(candidate))
-  ) return null;
+    || candidate.replaceAll('\\', '/').split('/').includes('..');
+}
+
+function canonicalTarget(cwd: string, candidate: string): { root: string; target: string } | null {
+  if (lexicallyUnsafe(candidate) || (win32.isAbsolute(candidate) && !isAbsolute(candidate))) return null;
 
   const root = realpathSync(resolve(cwd));
   const lexicalTarget = isAbsolute(candidate) ? resolve(candidate) : resolve(root, candidate);
@@ -63,6 +64,22 @@ export function canonicalRepoRelativePath(cwd: string, candidate: string): strin
 export function canonicalExternalPath(cwd: string, candidate: string): string | null {
   const resolved = canonicalTarget(cwd, candidate);
   return resolved && containedRelativePath(resolved.root, resolved.target) === null ? resolved.target : null;
+}
+
+/**
+ * Win32 drive-absolute path on a host whose own grammar reads it as relative
+ * (`C:/x` on POSIX). It names no file of this repository. A host that reads it
+ * as relative creates a new entry below the root, so the first relative segment
+ * must not exist yet: an existing entry there could alias a protected target.
+ */
+export function isForeignDriveAbsolutePath(cwd: string, candidate: string): boolean {
+  if (lexicallyUnsafe(candidate) || isAbsolute(candidate) || !/^[A-Za-z]:[\\/]/.test(candidate)) return false;
+  try {
+    lstatSync(resolve(realpathSync(resolve(cwd)), candidate.split('/')[0]!));
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
 }
 
 export function repoPath(cwd: string, relPath: string): string {

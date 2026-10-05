@@ -23,6 +23,7 @@ import {
   canonicalExternalPath,
   canonicalRepoRelativePath,
   fileExists,
+  isForeignDriveAbsolutePath,
   readText,
   safeRealpath,
 } from '../../effects/state/collect-state-inputs';
@@ -426,10 +427,12 @@ function runPerPathGuards(
 ): void {
   // normalizeFilePath leaves an absolute path raw both for a verified external
   // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
-  // only the first may skip the repository boundary checks below.
+  // only the first, or a foreign Win32 drive path, may skip the repository
+  // boundary checks below.
   if (isRepoScopedPath(filePath)
     ? canonicalRepoRelativePath(ctx.repoRoot, filePath) !== filePath
-    : canonicalExternalPath(ctx.repoRoot, filePath) === null) {
+    : canonicalExternalPath(ctx.repoRoot, filePath) === null
+      && !isForeignDriveAbsolutePath(ctx.repoRoot, filePath)) {
     out(ctx, `[RepoScopeGuard] Unsafe or out-of-repository target: ${filePath}`);
     structuredError(
       ctx,
