@@ -106,9 +106,20 @@ describe('committed module review prompt', () => {
   test('shows invalid schema status and refuses to publish rejected flows', () => {
     const root = repo();
     const flow = Bun.YAML.parse(readFileSync(join(root, MODULE_FLOW), 'utf8')) as { id: string };
-    flow.id = 'flow.module-name.primary'; fixtureWrite(root, MODULE_FLOW, Bun.YAML.stringify(flow)); fixtureCommit(root);
+    flow.id = 'flow.Module.primary'; fixtureWrite(root, MODULE_FLOW, Bun.YAML.stringify(flow)); fixtureCommit(root);
     expect(new ArchitectureModelReader(root).list().modules[0].state.model_valid).toBe('invalid');
     expect(() => new ArchitectureModelReader(root).reviewPrompt(MODULE_ID)).toThrow(`model_invalid: ${MODULE_FLOW}`);
+  });
+  test('accepts first-segment hyphens from the published 0.6.2 flow schema', () => {
+    const capabilityId = 'capability.test-suite.module';
+    const flowId = 'flow.module-name.primary';
+    const root = repo({ capabilityId, flowId }), reader = new ArchitectureModelReader(root);
+    expect(reader.list().modules[0].state.model_valid).toBe('valid');
+    expect(reader.detail(capabilityId).flows[0].id).toBe(flowId);
+    const prompt = reader.reviewPrompt(capabilityId);
+    expect(prompt.capability_id).toBe(capabilityId);
+    expect(prompt.prompt).toContain(flowId);
+    expect(new ArchitectureModelReader(root).reviewPrompt(capabilityId).digest).toBe(prompt.digest);
   });
   test('reads the schema-valid not-applicable flow branch and its reason', () => {
     const root = repo();
@@ -147,4 +158,10 @@ test('section parser and narrowed secret rules preserve absent values', () => {
   expect(containsSecret('tokens: null\nTOKEN: none\nAPI_KEY: ""')).toBe(false);
   expect(containsSecret('API_KEY=sample-secret')).toBe(true);
   expect(containsSecret('123456789:'+'a'.repeat(35))).toBe(true);
+});
+
+test('OpenAI prompt detection uses a token boundary without shrinking MCP redaction', () => {
+  expect(containsSecret('bound-task-abcdefghijklmnopqrstuv')).toBe(false);
+  expect(containsSecret('"sk-'+'A'.repeat(24)+'"')).toBe(true);
+  expect(containsSecret('TOKEN=prefixsk-'+'A'.repeat(24))).toBe(true);
 });

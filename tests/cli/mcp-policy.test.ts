@@ -352,4 +352,5 @@ test('shared token rules keep existing redaction and hide webhook and credential
   }
   // MCP keeps its broad assignment rule. Only prompt detection narrows it.
   expect(redactMcpText('tokens: null').text).toContain('REDACTED');
+  expect(redactMcpText('bound-task-abcdefghijklmnopqrstuv').text).toContain('REDACTED');
 });

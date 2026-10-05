@@ -14,7 +14,14 @@ export const SECRET_TOKEN_PATTERNS = [
 
 /** Assignment detection is case-sensitive. Empty and explicit absent values are safe. */
 export function containsSecret(text: string): boolean {
-  if (SECRET_TOKEN_PATTERNS.some(({ pattern }) => new RegExp(pattern.source, pattern.flags).test(text))) return true;
+  for (const { type, pattern } of SECRET_TOKEN_PATTERNS) {
+    for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
+      // The sk- prefix starts a token. It cannot start inside another identifier.
+      // MCP still uses the broad shared pattern for replacement.
+      if (type === 'openai_key' && match.index > 0 && /[A-Za-z0-9_]/.test(text[match.index - 1])) continue;
+      return true;
+    }
+  }
   const assignments = /(?:^|[^\w])([A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS|DATABASE_URL|POSTGRES_URL|MONGODB_URI|REDIS_URL)[A-Z0-9_]*)\s*[:=][ \t]*([^\r\n]*)/g;
   for (const match of text.matchAll(assignments)) {
     const value = match[2].trim().split(/\s+#/)[0].trim();
