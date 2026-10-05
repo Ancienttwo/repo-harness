@@ -25,7 +25,6 @@ export type MergeReadinessBlockerCode =
   | 'base_moved_since_verification'
   | 'review_subject_mismatch'
   | 'verification_evidence_stale'
-  | 'rollback_tags_pending'
   | 'checks_failed'
   | 'checks_pending'
   | 'acceptance_missing'
@@ -45,6 +44,10 @@ export type MergeReadinessIntegrationMode = 'unmerged' | 'ancestor' | 'absorbed'
 export type MergeReadinessAcceptance = 'pass' | 'not_required' | 'waived' | 'missing';
 export type MergeReadinessObservation = 'stable' | 'changed_during_read' | 'provider_unavailable' | 'provider_data_incomplete';
 
+export type MergeReadinessRollbackBoundary =
+  | { readonly status: 'not_active' }
+  | { readonly status: 'ready'; readonly pr_number: number; readonly before_sha: string; readonly after_sha: string };
+
 export interface ProviderMergeReadinessFactsV1 {
   readonly state: string;
   readonly is_draft: boolean;
@@ -52,7 +55,7 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly base_sha: string;
   readonly review_decision: string | null;
   readonly unresolved_thread_count: number | null;
-  readonly rollback_tags: 'not_active' | 'ready' | 'pending';
+  readonly rollback_boundary: MergeReadinessRollbackBoundary | null;
   readonly checks: readonly {
     readonly name: string;
     readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
@@ -99,7 +102,6 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   base_moved_since_verification: 'agent',
   review_subject_mismatch: 'agent',
   verification_evidence_stale: 'agent',
-  rollback_tags_pending: 'agent',
   checks_failed: 'agent',
   checks_pending: 'external',
   acceptance_missing: 'agent',
@@ -130,7 +132,7 @@ function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): Me
  */
 export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): Omit<MergeReadinessV1, 'protocol' | 'kind' | 'publication_id'> {
   const blockers: MergeReadinessBlockerV1[] = [];
-  const validSha = (value: string) => /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
+  const validSha = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
   if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
   if (input.integration_mode === 'ancestor' || input.integration_mode === 'absorbed') push(blockers, 'already_integrated');
   if (input.integration_mode === 'unavailable') push(blockers, 'provider_data_incomplete');
@@ -144,8 +146,15 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (provider.is_draft) push(blockers, 'draft');
     if (provider.head_sha !== input.expected_head_sha) push(blockers, 'head_moved');
     if (provider.base_sha !== input.expected_base_sha) push(blockers, 'base_moved_since_verification');
-    if (provider.rollback_tags === 'pending') push(blockers, 'rollback_tags_pending');
-    else if (!['not_active', 'ready'].includes(provider.rollback_tags)) push(blockers, 'provider_data_incomplete');
+    const boundary = provider.rollback_boundary;
+    if (!boundary || typeof boundary !== 'object' || Array.isArray(boundary)
+      || (boundary.status !== 'not_active' && boundary.status !== 'ready')
+      || (boundary.status === 'ready' && (!Number.isSafeInteger(boundary.pr_number) || boundary.pr_number < 1
+        || !validSha(boundary.before_sha) || !validSha(boundary.after_sha)
+        || boundary.before_sha === boundary.after_sha
+        || boundary.after_sha !== provider.base_sha || boundary.after_sha !== input.expected_base_sha))) {
+      push(blockers, 'provider_data_incomplete');
+    }
     // GitHub owns review state; local review, lease and acceptance artifacts do not grant merge permission.
     if (provider.review_decision === 'CHANGES_REQUESTED') push(blockers, 'changes_requested');
     if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) push(blockers, 'provider_data_incomplete');
