@@ -33,6 +33,15 @@ All notable changes to this skill are documented here.
   now use the package library. Edits in a repo-local `workflow-state.sh` copy
   no longer affect these commands.
 
+### Fixed
+
+- Managed Draft publication no longer needs a host merge seal. The publication
+  receipt moves to protocol 3 and records PR, head, base and candidate diff
+  identity only. Merge readiness still blocks a moved base. Receipt protocols 1
+  and 2 are retired and fail closed without migration.
+- Publication reopen, takeover and abandon now check historical publication
+  identity. A target base advance no longer blocks these repair transitions.
+
 ## [0.20.0] - 2026-10-05
 
 This preparation covers `v0.19.5..ffe70133`.

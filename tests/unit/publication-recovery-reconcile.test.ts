@@ -97,7 +97,6 @@ function installFixture(options: FixtureOptions = {}): Fixture {
     repo_id: publicationSha256(resolveGitCommonDirectory(root)), task_id: taskId, task_revision: revision,
     claim_id: CLAIM, generation: 1, target_ref: 'main', base_sha: base, branch: 'codex/reconcile',
     head_sha: head, tree_sha: tree, candidate_diff_fingerprint: SUBJECT,
-    merge_seal_sha256: `sha256:${'5'.repeat(64)}`,
     provider: 'github', provider_repo_id: 'R_reconcile', pr_number: 1,
     pr_url: 'https://example.invalid/pr/1', created_at: '2026-08-22T04:05:55Z',
   });

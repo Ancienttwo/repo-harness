@@ -93,7 +93,6 @@ function fixture(): Fixture {
     task_id: taskId, task_revision: taskRevision, claim_id: CLAIM, generation: 1,
     target_ref: 'main', base_sha: BASE, branch: 'codex/feedback', head_sha: HEAD, tree_sha: 'c'.repeat(40),
     candidate_diff_fingerprint: `sha256:${'3'.repeat(64)}`,
-    merge_seal_sha256: `sha256:${'5'.repeat(64)}`,
     provider: 'github', provider_repo_id: 'R_feedback_concurrency', pr_number: 9,
     pr_url: 'https://example.invalid/pr/9', created_at: '2026-08-23T00:00:00Z',
   });
