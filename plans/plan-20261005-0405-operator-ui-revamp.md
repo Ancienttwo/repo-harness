@@ -871,6 +871,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 2. **权威 ledger 主机**：ledger 放在常开的 Mac mini 上。DB 路径由配置指定，候选值 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`。`/Volumes/D` 没有挂载时，ledger 显示 `unavailable`：不自动创建，不回退到第二个 DB。（§7 D0、§9）
 3. **notify 插件 v0.3.0**：先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。升级前先备份，升级后核对没有重复发送。旧 payload 视为 incomplete。（§7 D0、§9）
 4. **Bot skill 的归属**：runtime owner 要展示实际加载路径、版本/hash 和一次调用回执。试点链是 Grok → Repo-Harness → herdr，用一个低风险的 doc/test 任务，不用 byok-sdk，不强制合并。（§7 D0、§7 D 线后续、§8）
+   - **Skill 工作区只放在 Mac mini（Aimpact 2026-10-05 12:09 HKT）**：Bot 和 worker 的运行时 skill 来源只有一个，就是常开的 Mac mini。Max 只用于开发，不作为运行时来源，因为它经常离线。`repo-harness-cross-review` 的过时复制目录要统一成指向同一来源的符号链接。
 5. **架构归属**：在现有 domain 下新增一个只读的 operator capability 节点。（Phase B、§9）
 6. **P1 的顺序**：三个 P1 项按各自的依赖排期，不排在两条线全部完成之后。三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**。（§7）
 7. **Agent config 的边界**：用单独的 collector，带显式路径白名单。GET 只读快照，「不返回也不存储内容」。符号链接在白名单内解析。GET 里不调用 herdr 子进程。没有快照时显示 `unknown`。（§4.5、§6.8、Phase C）
