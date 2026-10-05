@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import {
   CODEX_READ_ONLY_ARGV_TEMPLATE,
@@ -30,6 +30,7 @@ import {
   readDelegatedRunStatus,
   recordCodexReadOnlyCapability,
 } from '../../src/effects/engineers/delegated-run-store';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -251,6 +252,57 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
     };
     expect(processReceipt.argv).toEqual(CODEX_READ_ONLY_ARGV_TEMPLATE.map((part) => substitutions[part] ?? part));
     expect(readDelegatedRunEvidenceBlob(root, processReceipt.stdout_ref, processReceipt.stdout_sha256).toString('utf8')).toBe('{"untrusted":true}\n');
+  });
+
+  test('status fails closed when a persisted WorkerResult is a symlink or non-canonical bytes', () => {
+    const root = fixture();
+    const admission = admitted(root);
+    const prepared = prepare(root, admission);
+    dispatchDelegatedRun({
+      repo_root: root,
+      dispatch_id: prepared.intent.dispatch_id,
+      observed_at: '2026-08-26T00:00:03Z',
+      protected_paths: admission.protectedPaths,
+    });
+    const collected = collectDelegatedRunResult({
+      repo_root: root,
+      dispatch_id: prepared.intent.dispatch_id,
+      untrusted_claims: [],
+      contribution_refs: [],
+    });
+    const resultName = `${collected.result!.result_sha256.slice('sha256:'.length)}.json`;
+    const resultPath = join(resolveGitCommonDirectory(root), 'repo-harness', 'delegated-runs', 'v1', 'results', resultName);
+    const canonical = readFileSync(resultPath);
+    expect(readDelegatedRunStatus(root, prepared.intent.dispatch_id).result?.result_sha256).toBe(collected.result!.result_sha256);
+
+    // A symlink is not a regular evidence file, even when it points at the
+    // exact canonical bytes.
+    const copyPath = join(dirname(resultPath), `symlink-target-${resultName}`);
+    writeFileSync(copyPath, canonical);
+    rmSync(resultPath);
+    symlinkSync(copyPath, resultPath);
+    try {
+      readDelegatedRunStatus(root, prepared.intent.dispatch_id);
+      throw new Error('status accepted a symlinked result');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DelegatedRunStoreError);
+      expect((error as DelegatedRunStoreError).code).toBe('delegated_run_unsafe_path');
+    }
+
+    // Bytes that parse to the same record but are not canonical are a
+    // conflict, not a silent read.
+    unlinkSync(resultPath);
+    writeFileSync(resultPath, canonical);
+    const reparsed = JSON.parse(canonical.toString('utf8')) as Record<string, unknown>;
+    writeFileSync(resultPath, `${JSON.stringify(reparsed, null, 2)}\n`);
+    try {
+      readDelegatedRunStatus(root, prepared.intent.dispatch_id);
+      throw new Error('status accepted non-canonical result bytes');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DelegatedRunStoreError);
+      expect((error as DelegatedRunStoreError).code).toBe('delegated_run_conflict');
+    }
+    unlinkSync(copyPath);
   });
 
   test('lost ACK after persisted launch claim reconciles without a second action', () => {
