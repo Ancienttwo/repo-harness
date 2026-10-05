@@ -389,7 +389,12 @@ function persistImmutable(repoRoot: string, kind: ImmutableStoreKind, valueDiges
 }
 
 function readImmutable<T>(repoRoot: string, kind: ImmutableStoreKind, valueDigest: string, validate: (value: unknown) => T, canonical: (value: T) => string): T {
-  const raw = readRegular(immutablePath(repoRoot, kind, valueDigest), `${kind} evidence`);
+  return readImmutableAt(immutablePath(repoRoot, kind, valueDigest), kind, validate, canonical);
+}
+
+/** `readImmutable` for a path inside a store directory the caller already resolved. */
+function readImmutableAt<T>(path: string, kind: ImmutableStoreKind, validate: (value: unknown) => T, canonical: (value: T) => string): T {
+  const raw = readRegular(path, `${kind} evidence`);
   let value: unknown;
   try { value = JSON.parse(raw.toString('utf8')); } catch (error) { throw new DelegatedRunStoreError('delegated_run_invalid', `${kind} evidence is not JSON`, error); }
   let result: T;
@@ -859,7 +864,9 @@ function status(repoRoot: string, intent: DelegatedRunIntentV1, current: Delegat
     }
     if (directory !== null && existsSync(directory)) for (const entry of readdirSync(directory).sort()) {
       if (!/^[0-9a-f]{64}\.json$/u.test(entry)) continue;
-      const candidate = readImmutable(repoRoot, 'results', `sha256:${entry.slice(0, -'.json'.length)}`, validateWorkerResult, canonicalWorkerResultBytes);
+      // `directory` is already resolved and verified; resolving it again per
+      // entry would start one `git` process for every historical result.
+      const candidate = readImmutableAt(join(directory, entry), 'results', validateWorkerResult, canonicalWorkerResultBytes);
       if (candidate.worker_run_ref_sha256 === runRef.run_ref_sha256) { result = candidate; break; }
     }
   }
