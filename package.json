@@ -94,7 +94,7 @@
     "@botiverse/oar": "0.18.0",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "archctx": "0.6.1",
-    "archctx-contracts": "0.6.1",
+    "archctx-contracts": "0.6.2",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }
