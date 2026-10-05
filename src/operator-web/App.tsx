@@ -457,6 +457,17 @@ function StatusBar({
   );
 }
 
+/** Retained Fleet facts after a failed read. The task pane omits Retry: its header already refreshes. */
+function FleetStaleNotice({ error, onRetry, t }: { readonly error: OperatorApiErrorV1; readonly onRetry?: () => void; readonly t: OperatorTranslate }) {
+  return (
+    <div className="operator-notice operator-notice--danger" role="alert">
+      <Icon name="alert" size={18} />
+      <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={error} t={t} /></span></div>
+      {onRetry && <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('notice.retry')}</button>}
+    </div>
+  );
+}
+
 function SnapshotNotice({
   state,
   onRetry,
@@ -474,15 +485,7 @@ function SnapshotNotice({
       </div>
     );
   }
-  if (state.kind === 'stale') {
-    return (
-      <div className="operator-notice operator-notice--danger" role="alert">
-        <Icon name="alert" size={18} />
-        <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={state.error} t={t} /></span></div>
-        <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('notice.retry')}</button>
-      </div>
-    );
-  }
+  if (state.kind === 'stale') return <FleetStaleNotice error={state.error} onRetry={onRetry} t={t} />;
   if (state.kind === 'changed-during-read') {
     return (
       <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
@@ -1508,12 +1511,7 @@ function DetailPane({
           </div>
         </div>
         <div className="detail-pane__body">
-          {fleetStaleError && (
-            <div className="operator-notice operator-notice--danger" role="alert">
-              <Icon name="alert" size={16} />
-              <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={fleetStaleError} t={t} /></span></div>
-            </div>
-          )}
+          {fleetStaleError && <FleetStaleNotice error={fleetStaleError} t={t} />}
           <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
           <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
           {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
