@@ -411,6 +411,8 @@ interface OracleProcessResult {
   status: number | null;
   signal: NodeJS.Signals | null;
   error?: Error;
+  /** The workload watchdog fired; Oracle may already have submitted the prompt. */
+  timedOut: boolean;
 }
 
 function oracleProcessTreeSupportError(): { code: 'ORACLE_PROCESS_TREE_UNSUPPORTED'; message: string; recovery: string } | undefined {
@@ -465,7 +467,7 @@ function runOracleProcess(
       child.stdout?.destroy();
       child.stderr?.destroy();
     };
-    const settle = (result: OracleProcessResult, destroyPipes = false) => {
+    const settle = (result: Omit<OracleProcessResult, 'timedOut'>, destroyPipes = false) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -473,7 +475,7 @@ function runOracleProcess(
       child.removeListener('error', onError);
       child.removeListener('close', onClose);
       if (destroyPipes) stopCollecting();
-      resolveResult(result);
+      resolveResult({ ...result, timedOut });
     };
     const onStdout = (chunk: Buffer | string) => collect(chunk, 'stdout');
     const onStderr = (chunk: Buffer | string) => collect(chunk, 'stderr');
@@ -690,8 +692,32 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
     if (historyPath) evidence.conversationCapture = readOracleConversationCapture(historyPath, providerSessionId, oracleHomeDir);
     if (capturePath) evidence.networkCapture = readOracleNetworkCapture(capturePath, providerSessionId, new URL(input.chatgptUrl ?? 'https://chatgpt.com/').origin);
 
-    // Pre/at-start failures are safe to surface as failed; the prompt never landed.
     if (result.error) {
+      // A watchdog timeout can interrupt a run after Oracle submitted the prompt.
+      // Only Oracle's own session metadata proves submission; an allocated session
+      // id alone does not.
+      if (result.timedOut && evidence.promptSubmitted === true) {
+        return {
+          status: 'recoverable',
+          ...evidence,
+          conversationUrl,
+          output: [
+            'Oracle timed out after it submitted the prompt.',
+            'Do not re-send the prompt; continue the existing conversation.',
+            `Oracle session: ${providerSessionId}`,
+            log ? `\n[log]\n${log}` : '',
+          ].filter(Boolean).join('\n'),
+          command,
+          oracleBinary: resolution.binary,
+          oracleVersion,
+          error: {
+            code: 'ORACLE_TIMEOUT_AFTER_SUBMIT',
+            message: result.error.message,
+            recovery: 'Reconnect with browser-followup using the saved providerSessionId instead of re-sending the prompt.',
+          },
+        };
+      }
+      // Spawn failures and timeouts without a submission record stay failed.
       return {
         status: 'failed',
         ...evidence,

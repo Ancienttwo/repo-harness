@@ -116,9 +116,9 @@ function writeFakeGitleaks(dir: string, version = '8.30.0'): string {
 // oracle used with a profile binding must answer --help/--debug-help.
 const FAKE_ORACLE_HELP = 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --copy-profile <dir> --browser-chrome-profile <name> --chatgpt-url <url> --heartbeat <seconds>';
 
-function sessionDescriptorFixture(id: string, parent: string | null = null): string[] {
+function sessionDescriptorFixture(id: string, parent: string | null = null, runtime?: Record<string, unknown>): string[] {
   const descriptor = JSON.stringify({ protocol: 1, kind: 'oracle-session', sessionId: id, parentSessionId: parent });
-  const metadata = JSON.stringify({ id, browser: { modelSelection: { strategy: 'current', resolvedLabel: '6 Pro', verified: false } } });
+  const metadata = JSON.stringify({ id, browser: { modelSelection: { strategy: 'current', resolvedLabel: '6 Pro', verified: false }, ...(runtime ? { runtime } : {}) } });
   return [
     'SESSION=""', 'PREV=""',
     'for a in "$@"; do',
@@ -1234,6 +1234,112 @@ describe('chatgpt browser command', () => {
       }
     });
   }, 15_000);
+
+  test('oracle timeout after a recorded prompt submission stays recoverable for browser-followup', async () => {
+    if (process.platform === 'win32') return;
+    await withAsyncRepo(async (repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-submitted-timeout-'));
+      try {
+        const submittedPath = writeFakeOracle(join(binDir, 'oracle-submitted'), {
+          body: [
+            ...sessionDescriptorFixture('oracle_timeout_123', null, { promptSubmitted: true, conversationId: 'conv-timeout-123' }),
+            'while :; do sleep 1; done',
+          ],
+        });
+        const consult = await runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--oracle-bin',
+          submittedPath,
+          '--timeout-ms',
+          '100',
+          '--prompt',
+          'Submit, then outlive the workload timeout.',
+        ]);
+        const payload = JSON.parse(consult.stdout);
+        expect(payload).toMatchObject({ status: 'recoverable', error: { code: 'ORACLE_TIMEOUT_AFTER_SUBMIT' } });
+        expect(payload.error.message).toContain('timed out after 100ms');
+        const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+        expect(meta.status).toBe('recoverable');
+        expect(meta.providerSessionId).toBe('oracle_timeout_123');
+
+        const followupPath = writeFakeOracle(join(binDir, 'oracle-followup'), {
+          body: [
+            ...sessionDescriptorFixture('oracle_followup_789', 'oracle_timeout_123'),
+            'ARGS="$*"',
+            'OUT=""',
+            'PREV=""',
+            'for a in "$@"; do',
+            '  if [ "$PREV" = "--write-output" ]; then OUT="$a"; fi',
+            '  PREV="$a"',
+            'done',
+            'printf "%s\\n" "Oracle saw: $ARGS" > "$OUT"',
+          ],
+        });
+        const followup = await runChatgpt([
+          'browser-followup',
+          '--repo',
+          repoRoot,
+          '--session',
+          payload.sessionId,
+          '--prompt',
+          'Continue the interrupted conversation.',
+          '--oracle-bin',
+          followupPath,
+        ]);
+        expect(followup.status).toBe(0);
+        const followupPayload = JSON.parse(followup.stdout);
+        expect(followupPayload.status).toBe('completed');
+        expect(readFileSync(followupPayload.paths.output, 'utf-8')).toContain('--followup oracle_timeout_123');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle timeout with a session descriptor but no submission record stays failed', async () => {
+    if (process.platform === 'win32') return;
+    await withAsyncRepo(async (repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-unsubmitted-timeout-'));
+      try {
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+          body: [
+            ...sessionDescriptorFixture('oracle_timeout_456', null, { promptSubmitted: false }),
+            'while :; do sleep 1; done',
+          ],
+        });
+        const consult = await runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--oracle-bin',
+          oraclePath,
+          '--timeout-ms',
+          '100',
+          '--prompt',
+          'Time out before the prompt lands.',
+        ]);
+        const payload = JSON.parse(consult.stdout);
+        expect(payload).toMatchObject({ status: 'failed', error: { code: 'ORACLE_EXEC_FAILED' } });
+        const followup = await runChatgpt([
+          'browser-followup',
+          '--repo',
+          repoRoot,
+          '--session',
+          payload.sessionId,
+          '--prompt',
+          'Continue.',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        expect(followup.status).not.toBe(0);
+        expect(followup.stderr).toContain('with status "failed"');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
 
   test('oracle provider reads the --write-output answer file and treats stdout as logs', async () => {
     await withRepo(async (repoRoot) => {
