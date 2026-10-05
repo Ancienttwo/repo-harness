@@ -102,6 +102,9 @@ async function main(argv: readonly string[]): Promise<void> {
     const placements = hostSkillPlacements(catalog, profileFlag);
     for (const name of placements.claude) console.log(`host\tclaude ${name}`);
     for (const name of placements.codex) console.log(`host\tcodex ${name}`);
+    const providers = hostSkillPlacements(catalog);
+    for (const name of providers.claude) console.log(`provider\tclaude ${name}`);
+    for (const name of providers.codex) console.log(`provider\tcodex ${name}`);
     return;
   }
   if (subcommand === "facade-sources") {

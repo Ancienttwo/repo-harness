@@ -1,3 +1,4 @@
+import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
@@ -25,6 +26,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "fs";
 import { dirname, join, resolve } from "path";
@@ -448,6 +450,8 @@ function syncBundledItemsAtHome(
 ): InitStep[] {
   const steps: InitStep[] = [];
   const installed = home ? readInstalledProfile({ ...env, HOME: home }) : null;
+  const useLinks = isBunGlobalPackageSource(sourceRoot, env)
+    && (env ?? process.env).AGENTIC_DEV_LINK_INSTALLED_COPIES !== '0';
   for (const { skill, host, step } of skills) {
     if (target !== "both" && target !== host) continue;
     if (!home) {
@@ -464,36 +468,42 @@ function syncBundledItemsAtHome(
     const dest = join(root, skill);
     const destSkill = join(dest, "SKILL.md");
     mkdirSync(root, { recursive: true });
-    if (
-      existsSync(dest) &&
-      (samePath(source, dest) ||
-        (existsSync(destSkill) && lstatSync(dest).isDirectory() && skillTreeSha256(dest) === skillTreeSha256(source)))
-    ) {
-      steps.push({ step, status: "ok", detail: "already present" });
+    const globalRoot = bunGlobalPackageRoot(env);
+    const correctGlobalLink = globalRoot !== null
+      && skillLinkMatches(dest, join(globalRoot, 'assets', 'skills', skill));
+    // A stable installed link remains valid when init runs from another source.
+    if (correctGlobalLink && (!isBunGlobalPackageSource(sourceRoot, env) || useLinks)) {
+      steps.push({ step, status: 'ok', detail: 'already present' });
       continue;
     }
-    if (existsSync(dest)) {
-      const owned = installed?.ownership_manifest.find(surface =>
-        surface.path === dest && surface.type === "directory-copy");
-      if (!owned || !managedInstallSurfaceIsCurrent(owned)) {
-        steps.push({ step, status: "failed", detail: `refusing to overwrite unowned or modified skill at ${dest}` });
+    let stat: ReturnType<typeof lstatSync> | null = null;
+    try { stat = lstatSync(dest); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const identicalCopy = stat?.isDirectory() === true
+      && existsSync(destSkill) && skillTreeSha256(dest) === skillTreeSha256(source);
+    if (!useLinks && identicalCopy) {
+      steps.push({ step, status: 'ok', detail: 'already present' });
+      continue;
+    }
+    if (stat) {
+      const owned = installed?.ownership_manifest.find(surface => surface.path === dest);
+      if (!correctGlobalLink && !identicalCopy && (!owned || !managedInstallSurfaceIsCurrent(owned))) {
+        steps.push({ step, status: 'failed', detail: `refusing to overwrite unowned or modified skill at ${dest}; preserve or move this path, then run: repo-harness install --target ${host}` });
         continue;
       }
-      const transaction = beginInstallHostTransaction([dest], { HOME: home });
-      try {
-        // Replace the verified old tree so retired references cannot survive an upgrade.
-        rmSync(dest, { recursive: true });
-        cpSync(source, dest, { recursive: true });
-        commitInstallHostTransaction(transaction);
-        steps.push({ step, status: "ok", detail: `synced ${dest}` });
-      } catch (error) {
-        rollbackInstallHostTransaction(transaction);
-        steps.push({ step, status: "failed", detail: `cannot update bundled skill ${dest}: ${String(error)}` });
-      }
-      continue;
     }
-    cpSync(source, dest, { recursive: true });
-    steps.push({ step, status: "ok", detail: `synced ${dest}` });
+    const transaction = beginInstallHostTransaction([dest], { HOME: home });
+    try {
+      if (stat) rmSync(dest, { recursive: true });
+      if (useLinks) symlinkSync(join(globalRoot!, 'assets', 'skills', skill), dest, 'dir');
+      else cpSync(source, dest, { recursive: true });
+      commitInstallHostTransaction(transaction);
+      steps.push({ step, status: 'ok', detail: `synced ${dest}` });
+    } catch (error) {
+      rollbackInstallHostTransaction(transaction);
+      steps.push({ step, status: 'failed', detail: `cannot update bundled skill ${dest}: ${String(error)}` });
+    }
   }
   for (const { source, agent, host, step } of agents) {
     if (target !== "both" && target !== host) continue;

@@ -1,3 +1,6 @@
+import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
+import { hashManagedTree, installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
+import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 /**
  * `repo-harness doctor` — read-only readiness diagnostics.
  *
@@ -482,12 +485,81 @@ function checkTypedHookRoutes(cwd: string): DoctorCheckResult {
   };
 }
 
+function skillProjectionState(projection: SkillProjection, excludes: readonly string[]): string {
+  const { destination, source, name, staged } = projection;
+  let stat: fs.Stats;
+  try { stat = fs.lstatSync(destination); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
+    throw error;
+  }
+  if (stat.isSymbolicLink()) {
+    if (!fs.existsSync(destination)) return 'dangling link';
+    return skillLinkMatches(destination, source) ? `ok link -> ${source}` : 'wrong link';
+  }
+  if (!stat.isDirectory()) return 'invalid path type';
+  if (!fs.existsSync(path.join(source, 'SKILL.md'))) return 'source missing';
+  const sourceHash = hashManagedTree(source, name === 'repo-harness' ? { excludes } : {});
+  if (hashManagedTree(destination) !== sourceHash) return 'stale copy';
+  return staged ? 'unowned real directory' : 'ok copy';
+}
+
+/** Read all selected host projections and the recorded install ownership. */
+export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.ProcessEnv = process.env): DoctorCheckResult {
+  const id = 'skill-projection';
+  const describe = 'Host skills match their source and install ledger';
+  try {
+    const home = env.HOME ?? env.USERPROFILE ?? os.homedir();
+    const installed = readInstalledProfile(env);
+    const profile = installed?.profile ?? 'full';
+    const globalRoot = bunGlobalPackageRoot(env);
+    const sourceRoot = globalRoot && fs.existsSync(path.join(globalRoot, 'package.json')) ? globalRoot : PACKAGE_ROOT;
+    const manifestPath = path.join(sourceRoot, 'assets', 'skill-commands', 'manifest.json');
+    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
+    if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
+    const contract = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'assets', 'workflow-contract.v1.json'), 'utf8'));
+    if (!Array.isArray(contract.installedCopyExcludes) || !contract.installedCopyExcludes.every((value: unknown) => typeof value === 'string')) {
+      throw new Error('invalid installed copy exclusions');
+    }
+    let warning = false;
+    const details: string[] = [];
+    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile)) {
+      if (target !== 'both' && target !== projection.host) continue;
+      const { destination, source, host } = projection;
+      const fix = `repo-harness install --profile ${profile} --target ${host}`;
+      const problems: string[] = [];
+      const state = skillProjectionState(projection, contract.installedCopyExcludes);
+      if (!state.startsWith('ok ')) {
+        const preserve = state === 'missing' || state === 'source missing' ? '' : `preserve or move ${destination}, then `;
+        problems.push(`expected ${source}; ${preserve}run: ${fix}`);
+      }
+      const records = installed?.ownership_manifest.filter(surface => surface.path === destination) ?? [];
+      if (records.some(surface => !managedInstallSurfaceIsCurrent(surface))) {
+        problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
+      }
+      if (problems.length > 0) warning = true;
+      details.push(`${destination}: ${state}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`);
+    }
+    if (installed) {
+      const drift = installedProfileStatus(installed, env).drift;
+      if (drift.status === 'drift') warning = true;
+      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? '; inspect: repo-harness install --state; run: repo-harness install --profile ' + profile : ''}`);
+    } else {
+      warning = true;
+      details.push('install ledger: missing; run: repo-harness install --profile ' + profile);
+    }
+    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n') };
+  } catch (error) {
+    return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: repo-harness install --state` };
+  }
+}
+
 export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
   const codegraphProbe = probeCodegraph(cwd);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
+  checks.push(checkSkillProjection(target));
   checks.push(checkCodexCliVersion());
   checks.push(checkCliUpdate(target));
   for (const target of ALL_TARGETS) {

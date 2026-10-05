@@ -1,3 +1,4 @@
+import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { ensureGlobalRefactorRecommendations } from './refactor-recommendation-configuration';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
@@ -381,13 +382,6 @@ function appendOutput(...values: Array<string | undefined>): string | undefined 
   return output || undefined;
 }
 
-function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
-  const bunInstall = env?.BUN_INSTALL ?? process.env.BUN_INSTALL;
-  const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
-  const bunRoot = bunInstall ? resolve(bunInstall) : home ? join(resolve(home), ".bun") : null;
-  return bunRoot ? join(bunRoot, "install", "global", "node_modules", "repo-harness") : null;
-}
-
 interface PackageManifest {
   name?: unknown;
   version?: unknown;
@@ -559,17 +553,6 @@ export function verifyInstalledManagedRuntime(
   if (packages.status !== 'ok') return packages;
   const daemon = inspectManagedDaemonRuntime(cwd, env);
   return daemon.status === 'failed' ? { ...packages, status: 'failed', detail: daemon.detail } : packages;
-}
-
-function isBunGlobalPackageSource(sourceRoot: string, env?: NodeJS.ProcessEnv): boolean {
-  const globalPackageRoot = bunGlobalPackageRoot(env);
-  if (globalPackageRoot === null) return false;
-  if (resolve(sourceRoot) === globalPackageRoot) return true;
-  try {
-    return realpathSync(join(sourceRoot, "package.json")) === realpathSync(join(globalPackageRoot, "package.json"));
-  } catch (_error) {
-    return false;
-  }
 }
 
 // Best-effort: readLatestPackageVersion() already swallows offline/npm-missing/
@@ -1085,10 +1068,8 @@ function preflightStagedSkillProjection(
     for (const root of roots) {
       const destination = join(root.path, skill);
       if (!pathEntryExists(destination)) continue;
-      try {
-        if (existsSync(join(source, 'SKILL.md')) && realpathSync(destination) === realpathSync(source)) continue;
-      } catch { /* the fail-closed result below owns unreadable projections */ }
-      return { step, status: 'failed', detail: `refusing to refresh unowned host skill ${destination}` };
+      if (skillLinkMatches(destination, source)) continue;
+      return { step, status: 'failed', detail: `refusing to refresh unowned host skill ${destination}; preserve or move this path, then run: repo-harness install --profile full --target ${target}` };
     }
   }
   return null;
@@ -1129,7 +1110,7 @@ function projectStagedSkills(
         const invalidAfter = invalidProjectionRoot(root.path, root.expected);
         if (invalidAfter) return fail(invalidAfter);
         if (pathEntryExists(destination)) {
-          if (realpathSync(destination) === realpathSync(source)) {
+          if (skillLinkMatches(destination, source)) {
             projected.push(destination);
             continue;
           }
