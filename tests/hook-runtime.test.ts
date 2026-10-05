@@ -32,7 +32,7 @@ describe('hook runtime typed dispatch', () => {
         event: 'PostToolUse',
         routeId: 'bash',
         cwd: root,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }),
+        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
         env: env(root),
       });
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'command-observed' });
@@ -48,11 +48,10 @@ describe('hook runtime typed dispatch', () => {
     try {
       // Claude Code builds PostToolUse input as { tool_name, tool_input,
       // tool_response, tool_use_id, duration_ms }; the Bash tool_response is
-      // { stdout, stderr, interrupted, isImage? }. No top-level tool_output.
+      // { stdout, stderr, interrupted, isImage? }.
       const stdout = `${Array.from({ length: 201 }, (_, index) => `line-${index}`).join('\n')}\n`;
       const stderr = 'warning: slow test\n';
       const hostEnv = env(root);
-      delete hostEnv.TOOL_OUTPUT;
       delete hostEnv.EXIT_CODE;
       const result = runHook({
         event: 'PostToolUse',
@@ -154,7 +153,7 @@ describe('hook runtime typed dispatch', () => {
         event: 'PostToolUse',
         routeId: 'bash',
         cwd: root,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }),
+        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
         env: env(root),
       });
       const record = JSON.parse(readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim()) as Record<string, unknown>;

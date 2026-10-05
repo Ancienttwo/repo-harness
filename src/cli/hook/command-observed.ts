@@ -57,9 +57,11 @@ function outputText(value: unknown): string {
 }
 
 /**
- * Claude Code sends Bash results as `tool_response: { stdout, stderr,
- * interrupted, ... }`. The observed output is both streams, in that order.
- * Any other response shape is serialized like a structured `tool_output`.
+ * `tool_response` is the only host field for the command result. Claude Code
+ * sends Bash results as `{ stdout, stderr, interrupted, ... }`; the observed
+ * output is both streams, in that order. Codex documents the field only as
+ * the model-facing output, so a string is kept and any other shape is
+ * serialized.
  */
 function toolResponseOutput(response: unknown): unknown {
   if (!response || typeof response !== 'object' || Array.isArray(response)) return response;
@@ -181,10 +183,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
   // Hook input parsing is lazy; accessors add warnings on first use.
   const warnings = (): string => parsed.warnings.length > 0 ? `${parsed.warnings.join('\n')}\n` : '';
   const command = parsed.getString('.tool_input.command', '');
-  const rawToolOutput = env.TOOL_OUTPUT
-    ? env.TOOL_OUTPUT
-    : parsed.get('.tool_output', toolResponseOutput(parsed.get('.tool_response', '')));
-  const toolOutput = outputText(rawToolOutput);
+  const toolOutput = outputText(toolResponseOutput(parsed.get('.tool_response', '')));
   // post-bash.sh reads the top-level exit_code (its host adapter historically
   // passes this field separately from the trace observer's tool_response).
   const exitCode = numberValue(parsed.get('.exit_code', env.EXIT_CODE ?? '0'), 0);
