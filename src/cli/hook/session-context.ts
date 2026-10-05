@@ -1074,10 +1074,28 @@ function toolingUpdateReportWasRendered(repoRoot: string, reportFile: string, ma
   return reportMtime !== null && String(reportMtime) === markerRaw;
 }
 
-function toolingUpdateMarkReportRendered(repoRoot: string, reportFile: string, markerFile: string): void {
+/** Rendered advisory plus the marker commit that consumes it. Runtime calls `markDelivered` only after the host output includes the advisory. */
+interface ToolingUpdateAdvisory {
+  readonly content: string;
+  readonly markDelivered: () => void;
+}
+
+function renderToolingUpdateAdvisory(repoRoot: string, reportFile: string, markerFile: string): ToolingUpdateAdvisory | null {
+  // Capture the rendered report's mtime now: a later refresh can replace the
+  // report before delivery, and the marker must name only the delivered one.
   const reportMtime = fileMtimeSec(repoRoot, reportFile);
-  if (reportMtime === null) return;
-  writeFileSync(join(repoRoot, markerFile), `${reportMtime}\n`);
+  const content = renderToolingUpdateContext(repoRoot, reportFile);
+  if (reportMtime === null || content === null) return null;
+  return {
+    content,
+    markDelivered: () => {
+      try {
+        writeFileSync(join(repoRoot, markerFile), `${reportMtime}\n`);
+      } catch {
+        // An unwritten marker only repeats the advisory in a later session.
+      }
+    },
+  };
 }
 
 /**
@@ -1127,21 +1145,19 @@ function repoHarnessSetupCheckSubprocess(
   }
 }
 
-/** `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` branch: populate the cache synchronously, then render+mark exactly like the fresh-cache path. On any subprocess failure, mirrors bash: no cache write, no render. */
+/** `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` branch: populate the cache synchronously, then render exactly like the fresh-cache path. On any subprocess failure, mirrors bash: no cache write, no render. */
 function toolingUpdateSyncPopulateAndRender(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
   target: string,
   reportFile: string,
   markerFile: string,
-): string | null {
+): ToolingUpdateAdvisory | null {
   const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target);
   if (stdout === null) return null;
   writeFileSync(join(repoRoot, reportFile), stdout);
   if (toolingUpdateReportWasRendered(repoRoot, reportFile, markerFile)) return null;
-  const content = renderToolingUpdateContext(repoRoot, reportFile);
-  toolingUpdateMarkReportRendered(repoRoot, reportFile, markerFile);
-  return content;
+  return renderToolingUpdateAdvisory(repoRoot, reportFile, markerFile);
 }
 
 /** `evt-` lock's own crashed-holder threshold (`workflow_with_lock`'s 60s) reused for the tooling-advisory lock -- see `acquireToolingAdvisoryLock`'s doc comment for why this exists even though bash's own async branch had no such handling. */
@@ -1276,7 +1292,7 @@ function triggerDetachedToolingPopulate(
  * contributes ZERO content to the *triggering* session's own stdout, exactly
  * like bash's backgrounded subshell.
  */
-function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, nowMs: number): string | null {
+function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, nowMs: number): ToolingUpdateAdvisory | null {
   if (!fileExists(repoRoot, '.ai/harness/workflow-contract.json')) return null;
   if (env.REPO_HARNESS_TOOLING_ADVISORY === '0') return null;
 
@@ -1287,9 +1303,7 @@ function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, 
 
   if (toolingUpdateCacheIsFresh(repoRoot, reportFile, env, nowMs)) {
     if (toolingUpdateReportWasRendered(repoRoot, reportFile, markerFile)) return null;
-    const content = renderToolingUpdateContext(repoRoot, reportFile);
-    toolingUpdateMarkReportRendered(repoRoot, reportFile, markerFile);
-    return content;
+    return renderToolingUpdateAdvisory(repoRoot, reportFile, markerFile);
   }
 
   mkdirSync(join(repoRoot, TOOLING_ADVISORY_STATE_DIR), { recursive: true });
@@ -1319,11 +1333,11 @@ function appendBlock(context: string, block: string | null): string {
  * bash's pervasive `|| true` fail-open style: one section's bug must never
  * take down the rest of SessionStart).
  */
-function safely(
+function safely<T>(
   providerId: SessionContextProviderId,
   observeDiagnostic: ((diagnostic: SessionContextProviderDiagnostic) => void) | undefined,
-  fn: () => string | null,
-): string | null {
+  fn: () => T | null,
+): T | null {
   try {
     return fn();
   } catch (error) {
@@ -1339,12 +1353,12 @@ function safely(
  * separator, then the whole thing prefixed with the input-priority block IFF
  * non-empty.
  */
-export function sessionStartMainContent(
+function sessionStartMain(
   collector: SessionContextCollector,
   env: NodeJS.ProcessEnv,
   nowMs: number,
   observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
-): string | null {
+): { readonly content: string; readonly tooling: ToolingUpdateAdvisory | null } | null {
   const repoRoot = collector.getRepoRoot();
 
   // Cold-path housekeeping, matching the base script's own call order
@@ -1356,15 +1370,25 @@ export function sessionStartMainContent(
   context = appendBlock(context, safely('pending-plan-capture', observeDiagnostic, () => pendingPlanCaptureContext(repoRoot, collector, nowMs)));
   context = appendBlock(context, safely('current-status-snapshot', observeDiagnostic, () => currentStatusSnapshotContext(repoRoot)));
   context = appendBlock(context, safely('active-sprint', observeDiagnostic, () => activeSprintContext(repoRoot)));
-  context = appendBlock(context, safely('tooling-update-advisory', observeDiagnostic, () => toolingUpdateAdvisoryContext(repoRoot, env, nowMs)));
+  const tooling = safely('tooling-update-advisory', observeDiagnostic, () => toolingUpdateAdvisoryContext(repoRoot, env, nowMs));
+  context = appendBlock(context, tooling?.content ?? null);
 
   if (!context) return null;
-  return `${INPUT_PRIORITY_CONTEXT}\n${context}`;
+  return { content: `${INPUT_PRIORITY_CONTEXT}\n${context}`, tooling };
 }
 
-/** Headers that flip the old script-loop branch's `actionable` bit for this id (mirrors runtime.ts's retired `scriptActionable` regex verbatim). */
+export function sessionStartMainContent(
+  collector: SessionContextCollector,
+  env: NodeJS.ProcessEnv,
+  nowMs: number,
+  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
+): string | null {
+  return sessionStartMain(collector, env, nowMs, observeDiagnostic)?.content ?? null;
+}
+
+/** Headers that flip the old script-loop branch's `actionable` bit for this id. The tooling advisory names an agent update action, so it counts too. */
 const SESSION_START_ACTIONABLE_HEADERS =
-  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Architecture Model Guidance|Active Sprint)/m;
+  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Architecture Model Guidance|Active Sprint|Tooling Update Advisory)/m;
 
 export function sessionStartMainSection(
   collector: SessionContextCollector,
@@ -1372,15 +1396,16 @@ export function sessionStartMainSection(
   nowMs: number,
   observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
 ): SessionContextSection | null {
-  const content = sessionStartMainContent(collector, env, nowMs, observeDiagnostic);
-  if (!content) return null;
+  const main = sessionStartMain(collector, env, nowMs, observeDiagnostic);
+  if (!main) return null;
   return {
     id: 'session-start-context.sh',
     priority: 5,
-    content,
+    content: main.content,
     mandatory: false,
-    actionable: SESSION_START_ACTIONABLE_HEADERS.test(content),
+    actionable: SESSION_START_ACTIONABLE_HEADERS.test(main.content),
     reference: 'repo-harness state resolve --json',
+    ...(main.tooling ? { onDelivered: main.tooling.markDelivered } : {}),
   };
 }
 

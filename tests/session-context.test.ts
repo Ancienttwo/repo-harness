@@ -923,6 +923,67 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
     });
   }, 10000);
 
+  describe("delivery through the real SessionStart host output", () => {
+    const HOOK_ENTRY = join(import.meta.dir, "..", "src/cli/hook-entry.ts");
+    const REPORT = ".ai/harness/security/tooling-update-advisory-codex.json";
+
+    function optedInRepo(repoRoot: string): void {
+      writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), "{}\n");
+      initGit(repoRoot);
+      mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
+      writeFileSync(join(repoRoot, REPORT), `${JSON.stringify({
+        version: 1,
+        agent_actions: [{
+          id: "cli.update",
+          status: "needs_agent",
+          reason: "a new repo-harness version is available.",
+          command: "bun add -g repo-harness@latest",
+        }],
+      })}\n`);
+    }
+
+    function sessionStart(repoRoot: string, sessionId: string): string {
+      const env: NodeJS.ProcessEnv = { ...process.env, HOOK_HOST: "codex", HOOK_REPO_ROOT: repoRoot, HOOK_SESSION_ID: sessionId };
+      for (const key of Object.keys(env)) if (key.startsWith("REPO_HARNESS_TOOLING_ADVISORY")) delete env[key];
+      const output = execFileSync(process.execPath, [HOOK_ENTRY, "SessionStart", "--route", "default"], {
+        cwd: repoRoot,
+        input: "{}",
+        encoding: "utf-8",
+        env,
+      }).trim();
+      if (!output) return "";
+      return (JSON.parse(output) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    }
+
+    test("a fresh update report reaches the host once in an otherwise clean repository", () => {
+      withTmpRepo("tooling-delivery-clean", (repoRoot) => {
+        optedInRepo(repoRoot);
+        const first = sessionStart(repoRoot, "session-1");
+        expect(first).toContain("Tooling Update Advisory");
+        expect(first).toContain("cli.update");
+        expect(sessionStart(repoRoot, "session-2")).not.toContain("Tooling Update Advisory");
+      });
+    }, 30000);
+
+    test("an update report dropped by the context budget stays eligible for a later session", () => {
+      withTmpRepo("tooling-delivery-budget", (repoRoot) => {
+        optedInRepo(repoRoot);
+        // A local status snapshot larger than the whole budget makes the budget
+        // drop the main section, which also carries the tooling advisory.
+        mkdirSync(join(repoRoot, "tasks"), { recursive: true });
+        writeFileSync(join(repoRoot, "tasks/current.md"), `> **Status**: ${"x".repeat(8000)}\n`);
+        const dropped = sessionStart(repoRoot, "session-1");
+        expect(dropped).not.toContain("Tooling Update Advisory");
+
+        rmSync(join(repoRoot, "tasks/current.md"));
+        const delivered = sessionStart(repoRoot, "session-2");
+        expect(delivered).toContain("Tooling Update Advisory");
+        expect(delivered).toContain("cli.update");
+      });
+    }, 30000);
+  });
+
   test("a lock older than the stale threshold is broken and retried rather than permanently suppressing refresh", async () => {
     await withTmpRepoAsync("detached-stale-lock", async (repoRoot) => {
       writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
