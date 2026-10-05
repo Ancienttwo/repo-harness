@@ -695,6 +695,7 @@ test('MCP goals use visible persistent Herdr peers, redact history and clean suc
   run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], fixture, env);
   mkdirSync(join(fixture, '.ai/harness/handoff'), {recursive:true});
   const goalPath = join(fixture, '.ai/harness/handoff/task-goal.md');
+  const missedWorking = join(fixture, 'missed-working-observation');
   // Both kinds resolve only to this deterministic persistent TTY process.
   for (const kind of ['codex', 'claude']) {
     const fake = join(bin, kind);
@@ -712,14 +713,17 @@ process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(inpu
  const ref=/^Read task request (.*); write its result only to /.exec(text)?.[1];if(!ref)throw new Error('unexpected prompt');
  const request=JSON.parse(readFileSync(ref,'utf8'));const context=readFileSync(request.context_ref,'utf8');
  const ack=${JSON.stringify(join(fixture,'working-observation'))};
+ const missed=${JSON.stringify(missedWorking)};
  const executeGoal=()=>{if(context.includes('Finish fixture goal'))writeFileSync(ack+'.armed',JSON.stringify({request_id:request.request_id,pid:process.pid,pane}));report('working');
  process.stdout.write('GOAL VISIBLE '+${JSON.stringify(kind)}+' Authorization: Bearer fixture-secret-token\\n');
  const finish=()=>{if(context.includes('WRITE_RESULT')){writeFileSync(request.result_ref+'.tmp',JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:'fixture result'}));renameSync(request.result_ref+'.tmp',request.result_ref);}process.stdout.write('GOAL COMPLETE\\n');report('idle');};
- if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack)){const observed=JSON.parse(readFileSync(ack,'utf8'));if(observed.request_id===request.request_id&&observed.pid===process.pid){clearInterval(timer);finish();}}},10);}
+ if(context.includes('MISSED_WORKING')){finish();writeFileSync(missed+'.complete','complete');}
+ else if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack)){const observed=JSON.parse(readFileSync(ack,'utf8'));if(observed.request_id===request.request_id&&observed.pid===process.pid){clearInterval(timer);finish();}}},10);}
  else if(!context.includes('WAIT_FOREVER'))setTimeout(finish,200);};
  if(context.includes('STARTUP_WORKING')){setTimeout(()=>report('idle'),500);setTimeout(executeGoal,1500);}
  else if(context.includes('EARLY_IDLE')){report('unknown');report('idle');if(!context.includes('IDLE_ONLY'))setTimeout(executeGoal,1000);}
  else if(context.includes('Finish fixture goal')){const timer=setInterval(()=>{if(existsSync(ack+'.baseline')){clearInterval(timer);executeGoal();}},10);}
+ else if(context.includes('MISSED_WORKING')){const timer=setInterval(()=>{if(existsSync(missed+'.baseline')){clearInterval(timer);executeGoal();}},10);}
  else if(context.includes('WAIT_FOREVER'))executeGoal();
  else setTimeout(executeGoal,500);
  }});
@@ -745,6 +749,19 @@ const result=spawnSync(${JSON.stringify(herdr)},args,{env:process.env,encoding:'
   else {const baseline=JSON.parse(readFileSync(prefix+'.baseline','utf8'));if(current.agent_status==='working'&&current.state_change_seq>baseline.state_change_seq&&existsSync(prefix+'.armed')){const armed=JSON.parse(readFileSync(prefix+'.armed','utf8'));const request=JSON.parse(readFileSync(prefix+'.delivered','utf8'));if(armed.request_id===request.request_id&&armed.pane===current.pane_id&&armed.pid===Number(readFileSync(${JSON.stringify(join(fixture,'codex.pid'))},'utf8'))){writeFileSync(prefix+'.tmp',JSON.stringify({...current,...armed}));renameSync(prefix+'.tmp',prefix);}}}
  }
 }
+if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('MISSED_WORKING')){
+ const prefix=${JSON.stringify(missedWorking)};
+ if(args[2]==='agent'&&args[3]==='prompt'&&result.status===0)writeFileSync(prefix+'.delivered','accepted');
+ if(args[2]==='agent'&&args[3]==='get'&&result.status===0&&existsSync(prefix+'.delivered')){
+  const current=JSON.parse(result.stdout).result.agent;
+  if(!existsSync(prefix+'.baseline')){
+   if(current.agent_status!=='idle')throw new Error('fixture idle baseline required');
+   writeFileSync(prefix+'.baseline',JSON.stringify(current));
+   const deadline=Date.now()+8000;
+   while(!existsSync(prefix+'.complete')){if(Date.now()>=deadline)throw new Error('fixture missed working deadline');await Bun.sleep(10);}
+  }else if(current.agent_status==='idle'&&current.state_change_seq>JSON.parse(readFileSync(prefix+'.baseline','utf8')).state_change_seq)writeFileSync(prefix+'.settled',JSON.stringify(current));
+ }
+}
 process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exit(result.status??1);
 `); chmodSync(wrappedHerdr,0o700);
   const savedPath = process.env.PATH;
@@ -760,14 +777,23 @@ process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');
     const root=call(['workspace','create','--cwd',fixture,'--no-focus']);
     const parent=root.root_pane.pane_id;
     const ctx={repoRoot:fixture,policy:getMcpPolicy('orchestrator',{devAgentRunner:true,allowedAgents:['codex','claude'],runnerTimeoutMs:10000})};
-    for(const [kind,mode] of [['codex','startup-working-result'],['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','result'],['claude','timeout']] as const){
-      const hang=mode==='timeout'||mode==='idle-only', hasResult=mode==='result'||mode==='early-idle-result'||mode==='startup-working-result';
-      writeFileSync(goalPath,mode==='startup-working-result'?'STARTUP_WORKING WRITE_RESULT':mode==='early-idle-result'?'EARLY_IDLE WRITE_RESULT':mode==='idle-only'?'EARLY_IDLE IDLE_ONLY':hang?'WAIT_FOREVER':hasResult?'WRITE_RESULT':'Finish fixture goal');
+    for(const [kind,mode] of [['codex','startup-working-result'],['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','missed-working'],['codex','result'],['claude','timeout']] as const){
+      const hang=mode==='timeout'||mode==='idle-only'||mode==='missed-working', hasResult=mode==='result'||mode==='early-idle-result'||mode==='startup-working-result';
+      writeFileSync(goalPath,mode==='startup-working-result'?'STARTUP_WORKING WRITE_RESULT':mode==='early-idle-result'?'EARLY_IDLE WRITE_RESULT':mode==='idle-only'?'EARLY_IDLE IDLE_ONLY':mode==='missed-working'?'MISSED_WORKING':hang?'WAIT_FOREVER':hasResult?'WRITE_RESULT':'Finish fixture goal');
       const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:hang?5000:10000});
       const value=JSON.parse((result.content[0] as {text:string}).text);
       expect(value.stderr).toBe('');
       expect(value.status).toBe(hang?'timeout':hasResult?'completed':'observed_idle');
       expect(value.timedOut).toBe(hang);
+      if(mode==='missed-working'){
+        expect(readFileSync(missedWorking+'.complete','utf8')).toBe('complete');
+        const baseline=JSON.parse(readFileSync(missedWorking+'.baseline','utf8'));
+        const settled=JSON.parse(readFileSync(missedWorking+'.settled','utf8'));
+        expect(baseline.agent_status).toBe('idle');
+        expect(settled.agent_status).toBe('idle');
+        expect(settled.pane_id).toBe(baseline.pane_id);
+        expect(settled.state_change_seq).toBeGreaterThan(baseline.state_change_seq);
+      }
       if(mode!=='idle-only')expect(value.stdout).toContain('GOAL VISIBLE');
       expect(value.stdout).not.toContain('fixture-secret-token');
       expect(Buffer.byteLength(value.stdout)).toBeLessThanOrEqual(128*1024);

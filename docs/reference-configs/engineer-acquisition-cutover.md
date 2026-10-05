@@ -6,6 +6,24 @@ The acquisition-cutover CLI commands are retired. Ordinary acquisition uses the 
 
 The inner migration functions are retired. Ordinary acquisition retains its ledger guard. Unknown or corrupt outcomes require their evidence owner. An old observation is not deletion authority.
 
+## Selected CLI acquisition
+
+`engineer prepare --authorization-id <id> --json` returns a trusted observation and its offers.
+Save the complete 13-field assertion for one offer in a JSON file.
+Use `engineer acquire --authorization-id <id> --idempotency-key <key> --observation-ref <digest> --assertion-file <path> --json` to acquire that offer.
+The optional `--session-id <id>` binds the transaction to a host session.
+
+The CLI calls the existing selected acquisition transaction.
+The core checks all assertion fields and rejects extra fields.
+It checks the trusted observation before a new claim.
+A missing observation or a nonmatching assertion cannot select another offer.
+The same key and request return the stored result.
+A changed assertion, observation or session with the same key returns a conflict.
+Malformed JSON and missing CLI options fail before acquisition.
+
+`engineer acquire-next` remains the separate automatic selection command.
+This addition does not migrate the MCP or controller acquisition contracts.
+
 ## Error ownership
 
 | Source | Stable error codes | Required handling |

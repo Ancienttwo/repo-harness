@@ -7,7 +7,8 @@ import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
-import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
+import { listLiveClaimActorReceiptsForEngineer } from '../../src/effects/engineers/claim-actor-store';
+import { coordinationRoot, readLease } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
@@ -99,6 +100,78 @@ function graphFixture(): string {
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');
+  const sprintPath = 'plans/sprints/demo.sprint.md';
+  const task = 'task A';
+  const planPath = 'plans/plan-20260823-0202-cli-acquire.md';
+  const contractPath = 'tasks/contracts/20260823-0202-cli-acquire.contract.md';
+  for (const directory of ['tasks/contracts', 'tasks/reviews', 'tasks/notes', 'src', '.claude/templates']) {
+    mkdirSync(join(root, directory), { recursive: true });
+  }
+  cpSync(join(sourceRoot, '.claude/templates/contract.template.md'), join(root, '.claude/templates/contract.template.md'));
+  writeFileSync(join(root, planPath), [
+    '# Plan: CLI Fleet Acquire Fixture',
+    '',
+    '> **Status**: Approved',
+    '> **Source Ref**: sprint:' + sprintPath + '#' + task,
+    '> **Artifact Level**: work-package',
+    '> **Promotion Reason**: verification_boundary',
+    '> **Verification Boundary**: CLI acquisition proves bound worktree output.',
+    '> **Rollback Surface**: Remove the fixture worktree and lease.',
+    '> **Task Contract**: ' + contractPath,
+    '> **Task Review**: tasks/reviews/20260823-0202-cli-acquire.review.md',
+    '> **Implementation Notes**: tasks/notes/20260823-0202-cli-acquire.notes.md',
+    '',
+    '## Promotion Gate',
+    '',
+    '- **Merge/PR unit**: One fixture acquisition is independently verifiable.',
+    '- **Rollback surface**: Remove the fixture worktree and lease.',
+    '- **Verification boundary**: Fleet acquire CLI output and token readback.',
+    '- **Review/acceptance boundary**: The test asserts the returned envelope.',
+    '- **High-risk surface**: Shared lease election and fresh worktree creation.',
+    '- **Why not checklist row**: The acquisition transaction crosses persistent authorities.',
+    '',
+    '## Evidence Contract',
+    '',
+    '- **State/progress path**: ' + planPath,
+    '- **Verification evidence**: CLI JSON output and worktree token.',
+    '- **Evaluator rubric**: This test assertion.',
+    '- **Stop condition**: A bound envelope is returned.',
+    '- **Rollback surface**: Remove the fixture worktree and lease.',
+    '',
+  ].join('\n'));
+  writeFileSync(join(root, contractPath), [
+    '# Task Contract: CLI Fleet Acquire Fixture',
+    '',
+    '> **Plan**: ' + planPath,
+    '> **Task Profile**: code-change',
+    '> **Status**: Active',
+    '> **Review File**: tasks/reviews/20260823-0202-cli-acquire.review.md',
+    '',
+    '## Goal', '', 'Keep the authored acquisition contract unchanged.', '',
+    '## Why', '', 'Dispatch must use the same authority admitted by the plan proof.', '',
+    '## Scope', '', '- In scope: src fixture changes.', '- Out of scope: unrelated files.', '',
+    '## Exit Criteria', '', '```yaml', 'exit_criteria:', '  files_exist:', '    - src/index.ts', '```', '',
+    '## Allowed Paths',
+    '',
+    '```yaml',
+    'allowed_paths:',
+    '  - src/',
+    '```',
+    '',
+    '## Evidence Requirements', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
+    '## Change Assessment', '```json', '{"protocol":1,"oracles":[{"id":"business","kind":"deterministic_test","paths":["*"]}]}', '```', '',
+    '## Verification Plan',
+    '',
+    '```json',
+    JSON.stringify({ protocol: 1, checks: [{ id: 'business', kind: 'command', command: 'printf passed > .ai/harness/business-command-ran', cwd: '.', phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Business-only edits reach canonical execution after acquire.', inputs: { env: [] } }] }),
+    '```',
+    '',
+  ].join('\n'));
+  writeFileSync(join(root, 'tasks/reviews/20260823-0202-cli-acquire.review.md'), '# Authored review\n');
+  writeFileSync(join(root, 'tasks/notes/20260823-0202-cli-acquire.notes.md'), '# Authored notes\n');
+  writeFileSync(join(root, 'tasks/todos.md'), '# Deferred goals\n');
+  writeFileSync(join(root, 'src/index.ts'), 'export const business = false;\n');
+
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
   return root;
@@ -342,6 +415,134 @@ describe('repo-harness engineer CLI', () => {
     expect(principalHelp.stdout).toContain('revoke');
     expect(principalHelp.stdout).toContain('status');
     expect(principalHelp.stdout).not.toContain('acquire');
+  });
+
+  test('acquires only the selected trusted offer and rejects incomplete or conflicting requests', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-selected-home-')));
+    tempRoots.push(home);
+    process.env.REPO_HARNESS_HOME = home;
+    const root = graphFixture();
+    setRepoHarnessAccessMode(root, 'read_write', { env: process.env, requireAdopted: false });
+
+    const profiles = JSON.parse(run(root, ['engineer', 'profile', 'list', '--json']).stdout) as Array<{
+      engineer_id: string;
+      engineer_contract_revision: string;
+    }>;
+    const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
+    const bound = run(root, [
+      'engineer', 'binding', 'bind', '--engineer-id', engineerId,
+      '--idempotency-key', 'selected-bind-1', '--provider', 'codex',
+      '--provider-thread-id', 'thread-offers', '--host-id', 'local',
+      '--expected-current-digest', 'null', '--expected-binding-generation', '0',
+      '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision, '--json',
+    ]);
+    expect(bound.exitCode).toBe(0);
+    const current = JSON.parse(bound.stdout) as { current_binding_id: string; binding_generation: number };
+    const authorizationId = '44444444-4444-4444-8444-444444444444';
+    const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath());
+    tokenStore.setAccessToken('offers-bearer', {
+      token: 'offers-bearer',
+      clientId: 'client-engineer-offers-test',
+      scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
+      profile: 'engineer',
+      authorizationRevision: 1,
+      authorizationId,
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    });
+    expect(run(root, [
+      'engineer', 'principal', 'enroll', '--authorization-id', authorizationId,
+      '--engineer-id', engineerId,
+      '--expected-binding-id', current.current_binding_id,
+      '--expected-binding-generation', String(current.binding_generation),
+      '--expected-engineer-contract-revision', revision, '--json',
+    ]).exitCode).toBe(0);
+
+    const prepared = run(root, ['engineer', 'prepare', '--authorization-id', authorizationId, '--json']);
+    expect(prepared.exitCode, prepared.stderr).toBe(0);
+    const observation = JSON.parse(prepared.stdout);
+    expect(observation.offers.offers).toHaveLength(1);
+    const offer = observation.offers.offers[0];
+    const assertion = Object.fromEntries([
+      'offer_revision', 'work_package_id', 'work_package_revision', 'work_graph_revision',
+      'task_id', 'task_revision', 'dependency_revision', 'concurrency_revision',
+      'binding_id', 'binding_generation', 'engineer_contract_revision',
+      'fleet_offer_revision', 'authorization_revision',
+    ].map(key => [key, offer[key]]));
+    const assertionFile = join(root, 'selected-assertion.json');
+    writeFileSync(assertionFile, JSON.stringify(assertion));
+    const args = [
+      'engineer', 'acquire', '--authorization-id', authorizationId,
+      '--idempotency-key', 'selected-key', '--observation-ref', observation.observation_ref,
+      '--assertion-file', assertionFile, '--session-id', 'cli-selected-session', '--json',
+    ];
+    for (const flag of ['--authorization-id', '--idempotency-key', '--observation-ref', '--assertion-file']) {
+      const missing = [...args];
+      missing.splice(missing.indexOf(flag), 2);
+      expect(run(root, missing).exitCode).toBe(1);
+    }
+    writeFileSync(assertionFile, '{invalid');
+    const malformed = run(root, args);
+    expect(malformed.exitCode).toBe(1);
+    expect(JSON.parse(malformed.stderr).error).toBe('invalid_argument');
+    for (const value of [null, {}, { ...assertion, unexpected: true }, { ...assertion, binding_generation: '1' }]) {
+      writeFileSync(assertionFile, JSON.stringify(value));
+      const invalidAssertion = run(root, args);
+      expect(invalidAssertion.exitCode).toBe(1);
+      expect(JSON.parse(invalidAssertion.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
+    }
+    writeFileSync(assertionFile, JSON.stringify(assertion));
+    const missingFile = [...args];
+    missingFile[missingFile.indexOf('--assertion-file') + 1] = join(root, 'absent.json');
+    const missingFileResult = run(root, missingFile);
+    expect(missingFileResult.exitCode).toBe(1);
+    expect(JSON.parse(missingFileResult.stderr).error).toBe('internal_error');
+    const missingObservation = [...args];
+    missingObservation[missingObservation.indexOf('--observation-ref') + 1] = `sha256:${'0'.repeat(64)}`;
+    const missingResult = run(root, missingObservation);
+    expect(missingResult.exitCode).toBe(1);
+    expect(JSON.parse(missingResult.stderr).error).toBe('engineer_observation_missing');
+    const invalidObservation = [...args];
+    invalidObservation[invalidObservation.indexOf('--observation-ref') + 1] = 'invalid';
+    const invalidRef = run(root, invalidObservation);
+    expect(invalidRef.exitCode).toBe(1);
+    expect(JSON.parse(invalidRef.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
+    for (const [flag, value] of [
+      ['--idempotency-key', ''], ['--idempotency-key', 'k'.repeat(513)],
+      ['--session-id', ''], ['--session-id', '   '], ['--session-id', 's'.repeat(513)],
+    ]) {
+      const invalidArgs = [...args];
+      invalidArgs[invalidArgs.indexOf(flag!) + 1] = value!;
+      const invalidInput = run(root, invalidArgs);
+      expect(invalidInput.exitCode).toBe(1);
+      expect(JSON.parse(invalidInput.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
+    }
+    writeFileSync(assertionFile, JSON.stringify({ ...assertion, work_package_id: 'wp-absent' }));
+    const nonmatchingArgs = [...args];
+    nonmatchingArgs[nonmatchingArgs.indexOf('--idempotency-key') + 1] = 'nonmatching-key';
+    const nonmatching = run(root, nonmatchingArgs);
+    expect(nonmatching.exitCode).toBe(1);
+    expect(JSON.parse(nonmatching.stdout)).toMatchObject({ ok: false, error: 'engineer_offer_stale' });
+    const afterRefusals = run(root, ['engineer', 'offers', '--authorization-id', authorizationId, '--json']);
+    expect(afterRefusals.exitCode, afterRefusals.stderr).toBe(0);
+    expect(JSON.parse(afterRefusals.stdout).offers.map((item: { work_package_id: string }) => item.work_package_id)).toEqual(['wp-a']);
+
+    expect(readLease(root, fixtureTaskId('task A')).record).toBeNull();
+    expect(listLiveClaimActorReceiptsForEngineer(root, engineerId)).toHaveLength(0);
+    writeFileSync(assertionFile, JSON.stringify(assertion));
+    const selected = run(root, args);
+    if (selected.exitCode === 0) tempRoots.push(JSON.parse(selected.stdout).envelope.worktree_path);
+    expect(selected.exitCode, selected.stderr).toBe(0);
+    expect(JSON.parse(selected.stdout)).toMatchObject({ ok: true, offer: { work_package_id: 'wp-a' } });
+    const replay = run(root, args);
+    expect(replay.exitCode, replay.stderr).toBe(0);
+    expect(JSON.parse(replay.stdout)).toEqual(JSON.parse(selected.stdout));
+    expect(listLiveClaimActorReceiptsForEngineer(root, engineerId)).toHaveLength(1);
+    writeFileSync(assertionFile, JSON.stringify({ ...assertion, task_revision: 'f'.repeat(64) }));
+    const conflict = run(root, args);
+    expect(conflict.exitCode).toBe(1);
+    expect(JSON.parse(conflict.stdout)).toMatchObject({ ok: false, error: 'engineer_acquire_next_conflict' });
+    const afterClaim = run(root, ['engineer', 'offers', '--authorization-id', authorizationId, '--json']);
+    expect(JSON.parse(afterClaim.stdout).offers).toHaveLength(0);
   });
 
   test('offers report the Fleet domain error code when the coordination surface is unreadable', () => {
