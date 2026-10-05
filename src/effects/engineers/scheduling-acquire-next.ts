@@ -18,6 +18,12 @@ import {
 } from './scheduling-acquire';
 import { collectEngineerOffers } from './scheduling';
 
+export class EngineerAcquisitionInputError extends Error {
+  constructor(message: string) {
+    super(message); this.name = 'EngineerAcquisitionInputError';
+  }
+}
+
 export type EngineerAcquisitionLedgerErrorCode = 'engineer_acquisition_ledger_missing'
   | 'engineer_acquisition_ledger_corrupt' | 'engineer_acquisition_ledger_unsafe_path'
   | 'engineer_acquisition_ledger_io' | 'engineer_acquisition_ledger_cutover_required';
@@ -112,14 +118,14 @@ function acquisitionFailure(error: 'engineer_acquire_next_conflict' | 'engineer_
   return Object.freeze({ ok: false, error, message });
 }
 function validateOptions(options: AcquireNextScheduledEngineerTaskOptions): { attempts: number; filters: AcquireNextFiltersV1 } {
-  if (options.idempotency_key.length < 1 || options.idempotency_key.length > 512) throw new Error('idempotency_key must contain 1 through 512 characters');
+  if (options.idempotency_key.length < 1 || options.idempotency_key.length > 512) throw new EngineerAcquisitionInputError('idempotency_key must contain 1 through 512 characters');
   const attempts = options.max_selection_attempts ?? 3;
-  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 16) throw new Error('max_selection_attempts must be an integer from 1 through 16');
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 16) throw new EngineerAcquisitionInputError('max_selection_attempts must be an integer from 1 through 16');
   const filters = options.filters ?? {};
-  if (filters.capability_id !== undefined && !/^capability\.[a-z0-9][a-z0-9.-]*$/.test(filters.capability_id)) throw new Error('filters.capability_id is invalid');
-  if (filters.minimum_priority !== undefined && (!Number.isSafeInteger(filters.minimum_priority) || filters.minimum_priority < 0 || filters.minimum_priority > 100)) throw new Error('filters.minimum_priority must be an integer from 0 through 100');
-  if (Object.keys(filters).some(key => !['capability_id', 'minimum_priority', 'task_ids'].includes(key))) throw new Error('filters contains an unknown field');
-  if (filters.task_ids !== undefined && (!Array.isArray(filters.task_ids) || Array.from(filters.task_ids).some(id => typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)))) throw new Error('filters.task_ids must contain canonical Task IDs');
+  if (filters.capability_id !== undefined && !/^capability\.[a-z0-9][a-z0-9.-]*$/.test(filters.capability_id)) throw new EngineerAcquisitionInputError('filters.capability_id is invalid');
+  if (filters.minimum_priority !== undefined && (!Number.isSafeInteger(filters.minimum_priority) || filters.minimum_priority < 0 || filters.minimum_priority > 100)) throw new EngineerAcquisitionInputError('filters.minimum_priority must be an integer from 0 through 100');
+  if (Object.keys(filters).some(key => !['capability_id', 'minimum_priority', 'task_ids'].includes(key))) throw new EngineerAcquisitionInputError('filters contains an unknown field');
+  if (filters.task_ids !== undefined && (!Array.isArray(filters.task_ids) || Array.from(filters.task_ids).some(id => typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)))) throw new EngineerAcquisitionInputError('filters.task_ids must contain canonical Task IDs');
   return { attempts, filters: Object.freeze({
     ...(filters.capability_id === undefined ? {} : { capability_id: filters.capability_id }),
     ...(filters.minimum_priority === undefined ? {} : { minimum_priority: filters.minimum_priority }),
@@ -135,15 +141,15 @@ function assertion(offer: EngineerOfferV1): ScheduledEngineerAcquireAssertionV1 
     authorization_revision: offer.authorization_revision };
 }
 function closedAssertion(value: ScheduledEngineerAcquireAssertionV1): ScheduledEngineerAcquireAssertionV1 {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('selected assertion is required');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new EngineerAcquisitionInputError('selected assertion is required');
   const keys = ['offer_revision','work_package_id','work_package_revision','work_graph_revision','task_id','task_revision',
     'dependency_revision','concurrency_revision','binding_id','binding_generation','engineer_contract_revision','fleet_offer_revision','authorization_revision'];
-  assertMessageExactKeys(value as unknown as Record<string, unknown>, keys, 'selected assertion', message => { throw new Error(message); });
+  assertMessageExactKeys(value as unknown as Record<string, unknown>, keys, 'selected assertion', message => { throw new EngineerAcquisitionInputError(message); });
   for (const key of keys) {
     const item = (value as unknown as Record<string, unknown>)[key];
     if (key === 'binding_generation' || key === 'authorization_revision') {
-      if (!Number.isSafeInteger(item) || (item as number) < (key === 'binding_generation' ? 1 : 0)) throw new Error(`selected ${key} is invalid`);
-    } else if (typeof item !== 'string' || !item.length || item.length > 512) throw new Error(`selected ${key} is invalid`);
+      if (!Number.isSafeInteger(item) || (item as number) < (key === 'binding_generation' ? 1 : 0)) throw new EngineerAcquisitionInputError(`selected ${key} is invalid`);
+    } else if (typeof item !== 'string' || !item.length || item.length > 512) throw new EngineerAcquisitionInputError(`selected ${key} is invalid`);
   }
   return Object.freeze({ ...value });
 }
@@ -270,9 +276,9 @@ function runAcquisitionTransaction(options: AcquireNextScheduledEngineerTaskOpti
   });
 }
 function requestBasis(options: AcquireNextScheduledEngineerTaskOptions, operation: 'auto' | 'selected', filters: AcquireNextFiltersV1 | null, attempts: number | null, selected: ScheduledEngineerAcquireAssertionV1 | null, observationRef: string | null): AcquisitionRequestV2 {
-  if (!options.idempotency_key || options.idempotency_key.length > 512) throw new Error('idempotency_key must contain 1 through 512 characters');
+  if (!options.idempotency_key || options.idempotency_key.length > 512) throw new EngineerAcquisitionInputError('idempotency_key must contain 1 through 512 characters');
   const session = options.session_id ?? null;
-  if (session !== null && (typeof session !== 'string' || !session.trim() || session.length > 512)) throw new Error('session identity is invalid');
+  if (session !== null && (typeof session !== 'string' || !session.trim() || session.length > 512)) throw new EngineerAcquisitionInputError('session identity is invalid');
   return Object.freeze({ protocol: 2, operation, key_sha256: engineerSha256(options.idempotency_key), repository: resolveGitCommonDirectory(options.repo_root), principal: validateEngineerPrincipal(options.principal),
     session_id: session, policy: PLAIN_ACQUISITION_POLICY_R1, filters, max_selection_attempts: attempts, assertion: selected, observation_ref: observationRef });
 }
@@ -294,8 +300,8 @@ export function acquireNextScheduledEngineerTask(options: AcquireNextScheduledEn
   });
 }
 export function acquireSelectedEngineerTask(options: AcquireSelectedEngineerTaskOptions): AcquireNextScheduledEngineerTaskResult {
-  if (Object.keys(options).some(key => !['repo_root','principal','idempotency_key','session_id','env','dependencies','assertion','observation_ref'].includes(key))) throw new Error('selected request contains an unknown field');
-  if (!/^sha256:[a-f0-9]{64}$/.test(options.observation_ref)) throw new Error('selected observation_ref is invalid');
+  if (Object.keys(options).some(key => !['repo_root','principal','idempotency_key','session_id','env','dependencies','assertion','observation_ref'].includes(key))) throw new EngineerAcquisitionInputError('selected request contains an unknown field');
+  if (!/^sha256:[a-f0-9]{64}$/.test(options.observation_ref)) throw new EngineerAcquisitionInputError('selected observation_ref is invalid');
   const deps = acquisitionDependencies(options), selected = closedAssertion(options.assertion);
   const request = requestBasis(options,'selected',null,null,selected,options.observation_ref);
   return runAcquisitionTransaction(options,request,deps,observation => {

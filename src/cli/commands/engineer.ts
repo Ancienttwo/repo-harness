@@ -41,7 +41,7 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
-import { acquireSelectedEngineerTask, acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError } from '../../effects/engineers/scheduling-acquire-next';
+import { acquireSelectedEngineerTask, acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError, EngineerAcquisitionInputError } from '../../effects/engineers/scheduling-acquire-next';
 import { type ScheduledEngineerAcquireAssertionV1 } from '../../effects/engineers/scheduling-acquire';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
@@ -93,7 +93,7 @@ function emitError(error: unknown): void {
     || error instanceof WorkDemandError || error instanceof WorkDemandStoreError || error instanceof WorkDemandMaterializationError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
-    : error instanceof CliArgumentError
+    : error instanceof CliArgumentError || error instanceof EngineerAcquisitionInputError
       ? 'invalid_argument'
       : 'internal_error';
   const message = error instanceof Error ? error.message : String(error);

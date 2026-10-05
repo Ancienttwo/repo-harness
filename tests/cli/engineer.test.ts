@@ -486,12 +486,16 @@ describe('repo-harness engineer CLI', () => {
     expect(JSON.parse(malformed.stderr).error).toBe('invalid_argument');
     for (const value of [null, {}, { ...assertion, unexpected: true }, { ...assertion, binding_generation: '1' }]) {
       writeFileSync(assertionFile, JSON.stringify(value));
-      expect(run(root, args).exitCode).toBe(1);
+      const invalidAssertion = run(root, args);
+      expect(invalidAssertion.exitCode).toBe(1);
+      expect(JSON.parse(invalidAssertion.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
     }
     writeFileSync(assertionFile, JSON.stringify(assertion));
     const missingFile = [...args];
     missingFile[missingFile.indexOf('--assertion-file') + 1] = join(root, 'absent.json');
-    expect(run(root, missingFile).exitCode).toBe(1);
+    const missingFileResult = run(root, missingFile);
+    expect(missingFileResult.exitCode).toBe(1);
+    expect(JSON.parse(missingFileResult.stderr).error).toBe('internal_error');
     const missingObservation = [...args];
     missingObservation[missingObservation.indexOf('--observation-ref') + 1] = `sha256:${'0'.repeat(64)}`;
     const missingResult = run(root, missingObservation);
@@ -499,7 +503,19 @@ describe('repo-harness engineer CLI', () => {
     expect(JSON.parse(missingResult.stderr).error).toBe('engineer_observation_missing');
     const invalidObservation = [...args];
     invalidObservation[invalidObservation.indexOf('--observation-ref') + 1] = 'invalid';
-    expect(run(root, invalidObservation).exitCode).toBe(1);
+    const invalidRef = run(root, invalidObservation);
+    expect(invalidRef.exitCode).toBe(1);
+    expect(JSON.parse(invalidRef.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
+    for (const [flag, value] of [
+      ['--idempotency-key', ''], ['--idempotency-key', 'k'.repeat(513)],
+      ['--session-id', ''], ['--session-id', '   '], ['--session-id', 's'.repeat(513)],
+    ]) {
+      const invalidArgs = [...args];
+      invalidArgs[invalidArgs.indexOf(flag!) + 1] = value!;
+      const invalidInput = run(root, invalidArgs);
+      expect(invalidInput.exitCode).toBe(1);
+      expect(JSON.parse(invalidInput.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
+    }
     writeFileSync(assertionFile, JSON.stringify({ ...assertion, work_package_id: 'wp-absent' }));
     const nonmatchingArgs = [...args];
     nonmatchingArgs[nonmatchingArgs.indexOf('--idempotency-key') + 1] = 'nonmatching-key';
