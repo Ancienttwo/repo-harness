@@ -98,6 +98,23 @@ describe('migrate command (Phase 1C)', () => {
     });
   });
 
+  test('--apply keeps a private settings file mode under a 0022 umask', () => {
+    withTempRepo((repo) => {
+      const claudePath = path.join(repo, '.claude/settings.json');
+      fs.mkdirSync(path.dirname(claudePath), { recursive: true });
+      fs.writeFileSync(claudePath, LEGACY_WITH_SIBLING, { mode: 0o600 });
+      fs.chmodSync(claudePath, 0o600);
+      const previousUmask = process.umask(0o022);
+      try {
+        runMigrate({ cwd: repo, apply: true });
+      } finally {
+        process.umask(previousUmask);
+      }
+      expect(JSON.parse(fs.readFileSync(claudePath, 'utf-8')).hooks.PreToolUse.length).toBe(1);
+      expect(fs.statSync(claudePath).mode & 0o777).toBe(0o600);
+    });
+  });
+
   test('no-op when no legacy entries match', () => {
     withTempRepo((repo) => {
       const codexPath = path.join(repo, '.codex/hooks.json');
