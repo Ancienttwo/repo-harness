@@ -852,6 +852,50 @@ describe('operator web interactions', () => {
     expect(dialogStaleNotices()).toHaveLength(0);
   });
 
+  test('modal Tab traversal reaches evidence disclosures before it wraps', async () => {
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const tab = (shift = false) => act(async () => document.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true }) as unknown as Event));
+    // A compact focus key keeps assertion failures cheap to print: happy-dom
+    // element diffs are enormous.
+    const focusKey = () => {
+      const active = document.activeElement as Element | null;
+      return active ? `${active.tagName}:${active.getAttribute('aria-label') ?? active.textContent ?? ''}` : null;
+    };
+    // Scoped board reads are irrelevant here; stub the transport so the pane
+    // under test is the only live surface.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 })) as unknown as typeof fetch;
+    try {
+      await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en"
+        readTaskContext={async (request) => taskContextFixture(request)}
+        readTaskActivity={async (request) => ({ ...taskActivityFixture(request), entries: [] })} />);
+      await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
+      await act(async () => { await Promise.resolve(); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+      const summaries = Array.from(dialog.querySelectorAll<HTMLElement>('summary'));
+      // The unclaimed task has no diff button and no publication or head copy
+      // control: the task id copy button is the last plain control, and native
+      // disclosure summaries follow it in the tab order.
+      expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent))
+        .toEqual(['Refresh', 'Close task details', 'Copy task id']);
+      const lastSummary = summaries.at(-1)!;
+      expect(`${lastSummary.tagName}:${lastSummary.getAttribute('aria-label') ?? lastSummary.textContent ?? ''}`)
+        .toBe('SUMMARY:Original record');
+      buttons.at(-1)!.focus();
+      expect(focusKey()).toBe('BUTTON:Copy task id');
+      await tab();
+      // A summary still follows the last button, so focus must not wrap yet.
+      expect(focusKey()).not.toBe('BUTTON:Refresh');
+      lastSummary.focus();
+      await tab();
+      expect(focusKey()).toBe('BUTTON:Refresh');
+      await tab(true);
+      expect(focusKey()).toBe('SUMMARY:Original record');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
   test('reveals a newly urgent first group while preserving an explicit collapse', async () => {
     const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
     const lowerPriority = {

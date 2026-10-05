@@ -1437,9 +1437,17 @@ function DetailPane({
       if (event.key !== 'Tab') return;
       const dialog = dialogRef.current;
       if (!dialog) return;
+      // Native disclosure controls are keyboard-operable, so `summary` joins
+      // the tab order; content of a closed <details> is not rendered and can
+      // hold neither focus nor its copy buttons.
       const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ));
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => {
+        for (let host = element.closest('details'); host; host = host.parentElement?.closest('details') ?? null) {
+          if (!host.open && !(element.tagName === 'SUMMARY' && element.parentElement === host)) return false;
+        }
+        return true;
+      });
       if (focusable.length === 0) {
         event.preventDefault();
         return;
