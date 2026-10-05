@@ -9,13 +9,13 @@
 > **Promotion Reason**: architecture_boundary
 > **Verification Boundary**: 每个 phase 一个 PR；`bun run check:type`、受影响测试、`bun run build:operator-web`、真实浏览器截图
 > **Rollback Surface**: 每个 phase 单独 `git revert <squash-commit>`；ledger 数据只增不改
-> **Baseline**: `main@39d4e9edff716d0063d082fdb94ef811e74b9eba`
+> **Baseline**: `main@ac21fbdd`（最初在 `39d4e9ed` 上核对；2026-10-05 在 `ac21fbdd` 上复核，见 §12 第三轮）
 > **Spec**: `docs/spec.md`
 > **Sources**: Claude 会话 "visualze"（2026-10-05 03:45 HKT 方案）；Dot 的评审（Aimpact 已全部接受）；Aimpact 附录（graph 库选型）；Aimpact Addendum 2（04:00-04:08 HKT：prior art、D0 细节、packet/GET 安全/图/Agent config/设置措辞）；Aimpact 决定（2026-10-05 11:18 HKT，经 Grok，见 §11）
 
 本文件位置说明：任务简报建议 `docs/plans/operator-ui-revamp.md`。仓库已有 plan 位置 `plans/`，命名规则是 `plan-YYYYMMDD-HHMM-<slug>.md`。所以本 plan 放在 `plans/`。
 
-事实核对说明：下文的文件路径和行号都在 `39d4e9ed` 上核对过。没有核对的内容标为 **unverified**。从代码推断但没有运行的内容标为 **inferred**。
+事实核对说明：下文的文件路径和行号最初在 `39d4e9ed` 上核对，2026-10-05 在 `ac21fbdd` 上复核。`39d4e9ed..ac21fbdd` 的 5 个提交（#527、#528、#530、#531、#532）没有改动 operator、pipeline、review 和前端源码。没有核对的内容标为 **unverified**。从代码推断但没有运行的内容标为 **inferred**。
 
 ---
 
@@ -29,6 +29,7 @@
 - Review packet：`src/effects/review/generic-review.ts`、`src/core/review/generic-review.ts`。
 - 开发文档：`plans/prds`、`plans/sprints`、`plans/plan-*.md`、`tasks/contracts|reviews|notes`。头部解析器：`src/core/state/artifact-parsers.ts`。
 - `.archcontext/model` 里没有节点覆盖 `src/effects/operator` 或 `src/operator-web`。Operator 现在不属于任何 capability。
+- 已有的 archcontext 节点读取和翻译（Phase A 必须复用，不另写解析器）：`src/core/capabilities/registry.ts:518-560,598`（`ArchcontextNodeFile`、`archcontextIncludeToPrefix`、`capabilityRegistryFromArchcontextNodes`、`architectureModulePathFor`）；从工作区读节点的两处：`src/effects/engineers/profile-store.ts:97`、`src/effects/state/resolve-effective-state.ts:385`；`repo-harness capability-context status`（`src/cli/commands/capability-context.ts:556`）。
 
 **P2 一条真实路径（notify status）**
 `src/core/operator/notify-status.ts` 定义 `NotifyStatusV1` → `src/effects/operator/notify-status.ts` 调用 `herdr`，secret 只报告 `configured|missing`（:48-68）→ `GET /api/v1/notify/status`（`server.ts:75`）→ `NotifyStatus.tsx:40` 用 `useObservationRefresh` 每 30 秒刷新（`useObservationRefresh.ts:3`）。本 plan 的每个新数据源都沿用这条模式：core 合约 + decoder，effects 读取器，GET 路由，前端轮询。
@@ -52,7 +53,7 @@
 4. **Pipeline 数据（D0）**：让 ledger 有真实数据。内容包括 Bot 事件接入、task/run 身份、幂等、一台在线主机上的一个权威 ledger、存储健康状态。
 5. **Pipeline 可视化（D1）**：阶段轨道、门禁缺口和时间线。
 6. **Agent config 页面**：一个只读页面，不是一个工作区。内容包括 CLAUDE.md/AGENTS.md 共享规则块的比较、capability 本地合约文件、fleet 角色、engineer profile、skill、硬规则来源和 herdr dispatch 规则。
-7. **整体方向（Aimpact 2026-10-05 已决定，§11 #1、#12）**：前端用 React，图用 React Flow（`@xyflow/react` 12）+ `@dagrejs/dagre`。diff 的 `@git-diff-view/react` 在 Phase C 小范围评估。不做只读 xterm，终端输出改为脱敏后的文本日志。服务端只提供 GET，不做 SSE；前端 30 秒轮询，带 version/ETag 和退避，页面隐藏时降频。没有任何修改类端点，只读由架构保证。UI 上每一个「动作」按钮都改成「复制 Bot 命令」。
+7. **整体方向（Aimpact 2026-10-05 已决定，§11 #1、#12）**：前端用 React，图用 React Flow（`@xyflow/react` 12）+ `@dagrejs/dagre`。diff 的 `@git-diff-view/react` 在 Phase C 小范围评估。不做只读 xterm，终端输出改为脱敏后的文本日志。服务端只提供 GET，不做 SSE；前端 30 秒轮询，带 ETag 和退避，页面隐藏时暂停（现有 hook 的行为，比降频更省）。ETag 是新增工作，在 Phase B 交付（§6.1）。没有任何修改类端点，只读由架构保证。UI 上每一个「动作」按钮都改成「复制 Bot 命令」。
 
 ### 非目标
 - 不加写路由，不在 UI 里派任务，不在 UI 里改文档或配置。
@@ -75,7 +76,7 @@
 | I1 | Operator 只读 | `operator-write-boundary.test.ts:54`、:62-68；`server.ts:1444-1445` 返回 405 | 新路由都用 `method:'GET', write:false`。不改这两条断言 |
 | I2 | 唯一指令通道：Bot → CLI → herdr | `pipeline.ts:20` 描述「never dispatches, merges or cleans」 | CLI `module review-prompt` 只输出文本，不派发 pane。UI 只显示和复制 |
 | I3 | GET 白名单 | `OPERATOR_ROUTES`（`server.ts:93-109`），顺序在测试 :74-85 固定 | 每条新路由都登记在 `OPERATOR_ROUTES` 里。路径参数先匹配正则，再按索引查找，不能直接拼成文件路径 |
-| I4 | GET 永远不建库、不迁移、不探测、不派发 | pipeline 读取器只打开已发布的只读快照（`store.ts:131-134,174-187`） | 新读取器不打开 live DB，不创建目录，不调用 `herdr agent` 或 `pane` 写类动词，不运行会启动外部进程或 daemon 的探测（例如 `browser-doctor`） |
+| I4 | GET 永远不建库、不迁移、不探测、不派发、不写文件 | pipeline 读取器只打开已发布的只读快照（`store.ts:131-134,174-187`） | 新读取器不打开 live DB，不创建目录，不调用 `herdr agent` 或 `pane` 写类动词，不运行会启动外部进程或 daemon 的探测（例如 `browser-doctor`）。请求里的值永远不能变成子进程的选项（§6.8 argv 规则，例如 `git diff --output=<file>` 会写文件） |
 | I5 | 不泄露 secret 和私有路径 | `notify-status.ts:48-68` 只报告是否存在；`projection.ts:26` 用 `publicText` 替换路径 | 服务端按字段白名单输出（§6.8）。只用仓库相对路径。token、webhook URL 和连接串一律隐藏。prompt 先经过脱敏 |
 | I9 | UI 不触发动作 | 新增 | 每个「动作」只显示一条可以复制的 Bot 命令。UI 不发出任何请求去执行它 |
 | I6 | 每个数据只有一个权威来源 | 模型以 `.archcontext/model` 为准；ledger 以单一 SQLite 为准 | UI 不重新推导权威值。权威值缺失时显示 `unknown`，不合成替代值 |
@@ -84,7 +85,7 @@
 
 ---
 
-## 3. 现状清单（在 `39d4e9ed` 上核对）
+## 3. 现状清单（在 `39d4e9ed` 上核对，在 `ac21fbdd` 上复核）
 
 ### 3.1 Operator 服务端
 - 路由表 `OPERATOR_ROUTES`：`src/effects/operator/server.ts:93-109`。全部是 `GET` 且 `write:false`。
@@ -100,9 +101,10 @@
   | notify_status | `/api/v1/notify/status`（:75） |
   | static_asset | `/*`（:64） |
 - 只接受 loopback：`assertLoopbackHost`（:173-179）。CLI 端也检查（`src/cli/commands/operator.ts:57-59`）。
-- Host 头错误返回 421（:1434-1435）。URL authority 不一致也返回 421（:1454-1455）。Origin 错误返回 403（:1440-1441）。非 GET/HEAD 返回 405（:1444-1445）。
+- Host 头错误返回 421（:1434-1435）。期望的 Host 是 `127.0.0.1:<socket.localPort>`（`expectedRequestAuthority`，:1020-1024）。URL authority 不一致也返回 421（:1454-1455）。Origin 错误返回 403（:1440-1441），**但只在请求带 Origin 头时检查**；跨站的 no-cors GET（`<img>`、`<script>`、导航）通常不带 Origin，能到达路由。响应没有 CORS 头，跨站页面读不到内容，但服务端仍会执行这次 GET。`src/effects/operator` 里没有 `Sec-Fetch-*` 检查（grep 为 0）。非 GET/HEAD 返回 405（:1444-1445）。
+- 重的读取放在 worker 线程里，由 supervisor 管超时和进程树清理（`server.ts:482`、:1423）。
 - 默认端口 4318（`OPERATOR_DEFAULT_PORT`，:42）。静态目录 `dist/operator-ui`（:76-79）。HTML 导航有 index 回退（:1588-1589）。
-- `src/effects/operator/pipeline-status.ts:11` 运行 `repo-harness pipeline list --json --projection board`，超时 10 秒，maxBuffer 8 MiB。失败时保留上一次的 board，并标为 `unavailable`（:13-15）。
+- `src/effects/operator/pipeline-status.ts:11` 运行 `repo-harness pipeline list --json --projection board`，超时 10 秒，maxBuffer 8 MiB。失败时保留上一次的 board，并标为 `unavailable`（:13-15）。它从 PATH 找 `repo-harness`，所以 operator 自己的版本和被调用的 CLI 版本可以不同（Mini 上 bun 全局安装是 0.20.0）。
 
 ### 3.2 Operator 前端（React 19.3、Vite 8、TypeScript 7、测试用 happy-dom）
 - 文件：`App.tsx`、`AutomationSummary.tsx`、`NotifyStatus.tsx`、`OrganizationSummary.tsx`、`PipelineBoard.tsx`、`PlanningView.tsx`、`TaskDiff.tsx`、`TaskEvidence.tsx`、`TaskHistory.tsx`、`i18n.ts`（en/zh，1657 行）、`styles.css`、`useObservationRefresh.ts`、`fixture.ts` 等。
@@ -112,6 +114,7 @@
 - `vite.operator.config.ts`：`root` 是 `src/operator-web`，`outDir` 是 `dist/operator-ui`，`plugins:[react()]`。没有 `manualChunks`。
 - 依赖里没有 graph、diagram 或 SVG 渲染库（`package.json`）。React 和 Vite 都是 devDependency。`prepack` 会运行 `build:operator-web`（`package.json:70`）。
 - 前端和 operator 读取器都没有读取 archcontext、架构或文档的数据（grep 为 0）。
+- `useObservationRefresh.ts`：30 秒间隔（:3），失败后指数退避，最多 4 倍（:26、:39），页面隐藏时暂停并取消请求（:21-47）。服务端和前端都**没有** ETag 或 `If-None-Match`（grep 为 0）。
 
 ### 3.3 Pipeline ledger
 - 主键 `(source_host, repository_id, task)`（`src/core/pipeline/types.ts:12`）。阶段有 10 个（:8）。admission 有 3 种（:10）。证据类型有 7 种（:23）。
@@ -121,6 +124,7 @@
 - **`gates.ts` 不完全是纯函数**：`currentSubject`、`requirementPass` 和 `latestPlan` 是纯函数。`refreshValidity`（:7-13）会改写 `evidence[].current` 和 `owner_approval.expired`。`requireGate`（:26）会抛出异常。
 - Board 投影：`PipelineBoardV2`（`board.ts:11-15`）。卡片里不带 pane、endpoint、worktree 或 branch。标题和阻塞原因经过 `publicText`（`projection.ts:26,55-58`）。
 - 存储：Bun SQLite。`REPO_HARNESS_PIPELINES_DB` 默认是 `/Volumes/D/repo-harness/pipelines/pipelines.db`（`store.ts:25`）。表定义在 :69-78。
+- **SQLite 版本门槛**：writer 要求 SQLite ≥ 3.51.3，或修复过的 3.50.7、3.44.6（`assertSQLiteVersion`，`store.ts:18-24`）。只能用 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY` 选择其他库（:13-17）。版本检查在 `mkdir` 之前（:55-58），所以版本不够时失败关闭，不建目录。读取方（`read.ts`）不做这项检查。
 - 写入方的位置检查 `requireLocation`（:36-48）：
   - 主机名必须等于 `REPO_HARNESS_PIPELINES_AUTHORITY_HOST`，默认是 `kitos`。
   - `/Volumes/D` 必须是一个已挂载的独立卷。
@@ -145,9 +149,12 @@
   - `startTaskAgent`（:422）写 `.ai/harness/runs/task-agents/<sha>/`（:356-372），依次是 intent → pane split → binding（:443-465）。
   - 启动失败写 `launch-unknown.json`（:458）。
   - `sendTaskRequest`（:585）写 `request-N.json`、运行 `herdr agent prompt`（:617）、写 `delivery-N.json`（`accepted` 或 `unknown`，:618-620）。
-- Operator 不读取 task-agent 目录（grep 为 0）。
+- Operator 不读取 task-agent 目录（grep 为 0）。task-agent 会话目录在 primary checkout 下：`taskSessionDirectory` 返回 `<primary_root>/.ai/harness/runs/task-agents/<sha>`（`task-session.ts:356-359`），`primary_root` 来自 `taskRepository`。
+- `herdr` 子进程用 `spawnSync`（`herdr.ts:28-30`），会阻塞调用它的线程最多 10 秒。endpoint 是 `{session, configPath?, home?}`，session 必须匹配 `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`，configPath 和 home 是绝对路径（`herdr.ts:11-24`）。读取 pane 的现有 argv 是 `herdr --session <s> pane list [--workspace <id>]`（`task-session.ts:288,393,648`）。
+- **run 状态的来源**：`waiting_input` 只由 pipeline 投影产生，把 herdr 的 `blocked` 映射过来（`projection.ts:17`）。`waiting_approval` 只出现在类型（`types.ts:32`）和 i18n（`i18n.ts:741,1497`）里，**没有任何代码产生它**。
 - notify 插件 `assets/herdr/webhook-notify/notify.mjs`（插件 id `aimpact.webhook-notify`，v0.2.0）：
   - 只处理 `pane.agent_status_changed` 事件，状态是 done 或 blocked（:30-32）。
+  - 路由规则（:42、:56-64）：WEBHOOK 必须配置，否则报错；`blocked` 发给所有已配置的渠道（WEBHOOK、SLACK、DISCORD、TELEGRAM）；`done` 只发给 `<CHANNEL>_NOTIFY_DONE=1` 的渠道。6 个 key，4 个开关。
   - payload（:45-51）没有 task、role、round、request 或 delivery id。
   - 没有重试队列（:97；`herdr-notify.md:108-109`）。
 
@@ -156,13 +163,14 @@
 - 模型：26 个 capability 节点、28 个 component 节点（28 个带 `parent:`）、52 条关系（全是 `kind: calls`）、34 个 flow。schema 版本是 `archcontext.node/v2`、`relation/v1` 和 `flow/v1`。
 - Capability 节点字段示例：`capability.runtime-harness.verified-context.yaml`。字段包括 `responsibilities`（:7）、`source.include` 和 `entrypoints`（:15-20）、`extensions.contractFiles`（:62）、`lspProfile`（:65）和 `verification`（:66）。
 - 关系字段：`{id, kind, source, target, intent}`。flow 字段：`participants`、`steps[].evidence` 和 `outcomes`。
-- `archctx-contracts` 0.6.1（Apache-2.0）提供 `schemas/repo/architecture-{node,relation,flow}.schema.json` 和 `validateJsonSchema`（`src/validator.ts:40`）。依赖装在主 checkout 的 `node_modules`，本 worktree 没有装。
+- `archctx-contracts` 0.6.1（Apache-2.0）提供 `schemas/repo/architecture-{node,relation,flow}.schema.json` 和 `validateJsonSchema`（`src/validator.ts:40`）。它是运行时依赖（`package.json:97` 的 `dependencies`），生产代码已经 import 它（`src/core/architecture/projection.ts:8`、`src/cli/commands/global-runtime.ts:8`）。2026-10-05 用 Bun 直接 import 它的 TS 源码，`validateJsonSchema` 是函数（verified）。
+- `source.include` 只接受 `<dir>/**` 和不含通配符的文件路径两种写法（`docs/reference-configs/external-tooling.md:1148-1163`）。翻译成路径前缀的函数是 `archcontextIncludeToPrefix`（`registry.ts:560`）。
 - `archctx` 0.6.1（Apache-2.0，单个 bundle 2.3 MB）提供下列命令：
   - `export likec4|structurizr|mermaid` 不需要 daemon，但每次导出整个模型（`archctx.mjs:50496-50503`）。
   - `explore` 和 `book` 需要 daemon（:50310-50338，:50953-50958）。
   - Explorer 拒绝写入（:32976）。
 - 仓库里调用 archctx 的只有两处：`src/effects/architecture/archctx-provider.ts`（`projection run|readback`，:331、:408）和 `src/effects/refactor/archctx-provider.ts:96`。
-- 版本常量：`src/core/architecture/projection.ts:16-18`。renderer 是 `archcontext.docs-renderer/v4`，layout 是 `archcontext.docs-layout/v1`，archctx 要求 `0.6.1`。
+- 版本常量：`src/core/architecture/projection.ts:17-19`。renderer 是 `archcontext.docs-renderer/v4`，layout 是 `archcontext.docs-layout/v1`，archctx 要求 `0.6.1`。
 - `Bun.YAML.parse` 已经在用（`src/effects/engineers/profile-store.ts:111`）。解析 YAML 不需要新依赖。
 - `docs/architecture/modules/<domain>/<cap>.md` 共 26 份。生成区由 `<!-- BEGIN/END ARCHCONTEXT:generated ... sourceDigest=... -->` 包住，例如 `verified-context.md:3-86`。人写章节是 §3（:88）、§4（:90）和 Optimization Backlog（:92），标题用繁体中文。
 - **8/26 份模块文档的 §3 是空的**（本次统计）。
@@ -187,12 +195,12 @@
 - `repo-harness docs` 只解析 `assets/reference-configs` 里的文档（`src/cli/commands/docs.ts:15`）。仓库里没有 PRD 或 Sprint 的目录索引。
 
 ### 3.8 Agent config 数据源（仓库内）
-- 根目录 `CLAUDE.md`（7214 B）和 `AGENTS.md`（7326 B）只有一个 diff hunk，就是宿主章节：`## Claude Code` 对应 `## Codex`。共享规则重复写在两份文件里，这是有意的设计。
+- 根目录 `CLAUDE.md`（7305 B）和 `AGENTS.md`（7417 B，`ac21fbdd`）只有一个 diff hunk，就是宿主章节：`## Claude Code`（CLAUDE.md:51-55）对应 `## Codex`（AGENTS.md:51-56）。共享规则重复写在两份文件里，这是有意的设计。
 - 26 个 capability 节点声明了 `extensions.contractFiles`，对应 5 组 AGENTS/CLAUDE 文件，10 个文件都存在。分别在仓库根目录、`src/core/engineers/`、`assets/hooks/`、`scripts/` 和 `assets/`。
 - `agents/fleet/` 有 7 个角色文件。`agents/engineers/profiles/` 有 2 个 JSON。`agents/engineers/sops/` 有 2 个 MD。读取函数是 `listEngineerProfiles`（`profile-store.ts:214-235`），只读 git 跟踪的文件。
 - `assets/skills/` 有 6 个 skill。`.ai/context/context-map.json` 有 10 个 `discoverable_contexts`。`.ai/harness/policy.json` 有 34 个顶层 key，包括 `guards`、`enforcement` 和 `merge_gate`。
 - 参考文档同步：`scripts/sync-reference-configs.ts`，规范源是 `assets/reference-configs`（25 份），目标是 `docs/reference-configs`（35 份，其中 10 份只在 docs 里）。本次没有运行检查，所以当前是否 drift 为 **unverified**。
-- Herdr dispatch 规则：`docs/reference-configs/external-tooling.md:235-265`。herdr 运行时的会话和 pane 状态在 herdr 里，不在仓库里。
+- Herdr dispatch 规则：`docs/reference-configs/external-tooling.md:236-266`。herdr 运行时的会话和 pane 状态在 herdr 里，不在仓库里。
 - notify 状态只覆盖 6 个 secret 中的 3 个（`src/core/operator/notify-status.ts:2`），也不报告 `*_NOTIFY_DONE` 开关。
 
 ### 3.9 与代码不一致的文档（计划在 Phase A 修正，见 §9）
@@ -238,6 +246,7 @@
     2. Sprint 的 Child PRD 标签带 `Deferred` 时，对照子 PRD 自己的 `Activation` 字段。子 PRD 的 Activation 也是 Deferred 时**不算冲突**。子 PRD 没有 Activation 字段或含义不明时显示 `unknown`，不依据 `Approved` 推断它是激活的。只有两边 Activation 明确相反时才报冲突。
   - **停留过久**（阈值见 §11 #8）：`Executing` 状态 24 小时没有进展显示提示（hint），72 小时显示升级（escalated）；`Active` 文档的阈值是 7 天；每个项目可以覆盖这些值。等待审批（waiting-on-approval）和等待外部（waiting-on-external）单独列出，不算停留过久。处理方式只有一种：给出一条「检查 prompt」文本让人复制给 Bot。UI 不执行任何动作，也不判定任务失败。
 - **`updated` 的来源**：头部有 `**Updated**:` 时用它；没有时用该文件自己的最后一次 commit 时间。都没有时是 `null`。阈值见上一条（§11 #8）。
+  - 取 commit 时间时，每个 HEAD 只运行**一次** `git --no-optional-locks log --name-only --format=%H%x00%cI -- <范围内目录>`，不逐个文件运行 `git log -1`。同一个 HEAD 上「路径 → 最后 commit 时间」不会变，所以按 HEAD commit 缓存（属于 §6.3 允许的不可变数据，只在内存里）。
 - 归档（`plans/archive`、`tasks/archive`）默认不画，只显示数量。可以用白名单参数 `?scope=all` 切换，结果有节点上限。
 - 文档内容不在 UI 里渲染。UI 显示仓库相对路径并提供复制。
 
@@ -258,15 +267,17 @@
 - **来源版本**：
   - 仓库内的文件显示**该文件自己的最后一次 commit**（`git log -1 -- <path>`）和 dirty 标记，不显示仓库的 HEAD。
   - 不在 git 里的全局文件（例如 `~/.claude/CLAUDE.md`）只显示 mtime 和 sha256，不显示内容。仓库外的文件由单独的 collector 按显式路径白名单采集，GET 只读它的快照；没有快照时显示 `unknown`（§11 #7）。
-- **Capability 本地合约**：capability → agents/claude 路径、文件是否存在、两份文件的共享块是否一致。
+  - **collector 的归属（Phase C 交付）**：CLI 子命令 `repo-harness operator agent-config-snapshot [--json]`。它在 Mini 上运行（Bot 或人手动触发，不加定时器）。它把快照写到注册仓库 primary checkout 的 `.ai/harness/runs/agent-config/snapshot.json`（已被 `.gitignore:70` 的 `.ai/harness/runs/` 忽略），先写临时文件再 rename。路径白名单是代码里的常量，不来自请求。快照只含 `{path, exists, mtime, sha256, size, is_symlink, link_target_in_allowlist}` 和 `collected_at`、`host`。页面显示快照年龄，超过 24 小时标 `stale`。
+- **Capability 本地合约**：capability → agents/claude 路径、文件是否存在、两份文件的共享块是否一致。capability 到合约文件的对应关系复用 `capabilityRegistryFromArchcontextNodes` 的结果（`registry.ts:598`），不另写一份映射。
 - **角色和 profile**：`agents/fleet/*.md`、engineer profile 和 SOP。
-- **Skill 清单**：`assets/skills/*/SKILL.md` 和 `assets/skill-commands/*/SKILL.md` 的 frontmatter（name、description），按 anthropics/skills 的约定解析。实现入口：SKILL.md 的头部是 YAML frontmatter，用 `Bun.YAML.parse` 解析，不新增依赖。仓库里现在有没有现成的 SKILL.md frontmatter 解析函数，**unverified**；有就复用，没有就写一个小的读取函数。
+- **Skill 清单**：`assets/skills/*/SKILL.md` 和 `assets/skill-commands/*/SKILL.md` 的 frontmatter（name、description），按 anthropics/skills 的约定解析。实现入口：SKILL.md 的头部是 YAML frontmatter，用 `Bun.YAML.parse` 解析，不新增依赖。已核对：`ac21fbdd` 上没有专门的 SKILL.md frontmatter 解析函数；现有的 `parseFrontmatter`（`src/effects/terminal/task-role-profiles.ts:49`）只解析 fleet 角色文件。所以写一个小的读取函数。
+- **Skill 投影状态**：#531（`ec4caf82`，在 `ac21fbdd` 里）已经把 `repo-harness-cross-review` 装成指向 bun 全局包的符号链接，并新增 `doctor` 的 skill-projection 和 ledger 漂移检查（`src/cli/commands/doctor.ts:9`，`src/cli/installer/skill-projection.ts`）。这个检查读取的是仓库外的宿主目录（`~/.claude/skills` 等），所以只能由上面的 collector 调用它的判定函数（`expectedSkillProjections`、`skillLinkMatches`），把结果写进快照；GET 不调用它们，也不重新推导。#531 在 0.20.0 发布说明（#528）之后合并，所以 Mini 要装一个包含 #531 的新版本，链接才会生效。
 - **硬规则**：作为「来源 + diff」显示，包括 CLAUDE.md/AGENTS.md 的规则章节和 `policy.json` 的 `guards`、`enforcement`、`merge_gate` 原值。不做规则引擎。
 - **AGENTS.md 就近生效**：对每个 capability 的源码路径，显示哪一份 AGENTS.md/CLAUDE.md 离它最近，也就是理论上会生效的那一份。
 - **「哪个 agent 实际加载了它」不在这一页**。这需要每次运行都留下加载回执（文件版本和 hash）。这项移到 D 线（§7 D 线后续），并要求新增回执。
 - **Herdr**：
   - herdr 的实时结构（session、tab、pane）属于可视化，放到 P1 的 pane/worker 概览。
-  - pane 布局规则（`external-tooling.md:235-265`）和 hook 路由（`src/cli/hook/route-registry.ts:68` 的 `ROUTES`）显示为只读设置。
+  - pane 布局规则（`external-tooling.md:236-266`）和 hook 路由（`src/cli/hook/route-registry.ts:68` 的 `ROUTES`）显示为只读设置。
   - 运行状态和规则不一致时只做标记，不自动修复。所有值都先脱敏。
 - 优先级：配置清单是 P1，在 Phase C 交付。
 
@@ -301,7 +312,8 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 | LikeC4（参考） | MIT | 13.19 MB（likec4 1.59.4） | — | 它本身就用 xyflow + dagre + xstate。一个模型投影成多个视图，还有动态 flow 视图。archctx 已经能导出 `architecture.likec4` | **只借用模型/视图的思路**，不引入这个包 |
 
 **已批准方案（Aimpact 2026-10-05，§11 #1）**：`@xyflow/react` 12 + `@dagrejs/dagre`，两者都放在 devDependencies，打进 `dist/operator-ui`。
-- **依赖成本的边界**：表里只列了每个包固定版本下的**直接**依赖。`@xyflow/system` 0.0.83 的直接依赖共 9 个：运行时是 `d3-drag`、`d3-interpolate`、`d3-selection`、`d3-zoom` 四个，另有五个 `@types/*` 包（包括 `@types/d3-transition`；`d3-transition` 本身不是直接依赖，npm registry 2026-10-05 查询）。完整传递闭包和每个传递依赖的 license 都**没有统计，unverified**，留到引入依赖的阶段验证。不能用顶层 MIT 推断整个依赖图的 license。B 阶段用构建产物测量实际打包体积。
+- **依赖成本的边界**：表里只列了每个包固定版本下的**直接**依赖。`@xyflow/system` 0.0.83 的直接依赖共 9 个：运行时是 `d3-drag`、`d3-interpolate`、`d3-selection`、`d3-zoom` 四个，另有五个 `@types/*` 包（包括 `@types/d3-transition`；`d3-transition` 本身不是直接依赖，npm registry 2026-10-05 查询）。完整传递闭包**没有统计，unverified**，留到引入依赖的阶段验证。不能用顶层 MIT 推断整个依赖图的 license。已核对的部分（`npm view`，2026-10-05）：`d3-zoom`、`d3-drag`、`d3-selection`、`d3-interpolate`、`d3-color`、`d3-dispatch`、`d3-timer`、`d3-transition` 是 ISC，`d3-ease` 是 BSD-3-Clause，`zustand`、`classcat`、`@dagrejs/graphlib` 是 MIT。所以传递依赖的 license 规则按 §5A.6 的宽松许可白名单执行。B 阶段用构建产物测量实际打包体积。
+- **集成细节**：`@xyflow/react/dist/style.css` 只在 Architecture 的 lazy chunk 里 import，不进 Overview 首屏。画布容器要有明确的宽和高。happy-dom 不做布局，所以边、节点位置和折叠的断言放在 core 投影测试里；UI 测试只断言邻居列表。一跳视图同时提供邻居列表（也就是「N more」展开后的列表），作为键盘可访问的替代视图。
 - 一跳子图在 core 里用纯函数计算，服务端返回 `{nodes, edges}`。前端只负责布局和交互，不在前端推导模型关系。
 - 只在 Architecture chunk 里按需加载，Overview 的首屏体积不变。
 - 静态导出不新增任何依赖。Docs 和 PR 场景继续用 archctx 生成的 Mermaid、Structurizr 和 LikeC4 文件。
@@ -340,10 +352,10 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 - 提议：自己写组件，借用以上三种展示方式。
 
 ### 5A.4 多 agent 看板（P1 pane/worker 概览）
-- `h0x91b/dev-3.0`（Apache-2.0，Bun + React + tmux + worktree，有一列「Has Questions」）：只作参考。「Has Questions」对应我们的 `waiting_input` 和 `waiting_approval`。
-- ccmanager（MIT）：借用 busy/waiting/idle 的检测思路。我们的数据来源是 herdr 的 `agent_status` 和 ledger 的 run 状态，不读终端屏幕。
+- `h0x91b/dev-3.0`（Apache-2.0，Bun + React + tmux + worktree，有一列「Has Questions」）：只作参考。「Has Questions」在 P1 概览里对应 herdr 的 `blocked`（需要人处理）。ledger 的 `waiting_input` 由同一个 herdr 状态投影而来（`projection.ts:17`）；`waiting_approval` 现在没有产生方（§3.4），显示 `unknown`。
+- ccmanager（MIT）：借用 busy/waiting/idle 的检测思路。P1 概览的数据来源只有 herdr 的 `agent_status` 和 task-agent 会话文件，不读终端屏幕，也不依赖 ledger。D0 有真实数据以后，可以再叠加 ledger 的 run 状态，那是单独的增量。
 - opensessions（**没有 license**）：只借用「agent 主动推送状态」的思路，不复制任何代码。这个思路对应 D0 的事件接入。
-- 终端输出：**不做只读 xterm**（Aimpact 2026-10-05，§11 #1）。需要显示 `herdr agent read` 的历史时，只显示脱敏后的纯文本日志。
+- 终端输出：**不做只读 xterm**（Aimpact 2026-10-05，§11 #1）。终端历史不在 P1 概览范围里。以后要显示时另行批准：它需要 `herdr agent read`，这个动词现在不在 §6.8 的 argv 白名单里，而且只能显示脱敏后的纯文本日志。
 - diff：`@git-diff-view/react`（0.1.7，MIT，解包 1.31 MB）在 Phase C 小范围评估（§11 #1），评估通过后才替换现有 `TaskDiff.tsx`。0.x 版本说明 API 可能还不稳定。
 
 ### 5A.5 Agent config 查看
@@ -361,7 +373,10 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 | opensessions、agent-viewer | 没有 license | 只借用思路，不复制代码 |
 | superset、inngest、restate、cmux | source-available | 只借用模式，不复制代码 |
 
-规则：只有 MIT 或 Apache-2.0 的 npm 包可以作为依赖候选，而且每个都要单独批准。其他项目一行代码也不复制。
+规则：
+- **直接依赖**：只有 MIT 或 Apache-2.0 的 npm 包可以作为候选，而且每个都要单独批准。
+- **传递依赖**：允许宽松许可白名单 MIT、Apache-2.0、ISC、BSD-2-Clause、BSD-3-Clause（xyflow 的 d3-* 是 ISC，`d3-ease` 是 BSD-3-Clause）。白名单以外的 license 出现在闭包里时，停下来单独批准。引入依赖的 PR 要附上完整闭包的 license 清单。
+- 其他项目一行代码也不复制。
 
 ---
 
@@ -375,17 +390,19 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 |---|---|---|---|
 | architecture_modules | `^/api/v1/repositories/<id>/architecture/modules$` | `readArchitectureModuleIndex` | B |
 | architecture_module | `^/api/v1/repositories/<id>/architecture/modules/<cap>$` | `readArchitectureModule` | B |
-| architecture_review_prompt | `^/api/v1/repositories/<id>/architecture/modules/<cap>/review-prompt$`，查询参数白名单：`shard`、`mode=module\|diff`、`base`、`head`。`mode=diff` 必须同时给出 `base` 和 `head`，服务端先解析成固定 SHA | 与 CLI 共用的 builder | B |
+| architecture_review_prompt | `^/api/v1/repositories/<id>/architecture/modules/<cap>/review-prompt$`，查询参数白名单：`shard`（`^[1-9][0-9]{0,3}$`）、`mode=module\|diff`、`base`、`head`。`mode=diff` 必须同时给出 `base` 和 `head`。**GET 里的 `base`/`head` 只接受完整的十六进制 SHA**（`^[0-9a-f]{40}$` 或 `^[0-9a-f]{64}$`）；ref 名、缩写 SHA、以 `-` 开头的值和其他任何形式一律返回 400，不启动任何子进程。合法 SHA 再用 §6.8 的 `rev-parse` 形状确认它是一个 commit，不存在时返回 404。ref 名只在 CLI 里接受（Bot 先用 CLI 解析成 SHA，再把 SHA 交给 UI） | 与 CLI 共用的 builder | B |
 | docs_graph | `^/api/v1/repositories/<id>/docs/graph$`，查询参数白名单只有 `scope=active\|all` | `readDocsGraph` | C |
 | agent_config | `^/api/v1/repositories/<id>/agent-config$` | `readAgentConfig` | C |
 | pipeline_health | `/api/v1/pipelines/health` | 运行 `repo-harness pipeline health --json` | D0 |
-| pipeline_unsynced | `^/api/v1/repositories/<id>/pipelines/unsynced$` | 读取 `.ai/harness/runs/pipeline-unsynced/*.json`（只读，字段白名单） | D0 |
-| pipeline_detail | `^/api/v1/repositories/<id>/pipelines/detail$`，查询参数白名单：`source_host`、`task`（URL 编码）。**HTTP 只接收公开身份**：注册表 repo id（路径）、`source_host` 和 `task`（board 卡片上都有） | 服务端解析内部身份：注册表 → 仓库路径 → 复用 `taskRepository` 的 common-directory 逻辑（`task-worktree.ts:13-15`，和 CLI 同一个函数，不是重新推导）得到内部 `repository_id`，然后在服务端调用 `pipeline status --source-host … --repository-id … --task … --events --projection public --json`（`pipeline.ts:13,35` 的现有 selector，不新增 `--id` 别名）。仓库未注册或解析不唯一时返回 404。内部 `repository_id` 是 Git common 目录的绝对路径（`common-directory.ts:12-13`），只出现在服务端，HTTP 请求和响应都不得包含它 | D1 |
+| pipeline_unsynced | `^/api/v1/repositories/<id>/pipelines/unsynced$` | 读取注册仓库 **primary checkout** 的 `.ai/harness/runs/pipeline-unsynced/*.json`（只读，字段白名单；位置规则见 §7 D0「未同步」） | D0 |
+| pipeline_detail | `^/api/v1/repositories/<id>/pipelines/detail$`，查询参数白名单：`source_host`、`task`（URL 编码）。**HTTP 只接收公开身份**：注册表 repo id（路径）、`source_host` 和 `task`（board 卡片上都有） | 服务端解析内部身份：注册表 → 仓库路径 → 复用 `taskRepository` 的 common-directory 逻辑（`task-worktree.ts:13-15`，和 CLI 同一个函数，不是重新推导）得到内部 `repository_id`，然后在服务端调用 `pipeline status --source-host … --repository-id … --task … --events --projection public --json`（`pipeline.ts:13,35` 的现有 selector，不新增 `--id` 别名）。仓库未注册或解析不唯一时返回 404。内部 `repository_id` 是 Git common 目录的绝对路径（`src/effects/git/common-directory.ts:12-13`），只出现在服务端，HTTP 请求和响应都不得包含它 | D1 |
 
-- **不做 SSE（Aimpact 2026-10-05，§11 #12）**：服务端现在用 `node:http` 的 `createServer`（`server.ts:15,1616`），前端靠轮询。新数据源一律 30 秒轮询，响应带 version/ETag（版本没变时前端不重渲染），失败时退避，页面隐藏时降频。不新增长连接路由，写边界测试的两条断言不变。
+- **不做 SSE（Aimpact 2026-10-05，§11 #12）**：服务端现在用 `node:http` 的 `createServer`（`server.ts:15,1616`），前端靠轮询。新数据源一律用现有的 `useObservationRefresh`：30 秒轮询，失败时退避（最多 4 倍），页面隐藏时暂停。不新增长连接路由，写边界测试的两条断言不变。
+- **ETag（Phase B 新增，现在不存在）**：新路由的 200 响应带 `ETag: "<响应体 sha256>"`。请求带的 `If-None-Match` 相同时返回 304，不带响应体。前端读取函数保存上一次的 ETag；收到 304 时不更新 state，也就不重渲染。ETag 在响应体构建完成后计算，所以它只省带宽和渲染，不省服务端计算。现有路由不改。
 - `<cap>` 必须匹配 `^capability\.[a-z0-9-]+(\.[a-z0-9-]+)+$`，并且必须存在于模型索引里。不匹配时返回 404，不读取任何文件。
 - 白名单以外的查询参数一律返回 400。
-- `OPERATOR_ROUTES` 的顺序断言（`operator-write-boundary.test.ts:74-85`）要追加新 id。这是**必要的测试改动**：只追加 id，`toEqual([])` 和 GET/HEAD 扫描这两条断言不变。PR 里要逐项说明。
+- `OPERATOR_ROUTES` 的顺序断言（`operator-write-boundary.test.ts:74-85`）要加入新 id。`static_asset` 是兜底路由，必须留在最后（`server.ts:108`），所以新 id **插在 `static_asset` 之前**，不是追加在末尾。每条新路由还要导出路径常量，并在 :86-95 加一条 pattern 固定断言。这是**必要的测试改动**：`toEqual([])` 和 GET/HEAD 扫描这两条断言不变。PR 里要逐项说明。
+- GET/HEAD 扫描只读 `server.ts`（测试 :63）。所以按 method 分支的代码只能写在 `server.ts` 里，新读取器模块不判断 method。
 
 ### 6.2 core 合约（新文件放在 `src/core/`）
 
@@ -403,6 +420,7 @@ type ModuleDetailV1 = { schema_version: 'repo-harness.architecture-module.v1'; c
 type ModuleReviewPromptV1 = {
   schema_version: 'repo-harness.module-review-prompt.v1';
   prompt_version: string;                     // 指令文本的版本，改指令就升版本
+  package_version: string;                    // 构建它的 repo-harness 包版本；Bot 的 CLI 和 operator 版本不同时，digest 不同，UI 显示两者
   repository_id: string;                      // 注册表 id 的 digest，不是路径
   capability_id: string; commit: string; mode: 'module'|'diff'; base: string|null; head: string|null;
   worktree_dirty_paths: string[];             // 范围内的未提交路径；内容仍取自 commit
@@ -435,7 +453,7 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
 - **分片字段**：`budget.used_bytes` 和 `omitted_sections` 是整包字段，所有分片相同。每个分片自己的大小放在 `shard.bytes`。章节顺序固定。每个分片的输入上限都是同一个 12288 字节。
 
 ### 6.4 三个模块状态的来源
-- `model_valid`：用 `archctx-contracts` 的 `validateJsonSchema` 和仓库自带的 schema 校验。如果在进程内加载失败（例如本仓库的 Bun 运行时不能直接 import 它的 TS 源码，**unverified**），状态是 `unknown`，不另写一个解析器。
+- `model_valid`：用 `archctx-contracts` 的 `validateJsonSchema` 和包里自带的 schema 校验。Bun 能直接 import 它（§3.5，verified），所以这是一个真实的状态值。只有校验器本身抛出异常时才显示 `unknown`，不另写一个解析器。
 - `generated_summary`：**当前没有安全的读取来源，固定返回 `unknown`**。已核对的原因（verified，源码追踪）：`architecture-projection status` 会运行 `inspectArchitectureProjectionReadiness`，它调用 `archctxCapabilities` 并启动 `archctx capabilities --json`（`archctx-provider.ts:256-259,299`）；还会运行 `inspectArchitectureProjectionAcceptanceState`，它获取独占目录锁，锁实现会 `mkdir` 并写锁文件（`projection-acceptance.ts:446-448`，`exclusive-directory-lock.ts:177,422`）。所以这个命令是探测加写锁，不是读取器，禁止出现在 GET 调用链里。它的 readiness 输出也不包含模块文档生成区的新鲜度。
 - **功能缺口**：仓库里目前没有「每个模块生成区是否新鲜」的已发布证据。模块文档的生成区标记里有 `sourceDigest` 和 `outputDigest`（例如 `verified-context.md:3`），但要在本地比较它们就得重新计算模型侧 digest，这违反 I6。所以 UI 只把这两个 digest 当作信息字符串显示，不做比较，状态固定 `unknown`。
 - **以后的出路（不在本 plan 范围）**：让 `architecture-projection apply` 在发布时写一份每个模块的新鲜度回执，UI 读这份回执。这需要单独批准。
@@ -450,20 +468,27 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
   5. 关联的 contract/plan 列表（只有路径和状态）。
   6. 固定的 review 指令和输出格式。输出格式与 `ReviewOutput` 一致：verdict、summary、findings{id, severity P0-P3, status, message}。
 - **不放「最近的 commit」**，也不用它冒充 base 或 head。
-- **diff 模式**：`--base <rev> --head <rev>` 两个参数都必须给出，先解析成 SHA，再加上 `git diff base head -- <source.include>`。缺任何一个都会报错，没有默认值。
-- **共享 builder 的输入合约**：`composeReviewPacket` 的输入是 `{指令常量（带 prompt_version）、身份 digest（context_sha256、subject_sha256）、prior findings、contract 文本、goal 文本、verification 文本、source packet 文本}`。两个使用方各自准备这些输入，然后各自选择渲染方式：
-  - `review round` 的渲染包含运行身份行（`actual_harness` 等，`generic-review.ts:249-252` 的 DOMAIN IDENTITY 和 provider value 说明）。
-  - `module review-prompt` 的渲染不包含运行身份。它不伪造 `request_id`、`context_sha256`、`subject_sha256`、`actual_harness` 或 `actual_model`。
-- **ReviewOutput 身份由派发方绑定**：`validateReviewOutput` 检查精确的字段集合（`src/core/review/generic-review.ts:28`），包括 request、context、subject 和运行身份。模块 prompt 只要求 reviewer 返回 provider value。这些身份字段由真正的派发方（Bot 通过 `review round` 或 `task-agent`）在派发时绑定。
-- **共享的部分**：把 `generic-review.ts:249-251` 的固定指令文本，以及 ReviewOutput 的格式说明，抽成一个 core 常量，并带上 `prompt_version`。`review round` 和 `module review-prompt` 都用它。`module review-prompt` 不调用 `runReviewRound`，不启动 pane，不写 packet 文件。真正的派发仍然由 Bot 通过 `review round` 或 `task-agent` 完成。这样不会出现第二条 review-round 路径。
+- **diff 模式**：`--base <rev> --head <rev>` 两个参数都必须给出。缺任何一个都会报错，没有默认值。
+  - 解析：`git --no-optional-locks rev-parse --verify --quiet --end-of-options <rev>^{commit}`，得到完整 SHA。CLI 接受 ref 名；GET 只接受完整 SHA（§6.1）。
+  - diff：`git --no-optional-locks diff --no-ext-diff --no-textconv <base-sha> <head-sha> -- <pathspec...>`。两个 SHA 都是上一步的输出，不是原始输入。
+  - pathspec 由 `archcontextIncludeToPrefix`（`registry.ts:560`）把 `source.include` 翻译成路径前缀得到，不把原始 glob 交给 git。
+  - 原始输入值永远不出现在 git 的选项位置：`--end-of-options` 和 `--` 放在任何来自请求或命令行的值之前。
+- **两个 builder，各自独立**：
+  - `review round` 的 packet 由 `composeReviewPacket` 构建。它的输入是 `{身份 digest（context_sha256、subject_sha256）、actual_harness、prior findings、contract 文本、goal 文本、verification 文本、source packet 文本}`。它只有**一个**使用方，就是 `review round`。抽出它的理由是 Dot 要求的顺序修正（先构建，后启动 pane），不是复用。
+  - `module review-prompt` 有自己的 builder（`src/core/review/module-review-prompt.ts`），输入是模型事实、一跳关系、flow、§3 和关联文档路径。它没有 contract、goal、verification 和 source packet（diff 模式的 diff 文本除外）。它不伪造 `request_id`、`context_sha256`、`subject_sha256`、`actual_harness` 或 `actual_model`。
+- **ReviewOutput 身份由派发方绑定**：`validateReviewOutput` 检查精确的字段集合（`src/core/review/generic-review.ts:28`），包括 request、context、subject 和运行身份。模块 prompt 只要求 reviewer 返回 verdict、summary 和 findings。身份字段由真正的派发方（Bot 通过 `review round` 或 `task-agent`）在派发时绑定。
+- **共享的部分只有一行规则**：`generic-review.ts:251` 的 verdict 和 finding 规则（PASS/FAIL 条件、finding 的四个字段、severity 和 status 取值、稳定 ID），抽成一个 core 常量 `REVIEW_FINDING_RULES`，带 `prompt_version`。两个 builder 都用它。:249-250 是传输说明（`request.result_ref`、外层 transport JSON、「EXACTLY request_id, context_sha256, subject_sha256」），只属于 `review round`，**不**共享。`review round` 的 packet 字节必须和改动前完全相同。
+- `module review-prompt` 不调用 `runReviewRound`，不启动 pane，不写 packet 文件。真正的派发仍然由 Bot 通过 `review round` 或 `task-agent` 完成。这样不会出现第二条 review-round 路径。
 - **先把 context 构建和 pane 派发分开**（Dot 要求先做这一步，放在 Phase A）：
   - 现状：`runReviewRound` 先启动 reviewer pane（`generic-review.ts:241`），然后才拼装 packet（:247-255）。
   - 拼装需要的输入在 pane 启动前都已经有了：`context` 和 `identity`（:176-177）、`session.actual_harness`（:199）、`round`（:203），prior findings 只依赖 `round` 和会话目录（:246）。
   - 改法：新增纯函数 `composeReviewPacket(input)`，放在 `src/core/review/`。`runReviewRound` 在 `client.start` **之前**调用它，把 packet 写入 `packet-<round>.txt`，然后再启动 pane。
   - 行为约束：packet 的字节内容不变。packet 已存在但内容不同时，仍然抛出 `review_packet_changed_before_send`（:259）。拼装失败时，不启动 pane。
+  - **新的失败窗口**：packet 提前写入以后，`client.start` 失败会留下 `packet-<round>.txt`。如果 subject 随后改变，重试时同一个 round 号会撞上 `review_packet_changed_before_send`；改动前这个时点还没有 packet 文件。实施时先读 `nextSessionRound` 的分配规则（**unverified**），再从两种处理里选一种，并在 PR 里写明：(a) start 失败时删除本次写入的 packet（它还没有被发送）；(b) 保留现有错误码，并在错误信息里给出下一步命令。两种都要有测试：start 失败 → subject 改变 → 重试，断言结果是成功或者明确的错误码。
+  - 这个拆分单独做一个 PR（**A0**），排在 module CLI 之前。这样 module CLI 不依赖 review 运行时的重构。
 - **packet 合约**：每个 prompt 带这些字段：仓库（`repository_id`）、capability ID、mode、base/head、未提交内容 hash、模型和文档 hash、schema 版本和 prompt 版本（§6.2）。在同一个快照上，CLI 和 UI 必须得到相同的 digest。
 - **12 KB 是输入上限，不是输出截断点**：
-  - 上限从 `.archcontext/manifest.yaml` 的 `runtime.contextBudgetBytes` 读取，现在是 12288。不在代码里写死。
+  - 上限从 `.archcontext/manifest.yaml` 的 `runtime.contextBudgetBytes`（:39）读取，现在是 12288。不在代码里写死。这个值本来是 archctx 的运行时上下文预算；这里有意复用同一个预算，PR 和 prompt 的 `budget` 字段都写明来源键名。
   - 章节分成必需和可选两类：
     - 必需：身份字段、模型事实、一跳关系、review 指令和输出格式。
     - 可选：flow、§3 原文、关联文档列表。
@@ -471,13 +496,16 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
   - 可选章节按固定优先级装入。整章放不下时，把它写进 `omitted_sections`，在 `sources` 里列出路径和 sha256，并设置 `incomplete: true`。
   - 超出上限的内容分到后续分片（`--shard <n>`），而不是删掉。必需章节如果自己就超过上限，也同样分片。
   - 永远不做静默截断。每个分片都标明 `index/count`。
-- **脱敏**：§3 和 contract 文本在进入 prompt 之前先经过现有的 MCP 脱敏模块（`src/cli/mcp/redaction.ts`，文件已存在；它的规则是否适用于这里为 **unverified**，A 阶段核对）。检测到 secret 时直接失败，返回 `secret_detected` 和对应路径。不发布一个已被改动的 prompt。
+  - **分片的使用方式**：每个分片开头是同一个固定头部：digest、capability ID、`shard k/n`，以及一句「收到全部 n 个分片之后再开始 review」。review 指令和输出格式只放在最后一个分片。头部计入每个分片的预算。Bot 按顺序把 n 个分片发给同一个 reviewer。
+- **secret 检测**：§3 原文和 diff 文本在进入 prompt 之前先做 secret 检测。module prompt 只列出 contract 和 plan 的路径和状态，不包含它们的正文，所以正文不需要检测。检测到 secret 时直接失败，返回 `secret_detected` 和对应路径。不发布一个已被改动的 prompt。
+  - 已核对（`ac21fbdd`）：现有的 `src/cli/mcp/redaction.ts:17-38` 不够用。它没有 Slack 和 Discord webhook URL、`scheme://user:pass@` 和 Telegram bot token 的规则。它的 `secret_assignment` 规则不区分大小写，会把 `tokens: null` 当成 secret（2026-10-05 只读探测：命中当前唯一的活动 contract `tasks/contracts/20261003-0524-retire-cross-review-herdr.contract.md:130`）。core 和 effects 也不能反向 import `src/cli`。
+  - 改法（Phase A）：把 token 类规则（现有的 bearer、`sk-`、`ghp_`、`github_pat_`、AKIA、JWT、私钥，加上上述三类）移到 `src/core/security/secret-patterns.ts`。MCP 的 `redactMcpText` 改为使用这组规则，它是第二个使用方，它自己的赋值规则保持原样（替换场景下多替换一些没有害处，MCP 的脱敏范围不缩小）。prompt 的失败检测另用一条收窄的赋值规则：大写的 secret 名 + `=` 或 `:` + 非空且不是 `null`/`none`/`""` 的值。fixture 同时包含「必须命中」的假 token、webhook URL、带凭据的 URL，以及「必须不命中」的 `tokens: null`。
 - **路径**：只输出仓库相对路径。读取前先对路径做 realpath，必须在仓库根目录以内。
 
 ### 6.6 门禁 explain（无副作用）
-- 新增纯函数 `explainNextGate(record, now): { from, to, satisfied: boolean, missing: string[] }`，放在 `src/core/pipeline/gates.ts`。
+- 新增纯函数 `explainGate(record, to, now): { from, to, satisfied: boolean, missing: string[] }`，放在 `src/core/pipeline/gates.ts`。一个阶段有多条出边（前进、返工、blocked，`stage-machine.ts:7-41`），所以目标阶段 `to` 是参数。UI 的「下一道门禁」用每个阶段固定的前进边：plan→plan-review→implement→cross-review→test→merge-ask→merged→cleanup。
 - 它先 `structuredClone(record)`，在副本上调用 `refreshValidity`，然后复用 `requirementPass` 和 `stage-machine.ts` 里的门禁条件，只返回缺口，不抛异常。
-- 门禁条件要和 `advanceRecord` 共用同一组判断，避免出现两份规则。具体做法是把 :17-40 的条件抽成一张表，`advanceRecord` 和 `explainNextGate` 都读这张表。`advanceRecord` 的行为保持不变，由现有的 `pipeline-observer.test.ts` 保证。
+- 门禁条件要和 `advanceRecord` 共用同一组判断，避免出现两份规则。具体做法是把 :17-40 的条件抽成一张表，`advanceRecord` 和 `explainGate` 都读这张表。**表里只放判断，不放写入**：`advanceRecord` 里的写入（:14 的计数器、:30 的 `phase_entry_facts`、:34-35 的 `consumed_at` 和 `squash_commit`）留在 `advanceRecord` 里，在判断通过后执行。`advanceRecord` 的行为保持不变，由现有的 `pipeline-observer.test.ts` 保证。
 
 ### 6.7 当前 attempt 规则（P1-03）
 - **现状缺口**：`ledger.ts:48-53` 保留全部 round。`ingest.ts:48-56` 接受任何已登记且身份相符的 round。`projection.ts:11-13` 把结果应用到对应的 run，没有「当前 attempt」约束。门禁判断用的是 `record.runs.some(r => r.result_state === 'validated')`（`stage-machine.ts:23`）。所以在已有新 round 时，旧 round 的晚到结果仍能满足这项条件。CAS 只保护 record 的写版本，不约束 run 的先后。
@@ -487,7 +515,7 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
 - **归属 phase**：这一整项——helper、门禁和投影的修改、反例测试——都属于 **D0**（D0 的完成标准第 3 条要求它）。**D1 只消费这些规则，不再修改语义**。
 
 ### 6.7A Pipeline 详情的公开投影
-- 在 `src/core/pipeline/projection.ts` 新增 `projectPipelineDetail(record, transitions)`，输出 board 卡片字段，加上 counters、`explainNextGate` 和 transitions。transitions 只保留 from、to、`seq`、at、reason，reason 经过 `publicText`。
+- 在 `src/core/pipeline/projection.ts` 新增 `projectPipelineDetail(record, transitions)`，输出 board 卡片字段，加上 counters、`explainGate` 和 transitions。transitions 只保留 from、to、`seq`、at、reason，reason 经过 `publicText`。
 - **排序用现有的 `seq`**（`read.ts:27` 按 seq 倒序；transitions 表有 `seq` 和 `ts`，`store.ts:73`，没有逐事件的 commit_seq）。快照水位（epoch/commit_seq）和事件序号（seq）是两个概念，输出里分开标。
 - 不包含 pane、endpoint、worktree、branch 或私有路径。
 
@@ -503,7 +531,18 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
 - **GET 不做的事**：不建库，不迁移，不探测，不派发（I4）。pipeline 相关路由只读已发布的快照，或者调用只读 CLI。
 - **Agent config 的仓库外数据（§11 #7）**：由单独的 collector 按显式路径白名单采集；符号链接解析后必须仍在白名单内。GET 只读 collector 的快照，「不返回也不存储内容」（只有 mtime、sha256 这类元数据）。Agent config 的 GET 不调用 herdr 子进程。没有快照时显示 `unknown`。
 - **整条调用链检查（不只是 HTTP 动词）**：设计本身就使用只读子进程（pipeline CLI、git、herdr pane list）和 immutable SQLite 快照，所以约束不是「零子进程」，而是**只允许列出的只读操作**：
-  - **只读子进程 argv 白名单**：`git` 只允许 `cat-file`、`show`、`log`、`diff`，且必须带 `--no-optional-locks --no-ext-diff --no-textconv`；`repo-harness` 只允许 `pipeline list|status|health` 这类只读子命令；`herdr` 只允许 `pane list`。一律不经 shell。白名单以外的 argv 组合在测试里必须失败。
+  - **只读子进程 argv 白名单（精确形状）**。一律不经 shell。白名单以外的 argv 组合在测试里必须失败。`<sha>` 只能是上一步 `rev-parse` 的输出；`<path>` 只能来自模型、文档头部或 `archcontextIncludeToPrefix`，并已做过 realpath 检查；请求里的原始值不能出现在任何位置。
+    - `git --no-optional-locks rev-parse --verify --quiet --end-of-options <sha|HEAD>^{commit}`
+    - `git --no-optional-locks rev-parse --show-toplevel`、`git --no-optional-locks rev-parse --git-common-dir`（`taskRepository` 用到，`task-worktree.ts:14-15`、`src/effects/git/common-directory.ts:6`）
+    - `git --no-optional-locks cat-file -p <sha>:<path>`、`git --no-optional-locks show <sha>:<path>`
+    - `git --no-optional-locks log --format=<固定格式> [--name-only] [-1] <sha> -- <path...>`
+    - `git --no-optional-locks diff --no-ext-diff --no-textconv [--name-only] <sha> [<sha>] -- <path...>`
+    - `git --no-optional-locks ls-files --others --exclude-standard -- <path...>`（范围内的未跟踪文件）
+    - `git --no-optional-locks status --porcelain=v1 -- <path...>`（Agent config 的 dirty 标记）
+    - `<operator 自己的运行时> <operator 自己包里的 CLI 入口> pipeline list|status|health …`：用 `process.execPath` 加本包的 CLI 入口文件，**不从 PATH 找 `repo-harness`**。这样 operator 和它调用的 CLI 永远是同一个版本（§3.1：Mini 的全局安装是 0.20.0，没有 `pipeline health`）。`pipeline-status.ts:11` 在 D0 一起改。
+    - `herdr --session <s> pane list [--workspace <id>]`：`<s>` 和 `<id>` 来自 task-agent 绑定文件，并先过 `herdr.ts:12` 的 session 正则。
+  - **会阻塞的读取放在 worker 线程里**：任何运行子进程的新读取器（git、pipeline CLI、herdr）都沿用 `server.ts:482` 的 worker 加 supervisor 模式，带超时。`spawnSync`（例如 `herdr.ts:28-30`）不能在主事件循环上运行。超时或失败时，对应字段是 `unknown` 或 `unavailable`。
+  - **跨站请求**：Origin 只在请求带它时检查（§3.1），跨站的 no-cors GET 能到达路由。Phase B 在 `server.ts` 的分发入口加一条规则：`/api/*` 的请求带 `Sec-Fetch-Site` 且值不是 `same-origin` 或 `none` 时，返回 403。这条规则加在 method 检查之后，不改变 GET/HEAD 扫描的结果。主要防线仍是上面的 argv 规则，因为不是所有客户端都发送 `Sec-Fetch-Site`。
   - **唯一的 snapshot adapter**：只有这一个模块允许 import `bun:sqlite`，并且只以 `?immutable=1&mode=ro` 打开。其他读取器模块不得 import `Database`。
   - **仍然禁止的事**：打开 live DB，获取写锁，初始化或 mkdir，运行探测（例如 `archctx capabilities`），调用任何 mutation 或派发动词。
   - **行为检查，不只扫 import 名称**：集成测试记录 GET 和 HEAD 期间的全部子进程 argv 和文件系统副作用（含委托模块的调用）。断言只有白名单内的进程，零写入、零新建目录、零新数据库文件。`execFile` 一类的间接调用也要覆盖。
@@ -525,22 +564,23 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 ### Phase A：模型读取器 + `module review-prompt` CLI
 **范围**
 - core 纯函数：模型索引、一跳图、模块状态、prompt builder（预算、分片、digest）。
-- effects：从 `HEAD` 读取模型和模块文档，`Bun.YAML.parse`，schema 校验，脱敏。
-- CLI：`repo-harness module review-prompt <cap> [--json] [--shard n] [--base r --head r]`，以及 `repo-harness module list [--json]`。
-- 先做：把 `review round` 的 packet 构建和 pane 派发分开（§6.5）。
+- effects：从 `HEAD` 读取模型和模块文档的字节，`Bun.YAML.parse`，schema 校验，secret 检测。节点的结构检查和 include → 前缀翻译复用 `registry.ts`（§0 P1），新读取器只增加「从 commit 读字节」这一种来源。
+- CLI：`repo-harness module review-prompt <cap> [--json] [--shard n] [--base r --head r]`，以及 `repo-harness module list [--json]`。git 调用只用 §6.8 列出的 argv 形状。
+- **A0（单独的 PR，先做）**：把 `review round` 的 packet 构建和 pane 派发分开（§6.5），并抽出 `REVIEW_FINDING_RULES`。
 
 **涉及文件**
-- 新增 `src/core/architecture/module-view.ts`、`src/core/review/module-review-prompt.ts`、`src/core/review/review-packet.ts`（`composeReviewPacket` 和指令常量）、`src/effects/architecture/model-reader.ts`、`src/cli/commands/module.ts`。
-- 修改：
+- A0：新增 `src/core/review/review-packet.ts`（`composeReviewPacket`）；`src/core/review/generic-review.ts` 导出 `REVIEW_FINDING_RULES`（只含 `generic-review.ts:251` 的规则）；`src/effects/review/generic-review.ts` 在 `client.start` 之前调用 `composeReviewPacket`，packet 字节不变。
+- A：新增 `src/core/architecture/module-view.ts`、`src/core/review/module-review-prompt.ts`、`src/core/security/secret-patterns.ts`、`src/effects/architecture/model-reader.ts`、`src/cli/commands/module.ts`。
+- A 修改：
   - `src/cli/index.ts`：注册命令。
-  - `src/core/review/generic-review.ts`：导出共享的指令常量。
-  - `src/effects/review/generic-review.ts`：在 `client.start` 之前调用 `composeReviewPacket`，packet 字节不变。
+  - `src/cli/mcp/redaction.ts`：token 类规则改为从 `secret-patterns.ts` 导入，MCP 的脱敏范围不缩小（§6.5）。
 
 **验收标准**
-- 对 26 个 capability 中的任意一个，同一个 commit 上连续运行两次，digest 相同。
+- 对模型里的任意一个 capability（`ac21fbdd` 上是 26 个，Phase B 以后是 27 个），同一个 commit 上连续运行两次，digest 相同。
 - 超出预算时 `incomplete:true`，`omitted_sections` 不为空，所有分片拼起来能覆盖全部章节。
-- 只给 `--base` 或只给 `--head` 时，退出码非 0。
-- `review round` 的 packet 字节和改动前相同。
+- 只给 `--base` 或只给 `--head` 时，退出码非 0。`--head=--output=<路径>` 这类以 `-` 开头的值被拒绝，路径上没有新文件。
+- `model_valid` 对当前模型是 `valid`（`archctx-contracts` 能加载，§3.5）。
+- `review round` 的 packet 字节和改动前相同（A0）。
 
 **测试**（新行为需要新文件，名字是建议）
 - `tests/unit/module-review-prompt.test.ts`：
@@ -549,12 +589,15 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
   - **dirty**：工作区有改动时内容不变，`worktree_dirty_paths` 列出改动路径。
   - **oversize**：分片和 omitted 列表。
   - **path escape**：`source.include` 里的 `../`、绝对路径和符号链接都被拒绝。
-  - **secret redaction**：§3 里放一个假 token，构建失败并返回 `secret_detected`。
+  - **secret 检测**：§3 里放一个假 token、一个假 Slack webhook URL、一个 `https://user:pass@host` 连接串，构建都失败并返回 `secret_detected`；§3 里写 `tokens: null` 时构建成功（误报 fixture）。
+  - **选项注入**：`--base`/`--head` 的值以 `-` 开头时被拒绝；记录到的 git argv 全部符合 §6.8 的形状。
 - `tests/cli/module.test.ts`：`--json` 的形状和退出码；同一个快照上，两次调用的 digest 相同；改动一个范围内文件但不提交，digest 改变，`dirty_content_sha256` 不为 null。
-- 扩展 `tests/generic-review.test.ts`：
+- 扩展 MCP 脱敏的现有测试 `tests/cli/mcp-policy.test.ts`：原来会被替换的值仍然被替换（脱敏范围不缩小），新增的 webhook URL 和带凭据 URL 也被替换。
+- 扩展 `tests/generic-review.test.ts`（A0）：
   - packet 字节和改动前相同。
   - packet 文件在 `client.start` 之前写入。
   - 拼装失败时，`client.start` 没有被调用。
+  - `client.start` 失败 → subject 改变 → 重试：结果是成功，或者是 §6.5 选定的明确错误码。
 
 ### 数据线 Phase D0：先保证记录可靠（合约 + fixture + 一条真实任务链试点）
 **范围**
@@ -571,7 +614,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | 2 | 结果收集 | `assets/skill-commands/repo-harness-check/SKILL.md:9`（verify）、`assets/skills/repo-harness-cross-review/references/generic-review.md`；herdr webhook → Bot → `ingest-event` | herdr 的 `done` 只记成一条**通知**，不算阶段通过。现有代码已经这样处理：没有完整身份的 done/blocked 事件会记成 `weak_observation`（`ingest.ts`）。阶段结果只来自经过 sourceAuthority 校验的 result 和 `record --kind evidence` |
 | 3 | 审批和收尾 | `assets/skill-commands/repo-harness-ship/SKILL.md:10-20`（返回 PR URL 和 head SHA） | 记录真实的批准或拒绝，以及 PR 和 head SHA。批准对应 `record --kind go`，它要求 subject、PR 和 target 完全匹配（`ledger.ts:84-89`）。合并路径见下面事件表的 `merge` 行 |
 
-- 仓库里的这几个 skill 文件是 Bot 的入口说明。README:410 说任务执行已经移到「现有的 Bot skills」。已核对（2026-10-05，见 §11「Verified facts」）：Grok Bot 的 runtime 不加载任何 repo-harness skill；Mini 的 worker 通过符号链接加载 bun 全局安装的 0.20.0 skill。运行时归属和试点链见 §11 #4。
+- 仓库里的这几个 skill 文件是 Bot 的入口说明。README.md:411 说任务执行已经移到「现有的 Bot skills」。已核对（2026-10-05，见 §11「Verified facts」）：Grok Bot 的 runtime 不加载任何 repo-harness skill；Mini 的 worker 通过符号链接加载 bun 全局安装的 0.20.0 skill。运行时归属和试点链见 §11 #4。
 
 **最小事件集，以及它们和现有 CLI 的对应关系**
 
@@ -604,7 +647,8 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 
 **「未同步」状态**
 - 现状：写入失败时，CLI 已经输出 JSON 错误和退出码 2-7。但 UI 看不到这次失败，因为失败的写入根本没有进入 ledger。
-- **回执的归属**：回执由**发出这条命令的 checkout** 拥有，写在它的 `.ai/harness/runs/pipeline-unsynced/<event_id>.json`。这个目录已被 `.gitignore:70` 忽略。试点要求 operator serve 和 pipeline 写入方在同一台主机上，operator 启动时校验这一点（§11 #11）。跨主机时显示 `unknown` 或 `unavailable`，并带上主机名和快照时间，绝不显示成「空 ledger」。
+- **回执的位置**：CLI 用 `taskRepository(cwd).primary_root`（`task-worktree.ts:13-15`）找到调用方仓库的 **primary checkout**，把回执写在 `<primary_root>/.ai/harness/runs/pipeline-unsynced/<event_id>.json`。这和 task-agent 会话目录的规则相同（`task-session.ts:356-359`），所以从任何 linked worktree 发出的命令，回执都落在同一个位置，operator 的 `pipeline_unsynced` 路由能读到。这个目录已被 `.gitignore:70` 忽略。
+  - `ingest-event` 没有仓库选择器。它的回执按 CLI 的 cwd 决定：cwd 在 git 仓库里时，写到该仓库的 primary checkout；cwd 不在 git 仓库里时不写回执，错误输出加上 `unsynced_receipt_unavailable`，处理方式和「回执写失败」相同（只有 CLI 输出这一个证据）。webhook 接入的 skill 文本要求在仓库目录里运行 `ingest-event`。试点要求 operator serve 和 pipeline 写入方在同一台主机上，operator 启动时校验这一点（§11 #11）。跨主机时显示 `unknown` 或 `unavailable`，并带上主机名和快照时间，绝不显示成「空 ledger」。
 - **回执内容（足以跨进程重建同一条命令）**：按命令分别列出**全部**进入幂等 hash 的输入（hash 是 `digest(wire({...input, command_key: undefined}))`，`ledger.ts:107-110`），不能共用一张缺项的混合表：
   - `new`：`--source-host`、`--repository-id`、`--task`、`--title`、`--adopt-task`、`--root`、`--issue`、`--brief`、`--idem-key` 等实际给出的创建输入。
   - `record`：key 三元组、`kind`、payload、原 `state_version`、`command_key`。
@@ -617,14 +661,25 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - 恢复路径只调用 `repo-harness pipeline`，永远不重新运行 `task-agent start/send`。所以已经派发出去的工作不会被重新执行。Skill 文本要写明这一条。
 
 **合约测试用的临时 dev store**
-- 先交付合约和 fixture，再用一个临时 dev store：把 `REPO_HARNESS_PIPELINES_AUTHORITY_HOST` 设成本机名，把 `REPO_HARNESS_PIPELINES_DB` 设到临时目录。临时目录的文件系统类型能不能通过 `requireLocation` 的允许列表（darwin `[17,26]`），**unverified**，要先试一次。
+- 先交付合约和 fixture，再用一个临时 dev store：把 `REPO_HARNESS_PIPELINES_AUTHORITY_HOST` 设成本机名，把 `REPO_HARNESS_PIPELINES_DB` 设到临时目录。临时目录的文件系统类型能不能通过 `requireLocation` 的允许列表（darwin `[17,26]`），**unverified**，要先试一次。这两个环境变量只用于测试和 dev store；生产环境不设置它们（见下一节）。dev store 同样需要 SQLite ≥ 3.51.3，测试 fixture 已经选择 Homebrew 的库（`pipeline-observer.md:29-31`）。
 - 这时 Pipeline 视图显示「未连接」。它和「空」是两个不同的状态：没有快照指针时是「未连接」；有快照但没有 record 时是「空」。
 - dev store 里的数据只用于测试，选定主机以后直接丢弃，不迁移。
 
 **权威 ledger 主机（Aimpact 2026-10-05 已决定，§11 #2）**
-- 一台在线主机，一个权威 ledger（`requireLocation` 已经支持这两个环境变量，位置检查的代码不用改）。不给每个 Bot 单独建库，不做双写。
-- 主机是常开的 Mac mini。DB 路径由配置指定（`REPO_HARNESS_PIPELINES_DB`），候选值是 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`；代码里的默认值是 `/Volumes/D/repo-harness/pipelines/pipelines.db`，以配置为准。
+- 一台在线主机，一个权威 ledger。不给每个 Bot 单独建库，不做双写。
+- 主机是常开的 Mac mini。决定的 DB 路径是 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`（§11 #2，配置优先）。
+- **单一来源：决定值写进代码默认值，生产环境不靠环境变量选位置**。
+  - 问题（已核对，`ac21fbdd`）：代码默认路径是 `/Volumes/D/repo-harness/pipelines/pipelines.db`（`store.ts:25`），和决定的路径不同。在 `kitos` 上，`/Volumes/D` 下的任何路径都能通过 `requireLocation`，然后 `mkdirSync(..., {recursive:true})` 会建目录（`store.ts:36-58`）。写入方分布在 Bot shell、herdr pane、webhook 接入和 operator 子进程里。只要其中一个进程没有带 `REPO_HARNESS_PIPELINES_DB`，它就会在默认路径建出第二个 ledger；operator 没带时会读错指针，显示 `unavailable`。
+  - 改法：D0 把 `store.ts:25` 的默认值改成决定的路径 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`。`/Volumes/D/repo-harness` 现在还不存在（§11 Verified facts），所以不需要迁移。生产环境**不设置** `REPO_HARNESS_PIPELINES_DB`；它只留给测试和 dev store 覆盖用。这样没带环境变量的进程也写到同一个 ledger。同一个 PR 更新 `pipeline-observer.md:15-16` 的默认路径说明。
+  - **权威主机名**：D0 的第一步在 Mini 上运行 `bun -e 'console.log(require("node:os").hostname())'`，把输出记进 PR。输出等于 `kitos` 时代码不改；不等于时，同一个 PR 把 `store.ts:37` 的默认值改成记录到的值（`pipeline-observer.md:17-18` 要求部署前核对这个值）。生产环境同样不设置 `REPO_HARNESS_PIPELINES_AUTHORITY_HOST`。
+- **SQLite 库（D0 部署步骤，必须在第一次真实写入之前完成）**：
+  - 已核对：writer 要求 SQLite ≥ 3.51.3（`store.ts:18-24`），Mini 的系统 SQLite 和 `bun:sqlite` 是 3.51.0，Homebrew 的 3.53.2 是 keg-only（§11 Verified facts）。不做这一步，Mini 上每一次 `pipeline new|record|advance|ingest-event|export-snapshot` 都返回 `sqlite_version`（退出码 3）。
+  - 步骤：在 Mini 上把 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY` 设成 Homebrew 3.53.x 的 `libsqlite3.dylib` 的绝对路径（实际路径在 Mini 上用 `brew --prefix sqlite` 确认，记进 PR）。设置位置只有一个：Mini 的用户级环境文件，Bot、herdr 会话、webhook 接入和 operator 都从它启动。PR 写明这个文件和每个入口怎样加载它。
+  - 没带这个变量的进程在 `mkdir` 之前失败（`store.ts:55-58`），错误可见，不会建出第二个 ledger。所以它不会破坏「一个 ledger」，只会让这次写入进入「未同步」。
+- **`pipeline health` 报告解析结果**：输出 `store: {path_is_default: boolean, path_sha256, authority_host, hostname_matches: boolean, sqlite_version, sqlite_library_configured: boolean}`。CLI 输出可以包含绝对路径；operator 的 `pipeline_health` 投影只输出上面这些布尔值、digest 和版本，不输出绝对路径（I5）。
+- **D0 部署验收**：在 Mini 上，从四个入口（Bot shell、一个 herdr pane、webhook 接入进程、operator 的子进程）分别运行 `pipeline health --json`，四份输出的 `path_sha256`、`authority_host` 和 `sqlite_version` 相同，`sqlite_version` ≥ 3.51.3。然后对一个临时 dev store 运行一次 `pipeline new`，结果成功。
 - `/Volumes/D` 没有挂载时，ledger 显示 `unavailable`：不自动创建，不回退到第二个 DB。
+- **operator 的运行位置和查看方式**：快照指针在 ledger 旁边（`read.ts:9,19`），所以 Pipeline 数据只能在 Mini 上读到。operator serve 在 Mini 上运行。人在 Max 上用 `ssh -L 4318:127.0.0.1:4318 <mini>` 查看，**本地端口必须也是 4318**：服务端期望的 Host 是 `127.0.0.1:<服务端 socket 的本地端口>`（`server.ts:1020-1024`），本地端口不同会得到 421。验收截图通过这条隧道拍摄。
 - notify 插件的 payload 增加 `delivery_id`，作为 ingest 的 `event_id`。herdr 事件本身有没有 id，**unverified**，D0 先确认。插件版本升到 0.3.0。
 - **v0.3.0 的升级方式（§11 #3）**：先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。每台升级前先备份，升级后核对没有重复发送。旧 payload 一律视为 incomplete。
 - **旧插件一次性退役**：各主机完成单次升级后，旧插件停用。没有 `delivery_id` 的旧 payload 仍然接入，但在 health 和覆盖统计里标为 `incomplete`，**不计入**可靠覆盖（完成标准第 1 条要求有幂等键的事件）。不保留无限期的兼容路径。
@@ -632,22 +687,22 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 **发布状态和存储健康**
 - **三个发布状态**：`not committed`（写入失败，见未同步回执）、`committed but not published`（COMMIT 成功，快照导出失败）、`published`。已核对的缺口（verified）：导出在 COMMIT 之后尝试三次，失败只写 stderr（`store.ts:169-173`）；这时指针仍指向旧快照，旧快照里没有这次失败；首次失败时甚至没有可读快照。所以**不能**只靠快照内容报告导出失败。
 - **writer 侧的发布证据，覆盖崩溃窗口**（已核对：`ledger.ts:136` 的顺序是 `boundary('commit')` → `publishAfterCommit`；现有测试 A3 已有 worker 在 commit 边界被 SIGKILL 的 fixture，`pipeline-observer.test.ts:106-113`）：
-  1. **COMMIT 之前**，writer 先原子写发布意图文件 `<db>.publication-intent.json`，内容是目标 watermark 和时间。
-  2. **导出尝试之后**，写发布状态文件 `{status: ok|failed, error_code, at, watermark}`，成功时删除意图文件。
-  3. **writer 侧重启对账（writer-only）**：任何 writer 打开 store 时先看意图文件。意图存在且 live DB 的 watermark 已达到目标 → 属于 committed-but-not-published，先做一次发布专用导出，再清掉意图。意图存在但 live watermark 没到目标 → COMMIT 没有发生（SQLite 事务已回滚），丢弃意图。GET 永远不打开 live DB，所以 UI 在意图文件存在时显示 `pending`（等待 writer 对账），**不**断言 committed-but-not-published；只有 writer 校验过 live watermark 后，状态才变成确定的。
+  1. **COMMIT 之前**：在事务里 `bump()` 得到目标 watermark 以后、COMMIT 之前，writer 原子写一个**按目标 watermark 命名**的意图文件 `<db>.publication-intent/<epoch>-<commit_seq>.json`，内容是目标 watermark、writer pid 和时间。每次提交一个文件，不共用一个文件。
+  2. **导出尝试之后**，写发布状态文件 `{status: ok|failed, error_code, at, watermark}`。成功后，只删除**目标 watermark 小于或等于新指针 watermark** 的意图文件（比较 epoch 再比较 commit_seq）。一个 writer 不能删除目标比指针新的意图，所以并发 writer 的意图不会被别人的导出删掉。
+  3. **writer 侧重启对账（writer-only）**：任何 writer 打开 store 时先列出意图目录。对每个意图：live DB 的 watermark 已达到目标 → 属于 committed-but-not-published，先用 `export-snapshot` 的同一个函数导出一次，再按第 2 条清理；live watermark 没到目标 → 这次 COMMIT 没有发生（SQLite 事务已回滚），删除这个意图。GET 永远不打开 live DB，所以只要存在目标大于指针 watermark 的意图，UI 就显示 `pending`（等待 writer 对账），**不**断言 committed-but-not-published；只有 writer 校验过 live watermark 后，状态才变成确定的。
   4. 指针已更新但状态文件写失败时，health 以指针的 watermark 为准，把过期的状态文件标记为 `stale`。
-- **幂等重放要补发布**：已核对（verified）：`record`/`advance` 命中 command-key 时直接返回缓存结果（`ledger.ts:33,111`），`ingest-event` 命中 delivery-id 时直接返回（`ingest.ts:15-17`），都不会再次发布。所以「已提交未发布」后重放同一条命令，UI 不会恢复同步。改法：幂等命中返回前，先重试一次发布（发布是只读导出，不是 mutation）。另加一条发布专用的 CLI：`repo-harness pipeline publish-snapshot`，只导出当前已提交状态，不做任何 mutation，也不调用 task-agent。
+- **幂等重放要补发布**：已核对（verified）：`record`/`advance` 命中 command-key 时直接返回缓存结果（`ledger.ts:33,111`），`ingest-event` 命中 delivery-id 时直接返回（`ingest.ts:15-17`），都不会再次发布。所以「已提交未发布」后重放同一条命令，UI 不会恢复同步。改法：幂等命中返回前，先重试一次发布（发布是只读导出，不是 mutation）。单独补发布时，用**现有的** `repo-harness pipeline export-snapshot`（不带 `--restore-epoch` 和 `--reverify`，`pipeline.ts:42`）：它只调用 `exportSnapshot` 导出当前已提交状态，不做 mutation，也不调用 task-agent。不新增 `publish-snapshot` 命令。
 - 新增 `repo-harness pipeline health --json`。它读快照（年龄、epoch/commit_seq、coverage）、指针旁边的发布状态文件和「未连接」状态。operator 与 writer 不同主机时，发布状态显示 `unknown`。
 - operator 新增 `pipeline_health` 路由。PipelineBoard 旁边显示一个健康条。
 
 **涉及文件**
 - 新增 `docs/reference-configs/pipeline-event.md`（事件合约）和 fixture。
-- `src/effects/pipeline/store.ts`（发布意图和发布状态文件）、`src/effects/pipeline/read.ts`（`readPipelineHealth`）、`src/cli/commands/pipeline.ts`（`health`、`publish-snapshot`，以及写入失败时的未同步回执）。
+- `src/effects/pipeline/store.ts`（`storePath` 默认值改成决定的路径；必要时改权威主机默认值；按 watermark 命名的发布意图和发布状态文件）、`src/effects/pipeline/read.ts`（`readPipelineHealth`）、`src/cli/commands/pipeline.ts`（`health`，以及写入失败时写到 primary checkout 的未同步回执）。
 - R-02 的 owning files 也在这个 phase 改：`src/core/pipeline/{stage-machine,gates,projection}.ts`、`src/effects/pipeline/{ledger,ingest}.ts`。
 - `assets/herdr/webhook-notify/notify.mjs`、`herdr-plugin.toml`。
-- `src/effects/operator/pipeline-status.ts`、`src/effects/operator/server.ts`、`src/core/operator/`（health 和未同步回执的 decoder）、`src/operator-web/PipelineBoard.tsx`。
+- `src/effects/operator/pipeline-status.ts`（改为用 `process.execPath` 加本包 CLI 入口调用，不从 PATH 找，§6.8）、`src/effects/operator/server.ts`、`src/core/operator/`（health 和未同步回执的 decoder）、`src/operator-web/PipelineBoard.tsx`。
 - 三个接入点的 skill 文件：`SKILL.md`、`assets/skill-commands/repo-harness-check/SKILL.md`、`assets/skill-commands/repo-harness-ship/SKILL.md`。
-- `docs/reference-configs/pipeline-observer.md`（权威主机和迁移步骤）。
+- `docs/reference-configs/pipeline-observer.md`（权威主机、新的默认路径、SQLite 库的设置位置和迁移步骤）。
 
 **完成标准**
 1. 只看 ledger，就能还原一条真实任务的全过程：阶段、run、证据、批准和合并。
@@ -655,9 +710,10 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 3. 旧的 attempt 永远不会覆盖新状态（§6.7）：旧 round 的晚到 validated 结果不得满足当前阶段的门禁条件；旧 `state_version` 的写入返回 `rev_conflict`；旧结果仍保留在历史里。
 4. fixture 覆盖失败、返工、拒绝、冲突和崩溃（`crashed_unknown` 和 `launch-unknown.json`）。
 5. 记录在 CLI 重启后仍然存在：一个新进程能读回同样的状态。
-6. 写入失败时显示明确的「未同步」，并且不会重新执行已派发的工作。「已提交未发布」的状态也能被看到，并且重放或 `publish-snapshot` 能恢复发布。
-8. （补充）合并的两条路径都正确：批准合并消费 go；外部事实合并不做 advance，`approval_not_recorded` 为 true。
-7. 在非权威主机上，写入返回 `authority_unavailable`，ledger 路径上没有创建任何目录或文件。调用方 checkout 里的未同步回执目录**允许**创建，这一条验收只约束 ledger 路径。
+6. 写入失败时显示明确的「未同步」，并且不会重新执行已派发的工作。「已提交未发布」的状态也能被看到，并且重放或 `export-snapshot` 能恢复发布。
+7. 在非权威主机上，写入返回 `authority_unavailable`，ledger 路径上没有创建任何目录或文件。调用方 primary checkout 里的未同步回执目录**允许**创建，这一条验收只约束 ledger 路径。
+8. 合并的两条路径都正确：批准合并消费 go；外部事实合并不做 advance，`approval_not_recorded` 为 true。
+9. **Mini 部署**：「权威 ledger 主机」一节的部署验收通过：四个入口的 `pipeline health` 报告同一个 `path_sha256`、`authority_host` 和 `sqlite_version`（≥ 3.51.3）；没设 `REPO_HARNESS_PIPELINES_DB` 的进程写到决定的路径；`/Volumes/D/repo-harness/pipelines/` 这个旧默认目录不存在。
 
 **测试**（扩展 `tests/effects/pipeline-observer.test.ts`）
 - **empty/stale/not connected**：没有指针时返回「未连接」；有快照但没有 record 时返回 `empty`；快照过旧时返回 `stale`。
@@ -674,16 +730,20 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - **未同步**：让写入失败，回执出现；回执里有完整命令身份和 payload 引用；用同一个 `event_id` 重试成功后，回执消失；payload 缺失或内容改变时，重放被明确拒绝；整个过程中没有调用 `task-agent`。
 - **发布失败和崩溃窗口**五种：首次导出失败（没有快照，health 显示 failed）；已有旧快照时失败（指针不变，health 显示 failed + 旧快照年龄）；COMMIT 前退出（事务回滚，意图被对账丢弃，状态回到 not committed）；COMMIT 后、发布前退出（意图存在，health 显示 `pending`，writer 重启对账后发布成功并转 `published`）；指针已发布但状态文件写失败（health 以指针为准，状态文件标 `stale`）。崩溃窗口复用现有 A3 fixture 的 worker 手法。
 - **回执写失败**：错误输出带 `unsynced_receipt_write_failed`；ledger 路径零目录创建的断言不受回执目录影响。
+- **回执位置**：从 linked worktree 发出的失败命令，回执出现在 primary checkout 的 `.ai/harness/runs/pipeline-unsynced/`，linked worktree 里没有回执；cwd 不在 git 仓库里的 `ingest-event` 失败时，错误输出带 `unsynced_receipt_unavailable`，没有写任何回执。
+- **并发发布意图**：两个 writer 交替提交（复用 A3 的 worker 手法）。A 的导出成功后，B 的意图（目标比 A 的指针新）仍然存在；B 在 COMMIT 后、导出前被 SIGKILL，health 显示 `pending`；下一个 writer 对账后转为 `published`。
+- **存储配置**：没设 `REPO_HARNESS_PIPELINES_DB` 时，`storePath()` 返回决定的路径；SQLite 低于 3.51.3 时写入返回 `sqlite_version`，并且没有建任何目录（`store.ts:55-58` 的现有顺序）；`pipeline health --json` 输出 `store` 字段，operator 投影里没有绝对路径。
 - `tests/cli/operator-serve.test.ts`：`pipeline_health` 和未同步回执路由只接受 GET，其他方法返回 405。
 
 ### Phase B（轻量）：Architecture 工作区
-**范围**：3 条 architecture 路由；顶层导航；模块列表和模块页；一跳图（`@xyflow/react` + `@dagrejs/dagre`，按需加载）；复制 prompt；i18n（en/zh）；在 `.archcontext/model` 的现有 domain 下给 operator 补一个只读 capability 节点（Aimpact 已批准，§11 #5）。
+**范围**：3 条 architecture 路由；顶层导航；模块列表和模块页；一跳图（`@xyflow/react` + `@dagrejs/dagre`，按需加载）；复制 prompt；i18n（en/zh）；在 `.archcontext/model` 的现有 domain 下给 operator 补一个只读 capability 节点（Aimpact 已批准，§11 #5）；新路由的 ETag（§6.1）；`/api/*` 的 `Sec-Fetch-Site` 检查和 §6.8 的 argv 规则。
 
 **涉及文件**
-- `src/effects/operator/server.ts`（路由）、`src/effects/operator/architecture.ts`（新增，调用 A 阶段的读取器）、`src/core/operator/architecture.ts`（decoder）。
+- `src/effects/operator/server.ts`（路由、`Sec-Fetch-Site` 检查、ETag）、`src/effects/operator/architecture.ts`（新增，在 worker 里调用 A 阶段的读取器）、`src/core/operator/architecture.ts`（decoder）。
 - 新增 `src/operator-web/ArchitectureWorkspace.tsx`、`ModuleGraph.tsx`；修改 `App.tsx`（导航）、`i18n.ts`、`styles.css`。
 - `package.json`（2 个 devDependency）、`bun.lock`。
-- `tests/effects/operator-write-boundary.test.ts`（追加路由 id）。
+- `tests/effects/operator-write-boundary.test.ts`（在 `static_asset` 之前插入路由 id，并为每条新路由加 pattern 固定断言，§6.1）。
+- **新增 capability 必须改的三条测试断言**（必要的测试改动，PR 里逐项说明）：`tests/architecture-projection-e2e.test.ts:30`（capability 数 26 → 27）、`:50`（模块文档数 26 → 27）、`tests/capability-archcontext-export.test.ts:72`（节点数 26 → 27）。`tasks/todos.md:65` 记录了这个问题；如果同一个 PR 顺手把这三处改成从模型推导的数量，就关闭那条 todo，并在 PR 里说明。因为同一个 PR 既改测试断言又改实现，按规则做一次只读的 tests-bent review。
 
 **验收标准**
 - 对同一个 capability，GET 返回的 `digest` 等于 CLI `--json` 返回的 `digest`。
@@ -693,6 +753,10 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 **测试**
 - **CLI/UI digest 一致**：`tests/cli/operator-serve.test.ts` 先启动服务器读取 review-prompt，再运行 CLI，比较两个 digest。module 模式和 diff 模式各比一次。
 - **GET 调用链（§6.8）**：argv 白名单测试加 snapshot adapter 唯一性测试；集成测试逐个调用新路由（GET 和 HEAD 都测），记录子进程 argv 和文件系统副作用，断言零写入、零新库、白名单外零进程。
+- **选项注入（F-01）**：`mode=diff&base=<合法 SHA>&head=--output=<临时路径>` 返回 400，没有启动任何子进程，临时路径不存在；`head=main`（ref 名）、`head=abc123`（缩写）、`head=-x` 都返回 400；合法格式但不存在的 SHA 返回 404。断言记录到的每一条 git argv 都在 `--end-of-options` 或 `--` 之后才出现 SHA 和路径。
+- **跨站请求**：`/api/*` 带 `Sec-Fetch-Site: cross-site` 或 `same-site` 返回 403，带 `same-origin` 或 `none` 或不带时正常处理；静态资源路由不受影响。
+- **ETag**：同一个响应体第二次请求带 `If-None-Match` 返回 304 且没有响应体；内容改变后返回 200 和新的 ETag；前端读取函数收到 304 时不更新 state。
+- **事件循环不被阻塞**：读取器子进程超时（用假的慢 git）时，同时发出的 `/healthz` 请求仍然在 1 秒内返回；超时的字段是 `unknown`。
 - **path escape**：`<cap>` 不合法、`<repo_id>` 未注册、查询参数不在白名单里，分别返回 404 或 400，并且不读取文件（用 fs spy 断言）。
 - `tests/operator-web/operator-architecture.test.tsx`（新增）：模块列表的分组，三个状态分开显示，`unknown` 状态的显示，复制按钮的文本等于 CLI 命令。
 - **图的画法**（core 投影测试）：
@@ -705,6 +769,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
   - 源码扫描：`src/operator-web` 里没有 `dangerouslySetInnerHTML`。
   - 用带假 token 和 webhook URL 的 fixture，断言输出里只有 `[redacted]` 或 `configured`。
 - 写边界测试：`toEqual([])` 和 GET/HEAD 扫描的断言不变。
+- **依赖 license**：PR 附上 `@xyflow/react` 和 `@dagrejs/dagre` 完整闭包的 license 清单，全部在 §5A.6 的传递依赖白名单里。
 
 ### Phase C：Docs 工作区 + Agent config 页面
 **范围**
@@ -715,6 +780,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 
 **涉及文件**
 - 新增 `src/core/docs/docs-graph.ts`、`src/effects/operator/docs-graph.ts`、`src/core/operator/agent-config.ts`、`src/effects/operator/agent-config.ts`、`src/operator-web/DocsWorkspace.tsx`、`src/operator-web/AgentConfig.tsx`。
+- 新增 collector：`src/effects/operator/agent-config-collector.ts` 和 CLI 子命令 `repo-harness operator agent-config-snapshot`（在 `src/cli/commands/operator.ts` 注册，§4.5）。
 - 修改 `server.ts`、`App.tsx`、`i18n.ts`。
 - 按 §11 #9：在 `CLAUDE.md` 和 `AGENTS.md` 里只给有意共享的块加上稳定规则 ID 标记。两份文件要一起改，并保持各自独立；不做自动同步。
 
@@ -738,11 +804,12 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - **状态冲突**：fixture 用真实 header 格式（sprint 的 `Child PRD A (Active)` 写法）。一个「Approved + Activation: Deferred」的 fixture 断言**不报**冲突；一个 Activation 明确相反的 fixture 断言报冲突；`relationship_conflict` 和 `status_conflict` 分开报出。
 - **来源版本**：一个文件改了但没有提交，它的 dirty 标记为 true；其他文件的最后一次 commit 不受影响。
 - **实际命中的路由**：用一份 hook 事件日志 fixture 计数；日志缺失时显示 `unknown`，不显示 0。
+- **collector**：用临时 HOME；白名单内的文件只记录元数据，快照里没有文件内容；指向白名单外的符号链接记为 `link_target_in_allowlist: false`，不跟随；快照用临时文件加 rename 写入；没有快照时 GET 显示 `unknown`，快照超过 24 小时显示 `stale`；GET 期间没有读取仓库外的任何路径（fs spy）。
 
 ### Phase D1：Pipeline 可视化
 **前提**：数据线的 D0 已经完成真实接入，并且满足 D0 的完成标准。
 
-**范围**：`explainNextGate`、`projectPipelineDetail`、`pipeline status --projection public`（沿用现有三个 selector，见 N-02 的映射）、`pipeline_detail` 路由、Pipeline 工作区（阶段轨道、门禁缺口、时间线）；把 PipelineBoard 从 `organization` 移到这个工作区。`currentRun` 和 attempt 规则已在 D0 完成，这里只消费。
+**范围**：`explainGate`、`projectPipelineDetail`、`pipeline status --projection public`（沿用现有三个 selector，见 N-02 的映射）、`pipeline_detail` 路由、Pipeline 工作区（阶段轨道、门禁缺口、时间线）；把 PipelineBoard 从 `organization` 移到这个工作区。`currentRun` 和 attempt 规则已在 D0 完成，这里只消费。
 
 **涉及文件**
 - `src/core/pipeline/{gates,stage-machine,projection}.ts`、`src/cli/commands/pipeline.ts`。
@@ -750,11 +817,11 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - 新增 `src/operator-web/PipelineWorkspace.tsx`；修改 `PipelineBoard.tsx`、`App.tsx`。
 
 **验收标准**
-- 对每种 `transition_not_allowed` 和 `gate_not_satisfied` 的情况，`explainNextGate` 给出的缺口和 `advanceRecord` 的拒绝原因一致。
+- 对每种 `transition_not_allowed` 和 `gate_not_satisfied` 的情况，`explainGate` 给出的缺口和 `advanceRecord` 的拒绝原因一致。
 - 详情输出里不包含 pane、endpoint、worktree、branch 或绝对路径。
 
 **测试**
-- `explainNextGate` 调用前后，输入 record 深度相等，证明它没有副作用。
+- `explainGate` 调用前后，输入 record 深度相等，证明它没有副作用。
 - `advanceRecord` 原有的测试全部不改，并且全部通过。
 - **empty/stale ledger**：详情返回 `unavailable` 或 `stale`。
 - **out-of-order**：transitions 按 `seq` 倒序排列（现有稳定序号，`read.ts:27`）；输出同时带快照水位（epoch/commit_seq）和逐事件的 `seq`，两者分开。
@@ -770,31 +837,47 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 
 ### P1 其余项（按各自依赖排期，不等两条线都完成；每项单独批准；以下是每项的最小合约）
 
-三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**（§11 #6）。各自的依赖：pane/worker 概览依赖 §6.8 的 GET 调用链检查（Phase B）；PR/merge 队列依赖 D0 真实接入和 D1 的 `projectPipelineDetail`；通知路由视图只依赖现有的 `notify-status` 读取器。
+三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**（§11 #6）。各自的依赖：
+
+| 项 | 依赖 | 能否单独交付 |
+|---|---|---|
+| 通知路由视图 | 只依赖现有的 `notify-status` 读取器和插件的 key 列表 | 能 |
+| pane/worker 概览 | herdr 的 `agent_status` 和 task-agent 会话文件。**不依赖 ledger、D0 或 D1**。需要 §6.8 的 argv 规则、worker 隔离和副作用测试工具；Phase B 还没合并时，这个 PR 自己建这套测试工具，Phase B 以后复用 | 能 |
+| PR/merge 队列 | D0 的真实数据（D0 部署验收和 §11 #4 的运行时证明）。**不依赖 D1** | 不能：D0 有真实数据之前，队列永远是空的 |
 
 **pane/worker 概览**
-- 读取权限：task-agent 会话目录（`.ai/harness/runs/task-agents/*`）。herdr 实时结构通过只读 `herdr pane list --json`（现有只读动词）。
-- 文件：`src/core/operator/pane-overview.ts`（投影：pane、agent、状态、任务的对应，私有路径用 `publicText`）、`src/effects/operator/pane-overview.ts`、`src/operator-web/PaneOverview.tsx`。
-- API：`GET /api/v1/panes/overview`。
-- 新鲜度：每次请求现读 herdr，超时后显示 `unknown`。
-- 验收：一跳列表覆盖 waiting_input 和 waiting_approval（「Has Questions」思路，§5A.4）；不显示 endpoint 或绝对路径；不做只读 xterm（§11 #1），需要输出时只显示脱敏文本日志。
-- 测试：fixture 覆盖 running、waiting、crashed；405 非 GET；私有路径投影。
+- 数据来源（只有这两个）：
+  1. 注册仓库 primary checkout 的 task-agent 会话目录（`<primary_root>/.ai/harness/runs/task-agents/*`，§3.4）：`binding`、`request-N.json`、`delivery-N.json`、`launch-unknown.json`。由此得到 pane、角色、round、投递状态（`accepted`/`unknown`）。
+  2. herdr 实时状态：对绑定文件里出现的每个 endpoint，运行 `herdr --session <s> pane list [--workspace <id>]`（§6.8 的形状）。session 先过 `herdr.ts:12` 的正则；`configPath` 和 `home` 只用来组装子进程环境（`herdrEnvironment`），不进入响应。
+- 状态的显示规则（不推导没有产生方的值）：
+  - 直接显示 herdr 的 `agent_status` 原值。`blocked` 显示为「需要处理」（「Has Questions」思路，§5A.4）。
+  - `waiting_approval` 现在没有任何产生方（§3.4），一律显示 `unknown`，不由其他字段推断。
+  - `waiting_input` 是 ledger 的投影值（`projection.ts:17`）。P1 概览不读 ledger，所以不显示这个值；D0 有真实数据以后再叠加，是单独的增量。
+  - 绑定文件里有、herdr 列表里没有的 pane 显示「不在线」；有 `launch-unknown.json` 的显示「启动结果未知」；herdr 超时或失败时 herdr 部分显示 `unknown`。
+- 文件：`src/core/operator/pane-overview.ts`（投影：pane、agent、状态、任务的对应，私有路径用 `publicText`）、`src/effects/operator/pane-overview.ts`（在 worker 里运行，§6.8）、`src/operator-web/PaneOverview.tsx`。
+- API：`GET ^/api/v1/repositories/<id>/panes/overview$`，仓库按注册表 id 解析。
+- 新鲜度：每次请求现读 herdr，带超时；超时后显示 `unknown`。herdr 调用在 worker 线程里，不阻塞主事件循环。
+- 验收：「需要处理」列表覆盖 herdr 的 `blocked`；`waiting_approval` 显示 `unknown`；不显示 endpoint、session 配置路径、home 或绝对路径；不做只读 xterm，也不读终端历史（§5A.4）。
+- 测试：fixture 覆盖 working、blocked、done、不在线、启动结果未知、herdr 超时；405 非 GET；私有路径投影；记录到的 herdr argv 只有 `pane list` 形状；herdr 超时时 `/healthz` 仍然及时返回。
 
 **PR/merge 队列**
-- 读取权限：ledger 快照（`merge.ask`、`merge.owner_approval`、`merge.external_merge`、`resources.pr`）。
-- 文件：`projectPipelineDetail` 的扩展投影、`src/operator-web/MergeQueue.tsx`。
-- API：复用 `pipeline_detail`，不新增路由。
+- 读取权限：ledger 快照，经过现有的 `pipelines` board 路由。
+- 改法：board 卡片已经有 `phase`、`approval{attested, expired, expired_reason}` 和 `external_fact{approval_not_recorded, …}`（`board.ts:2-9`），只缺 PR 编号。在 `projectBoard`（`projection.ts:55`）的卡片里加 `pr: number|null`（来自 `resources.pr`），board 投影版本升到 `repo-harness.pipeline-board.v3`，decoder 同步升级。
+- 队列由前端从 board 卡片过滤得到：`phase === 'merge-ask'` 且没有 approval → 等待 go；`approval.expired` → go 已过期；`external_fact.approval_not_recorded` → 外部合并未记录批准。
+- 文件：`src/core/pipeline/{board,projection}.ts`、`src/operator-web/MergeQueue.tsx`。
+- API：复用现有的 `pipelines` 路由，不新增路由，也不用逐个任务的 `pipeline_detail`。
 - 新鲜度：跟随快照。
-- 验收：显示等待 go、go 已过期、外部合并未记录批准三类；没有审批按钮，只有复制的 Bot 命令。
-- 测试：三类 fixture；重放不产生重复条目。
+- 验收：显示三类；没有审批按钮，只有复制的 Bot 命令；D0 部署验收（完成标准第 9 条）通过以后才算交付。
+- 测试：三类 fixture；重放不产生重复条目；卡片 `pr` 字段在 decoder 里校验。
 
 **通知路由视图**
 - 读取权限：`notify-status` 现有读取器（presence only）加插件日志。
-- 文件：`src/core/operator/notify-status.ts`（key 列表从 3 个扩到 6 个，加 `*_NOTIFY_DONE` 开关）、`src/effects/operator/notify-status.ts`、`src/operator-web/NotifyStatus.tsx`。
+- 文件：`src/core/operator/notify-status.ts`（key 列表从 3 个扩到 6 个：WEBHOOK_URL、WEBHOOK_KEY、SLACK_WEBHOOK_URL、DISCORD_WEBHOOK_URL、TELEGRAM_BOT_TOKEN、TELEGRAM_CHAT_ID；加 4 个 `<CHANNEL>_NOTIFY_DONE` 开关）、`src/effects/operator/notify-status.ts`、`src/operator-web/NotifyStatus.tsx`。
+- **路由表**：按 `notify.mjs:42,56-64` 的规则投影出「事件 × 渠道」表：`blocked` 发给所有已配置的渠道；`done` 只发给开关为 1 的渠道；WEBHOOK 没配置时整个插件报错，表格显示「插件不可用」。投影只用 presence 和开关值，不读 secret 原值。
 - API：复用 `notify_status` 路由，schema 版本升级。
-- 新鲜度：30 秒轮询（现有 hook），带 version/ETag 和退避，页面隐藏时降频（§11 #12）。
-- 验收：6 个 key 都显示 configured/missing；四个开关显示 on/off；通知按三个状态显示（§4.6）。
-- 测试：fixture 断言 6 个 key 和开关都有输出，且值不泄露。
+- 新鲜度：30 秒轮询（现有 hook），失败时退避，页面隐藏时暂停（§6.1）。
+- 验收：6 个 key 都显示 configured/missing；四个开关显示 on/off；路由表和 `notify.mjs` 的规则一致；通知按三个状态显示，「已收到」显示 `unknown`（§4.6）。
+- 测试：fixture 断言 6 个 key、开关和路由表都有输出，且值不泄露；WEBHOOK 缺失时路由表显示「插件不可用」。
 
 ### P2（最低优先级）
 - worktree 视图：不显示绿色的「可以安全清理」。只显示「清理前提还缺：…」；没有最近一次检查时显示 `unknown`（§4.6）。
@@ -811,8 +894,11 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | Bot 不按规定调用 pipeline CLI | Pipeline 工作区一直是空的 | D0 的验收标准要求有真实任务数据；health 显示 coverage；D1 必须在 D0 验收之后才开始 |
 | 权威主机离线 | ledger 有缺口（pipeline-observer.md:5 说这是 telemetry gap） | health 显示快照年龄；Bot 把写入失败报给人；不做双写 |
 | notify 投递会丢失，没有重试 | 时间线不完整 | `delivery_id` 去重；task-agent 的 request 记录作为第二个来源；coverage 显示缺口 |
-| 新依赖的体积和维护 | 构建产物变大 | 按需加载；B 阶段测量 chunk 体积和完整依赖闭包。两个顶层包 MIT；直接依赖共 4 个；`@xyflow/system` 另有 9 个直接依赖（d3-*）；完整闭包 license 未测（unverified） |
-| `archctx-contracts` 是 TS 源码包，运行时能否直接加载是 unverified | `model_valid` 一直是 `unknown` | A 阶段先探测；不行就显示 unknown，不另写解析器 |
+| 新依赖的体积和维护 | 构建产物变大 | 按需加载；B 阶段测量 chunk 体积和完整依赖闭包。两个顶层包 MIT；直接依赖共 4 个；`@xyflow/system` 另有 9 个直接依赖（d3-*，ISC；`d3-ease` 是 BSD-3-Clause）；按 §5A.6 的传递依赖白名单检查，完整闭包在 B 阶段列出 |
+| GET 的请求值变成 git 选项（例如 `--output=<file>`） | GET 写文件，破坏 I1/I4；跨站页面能触发 GET | GET 只接受完整 SHA；`rev-parse --verify --end-of-options`；§6.8 的精确 argv 形状；`Sec-Fetch-Site` 检查；B 阶段的注入测试 |
+| Mini 的 SQLite 是 3.51.0，低于 writer 门槛 | D0 每次写入都失败 | D0 部署步骤设置 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY`；`pipeline health` 报告版本；完成标准第 9 条 |
+| 某个进程没带位置环境变量 | 建出第二个 ledger，或 operator 读错指针 | 决定的路径写进代码默认值，生产不靠环境变量选位置；四个入口的 `pipeline health` 一致 |
+| operator 调用的 CLI 版本和自己不同 | 新子命令不存在；CLI 和 UI 的 digest 不同 | operator 用 `process.execPath` 加本包 CLI 入口；prompt 里带 `package_version` |
 | 模块文档新鲜度没有可用证据 | `generated_summary` 一直是 `unknown` | 已核对 `architecture-projection status` 有探测和写锁，已从 GET 移除（P1-01）。缺口写进 §6.4；出路是 projection apply 发布新鲜度回执，单独批准 |
 | prompt 里带出 secret | 外泄 | 检测到 secret 就失败；测试覆盖 |
 | CLI 和 UI 输出漂移 | 人和 Bot 看到不同的内容 | 共用 builder 和 digest；B 阶段的测试比较两者 |
@@ -821,7 +907,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | operator 服务多个仓库 | 读错仓库 | 只按注册表 id 解析仓库路径，并做 realpath 检查 |
 | 把 packet 构建挪到 pane 启动之前 | 改变 `review round` 的行为 | packet 字节不变；断言「拼装失败时不启动 pane」；同一个 PR 改测试断言时做 tests-bent review |
 | 拒绝后是否要改变阶段 | 事件语义不完整 | observation kind 已能记录 reject 事实（`ledger.ts:97-101`）。§11 #10 已决定：拒绝记录对象版本和原因，派生「awaiting changes」，不改阶段；拒绝不等于取消 |
-| 外部 Bot runtime 不使用仓库里的 skill 文件 | 三个接入点改了也不生效 | 试点链 Grok → Repo-Harness → herdr（§11 #4）核对实际加载路径、版本/hash 和调用回执；核对不通过就停在合约和 fixture 阶段 |
+| 外部 Bot runtime 不使用仓库里的 skill 文件 | 三个接入点改了也不生效 | 试点链 Grok → Repo-Harness → herdr（§11 #4）核对实际加载路径、版本/hash 和调用回执；核对不通过就停在合约和 fixture 阶段。Mini 要先装一个包含 #531 的版本，skill 才全部是符号链接 |
 | 未同步回执留在本机 | 另一台机器上看不到 | 回执归发出命令的 checkout 所有（§7 D0）；试点要求 operator 和 writer 同主机，启动时校验；跨主机显示 `unknown`/`unavailable`，带主机名和快照时间（§11 #11） |
 | 复制了不兼容 license 的代码 | 法律风险 | §5A.6 规定只借用模式；依赖只考虑 MIT 或 Apache-2.0，并且每个单独批准 |
 | SSE 连接 | 新的长连接 GET 路由 | 已决定不做（§11 #12），改用带 version/ETag 的 30 秒轮询 |
@@ -841,7 +927,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
   整个过程不做双写，也不保留旧路径作为回退。
   - **搬迁细节**：**保留历史的迁移只能从完整、已验证的快照恢复**。从零建库是另一个空 ledger（epoch=1、commit_seq=0，没有 pipelines、idem_keys 和 ingest_receipts，`store.ts:70-77`），不能满足「历史、watermark 和幂等连续」的验收，所以它不是迁移的正常分支，已从本 plan 删除。原 `source_host`、`repository_id` 和 source authority 路由全部不变，只换 writer authority。任何写入前，先在新主机上成功执行一次快照发布，接管快照指针。task-agent 会话目录留在各自的 checkout 里不动。
   - **发布状态的单一权威**：发布状态只有发布意图文件和发布状态文件这一个权威（§7 D0）。**不改 `metadata` 表的 schema**，health 是发布文件的确定性投影。这样不存在两份可能漂移的状态，也不需要 schema 升级。
-  - **restore 分支**：如果实施时走现有 restore 路径，就沿用 restore 自己的 epoch/reverify 语义（`store.ts:91` 的 `assertWritable` 会拒绝 restore 未完成的写入；细节 **unverified**，实施时核对），不把它和「连续 epoch」的迁移验收混用。一个搬迁只选一条路径，PR 里写明选了哪条。
+  - **restore 分支**：如果实施时走现有 restore 路径，就沿用 restore 自己的 epoch/reverify 语义（`store.ts:92` 的 `assertWritable` 会拒绝 restore 未完成的写入；细节 **unverified**，实施时核对），不把它和「连续 epoch」的迁移验收混用。一个搬迁只选一条路径，PR 里写明选了哪条。
   - **迁移测试**：迁移前后 watermark 相同；幂等记录重放结果相同；新进程读回一致；旧 writer 对新位置写入被拒绝；迁移后第一条新写入和第一次重放都成功。
 - **notify 插件**：升到 0.3.0 以后，各主机要重新运行 `repo-harness herdr notify install`。旧插件完成单次升级后停用。没有 `delivery_id` 的旧 payload 接入时标为 `incomplete`，不计入可靠覆盖。升级按 §11 #3：一台主机试点后逐台升级，先备份，再核对没有重复发送。
 - **与代码不一致的文档**：本 plan 在 Phase A 的 PR 里修正 `README.md:521-524`（写动作描述）和 `tasks/todos.md:63`（三个文件已被 #510 删除）。这两处事实已核对，不再作为问题征求批准；如有异议请在审阅时提出。
@@ -855,9 +941,10 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 
 - **新依赖**：Aimpact 已批准 `@xyflow/react` 12 和 `@dagrejs/dagre`（§11 #1），都是 devDependency。理由是附录要求使用成熟的社区方案。§5 按固定版本比较了 9 个选项。`@git-diff-view/react` 在 Phase C 小范围评估；只读 xterm（`@xterm/xterm`）已取消（§5A.4）。完整依赖闭包和 license 没有统计（§5）。gray-matter 和 velite 不需要，因为现有解析器已经够用（§5A.2）。
 - **新抽象**：
-  - ReviewOutput 指令常量：有两个真实使用方，`review round` 和 `module review-prompt`。
-  - 门禁条件表：有两个真实使用方，`advanceRecord` 和 `explainNextGate`。
-  - `composeReviewPacket`：有两个真实使用方，`review round` 和 `module review-prompt`。它也满足 Dot 的要求：把 context 构建和 pane 派发分开。
+  - `REVIEW_FINDING_RULES`（只含 `generic-review.ts:251` 的 verdict 和 finding 规则）：有两个真实使用方，`review round` 和 `module review-prompt`。
+  - 门禁条件表（只放判断）：有两个真实使用方，`advanceRecord` 和 `explainGate`。
+  - `composeReviewPacket`：只有一个使用方，`review round`。它不是共享层；抽出它是为了满足 Dot 的顺序要求（先构建 packet，后启动 pane）。
+  - `src/core/security/secret-patterns.ts`：有两个真实使用方，MCP 脱敏和 module prompt 的 secret 检测。它也修正了 core 反向 import `src/cli` 的问题。
   - 不新增其他共享层。
 - **新文件**：每个新数据源按现有模式新增一个 core 文件、一个 effects 文件和一个前端组件。没有额外的 wrapper。
 
@@ -869,9 +956,10 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 
 1. **新依赖**：批准 React Flow（`@xyflow/react` 12）+ `@dagrejs/dagre`。`@git-diff-view/react` 在 Phase C 小范围评估。只读 xterm 取消，终端输出改用脱敏后的文本日志。（§1、§5、§5A、§10）
 2. **权威 ledger 主机**：ledger 放在常开的 Mac mini 上。DB 路径由配置指定，候选值 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`。`/Volumes/D` 没有挂载时，ledger 显示 `unavailable`：不自动创建，不回退到第二个 DB。（§7 D0、§9）
+   - 落地方式（第三轮复核，F-03）：配置的值写进代码默认值（`store.ts:25`），生产环境不再靠环境变量选位置，所以没带环境变量的进程也写到同一个 ledger。环境变量只留给测试覆盖。SQLite 库仍然用 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY` 设置，缺失时写入在建目录之前失败（F-02）。
 3. **notify 插件 v0.3.0**：先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。升级前先备份，升级后核对没有重复发送。旧 payload 视为 incomplete。（§7 D0、§9）
 4. **Bot skill 的归属**：runtime owner 要展示实际加载路径、版本/hash 和一次调用回执。试点链是 Grok → Repo-Harness → herdr，用一个低风险的 doc/test 任务，不用 byok-sdk，不强制合并。（§7 D0、§7 D 线后续、§8）
-   - **Skill 工作区只放在 Mac mini（Aimpact 2026-10-05 12:09 HKT）**：Bot 和 worker 的运行时 skill 来源只有一个，就是常开的 Mac mini。Max 只用于开发，不作为运行时来源，因为它经常离线。`repo-harness-cross-review` 的过时复制目录要统一成指向同一来源的符号链接。
+   - **Skill 工作区只放在 Mac mini（Aimpact 2026-10-05 12:09 HKT）**：Bot 和 worker 的运行时 skill 来源只有一个，就是常开的 Mac mini。Max 只用于开发，不作为运行时来源，因为它经常离线。`repo-harness-cross-review` 的过时复制目录要统一成指向同一来源的符号链接。main 上的 #531（`ec4caf82`）已经实现了这一点：安装时建符号链接，`doctor` 检查漂移。#531 在 0.20.0 之后合并，所以 Mini 要装一个包含它的版本，再运行 `repo-harness doctor` 确认。
 5. **架构归属**：在现有 domain 下新增一个只读的 operator capability 节点。（Phase B、§9）
 6. **P1 的顺序**：三个 P1 项按各自的依赖排期，不排在两条线全部完成之后。三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**。（§7）
 7. **Agent config 的边界**：用单独的 collector，带显式路径白名单。GET 只读快照，「不返回也不存储内容」。符号链接在白名单内解析。GET 里不调用 herdr 子进程。没有快照时显示 `unknown`。（§4.5、§6.8、Phase C）
@@ -880,6 +968,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 10. **拒绝的语义**：拒绝记录对象版本和原因，UI 派生「awaiting changes」。不做阶段转换。拒绝不等于取消。（§7 D0、§8）
 11. **同主机假设**：试点的同主机约束在启动时校验。跨主机时显示 `unknown` 或 `unavailable`，带上主机名和快照时间，绝不显示成「空 ledger」。（§7 D0、§8）
 12. **SSE**：不做。30 秒轮询，带 version/ETag，失败时退避，页面隐藏时降频。（§1、§6.1、§7 P1、§8）
+   - 落地方式（第三轮复核，F-15）：现有 hook 在页面隐藏时直接暂停，比降频更省，沿用它。ETag 现在不存在，在 Phase B 新增（§6.1）。
 13. **折叠阈值**：每一侧超过 8 个时折叠，显示「N more」。（§4.2）
 
 ### Verified facts (2026-10-05)
@@ -887,9 +976,10 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - Mini 的 `/Volumes/D` 是一块外置 USB 机械硬盘（WD Red EFRX），HFS+ journaled，diskutil 显示 `Fixed`、本地盘，owners 已禁用，Volume UUID `B54E6014-6A08-334C-9622-A8DF56890D58`，剩余 2.9 TB。
 - `/Volumes/D/repo-harness` 目前还不存在。
 - 这块盘**没有备份**：没有 Time Machine 目的地，这个卷被 Time Machine 排除，也没有任何备份任务。
-- 系统 SQLite 和 `bun:sqlite` 都是 3.51.0；homebrew 的 3.53.2 是 keg-only，不在默认路径上。
+- 系统 SQLite 和 `bun:sqlite` 都是 3.51.0；homebrew 的 3.53.2 是 keg-only，不在默认路径上。3.51.0 低于 writer 的门槛 3.51.3（`store.ts:18-24`），所以 D0 必须设置 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY`（§7 D0「权威 ledger 主机」）。
 - Mini 的 worker 通过符号链接加载 bun 全局安装里的 repo-harness 0.20.0 skill。`repo-harness-cross-review` 是一份过时的复制目录，不是符号链接。
 - Grok Bot 的 runtime 不加载任何 repo-harness skill。
+- `os.hostname()` 在 Mini 上的值没有核对（**unverified**）；D0 第一步记录它（§7 D0）。
 - Max 的加载路径（2026-10-05 只读核对，`ls -la` 和 `readlink`）：`~/.claude/skills` 和 `~/.codex/skills` 里的 `repo-harness`、`repo-harness-check`、`repo-harness-product`、`repo-harness-ship`、`repo-harness-test`（以及 `auto-campaign`、`obsidian-memory`）都是符号链接，指向 bun 全局安装 `~/.bun/install/global/node_modules/repo-harness`（版本 0.20.0，普通目录）。`repo-harness-cross-review` 在两处都是复制的普通目录，不是符号链接。`~/.agents/skills` 里没有 repo-harness skill。调用回执：unknown。
 
 ---
@@ -901,7 +991,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | Finding | 处置 | 位置 |
 |---|---|---|
 | P1-01 status 命令有探测和写锁 | 从 GET 移除；`generated_summary` 固定 `unknown` 并写明功能缺口；新增整条调用链检查 | §6.4、§6.8、Phase B 测试、§8 |
-| P1-02 导出失败不可见，重放不补发布 | 三态发布状态；writer 侧发布状态文件；幂等命中补发布；新增 `publish-snapshot`；四种失败测试 | §7 D0 存储健康、完成标准、测试 |
+| P1-02 导出失败不可见，重放不补发布 | 三态发布状态；writer 侧发布状态文件；幂等命中补发布；新增 `publish-snapshot`（第三轮 F-10 改为复用 `export-snapshot`）；四种失败测试 | §7 D0 存储健康、完成标准、测试 |
 | P1-03 旧 attempt 无约束 | 新增 §6.7 当前 attempt 规则、`currentRun`、owning files 和反例测试 | §6.7、§7 D0 |
 | P1-04 merge 路径绕过 go 消费 | 事件表拆成两条合并路径；external-merge 后不 advance；两个 fixture | §7 D0 事件表 |
 | P2-01 创建幂等和旧插件 | `new --idem-key` 写进事件表和字段表；旧插件一次性退役，旧 payload 标 incomplete | §7 D0、§9 |
@@ -931,3 +1021,35 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | N-01 零进程验收与设计冲突 | 改为只读子进程 argv 白名单（git/pipeline/herdr）、唯一 snapshot adapter、行为级副作用检查，覆盖 GET 和 HEAD | §6.8、Phase B |
 | N-02 详情 API 身份映射 | HTTP 只接收公开身份（注册表 repo id + source_host + task）；服务端复用 `taskRepository` 的逻辑解析内部 id 后再调 CLI；请求和响应不得含内部 Git 路径，有测试 | §6.1、D1 |
 | N-03 启动 hash 不是加载证明 | 改名 config-inventory，status=`snapshot`，`loaded=unknown`；只有运行时消费确认才能标 loaded，单独审批 | §7 D 线后续 |
+
+### 第三轮复核（Claude 只读评审，对照 `main@ac21fbdd`，2026-10-05，REQUEST CHANGES）
+
+P1 四条全部修正。P2 和 P3 里改动小的项一起修正；没改的项在下表标明。
+
+| Finding | 处置 | 位置 |
+|---|---|---|
+| F-01（P1）GET 的 base/head 进入 git argv | GET 只接受完整 SHA，其他形式 400 且不启动子进程；`rev-parse --verify --quiet --end-of-options`；argv 白名单改成精确形状（补上 `rev-parse`、`ls-files`、`status`）；`/api/*` 加 `Sec-Fetch-Site` 检查；I4 加「请求值不能变成选项」；注入测试 | §2 I4、§3.1、§6.1、§6.5、§6.8、Phase A、Phase B 测试、§8 |
+| F-02（P1）Mini 的 SQLite 低于 writer 门槛 | D0 部署步骤设置 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY`；`pipeline health` 报告版本；完成标准第 9 条；测试 | §3.3、§7 D0「权威 ledger 主机」、完成标准、测试、§8、§11 Verified facts |
+| F-03（P1）位置靠三个环境变量，代码默认值不同 | 决定的路径写进 `store.ts:25` 的默认值，生产不设位置变量；D0 第一步记录 Mini 的 `os.hostname()`，不等于 `kitos` 时改默认值；四个入口的 `pipeline health` 一致；旧默认目录不存在 | §7 D0、完成标准第 9 条、§8、§11 #2 |
+| F-04（P1）pane 概览需要没有产生方的状态 | 只用 herdr `agent_status` 和 task-agent 文件；`waiting_approval` 显示 `unknown`；不显示 ledger 的 `waiting_input`；endpoint 来自绑定文件；herdr 在 worker 里运行；依赖表改正 | §3.4、§5A.4、§6.8、§7 P1 其余项 |
+| F-05 merge 队列用错路由 | 从 `pipelines` board 路由过滤；卡片加 `pr`，board v3；不依赖 D1 | §7 P1 其余项 |
+| F-06 共享 builder 的说法不成立 | 只共享 `:251` 的规则；`composeReviewPacket` 只有一个使用方；新失败窗口和重试测试；拆分单独做 A0 | §6.5、Phase A、§10 |
+| F-07 漏掉已有的 archcontext 读取器 | P1 地图列出；Phase A 复用 `registry.ts` 的翻译和校验 | §0、§3.5、§6.5、Phase A |
+| F-08 脱敏模块不合要求 | 规则移到 `src/core/security/secret-patterns.ts`，补三类规则；prompt 检测用收窄的赋值规则；MCP 脱敏范围不缩小；误报 fixture；删掉「contract 正文」的说法 | §6.5、Phase A、§10 |
+| F-09 共用的发布意图文件 | 按目标 watermark 命名；只删不比指针新的意图；两个 writer 的测试 | §7 D0 发布状态、测试 |
+| F-10 `publish-snapshot` 重复 | 删除，复用 `export-snapshot` | §7 D0 |
+| F-11 回执位置不清楚 | 写到 `taskRepository(cwd).primary_root`；`ingest-event` 在仓库外时不写回执，报 `unsynced_receipt_unavailable` | §6.1、§7 D0、测试 |
+| F-12 新 capability 让三条断言变红 | 在 Phase B 列出三处断言改动，并要求 tests-bent review | Phase B |
+| F-13 license 规则和批准的依赖冲突 | 直接依赖仍是 MIT/Apache-2.0；传递依赖允许 ISC 和 BSD-2/3 | §5、§5A.6、Phase B 测试、§8 |
+| F-14 collector 没有归属 | `repo-harness operator agent-config-snapshot`，快照位置、字段、过期规则和测试 | §4.5、Phase C |
+| F-15 ETag 声称存在 | 写明现状；ETag 在 Phase B 新增并有测试；隐藏时暂停 | §1、§3.2、§6.1、Phase B、§11 #12 |
+| F-16 operator 的位置和版本 | operator 在 Mini 上运行，用同端口 SSH 隧道查看；调用本包 CLI 入口，不从 PATH 找；prompt 带 `package_version` | §3.1、§6.2、§6.8、§7 D0、§8 |
+| F-17 #531 已合并 | 引用 #531；collector 复用 doctor 的判定函数；Mini 要装新版本 | §4.5、§8、§11 #4 |
+| F-18 行号过期 | 全部更正；Baseline 改成 `ac21fbdd` | 头部、§3、§4.5、§7、§9 |
+| F-19 archctx-contracts 风险已过期 | 删除风险行；`model_valid` 是真实值 | §3.5、§6.4、§8、Phase A |
+| F-20 写边界测试的改动范围 | 插在 `static_asset` 之前，加 pattern 断言；method 分支只写在 `server.ts` | §6.1、Phase B |
+| F-21 `explainNextGate` 没有目标 | 改名 `explainGate(record, to, now)`；表里只放判断 | §6.6、D1 |
+| F-22 分片协议 | 每个分片带固定头部，指令只在最后一个分片；写明预算键的复用 | §6.5 |
+| F-23 文档图每次轮询的成本 | 每个 HEAD 一次 `git log`，按 HEAD 缓存 | §4.3 |
+| F-24 React Flow 集成细节 | CSS 在 lazy chunk 里；容器尺寸；布局断言在 core；邻居列表作为可访问的替代视图 | §5 |
+| F-25 通知视图没有路由表 | 按 `notify.mjs` 的规则投影「事件 × 渠道」表 | §3.4、§7 P1 其余项 |
