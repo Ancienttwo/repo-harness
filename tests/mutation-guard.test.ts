@@ -297,8 +297,11 @@ describe('mutation boundaries after workflow cutover', () => {
           expect(`${result.stdout}${result.stderr}`).toContain('[RepoScopeGuard]');
         }
       }
+      const patch = { command: '*** Begin Patch\n*** Add File: C:/secret.env\n+secret\n*** End Patch' };
+      // Control: the same patch passes while no `C:` entry exists, so the deny below comes from the alias.
+      expect(hostEdit(cwd, home, patch, 'codex').status).toBe(0);
       symlinkSync(join(cwd, '_ops'), join(cwd, 'C:'));
-      const aliased = hostEdit(cwd, home, { command: '*** Begin Patch\n*** Add File: C:/secret.env\n+secret\n*** End Patch' }, 'codex');
+      const aliased = hostEdit(cwd, home, patch, 'codex');
       expect(aliased.status).toBe(2);
       expect(`${aliased.stdout}${aliased.stderr}`).toContain('[RepoScopeGuard]');
     } finally { rmSync(root, { recursive: true, force: true }); }
