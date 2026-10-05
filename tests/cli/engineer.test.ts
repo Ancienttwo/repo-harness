@@ -495,7 +495,7 @@ describe('repo-harness engineer CLI', () => {
     missingFile[missingFile.indexOf('--assertion-file') + 1] = join(root, 'absent.json');
     const missingFileResult = run(root, missingFile);
     expect(missingFileResult.exitCode).toBe(1);
-    expect(JSON.parse(missingFileResult.stderr).error).toBe('internal_error');
+    expect(JSON.parse(missingFileResult.stderr).error).toBe('invalid_argument');
     const missingObservation = [...args];
     missingObservation[missingObservation.indexOf('--observation-ref') + 1] = `sha256:${'0'.repeat(64)}`;
     const missingResult = run(root, missingObservation);
@@ -533,6 +533,7 @@ describe('repo-harness engineer CLI', () => {
     if (selected.exitCode === 0) tempRoots.push(JSON.parse(selected.stdout).envelope.worktree_path);
     expect(selected.exitCode, selected.stderr).toBe(0);
     expect(JSON.parse(selected.stdout)).toMatchObject({ ok: true, offer: { work_package_id: 'wp-a' } });
+    expect(JSON.parse(selected.stdout).receipt.session_id).toBe('cli-selected-session');
     const replay = run(root, args);
     expect(replay.exitCode, replay.stderr).toBe(0);
     expect(JSON.parse(replay.stdout)).toEqual(JSON.parse(selected.stdout));

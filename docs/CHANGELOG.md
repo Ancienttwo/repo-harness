@@ -4,6 +4,11 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Added
+
+- Add `repo-harness engineer acquire` to acquire one exact observed Work Package.
+  The command checks the full assertion and uses a durable transaction key.
+
 ### Changed
 
 - Stop copying `workflow-state.sh` into consumer repositories during adoption.
