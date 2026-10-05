@@ -8,7 +8,7 @@
         "@botiverse/oar": "0.18.0",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "archctx": "0.6.1",
-        "archctx-contracts": "0.6.1",
+        "archctx-contracts": "0.6.2",
         "commander": "^15.0.0",
         "express": "^5.2.1",
       },
@@ -406,7 +406,7 @@
 
     "archctx": ["archctx@0.6.1", "", { "dependencies": { "@colbymchenry/codegraph": "1.6.1", "@node-rs/jieba": "^2.0.1", "koffi": "3.1.6" }, "bin": { "archctx": "bin/archctx.mjs" } }, "sha512-VrBIRUxCltArwx0JC+fcHnt1E0tkWT6O0MoTAmyFZ3i8Lj7neY/z4WMNWD+Fe+JBJLjTyzMxk18zN02BOFek2Q=="],
 
-    "archctx-contracts": ["archctx-contracts@0.6.1", "", {}, "sha512-ipCEgO2SXeyaC7HzO/95Q/YpjMssLltR+aWUNGa7OUq22gvv426iIZHKOfAsy/8AKaT52TuuoarwhO8pQEEGqQ=="],
+    "archctx-contracts": ["archctx-contracts@0.6.2", "", {}, "sha512-8HzWuqcqgE2FQeBxIknD0//Gzd72TIYIRIwYVxdUNRpcoiS7Lolew9wBl4j40kjqMTZ4y0a3PyWuanPhSzw3lg=="],
 
     "balanced-match": ["balanced-match@4.0.4", "", {}, "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA=="],
 
