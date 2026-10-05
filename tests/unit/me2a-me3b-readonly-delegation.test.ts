@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
+import { randomUUID } from 'crypto';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -26,6 +27,7 @@ import {
   readLogicalRoleInstructions,
   loadLogicalReadOnlyRoleProfile,
   prepareDelegatedRun,
+  readDelegatedRunStatus,
   recordCodexReadOnlyCapability,
 } from '../../src/effects/engineers/delegated-run-store';
 
@@ -326,6 +328,34 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
     });
     expect(retry.current.state).toBe('reconciliation_required');
     expect(dispatchCalls(root)).toBe(0);
+  });
+
+  test('a staged launch-claim temporary never blocks another run, while other entries still fail closed', () => {
+    const root = fixture();
+    const admission = admitted(root);
+    const prepared = prepare(root, admission);
+    expect(() => dispatchDelegatedRun({
+      repo_root: root, dispatch_id: prepared.intent.dispatch_id, observed_at: '2026-08-26T00:00:03Z', protected_paths: admission.protectedPaths,
+      crash_hook: (boundary) => { if (boundary === 'after_launch_claim_persisted') throw new Error('simulated process crash'); },
+    })).toThrow('simulated process crash');
+    const claims = join(root, '.git/repo-harness/delegated-runs/v1/launch-claims');
+    const [committed] = readdirSync(claims);
+    // The exact name persistImmutable stages for another claim; a crash before unlink leaves it behind.
+    const staged = join(claims, `.${'d'.repeat(64)}.${process.pid}.${randomUUID()}.tmp`);
+    writeFileSync(staged, '{"partial":');
+    expect(readDelegatedRunStatus(root, prepared.intent.dispatch_id).launch_claim?.launch_claim_sha256).toBe(`sha256:${committed!.slice(0, 64)}`);
+    const retry = dispatchDelegatedRun({
+      repo_root: root, dispatch_id: prepared.intent.dispatch_id, observed_at: '2026-08-26T00:00:04Z', protected_paths: admission.protectedPaths,
+    });
+    expect(retry.current.state).toBe('reconciliation_required');
+    expect(dispatchCalls(root)).toBe(0);
+    rmSync(staged);
+    for (const unexpected of [`.${'e'.repeat(64)}.${process.pid}.${randomUUID()}.tmp`, '.notes.tmp']) {
+      const path = join(claims, unexpected);
+      if (unexpected === '.notes.tmp') writeFileSync(path, '{}'); else mkdirSync(path);
+      expect(() => readDelegatedRunStatus(root, prepared.intent.dispatch_id)).toThrow('launch claim store contains unexpected entry');
+      rmSync(path, { recursive: true });
+    }
   });
 
   test('hands both the canary and the dispatch child an exact minimal environment bound into the receipts', () => {

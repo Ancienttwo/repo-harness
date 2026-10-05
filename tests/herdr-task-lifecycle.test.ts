@@ -208,7 +208,7 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
     symlinkSync(process.execPath, join(fixture, 'codex'));
     const peer = join(fixture, 'peer.ts');
     writeFileSync(peer, `
-import {readFileSync,writeFileSync} from 'fs'; import {join} from 'path';
+import {readFileSync,writeFileSync} from 'fs'; import {join} from 'path'; import {spawn} from 'child_process';
 import {writeSessionArtifact} from ${JSON.stringify(modulePath)};
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 if(process.argv[2].includes('stubborn'))process.on('SIGTERM',()=>writeFileSync(process.argv[2]+'.term','observed'));
@@ -223,6 +223,11 @@ let buffer=''; process.stdin.on('data',chunk=>{
   const request=JSON.parse(readFileSync(match[1],'utf8'));
   const content=readFileSync(request.context_ref,'utf8');
   if(content==='hold-result'||content==='via-cli'){process.stdout.write('PASS is not a result artifact\\n');continue;}
+  if(content==='spawn-group-child'){
+   // Same process group as this leader; the child ignores TERM and terminal hangup.
+   spawn(process.execPath,['-e',"const fs=require('fs');process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});fs.writeFileSync(process.argv[1]+'.tmp',String(process.pid));fs.renameSync(process.argv[1]+'.tmp',process.argv[1]);setInterval(()=>{},1000)",process.argv[2]+'.child'],{stdio:'ignore'});
+   continue;
+  }
   writeSessionArtifact(request.result_ref,{request_id:request.request_id,context_sha256:request.context_sha256,value:'artifact-result'});
   process.stdout.write('PASS misleading terminal text is not the result artifact\\n');
  }
@@ -467,6 +472,22 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(await api.closeTaskAgent(fixture, spec.task, stubbornSpec.role)).toEqual({ status: 'closed', pids: [] });
     expect(existsSync(join(fixture, 'stubborn.ready.term'))).toBe(true);
     expect(live(stubbornBinding.provider.pid)).toBe(false); // Ignored TERM; identity-proven KILL finished.
+    // The leader exits on TERM; its same-group child ignores TERM and HUP.
+    // Cleanup sends no group KILL after leader exit; the Herdr pane close removes the child.
+    const groupedSpec = { ...spec, role: 'grouped' };
+    const groupedPath = join(fixture, 'grouped.json'); writeFileSync(groupedPath, JSON.stringify(groupedSpec));
+    const groupedOwner = owner('normal', groupedPath); await exited(groupedOwner.child);
+    if (groupedOwner.child.exitCode !== 0) throw new Error(groupedOwner.errors());
+    const leaderPid = JSON.parse(readFileSync(join(fixture, 'grouped.ready'), 'utf8')).pid;
+    writeFileSync(join(fixture, 'context.md'), 'spawn-group-child');
+    await api.sendTaskRequest(fixture, spec.task, groupedSpec.role, 'context.md');
+    const groupedChild = join(fixture, 'grouped.ready.child');
+    await until(() => existsSync(groupedChild));
+    const childPid = Number(readFileSync(groupedChild, 'utf8'));
+    expect(run('ps', ['-p', String(childPid), '-o', 'pgid='], fixture, env)).toBe(String(leaderPid));
+    expect(await api.cancelTaskAgent(fixture, spec.task, groupedSpec.role)).toEqual({ status: 'closed', pids: [] });
+    expect(live(leaderPid)).toBe(false);
+    expect(live(childPid)).toBe(false);
 
     const splitSpec = { ...spec, role: 'split-gap' };
     const splitPath = join(fixture, 'split-gap.json'); writeFileSync(splitPath, JSON.stringify(splitSpec));
@@ -521,6 +542,9 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
       if (owner.exitCode === null && owner.signalCode === null) owner.kill('SIGTERM');
       await exited(owner);
     }
+    // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
+    const groupedChild = join(fixture, 'grouped.ready.child');
+    if (existsSync(groupedChild)) { try { process.kill(Number(readFileSync(groupedChild, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
     rmSync(fixture, { recursive: true, force: true });
   }
 }, 60_000);
