@@ -103,6 +103,13 @@ export interface PublicationReceiptRebuildInput {
   readonly git_bin?: string;
 }
 
+export interface PublicationIdentityInput {
+  readonly repo_root: string;
+  readonly receipt: PublicationReceiptV3;
+  readonly gh_bin?: string;
+  readonly git_bin?: string;
+}
+
 export interface PublicationReceiptResult {
   readonly receipt: PublicationReceiptV3;
   readonly cache_path: string;
@@ -322,12 +329,16 @@ function candidateDiffFingerprint(repoRoot: string, baseSha: string, headSha: st
   return current.diffFingerprint;
 }
 
-function assertLiveEvidence(receipt: PublicationReceiptV3, provider: ProviderPullRequestV1, repoRoot: string, gitBin: string): void {
+/**
+ * Historical publication identity. The provider reports the current target tip
+ * as the PR base, so a later target advance is not an identity change; repair
+ * transitions use this check, and merge readiness reports the moved base.
+ */
+function assertLiveIdentity(receipt: PublicationReceiptV3, provider: ProviderPullRequestV1, repoRoot: string, gitBin: string): void {
   if (provider.provider_repo_id !== receipt.provider_repo_id
     || provider.pr_number !== receipt.pr_number
     || provider.pr_url !== receipt.pr_url
     || provider.base_ref !== receipt.target_ref
-    || provider.base_sha !== receipt.base_sha
     || provider.head_ref !== receipt.branch
     || provider.head_sha !== receipt.head_sha
     || provider.created_at !== receipt.created_at) {
@@ -338,6 +349,14 @@ function assertLiveEvidence(receipt: PublicationReceiptV3, provider: ProviderPul
   }
   if (gitTreeForHead(repoRoot, gitBin, receipt.head_sha) !== receipt.tree_sha) {
     throw mismatch(`local tree no longer matches publication head ${receipt.head_sha}`);
+  }
+}
+
+/** Rebuild evidence: identity plus the unchanged base the receipt was created on. */
+function assertLiveEvidence(receipt: PublicationReceiptV3, provider: ProviderPullRequestV1, repoRoot: string, gitBin: string): void {
+  assertLiveIdentity(receipt, provider, repoRoot, gitBin);
+  if (provider.base_sha !== receipt.base_sha) {
+    throw mismatch(`provider base ${provider.base_sha} no longer matches publication ${receipt.publication_id} base ${receipt.base_sha}`);
   }
   if (candidateDiffFingerprint(repoRoot, receipt.base_sha, receipt.head_sha) !== receipt.candidate_diff_fingerprint) {
     throw mismatch(`candidate diff no longer matches publication ${receipt.publication_id}`);
@@ -637,24 +656,53 @@ export function ensurePublicationReceipt(input: PublicationReceiptEnsureInput): 
   }
 }
 
+function observeMarkedPublication(
+  repoRoot: string,
+  ghBin: string,
+  prNumber: number,
+): { readonly provider: ProviderPullRequestV1; readonly receipt: PublicationReceiptV3 } {
+  const provider = observeProviderPrByNumber(repoRoot, ghBin, prNumber);
+  let receipt: PublicationReceiptV3 | null;
+  try {
+    receipt = decodePublicationMarker(provider.body);
+  } catch (error) {
+    throw mismatch(`provider publication marker is invalid: ${error instanceof Error ? error.message : String(error)}`, error);
+  }
+  if (receipt === null) throw incomplete(`provider PR ${prNumber} has no publication receipt marker`);
+  return { provider, receipt };
+}
+
 export function rebuildPublicationReceipt(input: PublicationReceiptRebuildInput): PublicationReceiptResult {
   try {
     const ghBin = input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh';
     const gitBin = input.git_bin ?? 'git';
-    const provider = observeProviderPrByNumber(input.repo_root, ghBin, input.pr_number);
-    let receipt: PublicationReceiptV3 | null;
-    try {
-      receipt = decodePublicationMarker(provider.body);
-    } catch (error) {
-      throw mismatch(`provider publication marker is invalid: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (receipt === null) throw incomplete(`provider PR ${input.pr_number} has no publication receipt marker`);
+    const { provider, receipt } = observeMarkedPublication(input.repo_root, ghBin, input.pr_number);
     assertLiveEvidence(receipt, provider, input.repo_root, gitBin);
     const cachePath = writePublicationReceiptCache(input.repo_root, receipt, gitBin);
     return Object.freeze({ receipt, cache_path: cachePath, marker_changed: false });
   } catch (error) {
     if (error instanceof PublicationReceiptError) throw error;
     throw incomplete('publication receipt rebuild failed', error);
+  }
+}
+
+/**
+ * Revalidate a known receipt against its live marker, provider identity, and
+ * local repository without requiring the target base to be unchanged.
+ */
+export function verifyPublicationIdentity(input: PublicationIdentityInput): PublicationReceiptV3 {
+  try {
+    const ghBin = input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh';
+    const expected = validatePublicationReceipt(input.receipt);
+    const { provider, receipt } = observeMarkedPublication(input.repo_root, ghBin, expected.pr_number);
+    if (canonicalPublicationReceiptBytes(receipt) !== canonicalPublicationReceiptBytes(expected)) {
+      throw mismatch(`provider marker conflicts with publication ${expected.publication_id}`);
+    }
+    assertLiveIdentity(expected, provider, input.repo_root, input.git_bin ?? 'git');
+    return expected;
+  } catch (error) {
+    if (error instanceof PublicationReceiptError) throw error;
+    throw incomplete('publication identity verification failed', error);
   }
 }
 

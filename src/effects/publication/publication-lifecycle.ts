@@ -44,6 +44,7 @@ import {
   observeProviderPullRequestState,
   readPublicationReceiptCache,
   rebuildPublicationReceipt,
+  verifyPublicationIdentity,
   writePublicationReceiptCache,
   PublicationReceiptError,
   type ProviderPullRequestIntegrationV1,
@@ -350,22 +351,22 @@ function assertAuthorizationFence(environment: PublicationValidationEnvironment)
   }
 }
 
-function rebuildReceiptForPointer(
+/**
+ * Repair transitions verify historical identity only. A moved target base is
+ * stale merge evidence that readiness blocks; it must not lock the owner out
+ * of the repair state that replaces that evidence.
+ */
+function verifiedReceiptForPointer(
   repoRoot: string,
   pointer: CurrentPublicationPointerV1,
   environment: PublicationValidationEnvironment,
 ): PublicationReceiptV3 {
-  const cached = receiptForPointer(repoRoot, pointer);
-  const rebuilt = rebuildPublicationReceipt({
+  return verifyPublicationIdentity({
     repo_root: repoRoot,
-    pr_number: cached.pr_number,
+    receipt: receiptForPointer(repoRoot, pointer),
     gh_bin: environment.gh_bin,
     git_bin: environment.git_bin,
   });
-  if (rebuilt.receipt.publication_id !== pointer.publication_id) {
-    throw failure('publication_pointer_mismatch', 'live rebuilt receipt does not match current publication pointer');
-  }
-  return rebuilt.receipt;
 }
 
 function currentReviewingRecord(repoRoot: string, taskId: string): LeaseOwnerRecord & { readonly current_publication: CurrentPublicationPointerV1 } {
@@ -452,7 +453,7 @@ export function reopenPublication(input: ReopenPublicationInput): LeaseOwnerReco
   try {
     return withTaskLock(input.repo_root, input.task_id, () => {
       const record = currentReviewingRecord(input.repo_root, input.task_id);
-      const receipt = rebuildReceiptForPointer(input.repo_root, record.current_publication, input);
+      const receipt = verifiedReceiptForPointer(input.repo_root, record.current_publication, input);
       assertLeaseMatchesReceipt(record, receipt, record.current_publication);
       assertReopenTopology(input.repo_root, record, receipt, input.git_bin);
       const transition = reopenPublicationLeaseRecord(record, {
@@ -505,7 +506,7 @@ export function takeoverPublication(input: TakeoverPublicationInput): LeaseOwner
   try {
     return withTaskLock(input.repo_root, input.task_id, () => {
       const record = currentReviewingRecord(input.repo_root, input.task_id);
-      const receipt = rebuildReceiptForPointer(input.repo_root, record.current_publication, input);
+      const receipt = verifiedReceiptForPointer(input.repo_root, record.current_publication, input);
       assertLeaseMatchesReceipt(record, receipt, record.current_publication);
       assertCanonicalPending(input.repo_root, record);
       const transition = takeoverPublicationLeaseRecord(record, {
@@ -563,7 +564,7 @@ export function abandonPublication(input: AbandonPublicationInput): PublicationL
   try {
     return withTaskLock(input.repo_root, input.task_id, () => {
       const record = currentReviewingRecord(input.repo_root, input.task_id);
-      const receipt = rebuildReceiptForPointer(input.repo_root, record.current_publication, input);
+      const receipt = verifiedReceiptForPointer(input.repo_root, record.current_publication, input);
       assertLeaseMatchesReceipt(record, receipt, record.current_publication);
       assertCanonicalPending(input.repo_root, record);
       const provider = observeProviderPullRequestState(input.repo_root, receipt.pr_number, input.gh_bin);

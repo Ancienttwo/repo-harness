@@ -30,6 +30,8 @@ All notable changes to this skill are documented here.
   receipt moves to protocol 3 and records PR, head, base and candidate diff
   identity only. Merge readiness still blocks a moved base. Receipt protocols 1
   and 2 are retired and fail closed without migration.
+- Publication reopen, takeover and abandon now check historical publication
+  identity. A target base advance no longer blocks these repair transitions.
 
 ## [0.20.0] - 2026-10-05
 
