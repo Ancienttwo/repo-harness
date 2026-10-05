@@ -93,7 +93,7 @@ function sourceUnchanged(item: LeftoverItem, options: PlannerOptions): boolean {
   return item.sourcePath !== undefined && item.expectedSourceHash !== undefined
     && (resolve(item.sourcePath) === resolve(options.packageRoot)
       || isLegacyPathSafe(options.packageRoot, item.sourcePath, false))
-    && hashUpgradeSource(item.sourcePath, options.packageRoot) === item.expectedSourceHash;
+    && hashUpgradeSource(item.sourcePath, options.packageRoot, item.sourceSurface) === item.expectedSourceHash;
 }
 
 function refreshDirectory(

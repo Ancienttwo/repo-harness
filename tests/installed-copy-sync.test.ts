@@ -812,7 +812,7 @@ describe('installed copy file projection', () => {
         expect(staged.status, staged.stdout + staged.stderr).toBe(0);
         for (const copy of [staging, join(tmp, 'codex', name), join(tmp, 'claude', name)]) {
           expect(managedTreeEntries(copy)).toEqual(expected);
-          expect(hashUpgradeSource(root, source)).toBe(hashManagedTree(copy));
+          expect(hashUpgradeSource(root, source, surface)).toBe(hashManagedTree(copy));
           for (const entry of expected) {
             if (entry.type === 'symlink') expect(readlinkSync(join(copy, entry.path))).toBe(readlinkSync(join(root, entry.path)));
             else expect(readFileSync(join(copy, entry.path))).toEqual(readFileSync(join(root, entry.path)));
@@ -862,3 +862,34 @@ test('a missing canonical projection fails before changing existing owned copies
     }
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }, 60000);
+
+test('canonical projection keeps every tracked include file and every existing declared package file', async () => {
+  const { managedTreeEntries, installedCopyTreeOptions } = await import('../src/cli/installer/install-profile');
+  const { readdirSync } = await import('fs');
+  const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
+  const includes: string[] = contract.installedCopyIncludes;
+  const packageFiles: string[] = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).files;
+  const projected = new Set(managedTreeEntries(ROOT, installedCopyTreeOptions('canonical-skill', contract)).map(entry => entry.path));
+  const tracked = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' });
+  expect(tracked.status, tracked.stderr).toBe(0);
+  const trackedIncludes = tracked.stdout.split('\0').filter(file => file && includes.some(root =>
+    root.endsWith('/') ? file.startsWith(root) : file === root));
+  expect(trackedIncludes.length).toBeGreaterThan(0);
+  expect(trackedIncludes.filter(file => !projected.has(file))).toEqual([]);
+
+  const existingPackageFiles: string[] = [];
+  const visit = (file: string): void => {
+    const absolute = join(ROOT, file);
+    const entry = lstatSync(absolute);
+    if (entry.isDirectory()) {
+      for (const name of readdirSync(absolute)) visit(`${file.replace(/\/$/, '')}/${name}`);
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      existingPackageFiles.push(file);
+    }
+  };
+  for (const file of packageFiles) {
+    if (existsSync(join(ROOT, file))) visit(file);
+  }
+  expect(existingPackageFiles.length).toBeGreaterThan(0);
+  expect(existingPackageFiles.filter(file => !projected.has(file))).toEqual([]);
+});

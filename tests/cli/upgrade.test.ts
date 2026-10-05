@@ -621,3 +621,45 @@ describe('upgrade copy projection fences', () => {
     expect(tree(router)).toEqual(before);
   }));
 });
+
+test('a non-root provider uses its declared surface for hashing and real staging', async () => {
+  const { hashUpgradeSource } = await import('../../src/core/upgrade/legacy-inventory');
+  projectionSandbox((opts) => {
+    seed('upgrade-v0.19.5-home', opts.home);
+    const provider = join(opts.home, '.codex/skills/repo-harness-cross-review');
+    const source = join(opts.packageRoot, 'assets/skills/repo-harness-cross-review');
+    put(join(source, 'examples/outside-projection.md'), 'source example outside canonical includes\n');
+    const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === provider);
+    expect(planned?.action).toBe('refresh');
+    expect(planned?.sourcePath).toBe(source);
+    expect(planned?.sourceSurface).toBe('canonical-skill');
+    expect(hashUpgradeSource(source, opts.packageRoot, 'canonical-skill'))
+      .not.toBe(hashUpgradeSource(source, opts.packageRoot, 'command-facade'));
+    let staged = false;
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+      afterStage(item, staging) {
+        if (item.path !== provider) return;
+        staged = true;
+        expect(item.sourceSurface).toBe(planned?.sourceSurface);
+        expect(hashUpgradeSource(source, opts.packageRoot, item.sourceSurface)).toBe(hashManagedTree(staging));
+        expect(planned?.expectedSourceHash).toBe(hashManagedTree(staging));
+        put(join(source, 'examples/outside-projection.md'), 'concurrent non-projected example edit\n');
+      },
+    });
+    expect(staged).toBe(true);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.refreshedPaths, JSON.stringify(result.items)).toContain(provider);
+    expect(existsSync(join(provider, 'examples/outside-projection.md'))).toBe(false);
+    expect(readFileSync(join(provider, 'SKILL.md'))).toEqual(readFileSync(join(source, 'SKILL.md')));
+    expect(runUpgrade({ ...opts, scope: 'global' }).items.some(item => item.path === provider)).toBe(false);
+  });
+});
+
+test('directory source hashing rejects missing and invalid surfaces while file hashing needs no surface', async () => {
+  const { hashUpgradeSource, legacyPathSnapshot } = await import('../../src/core/upgrade/legacy-inventory');
+  expect(() => hashUpgradeSource(ROOT, ROOT, undefined)).toThrow('source surface is missing or invalid');
+  expect(() => Reflect.apply(hashUpgradeSource, undefined, [ROOT, ROOT, 'unknown-surface']))
+    .toThrow('source surface is missing or invalid');
+  const file = join(ROOT, 'SKILL.md');
+  expect(hashUpgradeSource(file, ROOT, undefined)).toBe(legacyPathSnapshot(file)?.contentHash ?? null);
+});
