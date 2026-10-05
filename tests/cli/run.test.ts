@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -506,4 +506,105 @@ describe("run command", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+});
+
+describe('package workflow-state library', () => {
+  test('CLI path selects the package asset and sources state in the consumer repo', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'workflow-state-cli-consumer-'));
+    try {
+      mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
+      mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repo, '.ai/hooks/lib/workflow-state.sh'), 'exit 91\n');
+      writeFileSync(join(repo, '.ai/harness/policy.json'), JSON.stringify({ harness: { failure_log_file: '.ai/harness/failures/custom.jsonl' } }));
+      const result = spawnSync(process.execPath, [CLI, 'hook-lib', 'path'], {
+        cwd: repo, encoding: 'utf8', env: { ...process.env, REPO_HARNESS_SOURCE_ROOT: repo, REPO_HARNESS_WORKFLOW_STATE_LIB: join(repo, '.ai/hooks/lib/workflow-state.sh') },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toBe(join(ROOT, 'assets/hooks/lib/workflow-state.sh'));
+      const sourced = spawnSync('bash', ['-c', 'source "$1"; workflow_failure_log_file', 'bash', result.stdout.trim()], { cwd: repo, encoding: 'utf8' });
+      expect(sourced.status, sourced.stderr).toBe(0);
+      expect(sourced.stdout).toBe('.ai/harness/failures/custom.jsonl');
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  }, 30_000);
+
+  test('packaged state helpers work without a repo library and ignore legacy copies', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'workflow-state-package-helpers-'));
+    try {
+      expect(spawnSync('git', ['init'], { cwd: repo }).status).toBe(0);
+      for (const legacy of [false, true]) {
+        if (legacy) {
+          mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
+          writeFileSync(join(repo, '.ai/hooks/lib/workflow-state.sh'), 'exit 91\n');
+        }
+        for (const [helper, args] of [['prepare-handoff', ['--status']], ['summarize-failures', []], ['archive-workflow', ['--help']]] as const) {
+          const result = runHelper({ helper, args, cwd: repo, env: packageRuntimeEnv(), stdio: 'pipe' });
+          expect(result.exitCode, `${helper}: ${result.stderr}`).toBe(0);
+          expect(result.stdout).toBeTruthy();
+        }
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  }, 30_000);
+});
+
+test('CLI library path uses a separate package and fails closed for missing or unsafe assets', () => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-state-installed-package-'));
+  const installed = join(root, 'package');
+  const consumer = join(root, 'consumer');
+  try {
+    mkdirSync(installed); mkdirSync(consumer);
+    for (const dir of ['src', 'assets', 'scripts']) cpSync(join(ROOT, dir), join(installed, dir), { recursive: true });
+    cpSync(join(ROOT, 'package.json'), join(installed, 'package.json'));
+    symlinkSync(join(ROOT, 'node_modules'), join(installed, 'node_modules'), 'dir');
+    const asset = join(installed, 'assets/hooks/lib/workflow-state.sh');
+    const invoke = () => spawnSync(process.execPath, [join(installed, 'src/cli/index.ts'), 'hook-lib', 'path'], { cwd: consumer, env: packageRuntimeEnv(), encoding: 'utf8' });
+    const result = invoke();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.trim()).toBe(asset);
+    const sourced = spawnSync('bash', ['-c', 'source "$1"; workflow_failure_log_file', 'bash', asset], { cwd: consumer, encoding: 'utf8' });
+    expect(sourced.status, sourced.stderr).toBe(0);
+    expect(sourced.stdout).toBe('.ai/harness/failures/latest.jsonl');
+    rmSync(asset);
+    const missing = invoke();
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toBe('');
+    expect(missing.stderr).toContain('missing');
+    symlinkSync(join(ROOT, 'assets/hooks/lib/workflow-state.sh'), asset);
+    const linked = invoke();
+    expect(linked.status).toBe(1);
+    expect(linked.stdout).toBe('');
+    expect(linked.stderr).toContain('not a regular file');
+    rmSync(asset); mkdirSync(asset);
+    const directory = invoke();
+    expect(directory.status).toBe(1);
+    expect(directory.stdout).toBe('');
+    expect(directory.stderr).toContain('not a regular file');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}, 30_000);
+
+test('state helpers return a clear error when their selected source library is missing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-state-missing-source-'));
+  try {
+    for (const helper of ['prepare-handoff', 'summarize-failures', 'archive-workflow']) {
+      const sourceRoot = writeSourceHelper(root, `${helper}.sh`, readFileSync(join(ROOT, 'scripts', `${helper}.sh`), 'utf8'));
+      const result = runHelper({ helper, args: ['--help'], cwd: root, env: { REPO_HARNESS_SOURCE_ROOT: sourceRoot }, stdio: 'pipe' });
+      expect(result.exitCode).toBe(1);
+      expect(result.reason).toBe('spawn-error');
+      expect(result.stderr).toContain('workflow-state.sh');
+      expect(result.stderr).toContain('missing');
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('direct state scripts reject an explicitly missing library', () => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-state-direct-missing-'));
+  try {
+    for (const helper of ['summarize-failures', 'archive-workflow']) {
+      const result = spawnSync('bash', [join(ROOT, 'scripts', `${helper}.sh`), '--help'], {
+        cwd: root, encoding: 'utf8', env: { ...process.env, REPO_HARNESS_BUN_BIN: process.execPath, REPO_HARNESS_WORKFLOW_STATE_LIB: join(root, 'missing.sh') },
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('workflow-state library is unavailable');
+      expect(result.stdout).toBe('');
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -154,8 +154,9 @@ leftovers. `setup check`, `update --check`, and a successful `update` print one
 count and the upgrade command. Update does not run cleanup.
 
 `upgrade --apply` also refreshes old owned copies of still-shipped skills from
-this package. It refreshes the project workflow-state helper and contract
-template only when an old ownership hash matches. It keeps changed copies.
+this package. It refreshes the contract template only when an old ownership
+hash matches. It keeps changed copies. It preserves legacy workflow-state
+libraries.
 Update continues to report counts only. This puts destructive changes and copy
 replacement under the same explicit, backed-up transaction.
 

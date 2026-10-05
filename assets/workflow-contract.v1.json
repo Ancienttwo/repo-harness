@@ -2282,42 +2282,12 @@
           "location": "project",
           "surface": "file",
           "paths": [
-            ".ai/hooks/lib/workflow-state.sh",
             ".claude/templates/contract.template.md"
           ],
           "sourcePaths": {
-            ".ai/hooks/lib/workflow-state.sh": "assets/hooks/lib/workflow-state.sh",
             ".claude/templates/contract.template.md": "assets/templates/contract.template.md"
           },
           "historicalFingerprints": {
-            ".ai/hooks/lib/workflow-state.sh": [
-              "sha256:091dee96bda01a9e87c5b99356d86881727ba28a55711921170e6aa7e5d7e5f4",
-              "sha256:28b279fbf7091a52a82cb420a85aa8516c98f25489f09a4b24fc494faebaca08",
-              "sha256:2b6e5f8329be2660f8601c21adb4d6e4b189e6adf3fdae5a67b500050bb9fc4e",
-              "sha256:38c3a3ea3914ddaeedbcbbda7da671ce62236886219cf0cc505afcfc9dada94b",
-              "sha256:3a1c7a5ff671efb7d296590dc75e42cef7c0c8e18eeaf9771182cf23b2272d8c",
-              "sha256:40d3285d3c6dab7ddbed01952dc08f14c2a4d73ebf06fbd7122676d283c33243",
-              "sha256:44d549c9b2703089b62e59597f48fe57a28b028bbf15973b09f76c1d1d414811",
-              "sha256:680cd1ca2c1f7b1e5e7e22ea519082c417bfbf6534479bddcbda6b74efa8c56a",
-              "sha256:6a4cb509f583777c6e29bcd15e6eb64b923450cc6f87758e3d59c92278b3085b",
-              "sha256:718bbfd6677f9ef44f894b1014621051240d6b5c06dd6085101ee1824ac202cc",
-              "sha256:78df163dcb36bb043ab98c363ef9ab4cd43e9aa9521fa782c52d9cffccd278ca",
-              "sha256:790d5367fed14038e7f38515eb69cb68a4479daa6fec6267be22c2c59475991a",
-              "sha256:7d4a7e72208ee9b901985660208206218c2f56900b4e349bb6af34a67299b871",
-              "sha256:92cc9904452f8e386e232044a7811a9fc5cedecd24169699a7e79cd92a7fbf89",
-              "sha256:9766c37244030153583465d67b6e1c70f622bdefc931cffbdf826b745cae59d4",
-              "sha256:99db9082d341d5e5267b4995a416d2352eacebea800b823460db0c550beb93c3",
-              "sha256:b8750733d95aa5b4fa9538de433fd54f71af7573299f52abc20cc23419a4c291",
-              "sha256:bab17e770a652dc6fc28db221c40a54dbd121a84e0f1ff83b0ffdbc0bafb1487",
-              "sha256:bc14dfa884fb111c9e83ad2e32fbe003c27ede914ab0cde96412381e498b1bae",
-              "sha256:bcf278f5ec5b1c59aa80d22aca6d250909e9a553e562d717e3e527974c6b5da5",
-              "sha256:c41c0803f7fdc6f342a2a0fa8fe9490a14da0b3f3af1c2928da393a9d88b120c",
-              "sha256:ccf16d489929545913aa54b517cf9137da79a5d1534007a20b4ac0ac7b54d615",
-              "sha256:d576fbc8e7f223bbaf5e11a517f395f0adcf40f9e3a30fa1c0c1ee2164ff352d",
-              "sha256:f547bfdc5206dab2e27159cbd30a4c6c032838f0c3e82d091a3f06987a41ada9",
-              "sha256:f7a9ee3b42e42b35dec1642a6b438197f633cdd750e7523ba757e77a7cc4535f",
-              "sha256:ffe9e0567dd23eabb561f30b38e33e65a416fd8d92d120bc17eba614e397fddc"
-            ],
             ".claude/templates/contract.template.md": [
               "sha256:015724f7f29e8a225092f4698a9987ec37fc93bb93d6e42a6666c741dcf307e0",
               "sha256:13ec3e814a1330926f9fadb01a054eb0d43a57883bbf4f263414a11f8a6a29c2",

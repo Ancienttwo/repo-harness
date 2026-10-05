@@ -633,3 +633,37 @@ test('skill-projection repair commands use supported install arguments', () => {
     }
   });
 });
+
+describe('legacy workflow-state diagnostic', () => {
+  test('reports a legacy copy from a nested cwd without changing its bytes', () => {
+    withTempHome(() => withTempRepo({ optIn: true }, (repo) => {
+      const legacy = path.join(repo, '.ai/hooks/lib/workflow-state.sh');
+      fs.mkdirSync(path.dirname(legacy), { recursive: true });
+      const content = '# Local operator changes\n';
+      fs.writeFileSync(legacy, content);
+      withEnv({ PATH: '/usr/bin:/bin', REPO_HARNESS_CHECK_UPDATES: '0' }, () => {
+        const check = runDoctor(path.dirname(legacy)).checks.find((check) => check.id === 'legacy-workflow-state');
+        expect(check?.status).toBe('warn');
+        expect(check?.detail).toContain('repo-harness hook-lib path');
+        expect(check?.detail).toContain('back up');
+        expect(check?.detail).toContain('edited copies');
+        expect(fs.readFileSync(legacy, 'utf8')).toBe(content);
+        fs.unlinkSync(legacy);
+        expect(runDoctor(repo).checks.find((check) => check.id === 'legacy-workflow-state')?.status).toBe('ok');
+      });
+    }));
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+});
+
+test('doctor preserves the source checkout self-host library without migration warnings', () => {
+  withTempHome(() => withEnv({ PATH: '/usr/bin:/bin', REPO_HARNESS_CHECK_UPDATES: '0' }, () => {
+    const root = path.join(import.meta.dir, '../..');
+    const library = path.join(root, '.ai/hooks/lib/workflow-state.sh');
+    const before = fs.readFileSync(library, 'utf8');
+    const check = runDoctor(root).checks.find((check) => check.id === 'legacy-workflow-state');
+    expect(check?.status).toBe('na');
+    expect(check?.detail).toContain('self-host');
+    expect(check?.detail).not.toContain('remove');
+    expect(fs.readFileSync(library, 'utf8')).toBe(before);
+  }));
+}, DOCTOR_CHECK_TIMEOUT_MS);

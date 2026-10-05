@@ -2,6 +2,16 @@
 
 All notable changes to this skill are documented here.
 
+## Unreleased
+
+### Changed
+
+- Stop copying `workflow-state.sh` into consumer repositories during adoption.
+  Use `repo-harness hook-lib path` to source the installed package library.
+  Packaged workflow helpers use that library. Init and upgrade preserve legacy
+  repo copies and user edits. Doctor reports copies with migration steps.
+  Upgrade no longer refreshes the legacy library.
+
 ## [0.20.0] - 2026-10-05
 
 This preparation covers `v0.19.5..ffe70133`.

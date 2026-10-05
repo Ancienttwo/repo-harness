@@ -54,7 +54,6 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/harness/workflow-contract.json",
         "./.ai/harness/worktrees/.gitkeep",
         "./.ai/hooks/README.md",
-        "./.ai/hooks/lib/workflow-state.sh",
         "./.claude/templates/contract.template.md",
         "./.claude/templates/design-brief.template.md",
         "./.claude/templates/implementation-notes.template.md",

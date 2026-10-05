@@ -1,10 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
-  # shellcheck source=/dev/null
-  . ".ai/hooks/lib/workflow-state.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workflow_state_lib="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
+if [[ ! -f "$workflow_state_lib" ]]; then
+  echo "summarize-failures: workflow-state library is unavailable" >&2
+  exit 1
 fi
+# shellcheck source=/dev/null
+. "$workflow_state_lib"
 
 usage() {
   cat <<'USAGE_EOF'
@@ -31,11 +35,7 @@ resolve_js_runtime() {
   return 1
 }
 
-if declare -F workflow_failure_log_file >/dev/null 2>&1; then
-  log_file="$(workflow_failure_log_file)"
-else
-  log_file=".ai/harness/failures/latest.jsonl"
-fi
+log_file="$(workflow_failure_log_file)"
 filter_run_id=""
 js_runtime=""
 js_code=""

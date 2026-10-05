@@ -53,6 +53,10 @@ export function copyHelpers(cwd: string, { linkDependencies = true } = {}) {
   if (linkDependencies && !existsSync(join(cwd, "node_modules"))) {
     symlinkSync(join(ROOT, "node_modules"), join(cwd, "node_modules"), "dir");
   }
+  // Materialize the real package asset beside the copied package scripts.
+  // Direct package scripts no longer read a consumer's legacy hook library.
+  mkdirSync(join(cwd, 'assets/hooks/lib'), { recursive: true });
+  copyFileSync(join(ASSETS_HOOKS_DIR, 'lib/workflow-state.sh'), join(cwd, 'assets/hooks/lib/workflow-state.sh'));
   const scriptsDir = join(cwd, "scripts");
   const harnessScriptsDir = join(cwd, ".ai", "harness", "scripts");
   mkdirSync(scriptsDir, { recursive: true });

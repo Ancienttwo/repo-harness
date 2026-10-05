@@ -12,7 +12,6 @@ import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-i
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
-const HOOK_ROOT = join(ASSET_ROOT, "hooks");
 const REFERENCE_ROOT = join(ASSET_ROOT, "reference-configs");
 
 const STANDARD_DIRS = [
@@ -630,14 +629,10 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
 }
 
 function addHookOperations(repoRoot: string, operations: AdoptionOperation[]): void {
-  for (const name of readdirSync(join(HOOK_ROOT, "lib")).filter((entry) => entry.endsWith(".sh")).sort()) {
-    const source = join(HOOK_ROOT, "lib", name);
-    operations.push(writeOperation(repoRoot, `.ai/hooks/lib/${name}`, readFileSync(source, "utf-8"), "Install repo-local hook helper library", { mode: 0o755, risk: "medium" }));
-  }
   operations.push(writeOperation(
     repoRoot,
     ".ai/hooks/README.md",
-    "# Repo-Local Workflow Helpers\n\nHost events execute through the user-level `repo-harness-hook` typed runtime. Files under `.ai/hooks/lib/` are operator helper libraries only; no repo-local host-event dispatcher or route script is supported.\n",
+    "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers use the installed package. Run `repo-harness hook-lib path` to locate `workflow-state.sh`. Use `repo-harness run <helper>` to run helpers. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
     "Document typed hook authority and operator-only helper boundary",
     { risk: "medium" },
   ));

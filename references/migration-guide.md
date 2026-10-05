@@ -15,8 +15,8 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
 - **User-level host adapters**: `~/.claude/settings.json` and
   `~/.codex/hooks.json`; repo-local adapter files are user-owned inputs for
   manual review.
-- **Operator helper projection**: `.ai/hooks/lib/workflow-state.sh` is the only
-  hook helper documented for workflow-state inspection. It is not a dispatcher.
+- **Operator library**: `repo-harness hook-lib path` locates the installed
+  package copy of `workflow-state.sh`. Init preserves legacy repo copies.
 - Stable product truth lives in `docs/spec.md`.
 - `plans/` is the timestamped plan catalog; `.ai/harness/active-plan` selects
   the active plan.
@@ -47,8 +47,8 @@ repo-harness init --repo /path/to/project
 
 ## What the Transaction Does
 
-1. Writes the workflow contract and projects the declared operator helper
-   library into `<repo>/.ai/hooks/lib/`.
+1. Writes the workflow contract and package helper guidance in
+   `<repo>/.ai/hooks/README.md`. It does not copy the operator library.
 2. Removes retired generated hook entry files by exact manifest ownership while
    preserving user-owned files outside that manifest.
 3. Preserves project-level host adapter configuration for explicit manual review;
@@ -75,8 +75,9 @@ treats mutating update commands as probes.
 
 1. Review the user-level Claude/Codex adapter entries for project-specific
    command exceptions and trust the Codex settings entry.
-2. Confirm `.ai/hooks/lib/workflow-state.sh` exists as the operator-helper
-   projection and that no retired dispatcher entry files remain.
+2. Run `repo-harness hook-lib path` to check the package library. Run doctor
+   for legacy copy guidance. Change callers and test them. Back up old copies
+   before manual removal. Review local edits first.
 3. Confirm `.claude/settings.local.json` contains only personal overrides.
 4. Confirm `docs/spec.md`, `tasks/reviews/`, and `.ai/harness/` match the live
    workflow contract.
@@ -88,8 +89,8 @@ treats mutating update commands as probes.
 8. Run `bash scripts/check-agent-tooling.sh --host both --check-updates` for a
    fresh advisory snapshot when needed.
 9. Run project smoke checks, `check:task-sync`, and `check:task-workflow`.
-10. Run `bash scripts/prepare-handoff.sh migration` if active task state changed.
-11. Run `bash scripts/verify-sprint.sh` when an active sprint review exists.
+10. Run `repo-harness run prepare-handoff migration` if active task state changed.
+11. Run `repo-harness run verify-sprint` when an active sprint review exists.
 12. Commit the migration as one isolated change-set.
 
 ## Rollback

@@ -417,14 +417,15 @@ describe('upgrade with real release bytes', () => {
     expect(existsSync(join(router, 'node_modules'))).toBe(false);
   }, false));
 
-  test('project helper and contract template refresh only with exact historical proof', () => sandbox((opts) => {
+  test('contract template refresh needs exact proof and preserves the legacy helper', () => sandbox((opts) => {
     const helper = '.ai/hooks/lib/workflow-state.sh'; const template = '.claude/templates/contract.template.md';
     for (const path of [helper, template]) put(join(opts.cwd, path), readUpgradeFixture('upgrade-v0.10-project', path).toString('utf8'));
     const check = runUpgrade({ ...opts, scope: 'project' });
-    for (const path of [helper, template]) expect(check.items.find((item) => item.path === join(opts.cwd, path))).toEqual(expect.objectContaining({ proof: 'historical-fingerprint', action: 'refresh' }));
+    expect(check.items.find((item) => item.path === join(opts.cwd, template))).toEqual(expect.objectContaining({ proof: 'historical-fingerprint', action: 'refresh' }));
+    expect(check.items.find((item) => item.path === join(opts.cwd, helper))).toBeUndefined();
     const result = runUpgrade({ ...opts, scope: 'project', apply: true });
     expect(result.exitCode).toBe(0);
-    expect(readFileSync(join(opts.cwd, helper), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/hooks/lib/workflow-state.sh'), 'utf8'));
+    expect(readFileSync(join(opts.cwd, helper), 'utf8')).toBe(readUpgradeFixture('upgrade-v0.10-project', helper).toString('utf8'));
     expect(readFileSync(join(opts.cwd, template), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/templates/contract.template.md'), 'utf8'));
     const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
     expect(rollback.ok).toBe(true);
