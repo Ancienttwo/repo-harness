@@ -84,7 +84,7 @@ describe('typed hook runtime', () => {
         ['PreToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-guard'],
         ['PreToolUse', 'subagent', JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'inspect' } }), 'subagent'],
         ['PostToolUse', 'edit', JSON.stringify({ tool_input: { file_path: 'README.md' } }), 'mutation-observed'],
-        ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_output: 'hi\n', exit_code: 0 }), 'command-observed'],
+        ['PostToolUse', 'bash', JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), 'command-observed'],
         ['PostToolUse', 'always', JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }), 'trace-observer'],
         ['UserPromptSubmit', 'default', JSON.stringify({ prompt: 'review this' }), 'prompt'],
         ['UserPromptSubmit', 'delegation', JSON.stringify({ prompt: 'implement next task' }), 'subagent'],
@@ -132,7 +132,7 @@ describe('typed hook runtime', () => {
   test('one telemetry record stays opaque-free without fabricating file-metric completeness', () => {
     const root = repo();
     try {
-      const result = runHook({ event: 'PostToolUse', routeId: 'bash', cwd: root, input: JSON.stringify({ tool_input: { command: 'echo hi' }, tool_output: 'hi\n', exit_code: 0 }), env: env(root) });
+      const result = runHook({ event: 'PostToolUse', routeId: 'bash', cwd: root, input: JSON.stringify({ tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi\n', stderr: '', interrupted: false }, exit_code: 0 }), env: env(root) });
       expect(result.handler).toBe('command-observed');
       const raw = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim();
       const record = JSON.parse(raw) as { steps: Array<{ execution: string }>; measurement: { complete: boolean; incomplete_metrics: unknown[]; opaque_steps: unknown[] } };

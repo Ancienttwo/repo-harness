@@ -6,11 +6,11 @@ import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { REVIEW_FINDING_RULES, REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
-import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { taskRepository } from '../terminal/task-worktree';
-import { startTaskApplicationHost, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
+import { locked, startTaskApplicationHost, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, type TaskCleanupResult, type TaskRequest } from '../terminal/task-session';
 import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth } from './review-isolation';
@@ -163,6 +163,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   let authOutput: string | undefined;
   try {
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
+    if (existsSync(join(dir, 'close.request'))) throw new Error('review_session_closing; finish the same cancel or close');
     const legacyDir = join(root, '.ai/harness/runs/claude-review', createHash('sha256').update(contract).digest('hex'));
     const legacySessionOpen = existsSync(join(legacyDir, 'session.json')) && !existsSync(join(legacyDir, 'closed.json'));
     const legacyServerPending = (existsSync(join(legacyDir, 'server.json')) || existsSync(join(legacyDir, 'server-start-intent.json')))
@@ -260,6 +261,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const recheck = await acceptanceContext({ root, contract, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
     const before = [fingerprint(root), fingerprint(reviewerRepo)];
+    if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no request sent');
     lock.assertOwned();
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
@@ -269,12 +271,20 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const deadline = Date.now() + timeout;
     let collected;
     for (;;) {
+      // A cancel request wins over a pending Result; the final decision is the
+      // re-check below, after the loop, before any acceptance is recorded.
+      if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
       collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
       if (collected && existsSync(join(dir, `observed-${request.round}.json`))) break;
       client.assertBinding(binding); lock.assertOwned();
       if (Date.now() >= deadline) throw new Error('review_round_timeout; inspect the same request; do not resend');
       await Bun.sleep(100);
     }
+    // Linearization point for accept-versus-cancel: the Result is collected
+    // and observed, and no acceptance exists yet. A request written after this
+    // read cannot un-record the acceptance below, so closeReview reports it to
+    // the cancel caller instead.
+    if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
     if (before[0] !== fingerprint(root) || before[1] !== fingerprint(reviewerRepo)) throw new Error('review_worktree_mutated');
     const model = client.model(session, request);
     if (!collected.value || typeof collected.value !== 'object' || Array.isArray(collected.value)
@@ -310,34 +320,58 @@ export function reviewStatus(repoRoot: string, contract: string, effects: Review
       .map(round => ({ round, receipt_saved: existsSync(join(dir, `accepted-${round}.json`)) })) };
 }
 
+function acceptedRounds(dir: string): number[] {
+  return Array.from({ length: REVIEW_MAX_ROUNDS }, (_, index) => index + 1).filter(round => existsSync(join(dir, `accepted-${round}.json`)));
+}
+
+/** Covers the round's 60 s host acknowledgement wait before it sees the
+ * cancel. Round-1 admission and task-agent start can hold the lock longer
+ * than this bound; a timed-out cancel must be run again. */
+const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
 export async function closeReview(repoRoot: string, contract: string, cancel = false, authorityHome = userInfo().homedir,
   effects: ReviewEffects = {}) {
   const { dir, primary, root } = reviewLocation(repoRoot, contract);
-  const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
+  // An active round holds caller.lock until it ends. Cancel first publishes the
+  // durable close request, which the round and the OAR host both observe, and
+  // then waits for the lock so receipt and cleanup publication stay serialized.
+  if (cancel && existsSync(join(dir, 'session.json')) && !existsSync(join(dir, 'closed.json'))) {
+    try { writeSessionArtifact(join(dir, 'close.request'), { close: true }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  }
   let authOutput: string | undefined;
   try {
-    if (existsSync(join(dir, 'session.json'))) {
-      const owned = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-      if (owned.actual_harness === 'codex') authOutput = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+    return await locked(primary, dir, async () => {
+      if (existsSync(join(dir, 'session.json'))) {
+        const owned = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+        if (owned.actual_harness === 'codex') authOutput = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+      }
+      if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
+      const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+      if (!cancel) {
+        const receipt = await verifyAcceptance({ root, authorityHome, contract });
+        const completed = acceptedRounds(dir);
+        if (!completed.length) throw new Error('review_no_accepted_round');
+        const last = readSessionArtifact<{ output: ReviewOutput; receipt: AcceptanceReceipt }>(join(dir, `accepted-${completed.at(-1)}.json`));
+        if (last.output.verdict !== 'PASS' || JSON.stringify(last.receipt) !== JSON.stringify(receipt)) throw new Error('review_acceptance_mismatch');
+      }
+      const client = { ...runtime, ...effects };
+      // An ambiguous launch without a disposal acknowledgement remains pending;
+      // never kill a host whose OAR children may still be alive.
+      await client.dispose(session.reviewer_repo, session.task, session.control_directory);
+      const cleanup = await (cancel ? client.cancel : client.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
+      // The round's final close.request read is not atomic with the acceptance
+      // write. A cancel that lands in that window still closes the session,
+      // and the durable receipt is reported here rather than discarded.
+      const accepted = cancel ? acceptedRounds(dir) : [];
+      if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup, ...(accepted.length ? { accepted_rounds: accepted } : {}) });
+      return accepted.length ? { ...cleanup, accepted_rounds: accepted } : cleanup;
+    }, undefined, cancel ? REVIEW_CANCEL_LOCK_WAIT_MS : 0);
+  } catch (error) {
+    if (cancel && error instanceof ExclusiveLockContentionError && error.kind === 'timeout') {
+      throw new Error('review_cancel_pending; close.request is durable; run cancel again', { cause: error });
     }
-    if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
-    const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-    if (!cancel) {
-      const receipt = await verifyAcceptance({ root, authorityHome, contract });
-      const completed = Array.from({ length: REVIEW_MAX_ROUNDS }, (_, index) => index + 1).filter(round => existsSync(join(dir, `accepted-${round}.json`)));
-      if (!completed.length) throw new Error('review_no_accepted_round');
-      const last = readSessionArtifact<{ output: ReviewOutput; receipt: AcceptanceReceipt }>(join(dir, `accepted-${completed.at(-1)}.json`));
-      if (last.output.verdict !== 'PASS' || JSON.stringify(last.receipt) !== JSON.stringify(receipt)) throw new Error('review_acceptance_mismatch');
-    }
-    const client = { ...runtime, ...effects };
-    // An ambiguous launch without a disposal acknowledgement remains pending;
-    // never kill a host whose OAR children may still be alive.
-    await client.dispose(session.reviewer_repo, session.task, session.control_directory);
-    const cleanup = await (cancel ? client.cancel : client.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
-    if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup });
-    return cleanup;
+    throw error;
   } finally {
-    lock.release();
     if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
   }
 }

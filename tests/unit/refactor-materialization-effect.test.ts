@@ -100,6 +100,35 @@ describe('Module 6 atomic Refactor Program materialization', () => {
     execFileSync('git', ['update-ref', 'refs/heads/main', malicious], { cwd: f.root });
     expect(() => materializeRefactorProgram(f.request)).toThrow('target moved outside this materialization transaction');
   });
+
+  test('recovery rejects a child that keeps every transaction byte but changes anything else', () => {
+    const f = fixture();
+    expect(() => materializeRefactorProgram({ ...f.request, crash_hook: (boundary) => { if (boundary === 'after_ref_cas') throw new Error('crash'); } })).toThrow('cannot create atomic');
+    const git = (args: string[], env?: NodeJS.ProcessEnv, input?: string) => execFileSync('git', args, { cwd: f.root, env: { ...process.env, ...env, GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.com', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.com' }, input, encoding: 'utf8' }).trim();
+    const owned = git(['rev-parse', 'main']); const baseline = git(['rev-parse', 'main^1']);
+    let serial = 0;
+    const child = (edit: (indexEnv: NodeJS.ProcessEnv) => void, parents: string[] = [baseline]) => {
+      const indexEnv = { GIT_INDEX_FILE: join(f.root, '.git', `recovery-index-${serial++}`) };
+      git(['read-tree', owned], indexEnv); edit(indexEnv);
+      return git(['commit-tree', git(['write-tree'], indexEnv), ...parents.flatMap((parent) => ['-p', parent]), '-m', 'rebuilt materialization'], indexEnv);
+    };
+    const unrelatedEdit = child((indexEnv) => {
+      const blob = git(['hash-object', '-w', '--stdin'], undefined, 'export const injected = true;\n');
+      git(['update-index', '--add', '--cacheinfo', '100644', blob, 'src/unrelated.ts'], indexEnv);
+    });
+    const modeOnly = child((indexEnv) => {
+      const blob = git(['rev-parse', `${owned}:plans/plan-rf-runtime.md`]);
+      git(['update-index', '--cacheinfo', '100755', blob, 'plans/plan-rf-runtime.md'], indexEnv);
+    });
+    const extraParent = child(() => undefined, [baseline, git(['commit-tree', git(['rev-parse', `${baseline}^{tree}`]), '-m', 'side root'])]);
+    for (const moved of [unrelatedEdit, modeOnly, extraParent]) {
+      git(['update-ref', 'refs/heads/main', moved]);
+      expect(() => materializeRefactorProgram(f.request)).toThrow('target moved outside this materialization transaction');
+      expect(readRefactorProgramStatus(f.root, 'rf-1', f.env).current.state).toBe('materializing');
+    }
+    git(['update-ref', 'refs/heads/main', owned]);
+    expect(materializeRefactorProgram(f.request)).toMatchObject({ materialized_commit: owned, current: { state: 'planning' } });
+  });
 });
 
   test('advances the owned materialization to execution and verification but rejects unrelated target movement', () => {

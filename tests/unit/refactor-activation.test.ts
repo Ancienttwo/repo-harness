@@ -12,4 +12,26 @@ afterAll(() => roots.forEach((root) => rmSync(root, { recursive: true, force: tr
 describe('Module 10 evidence-gated activation ladder', () => {
   test('freezes ten canaries and rejects skips, failures, and foreign evidence', () => { expect(REFACTOR_CANARY_IDS).toHaveLength(10); expect(() => promoteRefactorActivation({ currentLevel: 'off', nextLevel: 'active_module', repositoryId: 'repo.activation', targetRevision: 'a'.repeat(40), receipts: REFACTOR_CANARY_IDS.map((id) => receipt(id)), observedAt })).toThrow('exactly one level'); expect(() => promoteRefactorActivation({ currentLevel: 'off', nextLevel: 'shadow', repositoryId: 'repo.activation', targetRevision: 'a'.repeat(40), receipts: [receipt('version_mismatch_fail_closed', 'a'.repeat(40), false)], observedAt })).toThrow('did not pass'); expect(() => promoteRefactorActivation({ currentLevel: 'off', nextLevel: 'shadow', repositoryId: 'repo.activation', targetRevision: 'a'.repeat(40), receipts: [receipt('version_mismatch_fail_closed', 'b'.repeat(40))], observedAt })).toThrow('not bound'); });
   test('advances off to cross-module one rung at a time from repository-local receipts', () => { const root = mkdtempSync(join(tmpdir(), 'refactor-activation-')); roots.push(root); execFileSync('git', ['init', '-q'], { cwd: root }); execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root }); execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root }); execFileSync('git', ['commit', '--allow-empty', '-qm', 'baseline'], { cwd: root }); const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(); for (const id of REFACTOR_CANARY_IDS) appendRefactorCanaryReceipt(root, { canaryId: id, repositoryId: 'repo.activation', targetRevision: head, passed: true, evidenceRefs: [{ locator: `tests/canaries/${id}`, sha256: digest(id) }], observedAt }); expect(readRefactorActivationLevel(root)).toBe('off'); for (const next_level of ['shadow', 'active_module', 'active_cross_module'] as const) { const event = advanceRefactorActivation({ repo_root: root, repository_id: 'repo.activation', target_revision: head, next_level, observed_at: observedAt }); expect(event.canaryReceiptSha256).toHaveLength(REFACTOR_CANARIES_BY_LEVEL[next_level].length); expect(readRefactorActivationLevel(root)).toBe(next_level); } });
+  test('replays each historical event from its own receipts after later canary runs are recorded', () => {
+    const root = mkdtempSync(join(tmpdir(), 'refactor-activation-replay-')); roots.push(root);
+    const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    git(['init', '-q']); git(['config', 'user.email', 'fixture@example.com']); git(['config', 'user.name', 'Fixture']); git(['commit', '--allow-empty', '-qm', 'baseline']);
+    const head = git(['rev-parse', 'HEAD']); const canaryId = 'version_mismatch_fail_closed' as const;
+    const run = (targetRevision: string, passed: boolean, observed: string) => ({ canaryId, repositoryId: 'repo.activation', targetRevision, passed, evidenceRefs: [{ locator: `tests/canaries/${canaryId}`, sha256: digest(`${canaryId}:${observed}`) }], observedAt: observed });
+    const promoted = appendRefactorCanaryReceipt(root, run(head, true, observedAt));
+    const event = advanceRefactorActivation({ repo_root: root, repository_id: 'repo.activation', target_revision: head, next_level: 'shadow', observed_at: observedAt });
+    expect(event.canaryReceiptSha256).toEqual([promoted.receiptSha256]);
+    // Later runs whose digests sort after the promoted receipt, so a last-wins replay would pick them.
+    const later = (targetRevision: string, passed: boolean) => {
+      for (let minute = 10; minute < 60; minute += 1) {
+        const input = run(targetRevision, passed, `2026-09-04T09:${minute}:00.000Z`);
+        if (buildRefactorCanaryReceipt(input).receiptSha256 > promoted.receiptSha256) return input;
+      }
+      throw new Error('no later-sorting canary receipt fixture');
+    };
+    for (const input of [later(head, true), later('b'.repeat(40), true), later(head, false)]) {
+      appendRefactorCanaryReceipt(root, input);
+      expect(readRefactorActivationLevel(root)).toBe('shadow');
+    }
+  });
 });

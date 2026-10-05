@@ -79,7 +79,8 @@ import {
   applyInstallProfile,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
-  installProfileHostMutationPaths,
+  effectiveSkillRoots,
+  installProfileTransactionPaths,
   installedProfileStatus,
   assertInstallProfile,
   planLegacyInstallProfileMigration,
@@ -266,7 +267,7 @@ function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.P
 }
 
 function runtimeHostMutationPaths(env: NodeJS.ProcessEnv): readonly string[] {
-  const paths = [...installProfileHostMutationPaths(env)];
+  const paths = [...installProfileTransactionPaths(env)];
   if (process.platform === 'win32') paths.push(windowsProtectedHelperConfigPath());
   return [...new Set(paths)];
 }
@@ -425,13 +426,9 @@ async function runGlobalRuntimeBootstrap(
     ? planLegacyInstallProfileMigration(profile)
     : planInstallProfile(profile, currentProfile);
   if (rawOpts.dryRun === true) {
-    const home = process.env.HOME ?? homedir();
-    const codexRoot = process.env.CODEX_SKILLS_ROOT || join(home, '.codex', 'skills');
-    const claudeRoot = process.env.CLAUDE_SKILLS_ROOT
-      || (process.env.CODEX_SKILLS_ROOT ? '' : join(home, '.claude', 'skills'));
     const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
-      [codexRoot, claudeRoot],
+      effectiveSkillRoots(),
       true,
       currentProfile?.ownership_manifest,
     );
@@ -631,12 +628,16 @@ export function buildProgram(): Command {
       }
       const target = assertTarget(rawOpts.target, 'init');
       const mode = assertAdoptionMode(rawOpts.mode ?? 'standard', 'init');
+      // The planner reads documentation authoring env only from its options,
+      // so the public command boundary supplies the real process environment.
+      const env = process.env;
       if (rawOpts.dryRun === true) {
         const plan = runAdoptionPlan({
           repo: rawOpts.repo,
           mode,
           json: rawOpts.json === true,
           explicitRepo: rawOpts.repo !== undefined,
+          env,
         });
         writeAllSync(1, plan.output);
         process.exit(plan.exitCode);
@@ -654,6 +655,7 @@ export function buildProgram(): Command {
         syncCodegraph: rawOpts.syncCodegraph === true,
         mode,
         brainMode: 'skip' as const,
+        env,
       };
       const result = runInit(common);
       if (rawOpts.json === true) {

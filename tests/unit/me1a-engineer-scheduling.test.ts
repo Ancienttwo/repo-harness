@@ -12,6 +12,7 @@ import {
   collectEngineerOffers,
   type EngineerSchedulingDependencies,
 } from '../../src/effects/engineers/scheduling';
+import { createLeaseDirectory, leaseOwnerPath, readLease } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
@@ -208,6 +209,40 @@ describe('ME-1A Engineer offer effects', () => {
     expect(result.offers).toEqual([]);
     expect(result.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
       .toContain('concurrency_unavailable');
+  });
+
+  test('an unknown same-key Lease occupies the group instead of freeing it', () => {
+    const subject = fixture();
+    execFileSync('git', ['init', '-q'], { cwd: subject.root });
+    delete (subject.deps as any).readLease;
+    const taskA = subject.byTask.get('task A')!;
+    const collect = () => collectEngineerOffers({
+      repo_root: subject.root,
+      principal: principal(),
+      registry_snapshot: subject.registry,
+      dependencies: subject.deps,
+    });
+    try {
+      // Control: with no Lease directory the real reader proves the group free.
+      expect(collect().offers.map((offer) => offer.work_package_id)).toEqual(['wp-b']);
+
+      // The crash window between the lease mkdir and the durable owner write.
+      expect(createLeaseDirectory(subject.root, taskA.task_id)).toBeTrue();
+      expect(readLease(subject.root, taskA.task_id)).toMatchObject({ classification: 'unknown', unknown_reason: 'owner_record_missing' });
+      const missing = collect();
+      expect(missing.offers).toEqual([]);
+      expect(missing.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
+        .toContain('concurrency_unavailable');
+
+      writeFileSync(leaseOwnerPath(subject.root, taskA.task_id), '{"not":"an owner record"}\n');
+      expect(readLease(subject.root, taskA.task_id)).toMatchObject({ classification: 'unknown', unknown_reason: 'owner_record_malformed' });
+      const malformed = collect();
+      expect(malformed.offers).toEqual([]);
+      expect(malformed.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
+        .toContain('concurrency_unavailable');
+    } finally {
+      rmSync(subject.root, { recursive: true, force: true });
+    }
   });
 
   test('Profile max_active_claims is enforced from live actor/Lease joins', () => {

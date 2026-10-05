@@ -375,6 +375,34 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
+  test('install and uninstall keep private host config modes under a 0022 umask', () => {
+    withTempHome((home) => {
+      const claudePath = path.join(home, '.claude/settings.json');
+      const codexPath = path.join(home, '.codex/hooks.json');
+      const sibling = { hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'rtk hook claude' }] }] } };
+      for (const filePath of [claudePath, codexPath]) {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, `${JSON.stringify(sibling, null, 2)}\n`, { mode: 0o600 });
+        fs.chmodSync(filePath, 0o600);
+      }
+      const previousUmask = process.umask(0o022);
+      try {
+        expect(runInstall({ target: 'both', location: 'global' }).exitCode).toBe(0);
+        for (const filePath of [claudePath, codexPath]) {
+          expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).hooks.PreToolUse.length).toBeGreaterThan(1);
+          expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+        }
+        expect(runUninstall({ target: 'both', location: 'global' }).exitCode).toBe(0);
+        for (const filePath of [claudePath, codexPath]) {
+          expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).hooks).toEqual(sibling.hooks);
+          expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+        }
+      } finally {
+        process.umask(previousUmask);
+      }
+    });
+  });
+
   test('uninstall removes managed Codex entries and reverses installer TOML', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'codex', location: 'global' });

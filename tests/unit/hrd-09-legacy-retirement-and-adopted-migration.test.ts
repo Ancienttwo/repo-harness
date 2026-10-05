@@ -39,7 +39,7 @@ function routeInput(event: HookEvent, routeId: RouteId): { readonly host: 'claud
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
     case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Inspect the fixture and report evidence.' } }) };
     case 'PostToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
-    case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo fixture' }, tool_output: 'fixture\n', exit_code: 0 }) };
+    case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo fixture' }, tool_response: { stdout: 'fixture\n', stderr: '', interrupted: false }, exit_code: 0 }) };
     case 'PostToolUse.always': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }) };
     case 'UserPromptSubmit.default': return { host: 'claude', input: JSON.stringify({ prompt: 'status update' }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'check task inbox' }) };

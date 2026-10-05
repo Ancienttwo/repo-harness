@@ -1,7 +1,7 @@
-import { candidate, helperFingerprint } from '../../scripts/merge-gate';
+import { candidate } from '../../scripts/merge-gate';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -49,7 +49,6 @@ interface Fixture {
   readonly head: string;
   readonly gh: string;
   readonly body: string;
-  readonly seal: string;
 }
 
 function installFixture(): Fixture {
@@ -93,19 +92,6 @@ function installFixture(): Fixture {
   if (!createLeaseDirectory(root, TASK_ID)) throw new Error('fixture lease election failed');
   writeLeaseOwnerDurably(root, TASK_ID, completing.record);
 
-  const seal = join(root, 'merge-seal.json');
-  writeFileSync(seal, JSON.stringify({
-    protocol: 2,
-    repository_root: realpathSync(root),
-    base_ref: 'main',
-    helper_fingerprint: helperFingerprint(root),
-    pr_number: 1,
-    sealed_at: '2026-08-23T06:30:00Z',
-    kind: 'repo-harness-merge-seal',
-    base_sha: base,
-    head_sha: head,
-    diff_fingerprint: candidate(root, 'main').diffFingerprint,
-  }) + '\n');
   const body = join(root, 'pr-body.md');
   writeFileSync(body, 'Automated ship body.\n');
   const gh = join(root, 'fake-gh.sh');
@@ -129,7 +115,7 @@ function installFixture(): Fixture {
     '',
   ].join('\n'));
   chmodSync(gh, 0o755);
-  return { root, base, head, gh, body, seal };
+  return { root, base, head, gh, body };
 }
 
 function withFixture(run: (fixture: Fixture) => void): void {
@@ -153,7 +139,6 @@ function ensureInput(fixture: Fixture) {
     branch: 'codex/publication',
     target_branch: 'main',
     gh_bin: fixture.gh,
-    merge_seal_path: fixture.seal,
     create_intent_journal_path: join(fixture.root, 'publication-intent.status.json'),
   } as const;
 }
@@ -170,7 +155,7 @@ function prepareThenObserve(fixture: Fixture) {
   return prepared.create_intent!;
 }
 
-describe('PublicationReceiptV2', () => {
+describe('PublicationReceiptV3', () => {
   test('uses the frozen deterministic identity preimage and a complete canonical marker', () => {
     const input = {
       repo_id: 'fixture-common-dir',
@@ -184,7 +169,6 @@ describe('PublicationReceiptV2', () => {
       head_sha: 'b'.repeat(40),
       tree_sha: 'c'.repeat(40),
       candidate_diff_fingerprint: SUBJECT,
-      merge_seal_sha256: `sha256:${'5'.repeat(64)}`,
       provider: 'github' as const,
       provider_repo_id: 'R_fixture',
       pr_number: 1,
@@ -195,7 +179,7 @@ describe('PublicationReceiptV2', () => {
     expect(receipt.publication_id).toBe('sha256:f1819c97aa8816e26d68c2edb23c6344427e65f747047763ee982b733751ab28');
     expect(receipt.publication_id).toBe(derivePublicationId(input));
     expect(receipt.publication_id).toBe(buildPublicationReceipt({ ...input, created_at: '2026-08-23T04:05:55Z' }).publication_id);
-    expect(receipt.protocol).toBe(2);
+    expect(receipt.protocol).toBe(3);
     expect(Object.keys(receipt)).not.toContain('review_subject_sha256');
     expect(Object.keys(receipt)).not.toContain('verification_evidence_sha256');
     const intent = buildPublicationCreateIntent(input);
@@ -206,7 +190,7 @@ describe('PublicationReceiptV2', () => {
     expect(canonicalPublicationPrepareEnvelopeBytes(buildPublicationPrepareEnvelope(null)))
       .toBe('{"action":"existing","create_intent":null,"kind":"repo-harness-publication-prepare","protocol":1}');
     const marker = encodePublicationMarker(receipt);
-    expect(marker).toStartWith('<!-- repo-harness-publication-receipt:v2:');
+    expect(marker).toStartWith('<!-- repo-harness-publication-receipt:v3:');
     expect(decodePublicationMarker(marker)).toEqual(receipt);
     expect(decodePublicationMarker(replacePublicationMarker('human text', receipt))).toEqual(receipt);
     expect(publicationReceiptDigest(receipt)).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -239,7 +223,6 @@ describe('PublicationReceiptV2', () => {
         head_sha: first.receipt.head_sha,
         tree_sha: first.receipt.tree_sha,
         candidate_diff_fingerprint: first.receipt.candidate_diff_fingerprint,
-        merge_seal_sha256: first.receipt.merge_seal_sha256,
         provider: first.receipt.provider,
         provider_repo_id: first.receipt.provider_repo_id,
         pr_number: first.receipt.pr_number,
@@ -256,7 +239,6 @@ describe('PublicationReceiptV2', () => {
         repo_root: fixture.root,
         pr_number: 1,
         gh_bin: fixture.gh,
-        merge_seal_path: fixture.seal,
         });
       expect(rebuilt.receipt).toEqual(first.receipt);
       expect(readPublicationReceiptCache(fixture.root, first.receipt.publication_id)).toEqual(first.receipt);
@@ -270,7 +252,6 @@ describe('PublicationReceiptV2', () => {
           env: {
             ...process.env,
             REPO_HARNESS_GH_BIN: fixture.gh,
-            REPO_HARNESS_PUBLICATION_SEAL_PATH: fixture.seal,
           },
         },
       )) as { ok: boolean; receipt: unknown };
@@ -336,7 +317,6 @@ describe('PublicationReceiptV2', () => {
         repo_root: fixture.root,
         pr_number: persisted.receipt.pr_number,
         gh_bin: fixture.gh,
-        merge_seal_path: fixture.seal,
         })).toThrow(PublicationReceiptError);
       delete process.env.GH_BASE_SHA;
       process.env.GH_HEAD_REF = 'codex/retargeted';
@@ -344,7 +324,6 @@ describe('PublicationReceiptV2', () => {
         repo_root: fixture.root,
         pr_number: persisted.receipt.pr_number,
         gh_bin: fixture.gh,
-        merge_seal_path: fixture.seal,
         })).toThrow(PublicationReceiptError);
     });
   });
@@ -392,42 +371,61 @@ describe('PublicationReceiptV2', () => {
       expect(() => decodePublicationMarker(bodyBefore)).toThrow('marker version 1 is retired');
       expect(() => replacePublicationMarker(bodyBefore, result.receipt)).toThrow('marker version 1 is retired');
       expect(() => ensurePublicationReceipt(ensureInput(fixture))).toThrow(PublicationReceiptError);
-      expect(() => rebuildPublicationReceipt({ repo_root: fixture.root, pr_number: 1, gh_bin: fixture.gh, merge_seal_path: fixture.seal })).toThrow(PublicationReceiptError);
+      expect(() => rebuildPublicationReceipt({ repo_root: fixture.root, pr_number: 1, gh_bin: fixture.gh })).toThrow(PublicationReceiptError);
       expect(readFileSync(fixture.body, 'utf-8')).toBe(bodyBefore);
       expect(readFileSync(cache, 'utf-8')).toBe(oldBytes);
     });
   });
 
-  test('refuses a stale native seal repository, target, helper, candidate, or PR', () => {
+  test('refuses retired V2 seal-bound cache and marker bytes without migration or overwrite', () => {
     withFixture((fixture) => {
       const intent = prepareThenObserve(fixture);
-      const original = JSON.parse(readFileSync(fixture.seal, 'utf-8'));
-      for (const changed of [
-        { protocol: 1 }, { repository_root: '/tmp/other-publication' }, { base_ref: 'other' },
-        { helper_fingerprint: SUBJECT }, { diff_fingerprint: SUBJECT }, { pr_number: 2 },
-        { base_sha: 'f'.repeat(40) }, { head_sha: 'f'.repeat(40) },
-      ]) {
-        writeFileSync(fixture.seal, JSON.stringify({ ...original, ...changed }));
-        expect(() => ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent })).toThrow(PublicationReceiptError);
-        expect(readFileSync(fixture.body, 'utf-8')).toBe('Automated ship body.\n');
-      }
-      writeFileSync(fixture.seal, JSON.stringify(original));
       const result = ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent });
-      expect(result.receipt.candidate_diff_fingerprint).toBe(original.diff_fingerprint);
+      const oldReceipt = { ...result.receipt, protocol: 2, merge_seal_sha256: SUBJECT };
+      expect(() => validatePublicationReceipt(oldReceipt)).toThrow('version 2 is retired');
+      const cache = publicationReceiptPath(fixture.root, result.receipt.publication_id);
+      const oldBytes = `${JSON.stringify(oldReceipt)}\n`;
+      writeFileSync(cache, oldBytes);
+      expect(() => readPublicationReceiptCache(fixture.root, result.receipt.publication_id)).toThrow(PublicationReceiptError);
+      expect(() => writePublicationReceiptCache(fixture.root, result.receipt)).toThrow(PublicationReceiptError);
+      const oldMarker = `<!-- repo-harness-publication-receipt:v2:${Buffer.from(JSON.stringify(oldReceipt)).toString('base64url')} -->`;
+      writeFileSync(fixture.body, `human text\n${oldMarker}\n`);
+      const bodyBefore = readFileSync(fixture.body, 'utf-8');
+      expect(() => decodePublicationMarker(bodyBefore)).toThrow('marker version 2 is retired');
+      expect(() => replacePublicationMarker(bodyBefore, result.receipt)).toThrow('marker version 2 is retired');
+      expect(() => rebuildPublicationReceipt({ repo_root: fixture.root, pr_number: 1, gh_bin: fixture.gh })).toThrow(PublicationReceiptError);
+      expect(readFileSync(fixture.body, 'utf-8')).toBe(bodyBefore);
+      expect(readFileSync(cache, 'utf-8')).toBe(oldBytes);
     });
   });
 
+  test('binds the native candidate diff without a host merge seal and rebuild refuses a forged diff', () => {
+    withFixture((fixture) => {
+      const intent = prepareThenObserve(fixture);
+      const result = ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent });
+      expect(Object.keys(result.receipt)).not.toContain('merge_seal_sha256');
+      expect(result.receipt.base_sha).toBe(fixture.base);
+      expect(result.receipt.candidate_diff_fingerprint).toBe(candidate(fixture.root, fixture.base).diffFingerprint);
+      const { protocol: _protocol, kind: _kind, publication_id: _id, ...input } = result.receipt;
+      const forged = buildPublicationReceipt({ ...input, candidate_diff_fingerprint: SUBJECT });
+      expect(forged.publication_id).toBe(result.receipt.publication_id);
+      unlinkSync(publicationReceiptPath(fixture.root, result.receipt.publication_id));
+      writeFileSync(fixture.body, replacePublicationMarker('Automated ship body.\n', forged));
+      expect(() => rebuildPublicationReceipt({ repo_root: fixture.root, pr_number: 1, gh_bin: fixture.gh }))
+        .toThrow('candidate diff no longer matches');
+      expect(readPublicationReceiptCache(fixture.root, result.receipt.publication_id)).toBeNull();
+    });
+  });
 
   test('returns a typed refusal for unavailable native Git evidence and keeps the host alive', () => {
     withFixture((fixture) => {
       const intent = prepareThenObserve(fixture);
-      const seal = JSON.parse(readFileSync(fixture.seal, 'utf-8'));
-      writeFileSync(fixture.seal, JSON.stringify({ ...seal, base_ref: 'refs/remotes/unavailable/main' }));
+      process.env.GH_BASE_SHA = 'f'.repeat(40);
       expect(() => ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent }))
-        .toThrow('native merge seal evidence is unavailable: git rev-parse');
+        .toThrow('candidate diff evidence is unavailable: git rev-parse');
       expect(readFileSync(fixture.body, 'utf-8')).toBe('Automated ship body.\n');
-      writeFileSync(fixture.seal, JSON.stringify(seal));
-      expect(ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent }).receipt.protocol).toBe(2);
+      delete process.env.GH_BASE_SHA;
+      expect(ensurePublicationReceipt({ ...ensureInput(fixture), create_intent: intent }).receipt.protocol).toBe(3);
     });
   });
 

@@ -649,6 +649,14 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     `[::1]:${port}`,
     ...(publicHost ? [publicHost] : []),
   ]);
+  // The consent page posts its form from the server's own origin, not from
+  // ChatGPT. Only that form submission may carry one of these origins.
+  const consentFormOrigins = new Set([
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+    `http://[::1]:${port}`,
+    ...(configuredPublicOrigin ? [configuredPublicOrigin] : []),
+  ]);
   let authorizationCleanupRunning = false;
   const closeStaleAuthorizationState = (): void => {
     if (!authorizationScoped || authorizationCleanupRunning) return;
@@ -711,7 +719,8 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       return;
     }
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-    if (authorizationScoped && origin && origin !== 'https://chatgpt.com') {
+    const consentFormSubmit = req.method === 'POST' && req.path === '/authorize';
+    if (authorizationScoped && origin && origin !== 'https://chatgpt.com' && !(consentFormSubmit && consentFormOrigins.has(origin))) {
       res.status(403).json({ error: 'origin_not_allowed' });
       return;
     }

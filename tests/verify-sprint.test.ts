@@ -8,7 +8,7 @@ function fixture() {
   const root=mkdtempSync(join(tmpdir(),'explicit-verify-'));
   mkdirSync(join(root,'tests'),{recursive:true}); mkdirSync(join(root,'scripts'));
   for(const file of ['verify-sprint.sh','verify-contract.sh']) copyFileSync(join(ROOT,'scripts',file),join(root,'scripts',file));
-  writeFileSync(join(root,'package.json'),JSON.stringify({scripts:{'check:type':'bun typecheck.ts'}}));
+  writeFileSync(join(root,'package.json'),JSON.stringify({scripts:{'check:type':'bun typecheck.ts',test:'bun test'}}));
   writeFileSync(join(root,'typecheck.ts'),"import { appendFileSync,existsSync } from 'fs'; appendFileSync('commands.log','typecheck\\n'); if(existsSync('bad-types'))process.exit(7);\n");
   writeFileSync(join(root,'tests/affected.test.ts'),"import { test,expect } from 'bun:test'; import {appendFileSync} from 'fs'; appendFileSync('commands.log','affected\\n'); test('real affected behavior',()=>expect(1+1).toBe(2));\n");
   return root;

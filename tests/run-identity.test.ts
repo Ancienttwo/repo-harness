@@ -236,7 +236,7 @@ describe('run-identity acceptance probe: SessionStart -> PostToolUse.bash', () =
         routeId: 'bash',
         cwd: root,
         env,
-        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }),
+        input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }),
       });
       expect(bashResult.exitCode).toBe(0);
 

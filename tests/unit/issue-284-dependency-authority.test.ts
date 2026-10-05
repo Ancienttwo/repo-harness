@@ -443,7 +443,6 @@ function reviewingPublication(subject: Fixture, head: string, base: string, numb
     head_sha: head,
     tree_sha: git(subject.root, 'rev-parse', `${head}^{tree}`),
     candidate_diff_fingerprint: `sha256:${'5'.repeat(64)}`,
-    merge_seal_sha256: `sha256:${'7'.repeat(64)}`,
     provider: 'github',
     provider_repo_id: 'R_issue284',
     pr_number: number,

@@ -32,7 +32,9 @@ for(const file of process.argv.slice(1)) {
 ' "${tests[@]}"
 "$BUN_BIN" run check:type
 if [[ "${#tests[@]}" -gt 0 ]]; then
-  "$BUN_BIN" test "${tests[@]}" --timeout 60000 --max-concurrency 1
+  # The owning package test script prepares the startup environment before Bun
+  # starts. Its `bun` resolves to the trusted runtime that this helper checked.
+  PATH="$(dirname "$BUN_BIN"):$PATH" "$BUN_BIN" run test -- "${tests[@]}" --timeout 60000 --max-concurrency 1
 else
   echo '[verify] typecheck completed; no affected tests were selected or claimed.'
 fi

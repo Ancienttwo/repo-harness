@@ -424,7 +424,7 @@ describe('workflow circuit breakers', () => {
       const result = runCommandObserved({
         repoRoot: cwd,
         env: { ...env, REPO_HARNESS_WORKFLOW_PROFILE: 'routine' },
-        input: JSON.stringify({ tool_input: { command: 'bun test' }, tool_output: 'FAIL test', exit_code: 1 }),
+        input: JSON.stringify({ tool_input: { command: 'bun test' }, tool_response: { stdout: 'FAIL test', stderr: '', interrupted: false }, exit_code: 1 }),
       });
       expect(result.exitCode).toBe(index < 3 ? 0 : 2);
       if (index === 3) expect(result.stderr).toContain('"limit":2');

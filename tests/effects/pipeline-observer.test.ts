@@ -34,10 +34,10 @@ beforeEach(()=>{
 });
 afterEach(()=>{store?.close();rmSync(scratch,{recursive:true,force:true});});
 function git(root:string,...args:string[]):string{return execFileSync('git',args,{cwd:root,env,encoding:'utf8'}).trim();}
-function repo(name:string):string {
+function repo(name:string,preflight:readonly string[]=[]):string {
   const root=join(scratch,name);mkdirSync(root);git(root,'init','-q','-b','main');git(root,'config','user.name','Observer test');git(root,'config','user.email','observer@test');
   writeFileSync(join(root,'.gitignore'),'.ai/\n');writeFileSync(join(root,'source.txt'),'source\n');
-  const checks=['tc','a','b','full'].map(id=>({id,kind:'command',command:`test ! -f .ai/harness/runs/fail-${id}`,cwd:'.',phase:'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Test the observer authority boundary',inputs:{env:[]}}));
+  const checks=['tc','a','b','full'].map(id=>({id,kind:'command',command:`test ! -f .ai/harness/runs/fail-${id}`,cwd:'.',phase:preflight.includes(id)?'preflight':'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Test the observer authority boundary',inputs:{env:[]}}));
   writeFileSync(join(root,'plan.md'),'# Observer plan\n\n## Verification Plan\n\n```json\n'+JSON.stringify({protocol:1,checks})+'\n```\n');
   git(root,'add','.');git(root,'commit','-qm','fixture');return root;
 }
@@ -69,7 +69,7 @@ function execute(root:string,name:string) {
   return {report,path:join(root,reportFile)};
 }
 function cli(args:string[],overrides:NodeJS.ProcessEnv={}) {return spawnSync(process.execPath,[CLI,'pipeline',...args],{env:{...env,...overrides},encoding:'utf8',timeout:20000});}
-async function child(script:string,args:string[]=[]) {const proc=spawn(process.execPath,[script,...args],{env,stdio:['ignore','pipe','pipe']});let out='';let err='';proc.stdout.on('data',x=>out+=x);proc.stderr.on('data',x=>err+=x);const code=await new Promise<number|null>(resolve=>proc.on('exit',resolve));return {code,out,err};}
+async function child(script:string,args:string[]=[],childEnv:NodeJS.ProcessEnv=env) {const proc=spawn(process.execPath,[script,...args],{env:childEnv,stdio:['ignore','pipe','pipe']});let out='';let err='';proc.stdout.on('data',x=>out+=x);proc.stderr.on('data',x=>err+=x);const code=await new Promise<number|null>(resolve=>proc.on('exit',resolve));return {code,out,err};}
 function worker(body:string):string {const path=join(scratch,randomUUID()+'.ts');writeFileSync(path,`import {PipelineStore,exportSnapshot} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/store.ts'))};\nimport {mutatePipeline,newPipeline} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/ledger.ts'))};\nimport {ingestEvent} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/ingest.ts'))};\nimport {writeFileSync,existsSync} from 'fs';\nconst s=new PipelineStore();\n${body}\ns.close();\n`);return path;}
 
 test('A1: six tasks in two real repositories preserve imported and host-scoped identity',()=>{
@@ -159,6 +159,15 @@ test('A6: original execution provenance admits pass/fail, per-check AND and auth
   writeFileSync(join(root,'source.txt'),'dirty\n');resource(key,root);expect(store.read(key).evidence.every(e=>!e.current)).toBe(true);expect(requirementPass(store.read(key),'affected_tests')).toBe(false);
 });
 
+test('A6: a failed preflight with skipped later checks supersedes the earlier verified pass',()=>{
+  const root=repo('preflight',['tc']),key=create(root);const s=resource(key,root);const passed=execute(root,'pass');
+  record(key,'evidence',{evidence:evidence(root,s,'tc','pass',passed.path,'typecheck'),contract_path:'plan.md'});expect(requirementPass(store.read(key),'typecheck')).toBe(true);
+  writeFileSync(join(root,'.ai/harness/runs/fail-tc'),'fail');const failed=execute(root,'preflight-fail');
+  expect(failed.report.status).toBe('failed');expect(failed.report.results.filter(r=>r.execution==='missing').map(r=>r.id)).toEqual(['a','b','full']);
+  record(key,'evidence',{evidence:evidence(root,s,'tc','fail',failed.path,'typecheck'),contract_path:'plan.md'});
+  const stored=store.read(key);expect(requirementPass(stored,'typecheck')).toBe(false);expect(stored.evidence.at(-1)?.source).toBe('verified');expect(stored.evidence.at(-1)?.execution_order).toBeGreaterThan(stored.evidence[0].execution_order);
+});
+
 function mergeReady(key:Key,s:Subject):void {const r=store.read(key);r.phase='merge-ask';r.admission='gate_qualified';r.merge.phase_entry_facts={head_sha:s.head_sha,base_sha:s.base_sha};store.transaction(()=>store.save(r));}
 function go(key:Key,s:Subject){return {by:'owner',channel:'chat',ref:'owner-message',pr:17,head_sha:s.head_sha,base_sha:s.base_sha,tree_digest:s.tree_digest,target_branch:'main',provider:'github',repository_id:key.repository_id,merge_method:'squash'};}
 test('A7: ask/go/revoke and historical go survive B to M; external merge is an observed fact',()=>{
@@ -168,6 +177,16 @@ test('A7: ask/go/revoke and historical go survive B to M; external merge is an o
   mutatePipeline(store,key,{op:'advance',to:'merged',state_version:store.read(key).state_version});expect(store.read(key).merge.owner_approval?.consumed_at).not.toBeNull();expect(store.read(key).merge.owner_approval?.expired).toBe(false);
   git(root,'commit','--allow-empty','-qm','next');resource(key,root);const r=store.read(key);expect(r.merge.owner_approval?.expired).toBe(false);expect(r.merge.owner_approval?.consumed_at).not.toBeNull();expect(()=>advanceRecord(r,'implement')).toThrow('not allowed');
   const other=create(root,'external');record(other,'external-merge',{squash_commit:merge,pre_merge_head:s.head_sha,pre_merge_base:s.base_sha,tree_digest:s.tree_digest,method:'squash',observed_at:new Date().toISOString()});expect(store.read(other).phase).toBe('merged');expect(store.read(other).admission).toBe('observed');expect(store.read(other).merge.external_merge?.approval_not_recorded).toBe(true);expect(store.read(other).merge.external_merge?.confirmed_deviation).toBe(false);
+});
+
+test('A7: a PR or same-SHA target change expires unconsumed go and refuses its consumption',()=>{
+  const root=repo('destination');git(root,'branch','release');
+  for(const [task,resources] of [['pr',{pr:18}],['target',{pr_base:'release'}]] as const){
+    const key=create(root,task),s=resource(key,root);mergeReady(key,s);record(key,'go',go(key,s));
+    record(key,'resource',{resources});expect(store.read(key).merge.owner_approval).toMatchObject({expired:true,expired_reason:'destination_changed'});
+    record(key,'observation',{kind:'merge_fact',source:'operator',data:{squash_commit:s.head_sha,pre_merge_head:s.head_sha,pre_merge_base:s.base_sha,tree_digest:s.tree_digest,method:'squash',observed_at:new Date().toISOString()}});
+    expect(()=>mutatePipeline(store,key,{op:'advance',to:'merged',state_version:store.read(key).state_version})).toThrow('Historical go');expect(store.read(key).merge.owner_approval?.consumed_at).toBeNull();
+  }
 });
 
 test('A8: notes and go do not refresh source ages; partial and failed refresh retain times',async()=>{
@@ -253,6 +272,56 @@ test('A6/A7: complete phase path uses current plan, typed cross review and all c
   expect(()=>advance('cleanup')).toThrow('checklist');
 });
 
+test('A6: only the highest implementation round qualifies the implementation gate',()=>{
+  const root=repo('current-attempt'),repository_id=taskRepository(root).repository_id,snapshot={host:hostname(),herdr_session:'observer-fixture',result:{panes:[]}};
+  const start=(task:string)=>{const receipt=newPipeline(store,{source_host:hostname(),repository_id,root,adopt_task:task,backfill:true,phase:'implement',note:'Implementation position is attested'});const key={source_host:hostname(),repository_id,task:receipt.task};resource(key,root);return key;};
+  const advance=(key:Key)=>mutatePipeline(store,key,{op:'advance',to:'cross-review',state_version:store.read(key).state_version});
+  const planned=start('planning-only');const review=persistedRequest(root,planned.task,'plan-review');result(review.request);record(planned,'request',{role:'plan-review'});ingestEvent(store,snapshot,{snapshot:true});
+  expect(projectedRuns(store.read(planned),observations(store)).map(r=>[r.role,r.result_state])).toEqual([['plan-review','validated']]);expect(()=>advance(planned)).toThrow('Validated result');
+  const key=start('superseded');const first=persistedRequest(root,key.task,'implement');result(first.request);record(key,'request',{role:'implement'});const second=persistedRequest(root,key.task,'implement',2);record(key,'request',{role:'implement'});ingestEvent(store,snapshot,{snapshot:true});
+  expect(projectedRuns(store.read(key),observations(store)).map(r=>[r.round,r.result_state])).toEqual([[1,'validated'],[2,'missing']]);expect(()=>advance(key)).toThrow('Validated result');expect(store.read(key).phase).toBe('implement');
+  result(second.request);ingestEvent(store,snapshot,{snapshot:true});advance(key);expect(store.read(key).phase).toBe('cross-review');expect(store.read(key).admission).toBe('gate_qualified');
+});
+
+// The source channel pauses the advance writer after its preflight reads.
+// A second writer commits an invalidating result before the advance takes the lock.
+test('A2: a result invalidated during advance preflight cannot qualify the gate',async()=>{
+  const root=repo('observation-race'),repository_id=taskRepository(root).repository_id;const [arm,paused,resume,channel]=['arm','paused','resume','pause-channel.ts'].map(name=>join(scratch,name));
+  writeFileSync(channel,`import {existsSync,writeFileSync} from 'fs';process.env.REPO_HARNESS_PIPELINES_SOURCE_HOST='source-a';const {validateOnSource}=await import(${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/authority.ts'))});const query=await Bun.stdin.json();if(query.kind==='subject'&&existsSync(${JSON.stringify(arm)})){writeFileSync(${JSON.stringify(paused)},'paused');while(!existsSync(${JSON.stringify(resume)}))await Bun.sleep(5);}console.log(JSON.stringify(validateOnSource(query)));`);
+  const channelEnv={...env,REPO_HARNESS_PIPELINES_SOURCE_HOST:'mini',REPO_HARNESS_PIPELINES_SOURCE_COMMANDS:JSON.stringify({'source-a':[process.execPath,channel]})};
+  const source=new PipelineStore({env:channelEnv});
+  try{
+    const receipt=newPipeline(source,{source_host:'source-a',repository_id,root,adopt_task:'race',backfill:true,phase:'implement',note:'Implementation position is attested'});const key={source_host:'source-a',repository_id,task:receipt.task};
+    const write=(kind:string,payload:unknown)=>mutatePipeline(source,key,{op:'record',kind,payload,state_version:source.read(key).state_version});
+    write('resource',{resources:{branch:'feature'},subject:subject(root),contract_path:'plan.md',base_ref:'main'});
+    const {request}=persistedRequest(root,key.task,'implement');result(request);write('request',{role:'implement'});
+    ingestEvent(source,{host:'source-a',herdr_session:'observer-fixture',result:{panes:[]}},{snapshot:true});expect(projectedRuns(source.read(key),observations(source)).map(r=>r.result_state)).toEqual(['validated']);
+    writeFileSync(arm,'armed');
+    const script=worker(`try{console.log(JSON.stringify(mutatePipeline(s,${JSON.stringify(key)},{op:'advance',to:'cross-review',state_version:${source.read(key).state_version}})))}catch(e){console.log(JSON.stringify({code:e.code}));process.exitCode=e.exit;}`);
+    let exited=false;const running=child(script,[],channelEnv).finally(()=>{exited=true;});
+    while(!existsSync(paused)&&!exited)await Bun.sleep(5);expect(existsSync(paused)).toBe(true);
+    writeSessionArtifact(request.result_ref,{request_id:randomUUID(),context_sha256:request.context_sha256,value:'done'},false);
+    ingestEvent(source,{source:'herdr',agent_status:'done',...key,role:'implement',round:1,request_id:request.request_id,context_sha256:request.context_sha256},{delivery_id:'invalidate'});
+    expect(observations(source).filter(o=>o.kind==='result').at(-1)?.payload.result_state).toBe('invalid');
+    writeFileSync(resume,'resume');const outcome=await running;
+    expect(outcome.out).toContain('gate_not_satisfied');expect(outcome.code).toBe(5);expect(source.read(key).phase).toBe('implement');
+  }finally{source.close();}
+});
+
+// One first opener pauses after its unlocked reads. Another process initializes the store first.
+test('A2: concurrent first opens of an empty store both accept protocol 2',async()=>{
+  const freshEnv={...env,REPO_HARNESS_PIPELINES_DB:join(scratch,'fresh','ledger.db')};const [paused,resume,script]=['first-paused','first-resume','first-open.ts'].map(name=>join(scratch,name));
+  writeFileSync(script,`import {PipelineStore} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/store.ts'))};import {existsSync,writeFileSync} from 'fs';\ntry{const s=new PipelineStore({boundary:()=>{writeFileSync(${JSON.stringify(paused)},'paused');while(!existsSync(${JSON.stringify(resume)}))Bun.sleepSync(5);}});console.log(JSON.stringify(s.db.query('SELECT protocol FROM metadata').get()));s.close();}catch(e){console.log(JSON.stringify({code:e.code,message:e.message}));process.exitCode=e.exit;}`);
+  let exited=false;const running=child(script,[],freshEnv).finally(()=>{exited=true;});
+  while(!existsSync(paused)&&!exited)await Bun.sleep(5);expect(existsSync(paused)).toBe(true);
+  const winner=new PipelineStore({env:freshEnv});
+  try{
+    writeFileSync(resume,'resume');const outcome=await running;
+    expect(JSON.parse(outcome.out)).toEqual({protocol:2});expect(outcome.code).toBe(0);
+    expect(winner.db.query('PRAGMA user_version').get()).toEqual({user_version:2});expect(winner.db.query('SELECT count(*) n FROM metadata').get()).toEqual({n:1});
+  }finally{winner.close();}
+});
+
 test('A6: base, plan and environment movement expire unconsumed evidence and approval',()=>{
   const root=repo('movement'),key=create(root),s=resource(key,root);const report=execute(root,'subject');record(key,'evidence',{evidence:evidence(root,s,'a','pass',report.path),contract_path:'plan.md'});mergeReady(key,s);record(key,'go',go(key,s));
   git(root,'commit','--allow-empty','-qm','base movement');resource(key,root);expect(store.read(key).evidence[0].current).toBe(false);expect(store.read(key).merge.owner_approval?.expired).toBe(true);
@@ -315,4 +384,7 @@ test('F2: matching remote subject and digest cannot hide changed evidence identi
 test('ungated blocked return and rework remain observed rather than qualified',()=>{
   const root=repo('admission'),key=create(root);mutatePipeline(store,key,{op:'advance',to:'blocked',reason:'Observed wait',state_version:1});mutatePipeline(store,key,{op:'advance',to:'plan',state_version:2});expect(store.read(key).admission).toBe('observed');
   const imported=newPipeline(store,{source_host:hostname(),repository_id:key.repository_id,root,adopt_task:'rework',backfill:true,phase:'cross-review',note:'Historical position is attested'});const retry={...key,task:imported.task};mutatePipeline(store,retry,{op:'advance',to:'implement',reason:'Recorded rework',state_version:1});expect(store.read(retry).admission).toBe('observed');expect(store.read(retry).counters.fix_loops).toBe(1);
+  const twice=create(root,'blocked-twice');const block=(reason:string)=>mutatePipeline(store,twice,{op:'advance',to:'blocked',reason,state_version:store.read(twice).state_version});
+  block('First wait');block('Second wait');expect(store.read(twice).blocked).toMatchObject({reason:'Second wait',return_to:'plan'});
+  mutatePipeline(store,twice,{op:'advance',to:'plan',state_version:store.read(twice).state_version});expect(store.read(twice).phase).toBe('plan');expect(store.read(twice).blocked).toBeNull();
 });
