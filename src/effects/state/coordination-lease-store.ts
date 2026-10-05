@@ -141,15 +141,15 @@ const defaultBacklogLockReclaimReporter: BacklogLockReclaimReporter = (lockPath)
  * worktrees.
  *
  * `sprint-backlog.sh`'s `acquire_backlog_lock` still takes this same directory
- * for `start-task`, and it reclaims a stale *empty* one -- an mtime older than
- * the threshold plus a successful `rmdir`. This side must reclaim the same
- * shape, or the two callers of one directory disagree about whether a dead
- * holder's lock is recoverable: a crash under the shell would strand every
- * later TypeScript caller, and the reverse. `reclaimStaleOwner` (a dead-PID
- * owner file, which is the shape *this* primitive leaves behind) is already on
- * by default; `reclaimStaleEmptyDirectory` is what brings the shell's shape
- * with it. The report reuses the shell's exact wording so an operator reading
- * either path's stderr sees one message.
+ * for `start-task`, and publishes the same owner file this primitive writes, so
+ * a live shell holder is protected by PID liveness and a killed one is
+ * reclaimed through `reclaimStaleOwner`, which is on by default. Both sides
+ * also reclaim a stale *empty* directory -- a creator that stopped between
+ * `mkdir` and publication -- and a creator resumed after that reclaim fails
+ * the single-owner check before it runs. `reclaimStaleEmptyDirectory` brings
+ * that shape to this side, so the two callers of one directory agree about
+ * which locks are recoverable. The report reuses the shell's exact wording so
+ * an operator reading either path's stderr sees one message.
  */
 export function withBacklogLock<T>(
   cwd: string,
