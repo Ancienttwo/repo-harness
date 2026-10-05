@@ -356,6 +356,9 @@ function immutablePath(repoRoot: string, kind: ImmutableStoreKind, valueDigest: 
   return join(storePath(repoRoot, kind, create), `${digest(valueDigest, `${kind} digest`).slice('sha256:'.length)}.json`);
 }
 
+/** The private name persistImmutable stages under before link publication. */
+const STAGED_IMMUTABLE = /^\.[0-9a-f]{64}\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/u;
+
 function persistImmutable(repoRoot: string, kind: ImmutableStoreKind, valueDigest: string, canonical: string): void {
   const target = immutablePath(repoRoot, kind, valueDigest, true);
   const directory = dirname(target);
@@ -831,6 +834,8 @@ function launchClaimFor(repoRoot: string, id: string, intentSha: string): Delega
     throw error;
   }
   for (const entry of readdirSync(directory).sort()) {
+    // A concurrent or interrupted writer's staging file is not a committed claim.
+    if (STAGED_IMMUTABLE.test(entry) && lstatSync(join(directory, entry)).isFile()) continue;
     if (!/^[0-9a-f]{64}\.json$/u.test(entry)) fail('delegated_run_unsafe_path', 'launch claim store contains unexpected entry');
     const raw = readRegular(join(directory, entry), 'launch claim');
     let claim: DelegatedRunLaunchClaimV1;
