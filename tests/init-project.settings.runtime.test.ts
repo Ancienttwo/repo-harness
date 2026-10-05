@@ -42,7 +42,7 @@ describe("init-project settings runtime", () => {
       expect(readFileSync(join(cwd, ".codex/hooks.json"), "utf-8")).toBe(codexConfig);
       expect(readFileSync(join(cwd, ".ai/hooks/custom-owner-hook.sh"), "utf-8")).toBe(customHook);
       expect(existsSync(join(cwd, ".ai/hooks/README.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/session-start-context.sh"))).toBe(false);
