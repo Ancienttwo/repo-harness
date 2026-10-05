@@ -914,6 +914,56 @@ describe('claim verbs', () => {
     expect(existsSync(leaseDirectory(repo, taskId))).toBe(true);
   });
 
+  test('release clears a lease that still holds the temporary file of a terminated owner write', () => {
+    // A writer terminated between its temporary file and the rename leaves that
+    // file beside a valid owner record. Release must still make the task
+    // available, and never leave an ownerless directory that no verb can clear.
+    const repo = repoWithSprint();
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+    writeFileSync(join(leaseDirectory(repo, taskId), `.${LEASE_OWNER_FILE_NAME}.tmp-99999-1`), '{"partial"');
+
+    const released = releaseSprintCommand({ claimId: 'claim-1' }, deps(repo));
+    expect(released.stderr).toBe('');
+    expect(released.exitCode).toBe(0);
+    expect(readLease(repo, taskId).classification).toBe('available');
+    expect(readdirSync(join(coordinationRoot(repo), 'retired-leases'))).toEqual([]);
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2'])).exitCode).toBe(0);
+  });
+
+  test('a release killed after the owner record left the lease directory leaves the task claimable', () => {
+    if (process.platform === 'win32') return;
+    const repo = repoWithSprint();
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+
+    // A real process, killed with SIGKILL at the first directory removal for
+    // this task: the owner record is no longer in the lease directory, and the
+    // directory is not removed yet. No catch or finally runs in that process.
+    const childPath = join(repo, 'release-crash-child.ts');
+    writeFileSync(childPath, [
+      "import * as fs from 'fs';",
+      "import { spyOn } from 'bun:test';",
+      `const { processSprintDependencies, releaseSprintCommand } = await import(${JSON.stringify(join(REPO_ROOT, 'src/effects/state/coordination-sprint.ts'))});`,
+      'const realRmdir = fs.rmdirSync;',
+      "spyOn(fs, 'rmdirSync').mockImplementation(((path, ...rest) => {",
+      `  if (String(path).includes(${JSON.stringify(taskId)})) process.kill(process.pid, 'SIGKILL');`,
+      '  return realRmdir(path, ...rest);',
+      '}) as typeof fs.rmdirSync);',
+      `releaseSprintCommand({ claimId: 'claim-1' }, processSprintDependencies(${JSON.stringify(repo)}));`,
+    ].join('\n'));
+    const child = spawnSync(process.execPath, [childPath], { cwd: repo, encoding: 'utf-8' });
+    expect(child.signal).toBe('SIGKILL');
+
+    // The killed holder's task lock is reclaimed by PID; the lease itself must
+    // need no operator: either a named record or no live lease at all.
+    const reconciled = JSON.parse(
+      reconcileSprintCommand({ taskId, targetRef: 'main' }, deps(repo)).stdout,
+    ) as { classification: string; action: string };
+    expect(reconciled.classification).toBe('available');
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2'])).exitCode).toBe(0);
+  }, 60_000);
+
   test('reconcile refuses reviewing leases instead of bypassing publication reconciliation', () => {
     const repo = repoWithSprint();
     const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;

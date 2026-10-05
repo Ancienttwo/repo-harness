@@ -96,6 +96,9 @@ completing --abort-completion--> bound
   无 publication 的 lease 永久锁在 `completing`。
 - `released` 先durably 写盘再删目录,所以 release 中途崩溃留下的是一个具名可
   reconcile 的状态,而不是一个歧义状态。
+- 删目录是一次 rename:lease 目录整个移到 `coordination/v1/retired-leases/`,再清理。
+  live 路径只有两种状态:带 owner record 的目录,或者不存在。崩溃或残留的临时
+  owner 文件都不会在 `leases/` 下留下无 owner record 的 `unknown` 目录。
 
 fencing 是 `claim_id` + `generation`。`claim_id` 说现在谁拥有;`generation` 说
 之前有过几个拥有者 —— 这是抢占链需要的,也是陈旧读者无法靠重新 mint 一个 uuid

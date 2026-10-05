@@ -4,6 +4,7 @@
  *
  * ```
  * leases/<task-id>/owner.json
+ * retired-leases/<task-id>-<uuid>/   (a removed lease, until its cleanup ends)
  * locks/tasks/<task-id>.lock/
  * locks/backlog.lock/
  * ```
@@ -26,6 +27,7 @@
  * empty record, and a symlinked lease directory or record are all `unknown`,
  * and `unknown` is never silently deleted -- `removeLease` refuses to touch it.
  */
+import { randomUUID } from 'crypto';
 import {
   lstatSync,
   mkdirSync,
@@ -51,6 +53,9 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
 export const COORDINATION_BACKLOG_LOCK_RELATIVE_PATH = `${COORDINATION_ROOT_RELATIVE_PATH}/locks/backlog.lock`;
 export const LEASE_OWNER_FILE_NAME = 'owner.json';
+const LEASE_OWNER_TEMP_PREFIX = `.${LEASE_OWNER_FILE_NAME}.tmp-`;
+/** Sibling of `leases/`, so no lease reader ever enumerates a removed lease. */
+const RETIRED_LEASES_DIRECTORY_NAME = 'retired-leases';
 
 /** Why a lease could not be classified into a lifecycle state. */
 export type LeaseUnknownReason =
@@ -195,7 +200,7 @@ export function writeLeaseOwnerDurably(
   }
   const directory = leaseDirectory(cwd, taskId);
   const target = join(directory, LEASE_OWNER_FILE_NAME);
-  const temp = join(directory, `.${LEASE_OWNER_FILE_NAME}.tmp-${process.pid}-${Date.now()}`);
+  const temp = join(directory, `${LEASE_OWNER_TEMP_PREFIX}${process.pid}-${Date.now()}`);
   try {
     writeFileDurably(temp, serializeLeaseOwnerRecord(record));
     renameSync(temp, target);
@@ -347,10 +352,25 @@ export function removeLease(cwd: string, taskId: string, expectedClaimId: string
       `refusing to remove lease ${taskId}: owned by ${read.record.claim_id}, not ${expectedClaimId}`,
     );
   }
+  // One rename takes the lease off the live path. Deleting the record first
+  // and the directory second left a crash window, and a terminated owner
+  // write's temporary file made the rmdir fail: both left an ownerless lease
+  // that `claim` refuses and `reconcile` must not clear.
   const directory = leaseDirectory(cwd, taskId);
-  unlinkSync(join(directory, LEASE_OWNER_FILE_NAME));
-  rmdirSync(directory);
+  const retiredRoot = join(coordinationRoot(cwd), RETIRED_LEASES_DIRECTORY_NAME);
+  mkdirSync(retiredRoot, { recursive: true, mode: 0o700 });
+  const retired = join(retiredRoot, `${taskId}-${randomUUID()}`);
+  renameSync(directory, retired);
   syncDirectoryDurably(dirname(directory));
+
+  // Cleanup only. The retired copy is outside every lease read, so a crash
+  // here blocks nothing; an entry this store did not write is left in place.
+  for (const entry of readdirSync(retired)) {
+    if (entry === LEASE_OWNER_FILE_NAME || entry.startsWith(LEASE_OWNER_TEMP_PREFIX)) {
+      unlinkSync(join(retired, entry));
+    }
+  }
+  if (readdirSync(retired).length === 0) rmdirSync(retired);
 }
 
 /**
