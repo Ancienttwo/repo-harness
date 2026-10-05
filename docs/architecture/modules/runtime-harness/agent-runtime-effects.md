@@ -125,10 +125,13 @@ snapshot 已過期或空掉就是 no-op,仍算一次已送達的 wake。
 `wakes/<sha256(engineer\0binding\0generation)>.json` 是該 Binding 的耐久 ledger:
 上一次消費的 offer 投影 + 唯一的 pending wake 指針 + coalescing 窗口。
 只有 empty→eligible 這個確切轉換會 arm wake;同一個 snapshot 重複觀測不寫盤;
-任何換到另一個仍有 eligible work 的 snapshot 都算 due——包括 A→B 這種本來就 eligible 的變化——
-所以最新 revision 不會丟;更新的 snapshot 只在舊 wake 尚未 start 時取代它
+任何換到另一個仍有 eligible work 的 snapshot 都算 due——包括 A→B 這種本來就 eligible 的變化;
+更新的 snapshot 只在舊 wake 尚未 start 時取代它
 (繼承原本的 `requested_at`/`coalesce_until`,所以窗口有界、不會被連續變更推著走);
 已 start 的 wake 不被取代,也不會開第二個並行 wake。
+wake 執行期間記錄的 snapshot 保持未消費:ledger 不會把它寫成已觀察,
+只有 offer 權威在該 wake 結束後再次記錄它,它才會 wake——
+這是 `engineer runtime-effect record-offers` 呼叫端的責任。
 被取代的 intent 會在自己的鏈上寫入終態 `superseded`(只能從 `intent_persisted` 到達),
 不是留在 `intent_persisted` 讓 ledger 指針去解釋——因此每個 Binding 任何時刻只有一個非終態 wake,
 Board projection 不必讀 ledger 就與指針一致,重啟一個 superseded wake 是明確報錯而不是靜默無動作。
