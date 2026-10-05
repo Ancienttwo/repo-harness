@@ -131,6 +131,11 @@ describe('issue #279 automation controller core', () => {
     expect(() => nextAutomationControllerState('executing', 'stop')).toThrow('cannot stop');
   });
 
+  test('an empty acquisition completes only after its persisted acquisition boundary', () => {
+    expect(nextAutomationControllerState('acquiring', 'no_offer')).toBe('completed');
+    expect(() => nextAutomationControllerState('observing', 'no_offer')).toThrow('cannot no_offer from observing');
+  });
+
   test('folding rejects a stale or forked event chain', () => {
     const definition = run();
     const first = foldAutomationControllerCurrent(definition, null, event('start', 1, null));

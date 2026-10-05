@@ -59,7 +59,7 @@ function fixture(populated = true) {
   if (populated) {
     mintProgramAuthorization({repo_root:root,authorization:grant,env});
     publishAutomationBudget({repo_root:root,budget,env});
-    startAutomationControllerRun({repo_root:root,run,idempotency_key:'start',observed_at:at});
+    startAutomationControllerRun({repo_root:root,run,idempotency_key:'start'});
   }
   return {base,root,home,id,env,grant,budget,run,input:{repository_id:id,env}};
 }

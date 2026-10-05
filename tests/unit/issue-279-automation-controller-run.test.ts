@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash } from 'crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { createHash, randomUUID } from 'crypto';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -32,7 +32,7 @@ function setup() {
   const run = buildAutomationControllerRun({ run_id: RUN_ID, repository_id: principal.repository_id,
     principal: { authorization_id: principal.auth_subject, engineer_id: principal.engineer_id, binding_id: principal.binding_id, binding_generation: 1, engineer_contract_revision: SHA, authorization_revision: 7 }, budget_sha256: BUDGET_SHA256,
     policy: POLICY, protected_paths: ['plans', 'tasks'], created_at: '2026-09-04T00:00:00.000Z' });
-  startAutomationControllerRun({ repo_root: root, run, idempotency_key: 'start', observed_at: run.created_at }); return { root, run };
+  startAutomationControllerRun({ repo_root: root, run, idempotency_key: 'start' }); return { root, run };
 }
 
 function dependencies(acquire: unknown, dispatch: unknown = null) {
@@ -87,30 +87,58 @@ function publishedBudget(root: string) {
   return budget;
 }
 
+/** Runs `body` against a real published budget, an isolated grant home and the budget store's own test clock. */
+function withPublishedBudget(body: (root: string, budget: ReturnType<typeof publishedBudget>) => void): void {
+  const root = mkdtempSync(join(tmpdir(), 'controller-budget-')); spawnSync('git', ['init', '-q'], { cwd: root });
+  const home = mkdtempSync(join(tmpdir(), 'controller-budget-home-'));
+  const previous = { home: process.env.REPO_HARNESS_HOME, seam: process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] };
+  process.env.REPO_HARNESS_HOME = home; process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = '1';
+  let storeMs = Date.parse('2026-09-04T00:00:00.000Z');
+  __setAutomationClockForTests(() => new Date(storeMs += 1_000));
+  try { body(root, publishedBudget(root)); } finally {
+    __resetAutomationClockForTests();
+    if (previous.home === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = previous.home;
+    if (previous.seam === undefined) delete process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV]; else process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = previous.seam;
+    rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/** Budget read, reservation and usage stay on the real store; only the Engineer, Lease and dispatch effects are external. */
+function realBudgetDependencies(root: string, acquire: unknown, dispatch: unknown, usages: AutomationUsageCommitV1[]) {
+  const { readBudget: _readBudget, reserveBudget: _reserveBudget, appendUsage: _appendUsage, ...external } = dependencies(acquire, dispatch);
+  return { ...external, readDispatchAuthority: () => dispatchAuthority(root) as never,
+    appendUsage: (input: Parameters<typeof appendAutomationUsage>[0]) => { const commit = appendAutomationUsage(input); usages.push(commit); return commit; } };
+}
+
+const controllerRoot = (root: string): string => join(root, '.git', 'repo-harness', 'automation-controllers', 'v1');
+
+/** Operations of the persisted controller chain, oldest first. */
+function chainOperations(root: string, runId: string): string[] {
+  const store = controllerRoot(root);
+  let digest: string | null = (JSON.parse(readFileSync(join(store, 'runs', runId, 'current.json'), 'utf8')) as { current_event_sha256: string }).current_event_sha256;
+  const operations: string[] = [];
+  while (digest !== null) {
+    const event = JSON.parse(readFileSync(join(store, 'events', `${digest.slice('sha256:'.length)}.json`), 'utf8')) as { operation: string; previous_event_sha256: string | null };
+    operations.unshift(event.operation); digest = event.previous_event_sha256;
+  }
+  return operations;
+}
+
+const start = (root: string, runId: string, deps: object, policy = POLICY) => startBoundedAutomationController({ repo_root: root, automation_run_id: runId, authorization_id: principal.auth_subject, idempotency_key: 'start', policy, protected_paths: ['plans', 'tasks'] }, deps);
+
 describe('issue #279 bounded controller orchestration', () => {
   test('starts from a real published budget and charges each usage to its exact controller event', () => {
-    const root = mkdtempSync(join(tmpdir(), 'controller-budget-')); spawnSync('git', ['init', '-q'], { cwd: root });
-    const home = mkdtempSync(join(tmpdir(), 'controller-budget-home-'));
-    const previous = { home: process.env.REPO_HARNESS_HOME, seam: process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] };
-    process.env.REPO_HARNESS_HOME = home; process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = '1';
-    let storeMs = Date.parse('2026-09-04T00:00:00.000Z');
-    __setAutomationClockForTests(() => new Date(storeMs += 1_000));
-    try {
-      const budget = publishedBudget(root);
+    withPublishedBudget((root, budget) => {
       const runId = budget.automation_run_id;
-      const acquisition = acquired(root);
       const usages: AutomationUsageCommitV1[] = [];
-      // Budget read, reservation and usage stay on the real store; only the Engineer, Lease and dispatch effects are external.
-      const { readBudget: _readBudget, reserveBudget: _reserveBudget, appendUsage: _appendUsage, ...external } = dependencies(acquisition, { current: { state: 'completed', observation_sha256: SHA } });
-      const deps = { ...external, readDispatchAuthority: () => dispatchAuthority(root) as never,
-        appendUsage: (input: Parameters<typeof appendAutomationUsage>[0]) => { const commit = appendAutomationUsage(input); usages.push(commit); return commit; } };
+      const deps = realBudgetDependencies(root, acquired(root), { current: { state: 'completed', observation_sha256: SHA } }, usages);
 
-      const started = startBoundedAutomationController({ repo_root: root, automation_run_id: runId, authorization_id: principal.auth_subject, idempotency_key: 'start', policy: POLICY, protected_paths: ['plans', 'tasks'] }, deps);
+      const started = start(root, runId, deps);
       expect({ run_id: started.run.run_id, budget_sha256: started.run.budget_sha256, state: started.current.state }).toEqual({ run_id: runId, budget_sha256: budget.budget_sha256, state: 'created' });
       expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current.state).toBe('executing');
       expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2', dispatch_id: SHA }, deps).current.state).toBe('observing');
 
-      const events = join(root, '.git', 'repo-harness', 'automation-controllers', 'v1', 'events');
+      const events = join(controllerRoot(root), 'events');
       const charged = usages.map((usage) => usage.event.evidence_refs.map((ref) => {
         const event = JSON.parse(readFileSync(join(events, `${ref.sha256}.json`), 'utf8')) as { run_id: string; operation: string; event_sha256: string };
         return { ref: ref.ref, run_id: event.run_id, operation: event.operation, exact: event.event_sha256 === `sha256:${ref.sha256}` };
@@ -121,12 +149,84 @@ describe('issue #279 bounded controller orchestration', () => {
       ]);
       const status = readAutomationBudgetStatus(root, runId);
       expect({ events: status.current.event_count, open: status.current.open_reservation_sha256s, drift: status.drift }).toEqual({ events: 2, open: [], drift: 'none' });
-    } finally {
-      __resetAutomationClockForTests();
-      if (previous.home === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = previous.home;
-      if (previous.seam === undefined) delete process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV]; else process.env[AUTOMATION_TEST_CLOCK_SEAM_ENV] = previous.seam;
-      rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true });
-    }
+    });
+  });
+
+  test('an empty work queue settles the persisted acquisition boundary as completed after one charge', () => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      const usages: AutomationUsageCommitV1[] = []; let acquisitions = 0;
+      const deps = { ...realBudgetDependencies(root, null, null, usages), acquireNext: () => { acquisitions += 1; return { ok: false, error: 'engineer_no_eligible_offer', message: 'none' } as never; } };
+      start(root, runId, deps);
+
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current).toMatchObject({ state: 'completed', attention_owner: 'none', blocker: null });
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2' }, deps).current.state).toBe('completed');
+      expect(chainOperations(root, runId)).toEqual(['start', 'observe', 'begin_acquire', 'no_offer']);
+      expect({ acquisitions, outcomes: usages.map((usage) => usage.event.outcome) }).toEqual({ acquisitions: 1, outcomes: ['no_progress'] });
+      const status = readAutomationBudgetStatus(root, runId);
+      expect({ events: status.current.event_count, open: status.current.open_reservation_sha256s, drift: status.drift }).toEqual({ events: 1, open: [], drift: 'none' });
+    });
+  });
+
+  test('a later retry of the same start reuses the persisted creation time and start event', () => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      let now = Date.parse('2026-09-04T00:00:01.000Z');
+      const deps = { ...realBudgetDependencies(root, null, null, []), now: () => new Date(now) };
+      const first = start(root, runId, deps);
+      const definition = join(controllerRoot(root), 'runs', runId, 'run.json'); const bytes = readFileSync(definition, 'utf8');
+
+      now += 60_000;
+      const retry = start(root, runId, deps);
+      expect({ created_at: retry.run.created_at, run: retry.run.run_sha256, event: retry.event.event_sha256, current: retry.current.current_sha256 })
+        .toEqual({ created_at: first.run.created_at, run: first.run.run_sha256, event: first.event.event_sha256, current: first.current.current_sha256 });
+      expect(readFileSync(definition, 'utf8')).toBe(bytes);
+      expect(chainOperations(root, runId)).toEqual(['start']);
+      expect(() => start(root, runId, deps, { ...POLICY, maximum_steps_per_invocation: 4 })).toThrow('names different immutable bytes');
+    });
+  });
+
+  test.each([
+    ['step', { ...POLICY, maximum_steps_per_invocation: 2 }, 0],
+    ['duration', { ...POLICY, maximum_duration_ms: 100 }, 200],
+  ] as const)('a completed dispatch that ends at the %s bound settles on the next step without a second dispatch', (_bound, policy, dispatchMs) => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      const usages: AutomationUsageCommitV1[] = []; let now = Date.parse('2026-09-04T00:00:01.000Z'); let dispatches = 0; let offer: unknown = acquired(root);
+      const dispatched = { current: { state: 'completed', observation_sha256: SHA } };
+      const deps = { ...realBudgetDependencies(root, null, null, usages), now: () => new Date(now), acquireNext: () => offer as never,
+        dispatch: () => { dispatches += 1; now += dispatchMs; return dispatched as never; } };
+      start(root, runId, deps, policy);
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current.state).toBe('executing');
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2', dispatch_id: SHA }, deps).current.state).toBe('waiting_for_evidence');
+
+      offer = { ok: false, error: 'engineer_no_eligible_offer', message: 'none' };
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-3' }, deps).current).toMatchObject({ state: 'completed', attention_owner: 'none', blocker: null });
+      expect(chainOperations(root, runId)).toEqual(['start', 'observe', 'begin_acquire', 'acquired', 'begin_dispatch', 'dispatch_started', 'outcome_observed', 'begin_acquire', 'no_offer']);
+      expect({ dispatches, outcomes: usages.map((usage) => usage.event.outcome) }).toEqual({ dispatches: 1, outcomes: ['progress', 'progress', 'no_progress'] });
+    });
+  });
+
+  test('an unpublished event temporary does not block the controller, but other event entries still fail closed', () => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      const deps = realBudgetDependencies(root, acquired(root), { current: { state: 'completed', observation_sha256: SHA } }, []);
+      start(root, runId, deps);
+      const events = join(controllerRoot(root), 'events');
+      const published = readFileSync(join(events, readdirSync(events)[0]!));
+      // The store writer stages `.<pid>.<uuid>.tmp` beside its target; an in-flight or crashed write leaves partial bytes there.
+      const staged = join(events, `.${process.pid}.${randomUUID()}.tmp`); const partial = published.subarray(0, published.length >> 1);
+      writeFileSync(staged, partial);
+
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current.state).toBe('executing');
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2', dispatch_id: SHA }, deps).current.state).toBe('observing');
+      expect(readFileSync(staged).equals(partial)).toBe(true);
+
+      const linked = join(events, `.${process.pid}.${randomUUID()}.tmp`); symlinkSync(staged, linked);
+      expect(() => stopAutomationController(root, runId, 'stop', deps)).toThrow('unexpected controller event entry');
+      rmSync(linked); writeFileSync(join(events, 'foreign.json'), '{}\n');
+      expect(() => stopAutomationController(root, runId, 'stop', deps)).toThrow('unexpected controller event entry');
+    });
   });
 
   test('persists acquisition before consuming a real WorkEnvelope and dispatches only through the fenced dependency', () => {
