@@ -435,7 +435,7 @@ repo-harness mcp uninstall --repo . --services-stopped
 repo-harness mcp uninstall --repo . --target codex
 ```
 
-`--target chatgpt` cleans account-level `mcp.local.json`, `mcp.tokens.json`, `mcp.oauth.json` and `mcp.oauth-tokens.json` under `REPO_HARNESS_HOME` (default `~/.repo-harness`). The shared repository registry is restored only for setup changes with a restoration record. Other registrations and user changes are preserved; unresolved ownership yields `partial` and exit 1. Credentials are deleted without making secret backups.
+`--target chatgpt` cleans account-level `mcp.local.json`, `mcp.tokens.json`, `mcp.oauth.json`, `mcp.oauth-doctor-client.json` and `mcp.oauth-tokens.json` under `REPO_HARNESS_HOME` (default `~/.repo-harness`). The shared repository registry is restored only for setup changes with a restoration record. Other registrations and user changes are preserved; unresolved ownership yields `partial` and exit 1. Credentials are deleted without making secret backups.
 
 `--target codex` restores the project `.codex/config.toml` MCP fragment recorded by setup. Unrelated TOML settings remain. Existing registrations without a receipt are preserved and reported, including old `.bak` files which are not treated as restoration authority. An interrupted setup can be previewed and recovered with `--recover-interrupted --dry-run`, then `--recover-interrupted`.
 

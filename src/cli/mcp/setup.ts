@@ -1220,7 +1220,9 @@ function jsonFromMcpResponse(text: string): Record<string, unknown> | null {
 
 // Thrown when the probed server rejects the reused diagnostic registration
 // with invalid_client (store reset, or registration past the server's TTL).
-class StaleProbeRegistrationError extends Error {}
+class StaleProbeRegistrationError extends Error {
+  constructor() { super('the stored diagnostic OAuth client registration is unknown to the probed server'); }
+}
 
 export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }): Promise<McpSetupResult> {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
