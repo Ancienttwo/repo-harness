@@ -134,9 +134,10 @@ function sessionDescriptorFixture(id: string, parent: string | null = null, runt
 // preview before it spawns anything, so a fake oracle must answer that probe:
 // accepting it (exit 0) or rejecting the fork-only `--write-session` flag the way
 // upstream Oracle's argument parser does.
-function writeFakeOracle(path: string, opts: { help?: string; sessionLine?: string; body?: string[]; rejectWriteSession?: boolean } = {}): string {
+function writeFakeOracle(path: string, opts: { help?: string; sessionLine?: string; body?: string[]; rejectWriteSession?: boolean; callLog?: string } = {}): string {
   writeFileSync(path, [
     '#!/bin/sh',
+    ...(opts.callLog ? [`printf '%s\\n' "$1" >> '${opts.callLog}'`] : []),
     'case "$1" in',
     '  --version) printf "%s\\n" "0.20.0"; exit 0;;',
     `  --help|--debug-help) printf "%s\\n" "${opts.help ?? FAKE_ORACLE_HELP}"; exit 0;;`,
@@ -1564,6 +1565,32 @@ describe('chatgpt browser command', () => {
         ]);
         expect(followup.status).not.toBe(0);
         expect(followup.stderr).toContain('with status "failed"');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle consult runs the --version probe once before launch', async () => {
+    if (process.platform === 'win32') return;
+    await withAsyncRepo(async (repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-version-probe-count-'));
+      try {
+        const callLog = join(binDir, 'calls.log');
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), { callLog });
+        await runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--oracle-bin',
+          oraclePath,
+          '--prompt',
+          'Count the version probes.',
+        ]);
+        const calls = readFileSync(callLog, 'utf8').trim().split('\n');
+        expect(calls.filter((call) => call === '--version')).toHaveLength(1);
+        // The runtime-flag probe and the real consult both start with `--engine`.
+        expect(calls.filter((call) => call === '--engine')).toHaveLength(2);
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
