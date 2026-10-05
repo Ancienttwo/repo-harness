@@ -734,6 +734,11 @@ process.stdin.on('data',chunk=>{input+=chunk.toString();if(!/[\\r\\n]/.test(inpu
   writeFileSync(wrappedHerdr, `#!${process.execPath}
 import {existsSync,readFileSync,writeFileSync,renameSync} from 'fs';import {spawnSync} from 'child_process';
 const args=process.argv.slice(2);
+// Polling uses agent get only. History and cleanup first validate pane identity.
+if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('MISSED_WORKING')&&args[2]==='pane'&&args[3]==='get'){
+ const prefix=${JSON.stringify(missedWorking)};
+ if(existsSync(prefix+'.baseline')&&!existsSync(prefix+'.polling-ended'))writeFileSync(prefix+'.polling-ended',String(Date.now()));
+}
 if(args[2]==='agent' && args[3]==='prompt' && readFileSync(${JSON.stringify(goalPath)},'utf8').includes('STARTUP_WORKING')){
  const queried=spawnSync(${JSON.stringify(herdr)},[...args.slice(0,2),'agent','get',args[4]],{env:process.env,encoding:'utf8'});
  const agent=JSON.parse(queried.stdout).result.agent;
@@ -759,7 +764,7 @@ if(readFileSync(${JSON.stringify(goalPath)},'utf8').includes('MISSED_WORKING')){
    writeFileSync(prefix+'.baseline',JSON.stringify(current));
    const deadline=Date.now()+8000;
    while(!existsSync(prefix+'.complete')){if(Date.now()>=deadline)throw new Error('fixture missed working deadline');await Bun.sleep(10);}
-  }else if(current.agent_status==='idle'&&current.state_change_seq>JSON.parse(readFileSync(prefix+'.baseline','utf8')).state_change_seq)writeFileSync(prefix+'.settled',JSON.stringify(current));
+  }else if(!existsSync(prefix+'.polling-ended')&&current.agent_status==='idle'&&current.state_change_seq>JSON.parse(readFileSync(prefix+'.baseline','utf8')).state_change_seq)writeFileSync(prefix+'.settled',JSON.stringify({...current,observed_at_ms:Date.now()}));
  }
 }
 process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exit(result.status??1);
@@ -780,7 +785,7 @@ process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');
     for(const [kind,mode] of [['codex','startup-working-result'],['codex','early-idle-result'],['codex','idle-only'],['codex','idle'],['codex','missed-working'],['codex','result'],['claude','timeout']] as const){
       const hang=mode==='timeout'||mode==='idle-only'||mode==='missed-working', hasResult=mode==='result'||mode==='early-idle-result'||mode==='startup-working-result';
       writeFileSync(goalPath,mode==='startup-working-result'?'STARTUP_WORKING WRITE_RESULT':mode==='early-idle-result'?'EARLY_IDLE WRITE_RESULT':mode==='idle-only'?'EARLY_IDLE IDLE_ONLY':mode==='missed-working'?'MISSED_WORKING':hang?'WAIT_FOREVER':hasResult?'WRITE_RESULT':'Finish fixture goal');
-      const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:hang?5000:10000});
+      const result=await callMcpTool(ctx,'run_agent_goal',{agent:kind,herdr:{endpoint,parent_pane:parent},timeout_ms:mode==='missed-working'?10000:hang?5000:10000});
       const value=JSON.parse((result.content[0] as {text:string}).text);
       expect(value.stderr).toBe('');
       expect(value.status).toBe(hang?'timeout':hasResult?'completed':'observed_idle');
@@ -793,6 +798,7 @@ process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');
         expect(settled.agent_status).toBe('idle');
         expect(settled.pane_id).toBe(baseline.pane_id);
         expect(settled.state_change_seq).toBeGreaterThan(baseline.state_change_seq);
+        expect(settled.observed_at_ms).toBeLessThan(Number(readFileSync(missedWorking+'.polling-ended','utf8')));
       }
       if(mode!=='idle-only')expect(value.stdout).toContain('GOAL VISIBLE');
       expect(value.stdout).not.toContain('fixture-secret-token');
@@ -817,7 +823,7 @@ process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');
     try{execute(['server','stop']);}catch{if(server.exitCode===null&&server.signalCode===null)server.kill('SIGTERM');}
     await exited(server);rmSync(fixture,{recursive:true,force:true});
   }
-},60000);
+},90000); // Seven real Herdr launches need headroom after the 10 s missed-working budget.
 
 test.skipIf(process.platform !== 'darwin')('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
   const api = await import('../src/effects/terminal/task-session');

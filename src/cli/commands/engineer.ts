@@ -358,12 +358,18 @@ export function buildEngineerCommand(): Command {
     }) => run(() => {
       const repoRoot = realpathSync(process.cwd());
       const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      let assertionBytes: string;
+      try {
+        assertionBytes = readFileSync(options.assertionFile, 'utf8');
+      } catch (error) {
+        throw new CliArgumentError('--assertion-file must name a readable file', { cause: error });
+      }
       const result = acquireSelectedEngineerTask({
         repo_root: repoRoot,
         principal,
         idempotency_key: options.idempotencyKey,
         observation_ref: options.observationRef,
-        assertion: jsonOption<ScheduledEngineerAcquireAssertionV1>(readFileSync(options.assertionFile, 'utf8'), 'assertion-file'),
+        assertion: jsonOption<ScheduledEngineerAcquireAssertionV1>(assertionBytes, 'assertion-file'),
         session_id: options.sessionId,
       });
       emit(result, options.json, result.ok
