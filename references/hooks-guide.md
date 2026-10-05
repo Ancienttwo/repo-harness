@@ -1,7 +1,7 @@
 # Hooks Configuration Guide
 
 This guide describes the typed host-event runtime and the operator-helper
-projection installed by `repo-harness init`.
+library supplied by the installed package.
 
 ## Runtime Source of Truth
 
@@ -13,8 +13,9 @@ projection installed by `repo-harness init`.
   `src/cli/hook/handler-registry.ts`.
 - User-level Claude and Codex adapters live in `~/.claude/settings.json` and
   `~/.codex/hooks.json`. Codex requires the latter to be trusted in Settings.
-- `.ai/hooks/lib/workflow-state.sh` is an operator helper projection only. It
-  is not an adapter, dispatcher, or alternate route implementation.
+- `repo-harness hook-lib path` locates the package operator library.
+  Init preserves old `.ai/hooks/lib/workflow-state.sh` copies.
+  Doctor reports them with manual migration steps.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json` are user-owned
   legacy inputs and should be retired during migration.
 
@@ -73,9 +74,12 @@ the route tuple and typed handler registry unchanged.
 
 ## Operator Helpers and Migration
 
-`repo-harness init` projects the declared helper library into
-`.ai/hooks/lib/`, including `workflow-state.sh`, and removes retired generated
-entry scripts by manifest ownership. It does not install a repo-local dispatcher.
+`repo-harness init` writes package helper guidance in `.ai/hooks/README.md`.
+It does not copy `workflow-state.sh`. It preserves existing copies and edits.
+Use `repo-harness run <helper>` to run packaged helpers. Change direct callers
+to the package path from `repo-harness hook-lib path`. Test them, back up the
+legacy file, and remove it manually. Init removes retired generated entry
+scripts by manifest ownership.
 Run `repo-harness init --repo <repo> --dry-run` before applying a migration.
 
 Generated `.claude/hooks/` shims are legacy cleanup targets. Custom
@@ -104,5 +108,5 @@ Failure classes are intentionally limited to:
 - `quality_gate`
 
 Failures append JSONL records to `.ai/harness/failures/latest.jsonl`. Use
-`bash scripts/summarize-failures.sh` to aggregate the latest log, or add
+`repo-harness run summarize-failures` to aggregate the latest log, or add
 `--run-id <id>` to inspect one run.

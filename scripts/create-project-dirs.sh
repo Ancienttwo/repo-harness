@@ -16,7 +16,6 @@ if [[ -f "$PI_LIB_DIR/project-init-lib.sh" ]]; then
   . "$PI_LIB_DIR/project-init-lib.sh"
 fi
 ASSETS_TEMPLATES_DIR="$SCRIPT_DIR/../assets/templates"
-ASSETS_HOOKS_DIR="$SCRIPT_DIR/../assets/hooks"
 ASSETS_REF_DIR="$SCRIPT_DIR/../assets/reference-configs"
 ASSETS_FACTOR_FACTORY_DIR="$ASSETS_TEMPLATES_DIR/factor-factory"
 ASSETS_WORKFLOW_CONTRACT="$SCRIPT_DIR/../assets/workflow-contract.v1.json"
@@ -51,7 +50,7 @@ create_contract_directories() {
 }
 
 install_hook_assets() {
-  pi_install_hook_assets "$PWD" "$ASSETS_HOOKS_DIR" "apply"
+  pi_install_hook_assets "$PWD" "apply"
 }
 
 ensure_task_sync_package_script() {

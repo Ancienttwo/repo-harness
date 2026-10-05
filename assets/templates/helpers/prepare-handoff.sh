@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   cd "$REPO_HARNESS_TARGET_REPO_ROOT"
 elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
@@ -10,7 +11,7 @@ else
   cd "$SCRIPT_DIR/.."
 fi
 helper_dir="$SCRIPT_DIR"
-workflow_state_lib="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
+workflow_state_lib="${REPO_HARNESS_WORKFLOW_STATE_LIB:-$SCRIPT_DIR/../assets/hooks/lib/workflow-state.sh}"
 
 reason="manual"
 mode="write"
@@ -59,23 +60,5 @@ if [[ -f "$workflow_state_lib" ]]; then
   exit 0
 fi
 
-if [[ "$mode" == "status" ]]; then
-  echo "Active plan: (none)"
-  echo "Active contract: (none)"
-  echo "Review file: (none)"
-  echo "Handoff: .ai/harness/handoff/current.md"
-  echo "Resume packet: .ai/harness/handoff/resume.md"
-  exit 0
-fi
-
-mkdir -p .ai/harness/handoff
-cat > .ai/harness/handoff/current.md <<EOF_HANDOFF
-# Harness Handoff
-
-> **Generated**: $(date '+%Y-%m-%d %H:%M:%S')
-> **Reason**: ${reason}
-EOF_HANDOFF
-echo "Updated .ai/harness/handoff/current.md"
-if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "$helper_dir/codex-handoff-resume.sh" ]]; then
-  bash "$helper_dir/codex-handoff-resume.sh" --cwd "$(pwd -P)" --reason "$reason" >/dev/null
-fi
+echo "prepare-handoff: workflow-state library is unavailable" >&2
+exit 1

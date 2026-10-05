@@ -220,8 +220,9 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - Generated and self-hosted repos install `.ai/harness/workflow-contract.json` and `.ai/harness/policy.json`.
 - Host events use the user-level managed adapter projection, the 11-tuple
   `route-registry.ts`, and exactly one typed in-process handler per tuple.
-  `.ai/hooks/lib/workflow-state.sh` is an operator helper projection, not a
-  second host-event runtime.
+  Operator helpers use `assets/hooks/lib/workflow-state.sh` from the installed
+  package. `repo-harness hook-lib path` prints its path. Init preserves legacy
+  repo copies. Doctor reports them with migration steps.
 - Generated and migrated repos keep discovery and complex/design planning in the parent agent: `geju` opens the pre-contract frame, then the parent completes P1/P2/P3 and freezes the accepted direction. Daily small/medium work uses Waza with Codex-first runtime copies in `~/.codex/skills`; durable knowledge stays in repo-authored research and lessons.
 - `repo-harness install` bootstraps the package-owned Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. Mutable Waza and Mermaid providers are installed only after explicit selection. `repo-harness init` remains a compatibility alias for existing automation.
 - The recommended `reverse-skill-router` remains explicit-only through `--with-reverse-skill` because its upstream authorization assumption cannot replace independently verified scope; the pinned selected tree is integrity-checked before host projection.

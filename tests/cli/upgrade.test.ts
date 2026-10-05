@@ -417,14 +417,15 @@ describe('upgrade with real release bytes', () => {
     expect(existsSync(join(router, 'node_modules'))).toBe(false);
   }, false));
 
-  test('project helper and contract template refresh only with exact historical proof', () => sandbox((opts) => {
+  test('contract template refresh needs exact proof and preserves the legacy helper', () => sandbox((opts) => {
     const helper = '.ai/hooks/lib/workflow-state.sh'; const template = '.claude/templates/contract.template.md';
     for (const path of [helper, template]) put(join(opts.cwd, path), readUpgradeFixture('upgrade-v0.10-project', path).toString('utf8'));
     const check = runUpgrade({ ...opts, scope: 'project' });
-    for (const path of [helper, template]) expect(check.items.find((item) => item.path === join(opts.cwd, path))).toEqual(expect.objectContaining({ proof: 'historical-fingerprint', action: 'refresh' }));
+    expect(check.items.find((item) => item.path === join(opts.cwd, template))).toEqual(expect.objectContaining({ proof: 'historical-fingerprint', action: 'refresh' }));
+    expect(check.items.find((item) => item.path === join(opts.cwd, helper))).toEqual(expect.objectContaining({ action: 'report', ownership: 'unowned', proof: null }));
     const result = runUpgrade({ ...opts, scope: 'project', apply: true });
     expect(result.exitCode).toBe(0);
-    expect(readFileSync(join(opts.cwd, helper), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/hooks/lib/workflow-state.sh'), 'utf8'));
+    expect(readFileSync(join(opts.cwd, helper), 'utf8')).toBe(readUpgradeFixture('upgrade-v0.10-project', helper).toString('utf8'));
     expect(readFileSync(join(opts.cwd, template), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/templates/contract.template.md'), 'utf8'));
     const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
     expect(rollback.ok).toBe(true);
@@ -491,5 +492,63 @@ describe('upgrade with real release bytes', () => {
     expect(result.exitCode).toBe(0); expect(result.removedPaths).toEqual([]); expect(result.refreshedPaths).toEqual([]);
     for (const path of [plugin, ...docs]) expect(result.items.find((item) => item.path === path)?.action).toBe('report');
     expect(tree(opts.home)).toEqual(before);
+  }, false));
+});
+
+describe('legacy workflow-state upgrade report', () => {
+  for (const edited of [false, true]) {
+    test(`check and apply report and preserve ${edited ? 'edited' : 'historical'} library bytes`, () => sandbox((opts) => {
+      const path = join(opts.cwd, '.ai/hooks/lib/workflow-state.sh');
+      const bytes = readUpgradeFixture('upgrade-v0.10-project', '.ai/hooks/lib/workflow-state.sh').toString('utf8') + (edited ? '\n# Local operator changes\n' : '');
+      put(path, bytes); chmodSync(path, 0o755);
+      const beforeRepo = tree(opts.cwd); const beforeHome = tree(opts.home);
+      const check = runUpgrade({ ...opts, scope: 'project' });
+      expect(check.exitCode).toBe(1);
+      expect(check.items).toHaveLength(1);
+      expect(check.items[0]).toEqual(expect.objectContaining({ path, action: 'report', ownership: 'unowned', proof: null }));
+      expect(check.items[0]?.reason).toContain('repo-harness hook-lib path');
+      expect(check.items[0]?.reason).toContain('back up');
+      expect(check.items[0]?.reason).toContain('review local edits');
+      const apply = runUpgrade({ ...opts, scope: 'project', apply: true });
+      expect(apply.exitCode).toBe(0);
+      expect(apply.keptPaths).toContain(path);
+      expect(apply.removedPaths).toEqual([]); expect(apply.refreshedPaths).toEqual([]);
+      expect(apply.transactionId).toBeUndefined();
+      expect(readFileSync(path, 'utf8')).toBe(bytes);
+      expect(lstatSync(path).mode & 0o777).toBe(0o755);
+      expect(tree(opts.cwd)).toEqual(beforeRepo); expect(tree(opts.home)).toEqual(beforeHome);
+      expect(runUpgrade({ ...opts, scope: 'global' }).items).toEqual([]);
+    }, false));
+  }
+
+  test('CLI text and JSON both give manual migration steps from a nested cwd', () => sandbox((opts) => {
+    const path = join(opts.cwd, '.ai/hooks/lib/workflow-state.sh');
+    const bytes = readUpgradeFixture('upgrade-v0.10-project', '.ai/hooks/lib/workflow-state.sh');
+    put(path, bytes.toString('utf8'));
+    const invoke = (args: string[]) => spawnSync(process.execPath, [CLI, 'upgrade', '--scope', 'project', ...args], {
+      cwd: dirname(path), env: { ...process.env, HOME: opts.home }, encoding: 'utf8', timeout: 60000,
+    });
+    const text = invoke([]); const json = invoke(['--json']);
+    expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
+    expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness hook-lib path');
+    const items = JSON.parse(json.stdout);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));
+    expect(items[0].reason).toContain('manual removal');
+    expect(readFileSync(path)).toEqual(bytes);
+  }, false));
+
+  test('leaf links are report-only and a symlink parent is never followed', () => sandbox((opts) => {
+    const target = join(opts.home, 'operator-library.sh'); put(target, '# Outside operator file\n');
+    const libDir = join(opts.cwd, '.ai/hooks/lib'); mkdirSync(libDir, { recursive: true });
+    const path = join(libDir, 'workflow-state.sh'); symlinkSync(target, path);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.items).toContainEqual(expect.objectContaining({ path, surface: 'symlink', action: 'report' }));
+    expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
+    expect(readlinkSync(path)).toBe(target); expect(readFileSync(target, 'utf8')).toBe('# Outside operator file\n');
+    rmSync(libDir, { recursive: true }); symlinkSync(opts.home, libDir, 'dir');
+    put(join(opts.home, 'workflow-state.sh'), '# Library outside the repo\n');
+    expect(runUpgrade({ ...opts, scope: 'project', apply: true }).items.some((item) => item.path === path)).toBe(false);
+    expect(readFileSync(join(opts.home, 'workflow-state.sh'), 'utf8')).toBe('# Library outside the repo\n');
   }, false));
 });

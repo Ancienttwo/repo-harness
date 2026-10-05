@@ -51,6 +51,6 @@
 ## Claude Code
 - Own frontend implementation and interaction; Codex owns backend implementation and testing, and the parent coordinates scope and integration.
 - Use Claude Code's available tools within granted permissions; changes to tool grants, hooks or confirmation bypass require approval of the exact change.
-- User-level `~/.claude/settings.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired; `.ai/hooks/lib/workflow-state.sh` is an operator helper.
+- User-level `~/.claude/settings.json` hooks invoke `repo-harness-hook`; its typed route registry selects one in-process handler. Repo-local hook adapters are retired. Operator helpers use the package path from `repo-harness hook-lib path`. This source repo keeps `.ai/hooks/lib/workflow-state.sh` for self-hosting.
 - Write comments, commits and PR text from the final diff; comments explain non-obvious reasons, and PRs describe final behavior and material rationale.
 - Keep this file short; load [development flow](docs/reference-configs/agentic-development-flow.md) and [external tooling](docs/reference-configs/external-tooling.md) only when needed.

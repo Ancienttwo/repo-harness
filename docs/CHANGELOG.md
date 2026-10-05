@@ -2,6 +2,23 @@
 
 All notable changes to this skill are documented here.
 
+## Unreleased
+
+### Changed
+
+- Stop copying `workflow-state.sh` into consumer repositories during adoption.
+  Use `repo-harness hook-lib path` to source the installed package library.
+  Packaged workflow helpers use that library. Init and upgrade preserve legacy
+  repo copies and user edits. Doctor reports copies with migration steps.
+  Upgrade no longer refreshes the legacy library. It reports consumer copies
+  with manual migration steps. Upgrade check exits 1 while a copy remains.
+- `prepare-handoff` and `summarize-failures` now exit 1 if the workflow-state
+  library is missing. They no longer write a substitute handoff or fall back to
+  the default failure log.
+- `repo-harness run archive-workflow` and `repo-harness run summarize-failures`
+  now use the package library. Edits in a repo-local `workflow-state.sh` copy
+  no longer affect these commands.
+
 ## [0.20.0] - 2026-10-05
 
 This preparation covers `v0.19.5..ffe70133`.

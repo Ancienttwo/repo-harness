@@ -175,7 +175,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "scripts/skill-factory-create.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/skill-factory-check.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/README.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".codex/hooks.json"))).toBe(false);
@@ -709,7 +709,7 @@ describe("create-project-dirs runtime smoke", () => {
     }
   }, RUNTIME_SMOKE_TIMEOUT_MS);
 
-  test("should ignore retired hook_source and install operator helper libraries only", () => {
+  test("should ignore retired hook_source and use package operator libraries", () => {
     const cwd = mkdtempSync(join(tmpdir(), "create-project-dirs-hook-pin-"));
     try {
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
@@ -724,7 +724,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/post-bash.sh"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/projection.json"))).toBe(false);
@@ -759,7 +759,7 @@ describe("create-project-dirs runtime smoke", () => {
 
       expect(res.status).toBe(0);
       expect(existsSync(join(cwd, ".ai/hooks/README.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
       expect(readFileSync(join(cwd, ".ai/hooks/run-hook.sh"), "utf-8")).toBe(staleRuntime);
       expect(readFileSync(join(cwd, ".ai/hooks/prompt-guard.sh"), "utf-8")).toBe(staleRuntime);

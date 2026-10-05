@@ -163,3 +163,17 @@ describe("prepare-handoff helper integration", () => {
     }
   }, 30_000);
 });
+
+test('prepare-handoff fails closed when an explicit library is missing', () => {
+  const cwd = tmpWorkspace('helper-prepare-handoff-missing');
+  try {
+    const result = run('bash', [join(HELPER_DIR, 'prepare-handoff.sh'), '--status'], cwd, {
+      REPO_HARNESS_TARGET_REPO_ROOT: cwd,
+      REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, 'missing-library.sh'),
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('workflow-state library is unavailable');
+    expect(result.stdout).not.toContain('Active plan: (none)');
+    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});

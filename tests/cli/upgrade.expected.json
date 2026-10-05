@@ -45,7 +45,7 @@
   ["project","file",".ai/hooks/hook-input.sh","804c198f legacy-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file",".ai/hooks/lib/minimal-change.sh","804c198f legacy-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file",".ai/hooks/lib/session-state.sh","804c198f legacy-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
-  ["project","file",".ai/hooks/lib/workflow-state.sh","stale-project-copies","owned-clean","historical-fingerprint","refresh",null,null],
+  ["project","file",".ai/hooks/lib/workflow-state.sh","legacy-workflow-state-library","unowned",null,"report",null,null],
   ["project","file",".ai/hooks/minimal-change-context.sh","60e0f73b 8cdc0340 4d24a01b b12c07b2 legacy-earlier-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file",".ai/hooks/minimal-change-observer.sh","60e0f73b 8cdc0340 4d24a01b b12c07b2 legacy-earlier-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file",".ai/hooks/post-bash.sh","804c198f legacy-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],

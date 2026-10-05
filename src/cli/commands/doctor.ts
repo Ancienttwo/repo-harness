@@ -22,6 +22,7 @@ import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { getHandlerForRoute } from '../hook/handler-registry';
 import { ROUTES } from '../hook/route-registry';
+import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -556,6 +557,30 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
   } catch (error) {
     return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: repo-harness install --state` };
   }
+
+}
+
+function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
+  const id = 'legacy-workflow-state';
+  const describe = 'Repository operator library uses the installed package';
+  const repoRoot = resolveRepoRoot(cwd);
+  if (!repoRoot) return { id, describe, status: 'na', detail: 'not in a git repository' };
+  if (isRepoHarnessSourceCheckout(repoRoot)) {
+    return { id, describe, status: 'na', detail: 'source checkout keeps its self-host operator library' };
+  }
+  const legacy = path.join(repoRoot, '.ai/hooks/lib/workflow-state.sh');
+  try {
+    fs.lstatSync(legacy);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { id, describe, status: 'ok', detail: 'no legacy workflow-state.sh copy' };
+    }
+    return { id, describe, status: 'warn', detail: `cannot inspect ${legacy}: ${String(error)}` };
+  }
+  return {
+    id, describe, status: 'warn',
+    detail: `Legacy copy: ${legacy}. Change callers to source "$(repo-harness hook-lib path)" or use repo-harness run <helper>. Test callers, back up the copy, then remove it manually. Keep edited copies until their changes are reviewed. Init and upgrade preserve this file.`,
+  };
 }
 
 export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
@@ -579,6 +604,7 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
   checks.push(checkCodegraphIndex(codegraphProbe));
   checks.push(checkSecurityConfig(securityReport));
   checks.push(checkTypedHookRoutes(cwd));
+  checks.push(checkLegacyWorkflowState(cwd));
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();
     checks.push({ id: plugin.id, describe: plugin.describe, ...r });

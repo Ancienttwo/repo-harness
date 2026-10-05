@@ -23,7 +23,6 @@ if [[ -f "$PI_LIB_DIR/project-init-lib.sh" ]]; then
     . "$PI_LIB_DIR/project-init-lib.sh"
 fi
 ASSETS_REF_DIR="$SCRIPT_DIR/../assets/reference-configs"
-ASSETS_HOOKS_DIR="$SCRIPT_DIR/../assets/hooks"
 ASSETS_TEMPLATES_DIR="$SCRIPT_DIR/../assets/templates"
 ASSETS_FACTOR_FACTORY_DIR="$ASSETS_TEMPLATES_DIR/factor-factory"
 ASSETS_WORKFLOW_CONTRACT="$SCRIPT_DIR/../assets/workflow-contract.v1.json"
@@ -61,8 +60,8 @@ ensure_gitignore_entry() {
 }
 
 install_hook_assets() {
-    pi_install_hook_assets "$PWD" "$ASSETS_HOOKS_DIR" "apply"
-    echo -e "${GREEN}Repo-local hook fallback installed to .ai/hooks/${NC}"
+    pi_install_hook_assets "$PWD" "apply"
+    echo -e "${GREEN}Package helper guidance written to .ai/hooks/README.md${NC}"
 }
 
 install_workflow_contract() {

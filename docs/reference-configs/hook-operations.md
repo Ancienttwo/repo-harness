@@ -46,11 +46,29 @@ time is the whole turn, not the duration of its currently displayed hook.
 | `SubagentStop.quality` | subagent stop (Codex) | `subagent` | Check the delegated report and request one bounded continuation when required. |
 | `Stop.default` | session stop | `stop` | Flush pending observations and finalize the handoff projection. |
 
-`assets/hooks/lib/workflow-state.sh` and its `.ai/hooks/lib/` projection are
-operator helpers for inspecting workflow state. They are not hook dispatchers,
-route authorities, or alternate execution paths. Product changes to handler
+`assets/hooks/lib/workflow-state.sh` is the package operator library.
+Consumer repositories do not receive a copy. The library has no hook dispatch
+or route authority. Product changes to handler
 behavior belong in `src/cli/hook/` and its tests; run `bun run check:hooks` after
 updating the generated asset projection.
+
+Use the package library in an operator shell:
+
+```bash
+workflow_state_lib="$(repo-harness hook-lib path)" || exit 1
+source "$workflow_state_lib"
+```
+
+Run packaged helpers with `repo-harness run <helper>`. The CLI supplies the
+package library. Direct package scripts resolve the asset beside `scripts/`.
+The path command fails if the package asset is missing or is not a regular file.
+It does not select a repo copy or `REPO_HARNESS_SOURCE_ROOT`.
+
+Init and upgrade preserve `.ai/hooks/lib/workflow-state.sh`, including edits.
+Old scripts that source this file still work. Doctor reports it as legacy.
+Change callers to the package path or `repo-harness run`. Test the callers.
+Back up the old file before manual removal. Review local changes first.
+This source repository keeps its own helper for self-hosting.
 
 The prompt handler consumes the typed prompt-intent and workflow-state decision
 table, then verifies the file-backed contract and the typed `AcceptanceReceipt`
@@ -77,7 +95,8 @@ deterministic and never spawn an LLM or a long-running worker.
 ## Host and Adoption Operations
 
 `repo-harness init` installs the user-level adapters, writes the workflow
-contract, and projects only the declared operator helpers into `.ai/hooks/lib/`.
+contract, and writes package helper guidance in `.ai/hooks/README.md`.
+It does not copy the operator library into consumer repositories.
 It removes retired generated hook entry scripts by exact manifest ownership and
 does not create a repo-local dispatcher. Project-level `.claude/settings.json`
 and `.codex/hooks.json` are user-owned legacy inputs and should be reviewed

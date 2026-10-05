@@ -352,51 +352,20 @@ pi_write_hook_runtime_readme() {
 
   mkdir -p "$hooks_dir"
   cat > "$readme" <<'EOF_HOOK_README'
-# Repo-Local Workflow Helpers
+# Workflow Helpers
 
-Host events execute through the user-level `repo-harness-hook` typed runtime.
-Files under `.ai/hooks/lib/` are operator helper libraries only; no repo-local
-host-event dispatcher or route script is supported.
+Host events use the user-level `repo-harness-hook` typed runtime.
+Operator helpers use the installed package. Run `repo-harness hook-lib path`
+to locate `workflow-state.sh`. Use `repo-harness run <helper>` to run helpers.
+Init preserves legacy files under `.ai/hooks/lib/`.
+Run `repo-harness doctor` for migration guidance.
 EOF_HOOK_README
 }
 
 pi_install_hook_assets() {
   local target_dir="$1"
-  local hooks_assets_dir="$2"
-  local mode="${3:-apply}"
+  local mode="${2:-apply}"
   local hooks_dir="$target_dir/.ai/hooks"
-
-  if [[ ! -d "$hooks_assets_dir" ]]; then
-    echo "[project-init] Warning: hook assets not found at $hooks_assets_dir" >&2
-    echo "[project-init] User-level host adapters dispatch through repo-harness-hook packaged hooks." >&2
-    return 0
-  fi
-
-  if [[ "$mode" != "apply" ]]; then
-    echo "[dry-run] mkdir -p \"$hooks_dir\""
-  else
-    mkdir -p "$hooks_dir"
-  fi
-
-  if [[ "$mode" != "apply" ]]; then
-    echo "[dry-run] mkdir -p \"$hooks_dir/lib\""
-  else
-    mkdir -p "$hooks_dir/lib"
-  fi
-
-  if [[ -d "$hooks_assets_dir/lib" ]]; then
-    while IFS= read -r hook_lib; do
-      local lib_name
-      lib_name="$(basename "$hook_lib")"
-      if [[ "$mode" != "apply" ]]; then
-        echo "[dry-run] cp \"$hook_lib\" \"$hooks_dir/lib/$lib_name\""
-        continue
-      fi
-      cp "$hook_lib" "$hooks_dir/lib/$lib_name"
-      chmod +x "$hooks_dir/lib/$lib_name" 2>/dev/null || true
-    done < <(find "$hooks_assets_dir/lib" -maxdepth 1 -type f -name '*.sh' | sort)
-  fi
-
   pi_write_hook_runtime_readme "$hooks_dir" "$mode"
 }
 
