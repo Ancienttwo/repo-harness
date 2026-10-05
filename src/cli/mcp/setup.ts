@@ -22,8 +22,10 @@ import {
   mcpOAuthPath,
   mcpStorageDir,
   mcpTokenPath,
+  readMcpDoctorClientRecord,
   readMcpLocalConfigFile,
   readMcpOAuthPassphrase,
+  writeMcpDoctorClientRecord,
 } from './auth';
 import { sensitiveAllowedRootReason } from './policy';
 import { parseMcpProfile } from './policy';
@@ -52,6 +54,7 @@ const REQUIRED_CODEX_TOOLS = [
 ];
 
 const CHATGPT_MCP_ENDPOINT_PLACEHOLDER = '<https-tunnel-url>/mcp';
+const DOCTOR_PROBE_REDIRECT_URI = 'http://127.0.0.1/callback';
 const DEFAULT_CHATGPT_MCP_SERVER_NAME = 'repo-harness';
 const ENDPOINT_ERROR = 'expected a public HTTPS URL exactly ending in /mcp with no username, password, query, or fragment';
 const SERVER_NAME_ERROR = 'expected a ChatGPT MCP server name using 1-80 letters, numbers, spaces, dots, underscores, or hyphens';
@@ -1215,6 +1218,10 @@ function jsonFromMcpResponse(text: string): Record<string, unknown> | null {
   }
 }
 
+// Thrown when the probed server rejects the reused diagnostic registration
+// with invalid_client (store reset, or registration past the server's TTL).
+class StaleProbeRegistrationError extends Error {}
+
 export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }): Promise<McpSetupResult> {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   assertNoLegacyRepoScopeMcpConfig(repoRoot);
@@ -1279,16 +1286,22 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
     let accessToken = '';
     let clientId = '';
     let clientSecret = '';
-    try {
-      const metadataResponse = await fetchWithTimeout(`${probeOrigin}/.well-known/oauth-protected-resource/mcp`);
-      if (!metadataResponse.ok) throw new Error(`OAuth metadata returned ${metadataResponse.status}`);
-      const redirectUri = 'http://127.0.0.1/callback';
+    // Reuse the doctor's own persisted dynamic client registration. A fresh
+    // /register on every run would permanently consume the server's fixed
+    // dynamic-client quota; this record is doctor-owned state and is never the
+    // server's token store file.
+    const storedRegistration = readMcpDoctorClientRecord();
+    if (storedRegistration) {
+      clientId = storedRegistration.clientId;
+      clientSecret = storedRegistration.clientSecret ?? '';
+    }
+    const registerProbeClient = async (): Promise<void> => {
       const registrationResponse = await fetchWithTimeout(`${probeOrigin}/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           client_name: 'repo-harness-live-doctor',
-          redirect_uris: [redirectUri],
+          redirect_uris: [DOCTOR_PROBE_REDIRECT_URI],
           grant_types: ['authorization_code', 'refresh_token'],
           response_types: ['code'],
           token_endpoint_auth_method: 'none',
@@ -1299,6 +1312,9 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       clientId = client.client_id ?? '';
       clientSecret = client.client_secret ?? '';
       if (!clientId) throw new Error('OAuth registration omitted client_id');
+      writeMcpDoctorClientRecord(clientId, clientSecret || undefined);
+    };
+    const authorizeAndExchangeProbe = async (): Promise<void> => {
       const verifier = randomBytes(32).toString('base64url');
       const challenge = createHash('sha256').update(verifier).digest('base64url');
       const scope = ['repo-harness', ...(requiredScope ? [requiredScope] : []), 'offline_access'].join(' ');
@@ -1306,7 +1322,7 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
         passphrase,
         response_type: 'code',
         client_id: clientId,
-        redirect_uri: redirectUri,
+        redirect_uri: DOCTOR_PROBE_REDIRECT_URI,
         code_challenge: challenge,
         code_challenge_method: 'S256',
         scope,
@@ -1318,6 +1334,10 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
         body: authorize.toString(),
         redirect: 'manual',
       });
+      if (authorizationResponse.status === 400) {
+        const body = await authorizationResponse.json().catch(() => null) as { error?: string } | null;
+        if (body?.error === 'invalid_client') throw new StaleProbeRegistrationError();
+      }
       const location = authorizationResponse.headers.get('location');
       const code = location ? new URL(location).searchParams.get('code') ?? '' : '';
       if (!code) throw new Error(`OAuth authorization did not return a code (${authorizationResponse.status})`);
@@ -1325,7 +1345,7 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
         grant_type: 'authorization_code',
         client_id: clientId,
         code,
-        redirect_uri: redirectUri,
+        redirect_uri: DOCTOR_PROBE_REDIRECT_URI,
         code_verifier: verifier,
         ...(clientSecret ? { client_secret: clientSecret } : {}),
       });
@@ -1339,6 +1359,20 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       accessToken = token.access_token ?? '';
       if (!accessToken || (requiredScope !== null && !String(token.scope ?? '').split(' ').includes(requiredScope))) {
         throw new Error(`OAuth token is missing the required ${config?.profile} scope`);
+      }
+    };
+    try {
+      const metadataResponse = await fetchWithTimeout(`${probeOrigin}/.well-known/oauth-protected-resource/mcp`);
+      if (!metadataResponse.ok) throw new Error(`OAuth metadata returned ${metadataResponse.status}`);
+      if (!storedRegistration) await registerProbeClient();
+      try {
+        await authorizeAndExchangeProbe();
+      } catch (error) {
+        // One recovery attempt, only for a reused registration the server no
+        // longer knows. A registration created in this same run is never retried.
+        if (!(error instanceof StaleProbeRegistrationError) || !storedRegistration) throw error;
+        await registerProbeClient();
+        await authorizeAndExchangeProbe();
       }
       oauthReady = true;
       layers.push({ name: 'oauth_ready', ok: true, detail: `DCR + PKCE succeeded${requiredScope ? ` with ${requiredScope}` : ''}` });
