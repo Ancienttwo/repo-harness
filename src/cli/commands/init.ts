@@ -31,6 +31,7 @@ import {
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { runInstall, type InstallTargetSpec } from "./install";
+import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { runBrain } from "./brain";
 import {
   externalSkillInstallGroups as catalogExternalSkillInstallGroups,
@@ -714,6 +715,16 @@ export function runInit(
       status: "skipped",
       detail: hostAdapters ? "dry-run" : "disabled",
     });
+  }
+
+  if (apply) {
+    const herdrSkill = configureRequiredHerdrSkill(target, commandEnv);
+    steps.push(herdrSkill);
+    if (herdrSkill.status === "failed") {
+      return { exitCode: 1, repoRoot, steps, lines: steps.flatMap(renderStep) };
+    }
+  } else {
+    steps.push({ step: "configure required Herdr skill", status: "skipped", detail: "dry-run" });
   }
 
   if (opts.globalContext && apply) {

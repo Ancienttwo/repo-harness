@@ -22,6 +22,48 @@ const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
+const HERDR_SKILL = "---\nname: herdr\n---\n\nCheck HERDR_ENV before control.\n";
+
+test("strict readiness rejects a missing required Herdr skill", () => {
+  const envRoot = setupFakeEnvironment("check-agent-tooling-herdr-skill");
+  try {
+    rmSync(join(envRoot.home, ".codex", "skills", "herdr"), { recursive: true, force: true });
+    const res = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    expect(res.status).toBe(2);
+    const report = JSON.parse(res.stdout);
+    expect(report.tools.herdr_skill.status).toBe("missing");
+    expect(report.tools.herdr_skill.hosts.codex.status).toBe("missing");
+    expect(res.stderr).toContain("Herdr skill readiness is missing");
+
+    const skillDir = join(envRoot.home, ".codex", "skills", "herdr");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: herdr\n---\nWrong body.\n");
+    const drift = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    expect(drift.status).toBe(2);
+    expect(JSON.parse(drift.stdout).tools.herdr_skill.status).toBe("mismatch");
+    expect(JSON.parse(drift.stdout).tools.herdr_skill.hosts.codex.status).toBe("mismatch");
+
+    rmSync(join(skillDir, "SKILL.md"));
+    mkdirSync(join(skillDir, "SKILL.md"));
+    const unreadable = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    expect(unreadable.status).toBe(2);
+    expect(JSON.parse(unreadable.stdout).tools.herdr_skill.status).toBe("invalid");
+  } finally {
+    rmSync(envRoot.root, { recursive: true, force: true });
+  }
+});
 
 function sha256File(filePath: string) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
@@ -78,7 +120,12 @@ function setupFakeEnvironment(prefix: string) {
 
   mkdirSync(home, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
-  writeExecutable(join(fakeBin, "herdr"), "#!/bin/sh\nprintf 'herdr 0.9.3\\n'\n");
+  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.3\\n'; fi\n`);
+  for (const host of [".claude", ".codex"]) {
+    const skillDir = join(home, host, "skills", "herdr");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), HERDR_SKILL);
+  }
   writeOfficialCodexPluginFixture(join(home, ".claude/plugins/cache/openai-codex/codex/1.0.6"));
   writeExecutable(
     join(fakeBin, "timeout"),
@@ -441,6 +488,9 @@ describe("check-agent-tooling", () => {
       expect(report.tools.waza.hosts.codex.shared_rules_staging_sync).toBe("synced");
       expect(report.tools.waza.hosts.codex.stale_status).toBe("not-checked");
       expect(report.tools.codex_automation_profile.status).toBe("present");
+      expect(report.tools.herdr_skill.status).toBe("present");
+      expect(report.tools.herdr_skill.hosts.claude.status).toBe("present");
+      expect(report.tools.herdr_skill.hosts.codex.status).toBe("present");
       expect(report.tools.codex_automation_profile.required_skills).toEqual(["health", "check", "mermaid"]);
       expect(report.tools.codex_automation_profile.routes).toEqual({
         workflow_health: "waza:health",
