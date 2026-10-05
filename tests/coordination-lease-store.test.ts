@@ -10,6 +10,7 @@ import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -914,6 +915,56 @@ describe('claim verbs', () => {
     expect(existsSync(leaseDirectory(repo, taskId))).toBe(true);
   });
 
+  test('release clears a lease that still holds the temporary file of a terminated owner write', () => {
+    // A writer terminated between its temporary file and the rename leaves that
+    // file beside a valid owner record. Release must still make the task
+    // available, and never leave an ownerless directory that no verb can clear.
+    const repo = repoWithSprint();
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+    writeFileSync(join(leaseDirectory(repo, taskId), `.${LEASE_OWNER_FILE_NAME}.tmp-99999-1`), '{"partial"');
+
+    const released = releaseSprintCommand({ claimId: 'claim-1' }, deps(repo));
+    expect(released.stderr).toBe('');
+    expect(released.exitCode).toBe(0);
+    expect(readLease(repo, taskId).classification).toBe('available');
+    expect(readdirSync(join(coordinationRoot(repo), 'retired-leases'))).toEqual([]);
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2'])).exitCode).toBe(0);
+  });
+
+  test('a release killed after the owner record left the lease directory leaves the task claimable', () => {
+    if (process.platform === 'win32') return;
+    const repo = repoWithSprint();
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+
+    // A real process, killed with SIGKILL at the first directory removal for
+    // this task: the owner record is no longer in the lease directory, and the
+    // directory is not removed yet. No catch or finally runs in that process.
+    const childPath = join(repo, 'release-crash-child.ts');
+    writeFileSync(childPath, [
+      "import * as fs from 'fs';",
+      "import { spyOn } from 'bun:test';",
+      `const { processSprintDependencies, releaseSprintCommand } = await import(${JSON.stringify(join(REPO_ROOT, 'src/effects/state/coordination-sprint.ts'))});`,
+      'const realRmdir = fs.rmdirSync;',
+      "spyOn(fs, 'rmdirSync').mockImplementation(((path, ...rest) => {",
+      `  if (String(path).includes(${JSON.stringify(taskId)})) process.kill(process.pid, 'SIGKILL');`,
+      '  return realRmdir(path, ...rest);',
+      '}) as typeof fs.rmdirSync);',
+      `releaseSprintCommand({ claimId: 'claim-1' }, processSprintDependencies(${JSON.stringify(repo)}));`,
+    ].join('\n'));
+    const child = spawnSync(process.execPath, [childPath], { cwd: repo, encoding: 'utf-8' });
+    expect(child.signal).toBe('SIGKILL');
+
+    // The killed holder's task lock is reclaimed by PID; the lease itself must
+    // need no operator: either a named record or no live lease at all.
+    const reconciled = JSON.parse(
+      reconcileSprintCommand({ taskId, targetRef: 'main' }, deps(repo)).stdout,
+    ) as { classification: string; action: string };
+    expect(reconciled.classification).toBe('available');
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, ['claim-2'])).exitCode).toBe(0);
+  }, 60_000);
+
   test('reconcile refuses reviewing leases instead of bypassing publication reconciliation', () => {
     const repo = repoWithSprint();
     const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
@@ -1649,6 +1700,86 @@ test('a lease this completion could not release is refused before any write', ()
     expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(sprintBefore);
     expect(readLease(repo, RACE_ID).record?.claim_id).toBe('claim-original');
     expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
+  }, 60_000);
+
+  /**
+   * Run one completion while `directory` is readable but not writable, which
+   * is a real permission fault past the gate, and return what it left behind.
+   */
+  function completeWithReadOnlyDirectory(repo: string, directory: string) {
+    const tokenPath = join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`);
+    const before = {
+      sprint: readFileSync(join(repo, RACE_SPRINT), 'utf-8'),
+      owner: readFileSync(leaseOwnerPath(repo, RACE_ID), 'utf-8'),
+      token: readFileSync(tokenPath, 'utf-8'),
+    };
+    chmodSync(directory, 0o555);
+    let outcome;
+    try {
+      outcome = completeRowSprintCommand(
+        { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+        processSprintDependencies(repo),
+      );
+    } finally {
+      chmodSync(directory, 0o755);
+    }
+    return { before, outcome, tokenPath };
+  }
+
+  test('a token that cannot be removed after the lease is gone restores the lease and the token', () => {
+    if (process.platform === 'win32') return;
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const { before, outcome, tokenPath } = completeWithReadOnlyDirectory(repo, join(repo, CLAIM_TOKEN_DIR));
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('EACCES');
+    // The row is pending again, so the claim that protects it must be back too:
+    // otherwise any agent can claim the row while this tree still holds a token.
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(before.sprint);
+    expect(readLease(repo, RACE_ID).raw).toBe(before.owner);
+    expect(readFileSync(tokenPath, 'utf-8')).toBe(before.token);
+  }, 60_000);
+
+  test('a lease that cannot leave the lease plane after the released write restores the bound record', () => {
+    if (process.platform === 'win32') return;
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const { before, outcome, tokenPath } = completeWithReadOnlyDirectory(repo, join(coordinationRoot(repo), 'leases'));
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('EACCES');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(before.sprint);
+    expect(readLease(repo, RACE_ID).raw).toBe(before.owner);
+    expect(readFileSync(tokenPath, 'utf-8')).toBe(before.token);
+  }, 60_000);
+
+  test('complete-row refuses a target ref the lease was not claimed against', () => {
+    // The lease protects `main`. An older ref that still carries the claimed
+    // revision must not stand in for `main` after `main` moved the definition.
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    run(repo, ['branch', 'before-drift']);
+    writeFileSync(
+      join(repo, RACE_SPRINT),
+      raceSprintText('[ ]').replace('races converge', 'races converge under review'),
+    );
+    run(repo, ['commit', '--quiet', '-am', 'drift the acceptance cell']);
+    const tokenPath = join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`);
+    const sprintBefore = readFileSync(join(repo, RACE_SPRINT), 'utf-8');
+    const ownerBefore = readFileSync(leaseOwnerPath(repo, RACE_ID), 'utf-8');
+    const tokenBefore = readFileSync(tokenPath, 'utf-8');
+
+    const outcome = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'before-drift' },
+      processSprintDependencies(repo),
+    );
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('was claimed against main, not before-drift');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(sprintBefore);
+    expect(readLease(repo, RACE_ID).raw).toBe(ownerBefore);
+    expect(readFileSync(tokenPath, 'utf-8')).toBe(tokenBefore);
   }, 60_000);
 
   test('bytes that two readers would read differently are refused, not interpreted', () => {

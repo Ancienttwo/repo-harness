@@ -84,7 +84,6 @@ function reviewingPublication(root: string, taskId: string, revision: string, he
     head_sha: head,
     tree_sha: git(root, 'rev-parse', `${head}^{tree}`),
     candidate_diff_fingerprint: SUBJECT,
-    merge_seal_sha256: DIGEST,
     provider: 'github',
     provider_repo_id: 'R_me4c_fixture',
     pr_number: number,

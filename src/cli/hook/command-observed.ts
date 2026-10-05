@@ -56,6 +56,23 @@ function outputText(value: unknown): string {
   try { return JSON.stringify(value); } catch { return String(value); }
 }
 
+/**
+ * `tool_response` is the only host field for the command result. Claude Code
+ * sends Bash results as `{ stdout, stderr, interrupted, ... }`; the observed
+ * output is both streams, in that order. Codex documents the field only as
+ * the model-facing output, so a string is kept and any other shape is
+ * serialized.
+ */
+function toolResponseOutput(response: unknown): unknown {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return response;
+  const { stdout, stderr } = response as { stdout?: unknown; stderr?: unknown };
+  if (typeof stdout !== 'string' && typeof stderr !== 'string') return response;
+  const out = typeof stdout === 'string' ? stdout : '';
+  const err = typeof stderr === 'string' ? stderr : '';
+  if (!out || !err) return out || err;
+  return out.endsWith('\n') ? `${out}${err}` : `${out}\n${err}`;
+}
+
 function numberValue(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
   if (typeof value === 'string' && /^-?\d+$/u.test(value.trim())) return Number.parseInt(value.trim(), 10);
@@ -166,8 +183,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
   // Hook input parsing is lazy; accessors add warnings on first use.
   const warnings = (): string => parsed.warnings.length > 0 ? `${parsed.warnings.join('\n')}\n` : '';
   const command = parsed.getString('.tool_input.command', '');
-  const rawToolOutput = env.TOOL_OUTPUT ? env.TOOL_OUTPUT : parsed.get('.tool_output', '');
-  const toolOutput = outputText(rawToolOutput);
+  const toolOutput = outputText(toolResponseOutput(parsed.get('.tool_response', '')));
   // post-bash.sh reads the top-level exit_code (its host adapter historically
   // passes this field separately from the trace observer's tool_response).
   const exitCode = numberValue(parsed.get('.exit_code', env.EXIT_CODE ?? '0'), 0);

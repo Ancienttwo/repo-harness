@@ -99,6 +99,24 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   return observation;
 }
 
+/** Serves file requests until close. A close request also reaches a pending
+ * turn: disposal aborts it, and the aborted turn is not a turn failure. */
+export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHostSpec, close: () => Promise<void>, closing: () => boolean): Promise<void> {
+  const closeRequest = join(spec.controlDirectory, 'close.request');
+  const watch = setInterval(() => { if (existsSync(closeRequest)) void close(); }, 25);
+  try {
+    for (let round = 1; !closing() && !existsSync(closeRequest);) {
+      const path = join(spec.requestDirectory, `request-${round}.json`);
+      if (!existsSync(path)) { await new Promise(resolve => setTimeout(resolve, 25)); continue; }
+      if (round > 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
+      const observation = await runHostFileRequest(host, spec, readSessionArtifact<TaskRequest>(path));
+      if (closing()) return;
+      if (observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('OAR_REVIEW_TURN_FAILED');
+      round++;
+    }
+  } finally { clearInterval(watch); }
+}
+
 export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknown) => void): Promise<OarReviewHost> {
   assertOarHostNode();
   if (spec.controlDirectory !== spec.isolation.paths.journal || spec.output !== spec.isolation.paths.output
@@ -157,17 +175,7 @@ async function main(): Promise<void> {
       for (const input of spec.inputs) await host.prompt(input);
       console.log('OAR_HOST_ROUNDS_DONE_FIXTURE');
       while (!existsSync(closeRequest) && !closing) await new Promise(resolve => setTimeout(resolve, 25));
-    } else {
-      for (let round = 1; !closing && !existsSync(closeRequest);) {
-        const path = join(spec.requestDirectory, `request-${round}.json`);
-        if (!existsSync(path)) { await new Promise(resolve => setTimeout(resolve, 25)); continue; }
-        if (round > 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
-        const request = readSessionArtifact<TaskRequest>(path);
-        const observation = await runHostFileRequest(host, spec, request);
-        if (observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('OAR_REVIEW_TURN_FAILED');
-        round++;
-      }
-    }
+    } else await serveHostFileRequests(host, spec, close, () => closing !== undefined);
   } catch (error) {
     if (spec.mode === 'review') writeSessionArtifact(join(spec.controlDirectory, 'error.json'), { error: String(error) });
     throw error;

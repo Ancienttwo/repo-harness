@@ -24,7 +24,7 @@ function installChecks(dir: string): void {
   mkdirSync(join(dir, ".fixture-home"), { recursive: true });
   symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"), "dir");
   writeFileSync(join(dir, ".gitignore"), "node_modules\n.ai/\n.fixture-home/\n.local-checks.log\nnojq-bin/\n");
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module", scripts: { "check:type": "node typecheck.ts" } }));
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module", scripts: { "check:type": "node typecheck.ts", test: "bun test" } }));
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, target: "ES2022", types: [], noEmit: true }, include: ["src/**/*.ts"] }));
   writeFileSync(join(dir, "typecheck.ts"), [
     'import { spawnSync } from "node:child_process";',

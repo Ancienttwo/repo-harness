@@ -42,7 +42,7 @@ import type { PublicationIntegrationObservationV1 } from '../../core/publication
 import {
   publicationReceiptDigest,
   publicationSha256,
-  type PublicationReceiptV2,
+  type PublicationReceiptV3,
 } from '../../core/publication/publication-receipt';
 import {
   listProductAcceptanceProjections,
@@ -102,7 +102,7 @@ export interface DependencyAuthorityReaders {
     taskId: string,
     taskRevision: string,
   ) => readonly PublicationIntegrationObservationV1[];
-  readonly readPublicationReceipt: (repoRoot: string, publicationId: string) => PublicationReceiptV2 | null;
+  readonly readPublicationReceipt: (repoRoot: string, publicationId: string) => PublicationReceiptV3 | null;
   readonly readProductAcceptanceProjections: (repoRoot: string) => readonly ProductAcceptanceProjectionV1[];
   readonly readIntegrationEnvelope: (repoRoot: string, digest: string) => IntegrationEnvelopeV1;
   readonly readIntegrationContract: (repoRoot: string, digest: string) => IntegrationContractV1;
@@ -454,7 +454,7 @@ function publicationIntegrated(
   // exists and is not integrated yet. Integration is proven only by the
   // immutable observation this repository's publication authority persisted.
   for (const observation of observations) {
-    let receipt: PublicationReceiptV2 | null;
+    let receipt: PublicationReceiptV3 | null;
     try {
       receipt = reader.readPublicationReceipt(read.repo.path, observation.publication_id);
     } catch {
@@ -510,7 +510,7 @@ function productAccepted(
     const selected = envelope.selected_publications.find((entry) => entry.work_package_id === input.target.task_id
       && entry.work_package_revision === input.target.task_revision) ?? null;
     if (selected === null) continue;
-    let receipt: PublicationReceiptV2 | null;
+    let receipt: PublicationReceiptV3 | null;
     try {
       receipt = reader.readPublicationReceipt(read.repo.path, selected.publication_id);
     } catch {

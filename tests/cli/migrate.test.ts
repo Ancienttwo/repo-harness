@@ -98,6 +98,23 @@ describe('migrate command (Phase 1C)', () => {
     });
   });
 
+  test('--apply keeps a private settings file mode under a 0022 umask', () => {
+    withTempRepo((repo) => {
+      const claudePath = path.join(repo, '.claude/settings.json');
+      fs.mkdirSync(path.dirname(claudePath), { recursive: true });
+      fs.writeFileSync(claudePath, LEGACY_WITH_SIBLING, { mode: 0o600 });
+      fs.chmodSync(claudePath, 0o600);
+      const previousUmask = process.umask(0o022);
+      try {
+        runMigrate({ cwd: repo, apply: true });
+      } finally {
+        process.umask(previousUmask);
+      }
+      expect(JSON.parse(fs.readFileSync(claudePath, 'utf-8')).hooks.PreToolUse.length).toBe(1);
+      expect(fs.statSync(claudePath).mode & 0o777).toBe(0o600);
+    });
+  });
+
   test('no-op when no legacy entries match', () => {
     withTempRepo((repo) => {
       const codexPath = path.join(repo, '.codex/hooks.json');
@@ -140,6 +157,45 @@ describe('migrate command (Phase 1C)', () => {
       const plan = runMigrate({ cwd: repo, apply: false });
       const json = formatMigratePlan(plan, true);
       expect(() => JSON.parse(json)).not.toThrow();
+    });
+  });
+
+  for (const [linkedDir, linkedFile, localDir, localFile] of [
+    ['.claude', 'settings.json', '.codex', 'hooks.json'],
+    ['.codex', 'hooks.json', '.claude', 'settings.json'],
+  ] as const) {
+    test(`--apply refuses a symlinked ${linkedDir} directory before any write`, () => {
+      withTempRepo((repo) => {
+        withTempRepo((outside) => {
+          fs.writeFileSync(path.join(outside, linkedFile), LEGACY_WITH_SIBLING);
+          fs.symlinkSync(outside, path.join(repo, linkedDir));
+          const localPath = path.join(repo, localDir, localFile);
+          fs.mkdirSync(path.dirname(localPath), { recursive: true });
+          fs.writeFileSync(localPath, LEGACY_CODEX);
+
+          expect(() => runMigrate({ cwd: repo, apply: true })).toThrow('symlink is not allowed');
+          expect(fs.readdirSync(outside)).toEqual([linkedFile]);
+          expect(fs.readFileSync(path.join(outside, linkedFile), 'utf-8')).toBe(LEGACY_WITH_SIBLING);
+          expect(fs.readdirSync(path.dirname(localPath))).toEqual([localFile]);
+          expect(fs.readFileSync(localPath, 'utf-8')).toBe(LEGACY_CODEX);
+        });
+      });
+    });
+  }
+
+  test('--apply refuses a dangling symlink at the backup path before any write', () => {
+    withTempRepo((repo) => {
+      withTempRepo((outside) => {
+        const claudePath = path.join(repo, '.claude/settings.json');
+        fs.mkdirSync(path.dirname(claudePath), { recursive: true });
+        fs.writeFileSync(claudePath, LEGACY_WITH_SIBLING);
+        const escaped = path.join(outside, 'escaped.json');
+        fs.symlinkSync(escaped, `${claudePath}.repo-harness-migrate-backup`);
+
+        expect(() => runMigrate({ cwd: repo, apply: true })).toThrow('symlink is not allowed');
+        expect(fs.existsSync(escaped)).toBe(false);
+        expect(fs.readFileSync(claudePath, 'utf-8')).toBe(LEGACY_WITH_SIBLING);
+      });
     });
   });
 });

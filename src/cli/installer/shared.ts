@@ -17,9 +17,13 @@ import * as path from 'path';
 export function atomicWriteFileSync(filePath: string, content: string, options: { readonly mode?: number } = {}): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  // The rename installs a new inode. Without an explicit mode, keep the
+  // replaced file's permission bits so a private config never widens.
+  const mode = options.mode ?? fs.statSync(filePath, { throwIfNoEntry: false })?.mode;
   const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   try {
-    fs.writeFileSync(tmp, content, { encoding: 'utf-8', mode: options.mode });
+    fs.writeFileSync(tmp, content, { encoding: 'utf-8', mode: mode === undefined ? undefined : 0o600 });
+    if (mode !== undefined) fs.chmodSync(tmp, mode & 0o777);
     fs.renameSync(tmp, filePath);
   } finally {
     fs.rmSync(tmp, { force: true });

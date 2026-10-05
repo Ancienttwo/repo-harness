@@ -14,6 +14,7 @@
  * Safety:
  *   - --dry-run is default; --apply explicitly mutates.
  *   - Per-file backup before --apply: <file>.repo-harness-migrate-backup.
+ *   - A symlink in any candidate or backup path fails before any read or write.
  *   - If the file's hooks segment becomes empty after removal, the field is
  *     dropped entirely (cleaner for Claude settings.json which has non-hook config).
  */
@@ -22,6 +23,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWriteFileSync, formatJson, readJsonOrEmpty } from '../installer/shared';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
+import { assertNoSymlinkInPath } from '../../effects/fs-transaction';
+
+const BACKUP_SUFFIX = '.repo-harness-migrate-backup';
 
 export interface MigrateOptions {
   cwd?: string;
@@ -63,7 +67,7 @@ function planForFile(filePath: string): MigratePlanFile | null {
 }
 
 function applyForFile(filePath: string): void {
-  const backupPath = `${filePath}.repo-harness-migrate-backup`;
+  const backupPath = `${filePath}${BACKUP_SUFFIX}`;
   if (!fs.existsSync(backupPath)) {
     fs.copyFileSync(filePath, backupPath);
   }
@@ -76,15 +80,19 @@ function applyForFile(filePath: string): void {
   atomicWriteFileSync(filePath, formatJson(next));
 }
 
+const CANDIDATES = ['.codex/hooks.json', '.claude/settings.json'] as const;
+
 export function runMigrate(opts: MigrateOptions = {}): MigratePlan {
   const cwd = opts.cwd ?? process.cwd();
   const apply = opts.apply === true;
   const files: MigratePlanFile[] = [];
-  const candidates = [
-    path.join(cwd, '.codex/hooks.json'),
-    path.join(cwd, '.claude/settings.json'),
-  ];
-  for (const filePath of candidates) {
+  // Reads, backups, and atomic temp files all follow a linked host directory,
+  // so refuse every symlink before any candidate is read or written.
+  for (const rel of CANDIDATES) {
+    const symlinkError = assertNoSymlinkInPath(cwd, rel) ?? assertNoSymlinkInPath(cwd, `${rel}${BACKUP_SUFFIX}`);
+    if (symlinkError) throw new Error(symlinkError);
+  }
+  for (const filePath of CANDIDATES.map((rel) => path.join(cwd, rel))) {
     const plan = planForFile(filePath);
     if (!plan) continue;
     files.push(plan);

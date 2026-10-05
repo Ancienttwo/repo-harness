@@ -71,6 +71,31 @@ describe("new-plan helper integration", () => {
     }
   }, 30_000);
 
+  test("generated plans advertise the supported verification-plan command from both template paths", () => {
+    const inventory = readFileSync(join(TEMPLATE_DIR, "..", "workflow-contract.v1.json"), "utf-8");
+    expect(inventory).toContain('"verification-plan"');
+    for (const withLocalTemplate of [true, false]) {
+      const cwd = tmpWorkspace(`helper-new-plan-verification-${withLocalTemplate ? "local" : "fallback"}`);
+      try {
+        copyHelpers(cwd);
+        if (withLocalTemplate) {
+          mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
+          copyFileSync(join(TEMPLATE_DIR, "plan.template.md"), join(cwd, ".claude/templates/plan.template.md"));
+        }
+        const res = run("bash", ["scripts/new-plan.sh", "--slug", "my-feature", "--title", "My Feature"], cwd);
+        expect(res.status).toBe(0);
+        const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-my-feature\.md$/.test(name));
+        expect(plans.length).toBe(1);
+        const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+        expect(plan).not.toContain("run verify-contract --contract");
+        const artifactStem = plans[0].replace(/^plan-/, "").replace(/\.md$/, "");
+        expect(plan).toContain(`repo-harness run verification-plan execute --repo . --contract tasks/contracts/${artifactStem}.contract.md --report-file .ai/harness/runs/${artifactStem}.report.json`);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    }
+  }, 30_000);
+
   test("new-plan should suffix filename with -v2 when same slug/timestamp already exists", () => {
     const cwd = tmpWorkspace("helper-plan-collision");
     try {

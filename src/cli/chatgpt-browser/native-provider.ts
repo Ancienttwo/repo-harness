@@ -399,8 +399,9 @@ export async function checkNativeChatgptSession(input: {
       },
     };
   } finally {
-    if (input.keepBrowser !== true && connection) {
-      await connection.send('Browser.close').catch(() => undefined);
+    // --keep-browser keeps Chrome open; this invocation still releases its CDP client.
+    if (connection) {
+      if (input.keepBrowser !== true) await connection.send('Browser.close').catch(() => undefined);
       connection.close();
     }
   }
@@ -485,6 +486,20 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
         code: 'NATIVE_MODEL_SELECTION_UNSUPPORTED',
         message: 'native provider cannot select model or thinking level',
         recovery: 'Omit --model/--thinking for native runs, or use the Oracle provider when model selection is required.',
+      },
+    };
+  }
+  // Native submits one prompt per run. Refuse queued turns before launch so no
+  // requested turn is silently dropped.
+  if (bundle.followups.length > 0) {
+    const queued = `${bundle.followups.length} queued follow-up${bundle.followups.length === 1 ? '' : 's'}`;
+    return {
+      status: 'failed',
+      output: `Native ChatGPT browser provider sends only one prompt per run; it did not send the prompt or the ${queued}.`,
+      error: {
+        code: 'NATIVE_FOLLOWUPS_UNSUPPORTED',
+        message: `native provider cannot send ${queued}`,
+        recovery: 'Omit --follow-up for native runs and send each turn with browser-followup --prompt, or use the Oracle provider for queued follow-ups.',
       },
     };
   }
@@ -598,11 +613,10 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
       },
     };
   } finally {
-    if (input.keepBrowser !== true) {
-      if (connection) {
-        await connection.send('Browser.close').catch(() => undefined);
-        connection.close();
-      }
+    // --keep-browser keeps Chrome open; this invocation still releases its CDP client.
+    if (connection) {
+      if (input.keepBrowser !== true) await connection.send('Browser.close').catch(() => undefined);
+      connection.close();
     }
   }
 }

@@ -11,6 +11,9 @@ import { execFileSync } from 'child_process';
 import { dirname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { parseHookInput, type HookInputFs } from './hook-input';
+import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
+
+const TRACE_LOCK_PATH = '.ai/harness/state/claude-trace.lock';
 
 export interface TraceObserverFs extends HookInputFs {
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
@@ -173,7 +176,6 @@ export function runTraceObserver(opts: TraceObserverInput): TraceObserverResult 
       } catch { /* advisory marker */ }
     }
 
-    rotateTrace(tracePath, fsApi);
     const record = {
       ts: offsetTimestamp(now),
       event_type: eventType,
@@ -187,7 +189,12 @@ export function runTraceObserver(opts: TraceObserverInput): TraceObserverResult 
       agent_name: agentName,
       session_source: sessionSource,
     };
-    fsApi.appendFileSync(tracePath, `${JSON.stringify(record)}\n`);
+    // Rotation rewrites the file from a snapshot. Every writer holds one lock
+    // from that snapshot to its append, so no other append can fall between.
+    withExclusiveDirectoryLock(realpathSync(opts.repoRoot), TRACE_LOCK_PATH, () => {
+      rotateTrace(tracePath, fsApi);
+      fsApi.appendFileSync(tracePath, `${JSON.stringify(record)}\n`);
+    }, { reclaimStaleEmptyDirectory: true });
 
     let stdout = '';
     if (toolName === 'apply_patch') {

@@ -452,10 +452,12 @@ describe('issue #281 pure offer-transition observer', () => {
     expect(() => decideAgentRuntimeOfferWake(previous, buildAgentRuntimeOfferWakeSnapshot(emptyOffers(other)))).toThrow();
   });
 
-  test('the idempotency key is a deterministic function of Binding, snapshot and reason', () => {
-    const input = { engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, snapshot_revision: digest, wake_reason: 'new_eligible_offer' } as const;
+  test('the idempotency key is a deterministic function of Binding, snapshot, reason and predecessor ledger', () => {
+    const input = { engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, snapshot_revision: digest, wake_reason: 'new_eligible_offer', predecessor_ledger_sha256: null } as const;
     expect(deriveAgentRuntimeOfferWakeIdempotencyKey(input)).toBe(deriveAgentRuntimeOfferWakeIdempotencyKey({ ...input }));
     expect(deriveAgentRuntimeOfferWakeIdempotencyKey({ ...input, wake_reason: 'retry_due' }))
+      .not.toBe(deriveAgentRuntimeOfferWakeIdempotencyKey(input));
+    expect(deriveAgentRuntimeOfferWakeIdempotencyKey({ ...input, predecessor_ledger_sha256: `sha256:${'8'.repeat(64)}` }))
       .not.toBe(deriveAgentRuntimeOfferWakeIdempotencyKey(input));
   });
 });
@@ -494,6 +496,25 @@ describe('issue #281 durable wake store', () => {
       .not.toBeNull();
   });
 
+  test('a return to an earlier snapshot arms a new wake instead of reusing the superseded one', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const original = offers(fx);
+    const first = record(fx, original, '2026-09-03T10:04:00.000Z');
+    const second = record(fx, offers(fx, { taskRevision: '3'.repeat(64) }), '2026-09-03T10:04:10.000Z');
+    expect(second.outcome).toBe('wake_coalesced');
+    const third = record(fx, original, '2026-09-03T10:04:20.000Z');
+    expect(third.outcome).toBe('wake_coalesced');
+    expect(third.status!.intent.effect_id).not.toBe(first.status!.intent.effect_id);
+    expect(third.status!.current.state).toBe('intent_persisted');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('superseded');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, second.status!.intent.effect_id).current.state).toBe('superseded');
+    const due = listDueOfferWakes(fx.repoRoot, { now: '2026-09-03T10:05:00.000Z' });
+    expect(due.map((event) => event.effect_id)).toEqual([third.status!.intent.effect_id]);
+    expect(startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: third.status!.intent.effect_id, started_at: '2026-09-03T10:05:00.000Z', env: fx.env }).action)
+      .not.toBeNull();
+  });
+
   test('the bounded debounce window coalesces repeated changes and is never extended by them', () => {
     const fx = fixture();
     record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z', { debounce_ms: 60_000 });
@@ -518,6 +539,35 @@ describe('issue #281 durable wake store', () => {
     const second = record(fx, offers(fx, { taskRevision: '3'.repeat(64) }), '2026-09-03T10:04:30.000Z');
     expect(second).toMatchObject({ outcome: 'no_wake', cause: 'wake_in_flight' });
     expect(second.ledger.pending!.effect_id).toBe(first.status!.intent.effect_id);
+  });
+
+  test('a snapshot that arrives while a wake is in flight stays due after that wake ends', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const first = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    const start = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env });
+    const newer = offers(fx, { taskRevision: '3'.repeat(64) });
+    expect(record(fx, newer, '2026-09-03T10:04:20.000Z')).toMatchObject({ outcome: 'no_wake', cause: 'wake_in_flight' });
+    // The controller step truthfully reports the snapshot it consumed: the first one.
+    recordAgentRuntimeControllerStep({
+      repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id, control_ref: start.action!.control_ref,
+      observed_snapshot_revision: first.ledger.observed.snapshot_revision, observed_at: '2026-09-03T10:04:30.000Z',
+    });
+    expect(observeAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id,
+      adapter: { adapter_kind: 'herdr-cli-agent', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      observed_at: '2026-09-03T10:04:40.000Z', receipt_wait_exhausted: false,
+    }).current.state).toBe('observed_success');
+    const successor = record(fx, newer, '2026-09-03T10:04:50.000Z');
+    expect(successor.outcome).toBe('wake_prepared');
+    expect(successor.ledger.pending!.snapshot_revision).toBe(newer.snapshot_revision);
+    const due = listDueOfferWakes(fx.repoRoot, { now: '2026-09-03T10:05:00.000Z' });
+    expect(due.map((event) => event.effect_id)).toEqual([successor.status!.intent.effect_id]);
+    const repeat = record(fx, newer, '2026-09-03T10:05:00.000Z');
+    expect(repeat.outcome).toBe('unchanged');
+    expect(repeat.status!.intent.effect_id).toBe(successor.status!.intent.effect_id);
+    expect(startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: successor.status!.intent.effect_id, started_at: '2026-09-03T10:05:10.000Z', env: fx.env }).action)
+      .not.toBeNull();
   });
 
   test('Binding rotation, capability downgrade and authorization change all fail before the Host action', () => {

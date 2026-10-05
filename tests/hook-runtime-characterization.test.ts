@@ -18,7 +18,7 @@ function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
     case 'PreToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
     case 'PreToolUse.subagent': return { host: 'claude', input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Inspect the repository and report findings.' } }) };
     case 'PostToolUse.edit': return { host: 'claude', input: JSON.stringify({ tool_input: { file_path: 'src/example.ts' } }) };
-    case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }) };
+    case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_response: { stdout: 'hello\n', stderr: '', interrupted: false }, exit_code: 0 }) };
     case 'PostToolUse.always': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }) };
     case 'UserPromptSubmit.default': return { host: 'claude', input: JSON.stringify({ prompt: 'Please review this function for correctness.' }) };
     case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'Check the task inbox.' }) };

@@ -169,6 +169,22 @@ describe('GitHub external-source adapter', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
+  test('reports a repeated revision as the latest refresh after the source flips back', () => {
+    const root = refreshRepository();
+    let tick = 0;
+    const now = () => new Date(Date.parse('2026-08-31T00:00:00.000Z') + (tick++ * 1000));
+    try {
+      const first = refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
+      refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('later'), now });
+      const again = refreshExternalSource({ policy: readExternalSourcesPolicy(root), repo_root: root, registered_repository_id: 'repo_1', runner: snapshot('first'), now });
+
+      const issue = again.projection.issues[0];
+      expect(issue.source_drift).toBe(true);
+      expect(issue.latest_observation.source_revision).toBe(first.projection.issues[0].latest_observation.source_revision);
+      expect(again.projection.latest_complete_refresh?.source_revisions).toEqual([issue.latest_observation.source_revision]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('refresh measures the fetch deadline on its injected clock', () => {
     const root = refreshRepository();
     let tick = 0;

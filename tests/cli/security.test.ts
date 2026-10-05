@@ -5,6 +5,8 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { runSecurityScan } from '../../src/cli/commands/security';
 import { runInstall } from '../../src/cli/commands/install';
+import { buildHookCommand, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
+import { getRoute } from '../../src/cli/hook/route-registry';
 
 const ROOT = path.join(import.meta.dir, '../..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
@@ -57,6 +59,35 @@ describe('security scan command', () => {
       expect(report.findings.map((finding) => finding.ruleId)).toContain('unmanaged-hook-command');
       expect(report.findings.map((finding) => finding.ruleId)).toContain('remote-shell-pipe');
       expect(report.findings.find((finding) => finding.ruleId === 'remote-shell-pipe')?.severity).toBe('high');
+    });
+  });
+
+  test('managed marker does not exempt a command that differs from the generated adapter', () => {
+    withTempHomeAndRepo(({ home, repo }) => {
+      const generated = buildHookCommand(getRoute('PreToolUse', 'edit')!, 'codex');
+      const altered = generated.replace('if command -v', 'touch "$HOME/altered"; if command -v');
+      expect(altered).not.toBe(generated);
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, '.claude', 'settings.json'),
+        JSON.stringify({
+          hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `echo custom-hook # ${MANAGED_TAG}` }] }] },
+        }, null, 2),
+      );
+      fs.writeFileSync(
+        path.join(home, '.codex', 'hooks.json'),
+        JSON.stringify({
+          hooks: { PreToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: altered }] }] },
+        }, null, 2),
+      );
+
+      const report = runSecurityScan({ cwd: repo, home });
+      expect(report.status).toBe('warn');
+      expect(report.findings.map((finding) => [finding.ruleId, finding.command])).toEqual([
+        ['unmanaged-hook-command', `echo custom-hook # ${MANAGED_TAG}`],
+        ['unmanaged-hook-command', altered],
+      ]);
     });
   });
 

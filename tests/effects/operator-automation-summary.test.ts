@@ -51,7 +51,7 @@ function fixture(populated = true) {
   const budget = buildAutomationBudget({automation_run_id:hex('run'),goal_id:hex('goal'),goal_revision:hex('goal-revision'),repository_id:id,engineer_id:null,claim_id:null,
     authorization:grant,contract_sha256:null,contract_limits:null,metric_support:sealAutomationMetricSupport({provider:'codex',capability_sha256:hex('capability'),verified_metrics:[],observed_at:at}),
     unattended:true,created_by:'owner',created_at:at,supersedes_sha256:null,revision:1});
-  const run = buildAutomationControllerRun({run_id:`sha256:${hex('controller')}`,repository_id:id,budget_sha256:`sha256:${budget.budget_sha256}`,
+  const run = buildAutomationControllerRun({run_id:hex('controller'),repository_id:id,budget_sha256:budget.budget_sha256,
     principal:{authorization_id:'authorization-1',engineer_id:'engineer:capability.runtime-harness.automation',binding_id:'11111111-1111-4111-8111-111111111111',binding_generation:1,engineer_contract_revision:`sha256:${hex('contract')}`,authorization_revision:1},
     policy:{maximum_steps_per_invocation:4,maximum_duration_ms:10000,maximum_transient_retries:2,initial_backoff_ms:100,maximum_backoff_ms:1000,
       lease_liveness:buildLeaseLivenessPolicy({renewal_interval_ms:1000,maximum_ttl_ms:10000,renewal_actor_kind:'controller',required_evidence_sources:['controller'],unproven_behavior:'require_attention'})},
@@ -59,7 +59,7 @@ function fixture(populated = true) {
   if (populated) {
     mintProgramAuthorization({repo_root:root,authorization:grant,env});
     publishAutomationBudget({repo_root:root,budget,env});
-    startAutomationControllerRun({repo_root:root,run,idempotency_key:'start',observed_at:at});
+    startAutomationControllerRun({repo_root:root,run,idempotency_key:'start'});
   }
   return {base,root,home,id,env,grant,budget,run,input:{repository_id:id,env}};
 }
