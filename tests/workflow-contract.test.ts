@@ -16,6 +16,7 @@ import { inspectRepo } from "../scripts/inspect-project-state";
 import { planAdoption } from "../src/core/adoption/plan";
 import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 import { loadWorkflowContract } from "../scripts/workflow-contract";
+import { renderWorkflowContractMarker } from "../src/core/adoption/workflow-contract-asset";
 import { captureGitVirtualTreeSnapshot } from "../src/effects/evidence/verification-execution";
 import { hashManagedTree } from "../src/cli/installer/install-profile";
 
@@ -54,10 +55,10 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("cutover-closure.ts");
   });
 
-  test("self-hosted runtime manifest should match the asset contract", () => {
-    const asset = readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8");
+  test("self-hosted opt-in marker matches the renderer and the protocol", () => {
     const runtime = readFileSync(join(ROOT, ".ai/harness/workflow-contract.json"), "utf-8");
-    expect(runtime).toBe(asset);
+    expect(runtime).toBe(renderWorkflowContractMarker());
+    expect(JSON.parse(runtime)).toEqual({ kind: "repo-harness.workflow-contract-marker", protocol: 1 });
   });
 
   test("hook asset files should stay in projection parity with self-hosted .ai/hooks", () => {
@@ -410,6 +411,34 @@ describe("workflow contract manifest", () => {
 });
 
 describe("state inspection and legacy doc migration", () => {
+  test("inspector uses the package contract regardless of repo marker content", () => {
+    const repo = mkdtempSync(join(tmpdir(), "inspect-project-state-marker-"));
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      mkdirSync(join(repo, "docs"), { recursive: true });
+      writeFileSync(join(repo, "docs", "TODO.md"), "- [ ] legacy task\n");
+      const markerPath = join(repo, ".ai", "harness", "workflow-contract.json");
+      const missing = inspectRepo(repo);
+      expect(missing.drift_signals).toContain("missing-runtime-contract-manifest");
+      expect(missing.upgrade_plan.map((item) => item.id)).toContain("runtime-contract-refresh");
+
+      writeFileSync(markerPath, renderWorkflowContractMarker());
+      const expected = inspectRepo(repo);
+      expect(expected.drift_signals).not.toContain("missing-runtime-contract-manifest");
+      expect(expected.upgrade_plan.map((item) => item.id)).toContain("legacy-docs-todo");
+      for (const content of [
+        readFileSync(join(ROOT, "tests/fixtures/adoption/workflow-contract-v0.19.5.json"), "utf8"),
+        "{}\n",
+        "{broken\n",
+      ]) {
+        writeFileSync(markerPath, content);
+        expect(inspectRepo(repo)).toEqual(expected);
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test("inspector should classify pre-tasks-first drift", () => {
     const repo = mkdtempSync(join(tmpdir(), "inspect-project-state-"));
 

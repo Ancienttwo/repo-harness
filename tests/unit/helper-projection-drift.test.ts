@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { listHelperFiles, resolveHelper } from '../../src/effects/runtime/helper-runner';
+import { renderWorkflowContractMarker } from '../../src/core/adoption/workflow-contract-asset';
 const ROOT = join(import.meta.dir, '..', '..');
 describe('single executable helper authority', () => {
   test('every packaged helper resolves the exact canonical script, including protected helpers', () => {
@@ -17,11 +18,11 @@ describe('single executable helper authority', () => {
       expect(lstatSync(actual!.path).isSymbolicLink()).toBe(false);
     }
   });
-  test('local and packaged workflow manifests agree on the one runtime location', () => {
+  test('the package defines the runtime location and the repo holds the opt-in marker', () => {
     const packed = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
-    const local = JSON.parse(readFileSync(join(ROOT, '.ai/harness/workflow-contract.json'), 'utf8'));
+    const local = readFileSync(join(ROOT, '.ai/harness/workflow-contract.json'), 'utf8');
     expect(packed.helpers.runtimeDirectory).toBe('package:scripts');
-    expect(local).toEqual(packed);
+    expect(local).toBe(renderWorkflowContractMarker());
   });
   test('check rejects byte and mode drift; write repairs only the disposable projection', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));

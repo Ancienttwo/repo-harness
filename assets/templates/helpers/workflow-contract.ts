@@ -286,15 +286,6 @@ export function loadWorkflowContract(
   return validateWorkflowContract(parsed, contractPath);
 }
 
-export function resolveInstalledWorkflowContract(repoRoot: string): string {
-  return join(repoRoot, ".ai", "harness", "workflow-contract.json");
-}
-
-export function resolveWorkflowContractForRepo(repoRoot: string): string {
-  const installedPath = resolveInstalledWorkflowContract(repoRoot);
-  return existsSync(installedPath) ? installedPath : resolveUpstreamWorkflowContract(repoRoot);
-}
-
 export function getHelperScripts(contract: WorkflowContract): string[] {
   return [...contract.helpers.scripts];
 }

@@ -51,7 +51,6 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/harness/runs/.gitkeep",
         "./.ai/harness/security/.gitkeep",
         "./.ai/harness/triage/.gitkeep",
-        "./.ai/harness/workflow-contract.json",
         "./.ai/harness/worktrees/.gitkeep",
         "./.ai/hooks/README.md",
         "./.claude/templates/contract.template.md",

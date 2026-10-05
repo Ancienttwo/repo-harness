@@ -11,7 +11,7 @@ Run the shared preflight in `../SKILL.md` first.
 2. Use the plan catalog A-K from `assets/plan-map.json`.
 3. If the app needs agent runtime structure, select `ai_native_profile` as an overlay; otherwise keep the default `none`.
 4. Run `scripts/init-project.sh` or the matching stack template path.
-5. Attach the tasks-first workflow through the same contract install path used by init.
+5. Run `repo-harness init --repo <target-repo>` to attach the tasks-first workflow and write the opt-in marker.
 6. Verify scaffold output and workflow checks.
 
 ## AI-native Overlay

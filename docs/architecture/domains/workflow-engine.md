@@ -18,7 +18,9 @@ verify without a live service.
 ## Stable Rules
 
 - `assets/workflow-contract.v1.json` is the canonical contract asset.
-- `.ai/harness/workflow-contract.json` is the installed runtime copy.
+- `.ai/harness/workflow-contract.json` is the opt-in marker. Its content does not select a contract version.
+- Inspect reads the package contract. Adoption writes the marker and backs up replaced content.
+- Shell scaffold scripts leave workflow attachment to `repo-harness init`.
 - Migration deletes only manifest-owned `known_generated` surfaces.
 - User-authored legacy docs are preserved or archived before template refresh.
 - `_ref/`, `_ops/`, secrets, local env, and custom hooks are not product migration surfaces.

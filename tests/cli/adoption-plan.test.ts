@@ -418,6 +418,28 @@ describe("canonical adoption plan", () => {
     }
   });
 
+  test("adoption replaces the v0.19.5 contract body and keeps its bytes in the backup", () => {
+    const repo = tempRepo();
+    try {
+      // v0.19.5 commit 55bafc000ad0d4051bb443845ca9a51c4a2bf5dc, asset blob a7f59c40c2026c34920323f30ead61caca4bdc35.
+      const legacy = readFileSync(join(ROOT, "tests/fixtures/adoption/workflow-contract-v0.19.5.json"), "utf8");
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      const target = join(repo, ".ai", "harness", "workflow-contract.json");
+      writeFileSync(target, legacy);
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({ kind: "repo-harness.workflow-contract-marker", protocol: 1 });
+      const manifest = JSON.parse(readFileSync(join(repo, apply.transactionManifestPath!), "utf8")) as { operations: Array<{ path?: string; backupPath?: string }> };
+      const backup = manifest.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.backupPath;
+      expect(backup).toBeDefined();
+      expect(readFileSync(join(repo, backup!), "utf8")).toBe(legacy);
+      const next = planAdoption({ repoRoot: repo, mode: "minimal", apply: true });
+      expect(next.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.status).toBe("skipped");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
   test("self-host is rejected before the standard scaffold is created", () => {
     const repo = tempRepo();
     try {

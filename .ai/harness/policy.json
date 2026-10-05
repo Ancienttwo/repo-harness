@@ -193,7 +193,7 @@
     "assets": {
       "sources": [
         ".ai/harness/policy.json",
-        ".ai/harness/workflow-contract.json",
+        "package:assets/workflow-contract.v1.json",
         ".ai/hooks/",
         "package:scripts",
         "docs/reference-configs/"
@@ -350,7 +350,7 @@
       "remove": "delete only workflow-contract actions marked ownership=known_generated"
     },
     "cleanup": {
-      "source": ".ai/harness/workflow-contract.json#migrations.upgrade.actions",
+      "source": "package:assets/workflow-contract.v1.json#migrations.upgrade.actions",
       "remove_only_ownership": "known_generated",
       "unknown_files": "preserve-or-archive",
       "custom_hooks": "preserve",

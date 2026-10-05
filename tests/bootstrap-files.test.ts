@@ -299,7 +299,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("check-task-workflow.sh");
     expect(sharedLib).not.toContain("skill-factory-create.sh");
     expect(sharedLib).not.toContain("skill-factory-check.sh");
-    expect(sharedLib).toContain("pi_install_workflow_contract");
+    expect(sharedLib).not.toContain("pi_install_workflow_contract");
     expect(sharedLib).toContain("check:task-sync");
     expect(sharedLib).toContain("check:architecture-sync");
     expect(sharedLib).toContain("check:task-workflow");
@@ -310,7 +310,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/heartbeat-triage.md");
     expect(contract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
-    expect(content).toContain("install_workflow_contract");
+    expect(content).not.toContain("install_workflow_contract");
     expect(content).toContain("pi_install_hook_assets");
     expect(content).not.toContain("pi_install_hook_adapters");
     expect(content).toContain("pi_print_codex_hook_trust_notice");
@@ -396,7 +396,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).not.toContain("docs/TODO.md");
     expect(content).toContain("pi_install_helpers");
     expect(content).toContain("pi_install_templates");
-    expect(content).toContain("install_workflow_contract");
+    expect(content).not.toContain("install_workflow_contract");
     expect(sharedLib).toContain("contract.template.md");
     expect(sharedLib).toContain("implementation-notes.template.md");
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");

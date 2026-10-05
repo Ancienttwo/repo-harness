@@ -7,7 +7,7 @@ import { makeOperationId } from "./operations";
 import { adoptionTemplateFile } from "./manifest-templates";
 import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { managedBlockNeedsUpdate } from "./managed-block";
-import { readWorkflowContractAsset } from "./workflow-contract-asset";
+import { renderWorkflowContractMarker } from "./workflow-contract-asset";
 import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
@@ -749,7 +749,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     operations.push(writeOperation(opts.repoRoot, file.path, file.content, file.reason, { ifMissing: true }));
   }
   addTodoMigrations(opts.repoRoot, operations);
-  operations.push(writeOperation(opts.repoRoot, ".ai/harness/workflow-contract.json", readWorkflowContractAsset(), "Install canonical repo-harness workflow contract manifest"));
+  operations.push(writeOperation(opts.repoRoot, ".ai/harness/workflow-contract.json", renderWorkflowContractMarker(), "Install the repo-harness opt-in marker"));
 
   const gitignore = fileContent(opts.repoRoot, ".gitignore") ?? "";
   const gitignoreOperation = gitignoreManagedBlockOperation("planned");
