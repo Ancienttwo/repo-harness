@@ -10,6 +10,7 @@ import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1699,6 +1700,58 @@ test('a lease this completion could not release is refused before any write', ()
     expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(sprintBefore);
     expect(readLease(repo, RACE_ID).record?.claim_id).toBe('claim-original');
     expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
+  }, 60_000);
+
+  /**
+   * Run one completion while `directory` is readable but not writable, which
+   * is a real permission fault past the gate, and return what it left behind.
+   */
+  function completeWithReadOnlyDirectory(repo: string, directory: string) {
+    const tokenPath = join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`);
+    const before = {
+      sprint: readFileSync(join(repo, RACE_SPRINT), 'utf-8'),
+      owner: readFileSync(leaseOwnerPath(repo, RACE_ID), 'utf-8'),
+      token: readFileSync(tokenPath, 'utf-8'),
+    };
+    chmodSync(directory, 0o555);
+    let outcome;
+    try {
+      outcome = completeRowSprintCommand(
+        { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+        processSprintDependencies(repo),
+      );
+    } finally {
+      chmodSync(directory, 0o755);
+    }
+    return { before, outcome, tokenPath };
+  }
+
+  test('a token that cannot be removed after the lease is gone restores the lease and the token', () => {
+    if (process.platform === 'win32') return;
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const { before, outcome, tokenPath } = completeWithReadOnlyDirectory(repo, join(repo, CLAIM_TOKEN_DIR));
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('EACCES');
+    // The row is pending again, so the claim that protects it must be back too:
+    // otherwise any agent can claim the row while this tree still holds a token.
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(before.sprint);
+    expect(readLease(repo, RACE_ID).raw).toBe(before.owner);
+    expect(readFileSync(tokenPath, 'utf-8')).toBe(before.token);
+  }, 60_000);
+
+  test('a lease that cannot leave the lease plane after the released write restores the bound record', () => {
+    if (process.platform === 'win32') return;
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const { before, outcome, tokenPath } = completeWithReadOnlyDirectory(repo, join(coordinationRoot(repo), 'leases'));
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('EACCES');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(before.sprint);
+    expect(readLease(repo, RACE_ID).raw).toBe(before.owner);
+    expect(readFileSync(tokenPath, 'utf-8')).toBe(before.token);
   }, 60_000);
 
   test('complete-row refuses a target ref the lease was not claimed against', () => {

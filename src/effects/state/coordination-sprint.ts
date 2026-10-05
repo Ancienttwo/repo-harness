@@ -754,8 +754,10 @@ export function completeRowSprintCommand(
         // the row pending.
         const releasing = gate !== null && options.deferLeaseRelease !== true;
         let transition: LeaseTransition | null = null;
+        let releasedLease: ReleasedLease | null = null;
         if (releasing) {
-          const current = deps.coordination.readLease(taskId).record;
+          const read = deps.coordination.readLease(taskId);
+          const current = read.record;
           if (current === null) {
             return refuse(`the lease for '${lockedRow.task}' disappeared before it could be released`);
           }
@@ -768,12 +770,14 @@ export function completeRowSprintCommand(
           const computed = releaseLeaseRecord(current, gate!.claim_id);
           if (!computed.ok) return refuse(computed.error);
           transition = computed;
+          releasedLease = { taskId, record: current, raw: read.raw };
         }
 
         // Past this point the transaction commits: sprint bytes, then the lease
         // plane, then the token. Anything that still throws restores the sprint
-        // through the same journal the migration uses, so a failure never leaves
-        // a row published `[x]` on its own.
+        // through the same journal the migration uses, and the owner record this
+        // call started to release, so a failure never leaves a row published
+        // `[x]` on its own, nor a pending row that its owner no longer holds.
         const journal = createWriteJournal(deps.coordination.journalFs);
         let released: string | null = null;
         try {
@@ -785,15 +789,23 @@ export function completeRowSprintCommand(
             released = gate!.claim_id;
           }
         } catch (error) {
+          const restoreFailure = (subject: string, restoreError: unknown): Error => new Error(
+            `sprint complete-row failed and could not restore ${subject}: `
+            + `${restoreError instanceof Error ? restoreError.message : String(restoreError)} `
+            + `(original failure: ${error instanceof Error ? error.message : String(error)})`,
+            { cause: error },
+          );
           try {
             journal.restore();
           } catch (restoreError) {
-            throw new Error(
-              `sprint complete-row failed and could not restore ${sprintPath}: `
-              + `${restoreError instanceof Error ? restoreError.message : String(restoreError)} `
-              + `(original failure: ${error instanceof Error ? error.message : String(error)})`,
-              { cause: error },
-            );
+            throw restoreFailure(sprintPath, restoreError);
+          }
+          if (releasedLease !== null) {
+            try {
+              restoreLeaseAfterFailedRelease(deps, releasedLease);
+            } catch (restoreError) {
+              throw restoreFailure(`the lease for '${lockedRow.task}'`, restoreError);
+            }
           }
           throw error;
         }
@@ -813,6 +825,25 @@ export function completeRowSprintCommand(
   } catch (error) {
     return operationalFailure(error);
   }
+}
+
+/** The owner record a completion validated before it started to release it. */
+interface ReleasedLease {
+  readonly taskId: string;
+  readonly record: LeaseOwnerRecord;
+  readonly raw: string | null;
+}
+
+/**
+ * Put back the owner record a failed completion started to release. The task
+ * lock is still held, so no other verb can have claimed the row since the read;
+ * the directory is recreated when the release got as far as removing it.
+ */
+function restoreLeaseAfterFailedRelease(deps: SprintCommandDependencies, original: ReleasedLease): void {
+  const current = deps.coordination.readLease(original.taskId);
+  if (current.raw === original.raw) return;
+  if (current.classification === 'available') deps.coordination.createLeaseDirectory(original.taskId);
+  deps.coordination.writeLeaseOwner(original.taskId, original.record);
 }
 
 /**
