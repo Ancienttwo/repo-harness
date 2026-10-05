@@ -1240,7 +1240,8 @@ describe('chatgpt browser command', () => {
     }
   }
 
-  test.skipIf(!NATIVE_CHROME_PRESENT)('native consult refuses queued follow-ups before it opens Chrome', async () => {
+  // The follow-up guard runs before any Chrome check, so it holds on every host.
+  test('native consult refuses queued follow-ups before it opens Chrome', async () => {
     await withAsyncRepo(async (repoRoot) => {
       const profileDir = join(repoRoot, 'automation-profile');
       mkdirSync(profileDir);

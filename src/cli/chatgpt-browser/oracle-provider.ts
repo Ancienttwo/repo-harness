@@ -702,7 +702,7 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
           ...evidence,
           conversationUrl,
           output: [
-            'Oracle timed out after it submitted the prompt.',
+            'Oracle recorded the prompt as submitted before the run timed out.',
             'Do not re-send the prompt; continue the existing conversation.',
             `Oracle session: ${providerSessionId}`,
             log ? `\n[log]\n${log}` : '',
