@@ -79,7 +79,7 @@ import type {
   CollaborationThreadSnapshotV1,
 } from '../../core/collaboration/thread-projection';
 import type { CollaborativeWorkExchangeSnapshotV1 } from '../../core/collaboration/work-exchange';
-import type { EngineerOfferV1 } from '../../core/engineers/scheduling';
+import type { EngineerPrincipalV1 } from '../../core/engineers/principal-claim';
 import { collectEngineerOffers } from '../engineers/scheduling';
 import { resolveEngineerPrincipal } from '../engineers/principal';
 import { engineerPrincipalAuthorization } from './actor';
@@ -134,39 +134,55 @@ function surfaceRoot(context: CollaborationSurfaceContext): string {
   return realpathSync(context.repo_root);
 }
 
-/**
- * Collect the exchange for one authenticated participant.
- *
- * `read_execution_offers` is required by the collector and is answered by the
- * scheduling plane for this exact principal, because an absent reader would make
- * an empty offer list indistinguishable from "the caller did not ask". When
- * scheduling refuses — an unregistered repository, a stale principal — the read
- * fails with that refusal rather than reporting zero offers, which would be this
- * surface inventing an answer the scheduling plane declined to give.
- */
-function readExecutionOffersFor(
+function resolveSurfacePrincipal(
   repoRoot: string,
   context: CollaborationSurfaceContext,
-): readonly EngineerOfferV1[] {
-  const principal = resolveEngineerPrincipal({
+): EngineerPrincipalV1 {
+  return resolveEngineerPrincipal({
     repo_root: repoRoot,
     authorization_id: context.authorization_id,
     env: context.env,
   });
-  return collectEngineerOffers({ repo_root: repoRoot, principal, env: context.env }).offers;
 }
 
+/**
+ * Collect the exchange for one authenticated participant.
+ *
+ * The principal is resolved before any record is read, so an unmapped, revoked
+ * or stale authorization receives its refusal and no collaboration payload.
+ *
+ * `read_execution_offers` is required by the collector and is answered by the
+ * scheduling plane for this exact principal, because an absent reader would make
+ * an empty offer list indistinguishable from "the caller did not ask". The
+ * collector treats offers as additive and marks a failed offer read `degraded`.
+ * That fallback is for offer data only: the principal is resolved again on each
+ * pass, and a refusal on either pass fails the read. Without that, a mapping
+ * revoked mid-collection would become a degraded but successful read.
+ */
 function collect(
   repoRoot: string,
   context: CollaborationSurfaceContext,
 ): CollaborativeWorkExchangeCollectionV1 {
-  return collectCollaborativeWorkExchange({
+  resolveSurfacePrincipal(repoRoot, context);
+  let refusal: unknown = null;
+  const collection = collectCollaborativeWorkExchange({
     repo_root: repoRoot,
     // Called once per collector pass, on purpose. Hoisting the read out of the
     // callback would make the offer source look stable to the double read that
     // exists to notice it moving.
-    read_execution_offers: () => readExecutionOffersFor(repoRoot, context),
+    read_execution_offers: () => {
+      let principal: EngineerPrincipalV1;
+      try {
+        principal = resolveSurfacePrincipal(repoRoot, context);
+      } catch (error) {
+        refusal ??= error;
+        throw error;
+      }
+      return collectEngineerOffers({ repo_root: repoRoot, principal, env: context.env }).offers;
+    },
   });
+  if (refusal !== null) throw refusal;
+  return collection;
 }
 
 export interface CollaborationExchangeViewV1 {
@@ -447,11 +463,7 @@ export function collaborationPacketRead(
   packetSha256: string,
 ): CollaborationPacketReadResultV1 {
   const repoRoot = surfaceRoot(context);
-  resolveEngineerPrincipal({
-    repo_root: repoRoot,
-    authorization_id: context.authorization_id,
-    env: context.env,
-  });
+  resolveSurfacePrincipal(repoRoot, context);
   const packet = readCollaborationContextPacket(repoRoot, packetSha256);
   if (packet === null) {
     return collaborationUnavailable(`collaboration context packet is unavailable: ${packetSha256}`);

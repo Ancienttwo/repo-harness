@@ -11,13 +11,16 @@
  * carries the frozen untrusted-coordination marking.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { writeFileSync } from 'fs';
+import { rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 import { COLLABORATION_CONTEXT_WARNING } from '../../src/core/collaboration/context-packet';
 import { collaborationActorLineage } from '../../src/core/collaboration/common';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { readEngineerBindingStatus, retireEngineer } from '../../src/effects/engineers/binding-store';
+import { revokeEngineerPrincipal } from '../../src/effects/engineers/principal-store';
+import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
   createCollaborationFixture,
@@ -274,6 +277,61 @@ describe('C7 Engineer MCP collaboration tools', () => {
       }
     }
     expect((structured(exchange).snapshot as Record<string, unknown>).unverified_execution_context_count).toBe(1);
+  });
+
+  test('an unmapped, revoked or stale principal is refused every read and receives no record', async () => {
+    const value = fixture();
+    const posted = await callMcpTool(context(value), 'collaboration_signal_post', signalArgs('signal-a', 'merge-gate-flake'));
+    const published = await callMcpTool(context(value), 'collaboration_handoff_publish', handoffArgs('handoff-a', 'merge-gate-flake'));
+    expect(posted.isError).toBeUndefined();
+    expect(published.isError).toBeUndefined();
+    const signalId = (structured(posted).signal as Record<string, unknown>).signal_id as string;
+    const handoffId = structured(published).handoff_id as string;
+
+    const repositoryId = repoHarnessRepoIdFor(value.repoRoot);
+    revokeEngineerPrincipal(repositoryId, value.actors[1]!.authorization_id, { env: value.env });
+    const staleEngineer = value.actors[2]!.engineer_id;
+    const staleRevision = loadEngineerProfile(value.repoRoot, staleEngineer).engineer_contract_revision;
+    const staleCurrent = readEngineerBindingStatus(value.repoRoot, staleEngineer, staleRevision).current;
+    retireEngineer(value.repoRoot, {
+      engineer_id: staleEngineer,
+      idempotency_key: 'retire-stale',
+      expected_current_digest: staleCurrent.current_digest,
+      expected_binding_generation: staleCurrent.binding_generation,
+      expected_binding_id: staleCurrent.current_binding_id!,
+      expected_engineer_contract_revision: staleRevision,
+      now: () => '2026-08-30T01:00:00.000Z',
+    });
+
+    for (const [authorizationId, expected] of [
+      ['55555555-5555-4555-8555-555555555555', 'engineer_principal_unmapped'],
+      [value.actors[1]!.authorization_id, 'engineer_principal_revoked'],
+      [value.actors[2]!.authorization_id, 'engineer_principal_stale'],
+    ] as const) {
+      const ctx = { ...context(value), engineerAuthorizationId: authorizationId };
+      for (const name of ['collaboration_exchange', 'collaboration_threads'] as const) {
+        const refused = await callMcpTool(ctx, name, {});
+        expect({ name, isError: refused.isError, code: (structured(refused).error as Record<string, unknown> | undefined)?.code })
+          .toEqual({ name, isError: true, code: expected });
+        const payload = JSON.stringify(refused);
+        expect(payload).not.toContain(signalId);
+        expect(payload).not.toContain(handoffId);
+      }
+    }
+  });
+
+  test('an offer read failure for a valid principal stays a marked, degraded read', async () => {
+    const value = fixture();
+    await callMcpTool(context(value), 'collaboration_signal_post', signalArgs('signal-a', 'merge-gate-flake'));
+    // The scheduling plane refuses an unregistered repository. That is an
+    // optional offer-data failure, not a principal refusal.
+    rmSync(join(value.home, 'registered-repos.json'));
+
+    const exchange = await callMcpTool(context(value), 'collaboration_exchange', {});
+
+    expect(exchange.isError).toBeUndefined();
+    expect(structured(exchange).degraded_sources).toEqual(['execution_offers']);
+    expect((structured(exchange).snapshot as Record<string, unknown>).snapshot_consistency).toBe('degraded');
   });
 
   test('an unauthenticated session cannot reach any collaboration tool', async () => {
