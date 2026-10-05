@@ -866,7 +866,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
     );
   }
 
-  test("stale cache triggers a detached populate: lock appears then disappears, report cache refreshes", async () => {
+  test("stale cache triggers a detached populate that refreshes the report and releases the lock", async () => {
     await withTmpRepoAsync("detached-lock-lifecycle", async (repoRoot) => {
       writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
       const fakeBin = join(repoRoot, "fake-bin");
@@ -887,10 +887,9 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
       // own backgrounded subshell, which never renders either.
       expect(content === null || !content.includes("Tooling Update Advisory")).toBe(true);
 
-      const lockRemoved = await waitUntil(() => !existsSync(lockDir));
-      expect(lockRemoved).toBe(true);
-      const reportWritten = await waitUntil(() => existsSync(reportFile));
-      expect(reportWritten).toBe(true);
+      // The report appears only after the child acquired the lock, so this one
+      // wait proves the child ran and then released its lock.
+      expect(await waitUntil(() => existsSync(reportFile) && !existsSync(lockDir))).toBe(true);
       const report = JSON.parse(readFileSync(reportFile, "utf-8"));
       expect(report.agent_actions[0].id).toBe("cli.update");
       expect(readFileSync(logFile, "utf-8").trim()).toBe("setup check --target codex --check-updates --json");
@@ -947,13 +946,17 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
       );
     }
 
-    function release(fifo: string): void {
-      // Non-blocking open fails with ENXIO when no gated check is waiting.
+    // Non-blocking open fails with ENXIO until the gated check opens the FIFO,
+    // so a true result proves the check was waiting and is now released.
+    function release(fifo: string): boolean {
       try {
         const fd = openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK);
         writeSync(fd, "go\n");
         closeSync(fd);
-      } catch { /* no waiting reader */ }
+        return true;
+      } catch {
+        return false;
+      }
     }
 
     function logLines(logFile: string): number {
@@ -988,7 +991,7 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
           expect(existsSync(join(repoRoot, LOCK))).toBe(true);
           expect(existsSync(join(repoRoot, REPORT))).toBe(false);
 
-          release(fifo);
+          expect(await waitUntil(() => release(fifo))).toBe(true);
           expect(await waitUntil(() => existsSync(join(repoRoot, REPORT)) && !existsSync(join(repoRoot, LOCK)))).toBe(true);
           expect(JSON.parse(readFileSync(join(repoRoot, REPORT), "utf-8")).agent_actions[0].id).toBe("cli.update");
         } finally {
@@ -1010,6 +1013,42 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
         const env = { ...process.env, HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
         sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
         expect(await waitUntil(() => existsSync(join(repoRoot, REPORT)) && !existsSync(join(repoRoot, LOCK)))).toBe(true);
+      });
+    }, 20000);
+
+    test("a refresh that gets the lock after another refresh published a fresh report does not check again", async () => {
+      await withTmpRepoAsync("detached-second-after-fresh", async (repoRoot) => {
+        writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+        const fakeBin = join(repoRoot, "fake-bin");
+        const logFile = join(repoRoot, "tooling-check.log");
+        const fifo = join(repoRoot, "release.fifo");
+        execFileSync("mkfifo", [fifo]);
+        writeGatedRepoHarness(fakeBin, logFile, fifo);
+        const env: NodeJS.ProcessEnv = { ...process.env, HOOK_HOST: "codex", PATH: `${fakeBin}:${process.env.PATH ?? ""}`, REPO_HARNESS_CLI: "" };
+        for (const key of Object.keys(env)) if (key.startsWith("REPO_HARNESS_TOOLING_ADVISORY")) delete env[key];
+        mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
+        const refresh = () => Bun.spawn(
+          [process.execPath, SESSION_CONTEXT_ENTRY, "--detached-tooling-populate", repoRoot, "codex", REPORT, LOCK],
+          { cwd: repoRoot, env, stdout: "ignore", stderr: "pipe" },
+        );
+        let first: ReturnType<typeof refresh> | null = null;
+        let second: ReturnType<typeof refresh> | null = null;
+        try {
+          // Refresh A owns the lock and blocks inside its check. Refresh B
+          // starts while A still owns the lock, then A is released.
+          first = refresh();
+          expect(await waitUntil(() => logLines(logFile) === 1)).toBe(true);
+          second = refresh();
+          expect(await waitUntil(() => release(fifo))).toBe(true);
+          expect(await first.exited).toBe(0);
+          expect(await second.exited).toBe(0);
+          expect(existsSync(join(repoRoot, REPORT))).toBe(true);
+          expect(existsSync(join(repoRoot, LOCK))).toBe(false);
+          expect(logLines(logFile)).toBe(1);
+        } finally {
+          release(fifo);
+          for (const child of [first, second]) if (child && child.exitCode === null) child.kill();
+        }
       });
     }, 20000);
 

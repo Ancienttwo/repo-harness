@@ -1214,6 +1214,9 @@ export function runDetachedToolingPopulate(
     throw error;
   }
   try {
+    // Every stale SessionStart spawns a refresh. One that gets the lock after
+    // another refresh published a fresh report has nothing left to do.
+    if (toolingUpdateCacheIsFresh(repoRoot, reportFile, env, Date.now())) return;
     const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target, timeoutMs);
     if (stdout !== null) {
       // Publish only as the current owner, and atomically, so a reader never
