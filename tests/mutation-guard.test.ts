@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -275,6 +275,33 @@ describe('mutation boundaries after workflow cutover', () => {
       expect(external.status).toBe(0);
       expect(external.stdout).not.toContain('action":"block');
     } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+  test('host edit route keeps a private-path deny when diagnostic I/O fails', () => {
+    const faults: Record<string, (cwd: string) => void> = {
+      'read-only failure log directory': (cwd) => {
+        mkdirSync(join(cwd, '.ai/harness/failures'), { recursive: true });
+        chmodSync(join(cwd, '.ai/harness/failures'), 0o555);
+      },
+      'failure log path is a directory': (cwd) => mkdirSync(join(cwd, '.ai/harness/failures/latest.jsonl'), { recursive: true }),
+      'effective state cache is a directory': (cwd) => mkdirSync(join(cwd, '.ai/harness/state/effective.json'), { recursive: true }),
+    };
+    for (const [fault, install] of Object.entries(faults)) {
+      const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-diagnostic-fault-')));
+      const cwd = join(root, 'repo');
+      const home = join(root, 'home');
+      try {
+        mkdirSync(cwd, { recursive: true }); mkdirSync(home, { recursive: true });
+        initRepo(cwd);
+        install(cwd);
+        const result = hostEdit(cwd, home, { file_path: '_ops/secret.env' });
+        expect({ fault, status: result.status }).toEqual({ fault, status: 2 });
+        expect(result.stderr).toContain('[OpsPrivateGuard] _ops/ is local private operations state');
+        expect(result.stderr).not.toContain('mutation-guard failed');
+      } finally {
+        if (existsSync(join(cwd, '.ai/harness/failures'))) chmodSync(join(cwd, '.ai/harness/failures'), 0o755);
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
   }, 60_000);
   test('state resolution failure and contract-scope deviation are recorded without blocking', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-cutover-state-')));

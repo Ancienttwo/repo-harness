@@ -776,9 +776,17 @@ function structuredError(
     || guard.includes('Secret')
     || guard.includes('Destructive');
 
+  // The cache and the failure log are diagnostics. Their I/O errors must not
+  // escape: runtime.ts maps a throw to exit 1, which the host reads as
+  // non-blocking, so a failed write would turn this guard's deny into an allow.
   let profile = ctx.resolvedProfileHint ?? '';
   let progressToken = 'unknown';
-  const cache = readEffectiveStateCache(ctx.repoRoot);
+  let cache: Record<string, unknown> | null = null;
+  try {
+    cache = readEffectiveStateCache(ctx.repoRoot);
+  } catch (error) {
+    err(ctx, `[${guard}] Effective state cache unreadable: ${describeError(error)}`);
+  }
   if (cache) {
     progressToken = typeof cache.progress_token === 'string' ? cache.progress_token : 'unknown';
     if (!profile && typeof cache.workflow_profile === 'string') profile = cache.workflow_profile;
@@ -807,7 +815,11 @@ function structuredError(
     // A circuit-record failure must never itself block (mirrors bash's `|| true`).
   }
 
-  appendFailureRecord(ctx.repoRoot, guard, action, reason, fix, failureClass, runId);
+  try {
+    appendFailureRecord(ctx.repoRoot, guard, action, reason, fix, failureClass, runId);
+  } catch (error) {
+    err(ctx, `[${guard}] Failure log not written: ${describeError(error)}`);
+  }
 
   if (circuitOutput?.tripped) {
     outRaw(ctx, `${JSON.stringify(circuitOutput)}\n`);
