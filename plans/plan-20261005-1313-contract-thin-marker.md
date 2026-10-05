@@ -1,8 +1,8 @@
 # Plan: workflow-contract.json as a thin per-repo marker
 
-> **Status**: Draft (revision 2)
+> **Status**: Draft (revision 3)
 > **Created**: 20261005-1313
-> **Revised**: 20261005-1332, after the Codex read-only review `/tmp/contract-marker-plan-codex-review.md` (CHANGES REQUESTED)
+> **Revised**: 20261005-1332 (revision 2, after the first Codex review) and 20261005-1344 (revision 3, after the Codex re-review of 790b08ac, section "Re-review (790b08ac)" in `/tmp/contract-marker-plan-codex-review.md`)
 > **Slug**: contract-thin-marker
 > **Artifact Level**: work-package
 > **Promotion Reason**: shared_contract (hooks, doctor, status, adoption, inspection, scaffold, and tests touch this path)
@@ -84,6 +84,15 @@ Two facts from this trace drive the revision:
 | Adoption apply (`init`) | `src/core/adoption/standard-plan.ts:757`, `writeOperation` at `:150-164` | replace with asset bytes; any existing content, edited or not; fs-transaction backup (`tests/cli/adoption-plan.test.ts:403-418`); apply-time `expectedContentHash` check (`fs-transaction.ts:182-197`) |
 | Shell scaffold | `scripts/lib/project-init-lib.sh:690-703` (`cp`), called at `scripts/create-project-dirs.sh:42-43` and `scripts/init-project.sh:68-69,306` | plain overwrite; no ownership check; no backup. `create-project-dirs` is a non-public internal step (`assets/skill-commands/manifest.json:422`). The scaffold protocol runs `scripts/init-project.sh` (`assets/skills/repo-harness-setup/references/scaffold.md:13`) and then says to attach the workflow "through the same contract install path used by init" (`:14`) |
 
+### 1c-bis. Direct callers of `planAdoption` (the planned refusal boundary)
+
+`planAdoption` has exactly two production callers (observed, `grep -rn 'planAdoption(' src scripts`):
+
+| Caller | file:line | Exception handling today | Effect of the planned refusal |
+|---|---|---|---|
+| `createPlan` (used by `init`, `init --dry-run`, adoption apply) | `src/cli/commands/adoption-plan.ts:67-85` | catches every error and returns `invalid_adoption_plan` (`:73-84`) | correct: no operation runs, structured report |
+| `adoptionRefreshCheck` (read-only diagnostic) | `src/cli/commands/init-hook.ts:274-345`, call at `:322` | none. `runInitHook` (`:713-735`, check at `:729`) has none either | **regression**: the exception escapes `runInitHook`, so `repo-harness init-hook --check-updates [--json]` (`:797-802`) and `repo-harness setup check --check-updates [--json]` (`:824-829`) crash before `formatInitHook` runs. §5h fixes this |
+
 ### 1d. Contract data and generated text that name the path
 - `artifacts.runtimeManifest` (`assets/workflow-contract.v1.json:242`) and `artifacts.requiredFiles` (`:299`). Both stay valid.
 - Upgrade action `runtime-contract-refresh` (`:533-545`). Its summary says "Install the current runtime workflow contract". Change the wording.
@@ -99,7 +108,7 @@ Two facts from this trace drive the revision:
 | Inspect with a stale repo body | `tests/workflow-contract.test.ts:436-458` | yes: becomes the `legacy_known` / `legacy_unknown` case |
 | Adoption apply | `tests/cli/adoption-plan.test.ts:104,170,403-418,561`, `tests/cli/init.test.ts:103,293,460,1307,1330` | yes: `:403-418` writes `{}`, which becomes a refused state; others check existence |
 | Doctor | `tests/cli/doctor.test.ts:52-67` | yes: healthy cases need a valid marker; `{}` stays only in an explicit invalid-marker case |
-| Hook-init with `{}` | `tests/cli/init-hook.test.ts:431` (and `:63,89` expect the marker path) | check at implementation: no change if `runInitHook` does not plan adoption |
+| Setup/init-hook refresh check | `tests/cli/init-hook.test.ts:426-448` writes `{}` at `:431` and expects a `needs_agent` refresh action with an `init` command (`:445-447`); `:63,89` only expect the marker path | yes. `runInitHook` does plan adoption (`init-hook.ts:322,729`). Under Step B, `{}` is `marker_invalid`, a refused state. The healthy case must write a valid marker (with a stale or missing other surface, so a refresh is still pending). Add separate refusal cases (§5h). `:63,89` need no change |
 | Opt-in only (`{}`) | `tests/hook-runtime.test.ts:15`, `tests/hook-runtime-characterization.test.ts:41`, `tests/cli/hook.test.ts:15`, `tests/cli/status.test.ts:207-235`, `tests/session-context.test.ts:866,899,928`, `tests/session-state-authority.test.ts:82,175,245`, `tests/board-slice.test.ts:162`, `tests/runtime-profile-enforcement.test.ts:30`, `tests/plan-status-gate.test.ts:50`, `tests/mutation-guard.test.ts:43`, `tests/run-identity.test.ts:195`, `tests/state/adapter-parity.test.ts:294` | none: existence semantics stay |
 | Path list for scans | `tests/retired-planning-provider.test.ts:17` | none (inferred: it lists paths to scan) |
 | Package asset content | `tests/workflow-contract.test.ts:43,95,144,214-361`, `tests/bootstrap-files.test.ts:240,337,390`, `tests/install-profiles.test.ts:131`, `tests/migration-script.test.ts:11`, `tests/unit/hrd-09-legacy-retirement-and-adopted-migration.test.ts:113`, `tests/cli/run.test.ts:22-238`, `tests/unit/closeout-runner-guardrails.test.ts:65` (a fixture package asset, not the repo path) | none: the asset stays a full body |
@@ -151,25 +160,37 @@ Size: about 150 B, against 175,016 B today.
 
 The resolver in `scripts/workflow-contract.ts` replaces `resolveInstalledWorkflowContract` and `resolveWorkflowContractForRepo` (`:289-296`). `src/` imports it directly, as it already imports from `scripts/` (`src/cli/hook/session-context.ts:46`, `src/effects/state/resolve-effective-state.ts:5`). `scripts/sync-helper-sources.ts` carries it to `assets/templates/helpers/`.
 
-**Step A — load the package (fatal).** `loadPackageWorkflowContract(runtimeRoot)` loads the body with the existing `loadWorkflowContract` (`:268-287`) and reads `runtimeRoot/package.json` `version`. The caller passes `runtimeRoot`. It is the runtime that will execute (§3, P2-3). Errors, all fatal for every caller:
+**Step A — load the package.** `loadPackageWorkflowContract(runtimeRoot)` loads the body with the existing `loadWorkflowContract` (`:268-287`) and reads `runtimeRoot/package.json` `version`. The caller passes `runtimeRoot`. It is the runtime that will execute (§3, P2-3).
+
+Body errors are fatal for every caller, in both options:
 - `workflow_contract_package_missing` — no asset (`:256-261`);
 - `workflow_contract_package_malformed` — bad JSON (`:280-284`);
-- `workflow_contract_package_invalid` — structure check fails (`:199-241`);
-- `workflow_contract_package_version_invalid` — `package.json` missing, or `version` not valid semver. Fatal in Option P. In Option F it is only a doctor detail.
+- `workflow_contract_package_invalid` — structure check fails (`:199-241`).
 
-**Step B — classify the repo file (never throws on repo content).** `classifyRepoWorkflowContract(repoRoot, pkg)` returns one state. It never reads fields from a legacy body. It only hashes the bytes.
+The version error depends on the option:
+- `workflow_contract_package_version_invalid` — `package.json` missing, or `version` not valid semver.
+  - Option P: fatal for every caller, like the body errors.
+  - Option F: not fatal. Step A returns the body and records the error. Inspect, adoption, and `init` continue. Doctor reports it as `warn` (§6).
+
+In this plan, "Step A failure" means a fatal Step A error under the chosen option.
+
+**Step B — classify the repo file (never throws on repo content).** `classifyRepoWorkflowContract(repoRoot, pkg)` returns exactly one state. It never reads fields from a legacy body. It only hashes the bytes.
 
 | State | Condition |
 |---|---|
 | `absent` | no file |
-| `marker_valid` | valid marker; `contractId`/`contractVersion` equal the package body; Option P version rule holds |
-| `marker_stale` | valid marker; `contractId` or `contractVersion` differs from the package body |
-| `marker_pin_newer_than_package` | Option P: `packageVersion` > installed version |
-| `marker_pin_older_than_package` | Option P-exact only: `packageVersion` < installed version |
-| `legacy_known` | no `kind`; sha256 is in the release table (§5a); carries the matched tag range |
-| `legacy_unknown` | no `kind`; JSON object with `contractId` or `helpers`; sha256 not in the table |
 | `marker_malformed` | bytes are not JSON |
 | `marker_invalid` | JSON, but wrong `kind`/`protocol`, unknown key, wrong type, or neither marker nor body (for example `{}`) |
+| `legacy_known` | no `kind`; sha256 is in the release table (§5a); carries the matched tag range |
+| `legacy_unknown` | no `kind`; JSON object with `contractId` or `helpers`; sha256 not in the table |
+| `marker_pin_newer_than_package` | Option P: valid marker; `packageVersion` > executing version |
+| `marker_stale` | valid marker; `contractId` or `contractVersion` differs from the package body |
+| `marker_pin_older_than_package` | valid marker; `packageVersion` < executing version; a state only in P-exact and in P-floor with the `raise` policy (§3) |
+| `marker_valid` | valid marker; none of the rows above match |
+
+**State priority (review P2-R2).** One input can match more than one condition. For example, the executing package is `0.21.0` with body version `1.0.0`, and the marker has `packageVersion: "0.22.0"` and `contractVersion: "2.0.0"`. That input matches both `marker_pin_newer_than_package` and `marker_stale`. Step B checks the rows in the table order and returns the first match. So the order is: syntax and shape (`marker_malformed`, `marker_invalid`), legacy body (`legacy_known`, `legacy_unknown`), then pin ahead of the package, then contract mismatch, then pin behind the package, then valid. The rule is: a pin ahead of the executing package always wins over every repairable mismatch. An older package never rewrites a newer pin.
+
+Step B also returns a `mismatches` list with every dimension that differs (`contractId`, `contractVersion`, `packageVersion`). Doctor and inspect show it in the detail. Only the primary state selects the action.
 
 ### 2d. What each caller does
 
@@ -177,6 +198,7 @@ The resolver in `scripts/workflow-contract.ts` replaces `resolveInstalledWorkflo
 |---|---|---|
 | Inspect (`inspect-project-state.ts`) | fatal, exit non-zero | one drift signal per state; inspection data always comes from the package body |
 | Adoption (`standard-plan.ts`) | fatal (it already reads the asset) | §5b repair table; refuse with an exception for non-repairable states |
+| Setup / init-hook refresh check (`init-hook.ts:274-345`) | fatal, as today | calls `planAdoption`; catches only the typed refusal and returns a `fail` check (§5h) |
 | Doctor (§6) | `fail`, whatever Step B says | maps every state to a status |
 | `repo-harness run workflow-contract --repo . [--check]` | fatal | prints the package body for an `ok` state; `--check` exits non-zero for any state other than `marker_valid` (CI use, §4) |
 | Option P enforcement in `repo-harness run` | fatal | non-`marker_valid` pin states stop the helper |
@@ -198,13 +220,18 @@ Fact first: in 0.20.0 the repo copy is **not** a working pin. Hooks, status, doc
 
 ### Option P — pin
 
-| | P-exact | P-floor |
-|---|---|---|
-| Rule | installed version = `packageVersion` | installed version >= `packageVersion` |
-| Installed older | `marker_pin_newer_than_package` → fail closed | same |
-| Installed newer | `marker_pin_older_than_package` → fail closed; `init` repairs | allowed |
-| Who writes the pin | every `init` writes the executing version | `init` writes the executing version; Q5 asks whether an older machine may lower it |
-| Max vs Mac mini | the machine with the other version fails until `repo-harness update`; an `init` on one machine moves the pin and breaks the other after pull | the older machine fails after the newer machine runs `init` and commits |
+P-floor needs one more product choice: does `init` raise an existing floor? Two update policies:
+- `preserve`: `init` writes the executing version only when it writes a new marker (`absent`, `legacy_known`, `marker_stale`). A valid marker keeps its floor, even when the executing version is higher. The floor then rises only on first write or on a contract change.
+- `raise`: `init` also rewrites a valid marker whose floor is below the executing version. That input is the state `marker_pin_older_than_package`.
+
+| | P-exact | P-floor `preserve` | P-floor `raise` |
+|---|---|---|---|
+| Rule | executing version = `packageVersion` | executing version >= `packageVersion` | executing version >= `packageVersion` |
+| Executing older | `marker_pin_newer_than_package` → refuse | same | same |
+| Executing newer, same contract | `marker_pin_older_than_package` → `init` rewrites | `marker_valid` → no write | `marker_pin_older_than_package` → `init` rewrites |
+| Pin never goes down | yes: an older package refuses (Q5) | yes | yes |
+| Marker diff from `init` | every `init` on a different version | only on first write or contract change | every `init` on a newer version |
+| Max vs Mac mini | the machine with the other version fails until `repo-harness update`; an `init` on one machine moves the pin and breaks the other after pull | the older machine fails only after a new marker is written from a newer version (first write or contract change) and committed | the older machine fails after the newer machine runs any `init` and commits |
 
 - **Version source (review P2-3).** The check must use the runtime that executes. `resolveHelperRuntime` honors `REPO_HARNESS_SOURCE_ROOT` only for unprotected helpers (`helper-runner.ts:276-294`). Protected helpers (`acceptance-receipt`, `contract-worktree`, `ship-worktrees`, `merge-gate`, `:20`) always use the installed package (`:362-365`). So `repo-harness run` passes the selected `HelperRuntime` root to Step A. Inspect and doctor pass the root they run from. The pin check must not make protected helpers honor the override.
 - **Enforcement points must be named.** If only inspect and doctor check the pin, it guards little, because hooks and helpers do not read the repo file. To give the pin effect, `repo-harness run` must check it. Hook enforcement (`runtime.ts:361`) adds a read, a parse, and a semver check to every hook call, and lets skew stop hooks on one machine.
@@ -216,7 +243,7 @@ Fact first: in 0.20.0 the repo copy is **not** a working pin. Hooks, status, doc
 
 Both options stay open. Aimpact decides in Q2.
 - If no pin is wanted: Option F, plus a release rule to bump the body `version` when repos must run `init` again (Q3).
-- If a pin is wanted: P-floor, enforced in Step A/B callers and `repo-harness run`, with hooks on existence and doctor reporting skew.
+- If a pin is wanted: P-floor, enforced in Step A/B callers and `repo-harness run`, with hooks on existence and doctor reporting skew. The `preserve` or `raise` policy stays open (Q5).
 
 The schema supports both. `packageVersion` and the two pin states are the only difference.
 
@@ -265,10 +292,10 @@ The schema supports both. `packageVersion` and the two pin states are the only d
 | Step B state | Adoption action | Inspect signal |
 |---|---|---|
 | `absent` | write marker (`expectedAbsent`) | `missing-runtime-contract-manifest` (as today, `inspect-project-state.ts:136-138`) |
-| `marker_valid` | no operation when bytes equal; rewrite when only formatting differs | none |
-| `marker_stale` | rewrite marker | `stale-workflow-contract-marker` |
-| `marker_pin_older_than_package` (P-exact) | rewrite with the executing version | `workflow-contract-pin-behind` |
-| `marker_pin_newer_than_package` (P) | refuse (an older package must not rewrite a newer pin; Q5) | `workflow-contract-pin-ahead` |
+| `marker_valid` | no operation when bytes equal; rewrite when only formatting differs. Under P-floor `preserve`, this keeps the stored floor even when the executing version is higher | none |
+| `marker_stale` | rewrite marker (Option P: with the executing version). Step B returns this state only when the pin is not ahead (§2c priority) | `stale-workflow-contract-marker` |
+| `marker_pin_older_than_package` (P-exact; P-floor `raise`) | rewrite with the executing version | `workflow-contract-pin-behind` |
+| `marker_pin_newer_than_package` (P) | refuse, even when the contract also differs (an older package must not rewrite a newer pin; Q5) | `workflow-contract-pin-ahead` |
 | `legacy_known` | rewrite marker, if §5e finds no blocker; otherwise refuse | `legacy-workflow-contract-body` |
 | `legacy_unknown` | refuse | `unknown-workflow-contract-body` |
 | `marker_malformed`, `marker_invalid` | refuse | `invalid-workflow-contract-marker` |
@@ -284,11 +311,14 @@ Inspect must exit 0 for every Step B state, because it is a diagnostic. Otherwis
 | Gen-A or Gen-B body, no blocker | 0, `legacy-workflow-contract-body` | rewrites marker, backup | 0 |
 | Known body + kept body reader (§5e) | 0, signal plus blocker list | refuses; no repo writes | 1 |
 | Unknown body, malformed or invalid marker | 0, signal | refuses; no repo writes | 1 |
-| Package asset or version broken | non-zero | `planAdoption` fails reading the asset | 1 |
+| Option P: pin ahead of the executing package, with or without a contract mismatch | 0, `workflow-contract-pin-ahead` with the `mismatches` list | refuses; no repo writes | 1 |
+| Package body missing, malformed, or invalid (any option) | non-zero | `planAdoption` fails reading the asset | 1 |
+| Package version metadata invalid, Option P | non-zero | refuses (Step A fatal) | 1 |
+| Package version metadata invalid, Option F | 0, version error in the detail | continues by the other rows | by the other rows |
 
 Revision 1 said an inspect exception would stop migration. That was wrong: at HEAD, adoption runs after a failed inspect (`init.ts:733-736`).
 
-Tests: fresh `init`; `contractVersion` upgrade; Gen-A and Gen-B fixtures; edited body (bytes stay identical, and unrelated operations such as `tasks/current.md` do not run); malformed marker; blocker present. Each test asserts the `init` exit code and the file bytes.
+Tests: fresh `init`; `contractVersion` upgrade; Gen-A and Gen-B fixtures; edited body (bytes stay identical, and unrelated operations such as `tasks/current.md` do not run); malformed marker; blocker present. Option P adds the combined case from §2c (executing `0.21.0` with body `1.0.0`; marker `packageVersion: "0.22.0"`, `contractVersion: "2.0.0"`): Step B returns `marker_pin_newer_than_package`, adoption refuses, and the marker bytes and unrelated adoption targets stay unchanged. Each test asserts the `init` exit code and the file bytes.
 
 ### 5d. Shell scaffold (review P1-2)
 Retire the shell write. Remove `install_workflow_contract` at `scripts/create-project-dirs.sh:42-43` and `scripts/init-project.sh:68-69,306`, and `pi_install_workflow_contract` at `scripts/lib/project-init-lib.sh:690-703`. The scaffold protocol attaches the workflow with `repo-harness init --repo <new-project>` (`scaffold.md:14` already requires the init path). Change the generated policy text at `project-init-lib.sh:1594,1706` (§1d). Update the shell tests in §1e.
@@ -323,6 +353,22 @@ Recommended order per repo: `repo-harness upgrade --scope project` (removes owne
 - `inspect-project-state` uses only the package body (`:101-108` collapse to one contract). It hashes a legacy body and never reads its fields.
 - The fingerprint table and the body-reader list are migration data, not runtime paths. Remove them in a named later release (Q8).
 
+### 5h. Read-only diagnostic callers of the refusal (review P2-R1)
+The refusal stays an exception in `planAdoption`, so every real adoption attempt stops before any write (§5b). The read-only refresh check must not crash on it.
+
+- Typed error: `planAdoption` throws a dedicated class, for example `WorkflowContractRefusedError`, with `code` (the Step B state, or `workflow_contract_reader_blocked` for §5e), `path`, `mismatches`, and `blockers` (the §5e files).
+- `createPlan` (`adoption-plan.ts:71-84`) needs no change. It already catches every error. It may copy `code` into the `invalid_adoption_plan` message.
+- `adoptionRefreshCheck` (`init-hook.ts:322`) wraps only the `planAdoption` call. It catches only `WorkflowContractRefusedError`. Any other error propagates, as today, so the catch does not widen into a general fallback.
+- On a refusal it returns the check `repo.init-refresh` with `status: 'fail'`, `source: 'status'`, and a detail with the code, the path, the mismatches, and the blockers. A `fail` check makes the report `blocked` (`init-hook.ts:707-710`), so both commands exit 1 (`:802`, `:829`) after they print the full report.
+- It adds one agent action `repo.init-refresh` with **no** `command` field (`InitHookAction.command` is optional, `init-hook.ts:46-55`). The `reason` names the manual repair for the state: restore a release body or delete the file (`legacy_unknown`); fix or delete the marker (`marker_malformed`, `marker_invalid`); retire or route the listed readers (§5e); run `repo-harness update` (`marker_pin_newer_than_package`). It must not offer `repo-harness init` as the fix, because `init` refuses the same input. `verification` stays `verificationCommand(target, checkUpdates)`.
+- All other checks in `runInitHook` (`:727-735`) still run, so status, doctor, global rules, tooling, and legacy results stay in the report.
+- The check is read-only: `planAdoption` runs with `apply: false` (`:322`), and the refusal happens before any plan exists.
+
+Tests in `tests/cli/init-hook.test.ts`:
+1. Change the healthy case at `:426-448` to write a valid marker instead of `{}`. It must still expect `needs_agent` and the `init` command, because the other surfaces are missing.
+2. Add refusal cases: edited body (`legacy_unknown`), `{}` (`marker_invalid`), and a kept parser fork beside a Gen-B body (`workflow_contract_reader_blocked`). Option P adds the pin-ahead case. Each case asserts: check `repo.init-refresh` is `fail`; report status is `blocked`; the action has no `command`; the other checks are present; the JSON output parses (`formatInitHook(report, true)`); and the repo file bytes are unchanged.
+3. One CLI-level case runs `repo-harness setup check --check-updates --json` on a refused repo and asserts exit code 1 and valid JSON on stdout.
+
 ## 6. Doctor detection (review P2-4)
 
 Add one project check, for example `workflow-contract-marker`, after `checkTypedHookRoutes` (`src/cli/commands/doctor.ts:504`). Doctor has `ok`/`warn`/`fail`/`na` (`doctor.ts:104,443,453-461`) and exits 1 on any `fail` (`src/cli/index.ts:802-805`).
@@ -343,10 +389,10 @@ Order: (1) git repo and opt-in; (2) Step A, always, for every opted-in repo; (3)
 | `legacy_unknown` | `fail` | "unknown body; init will refuse; restore a release body or delete it" |
 | `marker_malformed` / `marker_invalid` | `fail` | the state and the offending key |
 | `marker_stale` | `fail` | both values; "run `repo-harness init`" |
-| `marker_pin_newer_than_package` (P) | `fail` | both versions; "run `repo-harness update`" |
-| `marker_pin_older_than_package` (P-exact) | `fail` | both versions; "run `repo-harness init`" |
+| `marker_pin_newer_than_package` (P), with or without a contract mismatch | `fail` | both versions and the full `mismatches` list; "run `repo-harness update`". Never "run `init`" |
+| `marker_pin_older_than_package` (P-exact; P-floor `raise`) | `fail` in P-exact; `warn` in P-floor `raise` (the floor still holds) | both versions; "run `repo-harness init`" |
 
-In Option F the two pin rows do not exist: the marker has no package version. Session context may show the same result once per session; that is not in the first PR.
+Doctor uses the §2c state priority, so it gives the same primary state as adoption. In Option F the two pin rows do not exist: the marker has no package version, and an invalid version in `package.json` is only the `warn` row above. Session context may show the same result once per session; that is not in the first PR.
 
 ## 7. Risks
 
@@ -361,18 +407,20 @@ In Option F the two pin rows do not exist: the marker has no package version. Se
 9. **Test changes.** Two equality tests, the shell scaffold tests, doctor fixtures, and several fixture repos change (§1e). The repo rule requires an item-by-item reason in the PR and one read-only review for tests bent to fit a bug.
 10. **Refused repos.** An edited body or a kept reader stops `init` for that repo until a person acts. This is the intended fail-closed result, but it can surprise users.
 11. **Fingerprint and reader lists.** A body from an unreleased dev checkout is `legacy_unknown`. A reader fork with a new name escapes the code gate; the manual check covers it.
-12. **Docs and rules drift.** `CLAUDE.md:17`, `AGENTS.md:17`, `docs/architecture/domains/workflow-engine.md:21`, the `runtime-contract-refresh` summary, the policy text in §1d, and `.archcontext/model/nodes/capability.workflow-engine.contract-assets.yaml` describe a copy. Update the model, then project the docs.
+12. **Refusal escapes a diagnostic.** `adoptionRefreshCheck` calls `planAdoption` with no catch, so `setup check --check-updates --json` would crash. Mitigation: §5h catches only the typed refusal and returns a `fail` check.
+13. **Conflicting states.** One marker can match a pin-ahead and a contract mismatch at once. Mitigation: the §2c priority makes the pin-ahead refusal win, with a combined-case test in Step B, adoption, doctor, and init-hook.
+14. **Docs and rules drift.** `CLAUDE.md:17`, `AGENTS.md:17`, `docs/architecture/domains/workflow-engine.md:21`, the `runtime-contract-refresh` summary, the policy text in §1d, and `.archcontext/model/nodes/capability.workflow-engine.contract-assets.yaml` describe a copy. Update the model, then project the docs.
 
 ### Implementation outline (later PR, not this one)
 1. Step A, Step B, the marker renderer, and error codes in `scripts/workflow-contract.ts`; sync the projection.
-2. Adoption: repair table, refusal exception, §5e gate.
+2. Adoption: repair table, typed refusal exception, §5e gate. Setup/init-hook refresh check: catch the typed refusal (§5h).
 3. Inspect: package body only; Step B signals; exit 0 for repo states.
 4. Shell scaffold: retire the write; scaffold doc runs `repo-harness init`; policy text.
 5. Asset: fingerprint table entry; fixtures for Gen-A and Gen-B.
 6. Doctor check. `repo-harness run workflow-contract --repo . [--check]`.
 7. Option P only: version check on the executing runtime in `repo-harness run`.
 8. Rewrite this repo's own `.ai/harness/workflow-contract.json` to a marker; update rules, docs, and the tests in §1e.
-9. Verify: `bun run check:type`; `bun run test:files tests/workflow-contract.test.ts tests/unit/helper-projection-drift.test.ts tests/cli/adoption-plan.test.ts tests/cli/init.test.ts tests/create-project-dirs.runtime.test.ts tests/scaffold-parity.test.ts tests/cli/doctor.test.ts tests/hook-runtime.test.ts tests/cli/status.test.ts --timeout 60000 --max-concurrency 1`; add `tests/cli/run.test.ts` with older/equal/newer cases and distinct source and installed versions if Option P is chosen.
+9. Verify: `bun run check:type`; `bun run test:files tests/workflow-contract.test.ts tests/unit/helper-projection-drift.test.ts tests/cli/adoption-plan.test.ts tests/cli/init.test.ts tests/create-project-dirs.runtime.test.ts tests/scaffold-parity.test.ts tests/cli/doctor.test.ts tests/cli/init-hook.test.ts tests/hook-runtime.test.ts tests/cli/status.test.ts --timeout 60000 --max-concurrency 1`; add `tests/cli/run.test.ts` with older/equal/newer cases and distinct source and installed versions if Option P is chosen.
 10. Rollback: `git revert <squash-commit>`. Consumer repos restore from the fs-transaction backup or from git.
 
 ## 8. Open questions for Aimpact
@@ -380,7 +428,7 @@ In Option F the two pin rows do not exist: the marker has no package version. Se
 1. **Q2 — pin or float?** Do you want a new version pin in the marker? The code shows the repo copy does not pin behavior today (§3). If yes: P-floor or P-exact? Must hooks enforce it, or only `repo-harness run`, inspect, and doctor?
 2. **Q3 — consumer CI and release rule.** Do consumer workflows read the repo body or run legacy forks (§5e manual check)? And may releases bump the body `version` when repos must run `init` again? Option F depends on that rule.
 3. **Q4 — overrides.** Is there a real repo-specific value that a repo must override? If not, protocol 1 has no `overrides` field.
-4. **Q5 — pin direction (Option P).** May an older machine lower `packageVersion`? This plan refuses that by default.
+4. **Q5 — pin direction (Option P).** May an older machine lower `packageVersion`? This plan refuses that by default, and the refusal wins over a contract mismatch (§2c). For P-floor: `preserve` (raise the floor only on first write or contract change) or `raise` (raise it on every `init` from a newer version)? See §3.
 5. **Q6 — offline CI.** Is there a CI that cannot reach npm? Only that case needs option 4D.
 6. **Q7 — narrow migration.** Is a full `init` acceptable for Gen-A repos, or do you want a contract-only step?
 7. **Q8 — retirement.** In which release may the fingerprint table, the reader list, and the legacy signals go away?
@@ -405,3 +453,13 @@ In Option F the two pin rows do not exist: the marker has no package version. Se
 | P3-1 adoption expected JSON | the three files; no consumer (observed, grep) | fixed: §1e says no change and records the op id mismatch |
 | P3-1 shell policy references | `project-init-lib.sh:1594,1706` | fixed in §1d and §5d |
 | P3-1 setup skill invocation claim | `scaffold.md:13` runs `init-project.sh`; `manifest.json:422` lists `create-project-dirs` as internal | fixed in §1c |
+
+### Re-review of 790b08ac (Codex, section "Re-review (790b08ac)")
+
+| Finding | Verified against | Disposition |
+|---|---|---|
+| P2-R1 refusal escapes the setup/init-hook diagnostic | `init-hook.ts:274-345` (call at `:322`), `:707-735`, `:797-802`, `:824-829`; `tests/cli/init-hook.test.ts:426-448`; grep shows only two `planAdoption` callers | accepted; §1c-bis lists both callers; §5h catches only the typed refusal in `adoptionRefreshCheck`, returns a `fail` check and an action with no `init` command, keeps all other checks; §1e and §5h update the `{}` fixture and add refusal cases; `tests/cli/init-hook.test.ts` added to verification. The refusal for real adoption stays an exception |
+| P2-R2 simultaneous contract and pin mismatch | §2c table of revision 2; `adoption-plan.ts:71-84`; `fs-transaction.ts:182-197` | accepted; §2c defines one state order in which a pin ahead of the executing package wins, plus a `mismatches` list; §5b, §5c, §6 use the same priority; combined-case tests added |
+| P3 P-floor update policy inconsistent | §3 and the `marker_valid` row of revision 2 | fixed; §3 names two P-floor policies (`preserve`, `raise`) and one table; §5b and §6 follow them; the choice stays open in Q5 |
+| P3 Option F version error wording | Step A text and the §5c, §6 rows of revision 2 | fixed; Step A separates body errors (always fatal) from the version error (fatal only in Option P); §5c and §6 rows split by option |
+| Original P3-1 (partial: `runInitHook` deferred) | `init-hook.ts:322,729` | fixed by P2-R1 |
