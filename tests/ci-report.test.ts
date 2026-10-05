@@ -29,6 +29,7 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
           issues.push(issue); writeFileSync(join(root, 'repair-issues.json'), JSON.stringify(issues)); return issue;
         }
         if (path.includes('/pulls?')) return [{ number: 7, merged_at: now, merge_commit_sha: after, base: { ref: 'main' } }];
+        if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: after, base: { ref: 'main' }, commits: 1 };
         if (path.endsWith(`/git/commits/${after}`)) return { sha: after, parents: [{ sha: before }] };
         if (path.includes('/compare/')) {
           const [base, head] = path.split('/compare/')[1]!.split('...');
@@ -129,10 +130,57 @@ test.each([
   };
   const first = await reportCI('test/repo', 12, api);
   expect(first.merges).toEqual([]); expect(first.errors).toHaveLength(1);
-  expect(first.repairs).toEqual([{ key: 'ci-repair:12:1:merge-pr-7', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
+  expect(first.repairs).toEqual([{ key: 'ci-repair:merge-pr-7', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
   const second = await reportCI('test/repo', 12, api);
   expect(second.repairs[0]?.delivery).toBe('reused'); expect(f.issues).toHaveLength(1);
   expect(f.git('show-ref')).toBe(refs);
+}));
+
+test('multi-commit rebase fails closed because reverting its last commit leaves the first change', () => fixture(async f => {
+  f.git('checkout', '-qb', 'rebase-pr', f.before);
+  for (const file of ['first.txt', 'second.txt']) {
+    writeFileSync(join(f.root, file), file); f.git('add', '.'); f.git('commit', '-qm', file);
+  }
+  f.git('rebase', 'main'); const after = f.git('rev-parse', 'HEAD');
+  const count = Number(f.git('rev-list', '--count', `${f.after}..${after}`));
+  const parent = f.git('rev-parse', 'HEAD^');
+  f.git('checkout', '-q', 'main'); f.git('merge', '--ff-only', 'rebase-pr');
+  const api: GitHubAPI = async (path, method, body) => {
+    if (path.includes('/pulls?')) return (await f.api(path) as Record<string, unknown>[]).map(pr => ({ ...pr, merge_commit_sha: after }));
+    if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: after, base: { ref: 'main' }, commits: count };
+    if (path.endsWith(`/git/commits/${after}`)) return { sha: after, parents: [{ sha: parent }] };
+    return f.api(path, method, body);
+  };
+  const report = await reportCI('test/repo', 12, api);
+  expect(count).toBe(2); expect(report.merges).toEqual([]);
+  expect(report.errors.join('\n')).toContain('Automatic rollback requires a PR with exactly one commit');
+  expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
+  expect(f.git('rev-parse', 'main')).toBe(after);
+  f.git('checkout', '-qb', 'incomplete-rollback'); f.git('revert', '--no-edit', after);
+  expect(readFileSync(join(f.root, 'first.txt'), 'utf8')).toBe('first.txt');
+  expect(f.git('rev-parse', 'HEAD^{tree}')).not.toBe(f.git('rev-parse', `${f.after}^{tree}`));
+}));
+
+test.each([
+  { name: 'missing commit count', detail: { commits: undefined } },
+  { name: 'string commit count', detail: { commits: '1' } },
+  { name: 'zero commit count', detail: { commits: 0 } },
+  { name: 'wrong PR', detail: { number: 8 } },
+  { name: 'wrong merge SHA', detail: { merge_commit_sha: 'a'.repeat(40) } },
+  { name: 'unmerged PR', detail: { merged: false } },
+  { name: 'wrong base', detail: { base: { ref: 'feature' } } },
+  { name: 'malformed detail', detail: null },
+  { name: 'detail API failure', fail: true },
+])('single-commit PR proof fails closed: $name', scenario => fixture(async f => {
+  const report = await reportCI('test/repo', 12, async (path, method, body) => {
+    if (path.endsWith('/pulls/7')) {
+      if ('fail' in scenario) throw new CIReportError(503, 'HTTP 503');
+      return scenario.detail === null ? null : { ...(await f.api(path) as object), ...scenario.detail };
+    }
+    return f.api(path, method, body);
+  });
+  expect(report.merges).toEqual([]); expect(report.errors).toHaveLength(1);
+  expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
 }));
 
 test.each(['behind', 'diverged'])('merge outside the fixed snapshot is excluded: %s', status => fixture(async f => {
@@ -160,23 +208,26 @@ test.each([
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:12:1:report-12', delivery: 'created' });
 }));
 
-test('merge boundary repair uses exact run markers and ignores retired tag markers', () => fixture(async f => {
+test('merge boundary repair reuses one open PR issue across new main SHAs, run IDs and attempts', () => fixture(async f => {
   f.issues.push(
     { number: 1, state: 'open', body: '<!-- ci-repair:91:3:tags-pr-7 -->', html_url: 'https://github.com/test/repo/issues/1' },
     { number: 2, state: 'open', body: '<!-- ci-repair:tags-pr-7 -->', html_url: 'https://github.com/test/repo/issues/2' },
-    { number: 3, state: 'open', pull_request: {}, body: '<!-- ci-repair:12:1:merge-pr-7 -->', html_url: 'https://github.com/test/repo/pull/3' },
-    { number: 4, state: 'closed', body: '<!-- ci-repair:12:1:merge-pr-7 -->', html_url: 'https://github.com/test/repo/issues/4' },
+    { number: 3, state: 'open', pull_request: {}, body: '<!-- ci-repair:merge-pr-7 -->', html_url: 'https://github.com/test/repo/pull/3' },
+    { number: 4, state: 'closed', body: '<!-- ci-repair:merge-pr-7 -->', html_url: 'https://github.com/test/repo/issues/4' },
   );
   const api: GitHubAPI = (path, method, body) => path.includes('/git/commits/') ? Promise.reject(new CIReportError(503, 'HTTP 503')) : f.api(path, method, body);
   const first = await reportCI('test/repo', 12, api);
-  expect(first.repairs[0]).toMatchObject({ key: 'ci-repair:12:1:merge-pr-7', delivery: 'created', issue_url: 'https://github.com/test/repo/issues/5' });
+  expect(first.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created', issue_url: 'https://github.com/test/repo/issues/5' });
   expect((await reportCI('test/repo', 12, api)).repairs[0]?.delivery).toBe('reused');
   f.issues[4].state = 'closed';
   expect((await reportCI('test/repo', 12, api)).repairs[0]?.delivery).toBe('created');
+  writeFileSync(join(f.root, 'later.txt'), 'later main\n'); f.git('add', '.'); f.git('commit', '-qm', 'later main');
   f.setRun(13, 2);
   const next = await reportCI('test/repo', 13, api);
-  expect(next.repairs[0]).toMatchObject({ key: 'ci-repair:13:2:merge-pr-7', delivery: 'created' });
-  expect(f.issues).toHaveLength(7);
+  expect(next.sha).not.toBe(first.sha);
+  expect(next.run_id).toBe(13); expect(next.run_attempt).toBe(2);
+  expect(next.repairs[0]).toEqual({ key: 'ci-repair:merge-pr-7', delivery: 'reused', issue_url: 'https://github.com/test/repo/issues/6' });
+  expect(f.issues).toHaveLength(6);
 }));
 
 test.each([

@@ -460,6 +460,14 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     || !validSha(commit.parents[0]?.sha) || commit.parents[0].sha === identity.base_sha) {
     throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit boundary');
   }
+  const detail = object(yield `${root}/pulls/${prNumber}`, 'merged parent PR detail');
+  if (detail.number !== prNumber || detail.merged !== true || detail.merge_commit_sha !== identity.base_sha
+    || object(detail.base, 'merged parent PR detail base').ref !== 'main') {
+    throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
+  }
+  if (detail.commits !== 1) {
+    throw new MergeReadinessError('provider_data_incomplete', 'Automatic rollback requires a PR with exactly one commit');
+  }
   return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: commit.parents[0].sha, after_sha: identity.base_sha });
 }
 

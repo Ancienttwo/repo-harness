@@ -64,7 +64,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
   const report: CIReport = { run_id: runId, run_attempt: run.run_attempt, sha: run.head_sha,
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
   const repair = async (identity: string, detail: string, requireOpen = false): Promise<void> => {
-    const key = `ci-repair:${run.id}:${run.run_attempt}:${identity}`;
+    const key = requireOpen ? `ci-repair:${identity}` : `ci-repair:${run.id}:${run.run_attempt}:${identity}`;
     try {
       const task = await ensureRepairIssue(api, root, key,
         `[CI repair] ${safeText(identity)} @ ${headSha.slice(0, 12)}`,
@@ -113,11 +113,15 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
         const membership = record(await api(`${root}/compare/${after}...${run.head_sha}`), 'Snapshot membership');
         if (membership.status === 'behind' || membership.status === 'diverged') continue;
         if (membership.status !== 'ahead' && membership.status !== 'identical') throw new Error('Snapshot membership unavailable');
+        const detail = record(await api(`${root}/pulls/${pr.number}`), 'Merged PR detail');
+        if (detail.number !== pr.number || detail.merged !== true || detail.merge_commit_sha !== after
+          || record(detail.base, 'Merged PR detail base').ref !== 'main') throw new Error('Merged PR detail does not match the rollback boundary');
+        if (detail.commits !== 1) throw new Error('Automatic rollback requires a PR with exactly one commit');
         const before = parent.sha;
         report.merges.push({ pr: pr.number, before, after, rollback: `git revert --no-edit ${after}` });
       } catch (error) {
         report.errors.push(`Rollback boundary pending for PR #${pr.number}: ${message(error)}`);
-        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit and its single parent in the fixed main snapshot. Never repeat the completed merge.', true);
+        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit, its single parent and the PR commit count in the fixed main snapshot. Automatic rollback requires a PR with exactly one commit. Never repeat the completed merge.', true);
       }
     }
   } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.'); }

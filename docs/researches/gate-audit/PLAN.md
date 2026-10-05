@@ -68,11 +68,11 @@ main/head移动后，重算候选subject；对确实新增/改变的check输入�
 
 2026-10-05 起，回滚使用 GitHub 提供的 merge SHA 和 parent SHA。日报记录 PR number、合并前 SHA、合并后 SHA 和回滚命令。不再创建或检查回滚 tags。
 
-readiness 保留固定 base 上的 reporter 适用范围。文件明确不存在时，该范围不启用。reporter 已存在时，GitHub 必须返回一个精确匹配当前 main base 的已合并 PR。对应 commit 必须只有一个 parent。两个 SHA 必须完整、非零且不同。缺失、错误、分页不完整或 API 不可用时，继续拒绝合并。
+readiness 保留固定 base 上的 reporter 适用范围。文件明确不存在时，该范围不启用。reporter 已存在时，GitHub 必须返回一个精确匹配当前 main base 的已合并 PR。对应 commit 必须只有一个 parent。PR detail 必须匹配 PR number、merged state、main base 和 merge SHA。GitHub 返回的 PR `commits` 必须等于 1。两个 SHA 必须完整、非零且不同。缺失、错误、分页不完整或 API 不可用时，继续拒绝合并。
 
 merge SHA 和 parent SHA 来自 provider readback。不得从时间、branch 名、tag 或本地规则补值。CI/head/base、review、thread、身份重读和原有授权检查保持有效。
 
-模型自动发布仍使用 squash merge。一条 commit 的 parent 关系只证明 commit 边界。它不能证明任意人工 rebase PR 都可由一次 revert 完整回滚。
+模型自动发布仍使用 squash merge。一条 commit 的 parent 关系只证明 commit 边界。reporter 和 readiness 只接受只有一个 commit 的 PR。多 commit rebase PR、缺失或错误的 commit count 都会明确报错。该限制也适用于多 commit squash PR。provider 未提供 merge method 证明时，不推断完整 PR 的回滚范围。
 
 在从最新 main 创建的干净 rollback branch 上，执行：
 
@@ -82,7 +82,7 @@ git revert --no-edit <MERGE_SHA>
 
 随后 push rollback branch，开回滚 PR，并验证受影响行为。不得 reset 或 force-push main。该命令只逆向 code commit。生产数据库、registry 版本和 host 授权仍由各自 owner 恢复，并保留 H03/H04 批准边界。
 
-只生成已确认 commit 边界的报告。报告失败可以重试读取和 repair issue 投递，但不能重放已发生的 merge。部署新 reader/writer 并确认旧 reporter jobs 已结束后，再清理历史回滚 tags。
+只生成已确认 commit 边界的报告。报告失败可以重试读取和 repair issue 投递，但不能重放已发生的 merge。部署新 reader/writer 并确认旧 reporter jobs 已结束后，可以准备历史回滚 tags 的清理方案。删除历史 `gate-cutover-pr-*` tags 必须取得 Aimpact 的明确批准。该删除不是自动操作。删除前，必须把旧日报和 repair issues 中的 tag 回滚命令转为精确 SHA。
 
 ## 每日全量与自动修复任务
 
