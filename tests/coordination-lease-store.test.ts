@@ -1651,6 +1651,34 @@ test('a lease this completion could not release is refused before any write', ()
     expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
   }, 60_000);
 
+  test('complete-row refuses a target ref the lease was not claimed against', () => {
+    // The lease protects `main`. An older ref that still carries the claimed
+    // revision must not stand in for `main` after `main` moved the definition.
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    run(repo, ['branch', 'before-drift']);
+    writeFileSync(
+      join(repo, RACE_SPRINT),
+      raceSprintText('[ ]').replace('races converge', 'races converge under review'),
+    );
+    run(repo, ['commit', '--quiet', '-am', 'drift the acceptance cell']);
+    const tokenPath = join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`);
+    const sprintBefore = readFileSync(join(repo, RACE_SPRINT), 'utf-8');
+    const ownerBefore = readFileSync(leaseOwnerPath(repo, RACE_ID), 'utf-8');
+    const tokenBefore = readFileSync(tokenPath, 'utf-8');
+
+    const outcome = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'before-drift' },
+      processSprintDependencies(repo),
+    );
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('was claimed against main, not before-drift');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(sprintBefore);
+    expect(readLease(repo, RACE_ID).raw).toBe(ownerBefore);
+    expect(readFileSync(tokenPath, 'utf-8')).toBe(tokenBefore);
+  }, 60_000);
+
   test('bytes that two readers would read differently are refused, not interpreted', () => {
     // `JSON.parse` keeps the last value for a duplicated key; a line reader
     // keeps the first. Either answer is somebody's authority, so neither is.

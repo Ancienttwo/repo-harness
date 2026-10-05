@@ -847,6 +847,10 @@ function completionLeaseGate(
     );
   }
   const record = lease.record;
+  // The revision fence below is only as good as the ref it reads: an older ref
+  // can still carry the claimed revision after the lease's own ref moved on.
+  const drift = targetRefDrift(record, input.targetRef);
+  if (drift !== null) return refuse(drift);
 
   // A lease this completion could not hand back must not pass the gate.
   // Without this the row was flipped to `[x]` first and `releaseLeaseRecord`
