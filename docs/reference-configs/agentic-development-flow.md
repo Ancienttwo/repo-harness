@@ -5,8 +5,8 @@
 2. Open a branch; isolate a worktree when concurrent edits overlap. Preserve unrelated work.
 3. Make small, bounded commits. Ordinary tasks live in the PR description: goal, changes, verification, risk and rollback.
 4. Freeze the candidate and verify once: typecheck plus affected tests. Reviewers and closeout consume the same evidence.
-5. A model may squash-merge into main when automatic checks pass, unless the user has reserved merging. Tag before/after and record `git revert --no-edit <squash-commit>`.
-6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/tag/rollback report.
+5. A model may squash-merge into main when automatic checks pass, unless the user has reserved merging. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags.
+6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report.
 
 ## Four operation boundaries
 - Main merge requires current automated checks, exact head/base and conflict safety.
