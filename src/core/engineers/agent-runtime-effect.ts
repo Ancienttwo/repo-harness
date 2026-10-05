@@ -544,14 +544,19 @@ export function decideAgentRuntimeOfferWake(previous: AgentRuntimeOfferWakeSnaps
   });
 }
 
+/** The predecessor ledger digest names one transition occurrence: a crash
+ * replay sees the same unpublished predecessor and reuses the key, while a
+ * later return to an earlier snapshot is a new occurrence with a new wake. */
 export function deriveAgentRuntimeOfferWakeIdempotencyKey(input: {
   readonly engineer_id: string; readonly binding_id: string; readonly binding_generation: number;
   readonly snapshot_revision: string; readonly wake_reason: AgentRuntimeOfferWakeReason;
+  readonly predecessor_ledger_sha256: string | null;
 }): string {
   return digest({
-    domain: 'repo-harness-agent-runtime-offer-wake-key.v2', engineer_id: engineer(input.engineer_id, 'engineer_id'),
+    domain: 'repo-harness-agent-runtime-offer-wake-key.v3', engineer_id: engineer(input.engineer_id, 'engineer_id'),
     binding_id: uuid(input.binding_id, 'binding_id'), binding_generation: integer(input.binding_generation, 'binding_generation'),
     snapshot_revision: sha(input.snapshot_revision, 'snapshot_revision'), wake_reason: wakeReason(input.wake_reason),
+    predecessor_ledger_sha256: input.predecessor_ledger_sha256 === null ? null : sha(input.predecessor_ledger_sha256, 'predecessor_ledger_sha256'),
   });
 }
 

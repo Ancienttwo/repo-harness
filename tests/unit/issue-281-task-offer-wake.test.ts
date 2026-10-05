@@ -452,10 +452,12 @@ describe('issue #281 pure offer-transition observer', () => {
     expect(() => decideAgentRuntimeOfferWake(previous, buildAgentRuntimeOfferWakeSnapshot(emptyOffers(other)))).toThrow();
   });
 
-  test('the idempotency key is a deterministic function of Binding, snapshot and reason', () => {
-    const input = { engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, snapshot_revision: digest, wake_reason: 'new_eligible_offer' } as const;
+  test('the idempotency key is a deterministic function of Binding, snapshot, reason and predecessor ledger', () => {
+    const input = { engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, snapshot_revision: digest, wake_reason: 'new_eligible_offer', predecessor_ledger_sha256: null } as const;
     expect(deriveAgentRuntimeOfferWakeIdempotencyKey(input)).toBe(deriveAgentRuntimeOfferWakeIdempotencyKey({ ...input }));
     expect(deriveAgentRuntimeOfferWakeIdempotencyKey({ ...input, wake_reason: 'retry_due' }))
+      .not.toBe(deriveAgentRuntimeOfferWakeIdempotencyKey(input));
+    expect(deriveAgentRuntimeOfferWakeIdempotencyKey({ ...input, predecessor_ledger_sha256: `sha256:${'8'.repeat(64)}` }))
       .not.toBe(deriveAgentRuntimeOfferWakeIdempotencyKey(input));
   });
 });
@@ -491,6 +493,25 @@ describe('issue #281 durable wake store', () => {
       .toThrow(AgentRuntimeEffectStoreError);
     expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('superseded');
     expect(startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: second.status!.intent.effect_id, started_at: '2026-09-03T10:06:00.000Z', env: fx.env }).action)
+      .not.toBeNull();
+  });
+
+  test('a return to an earlier snapshot arms a new wake instead of reusing the superseded one', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const original = offers(fx);
+    const first = record(fx, original, '2026-09-03T10:04:00.000Z');
+    const second = record(fx, offers(fx, { taskRevision: '3'.repeat(64) }), '2026-09-03T10:04:10.000Z');
+    expect(second.outcome).toBe('wake_coalesced');
+    const third = record(fx, original, '2026-09-03T10:04:20.000Z');
+    expect(third.outcome).toBe('wake_coalesced');
+    expect(third.status!.intent.effect_id).not.toBe(first.status!.intent.effect_id);
+    expect(third.status!.current.state).toBe('intent_persisted');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('superseded');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, second.status!.intent.effect_id).current.state).toBe('superseded');
+    const due = listDueOfferWakes(fx.repoRoot, { now: '2026-09-03T10:05:00.000Z' });
+    expect(due.map((event) => event.effect_id)).toEqual([third.status!.intent.effect_id]);
+    expect(startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: third.status!.intent.effect_id, started_at: '2026-09-03T10:05:00.000Z', env: fx.env }).action)
       .not.toBeNull();
   });
 

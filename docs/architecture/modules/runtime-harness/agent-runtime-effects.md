@@ -132,7 +132,9 @@ snapshot 已過期或空掉就是 no-op,仍算一次已送達的 wake。
 被取代的 intent 會在自己的鏈上寫入終態 `superseded`(只能從 `intent_persisted` 到達),
 不是留在 `intent_persisted` 讓 ledger 指針去解釋——因此每個 Binding 任何時刻只有一個非終態 wake,
 Board projection 不必讀 ledger 就與指針一致,重啟一個 superseded wake 是明確報錯而不是靜默無動作。
-沒有無限重試面:同一個 snapshot 的 idempotency key 固定,失敗後除非 offers 再次變化不會自動重來
+idempotency key 綁定 snapshot 與前一份 ledger digest:崩潰重放看到同一份未發佈的前驅,沿用同一把 key;
+A→B→A 回到舊 snapshot 是新的轉換,得到新的 wake,不會指回已 superseded 的 effect。
+沒有無限重試面:同一次轉換的 idempotency key 固定,失敗後除非 offers 再次變化不會自動重來
 (retry 屬於 attempt receipt 的權威)。
 
 ### 3.5 wake 的線性化點只有一個
