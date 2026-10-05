@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CIReportError, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
-function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; root: string; issues: any[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>) {
+function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
   const root = mkdtempSync(join(tmpdir(), 'ci-report-fixture-'));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
   return (async () => {
@@ -13,6 +13,10 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
       git('init', '-qb', 'main'); git('config', 'user.name', 'CI report fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       writeFileSync(join(root, 'feature.txt'), 'before\n'); git('add', '.'); git('commit', '-qm', 'base'); const before = git('rev-parse', 'HEAD');
       git('checkout', '-qb', 'candidate'); writeFileSync(join(root, 'feature.txt'), 'after\n'); git('add', '.'); git('commit', '-qm', 'candidate');
+      for (let i = 1; i < candidateCommits; i++) {
+        writeFileSync(join(root, `candidate-${i}.txt`), `change ${i}\n`); git('add', '.'); git('commit', '-qm', `candidate change ${i}`);
+      }
+      const prCommits = Number(git('rev-list', '--count', `${before}..candidate`));
       git('checkout', '-q', 'main'); git('merge', '--squash', 'candidate'); git('commit', '-qm', 'squashed PR'); const after = git('rev-parse', 'HEAD');
       const now = new Date().toISOString(); const issues: any[] = []; const calls: { path: string; method: string }[] = []; let conclusion = 'success'; let denied = false; let runId = 12; let runAttempt = 1;
       const api: GitHubAPI = async (path, method = 'GET', raw) => {
@@ -28,8 +32,9 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
           const issue = { ...body, state: 'open', number: issues.length + 1, html_url: `https://github.com/test/repo/issues/${issues.length + 1}` };
           issues.push(issue); writeFileSync(join(root, 'repair-issues.json'), JSON.stringify(issues)); return issue;
         }
-        if (path.includes('/pulls?')) return [{ number: 7, merged_at: now, merge_commit_sha: after, base: { ref: 'main' } }];
-        if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: after, base: { ref: 'main' }, commits: 1 };
+        if (path.startsWith('/repos/test/repo/pulls?')) return [{ number: 7, merged_at: now, merge_commit_sha: after, base: { ref: 'main' } }];
+        if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: after, base: { ref: 'main' }, commits: prCommits };
+        if (path === `/repos/test/repo/commits/${before}/pulls?per_page=100`) return [];
         if (path.endsWith(`/git/commits/${after}`)) return { sha: after, parents: [{ sha: before }] };
         if (path.includes('/compare/')) {
           const [base, head] = path.split('/compare/')[1]!.split('...');
@@ -37,7 +42,7 @@ function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; 
         }
         throw Error(`Unexpected API operation ${method} ${path}`);
       };
-      await run({ api, git, root, before, after, issues, calls, setConclusion: value => { conclusion = value; }, setRun: (id, attempt) => { runId = id; runAttempt = attempt; }, denyIssues: () => { denied = true; } });
+      await run({ api, git, root, before, after, prCommits, issues, calls, setConclusion: value => { conclusion = value; }, setRun: (id, attempt) => { runId = id; runAttempt = attempt; }, denyIssues: () => { denied = true; } });
     } finally { rmSync(root, { recursive: true, force: true }); }
   })();
 }
@@ -54,6 +59,18 @@ test('daily report reads exact squash boundaries without ref writes; its SHA rev
   f.git(...first.merges[0]!.rollback.split(' ').slice(1));
   expect(f.git('rev-parse', 'HEAD^{tree}')).toBe(f.git('rev-parse', `${f.before}^{tree}`));
 }));
+
+test('multi-commit squash accepts one main boundary and its reported revert restores the pre-merge tree', () => fixture(async f => {
+  const refs = f.git('show-ref');
+  const report = await reportCI('test/repo', 12, f.api);
+  expect(f.prCommits).toBe(2);
+  expect(f.git('rev-list', '--count', `${f.before}..${f.after}`)).toBe('1');
+  expect(report.errors).toEqual([]); expect(report.repairs).toEqual([]);
+  expect(report.merges).toEqual([{ pr: 7, before: f.before, after: f.after, rollback: `git revert --no-edit ${f.after}` }]);
+  expect(f.git('show-ref')).toBe(refs); expect(f.calls.every(call => call.method === 'GET')).toBe(true);
+  f.git(...report.merges[0]!.rollback.split(' ').slice(1));
+  expect(f.git('rev-parse', 'HEAD^{tree}')).toBe(f.git('rev-parse', `${f.before}^{tree}`));
+}, 2));
 
 test.each(['failure', 'cancelled', 'timed_out'])('completed %s run creates one readable run/check-bound repair task across retries', conclusion => fixture(async f => {
   f.setConclusion(conclusion);
@@ -146,14 +163,15 @@ test('multi-commit rebase fails closed because reverting its last commit leaves 
   const parent = f.git('rev-parse', 'HEAD^');
   f.git('checkout', '-q', 'main'); f.git('merge', '--ff-only', 'rebase-pr');
   const api: GitHubAPI = async (path, method, body) => {
-    if (path.includes('/pulls?')) return (await f.api(path) as Record<string, unknown>[]).map(pr => ({ ...pr, merge_commit_sha: after }));
+    if (path.startsWith('/repos/test/repo/pulls?')) return (await f.api(path) as Record<string, unknown>[]).map(pr => ({ ...pr, merge_commit_sha: after }));
     if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: after, base: { ref: 'main' }, commits: count };
     if (path.endsWith(`/git/commits/${after}`)) return { sha: after, parents: [{ sha: parent }] };
+    if (path === `/repos/test/repo/commits/${parent}/pulls?per_page=100`) return [{ number: 7 }];
     return f.api(path, method, body);
   };
   const report = await reportCI('test/repo', 12, api);
   expect(count).toBe(2); expect(report.merges).toEqual([]);
-  expect(report.errors.join('\n')).toContain('Automatic rollback requires a PR with exactly one commit');
+  expect(report.errors.join('\n')).toContain('Automatic rollback cannot revert only the last commit of multi-commit rebase PR #7');
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
   expect(f.git('rev-parse', 'main')).toBe(after);
   f.git('checkout', '-qb', 'incomplete-rollback'); f.git('revert', '--no-edit', after);
@@ -162,16 +180,13 @@ test('multi-commit rebase fails closed because reverting its last commit leaves 
 }));
 
 test.each([
-  { name: 'missing commit count', detail: { commits: undefined } },
-  { name: 'string commit count', detail: { commits: '1' } },
-  { name: 'zero commit count', detail: { commits: 0 } },
   { name: 'wrong PR', detail: { number: 8 } },
   { name: 'wrong merge SHA', detail: { merge_commit_sha: 'a'.repeat(40) } },
   { name: 'unmerged PR', detail: { merged: false } },
   { name: 'wrong base', detail: { base: { ref: 'feature' } } },
   { name: 'malformed detail', detail: null },
   { name: 'detail API failure', fail: true },
-])('single-commit PR proof fails closed: $name', scenario => fixture(async f => {
+])('merged PR identity proof fails closed: $name', scenario => fixture(async f => {
   const report = await reportCI('test/repo', 12, async (path, method, body) => {
     if (path.endsWith('/pulls/7')) {
       if ('fail' in scenario) throw new CIReportError(503, 'HTTP 503');
@@ -181,6 +196,32 @@ test.each([
   });
   expect(report.merges).toEqual([]); expect(report.errors).toHaveLength(1);
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
+}));
+
+test.each([
+  { name: 'non-array associations', response: {} },
+  { name: 'malformed association', response: [null] },
+  { name: 'missing PR number', response: [{}] },
+  { name: 'unsafe PR number', response: [{ number: Number.MAX_SAFE_INTEGER + 1 }] },
+  { name: 'full association page', response: Array.from({ length: 100 }, () => ({ number: 6 })) },
+  { name: 'parent API failure', fail: true },
+])('rollback parent PR observation fails closed: $name', scenario => fixture(async f => {
+  const report = await reportCI('test/repo', 12, async (path, method, body) => {
+    if (path === `/repos/test/repo/commits/${f.before}/pulls?per_page=100`) {
+      if ('fail' in scenario) throw new CIReportError(503, 'HTTP 503');
+      return scenario.response;
+    }
+    return f.api(path, method, body);
+  });
+  expect(report.merges).toEqual([]); expect(report.errors).toHaveLength(1);
+  expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
+}));
+
+test('a parent introduced by another PR keeps the squash boundary valid', () => fixture(async f => {
+  const report = await reportCI('test/repo', 12, (path, method, body) =>
+    path === `/repos/test/repo/commits/${f.before}/pulls?per_page=100` ? Promise.resolve([{ number: 6 }]) : f.api(path, method, body));
+  expect(report.errors).toEqual([]);
+  expect(report.merges[0]).toEqual({ pr: 7, before: f.before, after: f.after, rollback: `git revert --no-edit ${f.after}` });
 }));
 
 test.each(['behind', 'diverged'])('merge outside the fixed snapshot is excluded: %s', status => fixture(async f => {
@@ -203,7 +244,7 @@ test.each([
   { name: 'fractional PR number', response: [{ number: 7.5, merged_at: new Date().toISOString(), merge_commit_sha: 'a'.repeat(40), base: { ref: 'main' } }] },
   { name: 'zero merge SHA', response: [{ number: 7, merged_at: new Date().toISOString(), merge_commit_sha: '0'.repeat(40), base: { ref: 'main' } }] },
 ])('incomplete provider merge observation fails closed: $name', ({ response }) => fixture(async f => {
-  const report = await reportCI('test/repo', 12, (path, method, body) => path.includes('/pulls?') ? Promise.resolve(response) : f.api(path, method, body));
+  const report = await reportCI('test/repo', 12, (path, method, body) => path.startsWith('/repos/test/repo/pulls?') ? Promise.resolve(response) : f.api(path, method, body));
   expect(report.merges).toEqual([]); expect(report.errors).toHaveLength(1);
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:12:1:report-12', delivery: 'created' });
 }));

@@ -116,12 +116,19 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI): Pro
         const detail = record(await api(`${root}/pulls/${pr.number}`), 'Merged PR detail');
         if (detail.number !== pr.number || detail.merged !== true || detail.merge_commit_sha !== after
           || record(detail.base, 'Merged PR detail base').ref !== 'main') throw new Error('Merged PR detail does not match the rollback boundary');
-        if (detail.commits !== 1) throw new Error('Automatic rollback requires a PR with exactly one commit');
+        const parentAssociations = await api(`${root}/commits/${parent.sha}/pulls?per_page=100`);
+        if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) throw new Error('Rollback parent PR associations incomplete');
+        const parentPRs = parentAssociations.map(entry => {
+          const pr = record(entry, 'Rollback parent PR association');
+          if (!positive(pr.number)) throw new Error('Rollback parent PR number unavailable');
+          return pr.number;
+        });
+        if (parentPRs.includes(pr.number)) throw new Error(`Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${pr.number}`);
         const before = parent.sha;
         report.merges.push({ pr: pr.number, before, after, rollback: `git revert --no-edit ${after}` });
       } catch (error) {
         report.errors.push(`Rollback boundary pending for PR #${pr.number}: ${message(error)}`);
-        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit, its single parent and the PR commit count in the fixed main snapshot. Automatic rollback requires a PR with exactly one commit. Never repeat the completed merge.', true);
+        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit, its single parent and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
       }
     }
   } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.'); }

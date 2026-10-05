@@ -465,8 +465,19 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     || object(detail.base, 'merged parent PR detail base').ref !== 'main') {
     throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
-  if (detail.commits !== 1) {
-    throw new MergeReadinessError('provider_data_incomplete', 'Automatic rollback requires a PR with exactly one commit');
+  const parentAssociations = yield `${root}/commits/${commit.parents[0].sha}/pulls?per_page=100`;
+  if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent PR associations incomplete');
+  }
+  const parentPRs = parentAssociations.map(entry => {
+    const pr = object(entry, 'rollback parent PR association');
+    if (typeof pr.number !== 'number' || !Number.isSafeInteger(pr.number) || pr.number < 1) {
+      throw new MergeReadinessError('provider_data_incomplete', 'rollback parent PR number unavailable');
+    }
+    return pr.number;
+  });
+  if (parentPRs.includes(prNumber)) {
+    throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`);
   }
   return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: commit.parents[0].sha, after_sha: identity.base_sha });
 }
