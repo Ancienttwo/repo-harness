@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
+import { buildExternalSourceRefreshReceipt, buildProviderIssueObservation, type ExternalSourceRefreshReceiptV1 } from '../../src/core/external-sources/issue-observation';
 import { deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { bindExternalSource, listExternalSourceBindings, type ExternalSourceBindingDependencies } from '../../src/effects/external-sources/binding';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
@@ -21,12 +21,13 @@ function observation(body = 'request') {
   });
 }
 
-function harness(observations = [observation()]): { deps: ExternalSourceBindingDependencies; written: ReturnType<typeof bindExternalSource>[] } {
+function harness(observations = [observation()], refreshReceipts: readonly ExternalSourceRefreshReceiptV1[] = []): { deps: ExternalSourceBindingDependencies; written: ReturnType<typeof bindExternalSource>[] } {
   const written: ReturnType<typeof bindExternalSource>[] = [];
   const repo = { id: REPO_ID, path: '/repo', accessMode: 'read_write' as const, source: 'manual' as const, registeredAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-01T00:00:00Z' };
   const deps: ExternalSourceBindingDependencies = {
     registry: () => ({ registryPath: '/registry', registryRevision: `sha256:${'d'.repeat(64)}`, authorizationRevision: 4, repos: [repo] }),
     observations: () => observations,
+    refreshReceipts: () => refreshReceipts,
     receipts: () => written,
     canonical: () => ({ ok: true, commit: 'e'.repeat(40), text: `# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|---|---|---|---|---|\n| 1 | ${TASK_ID} | [ ] | ${TASK} | contract | tests pass | plan |\n` }),
     plan: () => ({ ok: true, proof: PLAN }),
@@ -69,6 +70,24 @@ describe('external source binding effect', () => {
     expect(projection.bindings[0].source_status).toBe('drifted');
     expect(projection.bindings[0].attention).toBe('source_drift');
     expect(projection.bindings[0].receipt.source_revision).toBe(first.source_revision);
+  });
+
+  test('projects a repeated refresh of the bound revision as current, not drifted', () => {
+    const first = observation();
+    const changed = observation('changed request');
+    const repeated = buildExternalSourceRefreshReceipt({
+      registered_repository_id: REPO_ID, provider: 'github', provider_host: 'github.com', provider_repository_id: '101', provider_display_ref: 'acme/widgets#7',
+      policy_revision: `sha256:${'c'.repeat(64)}`, started_at: '2026-09-01T02:30:00.000Z', completed_at: '2026-09-01T03:00:00.000Z',
+      outcome: 'complete', pages_fetched: 1, issues_seen: 1, observations_written: 1,
+      limits: { max_pages: 1, max_issues: 10, max_body_bytes: 1024, max_total_bytes: 8192, deadline_ms: 1000 },
+      source_revisions: [first.source_revision], failure: null,
+    });
+    const item = harness([first, changed], [repeated]);
+    const receipt = bindExternalSource({ registered_repository_id: REPO_ID, source_revision: first.source_revision, sprint_path: SPRINT, task_id: TASK_ID, target_ref: 'main', bound_at: '2026-09-01T02:00:00.000Z' }, item.deps);
+    const projection = listExternalSourceBindings(REPO_ID, undefined, item.deps);
+    expect(projection.bindings[0].source_status).toBe('current');
+    expect(projection.bindings[0].attention).toBe('none');
+    expect(projection.bindings[0].receipt).toEqual(receipt);
   });
 
   test('rejects ineligible observations before persistence', () => {

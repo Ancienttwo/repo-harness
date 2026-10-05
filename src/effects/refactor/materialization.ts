@@ -28,15 +28,16 @@ function safePath(path: string, label: string, suffix?: string): string {
   if (!path || path.startsWith('/') || path.startsWith('-') || path.includes('\\') || path.split('/').some((part) => !part || part === '.' || part === '..') || (suffix && !path.endsWith(suffix))) fail('refactor_materialization_conflict', `${label} is unsafe`);
   return path;
 }
-function existsAt(root: string, commit: string, path: string): boolean {
-  try { execFileSync('git', ['cat-file', '-e', `${commit}:${path}`], { cwd: root, stdio: 'ignore' }); return true; } catch { return false; }
-}
-function at(root: string, commit: string, path: string): string {
-  try { return execFileSync('git', ['show', `${commit}:${path}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch (error) { return fail('refactor_materialization_conflict', `materialized artifact is missing: ${path}`, error); }
-}
 function sprintBytes(title: string, createdAt: string, rows: readonly string[]): string {
   return `# Sprint: ${title}\n\n> **Status**: Approved\n> **Created**: ${createdAt}\n${SPRINT_BACKLOG_SCHEMA_HEADER}\n\n## Goal\n\nExecute the accepted Refactor Program through contract-gated Work Packages.\n\n## Backlog\n\n${BACKLOG_TABLE_HEADER[2]}\n${BACKLOG_TABLE_SEPARATOR[2]}\n${rows.join('\n')}\n\n## Execution Log\n`;
+}
+/** Mode and raw content digest of the entry at `path` in `commit`; `null` when the path is absent. */
+function entryAt(root: string, commit: string, path: string): { readonly mode: string; readonly digest: string | null } | null {
+  const entry = git(root, ['ls-tree', '-z', commit, '--', path]).replace(/\0$/u, '');
+  if (!entry) return null;
+  const [mode, type, object] = entry.slice(0, entry.indexOf('\t')).split(' ');
+  if (type !== 'blob') return { mode: mode!, digest: null };
+  return { mode: mode!, digest: `sha256:${createHash('sha256').update(execFileSync('git', ['cat-file', 'blob', object!], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })).digest('hex')}` };
 }
 function put(root: string, index: string, temp: string, serial: number, path: string, bytes: string): void {
   const file = join(temp, `artifact-${serial}`); writeFileSync(file, bytes);
@@ -111,36 +112,46 @@ export function materializeRefactorProgram(input: MaterializeRefactorProgramInpu
     const bytes = readFileSync(absolute, 'utf8');
     const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     if (digest !== entry.outputDigest) fail('refactor_materialization_conflict', `architecture projection bytes drifted: ${path}`);
-    return { path, bytes };
+    return { path, bytes, preimageDigest: entry.preimageDigest };
   });
   const architectureDeletes = architectureReceipt === null ? [] : architectureReceipt.result.files.filter((entry) => entry.action === 'delete').map((entry) => {
     const path = safePath(entry.path, 'architecture projection path');
     if (existsSync(join(root, path)) || entry.outputDigest !== null) fail('refactor_materialization_conflict', `architecture projection deletion drifted: ${path}`);
-    return path;
+    return { path, preimageDigest: entry.preimageDigest };
   });
   const writes = [{ path: sprintPath, bytes: sprint }, { path: sprintPath.replace(/\.sprint\.md$/u, '.work-graph.v1.json'), bytes: `${JSON.stringify(projection.workGraph, null, 2)}\n` }, { path: programPath, bytes: programBytes }, ...projection.plans, ...projection.artifacts, ...architectureWrites];
-  if (new Set([...writes.map((entry) => entry.path), ...architectureDeletes]).size !== writes.length + architectureDeletes.length) fail('refactor_materialization_conflict', 'transaction contains duplicate artifact paths');
+  if (new Set([...writes, ...architectureDeletes].map((entry) => entry.path)).size !== writes.length + architectureDeletes.length) fail('refactor_materialization_conflict', 'transaction contains duplicate artifact paths');
   for (const entry of writes) safePath(entry.path, 'artifact path');
+  const baselineRevision = status.program.target_revision;
+  // Planning artifacts and architecture creates must be new paths. An architecture update
+  // or delete must replace exactly the regular baseline blob that its receipt classified.
+  for (const entry of [...writes, ...architectureDeletes]) {
+    const preimage = 'preimageDigest' in entry ? entry.preimageDigest : null;
+    const baseline = entryAt(root, baselineRevision, entry.path);
+    if (preimage === null && baseline !== null) fail('refactor_materialization_conflict', `artifact already exists: ${entry.path}`);
+    if (preimage !== null && (baseline?.mode !== '100644' || baseline.digest !== preimage)) fail('refactor_materialization_conflict', `architecture projection preimage drifted: ${entry.path}`);
+  }
+  const temp = mkdtempSync(join(tmpdir(), 'repo-harness-refactor-')); const index = join(temp, 'index');
   let materializedCommit: string;
-  if (current !== status.program.target_revision) {
-    if (git(root, ['rev-parse', '--verify', `${current}^1`]) !== status.program.target_revision
-      || writes.some((entry) => at(root, current, entry.path) !== entry.bytes)
-      || architectureDeletes.some((path) => existsAt(root, current, path))) fail('refactor_materialization_stale', 'target moved outside this materialization transaction');
-    materializedCommit = current;
-  } else {
-    for (const entry of writes) if (existsAt(root, current, entry.path)) fail('refactor_materialization_conflict', `artifact already exists: ${entry.path}`);
-    const temp = mkdtempSync(join(tmpdir(), 'repo-harness-refactor-')); const index = join(temp, 'index');
-    try {
-      git(root, ['read-tree', current], { GIT_INDEX_FILE: index }); writes.forEach((entry, indexValue) => put(root, index, temp, indexValue, entry.path, entry.bytes));
-      for (const path of architectureDeletes) git(root, ['update-index', '--remove', path], { GIT_INDEX_FILE: index });
-      const tree = git(root, ['write-tree'], { GIT_INDEX_FILE: index }); const timestamp = input.now?.() ?? input.observed_at;
+  try {
+    git(root, ['read-tree', baselineRevision], { GIT_INDEX_FILE: index }); writes.forEach((entry, indexValue) => put(root, index, temp, indexValue, entry.path, entry.bytes));
+    for (const { path } of architectureDeletes) git(root, ['update-index', '--remove', path], { GIT_INDEX_FILE: index });
+    const tree = git(root, ['write-tree'], { GIT_INDEX_FILE: index });
+    if (current !== baselineRevision) {
+      // Recovery recognizes only the exact effect-owned transaction: the authorized baseline as
+      // the only parent and the exact tree that this transaction builds from that baseline.
+      if (git(root, ['rev-list', '--parents', '-n', '1', current]) !== `${current} ${baselineRevision}`
+        || git(root, ['rev-parse', `${current}^{tree}`]) !== tree) fail('refactor_materialization_stale', 'target moved outside this materialization transaction');
+      materializedCommit = current;
+    } else {
+      const timestamp = input.now?.() ?? input.observed_at;
       materializedCommit = git(root, ['commit-tree', tree, '-p', current, '-m', `materialize RefactorProgram ${program.programId}`], { GIT_INDEX_FILE: index, GIT_AUTHOR_NAME: 'repo-harness', GIT_AUTHOR_EMAIL: 'repo-harness@localhost', GIT_COMMITTER_NAME: 'repo-harness', GIT_COMMITTER_EMAIL: 'repo-harness@localhost', GIT_AUTHOR_DATE: timestamp, GIT_COMMITTER_DATE: timestamp });
       input.crash_hook?.('before_ref_cas');
       try { git(root, ['update-ref', targetRef, materializedCommit, current]); } catch (error) { return fail('refactor_materialization_stale', 'target moved during materialization', error); }
       input.crash_hook?.('after_ref_cas');
-    } catch (error) { if (error instanceof RefactorMaterializationError) throw error; return fail('refactor_materialization_failed', 'cannot create atomic Refactor Program materialization commit', error); }
-    finally { if (existsSync(temp)) rmSync(temp, { recursive: true, force: true }); }
-  }
+    }
+  } catch (error) { if (error instanceof RefactorMaterializationError) throw error; return fail('refactor_materialization_failed', 'cannot create atomic Refactor Program materialization commit', error); }
+  finally { if (existsSync(temp)) rmSync(temp, { recursive: true, force: true }); }
   if (status.current.state === 'planning') return Object.freeze({ program_id: program.programId, materialized_commit: materializedCommit, sprint_path: sprintPath, program_path: programPath, current: status.current });
   const planned = appendRefactorProgramEvent({ repo_root: root, program_id: program.programId, expected_current_sha256: status.current.current_sha256, idempotency_key: `${input.idempotency_key}:planning`, operation: 'begin_plan', evidence_refs: [materializedCommit, program.programDigest], observed_at: input.observed_at, owned_target_revision: materializedCommit, env: input.env });
   return Object.freeze({ program_id: program.programId, materialized_commit: materializedCommit, sprint_path: sprintPath, program_path: programPath, current: planned.current });

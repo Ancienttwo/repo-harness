@@ -577,6 +577,56 @@ describe('package-local ArchContext projection provider', () => {
     expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot).unresolvedCandidates).toBe(1);
   });
 
+  test('completes an accepted adoption through the provider boundary with its bound apply receipt', () => {
+    const adoptionPlanId = 'adopt-plan-0123456789abcdef';
+    const accepted = (respond: (wireRequest: ProjectionRequestV1) => unknown) => {
+      const f = fixture();
+      const initial = request(f.repoRoot);
+      const [candidate] = recordArchitectureProjectionAcceptanceCandidates(f.repoRoot, initial, unresolvedAcceptanceResult(initial));
+      if (!candidate) throw new Error('candidate fixture failed');
+      const modes: string[] = [];
+      const run: RunArchctxProcess = (_binary, args) => {
+        if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+        if (args[0] !== 'projection' || args[1] !== 'run') throw new Error(`unexpected provider command: ${args.join(' ')}`);
+        const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
+        modes.push(wireRequest.mode);
+        mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
+        writeFileSync(join(f.repoRoot, 'docs', 'architecture', 'index.md'), 'adopted projection\n');
+        return { status: 0, signal: null, stdout: JSON.stringify(respond(wireRequest)), stderr: '' };
+      };
+      const accept = () => acceptArchitectureProjectionCandidate(f.repoRoot, candidate.signalId, 'event.user-approval-adoption', {
+        consumerRoot: f.consumerRoot, policy, run, adoptionPlanId,
+        runRefreshActions: () => [{ actionKey: 'architecture-queue:src/core/a.ts', action: 'architecture-queue' as const, status: 0, stdout: '', stderr: '' }],
+      });
+      return { accept, modes, repoRoot: f.repoRoot };
+    };
+
+    // archctx 0.6.1 commits an accepted adoption through the same fixed-point apply,
+    // so its result carries an apply receipt bound to the accepted change.
+    const bound = accepted((wireRequest) => committedApplyEnvelope(wireRequest));
+    const receipt = bound.accept();
+    expect(bound.modes).toEqual(['adopt']);
+    expect(receipt.request).toMatchObject({ mode: 'adopt', adoptionPlanId });
+    expect(receipt.result.applyReceipt?.acceptedChange).toEqual(receipt.acceptedChange);
+    expect(inspectArchitectureProjectionAcceptanceState(bound.repoRoot)).toMatchObject({ receipts: 1, unresolvedCandidates: 0 });
+
+    const foreign = accepted((wireRequest) => committedApplyEnvelope({
+      ...wireRequest,
+      acceptedChange: { ...wireRequest.acceptedChange!, eventId: 'event.someone-else' },
+    }));
+    expect(foreign.accept).toThrow('archctx projection apply receipt accepted change mismatch');
+    expect(inspectArchitectureProjectionAcceptanceState(foreign.repoRoot)).toMatchObject({ receipts: 0, unresolvedCandidates: 1 });
+
+    const unbound = accepted((wireRequest) => {
+      const envelope = committedApplyEnvelope(wireRequest);
+      const { applyReceipt: _receipt, receiptDigest: _digest, ...body } = envelope.data;
+      const receiptDigest = projectionResultReceiptDigest(body);
+      return { ...envelope, data: { ...body, receiptDigest, refreshSignals: body.refreshSignals.map((signal) => ({ ...signal, projectionReceiptDigest: receiptDigest })) } };
+    });
+    expect(unbound.accept).toThrow('architecture acceptance apply receipt does not bind the accepted change and workspace');
+    expect(inspectArchitectureProjectionAcceptanceState(unbound.repoRoot)).toMatchObject({ receipts: 0, unresolvedCandidates: 1 });
+  });
+
   test('validated absence permits one normal retry after a precommit provider failure', () => {
     const f = fixture();
     const initial = request(f.repoRoot);
