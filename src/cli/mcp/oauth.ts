@@ -272,6 +272,7 @@ interface AuthorizationCodeRecord {
   clientId: string;
   redirectUri: string;
   scopes: string[];
+  authorizationRevision: number;
   createdAt: number;
   expiresAt: number;
 }
@@ -375,6 +376,7 @@ export function createMcpOAuthProvider(
         clientId: client.client_id,
         redirectUri: params.redirectUri,
         scopes,
+        authorizationRevision: currentAuthorizationRevision(),
         createdAt,
         expiresAt: createdAt + authorizationCodeTtlSeconds,
       });
@@ -400,6 +402,13 @@ export function createMcpOAuthProvider(
       }
       if (redirectUri !== stored.redirectUri) {
         throw new InvalidGrantError('redirect_uri mismatch');
+      }
+      // Consent granted under an old authorization revision must not produce
+      // authority under the current one (the same rule access/refresh tokens
+      // already enforce). Delete the code so the stale grant cannot be replayed.
+      if (authorizationScoped && stored.authorizationRevision !== currentAuthorizationRevision()) {
+        authCodes.delete(authorizationCode);
+        throw new InvalidGrantError('Authorization code was issued under a different authorization revision');
       }
       authCodes.delete(authorizationCode);
       const accessToken = issueToken();
