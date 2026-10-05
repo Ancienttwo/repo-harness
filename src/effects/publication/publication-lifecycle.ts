@@ -11,7 +11,7 @@ import {
   publicationReceiptDigest,
   validatePublicationJournalEvidence,
   type PublicationJournalEvidenceV1,
-  type PublicationReceiptV2,
+  type PublicationReceiptV3,
 } from '../../core/publication/publication-receipt';
 import {
   PublicationLifecycleError,
@@ -250,7 +250,7 @@ function readShipJournalProof(
   }
 }
 
-function assertReceiptMatchesEvidence(receipt: PublicationReceiptV2, evidence: PublicationJournalEvidenceV1): void {
+function assertReceiptMatchesEvidence(receipt: PublicationReceiptV3, evidence: PublicationJournalEvidenceV1): void {
   if (
     receipt.provider_repo_id !== evidence.provider_repo_id
     || receipt.pr_number !== evidence.provider_pr_number
@@ -261,7 +261,7 @@ function assertReceiptMatchesEvidence(receipt: PublicationReceiptV2, evidence: P
   }
 }
 
-function assertShipJournalContext(proof: ShipJournalProof, record: LeaseOwnerRecord, receipt: PublicationReceiptV2): void {
+function assertShipJournalContext(proof: ShipJournalProof, record: LeaseOwnerRecord, receipt: PublicationReceiptV3): void {
   if (proof.claim_id !== record.claim_id || proof.claim_task_id !== record.task_id
     || proof.claim_generation !== String(record.generation) || proof.claim_task_revision !== record.task_revision) {
     throw failure('publication_claim_mismatch', 'ship journal identity differs from the live claim generation/revision');
@@ -285,7 +285,7 @@ function assertShipJournalContext(proof: ShipJournalProof, record: LeaseOwnerRec
 
 function assertLeaseMatchesReceipt(
   record: LeaseOwnerRecord,
-  receipt: PublicationReceiptV2,
+  receipt: PublicationReceiptV3,
   pointer?: CurrentPublicationPointerV1,
 ): void {
   if (
@@ -307,7 +307,7 @@ function assertLeaseMatchesReceipt(
   }
 }
 
-function assertReopenTopology(repoRoot: string, record: LeaseOwnerRecord, receipt: PublicationReceiptV2, gitBin?: string): void {
+function assertReopenTopology(repoRoot: string, record: LeaseOwnerRecord, receipt: PublicationReceiptV3, gitBin?: string): void {
   const worktree = record.execution_worktree;
   let topology;
   try { topology = readWorktreeTopology(repoRoot, gitBin ?? 'git'); } catch (error) {
@@ -323,7 +323,7 @@ function assertReopenTopology(repoRoot: string, record: LeaseOwnerRecord, receip
   if (entry.head !== receipt.head_sha) throw failure('head_moved', `reviewing worktree head moved from ${receipt.head_sha} to ${entry.head ?? '(missing)'}`);
 }
 
-function receiptForPointer(repoRoot: string, pointer: CurrentPublicationPointerV1): PublicationReceiptV2 {
+function receiptForPointer(repoRoot: string, pointer: CurrentPublicationPointerV1): PublicationReceiptV3 {
   const receipt = readPublicationReceiptCache(repoRoot, pointer.publication_id);
   if (receipt === null) throw failure('publication_incomplete', `receipt cache is missing for ${pointer.publication_id}`);
   if (publicationReceiptDigest(receipt) !== pointer.receipt_sha256) {
@@ -336,7 +336,6 @@ interface PublicationValidationEnvironment {
   readonly observe_integration?: (repoRoot: string, prNumber: number) => ProviderPullRequestIntegrationV1;
   readonly gh_bin?: string;
   readonly git_bin?: string;
-  readonly merge_seal_path?: string;
   /** Optional transport-owned authorization recheck at the mutation boundary. */
   readonly authorization_fence?: () => void;
 }
@@ -355,14 +354,13 @@ function rebuildReceiptForPointer(
   repoRoot: string,
   pointer: CurrentPublicationPointerV1,
   environment: PublicationValidationEnvironment,
-): PublicationReceiptV2 {
+): PublicationReceiptV3 {
   const cached = receiptForPointer(repoRoot, pointer);
   const rebuilt = rebuildPublicationReceipt({
     repo_root: repoRoot,
     pr_number: cached.pr_number,
     gh_bin: environment.gh_bin,
     git_bin: environment.git_bin,
-    merge_seal_path: environment.merge_seal_path,
   });
   if (rebuilt.receipt.publication_id !== pointer.publication_id) {
     throw failure('publication_pointer_mismatch', 'live rebuilt receipt does not match current publication pointer');
@@ -407,7 +405,6 @@ function enterPublicationReviewingWithProof(
         pr_number: proof.evidence.provider_pr_number,
         gh_bin: input.gh_bin,
         git_bin: input.git_bin,
-        merge_seal_path: input.merge_seal_path,
       });
       assertShipJournalContext(proof, record, rebuilt.receipt);
       const pointer = publicationPointerFromReceipt(rebuilt.receipt, input.ship_transaction_key);
@@ -636,7 +633,7 @@ function integrationJournalProof(
  */
 export function verifyPublicationShipJournalComplete(input: {
   readonly repo_root: string;
-  readonly receipt: PublicationReceiptV2;
+  readonly receipt: PublicationReceiptV3;
   readonly reviewing_record: LeaseOwnerRecord;
   readonly current_publication: CurrentPublicationPointerV1;
   readonly git_bin?: string;
@@ -667,9 +664,9 @@ export function verifyPublicationShipJournalComplete(input: {
 
 function assertProviderReceiptIdentity(
   provider: ProviderPullRequestIntegrationV1,
-  receipt: PublicationReceiptV2,
+  receipt: PublicationReceiptV3,
 ): void {
-  let marker: PublicationReceiptV2 | null;
+  let marker: PublicationReceiptV3 | null;
   try { marker = decodePublicationMarker(provider.body); } catch (error) {
     throw failure('publication_pointer_mismatch', 'provider publication marker is invalid', error);
   }
@@ -696,7 +693,7 @@ function integrationReceiptAndProvider(
   repoRoot: string,
   pointer: CurrentPublicationPointerV1,
   environment: PublicationValidationEnvironment,
-): { readonly receipt: PublicationReceiptV2; readonly provider: ProviderPullRequestIntegrationV1 } {
+): { readonly receipt: PublicationReceiptV3; readonly provider: ProviderPullRequestIntegrationV1 } {
   let receipt = readPublicationReceiptCache(repoRoot, pointer.publication_id, environment.git_bin ?? 'git');
   const proof = receipt === null ? integrationJournalProof(repoRoot, pointer, environment.git_bin) : null;
   const prNumber = receipt?.pr_number ?? proof!.evidence.provider_pr_number;
@@ -704,7 +701,7 @@ function integrationReceiptAndProvider(
     ? environment.observe_integration(repoRoot, prNumber)
     : observeProviderPullRequestIntegration(repoRoot, prNumber, environment.gh_bin);
   if (receipt === null) {
-    let marker: PublicationReceiptV2 | null;
+    let marker: PublicationReceiptV3 | null;
     try { marker = decodePublicationMarker(provider.body); } catch (error) {
       throw failure('publication_pointer_mismatch', 'provider publication marker is invalid', error);
     }
@@ -1015,7 +1012,7 @@ export interface LegacyInspectInput extends Omit<EnterReviewingInput, 'claim_id'
 }
 
 export type LegacyInspection =
-  | { readonly classification: 'migratable'; readonly receipt: PublicationReceiptV2 }
+  | { readonly classification: 'migratable'; readonly receipt: PublicationReceiptV3 }
   | { readonly classification: 'legacy_unattributable'; readonly reason: string };
 
 /** Marker-backed reconstruction is required; no legacy PR is adopted by inference. */
@@ -1033,7 +1030,6 @@ export function inspectLegacyPublication(input: LegacyInspectInput): LegacyInspe
       pr_number: proof.evidence.provider_pr_number,
       gh_bin: input.gh_bin,
       git_bin: input.git_bin,
-      merge_seal_path: input.merge_seal_path,
     });
     const record = readLease(input.repo_root, input.task_id).record;
     if (record === null || record.state !== 'completing' || record.claim_id !== input.expected_claim_id) {

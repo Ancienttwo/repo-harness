@@ -1,4 +1,4 @@
-import type { PublicationReceiptV2 } from './publication-receipt';
+import type { PublicationReceiptV3 } from './publication-receipt';
 
 /** Read-time protocol only. It is deliberately independent of lease/task digest domains. */
 export const MERGE_READINESS_PROTOCOL = 1 as const;
@@ -72,7 +72,7 @@ export interface PullRequestMergeReadinessInput {
 }
 
 export interface MergeReadinessInputV1 extends Omit<PullRequestMergeReadinessInput, 'expected_head_sha' | 'expected_base_sha'> {
-  readonly receipt: PublicationReceiptV2;
+  readonly receipt: PublicationReceiptV3;
 }
 
 export interface MergeReadinessV1 {
