@@ -23,6 +23,20 @@ function newest<T extends { readonly completed_at: string; readonly receipt_sha2
   return values.slice().sort((left, right) => right.completed_at.localeCompare(left.completed_at) || right.receipt_sha256.localeCompare(left.receipt_sha256))[0] ?? null;
 }
 
+/**
+ * Last time this revision was the observed provider state: its immutable observation
+ * time, or the completed time of the latest complete refresh that returned it. The
+ * complete-receipt membership is the successful-refresh chronology, so a repeated
+ * revision outranks a revision observed only earlier.
+ */
+function lastSeenAt(observation: ProviderIssueObservationV1, receipts: readonly ExternalSourceRefreshReceiptV1[]): string {
+  let latest = observation.observed_at;
+  for (const receipt of receipts) {
+    if (receipt.outcome === 'complete' && receipt.source_revisions.includes(observation.source_revision) && receipt.completed_at.localeCompare(latest) > 0) latest = receipt.completed_at;
+  }
+  return latest;
+}
+
 function issueKey(observation: ProviderIssueObservationV1): string {
   return `${observation.provider_repository_id}\u0000${observation.provider_issue_id}`;
 }
@@ -42,7 +56,7 @@ export function buildExternalSourceProjection(input: {
     history.set(key, records);
   }
   const issues = Array.from(history.values()).map((records): ExternalSourceProjectionIssueV1 => {
-    const ordered = records.slice().sort((left, right) => right.observed_at.localeCompare(left.observed_at) || right.source_revision.localeCompare(left.source_revision));
+    const ordered = records.slice().sort((left, right) => lastSeenAt(right, receipts).localeCompare(lastSeenAt(left, receipts)) || right.source_revision.localeCompare(left.source_revision));
     return Object.freeze({
       provider_repository_id: ordered[0].provider_repository_id,
       provider_issue_id: ordered[0].provider_issue_id,
