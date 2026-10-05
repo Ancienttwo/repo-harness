@@ -17,7 +17,7 @@
  *    "0.0.0" catch.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -60,7 +60,13 @@ function populateFixture(): PopulateFixture {
   const cliStub = join(repoRoot, 'cli-stub.js');
   writeFileSync(cliStub, `process.stdout.write(${JSON.stringify(stubOutput)});\n`);
   const lockDir = '.ai/harness/tooling-lock.d';
-  mkdirSync(join(repoRoot, lockDir), { recursive: true });
+  // The populate owns the refresh lock itself. An abandoned ownerless lock dir,
+  // older than the reclaim age, must be reclaimed and then released by a populate
+  // that ran; a fresh one would make the populate exit as a contended refresh.
+  const absLockDir = join(repoRoot, lockDir);
+  mkdirSync(absLockDir, { recursive: true });
+  const abandonedAt = new Date(Date.now() - 60 * 60 * 1000);
+  utimesSync(absLockDir, abandonedAt, abandonedAt);
   return { repoRoot, reportFile: '.ai/harness/tooling-report.json', lockDir, cliStub, stubOutput };
 }
 
@@ -86,8 +92,8 @@ function runDetachedPopulate(entrypoint: string, fixture: PopulateFixture) {
 function expectPopulateRan(result: ReturnType<typeof spawnSync>, fixture: PopulateFixture): void {
   expect(result.status, `stdout=${result.stdout}\nstderr=${result.stderr}`).toBe(0);
   expect(result.stderr ?? '').not.toContain('usage: repo-harness-hook');
-  // The populate's `finally` always releases the lock -- the observable effect
-  // that separates "ran" from "fell through to the usage error".
+  // The populate reclaims the abandoned lock and its `finally` releases it --
+  // the observable effect that separates "ran" from "fell through to the usage error".
   expect(existsSync(join(fixture.repoRoot, fixture.lockDir))).toBe(false);
   expect(readFileSync(join(fixture.repoRoot, fixture.reportFile), 'utf-8')).toBe(fixture.stubOutput);
 }
