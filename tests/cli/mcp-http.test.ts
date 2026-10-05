@@ -74,6 +74,39 @@ function parseMcpResponse(text: string): any {
   return JSON.parse(data ?? text);
 }
 
+function unescapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+// Submits the server-rendered consent form the way a browser does: the action
+// resolves against the page URL, the hidden fields come from the page, and the
+// request carries the Origin of the page that rendered the form.
+function submitRenderedConsentForm(
+  pageUrl: string,
+  html: string,
+  passphrase: string,
+  headers: Record<string, string>,
+): Promise<Response> {
+  const action = html.match(/<form method="POST" action="([^"]+)">/)?.[1];
+  if (!action) throw new Error('consent page has no POST form');
+  const fields = new URLSearchParams();
+  for (const [, name, value] of html.matchAll(/<input type="hidden" name="([^"]*)" value="([^"]*)">/g)) {
+    fields.append(unescapeHtmlAttribute(name!), unescapeHtmlAttribute(value!));
+  }
+  fields.set('passphrase', passphrase);
+  return fetch(new URL(unescapeHtmlAttribute(action), pageUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
+    body: fields,
+    redirect: 'manual',
+  });
+}
+
 function useTempRegistryHome(): () => void {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-http-registry-'));
   const previous = process.env.REPO_HARNESS_HOME;
@@ -1014,18 +1047,31 @@ describe('mcp http transport', () => {
       const missingScope = await authorize('repo-harness offline_access');
       expect(missingScope.status).toBe(400);
       expect(await missingScope.json()).toMatchObject({ error: 'invalid_scope' });
-      const consent = await fetch(`http://127.0.0.1:${port}/authorize?${new URLSearchParams({
+      const consentUrl = `http://127.0.0.1:${port}/authorize?${new URLSearchParams({
         client_id: client.client_id,
         redirect_uri: 'https://chatgpt.com/connector/callback',
         response_type: 'code',
         code_challenge: challenge,
         code_challenge_method: 'S256',
         scope: 'repo-harness repo-harness.engineer offline_access',
-      })}`);
+      })}`;
+      const consent = await fetch(consentUrl);
       const consentHtml = await consent.text();
       expect(consentHtml).toContain('no shell, generic file write, Binding mutation, Publication, or Acceptance tools');
       expect(consentHtml).toContain('repo-harness-mcp-engineer-e2e-');
       expect(consentHtml).not.toContain(repoRoot);
+      // A browser submits the rendered consent form with the page's own Origin.
+      for (const headers of [
+        { origin: `http://127.0.0.1:${port}` },
+        { origin: 'https://engineer.test', 'x-forwarded-host': 'engineer.test' },
+      ] as Array<Record<string, string>>) {
+        const browserConsent = await submitRenderedConsentForm(consentUrl, consentHtml, passphrase, headers);
+        expect(browserConsent.status).toBe(302);
+        expect(new URL(browserConsent.headers.get('location') ?? '').searchParams.get('code')).toBeTruthy();
+      }
+      const foreignConsent = await submitRenderedConsentForm(consentUrl, consentHtml, passphrase, { origin: 'https://evil.test' });
+      expect(foreignConsent.status).toBe(403);
+      expect(await foreignConsent.json()).toEqual({ error: 'origin_not_allowed' });
 
       const issueToken = async (): Promise<string> => {
         const authorized = await authorize();
@@ -1243,14 +1289,15 @@ describe('mcp http transport', () => {
       const client = await registered.json() as { client_id: string };
       const verifier = randomBytes(32).toString('base64url');
       const challenge = createHash('sha256').update(verifier).digest('base64url');
-      const consent = await fetch(`http://127.0.0.1:${port}/authorize?${new URLSearchParams({
+      const consentUrl = `http://127.0.0.1:${port}/authorize?${new URLSearchParams({
         client_id: client.client_id,
         redirect_uri: 'https://chatgpt.com/connector/callback',
         response_type: 'code',
         code_challenge: challenge,
         code_challenge_method: 'S256',
         scope: 'repo-harness repo-harness.coding offline_access',
-      })}`);
+      })}`;
+      const consent = await fetch(consentUrl);
       expect(consent.status).toBe(200);
       const consentHtml = await consent.text();
       expect(consentHtml).toContain('can access anything your local OS user can access on this machine');
@@ -1289,6 +1336,35 @@ describe('mcp http transport', () => {
       });
       expect(missingScope.status).toBe(400);
       expect(await missingScope.json()).toMatchObject({ error: 'invalid_scope' });
+      // A browser submits the rendered consent form with the page's own Origin:
+      // the loopback page and the configured public origin behind a tunnel.
+      const loopbackOrigin = `http://127.0.0.1:${port}`;
+      for (const headers of [
+        { origin: loopbackOrigin },
+        { origin: `http://localhost:${port}`, host: `localhost:${port}` },
+        { origin: 'https://coding.test', 'x-forwarded-host': 'coding.test' },
+      ] as Array<Record<string, string>>) {
+        const browserConsent = await submitRenderedConsentForm(consentUrl, consentHtml, passphrase, headers);
+        expect(browserConsent.status).toBe(302);
+        expect(new URL(browserConsent.headers.get('location') ?? '').searchParams.get('code')).toBeTruthy();
+      }
+      for (const origin of ['https://evil.test', 'null', `http://127.0.0.1:${port + 1}`, 'http://coding.test']) {
+        const foreignConsent = await submitRenderedConsentForm(consentUrl, consentHtml, passphrase, { origin });
+        expect(foreignConsent.status).toBe(403);
+        expect(await foreignConsent.json()).toEqual({ error: 'origin_not_allowed' });
+      }
+      // The own-origin exception covers only the consent form submission. The
+      // MCP API, health, token and consent page routes keep the ChatGPT-only Origin.
+      for (const [path, init] of [
+        ['/health', {}],
+        ['/authorize', {}],
+        ['/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=authorization_code' }],
+        ['/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: initializeBody() }],
+      ] as const) {
+        const ownOriginApi = await fetch(`${loopbackOrigin}${path}`, { ...init, headers: { ...('headers' in init ? init.headers : {}), origin: loopbackOrigin } });
+        expect(ownOriginApi.status).toBe(403);
+        expect(await ownOriginApi.json()).toEqual({ error: 'origin_not_allowed' });
+      }
       const authorized = await authorize('https://chatgpt.com/connector/callback');
       expect(authorized.status).toBe(302);
       const code = new URL(authorized.headers.get('location') ?? '').searchParams.get('code') ?? '';
