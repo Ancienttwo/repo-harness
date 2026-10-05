@@ -299,6 +299,20 @@ test('A2: a result invalidated during advance preflight cannot qualify the gate'
   }finally{source.close();}
 });
 
+// One first opener pauses after its unlocked reads. Another process initializes the store first.
+test('A2: concurrent first opens of an empty store both accept protocol 2',async()=>{
+  const freshEnv={...env,REPO_HARNESS_PIPELINES_DB:join(scratch,'fresh','ledger.db')};const [paused,resume,script]=['first-paused','first-resume','first-open.ts'].map(name=>join(scratch,name));
+  writeFileSync(script,`import {PipelineStore} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/store.ts'))};import {existsSync,writeFileSync} from 'fs';\ntry{const s=new PipelineStore({boundary:()=>{writeFileSync(${JSON.stringify(paused)},'paused');while(!existsSync(${JSON.stringify(resume)}))Bun.sleepSync(5);}});console.log(JSON.stringify(s.db.query('SELECT protocol FROM metadata').get()));s.close();}catch(e){console.log(JSON.stringify({code:e.code,message:e.message}));process.exitCode=e.exit;}`);
+  let exited=false;const running=child(script,[],freshEnv).finally(()=>{exited=true;});
+  while(!existsSync(paused)&&!exited)await Bun.sleep(5);expect(existsSync(paused)).toBe(true);
+  const winner=new PipelineStore({env:freshEnv});
+  try{
+    writeFileSync(resume,'resume');const outcome=await running;
+    expect(JSON.parse(outcome.out)).toEqual({protocol:2});expect(outcome.code).toBe(0);
+    expect(winner.db.query('PRAGMA user_version').get()).toEqual({user_version:2});expect(winner.db.query('SELECT count(*) n FROM metadata').get()).toEqual({n:1});
+  }finally{winner.close();}
+});
+
 test('A6: base, plan and environment movement expire unconsumed evidence and approval',()=>{
   const root=repo('movement'),key=create(root),s=resource(key,root);const report=execute(root,'subject');record(key,'evidence',{evidence:evidence(root,s,'a','pass',report.path),contract_path:'plan.md'});mergeReady(key,s);record(key,'go',go(key,s));
   git(root,'commit','--allow-empty','-qm','base movement');resource(key,root);expect(store.read(key).evidence[0].current).toBe(false);expect(store.read(key).merge.owner_approval?.expired).toBe(true);
