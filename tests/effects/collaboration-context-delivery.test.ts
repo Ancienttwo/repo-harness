@@ -10,7 +10,11 @@
  * missing, dangling, or describes a different goal is refused dispatch.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { realpathSync, rmSync } from 'fs';
+import { execFileSync, spawn } from 'child_process';
+import { existsSync, mkdtempSync, realpathSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { open } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 import {
   COLLABORATION_CONTEXT_END,
@@ -33,6 +37,7 @@ import {
   deliverCollaborationContext,
   readCollaborationRunContextBinding,
   recordCollaborationRunContextBinding,
+  runContextBindingStorePaths,
   type CollaborationContextDeliveryV1,
 } from '../../src/effects/collaboration/context-delivery';
 import { publishCoordinationSignal } from '../../src/effects/collaboration/signal-store';
@@ -355,5 +360,252 @@ describe('C6 collaboration run context binding fence', () => {
         delivery,
       }).binding_sha256,
     );
+  });
+
+  describe('two independent writers of the same record converge', () => {
+    interface DriverRound {
+      readonly ok: boolean;
+      readonly sha256?: string;
+      readonly code?: string | null;
+      readonly message?: string;
+    }
+
+    /**
+     * One writer in its own process. Each round it blocks on its own barrier
+     * FIFO, so both writers enter the same publication window together and the
+     * final-name link race is exercised for real, not by timing luck. Results
+     * are one JSON array on stdout, read after the process exits.
+     */
+    function writeDriver(): string {
+      const directory = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-c6-driver-')));
+      roots.push(directory);
+      const driver = join(directory, 'publish.ts');
+      writeFileSync(driver, [
+        `import { closeSync, constants, openSync, readSync } from 'fs';`,
+        `import {`,
+        `  deliverCollaborationContext,`,
+        `  recordCollaborationRunContextBinding,`,
+        `} from ${JSON.stringify(join(sourceRoot, 'src/effects/collaboration/context-delivery'))};`,
+        `import { collectCollaborativeWorkExchange } from ${JSON.stringify(join(sourceRoot, 'src/effects/collaboration/work-exchange'))};`,
+        `const input = JSON.parse(process.argv[2]!);`,
+        `const rounds = [];`,
+        `for (let round = 0; round < input.rounds; round += 1) {`,
+        `  const fd = openSync(input.barriers[process.argv[3]!], constants.O_RDONLY);`,
+        `  try { readSync(fd, Buffer.alloc(1), 0, 1, null); } finally { closeSync(fd); }`,
+        `  try {`,
+        `    if (input.role === 'packet') {`,
+        `      const delivery = deliverCollaborationContext({`,
+        `        repo_root: input.repo_root,`,
+        `        collection: collectCollaborativeWorkExchange({ repo_root: input.repo_root, read_execution_offers: () => [] }),`,
+        `        subject_refs: [{ kind: 'capability', capability_id: ${JSON.stringify(CAPABILITY)}, capability_revision: ${JSON.stringify(`sha256:${'7'.repeat(64)}`)} }],`,
+        `        base_goal: \`${BASE_GOAL} round \${round}\`,`,
+        `      });`,
+        `      rounds.push({ ok: true, sha256: delivery.packet.packet_sha256 });`,
+        `    } else {`,
+        `      const binding = recordCollaborationRunContextBinding({`,
+        `        repo_root: input.repo_root,`,
+        `        dispatch_id: input.dispatch_id,`,
+        `        delivery: input.delivery,`,
+        `      });`,
+        `      rounds.push({ ok: true, sha256: binding.binding_sha256 });`,
+        `    }`,
+        `  } catch (error) {`,
+        `    rounds.push({ ok: false, code: (error as { code?: string }).code ?? null, message: (error as Error).message });`,
+        `  }`,
+        `}`,
+        `process.stdout.write(JSON.stringify(rounds));`,
+        '',
+      ].join('\n'));
+      return driver;
+    }
+
+    /**
+     * One driver process. It blocks on its own FIFO per round, so a round is
+     * released only once both writers reached it.
+     */
+    function startDriver(driver: string, input: unknown, env: NodeJS.ProcessEnv, index: string) {
+      const child = spawn(process.execPath, [driver, JSON.stringify(input), index], { env });
+      let stdoutText = '';
+      let stderrText = '';
+      child.stdout?.on('data', (chunk: Buffer | string) => { stdoutText += String(chunk); });
+      child.stderr?.on('data', (chunk: Buffer | string) => { stderrText += String(chunk); });
+      return {
+        results: async (): Promise<DriverRound[]> => {
+          const code = await new Promise<number | null>((resolveExit) => child.once('close', resolveExit));
+          if (stdoutText === '') throw new Error(`driver produced no result (exit ${code}): ${stderrText}`);
+          return JSON.parse(stdoutText) as DriverRound[];
+        },
+        stderr: () => stderrText,
+      };
+    }
+
+    /**
+     * Release both writers for one round. The returned handle writes the round
+     * byte; the gap between connecting and writing is where the test resets a
+     * binding record, while both writers are parked on the barrier read.
+     */
+    async function connectRound(barriers: readonly string[]): Promise<() => Promise<void>> {
+      const writers = await Promise.all(barriers.map((fifo) => open(fifo, 'w')));
+      return async () => {
+        for (const writer of writers) {
+          await writer.write('g');
+          await writer.close();
+        }
+      };
+    }
+
+    function prepareBarriers(value: Fixture, name: string): string[] {
+      return [0, 1].map((index) => {
+        const fifo = join(value.repoRoot, `.${name}-barrier-${index}`);
+        execFileSync('mkfifo', [fifo]);
+        return fifo;
+      });
+    }
+
+    test('concurrent identical packet writers both succeed and publish one record', async () => {
+      const value = fixture();
+      publishSignal(value, 'signal-a', 'merge-gate-flake');
+      const driver = writeDriver();
+      const rounds = 8;
+      const barriers = prepareBarriers(value, 'packet');
+
+      const first = startDriver(driver, { role: 'packet', repo_root: value.repoRoot, rounds, barriers }, value.env, '0');
+      const second = startDriver(driver, { role: 'packet', repo_root: value.repoRoot, rounds, barriers }, value.env, '1');
+      for (let round = 0; round < rounds; round += 1) await (await connectRound(barriers))();
+
+      const [leftRounds, rightRounds] = await Promise.all([first.results(), second.results()]);
+      expect(first.stderr()).toBe('');
+      expect(second.stderr()).toBe('');
+      const packetPaths = contextPacketStorePaths(realpathSync(value.repoRoot));
+
+      // Every round: both writers report the same packet, so the loser of the
+      // link race converged instead of failing, and the shard keeps one file.
+      expect(leftRounds).toHaveLength(rounds);
+      expect(rightRounds).toHaveLength(rounds);
+      for (let round = 0; round < rounds; round += 1) {
+        const left = leftRounds[round]!, right = rightRounds[round]!;
+        expect({ round, ...left }).toEqual({ round, ok: true, sha256: left.sha256 });
+        expect(right.ok).toBe(true);
+        expect(right.sha256).toBe(left.sha256);
+        expect(existsSync(collaborationRecordPath(
+          packetPaths,
+          left.sha256!.slice('sha256:'.length),
+          'packet_sha256',
+        ))).toBe(true);
+      }
+      // `base_goal` differs per round but is no input to the packet, so every
+      // round rebuilds byte-identical bytes: one digest across both writers,
+      // and the shard holds exactly the one converged record.
+      const digests = new Set([...leftRounds, ...rightRounds].map((round) => round.sha256));
+      expect([...digests]).toHaveLength(1);
+      expect(readdirSync(packetPaths.shard).filter((name) => name.endsWith('.json')))
+        .toEqual([`${leftRounds[0]!.sha256!.slice('sha256:'.length)}.json`]);
+    }, 240000);
+
+    test('concurrent identical binding writers both succeed and publish one record', async () => {
+      const value = fixture();
+      publishSignal(value, 'signal-a', 'merge-gate-flake');
+      const delivery = deliver(value);
+      const dispatchId = admit(value, 0, delivery.composed_goal);
+      const driver = writeDriver();
+      const repoRoot = realpathSync(value.repoRoot);
+      const rounds = 8;
+      // A binding is filed under its own digest, not the dispatch id, so the
+      // reset clears the shard's records wholesale rather than by name.
+      const bindingShard = runContextBindingStorePaths(repoRoot).shard;
+      const barriers = prepareBarriers(value, 'binding');
+      const input = { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery, barriers };
+
+      const first = startDriver(driver, input, value.env, '0');
+      const second = startDriver(driver, input, value.env, '1');
+
+      for (let round = 0; round < rounds; round += 1) {
+        const release = await connectRound(barriers);
+        if (round > 0) {
+          // Both writers are parked on this round's barrier read, so removing
+          // the converged record makes this round a fresh creation race rather
+          // than a replay.
+          for (const name of readdirSync(bindingShard)) {
+            if (name.endsWith('.json')) rmSync(join(bindingShard, name));
+          }
+        }
+        await release();
+      }
+
+      const [leftRounds, rightRounds] = await Promise.all([first.results(), second.results()]);
+      expect(first.stderr()).toBe('');
+      expect(second.stderr()).toBe('');
+      expect(leftRounds).toHaveLength(rounds);
+      expect(rightRounds).toHaveLength(rounds);
+      for (let round = 0; round < rounds; round += 1) {
+        const left = leftRounds[round]!, right = rightRounds[round]!;
+        expect({ round, ...left }).toEqual({ round, ok: true, sha256: left.sha256 });
+        expect(right.ok).toBe(true);
+        expect(right.sha256).toBe(left.sha256);
+      }
+
+      // Exactly the converged record is stored under the dispatch identity.
+      const converged = leftRounds[rounds - 1]!.sha256;
+      if (converged === undefined) throw new Error('no round converged');
+      const stored = readCollaborationRunContextBinding(repoRoot, dispatchId)!;
+      expect(stored.binding_sha256).toBe(converged);
+      expect(stored.dispatch_id).toBe(dispatchId);
+    }, 240000);
+
+    test('concurrent writers of different bytes for one dispatch conflict', async () => {
+      const value = fixture();
+      publishSignal(value, 'signal-a', 'merge-gate-flake');
+      // Two honest deliveries of the same store state that still disagree: a
+      // smaller budget selects the same single signal, so the rendered context
+      // and the composed goal are identical while the packet digest is not.
+      // Both bindings therefore pass every fence check and differ only in
+      // bytes under one record identity.
+      const delivery = deliver(value);
+      const other = deliverCollaborationContext({
+        repo_root: value.repoRoot,
+        collection: collect(value),
+        subject_refs: [{ kind: 'capability', capability_id: CAPABILITY, capability_revision: `sha256:${'7'.repeat(64)}` }],
+        base_goal: BASE_GOAL,
+        budget_estimated_tokens: 800,
+      });
+      expect(other.rendered_context).toBe(delivery.rendered_context);
+      expect(other.composed_goal).toBe(delivery.composed_goal);
+      expect(other.packet.packet_sha256).not.toBe(delivery.packet.packet_sha256);
+      const dispatchId = admit(value, 0, delivery.composed_goal);
+      const driver = writeDriver();
+      const rounds = 3;
+      const barriers = prepareBarriers(value, 'conflict');
+
+      const first = startDriver(
+        driver,
+        { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery, barriers },
+        value.env,
+        '0',
+      );
+      const second = startDriver(
+        driver,
+        { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery: other, barriers },
+        value.env,
+        '1',
+      );
+      for (let round = 0; round < rounds; round += 1) await (await connectRound(barriers))();
+
+      const [leftRounds, rightRounds] = await Promise.all([first.results(), second.results()]);
+      expect(first.stderr()).toBe('');
+      expect(second.stderr()).toBe('');
+      // One record identity, two byte streams: exactly one writer's record is
+      // stored, the loser of the link race is refused with the typed conflict
+      // — never a raw EEXIST and never an overwrite — and every later round
+      // agrees with the record that won.
+      const winner = [leftRounds, rightRounds].findIndex((writer) => writer.every((round) => round.ok));
+      expect(winner).toBeGreaterThanOrEqual(0);
+      const winnerDelivery = winner === 0 ? delivery : other;
+      for (const round of (winner === 0 ? rightRounds : leftRounds)) {
+        expect(round.ok).toBe(false);
+        expect(round.code).toBe('collaboration_conflict');
+      }
+      const stored = readCollaborationRunContextBinding(realpathSync(value.repoRoot), dispatchId)!;
+      expect(stored.collaboration_context_packet_sha256).toBe(winnerDelivery.packet.packet_sha256);
+    }, 240000);
   });
 });
