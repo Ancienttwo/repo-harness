@@ -358,7 +358,7 @@ export function taskSessionDirectory(root: string, task: string, role: string): 
   const key = createHash('sha256').update(JSON.stringify([repository.repository_id, task, role])).digest('hex');
   return join(repository.primary_root, '.ai/harness/runs/task-agents', key);
 }
-async function locked<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
+export async function locked<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
   const deadline = Date.now() + waitTimeoutMs;
   for (;;) {
     let lock;
