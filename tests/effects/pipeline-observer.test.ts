@@ -34,10 +34,10 @@ beforeEach(()=>{
 });
 afterEach(()=>{store?.close();rmSync(scratch,{recursive:true,force:true});});
 function git(root:string,...args:string[]):string{return execFileSync('git',args,{cwd:root,env,encoding:'utf8'}).trim();}
-function repo(name:string):string {
+function repo(name:string,preflight:readonly string[]=[]):string {
   const root=join(scratch,name);mkdirSync(root);git(root,'init','-q','-b','main');git(root,'config','user.name','Observer test');git(root,'config','user.email','observer@test');
   writeFileSync(join(root,'.gitignore'),'.ai/\n');writeFileSync(join(root,'source.txt'),'source\n');
-  const checks=['tc','a','b','full'].map(id=>({id,kind:'command',command:`test ! -f .ai/harness/runs/fail-${id}`,cwd:'.',phase:'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Test the observer authority boundary',inputs:{env:[]}}));
+  const checks=['tc','a','b','full'].map(id=>({id,kind:'command',command:`test ! -f .ai/harness/runs/fail-${id}`,cwd:'.',phase:preflight.includes(id)?'preflight':'verification',cost:'normal',evidence_policy:'current_exact',necessity:'Test the observer authority boundary',inputs:{env:[]}}));
   writeFileSync(join(root,'plan.md'),'# Observer plan\n\n## Verification Plan\n\n```json\n'+JSON.stringify({protocol:1,checks})+'\n```\n');
   git(root,'add','.');git(root,'commit','-qm','fixture');return root;
 }
@@ -157,6 +157,15 @@ test('A6: original execution provenance admits pass/fail, per-check AND and auth
   expect(store.read(key).evidence.at(-1)?.source).toBe('verified');
   expect(requirementPass(store.read(key),'affected_tests')).toBe(true);
   writeFileSync(join(root,'source.txt'),'dirty\n');resource(key,root);expect(store.read(key).evidence.every(e=>!e.current)).toBe(true);expect(requirementPass(store.read(key),'affected_tests')).toBe(false);
+});
+
+test('A6: a failed preflight with skipped later checks supersedes the earlier verified pass',()=>{
+  const root=repo('preflight',['tc']),key=create(root);const s=resource(key,root);const passed=execute(root,'pass');
+  record(key,'evidence',{evidence:evidence(root,s,'tc','pass',passed.path,'typecheck'),contract_path:'plan.md'});expect(requirementPass(store.read(key),'typecheck')).toBe(true);
+  writeFileSync(join(root,'.ai/harness/runs/fail-tc'),'fail');const failed=execute(root,'preflight-fail');
+  expect(failed.report.status).toBe('failed');expect(failed.report.results.filter(r=>r.execution==='missing').map(r=>r.id)).toEqual(['a','b','full']);
+  record(key,'evidence',{evidence:evidence(root,s,'tc','fail',failed.path,'typecheck'),contract_path:'plan.md'});
+  const stored=store.read(key);expect(requirementPass(stored,'typecheck')).toBe(false);expect(stored.evidence.at(-1)?.source).toBe('verified');expect(stored.evidence.at(-1)?.execution_order).toBeGreaterThan(stored.evidence[0].execution_order);
 });
 
 function mergeReady(key:Key,s:Subject):void {const r=store.read(key);r.phase='merge-ask';r.admission='gate_qualified';r.merge.phase_entry_facts={head_sha:s.head_sha,base_sha:s.base_sha};store.transaction(()=>store.save(r));}
