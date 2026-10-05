@@ -119,7 +119,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/harness/workflow-contract.json"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/workflow-contract.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/brain-manifest.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/events.jsonl"))).toBe(true);
@@ -228,7 +228,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(architectureIndex).toContain("<!-- END ARCHITECTURE PENDING REQUESTS -->");
 
       expect(existsSync(join(cwd, "docs/PROGRESS.md"))).toBe(false);
-      const workflowContract = JSON.parse(readFileSync(join(cwd, ".ai/harness/workflow-contract.json"), "utf-8"));
+      const workflowContract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8"));
       expect(workflowContract.helpers.runtimeDirectory).toBe("package:scripts");
       expect(workflowContract.helpers.runtimeSource).toBe("package");
       expect(Object.hasOwn(workflowContract.helpers, "compatibilityDirectory")).toBe(false);

@@ -38,10 +38,6 @@ install_workflow_helpers() {
   pi_install_helpers "$PWD" "$ASSETS_TEMPLATES_DIR/helpers" "apply" "$helper_names"
 }
 
-install_workflow_contract() {
-  pi_install_workflow_contract "$PWD" "$ASSETS_WORKFLOW_CONTRACT" "apply"
-}
-
 create_contract_directories() {
   while IFS= read -r rel_dir; do
     [[ -z "$rel_dir" ]] && continue
@@ -167,7 +163,6 @@ RESEARCH_README_EOF
 
 write_templates
 install_workflow_helpers
-install_workflow_contract
 install_hook_assets
 if pi_should_enable_factor_factory "$(pi_plan_type)"; then
   pi_install_factor_factory "$PWD" "$ASSETS_FACTOR_FACTORY_DIR" "$SCRIPT_DIR" "apply"

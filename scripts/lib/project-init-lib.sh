@@ -656,21 +656,6 @@ for (const action of actions) {
   esac
 }
 
-pi_install_workflow_contract() {
-  local target_dir="$1"
-  local contract_asset="$2"
-  local mode="${3:-apply}"
-  local output_path="$target_dir/.ai/harness/workflow-contract.json"
-
-  if [[ "$mode" != "apply" ]]; then
-    echo "[dry-run] install workflow contract into $output_path"
-    return 0
-  fi
-
-  mkdir -p "$(dirname "$output_path")"
-  cp "$contract_asset" "$output_path"
-}
-
 pi_install_templates() {
   local target_dir="$1"
   local templates_dir="$2"
@@ -1560,7 +1545,7 @@ pi_write_harness_policy() {
       "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
     },
     "assets": {
-      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "package:scripts", "docs/reference-configs/"],
+      "sources": [".ai/harness/policy.json", "package:assets/workflow-contract.v1.json", ".ai/hooks/", "package:scripts", "docs/reference-configs/"],
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
     },
     "memory": {
@@ -1672,7 +1657,7 @@ pi_write_harness_policy() {
       "remove": "delete only workflow-contract actions marked ownership=known_generated"
     },
     "cleanup": {
-      "source": ".ai/harness/workflow-contract.json#migrations.upgrade.actions",
+      "source": "package:assets/workflow-contract.v1.json#migrations.upgrade.actions",
       "remove_only_ownership": "known_generated",
       "unknown_files": "preserve-or-archive",
       "custom_hooks": "preserve",

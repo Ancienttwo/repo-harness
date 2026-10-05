@@ -541,7 +541,7 @@
             ".ai/harness/policy.json",
             ".ai/context/context-map.json"
           ],
-          "summary": "Install the current runtime workflow contract, harness policy, and context map."
+          "summary": "Install the repo-harness opt-in marker, harness policy, and context map."
         },
         {
           "id": "policy-upgrade-strategy-refresh",

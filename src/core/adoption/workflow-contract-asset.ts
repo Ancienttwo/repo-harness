@@ -10,3 +10,7 @@ export function readWorkflowContractAsset(): string {
 export function loadWorkflowContractAsset<T>(): T {
   return JSON.parse(readWorkflowContractAsset()) as T;
 }
+
+export function renderWorkflowContractMarker(): string {
+  return JSON.stringify({ kind: "repo-harness.workflow-contract-marker", protocol: 1 }, null, 2) + "\n";
+}

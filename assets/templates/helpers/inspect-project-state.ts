@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, resolve } from "path";
-import { loadWorkflowContract, resolveWorkflowContractForRepo } from "./workflow-contract.ts";
+import { loadWorkflowContract } from "./workflow-contract.ts";
 
 type Mode = "initialize" | "migrate" | "audit" | "repair";
 
@@ -98,12 +98,10 @@ function detectMode(repo: string): Mode {
 }
 
 export function inspectRepo(repo: string): InspectionResult {
-  const contract = loadWorkflowContract(resolveWorkflowContractForRepo(repo));
-  const latestContract = loadWorkflowContract();
-  const upgradeActions = latestContract.migrations.upgrade?.actions ?? contract.migrations.upgrade?.actions ?? [];
+  const contract = loadWorkflowContract();
+  const upgradeActions = contract.migrations.upgrade?.actions ?? [];
   const detectedPathSet = new Set(
-    [...new Set([...contract.migrations.legacyPaths, ...latestContract.migrations.legacyPaths])]
-      .map((relPath) => relPath)
+    contract.migrations.legacyPaths
       .filter((relPath) => existsSync(join(repo, relPath)))
   );
   const driftSignals: string[] = [];
@@ -186,7 +184,7 @@ export function inspectRepo(repo: string): InspectionResult {
   }
 
   if (driftSignals.includes("missing-runtime-contract-manifest")) {
-    requiredDecisions.push("Install runtime workflow contract manifest");
+    requiredDecisions.push("Install the repo-harness opt-in marker");
   }
   if (driftSignals.includes("policy-missing-upgrade-strategy")) {
     requiredDecisions.push("Merge versioned upgrade strategy into harness policy");

@@ -68,6 +68,16 @@ sequenceDiagram
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" -->
+
+## 2026-10-05 Package Contract Authority
+
+Inspect reads only the package contract body.
+The repo file is an opt-in marker. Its content does not affect inspection.
+A missing repo file still produces `missing-runtime-contract-manifest`.
+The shell scaffold does not write the marker.
+Run `repo-harness init --repo <target-repo>` to attach the workflow.
+The installed-contract resolver statements in earlier dated closeouts are historical.
+
 ## 3. P3：设计决策与不变量
 
 ### 3.1 必须保持的不变量

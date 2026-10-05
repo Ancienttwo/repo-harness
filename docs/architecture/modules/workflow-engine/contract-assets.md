@@ -1,12 +1,12 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:d62428f74694def318a39bdc362e602e4954492a00f87857de616c0622c1e3ad" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:94834c38f83d786a0c8f455c36ca2b90b1f0cec0143e8a9a9ea1b3eb2febf8bf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:cadfd578f5bb80b5b72f2fb06736f57f06f4fe6739473d470c00f550b526210e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:78ce27a8176c1796956e450334a979b1b2fb3f31f9259930e536d12005ec665f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/effects/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Maintains canonical workflow contracts, templates, capability nodes, and helper projections.
+Owns the package workflow contract, repo opt-in marker, templates, capability nodes, and helper projections.
 
 ## 1. P1:能力架構地圖
 
@@ -68,6 +68,18 @@ sequenceDiagram
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" -->
+
+## 2026-10-05 Workflow Contract Marker
+
+`assets/workflow-contract.v1.json` is the package contract body.
+`.ai/harness/workflow-contract.json` is the opt-in marker.
+It holds only `kind: repo-harness.workflow-contract-marker` and `protocol: 1`.
+Hooks continue to check file existence.
+Adoption replaces old content with the marker and keeps a transaction backup.
+Inspect reads only the package body.
+Shell scaffold scripts do not write the marker.
+Run `repo-harness init --repo <target-repo>` after the shell scaffold.
+Earlier byte-parity statements in dated closeouts describe the old design.
 
 ## Architecture automation defaults
 

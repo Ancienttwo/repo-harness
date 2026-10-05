@@ -217,7 +217,9 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - Runtime mode is configurable with template vars: `{{RUNTIME_MODE}}`, `{{RUNTIME_PROFILE}}`, `{{RECOVERY_PROFILE}}`, `{{STATE_PROFILE}}`.
 - Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.
-- Generated and self-hosted repos install `.ai/harness/workflow-contract.json` and `.ai/harness/policy.json`.
+- Generated and self-hosted repos use `.ai/harness/workflow-contract.json` as the opt-in marker.
+- The package asset `assets/workflow-contract.v1.json` defines the workflow contract.
+- `repo-harness init` writes the marker and `.ai/harness/policy.json`. Shell scaffold scripts do not write the marker.
 - Host events use the user-level managed adapter projection, the 11-tuple
   `route-registry.ts`, and exactly one typed in-process handler per tuple.
   Operator helpers use `assets/hooks/lib/workflow-state.sh` from the installed
