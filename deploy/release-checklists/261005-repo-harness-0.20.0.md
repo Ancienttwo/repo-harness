@@ -7,7 +7,7 @@
 - Previous public release: `v0.19.5` (`55bafc00`).
 - Release range: `v0.19.5..ffe70133`, 82 reachable commits.
 - Version: package, skill, template, and all five README files stay `0.20.0`.
-- Notes: [CHANGELOG](../../docs/CHANGELOG.md#0200---unreleased).
+- Notes: [CHANGELOG](../../docs/CHANGELOG.md#0200---2026-10-05).
 - The earlier `281e6555` filing is a historical preparation record.
   It is not publication authority. No `v0.20.0` tag exists.
 - The old `codex/release-prep` branch at `9660f1d7` is preserved.
