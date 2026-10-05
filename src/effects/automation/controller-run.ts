@@ -186,9 +186,15 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
   if (budget.budget.budget_sha256 !== run.budget_sha256 || !budget.budget.unattended || budget.budget.engineer_id !== run.principal.engineer_id) throw new Error('controller budget does not authorize this exact unattended Engineer run');
   const room = () => steps < run.policy.maximum_steps_per_invocation && deps.now().getTime() - startedAt < run.policy.maximum_duration_ms;
   const at = () => deps.now().toISOString();
+  const observeOutcome = (dispatchId: string | null, observationSha256: string) => append(input.repo_root, run.run_id, current, `${input.idempotency_key}:outcome`, 'outcome_observed', at(), receipt('outcome_observed', 'progress', { dispatch_id: dispatchId, evidence_refs: [observationSha256] }));
 
   if (current.state === 'created' && room()) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:observe`, 'observe', at(), receipt('observe', 'ready')); steps += 1; }
   if (current.state === 'observing' && current.retry_at !== null && Date.parse(current.retry_at) > deps.now().getTime()) return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
+  if (current.state === 'waiting_for_evidence') {
+    // An invocation can end after a durable completed dispatch_started; its receipt settles the outcome without a second dispatch.
+    const head = deps.readHeadEvent(input.repo_root, run.run_id);
+    if (head.operation === 'dispatch_started' && head.receipt.outcome === 'completed') { current = observeOutcome(head.receipt.dispatch_id, head.receipt.evidence_refs[0]); steps += 1; }
+  }
   if (current.state === 'acquiring' || current.state === 'waiting_for_evidence') {
     current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:uncertain`, 'require_reconciliation', at(), receipt('require_reconciliation', 'unresolved_side_effect'), 'operator', 'controller_reconciliation_required'); steps += 1;
     return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
@@ -249,7 +255,7 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
     deps.completeAttempt({ repo_root:input.repo_root, work_package_id:context.work_package_id, work_package_revision:context.work_package_revision, policy:context.retry_policy, identity_sha256:identity, outcome:attemptOutcome, ended_at:at(), runtime_effect_id:null, evidence_refs:[dispatched.current.observation_sha256,usage.event.event_sha256] });
     if (dispatched.current.state === 'completed') {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-started`, 'dispatch_started', at(), receipt('dispatch_started', 'completed', { dispatch_id: input.dispatch_id, evidence_refs: [dispatched.current.observation_sha256, usage.event.event_sha256] })); steps += 1;
-      if (room()) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:outcome`, 'outcome_observed', at(), receipt('outcome_observed', 'progress', { dispatch_id: input.dispatch_id, evidence_refs: [dispatched.current.observation_sha256] })); steps += 1; }
+      if (room()) { current = observeOutcome(input.dispatch_id, dispatched.current.observation_sha256); steps += 1; }
     } else {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:dispatch-observed`, 'require_reconciliation', at(), receipt('require_reconciliation', dispatched.current.state, { dispatch_id: input.dispatch_id, evidence_refs: [dispatched.current.observation_sha256, usage.event.event_sha256] }), 'operator', 'controller_reconciliation_required'); steps += 1;
     }

@@ -186,6 +186,27 @@ describe('issue #279 bounded controller orchestration', () => {
     });
   });
 
+  test.each([
+    ['step', { ...POLICY, maximum_steps_per_invocation: 2 }, 0],
+    ['duration', { ...POLICY, maximum_duration_ms: 100 }, 200],
+  ] as const)('a completed dispatch that ends at the %s bound settles on the next step without a second dispatch', (_bound, policy, dispatchMs) => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      const usages: AutomationUsageCommitV1[] = []; let now = Date.parse('2026-09-04T00:00:01.000Z'); let dispatches = 0; let offer: unknown = acquired(root);
+      const dispatched = { current: { state: 'completed', observation_sha256: SHA } };
+      const deps = { ...realBudgetDependencies(root, null, null, usages), now: () => new Date(now), acquireNext: () => offer as never,
+        dispatch: () => { dispatches += 1; now += dispatchMs; return dispatched as never; } };
+      start(root, runId, deps, policy);
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-1' }, deps).current.state).toBe('executing');
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-2', dispatch_id: SHA }, deps).current.state).toBe('waiting_for_evidence');
+
+      offer = { ok: false, error: 'engineer_no_eligible_offer', message: 'none' };
+      expect(stepAutomationController({ repo_root: root, run_id: runId, idempotency_key: 'step-3' }, deps).current).toMatchObject({ state: 'completed', attention_owner: 'none', blocker: null });
+      expect(chainOperations(root, runId)).toEqual(['start', 'observe', 'begin_acquire', 'acquired', 'begin_dispatch', 'dispatch_started', 'outcome_observed', 'begin_acquire', 'no_offer']);
+      expect({ dispatches, outcomes: usages.map((usage) => usage.event.outcome) }).toEqual({ dispatches: 1, outcomes: ['progress', 'progress', 'no_progress'] });
+    });
+  });
+
   test('persists acquisition before consuming a real WorkEnvelope and dispatches only through the fenced dependency', () => {
     const { root } = setup();
     try {
