@@ -45,6 +45,12 @@ import { parseHookInput } from './hook-input';
 import { mintOrAdoptSessionRunIdentity } from './run-identity';
 import { capabilitySourceMode, findMatch, readRegistry } from '../../../scripts/capability-resolver';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
+import {
+  acquireExclusiveDirectoryLock,
+  ExclusiveLockContentionError,
+  type ExclusiveDirectoryLockHandle,
+} from '../../effects/locking/exclusive-directory-lock';
+import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, runProcess } from '../../effects/process-runner';
 
 // ---------------------------------------------------------------------------
 // run-identity threading -- SessionStart's single mint/adopt point
@@ -1118,32 +1124,32 @@ function repoHarnessSetupCheckSubprocess(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
   target: string,
+  timeoutMs: number,
 ): string | null {
   const args = ['setup', 'check', '--target', target, '--check-updates', '--json'];
   const cliPath = env.REPO_HARNESS_CLI;
-  if (cliPath && existsSync(cliPath)) {
-    try {
-      return execFileSync('bun', [cliPath, ...args], {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-    } catch {
-      return null;
-    }
-  }
-  try {
-    return execFileSync('repo-harness', args, {
-      cwd: repoRoot,
-      encoding: 'utf-8',
-      env,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-  } catch {
-    return null;
-  }
+  const [command, commandArgs] = cliPath && existsSync(cliPath)
+    ? ['bun', [cliPath, ...args]]
+    : ['repo-harness', args];
+  // The process group bound stops the whole check tree, so a stuck check
+  // cannot hold the refresh lock forever. The report is kept verbatim.
+  const result = runProcess(command, commandArgs, {
+    cwd: repoRoot,
+    env,
+    inheritEnv: false,
+    processGroup: true,
+    timeoutMs,
+    maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
+    redactions: [],
+  });
+  return result.ok ? result.stdout : null;
 }
+
+/** Bound for one setup check: its tooling script stops itself after 30 seconds, plus CLI start-up. */
+const TOOLING_SETUP_CHECK_TIMEOUT_MS = 60_000;
+
+/** Long enough to reclaim a dead owner and retry once; a live owner makes a second refresh exit after this wait. */
+const TOOLING_REFRESH_LOCK_WAIT_MS = 1_000;
 
 /** `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` branch: populate the cache synchronously, then render exactly like the fresh-cache path. On any subprocess failure, mirrors bash: no cache write, no render. */
 function toolingUpdateSyncPopulateAndRender(
@@ -1153,15 +1159,12 @@ function toolingUpdateSyncPopulateAndRender(
   reportFile: string,
   markerFile: string,
 ): ToolingUpdateAdvisory | null {
-  const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target);
+  const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target, TOOLING_SETUP_CHECK_TIMEOUT_MS);
   if (stdout === null) return null;
   writeFileSync(join(repoRoot, reportFile), stdout);
   if (toolingUpdateReportWasRendered(repoRoot, reportFile, markerFile)) return null;
   return renderToolingUpdateAdvisory(repoRoot, reportFile, markerFile);
 }
-
-/** `evt-` lock's own crashed-holder threshold (`workflow_with_lock`'s 60s) reused for the tooling-advisory lock -- see `acquireToolingAdvisoryLock`'s doc comment for why this exists even though bash's own async branch had no such handling. */
-const TOOLING_ADVISORY_LOCK_STALE_SECONDS = 60;
 
 /**
  * Marks a `<entrypoint> <flag> <repoRoot> <target> <reportFile> <lockDir>`
@@ -1181,11 +1184,16 @@ export const DETACHED_TOOLING_POPULATE_FLAG = '--detached-tooling-populate';
  * OWN separate, `unref()`'d process (spawned by `triggerDetachedToolingPopulate`
  * below) so it outlives the triggering SessionStart hook, which exits
  * immediately after spawning -- that is the entire point of "detached".
- * Mirrors bash's backgrounded subshell exactly: populate the report cache
- * on success, and ALWAYS remove the lock dir when done (success OR
- * failure), so a later session's trigger can acquire it again. Never
- * renders/marks-rendered here -- exactly like bash, only a LATER session
- * that finds the cache fresh does that.
+ * Populates the report cache on success. Never renders/marks-rendered here
+ * -- exactly like bash, only a LATER session that finds the cache fresh
+ * does that.
+ *
+ * This process, not the short-lived trigger, owns the refresh lock, so the
+ * lock names a process that is alive for the whole check. A live refresh
+ * is never evicted by age; only a dead owner (crash, forced kill) or an
+ * abandoned ownerless directory is reclaimed. A second refresh that finds
+ * a live owner exits after a short wait. Release removes only this
+ * process' own token.
  */
 export function runDetachedToolingPopulate(
   repoRoot: string,
@@ -1193,56 +1201,31 @@ export function runDetachedToolingPopulate(
   target: string,
   reportFile: string,
   lockDir: string,
+  timeoutMs: number = TOOLING_SETUP_CHECK_TIMEOUT_MS,
 ): void {
+  let lock: ExclusiveDirectoryLockHandle;
   try {
-    const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target);
+    lock = acquireExclusiveDirectoryLock(realpathSync(repoRoot), lockDir, {
+      waitTimeoutMs: TOOLING_REFRESH_LOCK_WAIT_MS,
+      reclaimStaleEmptyDirectory: true,
+    });
+  } catch (error) {
+    if (error instanceof ExclusiveLockContentionError) return;
+    throw error;
+  }
+  try {
+    const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target, timeoutMs);
     if (stdout !== null) {
-      writeFileSync(join(repoRoot, reportFile), stdout);
+      // Publish only as the current owner, and atomically, so a reader never
+      // sees a partial report.
+      lock.assertOwned();
+      const report = join(repoRoot, reportFile);
+      const temp = `${report}.tmp-${process.pid}`;
+      writeFileSync(temp, stdout);
+      renameSync(temp, report);
     }
   } finally {
-    try {
-      rmdirSync(join(repoRoot, lockDir));
-    } catch {
-      // Already removed / never fully created -- matches bash's own
-      // `rmdir "$lock_dir" 2>/dev/null || true`.
-    }
-  }
-}
-
-/**
- * `if mkdir "$lock_dir" 2>/dev/null; then ... fi` port, PLUS a deliberate
- * improvement bash's own async branch never had: bash's backgrounded
- * subshell is the ONLY thing that ever removes this lock dir, so if it dies
- * mid-flight (OOM, forced kill, host sleep) before reaching its own
- * `rmdir`, the lock is left behind FOREVER and every future session's
- * `mkdir` attempt fails forever, permanently suppressing the refresh cycle
- * -- a latent bash bug, not a behavior worth preserving. Reuses
- * `workflow_with_lock`'s own 60s crashed-holder threshold (the only "sane
- * age" precedent this codebase already establishes) to break a stale lock
- * and retry once; a lock younger than that is left alone (a populate is
- * plausibly still genuinely in progress).
- */
-function acquireToolingAdvisoryLock(repoRoot: string, lockDir: string): boolean {
-  const absLockDir = join(repoRoot, lockDir);
-  try {
-    mkdirSync(absLockDir);
-    return true;
-  } catch {
-    let mtimeSec: number | null;
-    try {
-      mtimeSec = Math.floor(statSync(absLockDir).mtimeMs / 1000);
-    } catch {
-      return false; // vanished between the failed mkdir and this stat; next session tries again
-    }
-    const nowSec = Math.floor(Date.now() / 1000);
-    if (nowSec - mtimeSec < TOOLING_ADVISORY_LOCK_STALE_SECONDS) return false;
-    try {
-      rmdirSync(absLockDir);
-      mkdirSync(absLockDir);
-      return true;
-    } catch {
-      return false;
-    }
+    lock.release();
   }
 }
 
@@ -1255,7 +1238,8 @@ function acquireToolingAdvisoryLock(repoRoot: string, lockDir: string): boolean 
  * backgrounded, independent subshell instead of "do it later in the same
  * script"). `detached: true` + `unref()` means the parent never waits, and
  * the child is reparented (survives the parent exiting), matching bash's
- * own orphaned-background-job semantics.
+ * own orphaned-background-job semantics. The child acquires the refresh
+ * lock itself (see `runDetachedToolingPopulate`).
  */
 function triggerDetachedToolingPopulate(
   repoRoot: string,
@@ -1264,23 +1248,12 @@ function triggerDetachedToolingPopulate(
   reportFile: string,
   lockDir: string,
 ): void {
-  if (!acquireToolingAdvisoryLock(repoRoot, lockDir)) return;
-  try {
-    const child = spawn(
-      process.execPath,
-      [fileURLToPath(import.meta.url), DETACHED_TOOLING_POPULATE_FLAG, repoRoot, target, reportFile, lockDir],
-      { cwd: repoRoot, env, detached: true, stdio: 'ignore' },
-    );
-    child.unref();
-  } catch {
-    // Spawn itself failed; release the lock we just acquired instead of
-    // leaking it, so a later session can try again.
-    try {
-      rmdirSync(join(repoRoot, lockDir));
-    } catch {
-      /* ignore */
-    }
-  }
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(import.meta.url), DETACHED_TOOLING_POPULATE_FLAG, repoRoot, target, reportFile, lockDir],
+    { cwd: repoRoot, env, detached: true, stdio: 'ignore' },
+  );
+  child.unref();
 }
 
 /**
