@@ -32,7 +32,7 @@ function setup() {
   const run = buildAutomationControllerRun({ run_id: RUN_ID, repository_id: principal.repository_id,
     principal: { authorization_id: principal.auth_subject, engineer_id: principal.engineer_id, binding_id: principal.binding_id, binding_generation: 1, engineer_contract_revision: SHA, authorization_revision: 7 }, budget_sha256: BUDGET_SHA256,
     policy: POLICY, protected_paths: ['plans', 'tasks'], created_at: '2026-09-04T00:00:00.000Z' });
-  startAutomationControllerRun({ repo_root: root, run, idempotency_key: 'start', observed_at: run.created_at }); return { root, run };
+  startAutomationControllerRun({ repo_root: root, run, idempotency_key: 'start' }); return { root, run };
 }
 
 function dependencies(acquire: unknown, dispatch: unknown = null) {
@@ -165,6 +165,24 @@ describe('issue #279 bounded controller orchestration', () => {
       expect({ acquisitions, outcomes: usages.map((usage) => usage.event.outcome) }).toEqual({ acquisitions: 1, outcomes: ['no_progress'] });
       const status = readAutomationBudgetStatus(root, runId);
       expect({ events: status.current.event_count, open: status.current.open_reservation_sha256s, drift: status.drift }).toEqual({ events: 1, open: [], drift: 'none' });
+    });
+  });
+
+  test('a later retry of the same start reuses the persisted creation time and start event', () => {
+    withPublishedBudget((root, budget) => {
+      const runId = budget.automation_run_id;
+      let now = Date.parse('2026-09-04T00:00:01.000Z');
+      const deps = { ...realBudgetDependencies(root, null, null, []), now: () => new Date(now) };
+      const first = start(root, runId, deps);
+      const definition = join(controllerRoot(root), 'runs', runId, 'run.json'); const bytes = readFileSync(definition, 'utf8');
+
+      now += 60_000;
+      const retry = start(root, runId, deps);
+      expect({ created_at: retry.run.created_at, run: retry.run.run_sha256, event: retry.event.event_sha256, current: retry.current.current_sha256 })
+        .toEqual({ created_at: first.run.created_at, run: first.run.run_sha256, event: first.event.event_sha256, current: first.current.current_sha256 });
+      expect(readFileSync(definition, 'utf8')).toBe(bytes);
+      expect(chainOperations(root, runId)).toEqual(['start']);
+      expect(() => start(root, runId, deps, { ...POLICY, maximum_steps_per_invocation: 4 })).toThrow('names different immutable bytes');
     });
   });
 

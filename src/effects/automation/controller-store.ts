@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'path';
 
 import {
   buildAutomationControllerEvent,
+  buildAutomationControllerRun,
   canonicalAutomationControllerCurrentBytes,
   canonicalAutomationControllerEventBytes,
   canonicalAutomationControllerRunBytes,
@@ -100,10 +101,13 @@ function appendLocked(value: ReturnType<typeof paths>, run: AutomationController
   const next = foldAutomationControllerCurrent(run, previous, event); atomic(value.current, Buffer.from(`${canonicalAutomationControllerCurrentBytes(next)}\n`, 'utf8')); input.crash_hook?.('after_current_fsync'); return Object.freeze({ event, current: next });
 }
 
-export function startAutomationControllerRun(input: { readonly repo_root: string; readonly run: AutomationControllerRunV1; readonly idempotency_key: string; readonly observed_at: string; readonly crash_hook?: AppendAutomationControllerEventInput['crash_hook'] }): { readonly run: AutomationControllerRunV1; readonly event: AutomationControllerEventV1; readonly current: AutomationControllerCurrentV1 } {
-  const repoRoot = resolve(input.repo_root); const run = validateAutomationControllerRun(input.run); const value = paths(repoRoot, run.run_id);
-  return withExclusiveDirectoryLock(value.common, `${ROOT}/locks/engineers/${fileKey(run.principal.engineer_id)}.lock`, () => withExclusiveDirectoryLock(value.common, value.lock, () => {
-    prepare(value); const bytes = Buffer.from(`${canonicalAutomationControllerRunBytes(run)}\n`, 'utf8'); immutable(value.definition, bytes);
+/** The run's created_at is the start event's observed_at, so a later retry of the same start reuses both from the persisted run. */
+export function startAutomationControllerRun(input: { readonly repo_root: string; readonly run: AutomationControllerRunV1; readonly idempotency_key: string; readonly crash_hook?: AppendAutomationControllerEventInput['crash_hook'] }): { readonly run: AutomationControllerRunV1; readonly event: AutomationControllerEventV1; readonly current: AutomationControllerCurrentV1 } {
+  const repoRoot = resolve(input.repo_root); const requested = validateAutomationControllerRun(input.run); const value = paths(repoRoot, requested.run_id);
+  return withExclusiveDirectoryLock(value.common, `${ROOT}/locks/engineers/${fileKey(requested.principal.engineer_id)}.lock`, () => withExclusiveDirectoryLock(value.common, value.lock, () => {
+    prepare(value);
+    const run = existsSync(value.definition) ? buildAutomationControllerRun({ ...requested, created_at: parse(value.definition, validateAutomationControllerRun, canonicalAutomationControllerRunBytes).created_at }) : requested;
+    immutable(value.definition, Buffer.from(`${canonicalAutomationControllerRunBytes(run)}\n`, 'utf8'));
     const pointer = join(value.root, 'engineers', `${fileKey(run.principal.engineer_id)}.json`);
     if (existsSync(pointer)) {
       const active = regular(pointer).toString('utf8').trim();
@@ -113,7 +117,7 @@ export function startAutomationControllerRun(input: { readonly repo_root: string
         atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
       }
     } else atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
-    const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [] }, observed_at: input.observed_at, crash_hook: input.crash_hook });
+    const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [] }, observed_at: run.created_at, crash_hook: input.crash_hook });
     return Object.freeze({ run, ...result });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true }), { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
