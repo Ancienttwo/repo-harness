@@ -378,9 +378,15 @@ export function discoverWindowsProtectedHelperContract(options: DiscoverOptions 
     throw new Error(`Windows protected-helper install requires Git for Windows cmd\\git.exe or bin\\git.exe (found ${gitBin})`);
   }
   let gitRoot = win32.dirname(win32.dirname(gitBin));
+  // A public installation can itself be named mingw64 (or another architecture).
+  // Keep its root when either public layout marker exists. Validation below
+  // must reject incomplete or symlinked public layouts, not select a parent.
+  const hasPublicLayout = access.exists(win32.join(gitRoot, 'bin', 'bash.exe'))
+    || access.exists(win32.join(gitRoot, 'usr', 'bin'));
   // Git Bash puts an internal binary first on PATH. Pin its stable cmd wrapper
   // without allowing internal binaries in the persisted runtime contract.
-  if (gitParent === 'bin' && ['mingw32', 'mingw64', 'ucrt64', 'clangarm64'].includes(win32.basename(gitRoot).toLowerCase())) {
+  if (!hasPublicLayout && gitParent === 'bin'
+    && ['mingw32', 'mingw64', 'ucrt64', 'clangarm64'].includes(win32.basename(gitRoot).toLowerCase())) {
     requireDirectory(gitRoot, 'Git internal directory', access);
     requireDirectory(win32.dirname(gitBin), 'Git internal bin directory', access);
     gitRoot = win32.dirname(gitRoot);

@@ -248,6 +248,42 @@ describe('Windows protected-helper platform contract', () => {
     });
   }
 
+  for (const name of ['mingw32', 'mingw64', 'ucrt64', 'clangarm64']) {
+    test(`preserves a public bin installation whose root is named ${name}`, () => {
+      const root = `D:\\Apps\\${name}`;
+      const directContract = {
+        ...CONTRACT,
+        git_root: root,
+        git_bin: `${root}\\bin\\git.exe`,
+        bash_bin: `${root}\\bin\\bash.exe`,
+        posix_tools_dir: `${root}\\usr\\bin`,
+      };
+      const discover = (overrides: Record<string, FakePathKind> = {}) => discoverWindowsProtectedHelperContract({
+        env: { PATH: `${root}\\bin;${CONTRACT.system_tools_dir}`, TEMP: CONTRACT.temp_dir },
+        fileAccess: access({
+          [root]: 'directory',
+          [directContract.git_bin]: 'file',
+          [directContract.bash_bin]: 'file',
+          [directContract.posix_tools_dir]: 'directory',
+          // A complete parent installation must not take over a public one.
+          'D:\\Apps': 'directory',
+          'D:\\Apps\\cmd\\git.exe': 'file',
+          'D:\\Apps\\bin\\bash.exe': 'file',
+          'D:\\Apps\\usr\\bin': 'directory',
+          [`${root}\\bin`]: 'directory',
+          ...overrides,
+        }),
+        nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+        nativeTempDirectory: CONTRACT.temp_dir,
+      });
+      expect(discover()).toEqual(directContract);
+      for (const required of [directContract.bash_bin, directContract.posix_tools_dir]) {
+        expect(() => discover({ [required]: 'missing' })).toThrow('is missing');
+        expect(() => discover({ [required]: 'symlink' })).toThrow('non-symlink');
+      }
+    });
+  }
+
   test('internal Git discovery refuses incomplete or redirected installations', () => {
     const internalDirectory = `${GIT_ROOT}\\mingw64\\bin`;
     const internalGit = `${internalDirectory}\\git.exe`;
