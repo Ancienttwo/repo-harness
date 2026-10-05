@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
+import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import { listLiveClaimActorReceiptsForEngineer } from '../../src/effects/engineers/claim-actor-store';
+import { enrollEngineerPrincipal } from '../../src/effects/engineers/principal-store';
+import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { coordinationRoot, readLease } from '../../src/effects/state/coordination-lease-store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 
@@ -33,11 +36,24 @@ function fixture(): string {
   return root;
 }
 
+interface GraphFixtureTask {
+  readonly task: string;
+  readonly workPackageId: string;
+  readonly concurrencyKey: string;
+  /** Plan, contract, review and notes file stem. */
+  readonly stem: string;
+}
+
+const DEFAULT_GRAPH_TASKS: readonly GraphFixtureTask[] = [
+  { task: 'task A', workPackageId: 'wp-a', concurrencyKey: 'demo', stem: '20260823-0202-cli-acquire' },
+];
+
 /**
  * A fixture whose committed work graph is valid, so `engineer offers` gets past
- * the lane gates and actually reaches the Fleet offer collector.
+ * the lane gates and actually reaches the Fleet offer collector. Every task has
+ * an approved plan and contract, so Fleet acquisition can bind it.
  */
-function graphFixture(): string {
+function graphFixture(tasks: readonly GraphFixtureTask[] = DEFAULT_GRAPH_TASKS): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-offers-')));
   tempRoots.push(root);
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
@@ -52,7 +68,7 @@ function graphFixture(): string {
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   const policy = '{"policy":1}\n';
-  const rollback = '{"rollback":"wp-a"}\n';
+  const rollback = (workPackageId: string) => `{"rollback":"${workPackageId}"}\n`;
   const repositoryId = repoHarnessRepoIdFor(root);
   writeFileSync(join(root, 'plans/sprints/demo.sprint.md'), `# Sprint: demo
 > **Status**: Executing
@@ -62,7 +78,7 @@ function graphFixture(): string {
 
 | # | ID | Status | Task | Mode | Acceptance | Plan |
 |---|----|---|---|---|---|---|
-| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |
+${tasks.map((item, index) => `| ${index + 1} | ${fixtureTaskId(item.task)} | [ ] | ${item.task} | contract | accepted ${item.task.slice(-1)} | (pending) |`).join('\n')}
 
 ## Execution Log
 `);
@@ -72,13 +88,13 @@ function graphFixture(): string {
     repository_id: repositoryId,
     sprint_path: 'plans/sprints/demo.sprint.md',
     lane: 'engineering-v2',
-    work_packages: [{
-      work_package_id: 'wp-a',
-      task_id: fixtureTaskId('task A'),
+    work_packages: tasks.map((item) => ({
+      work_package_id: item.workPackageId,
+      task_id: fixtureTaskId(item.task),
       primary_capability: 'capability.verification.evals-checks',
       depends_on: [],
       priority: 50,
-      concurrency: { scope: 'repo', key: 'demo' },
+      concurrency: { scope: 'repo', key: item.concurrencyKey },
       execution_surface: 'contract',
       integration_group: null,
       required_acceptance: [{
@@ -87,13 +103,13 @@ function graphFixture(): string {
       }],
       retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
     rollback_boundary: {
-        kind: 'work_package', boundary_id: `${repositoryId}:wp-a`,
-        boundary_ref: 'plans/rollback/wp-a.json', boundary_revision: engineerSha256(rollback),
+        kind: 'work_package', boundary_id: `${repositoryId}:${item.workPackageId}`,
+        boundary_ref: `plans/rollback/${item.workPackageId}.json`, boundary_revision: engineerSha256(rollback(item.workPackageId)),
       },
-    }],
+    })),
   })}\n`);
   writeFileSync(join(root, 'plans/policies/module.json'), policy);
-  writeFileSync(join(root, 'plans/rollback/wp-a.json'), rollback);
+  for (const item of tasks) writeFileSync(join(root, `plans/rollback/${item.workPackageId}.json`), rollback(item.workPackageId));
   writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
     worktree_strategy: { merge_back: { target: 'main' } },
@@ -101,74 +117,75 @@ function graphFixture(): string {
   }));
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');
   const sprintPath = 'plans/sprints/demo.sprint.md';
-  const task = 'task A';
-  const planPath = 'plans/plan-20260823-0202-cli-acquire.md';
-  const contractPath = 'tasks/contracts/20260823-0202-cli-acquire.contract.md';
   for (const directory of ['tasks/contracts', 'tasks/reviews', 'tasks/notes', 'src', '.claude/templates']) {
     mkdirSync(join(root, directory), { recursive: true });
   }
   cpSync(join(sourceRoot, '.claude/templates/contract.template.md'), join(root, '.claude/templates/contract.template.md'));
-  writeFileSync(join(root, planPath), [
-    '# Plan: CLI Fleet Acquire Fixture',
-    '',
-    '> **Status**: Approved',
-    '> **Source Ref**: sprint:' + sprintPath + '#' + task,
-    '> **Artifact Level**: work-package',
-    '> **Promotion Reason**: verification_boundary',
-    '> **Verification Boundary**: CLI acquisition proves bound worktree output.',
-    '> **Rollback Surface**: Remove the fixture worktree and lease.',
-    '> **Task Contract**: ' + contractPath,
-    '> **Task Review**: tasks/reviews/20260823-0202-cli-acquire.review.md',
-    '> **Implementation Notes**: tasks/notes/20260823-0202-cli-acquire.notes.md',
-    '',
-    '## Promotion Gate',
-    '',
-    '- **Merge/PR unit**: One fixture acquisition is independently verifiable.',
-    '- **Rollback surface**: Remove the fixture worktree and lease.',
-    '- **Verification boundary**: Fleet acquire CLI output and token readback.',
-    '- **Review/acceptance boundary**: The test asserts the returned envelope.',
-    '- **High-risk surface**: Shared lease election and fresh worktree creation.',
-    '- **Why not checklist row**: The acquisition transaction crosses persistent authorities.',
-    '',
-    '## Evidence Contract',
-    '',
-    '- **State/progress path**: ' + planPath,
-    '- **Verification evidence**: CLI JSON output and worktree token.',
-    '- **Evaluator rubric**: This test assertion.',
-    '- **Stop condition**: A bound envelope is returned.',
-    '- **Rollback surface**: Remove the fixture worktree and lease.',
-    '',
-  ].join('\n'));
-  writeFileSync(join(root, contractPath), [
-    '# Task Contract: CLI Fleet Acquire Fixture',
-    '',
-    '> **Plan**: ' + planPath,
-    '> **Task Profile**: code-change',
-    '> **Status**: Active',
-    '> **Review File**: tasks/reviews/20260823-0202-cli-acquire.review.md',
-    '',
-    '## Goal', '', 'Keep the authored acquisition contract unchanged.', '',
-    '## Why', '', 'Dispatch must use the same authority admitted by the plan proof.', '',
-    '## Scope', '', '- In scope: src fixture changes.', '- Out of scope: unrelated files.', '',
-    '## Exit Criteria', '', '```yaml', 'exit_criteria:', '  files_exist:', '    - src/index.ts', '```', '',
-    '## Allowed Paths',
-    '',
-    '```yaml',
-    'allowed_paths:',
-    '  - src/',
-    '```',
-    '',
-    '## Evidence Requirements', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
-    '## Change Assessment', '```json', '{"protocol":1,"oracles":[{"id":"business","kind":"deterministic_test","paths":["*"]}]}', '```', '',
-    '## Verification Plan',
-    '',
-    '```json',
-    JSON.stringify({ protocol: 1, checks: [{ id: 'business', kind: 'command', command: 'printf passed > .ai/harness/business-command-ran', cwd: '.', phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Business-only edits reach canonical execution after acquire.', inputs: { env: [] } }] }),
-    '```',
-    '',
-  ].join('\n'));
-  writeFileSync(join(root, 'tasks/reviews/20260823-0202-cli-acquire.review.md'), '# Authored review\n');
-  writeFileSync(join(root, 'tasks/notes/20260823-0202-cli-acquire.notes.md'), '# Authored notes\n');
+  for (const { task, stem } of tasks) {
+    const planPath = `plans/plan-${stem}.md`;
+    const contractPath = `tasks/contracts/${stem}.contract.md`;
+    writeFileSync(join(root, planPath), [
+      '# Plan: CLI Fleet Acquire Fixture',
+      '',
+      '> **Status**: Approved',
+      '> **Source Ref**: sprint:' + sprintPath + '#' + task,
+      '> **Artifact Level**: work-package',
+      '> **Promotion Reason**: verification_boundary',
+      '> **Verification Boundary**: CLI acquisition proves bound worktree output.',
+      '> **Rollback Surface**: Remove the fixture worktree and lease.',
+      '> **Task Contract**: ' + contractPath,
+      `> **Task Review**: tasks/reviews/${stem}.review.md`,
+      `> **Implementation Notes**: tasks/notes/${stem}.notes.md`,
+      '',
+      '## Promotion Gate',
+      '',
+      '- **Merge/PR unit**: One fixture acquisition is independently verifiable.',
+      '- **Rollback surface**: Remove the fixture worktree and lease.',
+      '- **Verification boundary**: Fleet acquire CLI output and token readback.',
+      '- **Review/acceptance boundary**: The test asserts the returned envelope.',
+      '- **High-risk surface**: Shared lease election and fresh worktree creation.',
+      '- **Why not checklist row**: The acquisition transaction crosses persistent authorities.',
+      '',
+      '## Evidence Contract',
+      '',
+      '- **State/progress path**: ' + planPath,
+      '- **Verification evidence**: CLI JSON output and worktree token.',
+      '- **Evaluator rubric**: This test assertion.',
+      '- **Stop condition**: A bound envelope is returned.',
+      '- **Rollback surface**: Remove the fixture worktree and lease.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, contractPath), [
+      '# Task Contract: CLI Fleet Acquire Fixture',
+      '',
+      '> **Plan**: ' + planPath,
+      '> **Task Profile**: code-change',
+      '> **Status**: Active',
+      `> **Review File**: tasks/reviews/${stem}.review.md`,
+      '',
+      '## Goal', '', 'Keep the authored acquisition contract unchanged.', '',
+      '## Why', '', 'Dispatch must use the same authority admitted by the plan proof.', '',
+      '## Scope', '', '- In scope: src fixture changes.', '- Out of scope: unrelated files.', '',
+      '## Exit Criteria', '', '```yaml', 'exit_criteria:', '  files_exist:', '    - src/index.ts', '```', '',
+      '## Allowed Paths',
+      '',
+      '```yaml',
+      'allowed_paths:',
+      '  - src/',
+      '```',
+      '',
+      '## Evidence Requirements', '```yaml', 'evidence_requirements:', '  benchmark: not_applicable', '```', '',
+      '## Change Assessment', '```json', '{"protocol":1,"oracles":[{"id":"business","kind":"deterministic_test","paths":["*"]}]}', '```', '',
+      '## Verification Plan',
+      '',
+      '```json',
+      JSON.stringify({ protocol: 1, checks: [{ id: 'business', kind: 'command', command: 'printf passed > .ai/harness/business-command-ran', cwd: '.', phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Business-only edits reach canonical execution after acquire.', inputs: { env: [] } }] }),
+      '```',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, `tasks/reviews/${stem}.review.md`), '# Authored review\n');
+    writeFileSync(join(root, `tasks/notes/${stem}.notes.md`), '# Authored notes\n');
+  }
   writeFileSync(join(root, 'tasks/todos.md'), '# Deferred goals\n');
   writeFileSync(join(root, 'src/index.ts'), 'export const business = false;\n');
 
@@ -545,6 +562,102 @@ describe('repo-harness engineer CLI', () => {
     const afterClaim = run(root, ['engineer', 'offers', '--authorization-id', authorizationId, '--json']);
     expect(JSON.parse(afterClaim.stdout).offers).toHaveLength(0);
   });
+
+  test('two processes on different concurrency keys cannot exceed one Engineer active Claim limit', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-capacity-home-')));
+    tempRoots.push(home);
+    process.env.REPO_HARNESS_HOME = home;
+    const root = graphFixture([
+      ...DEFAULT_GRAPH_TASKS,
+      { task: 'task B', workPackageId: 'wp-b', concurrencyKey: 'demo-b', stem: '20260823-0203-cli-acquire-b' },
+    ]);
+    setRepoHarnessAccessMode(root, 'read_write', { env: process.env, requireAdopted: false });
+    const profile = loadEngineerProfile(root, engineerId);
+    expect(profile.profile.max_active_claims).toBe(1);
+    bindEngineer(root, {
+      engineer_id: engineerId, idempotency_key: 'capacity-bind', provider: 'codex',
+      provider_thread_id: 'thread-capacity', host_id: 'local',
+      engineer_contract_revision: profile.engineer_contract_revision,
+      expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null,
+      expected_engineer_contract_revision: profile.engineer_contract_revision,
+    });
+    const binding = readEngineerBindingStatus(root, engineerId, profile.engineer_contract_revision).binding!;
+    const authorizationId = '55555555-5555-4555-8555-555555555555';
+    enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(root), authorization_id: authorizationId, binding, env: process.env });
+
+    const signals = join(root, '.capacity-signals');
+    mkdirSync(signals);
+    const checked = join(signals, 'b-checked');
+    const resume = join(signals, 'b-resume');
+    // Each process runs the production scheduled acquisition. Process B pauses
+    // only between its final locked offer check and Engineer acquisition, which
+    // is the window a different-key acquisition can use.
+    const script = `
+      import { existsSync, writeFileSync } from 'fs';
+      import { resolveEngineerPrincipal } from ${JSON.stringify(resolve(sourceRoot, 'src/effects/engineers/principal.ts'))};
+      import { collectEngineerOffers } from ${JSON.stringify(resolve(sourceRoot, 'src/effects/engineers/scheduling.ts'))};
+      import { acquireScheduledEngineerTask, delegateScheduledEngineerAcquire } from ${JSON.stringify(resolve(sourceRoot, 'src/effects/engineers/scheduling-acquire.ts'))};
+      const [root, authorizationId, workPackageId, checked, resume] = process.argv.slice(1);
+      const sleep = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+      const principal = resolveEngineerPrincipal({ repo_root: root, authorization_id: authorizationId, env: process.env });
+      const nowMs = Date.now();
+      const offer = collectEngineerOffers({ repo_root: root, principal, env: process.env, now_ms: nowMs })
+        .offers.find((item) => item.work_package_id === workPackageId);
+      if (!offer) {
+        console.log(JSON.stringify({ ok: false, error: 'no_offer' }));
+      } else {
+        const keys = ['offer_revision', 'work_package_id', 'work_package_revision', 'work_graph_revision', 'task_id',
+          'task_revision', 'dependency_revision', 'concurrency_revision', 'binding_id', 'binding_generation',
+          'engineer_contract_revision', 'fleet_offer_revision', 'authorization_revision'];
+        const pause = checked === '-' ? {} : { acquire: (options) => {
+          writeFileSync(checked, '');
+          const deadline = Date.now() + 20000;
+          while (!existsSync(resume)) {
+            if (Date.now() > deadline) throw new Error('resume signal timeout');
+            sleep(25);
+          }
+          return delegateScheduledEngineerAcquire(options);
+        } };
+        const result = acquireScheduledEngineerTask({
+          repo_root: root, principal, env: process.env, session_id: 'capacity-' + workPackageId,
+          assertion: Object.fromEntries(keys.map((key) => [key, offer[key]])),
+          offer_options: { now_ms: nowMs }, dependencies: pause,
+        });
+        console.log(JSON.stringify(result.ok
+          ? { ok: true, worktree: result.envelope.worktree_path }
+          : { ok: false, error: result.error, message: result.message }));
+      }
+    `;
+    const spawn = (workPackageId: string, checkedPath: string) => Bun.spawn([
+      process.execPath, '-e', script, '--', root, authorizationId, workPackageId, checkedPath, resume,
+    ], { cwd: root, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, REPO_HARNESS_HOME: home } });
+    const outcome = async (child: ReturnType<typeof spawn>) => {
+      const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+      await child.exited;
+      if (child.exitCode !== 0 || !stdout.trim()) throw new Error(`child failed (${child.exitCode}): ${stderr}${stdout}`);
+      const value = JSON.parse(stdout.trim()) as { ok: boolean; worktree?: string; error?: string; message?: string };
+      if (value.worktree) tempRoots.push(value.worktree);
+      return value;
+    };
+
+    const paused = spawn('wp-b', checked);
+    const deadline = Date.now() + 20_000;
+    while (!existsSync(checked)) {
+      if (Date.now() > deadline || paused.exitCode !== null) throw new Error('process B never reached its final offer check');
+      await Bun.sleep(25);
+    }
+    const first = await outcome(spawn('wp-a', '-'));
+    writeFileSync(resume, '');
+    const second = await outcome(paused);
+
+    const report = JSON.stringify({ first, second });
+    expect(first, report).toMatchObject({ ok: true });
+    expect(second, report).toMatchObject({ ok: false, error: 'fleet_acquire_failed' });
+    expect(second.message, report).toContain('active Claim limit');
+    expect(listLiveClaimActorReceiptsForEngineer(root, engineerId)).toHaveLength(1);
+    // B was refused before the Fleet mutation, so its task has no Lease.
+    expect(readLease(root, fixtureTaskId('task B')).classification).toBe('available');
+  }, 60_000);
 
   test('offers report the Fleet domain error code when the coordination surface is unreadable', () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-offers-home-')));

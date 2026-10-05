@@ -22,6 +22,7 @@ import {
   readClaimActorReceipt,
   validateClaimActorReceiptLive,
 } from '../../src/effects/engineers/claim-actor-store';
+import { createLeaseDirectory, readLease } from '../../src/effects/state/coordination-lease-store';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const binding: EngineerBindingV1 = {
@@ -205,6 +206,31 @@ describe('ME-0B principal and claim actor protocols', () => {
           state: 'bound',
         },
       } as never))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('live receipt listing refuses a known actor whose Lease is unknown', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-me1a-unknown-receipt-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      const work = envelope();
+      publishClaimActorReceipt(root, buildClaimActorReceipt({ envelope: work, principal: principal(), session_id: null, bound_at: '2026-08-25T00:02:00.000Z' }));
+      // A lease directory without an owner record is the real unknown state.
+      expect(createLeaseDirectory(root, work.task_id)).toBeTrue();
+      expect(readLease(root, work.task_id)).toMatchObject({ classification: 'unknown', record: null });
+      // The unavailable Lease state is named, so the operator repairs the
+      // Lease instead of the valid receipt store.
+      const refusal = (() => {
+        try { listLiveClaimActorReceiptsForEngineer(root, engineerId); return null; }
+        catch (error) { return error as EngineerPrincipalError; }
+      })();
+      expect(refusal).toBeInstanceOf(EngineerPrincipalError);
+      expect(refusal?.code).toBe('claim_actor_lease_unavailable');
+      expect(refusal?.message).toContain('Lease is unknown');
+      // Another Engineer's receipts never read this Engineer's Lease state.
+      expect(listLiveClaimActorReceiptsForEngineer(root, 'engineer:capability.workflow-engine.contract-assets')).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
