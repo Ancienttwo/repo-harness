@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import { spawnSync } from 'child_process';
@@ -2236,4 +2236,52 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     }
     expect(verifyInstalledManagedRuntime(options).status).toBe('failed');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+
+describe('Codex Waza projection', () => {
+  for (const mode of ['relative', 'absolute', 'missing', 'unknown-directory'] as const) {
+    test(`Waza projection handles ${mode} paths without user-content deletion`, () => {
+      const tmp = mkdtempSync('/tmp/rh-waza-projection-');
+      const home = join(tmp, 'home');
+      const bin = join(tmp, 'bin');
+      try {
+        mkdirSync(bin, { recursive: true });
+        for (const name of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+          const stage = join(home, '.agents/skills', name);
+          mkdirSync(stage, { recursive: true });
+          writeFileSync(join(stage, 'SKILL.md'), `---\nname: ${name}\n---\n# ${name}\n`);
+          const dest = join(home, '.codex/skills', name);
+          mkdirSync(dirname(dest), { recursive: true });
+          if (mode === 'relative') symlinkSync(`../../.agents/skills/${name}`, dest);
+          if (mode === 'absolute') symlinkSync(stage, dest);
+        }
+        const think = join(home, '.codex/skills/think');
+        if (mode === 'unknown-directory') {
+          mkdirSync(think); writeFileSync(join(think, 'SKILL.md'), 'user instructions\n');
+        }
+        // Only the runtime version probe is external. All skill bytes are staged.
+        writeExecutable(join(bin, 'bun'), '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 9\n');
+        writeExecutable(join(bin, 'bunx'), '#!/bin/bash\nexit 9\n');
+        const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${bin}:${process.env.PATH ?? ''}` };
+        const result = runGlobalRuntimeSetup({ sourceRoot: ROOT, cwd: tmp, target: 'codex', profile: 'minimal',
+          installCli: false, syncSkill: false, hostAdapters: false, externalSkills: true, codegraph: false, env });
+        const waza = result.steps.find(step => step.step === 'configure Waza skills');
+        expect(waza?.status).toBe(mode === 'unknown-directory' ? 'failed' : 'ok');
+        if (mode === 'unknown-directory') {
+          expect(result.exitCode).toBe(1);
+          expect(waza?.detail).toContain('refusing to refresh unowned host skill');
+          expect(waza?.detail).toContain('repo-harness install --profile full --target codex');
+          expect(lstatSync(think).isDirectory()).toBe(true);
+          expect(readFileSync(join(think, 'SKILL.md'), 'utf8')).toBe('user instructions\n');
+        } else {
+          expect(result.exitCode, result.stderr).toBe(0);
+          for (const name of ['think', 'hunt', 'check', 'health']) {
+            const dest = join(home, '.codex/skills', name);
+            expect(lstatSync(dest).isSymbolicLink()).toBe(true);
+            expect(readlinkSync(dest)).toBe(mode === 'relative' ? `../../.agents/skills/${name}` : join(home, '.agents/skills', name));
+          }
+        }
+      } finally { rmSync(tmp, { recursive: true, force: true }); }
+    });
+  }
 });

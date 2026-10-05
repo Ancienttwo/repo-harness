@@ -1,3 +1,4 @@
+import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { createHash, randomUUID } from 'crypto';
 import {
@@ -461,6 +462,24 @@ function discoverManagedSurfaces(
             : [];
       const facade = captureDirectoryOrLink(join(root, name), facadeComponents);
       if (facade) surfaces.push(facade);
+    }
+  }
+  const sourceRoot = bunGlobalPackageRoot(env);
+  // A matching stable package or staging link is ownership proof. Never
+  // acquire an arbitrary link merely because the transaction found it.
+  if (sourceRoot !== null) {
+    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile)) {
+      if (!skillLinkMatches(projection.destination, projection.source)) continue;
+      const pkg = catalog.packages.find(pkg => pkg.name === projection.name);
+      const components = projection.staged
+        ? componentsForTransactionPath(projection.destination)
+        : projection.name === 'repo-harness'
+        ? runtimeComponents
+        : projection.name === 'repo-harness-check'
+          ? desired.filter(component => component === 'scope-worktree-check-guards' || component === 'verifier')
+          : desired.filter(component => component === pkg?.component);
+      const surface = captureOwnedPath(projection.destination, components);
+      if (surface) surfaces.push(surface);
     }
   }
   for (const file of [join(home, '.codex', 'hooks.json'), join(home, '.claude', 'settings.json')]) {
@@ -1251,7 +1270,10 @@ export function applyInstallProfile(
     : [];
   const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(profile, env) : [];
   const ownershipManifest = [...new Map(
-    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned].map((surface) => [
+    // Current verified link projections own their component classification.
+    // Historical records must not restore a retired or wrong component.
+    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
+      ...discovered.filter(surface => surface.type === 'symlink')].map((surface) => [
       `${surface.path}\0${surface.managed_marker ?? surface.type}`,
       surface,
     ]),

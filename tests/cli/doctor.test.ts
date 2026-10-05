@@ -1,3 +1,5 @@
+import { buildProgram } from '../../src/cli/index';
+import { PROFILE_COMPONENTS, hashManagedTree, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -5,6 +7,7 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { execSync, spawnSync } from 'child_process';
 import {
+  checkSkillProjection,
   clearRegisteredChecks,
   formatDoctor,
   readLatestPackageVersion,
@@ -473,4 +476,160 @@ describe('doctor command (Phase 1C)', () => {
       fs.rmSync(envRoot.root, { recursive: true, force: true });
     }
   }, 15000);
+});
+
+describe('doctor skill projection', () => {
+  const root = path.resolve(import.meta.dir, '../..');
+  function seed(home: string) {
+    const source = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    fs.mkdirSync(path.join(source, 'assets/skill-commands'), { recursive: true });
+    fs.cpSync(path.join(root, 'assets/skill-commands/manifest.json'), path.join(source, 'assets/skill-commands/manifest.json'));
+    fs.cpSync(path.join(root, 'assets/workflow-contract.v1.json'), path.join(source, 'assets/workflow-contract.v1.json'));
+    fs.cpSync(path.join(root, 'assets/skills/repo-harness-cross-review'), path.join(source, 'assets/skills/repo-harness-cross-review'), { recursive: true });
+    fs.writeFileSync(path.join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.20.0' }));
+    const destination = path.join(home, '.codex/skills/repo-harness-cross-review');
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    return { source: path.join(source, 'assets/skills/repo-harness-cross-review'), destination,
+      env: { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') } };
+  }
+
+  for (const state of ['ok link', 'stale copy', 'missing', 'dangling link', 'wrong link', 'ok copy'] as const) {
+    test(`reports ${state} with the affected path and repair command`, () => withTempHome(home => {
+      const f = seed(home);
+      if (state === 'ok link') fs.symlinkSync(f.source, f.destination);
+      if (state === 'dangling link') fs.symlinkSync(path.join(home, 'missing'), f.destination);
+      if (state === 'wrong link') fs.symlinkSync(root, f.destination);
+      if (state === 'stale copy' || state === 'ok copy') {
+        fs.cpSync(f.source, f.destination, { recursive: true });
+        if (state === 'stale copy') fs.writeFileSync(path.join(f.destination, 'SKILL.md'), 'user change\n');
+      }
+      const result = checkSkillProjection('both', f.env);
+      expect(result.id).toBe('skill-projection');
+      expect(result.detail).toContain(`${f.destination}: ${state}`);
+      expect(result.detail).toContain('repo-harness install --profile full --target codex');
+      expect(result.detail).toContain(path.join(home, '.claude/skills/repo-harness-cross-review') + ': missing');
+      expect(result.detail).toContain(path.join(home, '.codex/skills/think') + ': missing');
+      if (state === 'stale copy') expect(fs.readFileSync(path.join(f.destination, 'SKILL.md'), 'utf8')).toBe('user change\n');
+      if (state === 'dangling link') expect(fs.readlinkSync(f.destination)).toBe(path.join(home, 'missing'));
+    }));
+  }
+
+  test('review regression: old global contract is an actionable warning', () => withTempHome(home => {
+    const f = seed(home);
+    const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    const contractPath = path.join(packageRoot, 'assets/workflow-contract.v1.json');
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    delete contract.installedCopyExcludes;
+    fs.writeFileSync(contractPath, JSON.stringify(contract));
+    fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.19.5' }));
+    const before = fs.readFileSync(contractPath, 'utf8');
+    const result = checkSkillProjection('both', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain('installedCopyExcludes');
+    expect(result.detail).toContain('run: repo-harness upgrade');
+    expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
+  }));
+
+  test('reports invalid path type without replacing the file', () => withTempHome(home => {
+    const f = seed(home);
+    fs.writeFileSync(f.destination, 'user file\n');
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain(`${f.destination}: invalid path type`);
+    expect(result.detail).toContain(`preserve or move ${f.destination}`);
+    expect(fs.readFileSync(f.destination, 'utf8')).toBe('user file\n');
+  }));
+
+  test('reports source missing and preserves the installed copy', () => withTempHome(home => {
+    const f = seed(home);
+    fs.cpSync(f.source, f.destination, { recursive: true });
+    const before = hashManagedTree(f.destination);
+    fs.rmSync(f.source, { recursive: true });
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain(`${f.destination}: source missing`);
+    expect(result.detail).toContain('run: repo-harness install --profile full --target codex');
+    expect(hashManagedTree(f.destination)).toBe(before);
+  }));
+
+  test('fails closed on a malformed projection contract', () => withTempHome(home => {
+    const f = seed(home);
+    const contractPath = path.join(home, '.bun/install/global/node_modules/repo-harness/assets/workflow-contract.v1.json');
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+    contract.installedCopyExcludes = 42;
+    fs.writeFileSync(contractPath, JSON.stringify(contract));
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('invalid installed copy exclusions');
+    expect(result.detail).toContain('repo-harness install --state');
+  }));
+
+  test('reports ledger type drift and installedProfileStatus drift without changing the ledger', () => withTempHome(home => {
+    const f = seed(home);
+    fs.symlinkSync(f.source, f.destination);
+    const ledger = path.join(home, '.repo-harness/install-state.json');
+    fs.mkdirSync(path.dirname(ledger), { recursive: true });
+    fs.writeFileSync(ledger, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+      transaction_id: 'projection-test', applied_at: new Date(0).toISOString(), previous: null,
+      ownership_manifest: [{ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+        path: f.destination, type: 'directory-copy', content_hash: hashManagedTree(f.source), managed_marker: 'transaction-created-directory', symlink_target: null }] }));
+    const before = fs.readFileSync(ledger, 'utf8');
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.status).toBe('warn');
+    expect(result.detail).toContain(`${f.destination}: ok link -> ${f.source}; ledger drift`);
+    expect(result.detail).toContain('"surface_drift":["' + f.destination + '"]');
+    expect(result.detail).toContain('repo-harness install --state');
+    expect(fs.readFileSync(ledger, 'utf8')).toBe(before);
+    // Keep the on-disk type as symlink, but change its recorded target.
+    const changed = JSON.parse(before);
+    changed.ownership_manifest[0] = { ...changed.ownership_manifest[0], type: 'symlink', content_hash: null,
+      managed_marker: null, symlink_target: path.join(home, 'previous-target') };
+    fs.writeFileSync(ledger, JSON.stringify(changed));
+    expect(checkSkillProjection('codex', f.env).detail).toContain(`${f.destination}: ok link -> ${f.source}; ledger drift`);
+  }));
+
+  test('reports changed owned links and unknown Waza directories; accepts relative staging links', () => withTempHome(home => {
+    const f = seed(home);
+    const staging = path.join(home, '.agents/skills/think');
+    fs.mkdirSync(staging, { recursive: true });
+    fs.writeFileSync(path.join(staging, 'SKILL.md'), '# think\n');
+    const dest = path.join(home, '.codex/skills/think');
+    fs.symlinkSync('../../.agents/skills/think', dest);
+    expect(checkSkillProjection('codex', f.env).detail).toContain(`${dest}: ok link -> ${staging}`);
+    fs.rmSync(dest);
+    fs.cpSync(staging, dest, { recursive: true });
+    const result = checkSkillProjection('codex', f.env);
+    expect(result.detail).toContain(`${dest}: unowned real directory; expected ${staging}; preserve or move ${dest}`);
+    expect(result.detail).toContain('repo-harness install --profile full --target codex');
+    expect(fs.lstatSync(dest).isDirectory()).toBe(true);
+    fs.writeFileSync(path.join(dest, 'SKILL.md'), 'private instructions\n');
+    expect(checkSkillProjection('codex', f.env).detail).toContain(`${dest}: stale copy`);
+    expect(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8')).toBe('private instructions\n');
+  }));
+
+  test('runDoctor includes the check and filters projection hosts by target', () => withTempHome(home => {
+    seed(home);
+    withEnv({ BUN_INSTALL: path.join(home, '.bun') }, () => {
+      const result = runDoctor(root, 'codex').checks.find(check => check.id === 'skill-projection');
+      expect(result?.detail).toContain(path.join(home, '.codex/skills/repo-harness-cross-review'));
+      expect(result?.detail).not.toContain(path.join(home, '.claude/skills'));
+    });
+  }), DOCTOR_CHECK_TIMEOUT_MS);
+});
+
+test('skill-projection repair commands use supported install arguments', () => {
+  withTempHome(home => {
+    const result = checkSkillProjection('both', { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') });
+    const repairs = [...result.detail.matchAll(/run: repo-harness (install[^;\n]*)/g)].map(match => match[1]);
+    expect(repairs.length).toBeGreaterThan(0);
+    for (const repair of repairs) {
+      const install = buildProgram().commands.find(command => command.name() === 'install')!;
+      const args = repair.trim().split(/\s+/).slice(1);
+      expect(install.parseOptions(args).unknown).toEqual([]);
+      expect(install.opts().profile).toBe('full');
+      // parseOptions validates flags. The action selects marketplace defaults
+      // from the requested profile through this exact policy function.
+      expect(profileEnablesExternalSkills(install.opts().profile)).toBe(true);
+    }
+  });
 });

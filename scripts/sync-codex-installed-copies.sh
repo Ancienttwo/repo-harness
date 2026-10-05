@@ -70,11 +70,11 @@ if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" pr
   exit 1
 fi
 SELECTED_FACADES=""
-HOST_PLACEMENTS=""
+PROVIDER_PLACEMENTS=""
 while IFS=$'\t' read -r projection_kind projection_value; do
   case "$projection_kind" in
     facade) SELECTED_FACADES+="${SELECTED_FACADES:+$'\n'}$projection_value" ;;
-    host) HOST_PLACEMENTS+="${HOST_PLACEMENTS:+$'\n'}$projection_value" ;;
+    provider) PROVIDER_PLACEMENTS+="${PROVIDER_PLACEMENTS:+$'\n'}$projection_value" ;;
   esac
 done <<< "$PROFILE_PROJECTION"
 
@@ -281,7 +281,7 @@ facade_selected() {
   profile_facades | grep -Fxq "$wanted"
 }
 
-provider_skill_selected_for_root() {
+provider_skill_for_root() {
   local root="$1"
   local wanted="$2"
   local host=""
@@ -290,7 +290,7 @@ provider_skill_selected_for_root() {
   elif [[ -n "$CLAUDE_SKILLS_ROOT" && "$root" == "$CLAUDE_SKILLS_ROOT" ]]; then
     host="claude"
   fi
-  [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$HOST_PLACEMENTS"
+  [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$PROVIDER_PLACEMENTS"
 }
 
 preflight_skill_root() {
@@ -306,8 +306,8 @@ preflight_skill_root() {
     # Provider Skills (for example repo-harness-cross-review) are installed by
     # their own profile component after this facade sync. They are not command
     # facades, so this loop must neither require a command-facade owner marker
-    # nor retire them while their host placement is selected.
-    provider_skill_selected_for_root "$root" "$name" && continue
+    # nor retire them. Profile cleanup owns provider retirement.
+    provider_skill_for_root "$root" "$name" && continue
     source_rel="$(facade_source_for "$name")"
     source=""
     [[ -n "$source_rel" ]] && source="$SOURCE_ROOT/$source_rel"
@@ -339,7 +339,7 @@ remove_retired_owned_facades() {
   for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
-    provider_skill_selected_for_root "$root" "$name" && continue
+    provider_skill_for_root "$root" "$name" && continue
     facade_selected "$name" && continue
     source_rel="$(facade_source_for "$name")"
     source=""

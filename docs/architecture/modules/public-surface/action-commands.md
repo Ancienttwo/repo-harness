@@ -79,7 +79,8 @@ sequenceDiagram
 `manifest.json` 是 discovery 的唯一权威，其余全是投影：
 
 - `expectedProjections` 是**声明**，`computeFacadesForProfile` / `computeExternalSkillsForProfile` / `computeHostSkillPlacements` 是**复算**，两者不符即 `PROJECTION_MISMATCH`（catalog.ts:596-630）。selector 只有一份实现，导出的 selector 与内部自洽校验共用（catalog.ts:173-210 的注释即为此意图）。
-- shell 侧完全不复制选择逻辑：`sync-codex-installed-copies.sh` 通过 `skill-surface-select.ts` 拿投影结果，一次 `profile-projection` 调用同时返回 facade 与 host placement，避免为了加一条归属边界再付一次 Bun 启动开销（脚本 L51-56 注释）。
+- shell 不复制选择逻辑。`sync-codex-installed-copies.sh` 调用一次 `skill-surface-select.ts profile-projection`。结果包含当前 profile 的 facade 和所有 provider host placement。provider 不受 profile 选择限制。facade sync 不处理 provider 的归属或删除。
+- PR-A 的 staged projection 诊断只覆盖 Waza。provider 匹配值为 `tw93/Waza`，与 runtime 安装组相同。Mermaid 保留 transaction ownership。doctor 暂不检查 Mermaid。
 - 校验层次也是单一的：`profileComponents` 交叉校验的数据源 `PROFILE_COMPONENTS` 由 core 拥有（profile-components.ts），`install-profile.ts` 原样再导出，因此 adapter 直接 import core 而不必把整个 installer 拉进一个薄壳。
 
 ### 3.3 fail-closed 的所有权模型

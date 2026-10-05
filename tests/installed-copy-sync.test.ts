@@ -725,3 +725,36 @@ root="$1"
     }
   });
 });
+
+describe('minimal provider ownership boundary', () => {
+  for (const link of [true, false]) {
+    test(`minimal sync preserves an unselected provider ${link ? 'link' : 'copy'}`, () => {
+      const tmp = mkdtempSync('/tmp/rh-minimal-provider-');
+      try {
+        const source = join(tmp, 'source');
+        seedSkillSurfaceRuntime(source);
+        const provider = join(source, 'assets/skills/repo-harness-cross-review');
+        mkdirSync(provider, { recursive: true });
+        cpSync(join(ROOT, 'assets/skills/repo-harness-cross-review'), provider, { recursive: true });
+        const roots = ['.codex', '.claude'].map(host => join(tmp, 'home', host, 'skills'));
+        for (const root of roots) {
+          mkdirSync(root, { recursive: true });
+          const dest = join(root, 'repo-harness-cross-review');
+          if (link) symlinkSync(provider, dest); else cpSync(provider, dest, { recursive: true });
+        }
+        const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], {
+          env: { ...process.env, HOME: join(tmp, 'home'), BUN_INSTALL: join(tmp, 'home/.bun'),
+            AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' }, encoding: 'utf8',
+        });
+        expect(result.status, result.stderr).toBe(0);
+        for (const root of roots) {
+          expect(readlinkSync(join(root, 'repo-harness'))).toBe(source);
+          const dest = join(root, 'repo-harness-cross-review');
+          expect(lstatSync(dest).isSymbolicLink()).toBe(link);
+          if (link) expect(readlinkSync(dest)).toBe(provider);
+          expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(readFileSync(join(provider, 'SKILL.md'), 'utf8'));
+        }
+      } finally { rmSync(tmp, { recursive: true, force: true }); }
+    }, 30000);
+  }
+});
