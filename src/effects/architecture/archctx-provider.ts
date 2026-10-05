@@ -590,7 +590,9 @@ function assertProjectionResultAuthority(
     throw new Error('archctx projection wrote outside the projection-owned fixed-point surfaces');
   }
   if (result.applyReceipt) {
-    if (request.mode !== 'apply' || !request.acceptedChange) throw new Error('archctx projection apply receipt requires an accepted apply request');
+    // archctx commits an accepted adoption through the same fixed-point apply, so
+    // both mutating modes carry a receipt bound to the request's accepted change.
+    if ((request.mode !== 'apply' && request.mode !== 'adopt') || !request.acceptedChange) throw new Error('archctx projection apply receipt requires an accepted apply or adopt request');
     if (!sameAcceptedArchitectureChange(request.acceptedChange, result.applyReceipt.acceptedChange)) throw new Error('archctx projection apply receipt accepted change mismatch');
     if (result.applyReceipt.repositoryId !== request.expected.repositoryId || result.applyReceipt.workspaceId !== request.expected.workspaceId) throw new Error('archctx projection apply receipt repository/workspace mismatch');
   }
