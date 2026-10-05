@@ -332,3 +332,24 @@ describe('mcp redaction and audit', () => {
     }
   });
 });
+
+test('shared token rules keep existing redaction and hide webhook and credential URLs', () => {
+  const cases = [
+    'Authorization: Bearer fake-value', 'sk-'+'a'.repeat(25), 'ghp_'+'a'.repeat(25),
+    'github_pat_'+'a'.repeat(35), 'AKIA'+'A'.repeat(16),
+    'eyJ'+'a'.repeat(12)+'.'+'b'.repeat(12)+'.'+'c'.repeat(12),
+    '-----BEGIN PRIVATE KEY-----fake-value-----END PRIVATE KEY-----',
+    'SECRET=sample-value', 'DATABASE_URL=postgres://example.invalid/db',
+    'https://hooks.slack.com/services/TTEST/BTEST/fake-value',
+    'https://discord.com/api/webhooks/123456/fake-value',
+    'https://user:pass@example.invalid/db', '123456789:'+'a'.repeat(35),
+  ];
+  for (const input of cases) {
+    const result = redactMcpText(input);
+    expect(result.text).not.toBe(input);
+    expect(result.text).toContain('REDACTED');
+    expect(result.redactions.length).toBeGreaterThan(0);
+  }
+  // MCP keeps its broad assignment rule. Only prompt detection narrows it.
+  expect(redactMcpText('tokens: null').text).toContain('REDACTED');
+});
