@@ -215,6 +215,21 @@ describe('repository automation supervision', () => {
     expect(zh).toContain('原始关注责任方');
   });
 
+  test('fixture run and budget identities keep the bare hex shape the budget store mints', async () => {
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const { automation } = repositoryObservationFixture();
+    const bare = /^[0-9a-f]{64}$/u;
+    const budget = automation.budgets.records[0]!;
+    const controller = automation.controllers.records[0]!;
+    expect(budget.automation_run_id).toMatch(bare);
+    expect(budget.budget_sha256).toMatch(bare);
+    expect(controller.run_id).toMatch(bare);
+    expect(controller.budget_sha256).toMatch(bare);
+    expect(controller.run_id).toBe(budget.automation_run_id);
+    // Controller evidence digests keep the stored sha256: prefix.
+    expect(controller.run_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+  });
+
   test('keeps source absence, failure and stale budget metrics distinct', async () => {
     const { AutomationEvidence } = await import('../../src/operator-web/AutomationSummary');
     const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
