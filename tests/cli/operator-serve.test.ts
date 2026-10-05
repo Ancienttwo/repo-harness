@@ -493,6 +493,65 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('default Fleet reads never lazy-fetch a missing promisor Sprint blob', async () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-promisor-')));
+    const remote = join(parent, 'remote.git');
+    const source = join(parent, 'source');
+    const clone = join(parent, 'clone');
+    const sprint = 'plans/sprints/promisor.sprint.md';
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout.trim();
+    };
+    const sprintText = (state: string) => `# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${TASK_ID} | [ ] | ${state} | contract | read only | (pending) |\n`;
+    git(parent, 'init', '-q', '--bare', remote);
+    git(remote, 'config', 'uploadpack.allowFilter', 'true');
+    git(parent, 'init', '-q', '-b', 'main', source);
+    mkdirSync(join(source, 'plans/sprints'), { recursive: true });
+    mkdirSync(join(source, '.ai/harness/sprint'), { recursive: true });
+    writeFileSync(join(source, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
+    writeFileSync(join(source, sprint), sprintText('base'));
+    git(source, 'add', '.');
+    git(source, 'commit', '-qm', 'base');
+    git(source, 'push', '-q', `file://${remote}`, 'main');
+    git(parent, 'clone', '-q', '--filter=blob:none', `file://${remote}`, clone);
+    git(clone, 'switch', '-qc', 'work');
+    writeFileSync(join(source, sprint), sprintText('moved'));
+    git(source, 'commit', '-qam', 'moved');
+    git(source, 'push', '-q', `file://${remote}`, 'main');
+    git(clone, 'fetch', '-q', 'origin', 'main:main');
+    const blob = git(clone, 'rev-parse', `main:${sprint}`);
+    const blobPresent = () => spawnSync('git', ['cat-file', '-e', blob], { cwd: clone, env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).status === 0;
+    expect(blobPresent()).toBe(false);
+    const fetchMarker = join(parent, 'fetch-ran');
+    git(clone, 'config', 'remote.origin.uploadpack', `touch '${fetchMarker}'; git-upload-pack`);
+    const packs = readdirSync(join(clone, '.git/objects/pack')).sort();
+    const registry = registryHome([{ path: clone, accessMode: 'read_only' }]);
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: parent,
+      // A caller value must not reopen lazy fetch for the read-only worker.
+      env: { ...registry.env, GIT_NO_LAZY_FETCH: '0' },
+    });
+    try {
+      for (const route of ['/api/v1/fleet/snapshot', `/api/v1/fleet/repositories/${registry.ids[0]}/snapshot`]) {
+        const response = await fetch(`${server.url}${route}`);
+        expect(response.status).toBe(200);
+        const body = JSON.stringify(await response.json());
+        expect(body).toContain('"status":"unreadable"');
+        expect(body).not.toContain('moved');
+        expect(existsSync(fetchMarker)).toBe(false);
+        expect(blobPresent()).toBe(false);
+        expect(readdirSync(join(clone, '.git/objects/pack')).sort()).toEqual(packs);
+      }
+    } finally {
+      await server.close();
+      rmSync(parent, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
+
   test('cancels a sole Fleet observation when its client disconnects and permits a clean retry', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-disconnect-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
