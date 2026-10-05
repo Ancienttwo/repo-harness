@@ -142,7 +142,8 @@ interface ExecutionPayload {
   readonly passed: boolean;
 }
 
-interface PreparedContext {
+/** Ledger and contract facts. Historical validation needs no live toolchain. */
+interface EvidenceContext {
   readonly repoRoot: string;
   readonly contractPath: string;
   readonly contractText: string;
@@ -151,6 +152,9 @@ interface PreparedContext {
   readonly planHash: string;
   readonly snapshot: GitVirtualTreeSnapshot;
   readonly env: NodeJS.ProcessEnv;
+}
+
+interface PreparedContext extends EvidenceContext {
   readonly toolchainHash: string;
   readonly envProviderId: string;
 }
@@ -517,7 +521,7 @@ function payloadOf(repoRoot: string, event: EvidenceEventRecord): ExecutionPaylo
   return record as unknown as ExecutionPayload;
 }
 
-function executionEvents(context: PreparedContext): readonly { event: EvidenceEventRecord; payload: ExecutionPayload }[] {
+function executionEvents(context: EvidenceContext): readonly { event: EvidenceEventRecord; payload: ExecutionPayload }[] {
   return readAcceptedEvents(context.repoRoot).accepted.flatMap((event) => {
     if (event.event_type !== EVENT_TYPE || event.producer !== PRODUCER || event.trust_class !== "authoritative_machine") return [];
     const payload = payloadOf(context.repoRoot, event);
@@ -526,7 +530,7 @@ function executionEvents(context: PreparedContext): readonly { event: EvidenceEv
   });
 }
 
-function readValidRunResult(context: PreparedContext, payload: ExecutionPayload): VerificationExecutionResult | null {
+function readValidRunResult(context: EvidenceContext, payload: ExecutionPayload): VerificationExecutionResult | null {
   if (!payload.run_file.startsWith(".ai/harness/runs/")) return null;
   const resolved = resolveInsideRepo(context.repoRoot, payload.run_file);
   if (!resolved.ok || !resolved.path || !existsSync(resolved.path)) return null;
@@ -558,7 +562,7 @@ function currentResult(context: PreparedContext, check: VerificationCheck): Veri
   if (!result.passed && result.exit_code === 0 && !result.timed_out && result.signal === null) return null;
   const projected = { ...result, execution: result.passed ? "reused" as const : "executed" as const };
   const materialized = (redactPayloadStrings({ result: projected } as unknown as JsonValue, collectDenylistSecretValues()) as unknown as { result: VerificationExecutionResult }).result;
-  return matchingImmutableExecution(context, check, materialized, false, true) ? projected : null;
+  return matchingImmutableExecution(context, check, materialized, false, context.toolchainHash) ? projected : null;
 }
 
 function reusableResult(context: PreparedContext, check: VerificationCheck): VerificationExecutionResult | null {
@@ -572,7 +576,7 @@ function priorExecutionExists(context: PreparedContext, check: VerificationCheck
 }
 
 function baselineResult(
-  context: PreparedContext,
+  context: EvidenceContext,
   check: VerificationCheck,
   current: ReadonlyMap<string, VerificationExecutionResult>,
 ): VerificationExecutionResult {
@@ -624,7 +628,7 @@ function baselineResult(
   };
 }
 
-function missingResult(context: PreparedContext, check: VerificationCheck, message: string): VerificationExecutionResult {
+function skippedResult(check: VerificationCheck, message: string, key: string): VerificationExecutionResult {
   return {
     id: check.id,
     kind: check.kind,
@@ -636,7 +640,7 @@ function missingResult(context: PreparedContext, check: VerificationCheck, messa
     exit_code: null,
     signal: null,
     execution: "missing",
-    cache_key: cacheKey(context, check),
+    cache_key: key,
     command: displayCommand(check),
     force_reason: null,
     execution_id: null,
@@ -645,8 +649,22 @@ function missingResult(context: PreparedContext, check: VerificationCheck, messa
   };
 }
 
+function missingResult(context: PreparedContext, check: VerificationCheck, message: string): VerificationExecutionResult {
+  return skippedResult(check, message, cacheKey(context, check));
+}
+
+/** A skipped result claims no execution, so only its exact materialized shape is valid. */
+function isMaterializedSkippedResult(check: VerificationCheck, result: VerificationExecutionResult): boolean {
+  if (typeof result.message !== "string" || typeof result.cache_key !== "string") return false;
+  const expected = (redactPayloadStrings(
+    { result: skippedResult(check, result.message, result.cache_key) } as unknown as JsonValue,
+    collectDenylistSecretValues(),
+  ) as unknown as { result: JsonValue }).result;
+  return canonicalize(result as unknown as JsonValue) === canonicalize(expected);
+}
+
 function buildReport(
-  context: PreparedContext,
+  context: EvidenceContext,
   results: readonly VerificationExecutionResult[],
   status: VerificationReportStatus,
   snapshotChanged = false,
@@ -721,16 +739,17 @@ function matchesLedgerCheckId(storedId: string, declaredId: string): boolean {
   return storedId === legacy.id;
 }
 
+/** `currentToolchainHash` is null for historical proof, which uses the event's self-bound toolchain identity. */
 function matchingImmutableExecution(
-  context: PreparedContext,
+  context: EvidenceContext,
   check: VerificationCheck,
   result: VerificationExecutionResult,
-  requirePass = true,
-  current = false,
+  requirePass: boolean,
+  currentToolchainHash: string | null,
 ): boolean {
   return executionEvents(context).some(({ event, payload }) => {
-    if (current && (payload.contract_hash !== context.contractHash
-      || payload.toolchain_hash !== context.toolchainHash
+    if (currentToolchainHash !== null && (payload.contract_hash !== context.contractHash
+      || payload.toolchain_hash !== currentToolchainHash
       || payload.inputs_hash !== declaredEnvironmentHash(check, context.env))) return false;
     if (payload.contract_hash !== context.contractHash) return false;
     if (!matchesLedgerCheckId(payload.check_id, check.id)
@@ -818,8 +837,8 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   const planHash = hashVerificationPlan(plan);
   if (target.plan_hash !== planHash) throw new Error("verification report plan hash does not match current contract authority");
   const env = input.env ?? process.env;
-  const toolchain = resolveToolchain(env);
-  const context: PreparedContext = {
+  const currentToolchainHash = input.current ? resolveToolchain(env).hash : null;
+  const context: EvidenceContext = {
     repoRoot,
     contractPath: input.contractPath,
     contractText,
@@ -832,8 +851,6 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
       snapshot_hash: snapshotHash,
     },
     env,
-    toolchainHash: toolchain.hash,
-    envProviderId: toolchain.providerId,
   };
   if (!Array.isArray(reportObject.results) || reportObject.results.length !== plan.checks.length) {
     throw new Error("verification report results do not cover the plan exactly");
@@ -862,10 +879,13 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
     const result = supplied.get(check.id);
     if (!result || result.kind !== check.kind || typeof result.passed !== "boolean" || (requirePass && result.passed !== true)) throw new Error(`verification report result is invalid: ${check.id}`);
     if (check.evidence_policy === "current_exact") {
-      if (result.target !== "current_exact" || (result.execution !== "executed" && result.execution !== "reused")) {
+      // A failed preflight skips later checks. Those skipped results must not
+      // remove the authority of the recorded failure from a negative outcome.
+      const skipped = !requirePass && result.execution === "missing" && isMaterializedSkippedResult(check, result);
+      if (result.target !== "current_exact" || (!skipped && result.execution !== "executed" && result.execution !== "reused")) {
         throw new Error(`verification report exact result has invalid disposition: ${check.id}`);
       }
-      if (!matchingImmutableExecution(context, check, result, requirePass, input.current ?? false)) {
+      if (!skipped && !matchingImmutableExecution(context, check, result, requirePass, currentToolchainHash)) {
         throw new Error(`verification report exact result is not backed by immutable evidence: ${check.id}`);
       }
     }
@@ -874,7 +894,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
     if (check.evidence_policy !== "baseline_with_delta") continue;
     const result = supplied.get(check.id)!;
     const evaluated = baselineResult(context, check, supplied);
-    if (!evaluated.passed) {
+    if (requirePass && !evaluated.passed) {
       throw new Error(`verification report baseline result is not backed by immutable evidence: ${check.id}`);
     }
     const projectedExpected = (redactPayloadStrings(

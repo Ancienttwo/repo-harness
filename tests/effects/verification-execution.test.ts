@@ -780,6 +780,24 @@ describe("verification execution lifecycle", () => {
         report,
         env,
       })).toThrow("plan hash");
+
+      // Historical proof uses the toolchain identity bound into the event.
+      // Only current validation needs the live toolchain.
+      const brokenBash = `${counterPath}-bash-broken`;
+      writeFileSync(brokenBash, "#!/bin/sh\nexit 9\n");
+      chmodSync(brokenBash, 0o755);
+      for (const [bash, error] of [
+        [`${counterPath}-bash-absent`, "toolchain executable is unavailable"],
+        [brokenBash, "toolchain version probe failed"],
+      ] as const) {
+        const unavailable = { ...env, REPO_HARNESS_BASH_BIN: bash };
+        expect(validateMaterializedVerificationExecutionReport({
+          repoRoot, contractPath, contractText, report, env: unavailable,
+        }).valid).toBe(true);
+        expect(() => validateMaterializedVerificationExecutionReport({
+          repoRoot, contractPath, contractText, report, env: unavailable, current: true,
+        })).toThrow(error);
+      }
     });
   }, 30_000);
 
@@ -1017,14 +1035,63 @@ ${path === secondBash ? 'if [ "$1" = --version ]; then sleep 5.1; fi\n' : ''}exe
         ],
       };
       writeFileSync(join(repoRoot, contractPath), contract(plan));
-      const report = executeVerificationContract({
-        repoRoot,
-        contractPath,
-        env: { ...process.env, COUNTER_PATH: counterPath },
-      });
+      const env = { ...process.env, COUNTER_PATH: counterPath };
+      const report = executeVerificationContract({ repoRoot, contractPath, env });
       expect(report.status).toBe("failed");
       expect(report.results.find((result) => result.id === "full")?.execution).toBe("missing");
       expect(existsSync(counterPath)).toBe(false);
+
+      // The skipped sibling must not erase the authority of the recorded failure.
+      const failure = verificationOutcomeProvenance({ repoRoot, contractPath, report, env }, "preflight");
+      expect(failure.result.passed).toBe(false);
+      expect(failure.result.exit_code).toBe(9);
+      expect(failure.execution_order).toBeGreaterThan(0);
+      expect(() => verificationOutcomeProvenance({ repoRoot, contractPath, report, env }, "full"))
+        .toThrow("verification sequence is unavailable");
+      expect(() => validateMaterializedVerificationExecutionReport({ repoRoot, contractPath, report, env }))
+        .toThrow("not a passing evaluation");
+      const forged = {
+        ...report,
+        results: report.results.map((result) => result.id === "full"
+          ? { ...result, run_file: ".ai/harness/runs/forged.json" }
+          : result),
+      };
+      expect(() => verificationOutcomeProvenance({ repoRoot, contractPath, report: forged, env }, "preflight"))
+        .toThrow("invalid disposition: full");
+    });
+  }, 30_000);
+
+  test("a failed delta check keeps outcome provenance when its baseline sibling fails", () => {
+    withRepo("verification-failed-delta", (repoRoot, contractPath, counterPath) => {
+      const env = { ...process.env, COUNTER_PATH: counterPath };
+      const full = executeVerificationContract({ repoRoot, contractPath, env }).results[0]!;
+      const delta = commandCheck({
+        id: "delta",
+        command: "exit 7",
+        cost: "normal",
+        necessity: "covers the current delta",
+        inputs: { env: [] },
+      });
+      const baseline = commandCheck({
+        evidence_policy: "baseline_with_delta",
+        baseline: { run_file: full.run_file, execution_id: full.execution_id },
+        delta_checks: ["delta"],
+      });
+      writeFileSync(join(repoRoot, contractPath), contract({ protocol: 1, checks: [delta, baseline] }, "failed delta"));
+      const executed = executeVerificationContract({ repoRoot, contractPath, env });
+      expect(executed.status).toBe("failed");
+      expect(executed.results.find((result) => result.id === "full")?.passed).toBe(false);
+      const report = projectReportThroughEvidenceWriter(repoRoot, executed);
+
+      const failure = verificationOutcomeProvenance({ repoRoot, contractPath, report, env }, "delta");
+      expect(failure.result.passed).toBe(false);
+      expect(failure.result.exit_code).toBe(7);
+      const tampered = {
+        ...report,
+        results: report.results.map((result) => result.id === "full" ? { ...result, message: "forged" } : result),
+      };
+      expect(() => verificationOutcomeProvenance({ repoRoot, contractPath, report: tampered, env }, "delta"))
+        .toThrow("baseline result was altered");
     });
   }, 30_000);
 
