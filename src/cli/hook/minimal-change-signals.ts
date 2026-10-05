@@ -559,11 +559,17 @@ export function collectMinimalChangeSignals(
     ? abstractionCandidates(repoRoot, relPath, protectedChanges)
     : [];
   const findings = buildFindings(policy, relPath, dependency.newDependencies, abstraction);
+  // Every policy field that shapes the report belongs here: event dedupe
+  // skips the write on a match, and Stop reads only the saved report.
   const reportFingerprint = fingerprint({
     baseRef,
     relPath,
     policyVersion: policy.version,
     mode: policy.mode,
+    newDependency: policy.new_dependency,
+    newAbstraction: policy.new_abstraction,
+    maxFindings: policy.max_findings,
+    reportPath: policy.report_path,
     nameStatusRaw,
     numstatRaw,
     fileHash: readFileHash(repoRoot, relPath),
