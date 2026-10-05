@@ -1651,6 +1651,18 @@ export function OperatorApp({
   const selectedCard = selection && !selection.historical && snapshot
     ? activeRepository?.cards.find((card) => taskKey(card) === selection.key) ?? null
     : null;
+  // A current URL carries no revision, so the first snapshot that resolves the
+  // selection supplies the comparison baseline. Capturing it into the selection
+  // puts URL-opened and restored panes under the same changed-definition
+  // warning as clicked cards; later snapshots never move a stored baseline.
+  useEffect(() => {
+    if (!selection || selection.historical || selection.revision !== null || !selectedCard) return;
+    const baseline = selectedCard.task_revision;
+    setSelection((current) => current !== null && !current.historical && current.revision === null
+      && current.key === selection.key
+      ? { ...current, revision: baseline }
+      : current);
+  }, [selection, selectedCard]);
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
     ? selection.revision
     : null;

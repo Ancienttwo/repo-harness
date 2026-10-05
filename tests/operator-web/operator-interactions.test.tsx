@@ -791,6 +791,49 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  test('a current Task URL baselines the revision it resolves so a later refresh warns about the change', async () => {
+    const card = stableSnapshot.repositories[0]!.cards.find((row) => row.task_id === fixtureTasks.blocked.task_id)!;
+    const revised = (revision: string): OperatorFleetSnapshotV1 => ({
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 1,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((row) => row.task_id === card.task_id ? { ...row, task_revision: revision } : row),
+      })),
+    });
+    let current = stableSnapshot;
+    window.history.replaceState(null, '', `?repository=${card.repository_id}&task=${card.task_id}`);
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => current} />);
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    expect(paneText()).not.toContain('Task definition changed');
+    current = revised('rev-url-next');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(paneText()).toContain('Task definition changed since last snapshot');
+    expect(paneText()).toContain(card.task_revision);
+    expect(paneText()).toContain('rev-url-next');
+
+    // A Back/Forward restore builds a fresh selection without a revision; the
+    // restored pane re-baselines from the snapshot it first resolves.
+    await act(async () => {
+      window.history.pushState(null, '', window.location.pathname);
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => {
+      window.history.pushState(null, '', `?repository=${card.repository_id}&task=${card.task_id}`);
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+    });
+    expect(paneText()).toContain('rev-url-next');
+    expect(paneText()).not.toContain('Task definition changed');
+    current = revised('rev-url-third');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(paneText()).toContain('Task definition changed since last snapshot');
+    expect(paneText()).toContain('rev-url-next');
+    expect(paneText()).toContain('rev-url-third');
+    expect(new URLSearchParams(window.location.search).get('task_revision')).toBeNull();
+  });
+
   test('reveals a newly urgent first group while preserving an explicit collapse', async () => {
     const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
     const lowerPriority = {
