@@ -142,4 +142,27 @@ describe('migrate command (Phase 1C)', () => {
       expect(() => JSON.parse(json)).not.toThrow();
     });
   });
+
+  for (const [linkedDir, linkedFile, localDir, localFile] of [
+    ['.claude', 'settings.json', '.codex', 'hooks.json'],
+    ['.codex', 'hooks.json', '.claude', 'settings.json'],
+  ] as const) {
+    test(`--apply refuses a symlinked ${linkedDir} directory before any write`, () => {
+      withTempRepo((repo) => {
+        withTempRepo((outside) => {
+          fs.writeFileSync(path.join(outside, linkedFile), LEGACY_WITH_SIBLING);
+          fs.symlinkSync(outside, path.join(repo, linkedDir));
+          const localPath = path.join(repo, localDir, localFile);
+          fs.mkdirSync(path.dirname(localPath), { recursive: true });
+          fs.writeFileSync(localPath, LEGACY_CODEX);
+
+          expect(() => runMigrate({ cwd: repo, apply: true })).toThrow('symlink is not allowed');
+          expect(fs.readdirSync(outside)).toEqual([linkedFile]);
+          expect(fs.readFileSync(path.join(outside, linkedFile), 'utf-8')).toBe(LEGACY_WITH_SIBLING);
+          expect(fs.readdirSync(path.dirname(localPath))).toEqual([localFile]);
+          expect(fs.readFileSync(localPath, 'utf-8')).toBe(LEGACY_CODEX);
+        });
+      });
+    });
+  }
 });

@@ -122,7 +122,7 @@ function unsupportedOperationReason(operation: AdoptionOperation): string {
   return `unsupported operation kind: ${operation.kind}`;
 }
 
-function assertNoSymlinkInPath(repoRoot: string, path: string): string | null {
+export function assertNoSymlinkInPath(repoRoot: string, path: string): string | null {
   const target = resolveInsideRepo(repoRoot, path);
   if (!target.ok || !target.path) return target.error ?? "invalid path";
   const root = resolve(repoRoot);
