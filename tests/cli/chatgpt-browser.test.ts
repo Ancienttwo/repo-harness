@@ -1240,6 +1240,36 @@ describe('chatgpt browser command', () => {
     }
   }
 
+  test.skipIf(!NATIVE_CHROME_PRESENT)('native consult refuses queued follow-ups before it opens Chrome', async () => {
+    await withAsyncRepo(async (repoRoot) => {
+      const profileDir = join(repoRoot, 'automation-profile');
+      mkdirSync(profileDir);
+      const run = await runWithFakeChrome([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--profile-dir',
+        profileDir,
+        '--timeout-ms',
+        '1000',
+        '--prompt',
+        'First turn.',
+        '--follow-up',
+        'Second turn.',
+      ]);
+      const payload = JSON.parse(run.stdout);
+      expect(payload.status).toBe('failed');
+      expect(payload.error.code).toBe('NATIVE_FOLLOWUPS_UNSUPPORTED');
+      expect(payload.error.message).toContain('1 queued follow-up');
+      expect(run.openArgs).toEqual([]);
+      expect(run.methods).toEqual([]);
+      expect(run.insertedTexts).toEqual([]);
+      expect(run.exitedOnItsOwn).toBe(true);
+    });
+  }, 30_000);
+
   const nativeValidationExitPaths: Array<{ label: string; chrome: FakeChromeOptions; status: string }> = [
     { label: 'a ready composer', chrome: {}, status: 'ready' },
     { label: 'a login prompt', chrome: { composerReady: false }, status: 'login_required' },

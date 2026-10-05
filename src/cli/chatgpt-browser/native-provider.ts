@@ -489,6 +489,20 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
       },
     };
   }
+  // Native submits one prompt per run. Refuse queued turns before launch so no
+  // requested turn is silently dropped.
+  if (bundle.followups.length > 0) {
+    const queued = `${bundle.followups.length} queued follow-up${bundle.followups.length === 1 ? '' : 's'}`;
+    return {
+      status: 'failed',
+      output: `Native ChatGPT browser provider sends only one prompt per run; it did not send the prompt or the ${queued}.`,
+      error: {
+        code: 'NATIVE_FOLLOWUPS_UNSUPPORTED',
+        message: `native provider cannot send ${queued}`,
+        recovery: 'Omit --follow-up for native runs and send each turn with browser-followup --prompt, or use the Oracle provider for queued follow-ups.',
+      },
+    };
+  }
   const channel = browserChannel(input.browserChannel);
   if (!input.profileDir) {
     return {
