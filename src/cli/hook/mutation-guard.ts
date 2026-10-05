@@ -20,6 +20,7 @@ import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { recordCircuitAttempt, type CircuitAttempt } from './circuit-breaker';
 import {
+  canonicalExternalPath,
   canonicalRepoRelativePath,
   fileExists,
   readText,
@@ -423,7 +424,12 @@ function runPerPathGuards(
   allTargetPaths: readonly string[],
   _writePayload: string,
 ): void {
-  if (isRepoScopedPath(filePath) && canonicalRepoRelativePath(ctx.repoRoot, filePath) !== filePath) {
+  // normalizeFilePath leaves an absolute path raw both for a verified external
+  // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
+  // only the first may skip the repository boundary checks below.
+  if (isRepoScopedPath(filePath)
+    ? canonicalRepoRelativePath(ctx.repoRoot, filePath) !== filePath
+    : canonicalExternalPath(ctx.repoRoot, filePath) === null) {
     out(ctx, `[RepoScopeGuard] Unsafe or out-of-repository target: ${filePath}`);
     structuredError(
       ctx,

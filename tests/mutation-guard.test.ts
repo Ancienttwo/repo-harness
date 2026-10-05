@@ -202,6 +202,19 @@ function edit(cwd: string, filePath: string, options: { readonly env?: NodeJS.Pr
   return invoke(cwd, { tool_input: { file_path: filePath } }, options);
 }
 
+const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
+
+/** The installed host path: `repo-harness-hook PreToolUse --route edit` in a child process with an isolated HOME. */
+function hostEdit(cwd: string, home: string, toolInput: Record<string, string>) {
+  const result = spawnSync(process.execPath, [HOOK_ENTRY, 'PreToolUse', '--route', 'edit'], {
+    cwd,
+    encoding: 'utf-8',
+    input: JSON.stringify({ tool_name: 'Edit', tool_input: toolInput }),
+    env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, HOME: home, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd },
+  });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
 describe('mutation boundaries after workflow cutover', () => {
   test('primary edit ignores old markers, missing plans and high-risk ceremony', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-cutover-')));
@@ -228,6 +241,41 @@ describe('mutation boundaries after workflow cutover', () => {
       expect(existsSync(join(outside, 'secret.ts'))).toBe(false);
     } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
   });
+  test('host edit route refuses absolute aliases of private/reference targets and allows verified external paths', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-alias-')));
+    const cwd = join(root, 'repo');
+    const outside = join(root, 'outside');
+    const home = join(root, 'home');
+    try {
+      for (const dir of [cwd, outside, home]) mkdirSync(dir, { recursive: true });
+      initRepo(cwd);
+      for (const dir of ['src', '_ops', '_ref']) mkdirSync(join(cwd, dir), { recursive: true });
+      symlinkSync(join(cwd, '_ops'), join(cwd, 'src/opslink'));
+      // Literal strings: path.join would collapse the `..` and `//` forms before the hook sees them.
+      const refused = [
+        `${cwd}/src/../_ops/secret.env`,
+        `${cwd}/src/../_ref/upstream.txt`,
+        `${cwd}//_ops/secret.env`,
+        `${cwd}/./_ops/secret.env`,
+        `${cwd}/src/opslink/secret.env`,
+        `${outside}/../repo/_ops/secret.env`,
+      ];
+      // macOS volumes are usually case-insensitive; there `_OPS` is the same directory as `_ops`.
+      if (existsSync(join(cwd, '_OPS'))) refused.push(`${cwd}/_OPS/secret.env`, `${cwd.toUpperCase()}/_ops/secret.env`);
+      for (const filePath of refused) {
+        const result = hostEdit(cwd, home, { file_path: filePath });
+        expect({ filePath, status: result.status }).toEqual({ filePath, status: 2 });
+        expect(result.stdout).toMatch(/\[(RepoScopeGuard|OpsPrivateGuard|ExternalReferenceGuard)\]/);
+      }
+      const patched = hostEdit(cwd, home, { command: `*** Begin Patch\n*** Add File: ${cwd}/src/../_ops/secret.env\n+secret\n*** End Patch` });
+      expect(patched.status).toBe(2);
+      expect(patched.stdout).toContain('[RepoScopeGuard]');
+
+      const external = hostEdit(cwd, home, { file_path: `${outside}/notes.md` });
+      expect(external.status).toBe(0);
+      expect(external.stdout).not.toContain('action":"block');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
   test('state resolution failure and contract-scope deviation are recorded without blocking', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-cutover-state-')));
     try {

@@ -59,6 +59,12 @@ export function canonicalRepoRelativePath(cwd: string, candidate: string): strin
   return resolved ? containedRelativePath(resolved.root, resolved.target) : null;
 }
 
+/** Canonical absolute target outside the repository; null means inside or unresolvable. */
+export function canonicalExternalPath(cwd: string, candidate: string): string | null {
+  const resolved = canonicalTarget(cwd, candidate);
+  return resolved && containedRelativePath(resolved.root, resolved.target) === null ? resolved.target : null;
+}
+
 export function repoPath(cwd: string, relPath: string): string {
   const posixRoot = posix.resolve('/repo');
   const win32Root = win32.resolve('C:\\repo').toLowerCase();
