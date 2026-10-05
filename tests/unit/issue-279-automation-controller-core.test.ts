@@ -80,6 +80,14 @@ describe('issue #279 automation controller core', () => {
     expect(() => buildAutomationControllerRun({ ...value, policy: { ...value.policy, maximum_backoff_ms: 100 } })).toThrow('must be >=');
   });
 
+  test.each(['run_id', 'budget_sha256'] as const)('refuses a sha256:-prefixed %s because budget digests are bare hex', (field) => {
+    const value = run();
+    let error: unknown = null;
+    try { buildAutomationControllerRun({ ...value, [field]: `sha256:${value[field]}` }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AutomationControllerError);
+    expect(error).toMatchObject({ code: 'automation_controller_invalid', message: `${field} is invalid` });
+  });
+
   test('walks observation through one exact acquisition and dispatch evidence boundary', () => {
     const definition = run();
     let current = foldAutomationControllerCurrent(definition, null, event('start', 1, null));

@@ -146,6 +146,11 @@ describe('Task attempt mutation boundary', () => {
     }
     expect(() => completeTaskAutomationAttempt(start, { outcome: 'started', ended_at: null, runtime_effect_id: null, evidence_refs: [] } as unknown as Parameters<typeof completeTaskAutomationAttempt>[1])).toThrow('outcome');
   });
+
+  test.each(['controller_run_id', 'budget_revision'] as const)('refuses a sha256:-prefixed %s because budget digests are bare hex', field => {
+    const input = { ...identity, sequence: 1, started_at: startedAt, ended_at: null, outcome: 'started' as const, evidence_refs: [], runtime_effect_id: null, previous_attempt_sha256: null };
+    expect(() => buildTaskAutomationAttempt({ ...input, [field]: `sha256:${identity[field]}` })).toThrow(new Error(`${field} must be a budget digest`));
+  });
 });
 
 
