@@ -1,7 +1,7 @@
 import { syncCrossReviewSkills } from '../src/cli/commands/init';
 import { describe, expect, test } from 'bun:test';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
-import { spawnSync } from 'child_process';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -12,6 +12,7 @@ import {
   commitInstallHostTransaction,
   INSTALL_PROFILES,
   installProfileHostMutationPaths,
+  installProfileTransactionPaths,
   installedProfileStatus,
   hashManagedTree,
   planInstallProfile,
@@ -27,6 +28,7 @@ import {
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
+import { runUserUninstall } from '../src/cli/installer/uninstall';
 import { parseSkillSurfaceCatalog, probeExpectations } from '../src/core/skill-surface/catalog';
 import { copyUpgradeFixture } from './helpers/upgrade-fixtures';
 
@@ -71,6 +73,35 @@ function writeMarkedFacade(dest: string, skillMdContent: string): void {
     surface: 'command-facade',
     content_hash: `sha256:${hash.digest('hex')}`,
   }));
+}
+
+// The skill sync writer resolves its catalog adapter from the source root.
+function seedSyncRuntime(source: string): void {
+  mkdirSync(join(source, 'scripts'), { recursive: true });
+  cpSync(join(ROOT, 'scripts', 'skill-surface-select.ts'), join(source, 'scripts', 'skill-surface-select.ts'));
+  cpSync(join(ROOT, 'src'), join(source, 'src'), { recursive: true });
+  mkdirSync(join(source, 'assets', 'skill-commands'), { recursive: true });
+  cpSync(join(ROOT, 'assets', 'skill-commands', 'manifest.json'), join(source, 'assets', 'skill-commands', 'manifest.json'));
+}
+
+function runSkillSync(env: NodeJS.ProcessEnv, extra: Record<string, string>): SpawnSyncReturns<string> {
+  return spawnSync('bash', [join(ROOT, 'scripts', 'sync-codex-installed-copies.sh')], {
+    cwd: ROOT, encoding: 'utf-8', env: { ...env, ...extra },
+  });
+}
+
+function treeSnapshot(root: string): Record<string, string> {
+  const entries: Record<string, string> = {};
+  const visit = (path: string, relative: string): void => {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) entries[relative] = `link:${readlinkSync(path)}`;
+    else if (stat.isDirectory()) {
+      entries[relative] = 'dir';
+      for (const name of readdirSync(path).sort()) visit(join(path, name), relative ? `${relative}/${name}` : name);
+    } else entries[relative] = `file:${readFileSync(path, 'utf-8')}`;
+  };
+  if (existsSync(root)) visit(root, '');
+  return entries;
 }
 
 function writeManagedHostSurfaces(
@@ -520,6 +551,113 @@ describe('install profiles', () => {
     expect(retiredSurface).toBeDefined();
     expect(retiredSurface?.components).toEqual([]);
     expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+    expect(readInstalledProfile(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
+  }));
+
+  test('state keeps a formerly managed facade receipt readable after its catalog retirement', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'minimal');
+    const retired = join(env.HOME!, '.claude', 'skills', 'repo-harness-handoff');
+    const oldSource = join(env.HOME!, 'old-package', 'assets', 'skill-commands', 'repo-harness-handoff');
+    writePath(join(oldSource, 'SKILL.md'), '# old\n');
+    mkdirSync(join(retired, '..'), { recursive: true });
+    symlinkSync(oldSource, retired);
+    const receipt = {
+      components: [],
+      authority: 'repo-harness-install-transaction',
+      removal: 'managed-surfaces-only',
+      path: retired,
+      type: 'symlink',
+      content_hash: null,
+      managed_marker: null,
+      symlink_target: oldSource,
+    } as const;
+    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
+    const state = {
+      protocol: 2,
+      profile: 'minimal',
+      components: PROFILE_COMPONENTS.minimal,
+      transaction_id: 'older-package',
+      applied_at: '2026-01-01T00:00:00.000Z',
+      ownership_manifest: [receipt],
+      previous: null,
+    };
+    writePath(statePath, `${JSON.stringify(state)}\n`);
+    expect(readInstalledProfile(env)?.ownership_manifest).toEqual([receipt]);
+
+    const applied = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'));
+    expect(applied.state.ownership_manifest).toContainEqual(receipt);
+    expect(readInstalledProfile(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
+
+    for (const path of [join(env.HOME!, 'elsewhere', 'repo-harness-handoff'), join(env.HOME!, '.claude', 'skills', 'foreign-skill')]) {
+      writePath(statePath, `${JSON.stringify({ ...state, ownership_manifest: [{ ...receipt, path }] })}\n`);
+      expect(() => readInstalledProfile(env)).toThrow('invalid ownership surface');
+    }
+  }));
+
+  test('copy-mode sync gives a non-prefixed profile facade an ownership receipt that uninstall honors', () => withHome((env) => {
+    const { source } = writeManagedHostSurfaces(env, 'minimal');
+    seedSyncRuntime(source);
+    cpSync(join(ROOT, 'assets', 'skills', 'obsidian-memory'), join(source, 'assets', 'skills', 'obsidian-memory'), { recursive: true });
+    const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    expect(sync.status, sync.stderr).toBe(0);
+    const copies = ['.codex', '.claude'].map((host) => join(env.HOME!, host, 'skills', 'obsidian-memory'));
+    for (const copy of copies) expect(existsSync(join(copy, '.repo-harness-owner.json'))).toBe(true);
+
+    const applied = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
+    for (const copy of copies) {
+      expect(applied.state.ownership_manifest.find(({ path }) => path === copy)).toMatchObject({
+        components: ['adaptive-workflow'],
+        type: 'directory-copy',
+        managed_marker: '.repo-harness-owner.json:owner=repo-harness;surface=command-facade',
+      });
+    }
+    expect(readInstalledProfile(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
+
+    const [unchanged, edited] = copies;
+    writeFileSync(join(edited!, 'SKILL.md'), '# user edit\n');
+    const uninstall = runUserUninstall({ target: 'both', env });
+    expect(uninstall.status).toBe('partial');
+    expect(existsSync(unchanged!)).toBe(false);
+    expect(readFileSync(join(edited!, 'SKILL.md'), 'utf-8')).toBe('# user edit\n');
+    expect(readInstalledProfile(env)?.ownership_manifest.some(({ path }) => path === edited)).toBe(true);
+  }));
+
+  test('host transaction rollback restores a retired facade that skill sync removed', () => withHome((env) => {
+    const source = join(env.HOME!, 'package-source');
+    seedSyncRuntime(source);
+    writePath(join(source, 'SKILL.md'), '# managed\n');
+    const roots = ['.codex', '.claude'].map((host) => join(env.HOME!, host, 'skills'));
+    for (const root of roots) writeMarkedFacade(join(root, 'repo-harness-retired-demo'), '# retired\n');
+    const before = roots.map(treeSnapshot);
+
+    const transaction = beginInstallHostTransaction(installProfileTransactionPaths(env), env);
+    const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    expect(sync.status, sync.stderr).toBe(0);
+    for (const root of roots) expect(existsSync(join(root, 'repo-harness-retired-demo'))).toBe(false);
+    rollbackInstallHostTransaction(transaction);
+
+    expect(roots.map(treeSnapshot)).toEqual(before);
+  }));
+
+  test('host transaction rollback restores effective custom skill roots', () => withHome((env) => {
+    const source = join(env.HOME!, 'package-source');
+    seedSyncRuntime(source);
+    writePath(join(source, 'SKILL.md'), '# managed\n');
+    writePath(join(source, 'assets', 'skill-commands', 'repo-harness-check', 'SKILL.md'), '# check\n');
+    const roots = [join(env.HOME!, 'custom', 'codex-skills'), join(env.HOME!, 'custom', 'claude-skills')];
+    const custom = { ...env, CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] };
+    writeMarkedFacade(join(roots[1]!, 'repo-harness-retired-demo'), '# retired\n');
+    writePath(join(roots[0]!, 'user-skill', 'SKILL.md'), '# user\n');
+    const before = roots.map(treeSnapshot);
+
+    const transaction = beginInstallHostTransaction(installProfileTransactionPaths(custom), custom);
+    const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    expect(sync.status, sync.stderr).toBe(0);
+    expect(readlinkSync(join(roots[0]!, 'repo-harness'))).toBe(source);
+    expect(readlinkSync(join(roots[1]!, 'repo-harness-check'))).toBe(join(source, 'assets', 'skill-commands', 'repo-harness-check'));
+    rollbackInstallHostTransaction(transaction);
+
+    expect(roots.map(treeSnapshot)).toEqual(before);
   }));
 
   test('status detects actual managed host surface drift', () => withHome((env) => {

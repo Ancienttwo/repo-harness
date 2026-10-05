@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { homedir } from 'os';
-import { delimiter, dirname, join } from 'path';
+import { basename, delimiter, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
   canonicalManagedHookProjection,
@@ -460,6 +460,22 @@ function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCata
   return typeof source === 'string' && existsSync(join(root, 'repo-harness', source, 'SKILL.md'));
 }
 
+const FACADE_NAME_PREFIX = 'repo-harness-';
+
+function hostSkillRoots(home: string): readonly string[] {
+  return [join(home, '.codex', 'skills'), join(home, '.claude', 'skills')];
+}
+
+/**
+ * Discovery records every owner-marked repo-harness-* directory, including a
+ * name that later leaves the catalog. The state reader accepts the same
+ * bounded set, so a committed receipt stays readable until removal.
+ */
+function isDiscoveredFacadePath(path: string, home: string): boolean {
+  const name = basename(path);
+  return name.startsWith(FACADE_NAME_PREFIX) && hostSkillRoots(home).some((root) => join(root, name) === path);
+}
+
 function discoverManagedSurfaces(
   profile: InstallProfile,
   env: NodeJS.ProcessEnv,
@@ -476,11 +492,14 @@ function discoverManagedSurfaces(
     'release-deployment-gates',
   ].includes(component));
   const surfaces: ManagedInstallSurface[] = [];
-  for (const root of [join(home, '.codex', 'skills'), join(home, '.claude', 'skills')]) {
+  // A catalog facade can lack the prefix (obsidian-memory). Its copy needs
+  // the same marker-based receipt as a prefixed facade copy.
+  const facadeNames = new Set(catalog.packages.filter((pkg) => pkg.kind === 'facade').map((pkg) => pkg.name));
+  for (const root of hostSkillRoots(home)) {
     const canonical = captureDirectoryOrLink(join(root, 'repo-harness'), runtimeComponents);
     if (canonical) surfaces.push(canonical);
     if (!existsSync(root)) continue;
-    for (const name of readdirSync(root).filter((entry) => entry.startsWith('repo-harness-')).sort()) {
+    for (const name of readdirSync(root).filter((entry) => entry.startsWith(FACADE_NAME_PREFIX) || facadeNames.has(entry)).sort()) {
       // repo-harness-handoff retired as a facade (SSD-06): 'handoff' is now
       // fulfilled by the root router's own references/handoff.md rather than
       // a separately discoverable Skill. A stale repo-harness-handoff dir
@@ -721,6 +740,28 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   return [...new Set(paths)];
 }
 
+/**
+ * Skill sync honors CODEX_SKILLS_ROOT and CLAUDE_SKILLS_ROOT. It also retires
+ * repo-harness-* facades and owned dangling links that the current catalog
+ * does not name. A host transaction snapshots that full set before sync runs.
+ */
+export function installProfileTransactionPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const home = env.HOME ?? homedir();
+  const codexRoot = env.CODEX_SKILLS_ROOT || join(home, '.codex', 'skills');
+  const claudeRoot = env.CLAUDE_SKILLS_ROOT || (env.CODEX_SKILLS_ROOT ? '' : join(home, '.claude', 'skills'));
+  const { repoHarnessSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
+  const paths = [...installProfileHostMutationPaths(env)];
+  for (const root of [codexRoot, claudeRoot].filter(Boolean)) {
+    for (const skill of repoHarnessSkills) paths.push(join(root, skill));
+    if (!lstatExists(root) || !lstatSync(root).isDirectory()) continue;
+    for (const name of readdirSync(root)) {
+      const path = join(root, name);
+      if (name.startsWith(FACADE_NAME_PREFIX) || (lstatSync(path).isSymbolicLink() && !existsSync(path))) paths.push(path);
+    }
+  }
+  return [...new Set(paths)];
+}
+
 export function beginInstallHostTransaction(
   paths: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
@@ -940,7 +981,7 @@ function validateManagedSurface(
     && raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && allowedPaths.has(raw.path)
+    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir()))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')

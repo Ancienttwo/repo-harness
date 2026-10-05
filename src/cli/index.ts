@@ -78,7 +78,7 @@ import {
   applyInstallProfile,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
-  installProfileHostMutationPaths,
+  installProfileTransactionPaths,
   installedProfileStatus,
   assertInstallProfile,
   planLegacyInstallProfileMigration,
@@ -265,7 +265,7 @@ function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.P
 }
 
 function runtimeHostMutationPaths(env: NodeJS.ProcessEnv): readonly string[] {
-  const paths = [...installProfileHostMutationPaths(env)];
+  const paths = [...installProfileTransactionPaths(env)];
   if (process.platform === 'win32') paths.push(windowsProtectedHelperConfigPath());
   return [...new Set(paths)];
 }
