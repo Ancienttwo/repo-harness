@@ -18,7 +18,7 @@ concurrency:
 jobs:
   report:
     # Never execute PR code in a privileged workflow_run context. Only fixed
-    # main push/daily runs produce tags or repair issues; PR checks remain read-only.
+    # main push/daily runs produce reports or repair issues; PR checks remain read-only.
     if: >-
       github.event.workflow_run.head_branch == 'main' &&
       contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event.workflow_run.event)
@@ -36,7 +36,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - name: Read provider facts, recover tags, dispatch failures and write report
+      - name: Read provider rollback commits, dispatch failures and write report
         env:
           GH_TOKEN: ${{ github.token }}
         run: bun scripts/report-ci.ts

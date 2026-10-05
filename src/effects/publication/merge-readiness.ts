@@ -152,8 +152,18 @@ function gh(input: PublicationReadinessInput, args: readonly string[], accepted 
     );
   }
   try {
-    return JSON.parse(result.stdout);
+    const value = JSON.parse(result.stdout);
+    if (args[0] === 'api' && accepted.includes(1)) {
+      if (result.status !== 0 && value?.status !== '404') {
+        throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
+      }
+      if (result.status === 0 && value?.status === '404') {
+        throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
+      }
+    }
+    return value;
   } catch (error) {
+    if (error instanceof MergeReadinessError) throw error;
     throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
   }
 }
@@ -228,8 +238,18 @@ async function ghAbortable(
     throw new MergeReadinessError('provider_unavailable', `provider observation failed: gh ${args.join(' ')}: ${detail}`, result.error);
   }
   try {
-    return JSON.parse(result.stdout);
+    const value = JSON.parse(result.stdout);
+    if (args[0] === 'api' && accepted.includes(1)) {
+      if (result.status !== 0 && value?.status !== '404') {
+        throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
+      }
+      if (result.status === 0 && value?.status === '404') {
+        throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
+      }
+    }
+    return value;
   } catch (error) {
+    if (error instanceof MergeReadinessError) throw error;
     throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
   }
 }
@@ -318,7 +338,7 @@ export async function observeProviderReadinessIdentityAbortable(
 function parseProviderReadinessFacts(
   identity: ProviderIdentity,
   checksValue: unknown,
-  rollbackTags: ProviderMergeReadinessFactsV1['rollback_tags'],
+  rollbackBoundary: ProviderMergeReadinessFactsV1['rollback_boundary'],
   graphValue: unknown,
 ): ProviderMergeReadinessFactsV1 {
   if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
@@ -370,7 +390,7 @@ function parseProviderReadinessFacts(
     base_sha: identity.base_sha,
     review_decision: changesRequested ? 'CHANGES_REQUESTED' : identity.review_decision,
     unresolved_thread_count: unresolved,
-    rollback_tags: rollbackTags,
+    rollback_boundary: rollbackBoundary,
     checks: Object.freeze(checks),
     mergeable: identity.mergeable,
   });
@@ -410,40 +430,37 @@ function validateRequiredCIRun(identity: ProviderIdentity, value: unknown, check
   }
 }
 
-/** One read protocol for synchronous and abortable consumers; no history scan or tag write. */
-function* rollbackTagBoundary(identity: ProviderIdentity): Generator<string, ProviderMergeReadinessFactsV1['rollback_tags'], unknown> {
+/** One read protocol for synchronous and abortable consumers; reads only the current commit boundary. */
+function* rollbackBoundary(identity: ProviderIdentity): Generator<string, ProviderMergeReadinessFactsV1['rollback_boundary'], unknown> {
+  const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
+  if (!validSha(identity.base_sha)) throw new MergeReadinessError('provider_data_incomplete', 'rollback base SHA is invalid');
   const root = `repos/${identity.repo_name_with_owner}`;
   const activation = object(yield `${root}/contents/.github/workflows/ci-report.yml?ref=${identity.base_sha}`, 'rollback reporter activation');
-  if (activation.status === '404') return 'not_active';
-  if (activation.type !== 'file' || activation.path !== '.github/workflows/ci-report.yml' || !/^[0-9a-f]{40}$/.test(String(activation.sha))) {
+  if (activation.status === '404') return Object.freeze({ status: 'not_active' });
+  if (activation.status || activation.type !== 'file' || activation.path !== '.github/workflows/ci-report.yml' || !validSha(activation.sha)) {
     throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation unavailable');
   }
   const associations = yield `${root}/commits/${identity.base_sha}/pulls?per_page=100`;
   if (!Array.isArray(associations) || associations.length >= 100) throw new MergeReadinessError('provider_data_incomplete', 'parent PR associations incomplete');
-  const merged = associations.filter(pr => pr?.merged_at && pr.base?.ref === 'main' && pr.merge_commit_sha === identity.base_sha);
-  if (merged.length !== 1 || !Number.isInteger(merged[0].number) || merged[0].number < 1) {
+  const merged = associations.map(entry => {
+    const pr = object(entry, 'parent PR association');
+    const base = object(pr.base, 'parent PR base');
+    if (typeof base.ref !== 'string' || (pr.merged_at !== null && (typeof pr.merged_at !== 'string' || pr.merged_at.trim() === ''))
+      || (pr.merge_commit_sha !== null && !validSha(pr.merge_commit_sha))) {
+      throw new MergeReadinessError('provider_data_incomplete', 'parent PR association is incomplete');
+    }
+    return pr;
+  }).filter(pr => pr.merged_at !== null && (pr.base as Record<string, unknown>).ref === 'main' && pr.merge_commit_sha === identity.base_sha);
+  const prNumber = merged[0]?.number;
+  if (merged.length !== 1 || typeof prNumber !== 'number' || !Number.isSafeInteger(prNumber) || prNumber < 1) {
     throw new MergeReadinessError('provider_data_incomplete', 'activated reporter parent is not an exact single merged PR');
   }
   const commit = object(yield `${root}/git/commits/${identity.base_sha}`, 'main parent commit');
-  if (commit.sha !== identity.base_sha || !Array.isArray(commit.parents) || commit.parents.length !== 1 || !/^[0-9a-f]{40}$/.test(String(commit.parents[0]?.sha))) {
-    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single squash boundary');
+  if (commit.sha !== identity.base_sha || !Array.isArray(commit.parents) || commit.parents.length !== 1
+    || !validSha(commit.parents[0]?.sha) || commit.parents[0].sha === identity.base_sha) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit boundary');
   }
-  for (const [phase, sha] of [['before', commit.parents[0].sha], ['after', identity.base_sha]]) {
-    const name = `gate-cutover-pr-${merged[0].number}-${phase}`;
-    const ref = object(yield `${root}/git/ref/tags/${name}`, 'rollback tag ref');
-    if (ref.status === '404') return 'pending';
-    if (ref.status) throw new MergeReadinessError('provider_unavailable', `rollback tag ref HTTP ${ref.status}`);
-    const tagObject = object(ref.object, 'rollback tag object');
-    if (typeof tagObject.type !== 'string' || typeof tagObject.sha !== 'string' || !/^[0-9a-f]{40}$/.test(tagObject.sha)) throw new MergeReadinessError('provider_data_incomplete', 'rollback tag ref incomplete');
-    if (tagObject.type !== 'tag') return 'pending';
-    const annotation = object(yield `${root}/git/tags/${tagObject.sha}`, 'rollback tag annotation');
-    if (annotation.status === '404') return 'pending';
-    if (annotation.status) throw new MergeReadinessError('provider_unavailable', `rollback tag annotation HTTP ${annotation.status}`);
-    const target = object(annotation.object, 'rollback tag target');
-    if (typeof annotation.tag !== 'string' || typeof target.type !== 'string' || typeof target.sha !== 'string' || !/^[0-9a-f]{40}$/.test(target.sha)) throw new MergeReadinessError('provider_data_incomplete', 'rollback tag annotation incomplete');
-    if (annotation.tag !== name || target.type !== 'commit' || target.sha !== sha) return 'pending';
-  }
-  return 'ready';
+  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: commit.parents[0].sha, after_sha: identity.base_sha });
 }
 
 export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PublicationReceiptV2, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
@@ -451,9 +468,9 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
     'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
   validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, checks)]), checks);
-  const boundary = rollbackTagBoundary(identity);
+  const boundary = rollbackBoundary(identity);
   let request = boundary.next();
-  while (!request.done) request = boundary.next(gh(input, ['api', request.value], [0, 1]));
+  while (!request.done) request = boundary.next(gh(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
   return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)));
 }
 
@@ -466,9 +483,9 @@ export async function observeProviderReadinessFactsAbortable(
     'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
   validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, checks)]), checks);
-  const boundary = rollbackTagBoundary(identity);
+  const boundary = rollbackBoundary(identity);
   let request = boundary.next();
-  while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], [0, 1]));
+  while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
   return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)));
 }
 
@@ -629,7 +646,7 @@ function unavailableReadiness(
     identity_before: identity,
     identity_after: identity,
     facts: { state: 'UNKNOWN', is_draft: false, head_sha: receipt.head_sha, base_sha: receipt.base_sha,
-      review_decision: null, unresolved_thread_count: null, rollback_tags: 'pending', checks: [], mergeable: 'CONFLICTING' },
+      review_decision: null, unresolved_thread_count: null, rollback_boundary: null, checks: [], mergeable: 'CONFLICTING' },
     integration_mode: 'unavailable',
   }, observation);
 }
