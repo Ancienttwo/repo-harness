@@ -132,7 +132,14 @@ export function assertNoSymlinkInPath(repoRoot: string, path: string): string | 
     if (!part) continue;
     current = resolve(current, part);
     // lstat, not existsSync: existsSync follows links and misses a dangling one.
-    const stat = lstatSync(current, { throwIfNoEntry: false });
+    // Return other lstat errors (for example EACCES) as a refusal, because callers
+    // such as rollback expect a structured result and do not catch a throw.
+    let stat: ReturnType<typeof lstatSync> | undefined;
+    try {
+      stat = lstatSync(current, { throwIfNoEntry: false });
+    } catch (error) {
+      return `cannot inspect adoption path: ${path} (${(error as NodeJS.ErrnoException).code ?? errorMessage(error)})`;
+    }
     if (!stat) break;
     if (stat.isSymbolicLink()) return `symlink is not allowed in adoption path: ${path}`;
     if (!stat.isDirectory()) break;

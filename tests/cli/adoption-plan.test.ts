@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
@@ -751,6 +751,25 @@ describe("canonical adoption plan", () => {
     } finally {
       cleanup(repo);
       cleanup(outside);
+    }
+  });
+
+  test.skipIf(process.getuid?.() === 0)("rollback reports a structured failure when a path folder cannot be searched", () => {
+    const repo = tempRepo();
+    try {
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+      chmodSync(join(repo, "docs"), 0o000);
+      try {
+        const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+        expect(rollback.ok).toBe(false);
+        expect(rollback.results.find((result) => result.path === "docs/spec.md")?.error).toContain("cannot inspect adoption path: docs/spec.md (EACCES)");
+      } finally {
+        chmodSync(join(repo, "docs"), 0o755);
+      }
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
+    } finally {
+      cleanup(repo);
     }
   });
 });
