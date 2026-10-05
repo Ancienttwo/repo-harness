@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { sha256 } from '../../src/core/review/module-review-prompt';
-import { MODULE_ID, fixtureCommit, fixtureWrite, moduleRepository } from '../helpers/module-repository';
+import { MODULE_ID, fixtureCommit, fixtureGit, fixtureWrite, moduleRepository } from '../helpers/module-repository';
 
 const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
 const roots: string[] = [];
@@ -56,11 +56,30 @@ test('CLI digest tracks same-path dirty contents and diff contains only committe
   expect(dirty.prompt).not.toContain('dirty source one');
 });
 
+test('CLI read boundary never runs configured fsmonitor, diff or textconv helpers', () => {
+  const root = repo(), helper = '.git/read-helper', marker = join(root, '.git/helper-called');
+  fixtureWrite(root, helper, '#!/bin/sh\nprintf called >> "' + marker + '"\n');
+  Bun.spawnSync(['chmod', '+x', join(root, helper)]);
+  fixtureWrite(root, '.gitattributes', 'src/module/*.ts diff=fixture\n');
+  const base = fixtureCommit(root);
+  fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n');
+  const head = fixtureCommit(root);
+  fixtureGit(root, ['config', 'core.fsmonitor', join(root, helper)]);
+  fixtureGit(root, ['config', 'diff.external', join(root, helper)]);
+  fixtureGit(root, ['config', 'diff.fixture.textconv', join(root, helper)]);
+  const before = snapshot(root);
+  const result = run(root, ['review-prompt', MODULE_ID, '--json', '--base', base, '--head', head]);
+  expect(result.status).toBe(0); expect(result.stderr).toBe('');
+  expect(existsSync(marker)).toBe(false);
+  expect(JSON.parse(result.stdout).prompt).toContain('export const read = () => 2;');
+  expect(snapshot(root)).toEqual(before);
+});
+
 test('real git argv stay within the read whitelist and concurrent content changes retry once then fail closed', () => {
   const root = repo();
   const scratch = join(root, '.test-git'); mkdirSync(scratch);
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
-  const wrapper = `#!/usr/bin/env bun\nimport {execFileSync} from 'node:child_process';\nimport {appendFileSync,existsSync,readFileSync,writeFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.ARGV_LOG, JSON.stringify(args)+'\\n');\nconst bytes=execFileSync(${JSON.stringify(realGit)}, args);\nif(args[1]==='status'){\n const count=existsSync(process.env.COUNT_FILE)?Number(readFileSync(process.env.COUNT_FILE,'utf8'))+1:1;\n writeFileSync(process.env.COUNT_FILE,String(count));\n if(count===2 || (count%2===0 && process.env.KEEP_CHANGING==='1'))writeFileSync(process.env.CHANGE_PATH,'dirty version '+count);\n}\nprocess.stdout.write(bytes);\n`;
+  const wrapper = `#!/usr/bin/env bun\nimport {execFileSync} from 'node:child_process';\nimport {appendFileSync,existsSync,readFileSync,writeFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(process.env.ARGV_LOG, JSON.stringify(args)+'\\n');\nconst bytes=execFileSync(${JSON.stringify(realGit)}, args);\nif(args[5]==='status'){\n const count=existsSync(process.env.COUNT_FILE)?Number(readFileSync(process.env.COUNT_FILE,'utf8'))+1:1;\n writeFileSync(process.env.COUNT_FILE,String(count));\n if(count===2 || (count%2===0 && process.env.KEEP_CHANGING==='1'))writeFileSync(process.env.CHANGE_PATH,'dirty version '+count);\n}\nprocess.stdout.write(bytes);\n`;
   fixtureWrite(root, '.test-git/git', wrapper); Bun.spawnSync(['chmod', '+x', join(scratch, 'git')]);
   const log = join(scratch, 'argv.jsonl'), count = join(scratch, 'count');
   fixtureWrite(root, 'src/module/read.ts', 'dirty initial');
@@ -73,15 +92,15 @@ test('real git argv stay within the read whitelist and concurrent content change
   expect(fail.status).toBe(1); expect(JSON.parse(fail.stdout).error.code).toBe('worktree_changed_during_read');
   const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]);
   expect(calls.length).toBeGreaterThan(0);
-  for (const args of calls) {
-    expect(args[0]).toBe('--no-optional-locks');
+  for (const call of calls) {
+    expect(call.slice(0, 5)).toEqual(['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short']);
+    const args = [call[0], ...call.slice(5)];
     switch (args[1]) {
       case 'rev-parse':
         expect(args.length === 3 && args[2] === '--show-toplevel' || args.length === 6 && args.slice(2, 5).join(' ') === '--verify --quiet --end-of-options' && args[5].endsWith('^{commit}')).toBe(true); break;
       case 'cat-file': expect(args).toHaveLength(4); expect(args[2]).toBe('-p'); expect(args[3]).toMatch(/^[0-9a-f]{40}:/); break;
       case 'diff': expect(args.slice(2, 4)).toEqual(['--no-ext-diff', '--no-textconv']); expect(args[4]).toMatch(/^[0-9a-f]{40}$/); expect(args[5]).toMatch(/^[0-9a-f]{40}$/); expect(args[6]).toBe('--'); break;
-      case 'status': expect(args.slice(2, 4)).toEqual(['--porcelain=v1', '--']); break;
-      case 'ls-files': expect(args.slice(2, 5)).toEqual(['--others', '--exclude-standard', '--']); break;
+      case 'status': expect(args.slice(2, 7)).toEqual(['--porcelain=v2', '-z', '--untracked-files=all', '--ignore-submodules=dirty', '--']); break;
       default: throw new Error(`unapproved git command: ${args.join(' ')}`);
     }
   }

@@ -107,9 +107,9 @@ export class ArchitectureModelReader {
 
   private gitAt(cwd: string, args: string[]): Buffer {
     try {
-      return execFileSync('git', ['--no-optional-locks', ...args], {
+      return execFileSync('git', ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short', ...args], {
         cwd, stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, GIT_LITERAL_PATHSPECS: '1' },
+        env: { ...process.env, GIT_LITERAL_PATHSPECS: '1', GIT_NO_LAZY_FETCH: '1' },
       });
     } catch { throw new ModuleReadError('git_read_failed'); }
   }
@@ -235,20 +235,24 @@ export class ArchitectureModelReader {
   }
 
   private dirty(scope: string[]): { paths: string[]; digest: string | null } {
-    const raw = this.git(['status', '--porcelain=v1', '--', ...scope]).toString('utf8');
+    // Porcelain v2 binds index modes and object IDs (including conflict stages).
+    // NUL records preserve rename pairs and literal spaces, arrows and quotes.
+    const bytes = this.git(['status', '--porcelain=v2', '-z', '--untracked-files=all', '--ignore-submodules=dirty', '--', ...scope]);
+    let raw: string;
+    try { raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch { throw new ModuleReadError('git_path_encoding_invalid'); }
+    const entries = raw.split('\0');
+    if (entries.pop() !== '') throw new ModuleReadError('dirty_path_invalid');
     const paths = new Set<string>();
-    for (const line of raw.split('\n').filter(Boolean)) {
-      if (line.startsWith('?? ') && line.endsWith('/')) continue;
-      const names = /[RC]/.test(line.slice(0, 2)) ? line.slice(3).split(' -> ') : [line.slice(3)];
-      for (const name of names) {
-        const path = gitPath(name);
-        if (path.endsWith('/')) throw new ModuleReadError('dirty_path_invalid');
+    for (let index = 0; index < entries.length; index++) {
+      const record = entries[index];
+      const match = /^(?:1 (?:\S+ ){7}|2 (?:\S+ ){8}|u (?:\S+ ){9}|\? )(.+)$/s.exec(record);
+      if (!match) throw new ModuleReadError('dirty_path_invalid');
+      const names = record.startsWith('2 ') ? [match[1], entries[++index]] : [match[1]];
+      for (const path of names) {
+        if (!path || path.endsWith('/')) throw new ModuleReadError('dirty_path_invalid');
         this.safePath(path); paths.add(path);
       }
-    }
-    for (const rawPath of this.git(['ls-files', '--others', '--exclude-standard', '--', ...scope]).toString('utf8').split('\n').filter(Boolean)) {
-      const path = gitPath(rawPath);
-      this.safePath(path); paths.add(path);
     }
     const sorted = [...paths].sort();
     const records = sorted.map(path => {

@@ -48,6 +48,71 @@ describe('committed module review prompt', () => {
     const next = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID);
     expect(next.worktree_dirty_paths).toEqual(dirty.worktree_dirty_paths); expect(next.digest).not.toBe(dirty.digest);
   });
+  test('binds staged blob identity separately from the same worktree bytes', () => {
+    const root = repo(), path = 'src/module/read.ts';
+    const reader = new ArchitectureModelReader(root), commit = reader.commit;
+    const observe = (staged: string) => {
+      fixtureWrite(root, path, staged); fixtureGit(root, ['add', '--', path]);
+      const index = fixtureGit(root, ['rev-parse', `:${path}`]);
+      fixtureWrite(root, path, 'fixed worktree bytes');
+      expect(fixtureGit(root, ['status', '--porcelain=v1', '--', path])).toBe(`MM ${path}`);
+      return { index, packet: reader.reviewPrompt(MODULE_ID) };
+    };
+    const first = observe('staged first'), second = observe('staged second');
+    expect(first.index).not.toBe(second.index);
+    expect(second.packet.commit).toBe(commit);
+    expect(second.packet.worktree_dirty_paths).toEqual(first.packet.worktree_dirty_paths);
+    expect(second.packet.dirty_content_sha256).not.toBe(first.packet.dirty_content_sha256);
+    expect(second.packet.digest).not.toBe(first.packet.digest);
+    expect(second.packet.model_sha256).toBe(first.packet.model_sha256);
+    expect(second.packet.doc_sha256).toBe(first.packet.doc_sha256);
+    for (const packet of [first.packet, second.packet]) {
+      expect(packet.prompt).not.toContain('staged first'); expect(packet.prompt).not.toContain('staged second');
+      expect(packet.prompt).not.toContain('fixed worktree bytes');
+    }
+    expect(reader.reviewPrompt(MODULE_ID)).toEqual(second.packet);
+  });
+  test('binds staged modes and keeps unmerged stage objects distinct', () => {
+    const root = repo(), path = 'src/module/read.ts', reader = new ArchitectureModelReader(root);
+    fixtureWrite(root, path, 'fixed worktree bytes');
+    fixtureGit(root, ['update-index', '--chmod=+x', '--', path]);
+    const executable = reader.reviewPrompt(MODULE_ID);
+    fixtureGit(root, ['update-index', '--chmod=-x', '--', path]);
+    const regular = reader.reviewPrompt(MODULE_ID);
+    expect(executable.worktree_dirty_paths).toEqual(regular.worktree_dirty_paths);
+    expect(executable.dirty_content_sha256).not.toBe(regular.dirty_content_sha256);
+    expect(executable.digest).not.toBe(regular.digest);
+    const base = fixtureGit(root, ['rev-parse', `HEAD:${path}`]);
+    fixtureWrite(root, path, 'staged side one');
+    const first = fixtureGit(root, ['hash-object', '-w', '--', path]);
+    fixtureWrite(root, path, 'staged side two');
+    const second = fixtureGit(root, ['hash-object', '-w', '--', path]);
+    fixtureWrite(root, path, 'fixed worktree bytes');
+    const observeConflict = (theirs: string) => {
+      const result = Bun.spawnSync(['git', 'update-index', '--index-info'], {
+        cwd: root, stdin: Buffer.from(`0 ${'0'.repeat(40)}\t${path}\n100644 ${base} 1\t${path}\n100644 ${first} 2\t${path}\n100644 ${theirs} 3\t${path}\n`),
+      });
+      expect(result.exitCode).toBe(0);
+      expect(fixtureGit(root, ['ls-files', '--unmerged', '--', path]).split('\n')).toHaveLength(3);
+      return reader.reviewPrompt(MODULE_ID);
+    };
+    const conflict = observeConflict(second), changed = observeConflict(base);
+    expect(changed.worktree_dirty_paths).toEqual(conflict.worktree_dirty_paths);
+    expect(changed.dirty_content_sha256).not.toBe(conflict.dirty_content_sha256);
+    expect(changed.digest).not.toBe(conflict.digest);
+    expect(changed.prompt).not.toContain('fixed worktree bytes');
+    expect(changed.prompt).not.toContain('staged side');
+  });
+  test('reads real staged renames with arrow text and quoted UTF-8 names', () => {
+    for (const target of ['src/module/name -> arrow.ts', 'src/module/新 "文件" -> arrow.ts']) {
+      const root = repo(), source = 'src/module/read.ts';
+      fixtureGit(root, ['mv', '--', source, target]);
+      const packet = new ArchitectureModelReader(root).reviewPrompt(MODULE_ID);
+      expect(packet.worktree_dirty_paths).toEqual([source, target].sort());
+      expect(packet.dirty_content_sha256).not.toBeNull();
+      expect(new ArchitectureModelReader(root).reviewPrompt(MODULE_ID)).toEqual(packet);
+    }
+  });
   test('oversize UTF-8 content is complete across bounded shards with one digest and instructions only at the end', () => {
     const root = repo({ section3: '决策🙂'.repeat(5000), budget: 2000 }), reader = new ArchitectureModelReader(root);
     const first = reader.reviewPrompt(MODULE_ID), packets = Array.from({ length: first.shard.count }, (_, index) => reader.reviewPrompt(MODULE_ID, { shard: index + 1 }));
