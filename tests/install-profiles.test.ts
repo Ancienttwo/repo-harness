@@ -4,7 +4,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import {
   applyInstallProfile,
   assertInstallProfile,
@@ -13,6 +13,7 @@ import {
   INSTALL_PROFILES,
   installProfileHostMutationPaths,
   installProfileTransactionPaths,
+  effectiveSkillRoots,
   installedProfileStatus,
   hashManagedTree,
   planInstallProfile,
@@ -88,6 +89,11 @@ function runSkillSync(env: NodeJS.ProcessEnv, extra: Record<string, string>): Sp
   return spawnSync('bash', [join(ROOT, 'scripts', 'sync-codex-installed-copies.sh')], {
     cwd: ROOT, encoding: 'utf-8', env: { ...env, ...extra },
   });
+}
+
+// The shell reports each skill root it syncs. This is the drift check for effectiveSkillRoots.
+function syncedSkillRoots(stdout: string): string[] {
+  return [...stdout.matchAll(/^\[sync-installed\] command facades \(\w+\): \d+ into (.+)$/gm)].map((match) => match[1]!);
 }
 
 function treeSnapshot(root: string): Record<string, string> {
@@ -622,43 +628,65 @@ describe('install profiles', () => {
     expect(readInstalledProfile(env)?.ownership_manifest.some(({ path }) => path === edited)).toBe(true);
   }));
 
-  test('host transaction rollback restores a retired facade that skill sync removed', () => withHome((env) => {
-    const source = join(env.HOME!, 'package-source');
-    seedSyncRuntime(source);
-    writePath(join(source, 'SKILL.md'), '# managed\n');
-    const roots = ['.codex', '.claude'].map((host) => join(env.HOME!, host, 'skills'));
-    for (const root of roots) writeMarkedFacade(join(root, 'repo-harness-retired-demo'), '# retired\n');
-    const before = roots.map(treeSnapshot);
+  for (const linkedRoot of [false, true]) {
+    test(`host transaction rollback restores a retired facade that skill sync removed${linkedRoot ? ' through a symlinked skill root' : ''}`, () => withHome((env) => {
+      const source = join(env.HOME!, 'package-source');
+      seedSyncRuntime(source);
+      writePath(join(source, 'SKILL.md'), '# managed\n');
+      const roots = ['.codex', '.claude'].map((host) => join(env.HOME!, host, 'skills'));
+      // A dotfiles setup can link a host skill root. The sync writer follows that link.
+      const realRoots = linkedRoot ? roots.map((root) => join(env.HOME!, 'dotfiles', basename(dirname(root)))) : roots;
+      for (const [index, root] of roots.entries()) {
+        mkdirSync(realRoots[index]!, { recursive: true });
+        if (linkedRoot) {
+          mkdirSync(dirname(root), { recursive: true });
+          symlinkSync(realRoots[index]!, root);
+        }
+        writeMarkedFacade(join(root, 'repo-harness-retired-demo'), '# retired\n');
+      }
+      const before = realRoots.map(treeSnapshot);
 
-    const transaction = beginInstallHostTransaction(installProfileTransactionPaths(env), env);
-    const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
-    expect(sync.status, sync.stderr).toBe(0);
-    for (const root of roots) expect(existsSync(join(root, 'repo-harness-retired-demo'))).toBe(false);
-    rollbackInstallHostTransaction(transaction);
+      const transaction = beginInstallHostTransaction(installProfileTransactionPaths(env), env);
+      const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+      expect(sync.status, sync.stderr).toBe(0);
+      expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots(env)]);
+      for (const root of roots) expect(existsSync(join(root, 'repo-harness-retired-demo'))).toBe(false);
+      rollbackInstallHostTransaction(transaction);
 
-    expect(roots.map(treeSnapshot)).toEqual(before);
-  }));
+      expect(realRoots.map(treeSnapshot)).toEqual(before);
+    }));
+  }
 
-  test('host transaction rollback restores effective custom skill roots', () => withHome((env) => {
-    const source = join(env.HOME!, 'package-source');
-    seedSyncRuntime(source);
-    writePath(join(source, 'SKILL.md'), '# managed\n');
-    writePath(join(source, 'assets', 'skill-commands', 'repo-harness-check', 'SKILL.md'), '# check\n');
-    const roots = [join(env.HOME!, 'custom', 'codex-skills'), join(env.HOME!, 'custom', 'claude-skills')];
-    const custom = { ...env, CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] };
-    writeMarkedFacade(join(roots[1]!, 'repo-harness-retired-demo'), '# retired\n');
-    writePath(join(roots[0]!, 'user-skill', 'SKILL.md'), '# user\n');
-    const before = roots.map(treeSnapshot);
+  for (const claudeOverride of [true, false]) {
+    test(`host transaction rollback restores effective custom skill roots${claudeOverride ? '' : ' when only CODEX_SKILLS_ROOT is set'}`, () => withHome((env) => {
+      const source = join(env.HOME!, 'package-source');
+      seedSyncRuntime(source);
+      writePath(join(source, 'SKILL.md'), '# managed\n');
+      writePath(join(source, 'assets', 'skill-commands', 'repo-harness-check', 'SKILL.md'), '# check\n');
+      const codexRoot = join(env.HOME!, 'custom', 'codex-skills');
+      const claudeRoot = claudeOverride ? join(env.HOME!, 'custom', 'claude-skills') : join(env.HOME!, '.claude', 'skills');
+      const { CLAUDE_SKILLS_ROOT: _claude, ...base } = env;
+      const custom = { ...base, CODEX_SKILLS_ROOT: codexRoot, ...(claudeOverride ? { CLAUDE_SKILLS_ROOT: claudeRoot } : {}) };
+      writeMarkedFacade(join(claudeOverride ? claudeRoot : codexRoot, 'repo-harness-retired-demo'), '# retired\n');
+      writePath(join(codexRoot, 'user-skill', 'SKILL.md'), '# user\n');
+      if (!claudeOverride) writeMarkedFacade(join(claudeRoot, 'repo-harness-retired-demo'), '# not synced\n');
+      const before = [codexRoot, claudeRoot].map(treeSnapshot);
 
-    const transaction = beginInstallHostTransaction(installProfileTransactionPaths(custom), custom);
-    const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
-    expect(sync.status, sync.stderr).toBe(0);
-    expect(readlinkSync(join(roots[0]!, 'repo-harness'))).toBe(source);
-    expect(readlinkSync(join(roots[1]!, 'repo-harness-check'))).toBe(join(source, 'assets', 'skill-commands', 'repo-harness-check'));
-    rollbackInstallHostTransaction(transaction);
+      const transaction = beginInstallHostTransaction(installProfileTransactionPaths(custom), custom);
+      const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+      expect(sync.status, sync.stderr).toBe(0);
+      expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots(custom)]);
+      expect(readlinkSync(join(codexRoot, 'repo-harness'))).toBe(source);
+      if (claudeOverride) {
+        expect(readlinkSync(join(claudeRoot, 'repo-harness-check'))).toBe(join(source, 'assets', 'skill-commands', 'repo-harness-check'));
+      } else {
+        expect(existsSync(join(claudeRoot, 'repo-harness-check'))).toBe(false);
+      }
+      rollbackInstallHostTransaction(transaction);
 
-    expect(roots.map(treeSnapshot)).toEqual(before);
-  }));
+      expect([codexRoot, claudeRoot].map(treeSnapshot)).toEqual(before);
+    }));
+  }
 
   test('status detects actual managed host surface drift', () => withHome((env) => {
     const { canonical } = writeManagedHostSurfaces(env);

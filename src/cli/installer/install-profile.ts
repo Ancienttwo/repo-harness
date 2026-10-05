@@ -12,6 +12,7 @@ import {
   readlinkSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'fs';
 import { homedir } from 'os';
@@ -741,19 +742,28 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
 }
 
 /**
- * Skill sync honors CODEX_SKILLS_ROOT and CLAUDE_SKILLS_ROOT. It also retires
- * repo-harness-* facades and owned dangling links that the current catalog
- * does not name. A host transaction snapshots that full set before sync runs.
+ * The skill roots that scripts/sync-codex-installed-copies.sh writes. An
+ * explicit CODEX_SKILLS_ROOT without CLAUDE_SKILLS_ROOT disables the Claude
+ * root. The skill sync tests compare this rule with the roots the shell reports.
+ */
+export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const home = env.HOME ?? homedir();
+  if (env.CODEX_SKILLS_ROOT) return [env.CODEX_SKILLS_ROOT, ...(env.CLAUDE_SKILLS_ROOT ? [env.CLAUDE_SKILLS_ROOT] : [])];
+  return [join(home, '.codex', 'skills'), env.CLAUDE_SKILLS_ROOT || join(home, '.claude', 'skills')];
+}
+
+/**
+ * Skill sync also retires repo-harness-* facades and owned dangling links
+ * that the current catalog does not name. A host transaction snapshots that
+ * full set before sync runs.
  */
 export function installProfileTransactionPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  const home = env.HOME ?? homedir();
-  const codexRoot = env.CODEX_SKILLS_ROOT || join(home, '.codex', 'skills');
-  const claudeRoot = env.CLAUDE_SKILLS_ROOT || (env.CODEX_SKILLS_ROOT ? '' : join(home, '.claude', 'skills'));
   const { repoHarnessSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
   const paths = [...installProfileHostMutationPaths(env)];
-  for (const root of [codexRoot, claudeRoot].filter(Boolean)) {
+  for (const root of effectiveSkillRoots(env)) {
     for (const skill of repoHarnessSkills) paths.push(join(root, skill));
-    if (!lstatExists(root) || !lstatSync(root).isDirectory()) continue;
+    // Follow a linked root, as the shell's [[ -d ]] test does.
+    if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) continue;
     for (const name of readdirSync(root)) {
       const path = join(root, name);
       if (name.startsWith(FACADE_NAME_PREFIX) || (lstatSync(path).isSymbolicLink() && !existsSync(path))) paths.push(path);

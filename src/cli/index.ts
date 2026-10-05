@@ -78,6 +78,7 @@ import {
   applyInstallProfile,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
+  effectiveSkillRoots,
   installProfileTransactionPaths,
   installedProfileStatus,
   assertInstallProfile,
@@ -424,13 +425,9 @@ async function runGlobalRuntimeBootstrap(
     ? planLegacyInstallProfileMigration(profile)
     : planInstallProfile(profile, currentProfile);
   if (rawOpts.dryRun === true) {
-    const home = process.env.HOME ?? homedir();
-    const codexRoot = process.env.CODEX_SKILLS_ROOT || join(home, '.codex', 'skills');
-    const claudeRoot = process.env.CLAUDE_SKILLS_ROOT
-      || (process.env.CODEX_SKILLS_ROOT ? '' : join(home, '.claude', 'skills'));
     const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
-      [codexRoot, claudeRoot],
+      effectiveSkillRoots(),
       true,
       currentProfile?.ownership_manifest,
     );
