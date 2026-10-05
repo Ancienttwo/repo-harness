@@ -896,6 +896,42 @@ describe('operator web interactions', () => {
     } finally { globalThis.fetch = originalFetch; }
   });
 
+  test('the page Refresh action also re-requests the Notify and Pipeline panels', async () => {
+    const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatusV1 = {
+      protocol: 1,
+      kind: 'operator_notify_status',
+      plugin_id: 'aimpact.webhook-notify',
+      linked: 'linked',
+      enabled: 'enabled',
+      config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' },
+      last_delivery: { at: null, result: 'missing' },
+      observed_at: '2026-09-22T00:00:00.000Z',
+    };
+    const board: import('../../src/core/pipeline/board').PipelineBoardV2 = {
+      projection_version: 'repo-harness.pipeline-board.v2',
+      status: 'ready',
+      generated_at: '2026-09-22T00:00:00.000Z',
+      last_reconciled_at: '2026-09-22T00:00:00.000Z',
+      epoch: 1,
+      commit_seq: 1,
+      source_observed_at: {},
+      coverage: { counted: 0, skipped: 0, errors: 0, registration_incomplete: 0 },
+      cards: [],
+    };
+    let notify = 0;
+    let pipeline = 0;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+      readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }}
+      readPipelineBoard={async () => { pipeline += 1; return board; }} />);
+    expect(notify).toBe(1);
+    expect(pipeline).toBe(1);
+    expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('unavailable');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(notify).toBe(2);
+    expect(pipeline).toBe(2);
+    expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('ready');
+  });
+
   test('reveals a newly urgent first group while preserving an explicit collapse', async () => {
     const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
     const lowerPriority = {
@@ -1383,9 +1419,15 @@ test('automatic epoch change cancels associated evidence and late responses cann
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
   let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
   const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
-  globalThis.fetch = (async (_input, init) => {
-    diffSignal = init!.signal as AbortSignal;
-    return new Promise<Response>(resolve => { finishDiff = resolve; });
+  globalThis.fetch = (async (input, init) => {
+    // The explicit refresh generation now reaches the Notify and Pipeline
+    // panels, so an epoch reset issues their requests too; only the diff
+    // request is parked, and the rest fail fast.
+    if (String(input).includes('/diff')) {
+      diffSignal = init!.signal as AbortSignal;
+      return new Promise<Response>(resolve => { finishDiff = resolve; });
+    }
+    return Response.json({ code: 'unavailable' }, { status: 503 });
   }) as typeof fetch;
   try {
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}

@@ -1747,8 +1747,8 @@ export function OperatorApp({
           />}
           {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
           {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
-          <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} t={t} />
-          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} t={t} />
+          <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} refreshGeneration={collaborationRefreshGeneration} t={t} />
+          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} refreshGeneration={collaborationRefreshGeneration} t={t} />
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />
