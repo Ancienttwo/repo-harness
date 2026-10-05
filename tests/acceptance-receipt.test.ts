@@ -858,6 +858,28 @@ test.skipIf(process.platform !== 'darwin')('generic review unknown owner, explic
   expect((await closeReview(f.root, f.options.contract, true, f.home, f.effects)).status).toBe('closed');
 });
 
+test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an active round at the lock boundary and records no acceptance', async () => {
+  const f = reviewFixture(); f.verdict('PASS');
+  const { dir } = reviewLocation(f.root, f.options.contract);
+  let collecting!: () => void;
+  const inCollectLoop = new Promise<void>(resolve => { collecting = resolve; });
+  // The delivered request stays pending: no Result arrives before cancel.
+  const round = runReviewRound({ ...f.options, timeoutMs: 20_000 }, { ...f.effects, collect: async () => { collecting(); return null; } })
+    .then(() => { f.calls.push('round:accepted'); }, (error: unknown) => { f.calls.push(`round:${String(error)}`); });
+  await Promise.race([inCollectLoop, round.then(() => { throw new Error(`round settled before collection: ${f.calls.join(', ')}`); })]);
+  expect(existsSync(join(dir, 'delivery-1.json'))).toBe(true);
+  const cleanup = await closeReview(f.root, f.options.contract, true, f.home, { ...f.effects,
+    dispose: async () => { f.calls.push(existsSync(join(dir, 'close.request')) ? 'dispose:requested' : 'dispose:unrequested'); } });
+  await round;
+  expect(cleanup.status).toBe('closed');
+  const ended = f.calls.findIndex(call => call.startsWith('round:'));
+  expect(f.calls[ended]).toContain('review_round_cancelled');
+  expect(f.calls.slice(ended + 1)).toEqual(['dispose:requested', 'cancel']);
+  expect(existsSync(join(dir, 'accepted-1.json'))).toBe(false);
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+  expect(readSessionArtifact<{ cancelled: boolean }>(join(dir, 'closed.json')).cancelled).toBe(true);
+});
+
 
 test('generic review refuses legacy cleanup-pending markers without reading or translating old records', async () => {
   const f = reviewFixture();

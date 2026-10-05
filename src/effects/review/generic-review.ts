@@ -6,7 +6,7 @@ import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
-import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { taskRepository } from '../terminal/task-worktree';
@@ -163,6 +163,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   let authOutput: string | undefined;
   try {
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
+    if (existsSync(join(dir, 'close.request'))) throw new Error('review_session_closing; finish the same cancel or close');
     const legacyDir = join(root, '.ai/harness/runs/claude-review', createHash('sha256').update(contract).digest('hex'));
     const legacySessionOpen = existsSync(join(legacyDir, 'session.json')) && !existsSync(join(legacyDir, 'closed.json'));
     const legacyServerPending = (existsSync(join(legacyDir, 'server.json')) || existsSync(join(legacyDir, 'server-start-intent.json')))
@@ -260,6 +261,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const recheck = await acceptanceContext({ root, contract, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
     const before = [fingerprint(root), fingerprint(reviewerRepo)];
+    if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no request sent');
     lock.assertOwned();
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
@@ -269,6 +271,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const deadline = Date.now() + timeout;
     let collected;
     for (;;) {
+      // A cancel request wins over a pending Result: no acceptance is recorded.
+      if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
       collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
       if (collected && existsSync(join(dir, `observed-${request.round}.json`))) break;
       client.assertBinding(binding); lock.assertOwned();
@@ -310,10 +314,25 @@ export function reviewStatus(repoRoot: string, contract: string, effects: Review
       .map(round => ({ round, receipt_saved: existsSync(join(dir, `accepted-${round}.json`)) })) };
 }
 
+/** Covers the round's 60 s host acknowledgement wait before it sees the cancel. */
+const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
 export async function closeReview(repoRoot: string, contract: string, cancel = false, authorityHome = userInfo().homedir,
   effects: ReviewEffects = {}) {
   const { dir, primary, root } = reviewLocation(repoRoot, contract);
-  const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
+  // An active round holds caller.lock until it ends. Cancel first publishes the
+  // durable close request, which the round and the OAR host both observe, and
+  // then waits for the lock so receipt and cleanup publication stay serialized.
+  if (cancel && existsSync(join(dir, 'session.json')) && !existsSync(join(dir, 'closed.json'))) {
+    try { writeSessionArtifact(join(dir, 'close.request'), { close: true }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  }
+  const deadline = Date.now() + (cancel ? REVIEW_CANCEL_LOCK_WAIT_MS : 0);
+  let lock: ReturnType<typeof acquireExclusiveDirectoryLock>;
+  for (;;) {
+    try { lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true }); break; }
+    catch (error) { if (!(error instanceof ExclusiveLockContentionError) || Date.now() >= deadline) throw error; }
+    await Bun.sleep(25);
+  }
   let authOutput: string | undefined;
   try {
     if (existsSync(join(dir, 'session.json'))) {
