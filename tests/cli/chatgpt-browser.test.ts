@@ -189,6 +189,129 @@ async function bindChromeProfile(repoRoot: string, opts: { profileDirectory?: st
   return { userDataDir, profileDir };
 }
 
+// The native provider checks for the real Chrome executable before it calls
+// `open`; the harness below never executes it.
+const NATIVE_CHROME_PRESENT = process.platform === 'darwin'
+  && existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+
+interface FakeChromeOptions {
+  composerReady?: boolean;
+  capture?: { text: string; streaming: boolean };
+  failMethod?: string;
+}
+
+interface FakeChromeRun {
+  stdout: string;
+  stderr: string;
+  exitedOnItsOwn: boolean;
+  openArgs: string[];
+  methods: string[];
+  insertedTexts: string[];
+  closeCodes: number[];
+}
+
+/**
+ * Runs a native CLI command in a child process whose PATH holds only a fake
+ * `open`. The fake writes DevToolsActivePort for a loopback CDP stub instead of
+ * launching Chrome; without the fake, `open` does not resolve at all. The child
+ * keeps running while any CDP socket stays open, so a leak shows as a run that
+ * does not exit by itself.
+ */
+async function runWithFakeChrome(args: string[], opts: FakeChromeOptions = {}): Promise<FakeChromeRun> {
+  const methods: string[] = [];
+  const insertedTexts: string[] = [];
+  const closeCodes: number[] = [];
+  const capture = opts.capture ?? { text: 'stub answer', streaming: false };
+  const evaluate = (expression: string): unknown => {
+    if (expression.includes('ok: Boolean(element)')) return { ok: opts.composerReady !== false };
+    if (expression.includes('element.focus()')) return { ok: true };
+    if (expression.includes('button.click()')) return { ok: true };
+    if (expression.includes('const streaming')) return capture;
+    if (expression.includes('querySelectorAll')) return 0;
+    return 'https://chatgpt.com/c/fake-conversation';
+  };
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, srv) {
+      if (new URL(request.url).pathname === '/json/version') {
+        return Response.json({ Browser: 'FakeChrome/1.0', webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/browser/fake` });
+      }
+      if (srv.upgrade(request)) return undefined;
+      return new Response('not found', { status: 404 });
+    },
+    websocket: {
+      message(ws, raw) {
+        const message = JSON.parse(String(raw)) as { id: number; method: string; params?: Record<string, unknown> };
+        methods.push(message.method);
+        if (message.method === opts.failMethod) {
+          ws.send(JSON.stringify({ id: message.id, error: { message: `stub ${message.method} failure` } }));
+          return;
+        }
+        let result: unknown = {};
+        if (message.method === 'Target.createTarget') result = { targetId: 'fake-target' };
+        if (message.method === 'Target.attachToTarget') result = { sessionId: 'fake-page-session' };
+        if (message.method === 'Input.insertText') insertedTexts.push(String(message.params?.text));
+        if (message.method === 'Runtime.evaluate') result = { result: { value: evaluate(String(message.params?.expression)) } };
+        ws.send(JSON.stringify({ id: message.id, result }));
+      },
+      close(_ws, code) {
+        closeCodes.push(code);
+      },
+    },
+  });
+  const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-chrome-bin-'));
+  try {
+    const openArgsPath = join(binDir, 'open.args');
+    writeFileSync(join(binDir, 'open'), [
+      '#!/bin/sh',
+      'DIR=""',
+      'for a in "$@"; do',
+      '  case "$a" in --user-data-dir=*) DIR="${a#--user-data-dir=}";; esac',
+      'done',
+      'printf "%s\\n" "$@" > "$FAKE_OPEN_ARGS_PATH"',
+      'printf "%s\\n%s\\n" "$FAKE_CDP_PORT" "/devtools/browser/fake" > "$DIR/DevToolsActivePort"',
+    ].join('\n') + '\n');
+    chmodSync(join(binDir, 'open'), 0o755);
+    const homeDir = mkdtempSync(join(binDir, 'home-'));
+    const child = Bun.spawn({
+      cmd: [process.execPath, CLI, 'chatgpt', ...args],
+      cwd: ROOT,
+      env: {
+        HOME: homeDir,
+        PATH: binDir,
+        TMPDIR: tmpdir(),
+        FAKE_CDP_PORT: String(server.port),
+        FAKE_OPEN_ARGS_PATH: openArgsPath,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const stdoutText = new Response(child.stdout).text();
+    const stderrText = new Response(child.stderr).text();
+    const exitedOnItsOwn = await Promise.race([
+      child.exited.then(() => true),
+      Bun.sleep(8_000).then(() => false),
+    ]);
+    // Read the stub before a forced kill: the kill itself drops the socket (1006).
+    const closeDeadline = Date.now() + 2_000;
+    while (exitedOnItsOwn && closeCodes.length === 0 && methods.length > 0 && Date.now() < closeDeadline) await Bun.sleep(10);
+    const observed = { methods: [...methods], insertedTexts: [...insertedTexts], closeCodes: [...closeCodes] };
+    if (!exitedOnItsOwn) child.kill('SIGKILL');
+    await child.exited;
+    return {
+      stdout: await stdoutText,
+      stderr: await stderrText,
+      exitedOnItsOwn,
+      openArgs: existsSync(openArgsPath) ? readFileSync(openArgsPath, 'utf-8').trimEnd().split('\n') : [],
+      ...observed,
+    };
+  } finally {
+    server.stop(true);
+    rmSync(binDir, { recursive: true, force: true });
+  }
+}
+
 describe('chatgpt browser command', () => {
   test('prints help for browser command group', async () => {
     const root = await runChatgpt(['--help']);
@@ -1077,6 +1200,81 @@ describe('chatgpt browser command', () => {
 
     expect(capture).toEqual({ text: 'instant final', completed: true });
   });
+
+  const nativeConsultExitPaths: Array<{ label: string; chrome: FakeChromeOptions; status: string; code?: string }> = [
+    { label: 'a completed answer', chrome: {}, status: 'completed' },
+    { label: 'a composer that is not ready', chrome: { composerReady: false }, status: 'failed', code: 'LOGIN_OR_COMPOSER_NOT_READY' },
+    { label: 'an empty capture', chrome: { capture: { text: '', streaming: true } }, status: 'incomplete_capture', code: 'ASSISTANT_CAPTURE_TIMEOUT' },
+    { label: 'an unverified capture', chrome: { capture: { text: 'partial', streaming: true } }, status: 'incomplete_capture', code: 'ASSISTANT_CAPTURE_INCOMPLETE' },
+    { label: 'a CDP command error', chrome: { failMethod: 'Page.navigate' }, status: 'failed', code: 'NATIVE_PROVIDER_FAILED' },
+  ];
+  for (const keepBrowser of [true, false]) {
+    for (const exitPath of nativeConsultExitPaths) {
+      test.skipIf(!NATIVE_CHROME_PRESENT)(`native consult closes its CDP client after ${exitPath.label} (keepBrowser=${keepBrowser})`, async () => {
+        await withAsyncRepo(async (repoRoot) => {
+          const profileDir = join(repoRoot, 'automation-profile');
+          mkdirSync(profileDir);
+          const run = await runWithFakeChrome([
+            'browser-consult',
+            '--repo',
+            repoRoot,
+            '--provider',
+            'native',
+            '--profile-dir',
+            profileDir,
+            '--timeout-ms',
+            '1000',
+            ...(keepBrowser ? ['--keep-browser'] : []),
+            '--prompt',
+            'Native lifecycle probe.',
+          ], exitPath.chrome);
+          expect(run.openArgs).toContain('--remote-debugging-port=0');
+          const payload = JSON.parse(run.stdout);
+          expect(payload.status).toBe(exitPath.status);
+          if (exitPath.code) expect(payload.error.code).toBe(exitPath.code);
+          expect(run.methods.includes('Browser.close')).toBe(!keepBrowser);
+          expect(run.closeCodes).toEqual([1000]);
+          expect(run.exitedOnItsOwn).toBe(true);
+        });
+      }, 30_000);
+    }
+  }
+
+  const nativeValidationExitPaths: Array<{ label: string; chrome: FakeChromeOptions; status: string }> = [
+    { label: 'a ready composer', chrome: {}, status: 'ready' },
+    { label: 'a login prompt', chrome: { composerReady: false }, status: 'login_required' },
+    { label: 'a CDP command error', chrome: { failMethod: 'Page.navigate' }, status: 'failed' },
+  ];
+  for (const keepBrowser of [true, false]) {
+    for (const exitPath of nativeValidationExitPaths) {
+      test.skipIf(!NATIVE_CHROME_PRESENT)(`native session validation closes its CDP client after ${exitPath.label} (keepBrowser=${keepBrowser})`, async () => {
+        await withAsyncRepo(async (repoRoot) => {
+          const profileDir = join(repoRoot, 'automation-profile');
+          mkdirSync(profileDir);
+          const run = await runWithFakeChrome([
+            'browser-doctor',
+            '--repo',
+            repoRoot,
+            '--provider',
+            'native',
+            '--validate-session',
+            '--profile-dir',
+            profileDir,
+            '--timeout-ms',
+            '1000',
+            ...(keepBrowser ? ['--keep-browser'] : []),
+            '--json',
+          ], exitPath.chrome);
+          expect(run.openArgs).toContain('--remote-debugging-port=0');
+          const readiness = JSON.parse(run.stdout);
+          expect(readiness.native.productSession.validation.status).toBe(exitPath.status);
+          expect(run.methods.includes('Browser.close')).toBe(!keepBrowser);
+          expect(run.closeCodes).toEqual([1000]);
+          expect(run.exitedOnItsOwn).toBe(true);
+        });
+      }, 30_000);
+    }
+  }
 
   test('oracle rejects unsupported versions uniformly before consultation side effects', async () => {
     await withRepo(async (repoRoot) => {

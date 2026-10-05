@@ -399,8 +399,9 @@ export async function checkNativeChatgptSession(input: {
       },
     };
   } finally {
-    if (input.keepBrowser !== true && connection) {
-      await connection.send('Browser.close').catch(() => undefined);
+    // --keep-browser keeps Chrome open; this invocation still releases its CDP client.
+    if (connection) {
+      if (input.keepBrowser !== true) await connection.send('Browser.close').catch(() => undefined);
       connection.close();
     }
   }
@@ -598,11 +599,10 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
       },
     };
   } finally {
-    if (input.keepBrowser !== true) {
-      if (connection) {
-        await connection.send('Browser.close').catch(() => undefined);
-        connection.close();
-      }
+    // --keep-browser keeps Chrome open; this invocation still releases its CDP client.
+    if (connection) {
+      if (input.keepBrowser !== true) await connection.send('Browser.close').catch(() => undefined);
+      connection.close();
     }
   }
 }
