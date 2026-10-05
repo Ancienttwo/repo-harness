@@ -26,7 +26,8 @@ The boundary has four layers:
    host output shaping and writes one event-level telemetry record.
 
 The only shell file left in the hook projection is
-`assets/hooks/lib/workflow-state.sh` (mirrored to `.ai/hooks/lib/`). It is an
+`assets/hooks/lib/workflow-state.sh`. Only the source checkout mirrors it to
+`.ai/hooks/lib/`. Consumer repositories use the package asset. It is an
 operator/workflow-state helper and is not a host-event route. The deleted
 `run-hook.sh`, per-event guards, hook shims, and root helper runtime are not
 read by host-event execution.

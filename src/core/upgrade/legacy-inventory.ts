@@ -535,6 +535,13 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
   if (projectEnabled) {
     const retiredPaths = actions.filter((action) => (action.location ?? 'project') === 'project' && action.action === 'remove').flatMap((action) => [...(action.paths ?? [])]).filter((path) => !path.includes('*'));
     const root = resolve(options.cwd);
+    const library = join(root, '.ai/hooks/lib/workflow-state.sh');
+    const libraryEntry = isLegacyPathSafe(root, library) ? stat(library) : null;
+    if (libraryEntry) {
+      add({ location: 'project', surface: libraryEntry.isSymbolicLink() ? 'symlink' : libraryEntry.isDirectory() ? 'directory' : 'file',
+        path: library, retiredBy: 'legacy-workflow-state-library', ownership: 'unowned', proof: null, action: 'report',
+        reason: 'Legacy workflow-state library. Change callers to the package path from repo-harness hook-lib path or use repo-harness run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
+    }
     const scanDocument = (path: string): void => {
       if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
       const content = readFileSync(path, 'utf8');

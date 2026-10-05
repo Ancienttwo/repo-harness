@@ -338,12 +338,13 @@ function resolveFromDir(
   repoRoot: string,
 ): ResolvedHelper {
   const filePath = join(dir, fileName);
+  const description = fileName === 'workflow-state.sh' ? 'workflow-state library' : 'contract helper';
   if (!existsSync(filePath)) {
-    throw new Error(`contract helper is missing from ${source} runtime: ${filePath}`);
+    throw new Error(`${description} is missing from ${source} runtime: ${filePath}`);
   }
   const stat = lstatSync(filePath);
   if (stat.isSymbolicLink() || !stat.isFile()) {
-    throw new Error(`contract helper is not a regular file: ${filePath}`);
+    throw new Error(`${description} is not a regular file: ${filePath}`);
   }
   return { id: helperId(fileName), fileName, path: filePath, source, repoRoot };
 }

@@ -58,16 +58,13 @@
       "surface": "bash workflow_write_handoff's independent handoff/resume Markdown assembly",
       "retiring_package": "EPC-07",
       "retired_at_pr": "#123",
-      "description": "workflow_write_handoff (.ai/hooks/lib/workflow-state.sh, canonical mirror assets/hooks/lib/workflow-state.sh) used to assemble both handoff/current.md and handoff/resume.md content directly via heredoc. It is now a thin invoker of the single standalone materializer, scripts/recovery-view-cli.ts. scripts/prepare-handoff.sh's own no-library fallback (fires only when workflow-state.sh is entirely absent, e.g. a repo not yet through adoption) legitimately shares the EOF_HANDOFF marker name and is an explicitly classified out-of-scope bootstrap, not this retired writer.",
+      "description": "workflow_write_handoff delegates handoff and resume output to scripts/recovery-view-cli.ts. prepare-handoff.sh now fails if the workflow-state library is missing. No independent heredoc writer remains.",
       "patterns": [
         "<<EOF_HANDOFF",
         "<<EOF_RESUME",
         "generated-by: workflow_write_handoff v1"
       ],
-      "allowed_exceptions": [
-        "scripts/prepare-handoff.sh",
-        "assets/templates/helpers/prepare-handoff.sh"
-      ]
+      "allowed_exceptions": []
     },
     {
       "id": "codex-handoff-resume-assembly",

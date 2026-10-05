@@ -568,16 +568,20 @@ test('CLI library path uses a separate package and fails closed for missing or u
     expect(missing.status).toBe(1);
     expect(missing.stdout).toBe('');
     expect(missing.stderr).toContain('missing');
+    expect(missing.stderr).toContain('workflow-state library is missing from package runtime');
+    expect(missing.stderr).not.toContain('contract helper');
     symlinkSync(join(ROOT, 'assets/hooks/lib/workflow-state.sh'), asset);
     const linked = invoke();
     expect(linked.status).toBe(1);
     expect(linked.stdout).toBe('');
     expect(linked.stderr).toContain('not a regular file');
+    expect(linked.stderr).toContain('workflow-state library is not a regular file');
     rmSync(asset); mkdirSync(asset);
     const directory = invoke();
     expect(directory.status).toBe(1);
     expect(directory.stdout).toBe('');
     expect(directory.stderr).toContain('not a regular file');
+    expect(directory.stderr).toContain('workflow-state library is not a regular file');
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 30_000);
 
@@ -591,6 +595,8 @@ test('state helpers return a clear error when their selected source library is m
       expect(result.reason).toBe('spawn-error');
       expect(result.stderr).toContain('workflow-state.sh');
       expect(result.stderr).toContain('missing');
+      expect(result.stderr).toContain('workflow-state library is missing from source runtime');
+      expect(result.stderr).not.toContain('contract helper');
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
