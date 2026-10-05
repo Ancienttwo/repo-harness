@@ -7,7 +7,7 @@
  */
 
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
-import { hashManagedTree, installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
+import { hashManagedTree, installedCopyTreeOptions, installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 
 import * as fs from 'fs';
@@ -487,7 +487,7 @@ function checkTypedHookRoutes(cwd: string): DoctorCheckResult {
   };
 }
 
-function skillProjectionState(projection: SkillProjection, excludes: readonly string[]): string {
+function skillProjectionState(projection: SkillProjection, contract: Parameters<typeof installedCopyTreeOptions>[1]): string {
   const { destination, source, name, staged } = projection;
   let stat: fs.Stats;
   try { stat = fs.lstatSync(destination); } catch (error) {
@@ -500,7 +500,7 @@ function skillProjectionState(projection: SkillProjection, excludes: readonly st
   }
   if (!stat.isDirectory()) return 'invalid path type';
   if (!fs.existsSync(path.join(source, 'SKILL.md'))) return 'source missing';
-  const sourceHash = hashManagedTree(source, name === 'repo-harness' ? { excludes } : {});
+  const sourceHash = hashManagedTree(source, installedCopyTreeOptions(name === 'repo-harness' ? 'canonical-skill' : 'command-facade', contract));
   if (hashManagedTree(destination) !== sourceHash) return 'stale copy';
   return staged ? 'unowned real directory' : 'ok copy';
 }
@@ -517,8 +517,10 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const sourceRoot = globalRoot && fs.existsSync(path.join(globalRoot, 'package.json')) ? globalRoot : PACKAGE_ROOT;
     const contractPath = path.join(sourceRoot, 'assets', 'workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
-    if (sourceRoot !== PACKAGE_ROOT && contract.installedCopyExcludes === undefined) {
-      return { id, describe, status: 'warn', detail: `global package contract at ${contractPath} lacks installedCopyExcludes; run: repo-harness update; then run: repo-harness upgrade` };
+    for (const field of ['installedCopyExcludes', 'installedCopyIncludes']) {
+      if (sourceRoot !== PACKAGE_ROOT && contract[field] === undefined) {
+        return { id, describe, status: 'warn', detail: `global package contract at ${contractPath} lacks ${field}; run: repo-harness update; then run: repo-harness upgrade` };
+      }
     }
     if (!Array.isArray(contract.installedCopyExcludes) || !contract.installedCopyExcludes.every((value: unknown) => typeof value === 'string')) {
       throw new Error('invalid installed copy exclusions');
@@ -533,7 +535,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       const { destination, source, host } = projection;
       const fix = `repo-harness install --profile ${profile} --target ${host}`;
       const problems: string[] = [];
-      const state = skillProjectionState(projection, contract.installedCopyExcludes);
+      const state = skillProjectionState(projection, contract);
       if (!state.startsWith('ok ')) {
         const preserve = state === 'missing' || state === 'source missing' ? '' : `preserve or move ${destination}, then `;
         problems.push(`expected ${source}; ${preserve}run: ${fix}`);

@@ -76,6 +76,18 @@ async function main(argv: readonly string[]): Promise<void> {
     console.log(hashManagedTree(root));
     return;
   }
+  if (subcommand === "installed-copy-files") {
+    const [root, surface, contractPath] = rest;
+    if (!root || !contractPath || rest.length !== 3 || (surface !== 'canonical-skill' && surface !== 'command-facade')) {
+      fail("installed-copy-files requires <root> <canonical-skill|command-facade> <contract>");
+    }
+    const { installedCopyTreeOptions, managedTreeEntries } = await import("../src/cli/installer/install-profile");
+    const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
+    for (const entry of managedTreeEntries(root, installedCopyTreeOptions(surface, contract))) {
+      process.stdout.write(`${entry.path}\0`);
+    }
+    return;
+  }
   const profileFlag = parseProfileFlag(rest);
   const catalog = loadCatalog();
 

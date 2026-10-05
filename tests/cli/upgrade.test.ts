@@ -552,3 +552,72 @@ describe('legacy workflow-state upgrade report', () => {
     expect(readFileSync(join(opts.home, 'workflow-state.sh'), 'utf8')).toBe('# Library outside the repo\n');
   }, false));
 });
+
+// Use the real v0.10 copy writer to establish ownership. The current writer
+// then stages a real package projection with active worktree residues.
+function projectionSandbox(run: (opts: { cwd: string; home: string; packageRoot: string }, router: string) => void): void {
+  sandbox((opts) => {
+    const oldSource = join(opts.home, 'old-source');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source/SKILL.md', join(oldSource, 'SKILL.md'));
+    const oldInstaller = join(opts.home, 'old-installer');
+    copyUpgradeFixture('upgrade-v0.10-home', 'release-source', oldInstaller);
+    const installed = spawnSync('bash', [join(oldInstaller, 'scripts/sync-codex-installed-copies.sh')], {
+      env: { ...process.env, HOME: opts.home, AGENTIC_DEV_SOURCE_ROOT: oldSource,
+        CODEX_SKILLS_ROOT: join(opts.home, '.codex/skills'), CLAUDE_SKILLS_ROOT: '',
+        REPO_HARNESS_INSTALL_PROFILE: 'strict', AGENTIC_DEV_LINK_INSTALLED_COPIES: '0' }, encoding: 'utf8',
+    });
+    expect(installed.status, installed.stderr).toBe(0);
+    const packageRoot = join(opts.home, 'active-source');
+    mkdirSync(packageRoot);
+    for (const path of ['src', 'scripts', 'assets', 'references', 'SKILL.md', 'package.json']) {
+      cpSync(join(ROOT, path), join(packageRoot, path), { recursive: true, verbatimSymlinks: true });
+    }
+    put(join(packageRoot, '.ai/harness/state/effective.json'), '{"revision":1}\n');
+    put(join(packageRoot, 'dist/oar-review-host.js'), 'shipped runtime bundle\n');
+    put(join(packageRoot, 'dist/unshipped-build.js'), 'build residue\n');
+    put(join(packageRoot, 'plans/untracked.md'), 'untracked plan\n');
+    run({ ...opts, packageRoot }, join(opts.home, '.codex/skills/repo-harness'));
+  }, false);
+}
+
+describe('upgrade copy projection fences', () => {
+  test('runtime writes and new untracked plans during staging do not abort a real router refresh', () => projectionSandbox((opts, router) => {
+    let staged = false;
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+      afterStage(item) {
+        if (item.path !== router) return;
+        staged = true;
+        put(join(opts.packageRoot, '.ai/harness/state/effective.json'), '{"revision":2}\n');
+        put(join(opts.packageRoot, 'plans/new-untracked.md'), 'new concurrent plan\n');
+        put(join(opts.packageRoot, 'dist/unshipped-build.js'), 'new build residue\n');
+      },
+    });
+    expect(staged).toBe(true);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.refreshedPaths, JSON.stringify(result.items)).toContain(router);
+    expect(readFileSync(join(router, 'SKILL.md'))).toEqual(readFileSync(join(opts.packageRoot, 'SKILL.md')));
+    for (const path of ['.ai/harness/state/effective.json', 'plans/untracked.md', 'plans/new-untracked.md', 'dist/unshipped-build.js']) {
+      expect(existsSync(join(router, path))).toBe(false);
+    }
+    expect(runUpgrade({ ...opts, scope: 'global' }).items.some(item => item.path === router)).toBe(false);
+  }));
+
+  for (const projected of ['SKILL.md', 'dist/oar-review-host.js']) test(`a projected ${projected} edit during staging aborts and preserves the installed bytes`, () => projectionSandbox((opts, router) => {
+    const before = tree(router);
+    let staged = false;
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true }, {
+      afterStage(item) {
+        if (item.path !== router) return;
+        staged = true;
+        put(join(opts.packageRoot, projected), 'concurrent projected file edit\n');
+      },
+    });
+    expect(staged).toBe(true);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.refreshedPaths).not.toContain(router);
+    expect(result.items.find(item => item.path === router)).toEqual(expect.objectContaining({
+      action: 'report', reason: 'Source or target changed during staging.',
+    }));
+    expect(tree(router)).toEqual(before);
+  }));
+});

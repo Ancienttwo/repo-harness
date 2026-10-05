@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import { hashManagedTree } from '../../cli/installer/install-profile';
+import { hashManagedTree, installedCopyTreeOptions } from '../../cli/installer/install-profile';
 import { isRepoHarnessLegacyTypedHookCommand, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
 import { loadWorkflowContractAsset } from '../adoption/workflow-contract-asset';
@@ -49,7 +49,7 @@ interface RetirementAction {
   readonly commands?: readonly string[];
   readonly sourcePaths?: Readonly<Record<string, string>>;
 }
-interface Contract { readonly installedCopyExcludes?: readonly string[]; readonly helpers?: { readonly scripts?: readonly string[] }; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
+interface Contract { readonly installedCopyIncludes?: readonly string[]; readonly installedCopyExcludes?: readonly string[]; readonly helpers?: { readonly scripts?: readonly string[] }; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
 interface ManifestSurface {
   readonly authority?: string;
   readonly removal?: string;
@@ -290,9 +290,9 @@ export function hashUpgradeSource(sourcePath: string, packageRoot: string): stri
   const entry = stat(path);
   if (entry?.isFile()) return hash(readFileSync(path));
   if (entry?.isDirectory()) {
-    const excludes = loadWorkflowContractAsset<Contract>().installedCopyExcludes;
-    if (!excludes || !excludes.every((pattern) => typeof pattern === 'string')) throw new Error('installed copy exclusions are missing from the workflow contract');
-    return hashManagedTree(path, { excludes });
+    return hashManagedTree(path, installedCopyTreeOptions(
+      path === root ? 'canonical-skill' : 'command-facade', loadWorkflowContractAsset<Contract>(),
+    ));
   }
   return null;
 }
