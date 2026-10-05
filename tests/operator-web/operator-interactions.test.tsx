@@ -163,6 +163,21 @@ function paneText(): string {
   return document.querySelector('.detail-pane')?.textContent ?? '';
 }
 
+/** A compact element key keeps focus assertion failures cheap to print: happy-dom element diffs are enormous. */
+function elementKey(element: Element): string {
+  return `${element.tagName}:${element.getAttribute('aria-label') ?? element.textContent ?? ''}`;
+}
+
+function focusKey(): string | null {
+  return document.activeElement ? elementKey(document.activeElement as Element) : null;
+}
+
+function tab(shift = false): Promise<void> {
+  return act(async () => {
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true }) as unknown as Event);
+  });
+}
+
 function filterChipCount(label: string): number {
   const chip = Array.from(document.querySelectorAll('.worklist__filters button'))
     .find((candidate) => candidate.textContent?.startsWith(label));
@@ -854,14 +869,6 @@ describe('operator web interactions', () => {
 
   test('modal Tab traversal reaches evidence disclosures before it wraps', async () => {
     const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
-    const tab = (shift = false) => act(async () => document.dispatchEvent(
-      new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true }) as unknown as Event));
-    // A compact focus key keeps assertion failures cheap to print: happy-dom
-    // element diffs are enormous.
-    const focusKey = () => {
-      const active = document.activeElement as Element | null;
-      return active ? `${active.tagName}:${active.getAttribute('aria-label') ?? active.textContent ?? ''}` : null;
-    };
     // Scoped board reads are irrelevant here; stub the transport so the pane
     // under test is the only live surface.
     const originalFetch = globalThis.fetch;
@@ -881,8 +888,7 @@ describe('operator web interactions', () => {
       expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent))
         .toEqual(['Refresh', 'Close task details', 'Copy task id']);
       const lastSummary = summaries.at(-1)!;
-      expect(`${lastSummary.tagName}:${lastSummary.getAttribute('aria-label') ?? lastSummary.textContent ?? ''}`)
-        .toBe('SUMMARY:Original record');
+      expect(elementKey(lastSummary)).toBe('SUMMARY:Original record');
       buttons.at(-1)!.focus();
       expect(focusKey()).toBe('BUTTON:Copy task id');
       await tab();
@@ -893,6 +899,48 @@ describe('operator web interactions', () => {
       expect(focusKey()).toBe('BUTTON:Refresh');
       await tab(true);
       expect(focusKey()).toBe('SUMMARY:Original record');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
+  test('modal Tab traversal skips copy controls inside a closed disclosure until it opens', async () => {
+    const available = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.available.task_id)!;
+    const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
+    // An unclaimed card with recorded delivery evidence: the closed
+    // "Source evidence details" disclosure holds two copy buttons and is the
+    // last keyboard-operable content in the pane once evidence reads fail.
+    const card = { ...available, inbox: { ...available.inbox, effect_sha256: working.inbox.effect_sha256, delivery_evidence: working.inbox.delivery_evidence } };
+    const snapshot: OperatorFleetSnapshotV1 = { ...stableSnapshot, repositories: [{ ...stableSnapshot.repositories[0]!, cards: [card] }] };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 })) as unknown as typeof fetch;
+    try {
+      await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en"
+        readTaskContext={async () => { throw new Error('unavailable'); }}
+        readTaskActivity={async () => { throw new Error('unavailable'); }} />);
+      await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
+      await act(async () => { await Promise.resolve(); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const details = dialog.querySelector<HTMLDetailsElement>('[aria-labelledby="detail-delivery-heading"] details')!;
+      const summary = details.querySelector<HTMLElement>('summary')!;
+      const hidden = Array.from(details.querySelectorAll<HTMLButtonElement>('button'));
+      expect(details.open).toBe(false);
+      expect(hidden.map(elementKey)).toEqual(['BUTTON:Copy effect sha256', 'BUTTON:Copy Observation digest']);
+      expect(elementKey(Array.from(dialog.querySelectorAll('summary, button')).at(-1)!)).toBe('BUTTON:Copy Observation digest');
+      // Closed: the summary is the true last tab stop, in both directions.
+      summary.focus();
+      await tab();
+      expect(focusKey()).toBe('BUTTON:Refresh');
+      await tab(true);
+      expect(focusKey()).toBe('SUMMARY:Source evidence details');
+      // Open: the copy controls become reachable, and the trap wraps after them.
+      await act(async () => { details.open = true; });
+      summary.focus();
+      await tab();
+      expect(focusKey()).toBe('SUMMARY:Source evidence details');
+      hidden.at(-1)!.focus();
+      await tab();
+      expect(focusKey()).toBe('BUTTON:Refresh');
+      await tab(true);
+      expect(focusKey()).toBe('BUTTON:Copy Observation digest');
     } finally { globalThis.fetch = originalFetch; }
   });
 
