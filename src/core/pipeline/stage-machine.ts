@@ -7,7 +7,8 @@ export function advanceRecord(record:PipelineRecord,to:Phase,reason?:string):voi
   if(from==='cleanup' || from==='abandoned' && to!=='cleanup') throw new PipelineError('transition_not_allowed',7,'Terminal record');
   if(to==='blocked'||to==='abandoned') {
     if(!reason) throw new PipelineError('usage',2,'This transition requires a reason');
-    if(to==='blocked') record.blocked={reason,since:now,return_to:from};
+    // A repeated block updates the reason. It keeps the original resume phase.
+    if(to==='blocked') record.blocked={reason,since:now,return_to:from==='blocked'?record.blocked?.return_to??from:from};
   } else if(from==='blocked' && to===record.blocked?.return_to) record.blocked=null;
   else if((from==='cross-review'&&to==='implement')||(from==='test'&&to==='cross-review')||(from==='merge-ask'&&to==='test')) {
     if(!reason) throw new PipelineError('usage',2,'Rework requires a reason');

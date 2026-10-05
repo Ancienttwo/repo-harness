@@ -326,4 +326,7 @@ test('F2: matching remote subject and digest cannot hide changed evidence identi
 test('ungated blocked return and rework remain observed rather than qualified',()=>{
   const root=repo('admission'),key=create(root);mutatePipeline(store,key,{op:'advance',to:'blocked',reason:'Observed wait',state_version:1});mutatePipeline(store,key,{op:'advance',to:'plan',state_version:2});expect(store.read(key).admission).toBe('observed');
   const imported=newPipeline(store,{source_host:hostname(),repository_id:key.repository_id,root,adopt_task:'rework',backfill:true,phase:'cross-review',note:'Historical position is attested'});const retry={...key,task:imported.task};mutatePipeline(store,retry,{op:'advance',to:'implement',reason:'Recorded rework',state_version:1});expect(store.read(retry).admission).toBe('observed');expect(store.read(retry).counters.fix_loops).toBe(1);
+  const twice=create(root,'blocked-twice');const block=(reason:string)=>mutatePipeline(store,twice,{op:'advance',to:'blocked',reason,state_version:store.read(twice).state_version});
+  block('First wait');block('Second wait');expect(store.read(twice).blocked).toMatchObject({reason:'Second wait',return_to:'plan'});
+  mutatePipeline(store,twice,{op:'advance',to:'plan',state_version:store.read(twice).state_version});expect(store.read(twice).phase).toBe('plan');expect(store.read(twice).blocked).toBeNull();
 });
