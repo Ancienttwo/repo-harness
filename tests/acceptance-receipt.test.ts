@@ -1,5 +1,5 @@
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
-import { readSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type TaskPaneBinding } from '../src/effects/terminal/task-session';
+import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type TaskPaneBinding } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -878,6 +878,23 @@ test.skipIf(process.platform !== 'darwin')('generic review cancel reaches an act
   expect(existsSync(join(dir, 'accepted-1.json'))).toBe(false);
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
   expect(readSessionArtifact<{ cancelled: boolean }>(join(dir, 'closed.json')).cancelled).toBe(true);
+});
+
+test.skipIf(process.platform !== 'darwin')('generic review cancel that lands between the final check and the acceptance keeps the receipt and reports it', async () => {
+  const f = reviewFixture(); f.verdict('PASS');
+  const { dir } = reviewLocation(f.root, f.options.contract);
+  // The request is written by the model effect, which runs after the round's
+  // final close.request read and before the acceptance is recorded.
+  const round = runReviewRound({ ...f.options }, { ...f.effects,
+    model: () => { writeSessionArtifact(join(dir, 'close.request'), { close: true }); return 'fixture-model'; } });
+  const result = await round;
+  expect(result.status).toBe('accepted');
+  expect(existsSync(join(dir, 'accepted-1.json'))).toBe(true);
+  const cleanup = await closeReview(f.root, f.options.contract, true, f.home, f.effects);
+  expect(cleanup).toMatchObject({ status: 'closed', accepted_rounds: [1] });
+  expect(readSessionArtifact<{ cancelled: boolean; accepted_rounds: number[] }>(join(dir, 'closed.json'))).toMatchObject({ cancelled: true, accepted_rounds: [1] });
+  // A repeated cancel reports the already-closed cleanup without the window field.
+  expect(await closeReview(f.root, f.options.contract, true, f.home, f.effects)).toEqual({ status: 'closed', pids: [] });
 });
 
 

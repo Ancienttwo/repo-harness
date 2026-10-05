@@ -271,7 +271,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const deadline = Date.now() + timeout;
     let collected;
     for (;;) {
-      // A cancel request wins over a pending Result: no acceptance is recorded.
+      // A cancel request wins over a pending Result; the final decision is the
+      // re-check below, after the loop, before any acceptance is recorded.
       if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
       collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
       if (collected && existsSync(join(dir, `observed-${request.round}.json`))) break;
@@ -279,6 +280,11 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       if (Date.now() >= deadline) throw new Error('review_round_timeout; inspect the same request; do not resend');
       await Bun.sleep(100);
     }
+    // Linearization point for accept-versus-cancel: the Result is collected
+    // and observed, and no acceptance exists yet. A request written after this
+    // read cannot un-record the acceptance below, so closeReview reports it to
+    // the cancel caller instead.
+    if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
     if (before[0] !== fingerprint(root) || before[1] !== fingerprint(reviewerRepo)) throw new Error('review_worktree_mutated');
     const model = client.model(session, request);
     if (!collected.value || typeof collected.value !== 'object' || Array.isArray(collected.value)
@@ -316,6 +322,9 @@ export function reviewStatus(repoRoot: string, contract: string, effects: Review
 
 /** Covers the round's 60 s host acknowledgement wait before it sees the cancel. */
 const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
+function acceptedRounds(dir: string): number[] {
+  return Array.from({ length: REVIEW_MAX_ROUNDS }, (_, index) => index + 1).filter(round => existsSync(join(dir, `accepted-${round}.json`)));
+}
 export async function closeReview(repoRoot: string, contract: string, cancel = false, authorityHome = userInfo().homedir,
   effects: ReviewEffects = {}) {
   const { dir, primary, root } = reviewLocation(repoRoot, contract);
@@ -353,8 +362,12 @@ export async function closeReview(repoRoot: string, contract: string, cancel = f
     // never kill a host whose OAR children may still be alive.
     await client.dispose(session.reviewer_repo, session.task, session.control_directory);
     const cleanup = await (cancel ? client.cancel : client.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
-    if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup });
-    return cleanup;
+    // The round's final close.request read is not atomic with the acceptance
+    // write. A cancel that lands in that window still closes the session,
+    // and the durable receipt is reported here rather than discarded.
+    const accepted = cancel ? acceptedRounds(dir) : [];
+    if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup, ...(accepted.length ? { accepted_rounds: accepted } : {}) });
+    return accepted.length ? { ...cleanup, accepted_rounds: accepted } : cleanup;
   } finally {
     lock.release();
     if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
