@@ -11,7 +11,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'child_process';
-import { closeSync, constants, openSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { closeSync, constants, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { open as openFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -23,6 +23,9 @@ import {
 } from '../../src/core/collaboration/context-packet';
 import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
 import { admitCollaborationDelegation } from '../../src/effects/collaboration/admission-bridge';
+import { COLLABORATION_ADOPTIONS_SHARD } from '../../src/effects/collaboration/adoption-store';
+import { COLLABORATION_HANDOFFS_SHARD } from '../../src/effects/collaboration/handoff-store';
+import { collaborationStorePaths } from '../../src/effects/collaboration/record-store';
 import {
   deliverCollaborationContext,
   readCollaborationRunContextBinding,
@@ -114,6 +117,44 @@ function retireActor(value: Fixture, index: number): void {
     expected_engineer_contract_revision: revision,
     now: () => '2026-08-30T01:00:00.000Z',
   });
+}
+
+/**
+ * Run one collaboration read and act between its two collector passes.
+ *
+ * The offer callback reads the registry after the principal resolves. A FIFO in
+ * the registry's place parks the first pass on that read until `between` has
+ * run, so the second pass observes what `between` changed.
+ */
+async function readBetweenCollectorPasses(value: Fixture, args: readonly string[], between: () => void) {
+  const registry = join(value.home, 'registered-repos.json');
+  const registryBytes = readFileSync(registry);
+  rmSync(registry);
+  execFileSync('mkfifo', [registry]);
+  const child = spawn('bun', [cliEntry, 'collaboration', ...args], {
+    cwd: value.repoRoot,
+    env: { ...process.env, REPO_HARNESS_HOME: value.home, PATH: `${value.fake_bin}:${process.env.PATH ?? ''}` },
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk: Buffer) => { stdout += String(chunk); });
+  child.stderr.on('data', (chunk: Buffer) => { stderr += String(chunk); });
+  const exited = new Promise<number | null>((resolveExit) => child.once('close', resolveExit));
+
+  const writer = await Promise.race([openFile(registry, 'w'), exited.then(() => null)]);
+  if (writer === null) {
+    // Release the pending writer open before the fixture is removed.
+    closeSync(openSync(registry, constants.O_RDONLY | constants.O_NONBLOCK));
+    throw new Error(`the CLI exited before its first offer read: ${stderr}`);
+  }
+  between();
+  // The second pass opens the registry again; give it the regular file before
+  // the parked first read is released.
+  writeFileSync(`${registry}.restored`, registryBytes);
+  renameSync(`${registry}.restored`, registry);
+  await writer.writeFile(registryBytes);
+  await writer.close();
+  return { status: await exited, stdout, stderr };
 }
 
 function writeInput(value: Fixture, name: string, payload: unknown): string {
@@ -579,36 +620,78 @@ describe('C7 bounded collaboration CLI', () => {
     const value = fixture();
     publishSignal(value, 'signal-a', 'merge-gate-flake');
     const authorization = value.actors[0]!.authorization_id;
-    // The registry is read by the offer callback after the principal resolves.
-    // A FIFO in its place parks the first pass on that read until this test
-    // has revoked the mapping, so the second pass resolves a revoked principal.
-    const registry = join(value.home, 'registered-repos.json');
-    const registryBytes = readFileSync(registry);
-    rmSync(registry);
-    execFileSync('mkfifo', [registry]);
-    const child = spawn('bun', [cliEntry, 'collaboration', 'exchange', '--authorization-id', authorization], {
-      cwd: value.repoRoot,
-      env: { ...process.env, REPO_HARNESS_HOME: value.home, PATH: `${value.fake_bin}:${process.env.PATH ?? ''}` },
+
+    const result = await readBetweenCollectorPasses(value, ['exchange', '--authorization-id', authorization], () => {
+      revokeEngineerPrincipal(repoHarnessRepoIdFor(value.repoRoot), authorization, { env: value.env });
     });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => { stdout += String(chunk); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr += String(chunk); });
-    const exited = new Promise<number | null>((resolveExit) => child.once('close', resolveExit));
 
-    const writer = await Promise.race([openFile(registry, 'w'), exited.then(() => null)]);
-    if (writer === null) {
-      // Release the pending writer open before the fixture is removed.
-      closeSync(openSync(registry, constants.O_RDONLY | constants.O_NONBLOCK));
-      throw new Error(`the CLI exited before its first offer read: ${stderr}`);
-    }
-    revokeEngineerPrincipal(repoHarnessRepoIdFor(value.repoRoot), authorization, { env: value.env });
-    await writer.writeFile(registryBytes);
-    await writer.close();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(failure(result).error).toBe('engineer_principal_revoked');
+  });
 
-    expect(await exited).toBe(1);
-    expect(stdout).toBe('');
-    expect(failure({ stderr }).error).toBe('engineer_principal_revoked');
+  test('a damaged handoff or adoption shard marks the handoff and signal lists incomplete', () => {
+    const value = fixture();
+    const authorization = value.actors[0]!.authorization_id;
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+    const published = cli(value, 'collaboration', 'handoff', 'publish', '--authorization-id', authorization,
+      '--input', writeInput(value, '.handoff.json', {
+        ...forgedBoundTaskHandoffInput('merge-gate-flake'),
+        execution_context: { kind: 'none' },
+      }));
+    const handoffId = (JSON.parse(published.stdout) as { handoff_id: string }).handoff_id;
+    const adopted = cli(value, 'collaboration', 'handoff', 'adopt', '--authorization-id', value.actors[1]!.authorization_id,
+      '--input', writeInput(value, '.adopt.json', { handoff_id: handoffId, context_packet_sha256: `sha256:${'c'.repeat(64)}` }));
+    expect(adopted.status).toBe(0);
+    const list = (read: string[]) => {
+      const result = cli(value, 'collaboration', ...read, '--authorization-id', authorization);
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      return JSON.parse(result.stdout) as {
+        handoffs?: Array<{ handoff_id: string; adoption_count: number }>;
+        snapshot_consistency: string;
+        degraded_sources: string[];
+        changed_sources: string[];
+      };
+    };
+
+    const healthy = list(['handoff', 'list']);
+    expect(healthy.handoffs!.find((entry) => entry.handoff_id === handoffId)!.adoption_count).toBe(1);
+    expect(healthy).toMatchObject({ snapshot_consistency: 'stable', degraded_sources: [], changed_sources: [] });
+
+    const repoRoot = realpathSync(value.repoRoot);
+    const badAdoption = join(collaborationStorePaths(repoRoot, COLLABORATION_ADOPTIONS_SHARD).shard, 'not-a-record.json');
+    writeFileSync(badAdoption, '{}\n');
+    const zeroCounts = list(['handoff', 'list']);
+    // The handoff is still listed, but its zero count is marked as incomplete.
+    expect(zeroCounts.handoffs!.find((entry) => entry.handoff_id === handoffId)!.adoption_count).toBe(0);
+    expect(zeroCounts).toMatchObject({ snapshot_consistency: 'degraded', degraded_sources: ['adoptions'] });
+    rmSync(badAdoption);
+
+    writeFileSync(join(collaborationStorePaths(repoRoot, COLLABORATION_HANDOFFS_SHARD).shard, 'not-a-record.json'), '{}\n');
+    const emptied = list(['handoff', 'list']);
+    expect(emptied.handoffs).toEqual([]);
+    // Receipts are proved against the handoff shard, so adoptions degrade too.
+    const degraded = { snapshot_consistency: 'degraded', degraded_sources: ['handoffs', 'adoptions'] };
+    expect(emptied).toMatchObject(degraded);
+    expect(list(['signals'])).toMatchObject(degraded);
+  });
+
+  test('a signal published between the two collector passes marks the signal list changed', async () => {
+    const value = fixture();
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+
+    const result = await readBetweenCollectorPasses(value,
+      ['signals', '--authorization-id', value.actors[0]!.authorization_id],
+      () => { publishSignal(value, 'signal-late', 'archctx-drain'); });
+
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      snapshot_consistency: 'changed_during_read',
+      changed_sources: ['signals'],
+      degraded_sources: [],
+    });
   });
 
   test('a packet build asking for more than the frozen injection budget is refused', () => {

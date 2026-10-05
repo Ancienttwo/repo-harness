@@ -234,7 +234,28 @@ export function collaborationThreadsView(
   });
 }
 
-export interface CollaborationSignalsViewV1 {
+/**
+ * The collection's own consistency verdict, carried by every narrow list view.
+ *
+ * The collector replaces an unreadable additive source with an empty list and
+ * marks it. A view that drops the mark turns "this source could not be read"
+ * into "there are none", so a list view repeats the verdict verbatim.
+ */
+export interface CollaborationCollectionStatusV1 {
+  readonly snapshot_consistency: CollaborativeWorkExchangeCollectionV1['snapshot_consistency'];
+  readonly degraded_sources: CollaborativeWorkExchangeCollectionV1['degraded_sources'];
+  readonly changed_sources: CollaborativeWorkExchangeCollectionV1['changed_sources'];
+}
+
+function collectionStatus(collection: CollaborativeWorkExchangeCollectionV1): CollaborationCollectionStatusV1 {
+  return {
+    snapshot_consistency: collection.snapshot_consistency,
+    degraded_sources: collection.degraded_sources,
+    changed_sources: collection.changed_sources,
+  };
+}
+
+export interface CollaborationSignalsViewV1 extends CollaborationCollectionStatusV1 {
   readonly mode: CollaborationMode;
   readonly content_trust: CollaborationContentTrustV1;
   readonly signals: readonly CoordinationSignalV1[];
@@ -254,10 +275,10 @@ export function collaborationSignalsView(
 ): CollaborationSignalsViewV1 {
   const repoRoot = surfaceRoot(context);
   const collection = collect(repoRoot, context);
-  return marked(collection.mode, { signals: collection.signals });
+  return marked(collection.mode, { signals: collection.signals, ...collectionStatus(collection) });
 }
 
-export interface CollaborationHandoffsViewV1 {
+export interface CollaborationHandoffsViewV1 extends CollaborationCollectionStatusV1 {
   readonly mode: CollaborationMode;
   readonly content_trust: CollaborationContentTrustV1;
   readonly handoffs: readonly WorkStateHandoffSummaryV1[];
@@ -291,6 +312,7 @@ export function collaborationHandoffsView(
   return marked(collection.mode, {
     handoffs: collection.snapshot.open_handoffs,
     unverified_execution_context_count: collection.snapshot.unverified_execution_context_count,
+    ...collectionStatus(collection),
   });
 }
 
