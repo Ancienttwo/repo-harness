@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildLeaseOwnerRecord, bindLeaseRecord, deriveTaskRevision, serializeLeaseOwnerRecord, type LeaseOwnerRecord } from '../../src/core/state/coordination-identity';
@@ -170,6 +170,24 @@ test('assume-unchanged tracked entries cannot produce an empty observation', () 
   git(f.worktree, 'update-index', '--assume-unchanged', 'file.txt');
   writeFileSync(join(f.worktree, 'file.txt'), 'hidden edit\n');
   expect(() => readOperatorTaskDiff(f.input)).toThrow('index_unsupported');
+});
+
+test('skip-worktree tracked entries cannot produce an empty observation and stay untouched', async () => {
+  const f = fixture();
+  git(f.worktree, 'update-index', '--skip-worktree', 'file.txt');
+  writeFileSync(join(f.worktree, 'file.txt'), 'hidden edit\n');
+  expect(git(f.worktree, 'diff', f.base, '--')).toBe('');
+  expect(() => readOperatorTaskDiff(f.input)).toThrow('index_unsupported');
+  const { startOperatorServer } = await import('../../src/effects/operator/server');
+  const server = await startOperatorServer({ port: 0, static_root: f.root, env: f.input.env });
+  try {
+    const q = new URLSearchParams({ task_revision: f.input.task_revision, claim_id: f.input.claim_id, generation: '1' });
+    const response = await fetch(`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/diff?${q}`);
+    expect(response.status).not.toBe(200);
+    expect(JSON.stringify(await response.json())).toContain('index_unsupported');
+  } finally { await server.close(); }
+  expect(git(f.worktree, 'ls-files', '-v', 'file.txt')).toBe('S file.txt');
+  expect(readFileSync(join(f.worktree, 'file.txt'), 'utf8')).toBe('hidden edit\n');
 });
 
 test('missing promisor blobs fail without fetching or writing objects', () => {
