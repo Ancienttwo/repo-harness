@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -565,13 +566,22 @@ describe('restricted Engineer MCP tools', () => {
     expect(coordinationState(repoRoot)).toEqual(before);
     writeFileSync(sealPath, sealBytes);
 
+    // A fresh trusted observation, so the fabricated assertion is the only stale input.
+    const staleObservation = (await callMcpTool(context, 'engineer_prepare', {})).structuredContent as { observation_ref: string };
     const beforeStale = coordinationState(repoRoot);
-    const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
+    const staleOffer = await callMcpTool(context, 'engineer_acquire', {
+      ...acquireArgs, idempotency_key: 'stale-offer', observation_ref: staleObservation.observation_ref,
+    });
     expect(staleOffer).toMatchObject({
       isError: true,
       structuredContent: { error: { code: 'engineer_offer_stale' } },
     });
-    expect(coordinationState(repoRoot)).toEqual(beforeStale);
+    // Fleet and Lease state stay unchanged. The only new entry is the ledger
+    // receipt that stores this stale result for same-key replay.
+    const staleReceipt = `engineer-scheduling/v1/acquire-next/${createHash('sha256').update('stale-offer').digest('hex')}.json`;
+    expect(coordinationState(repoRoot)).toEqual([...beforeStale, staleReceipt].sort());
+    expect(JSON.parse(readFileSync(join(resolveGitCommonDirectory(repoRoot), 'repo-harness', staleReceipt), 'utf8')))
+      .toMatchObject({ state: 'completed', result: { ok: false, error: 'engineer_offer_stale' } });
     const policyPath = join(repoRoot, '.ai/harness/policy.json');
     writeFileSync(policyPath, 'not JSON');
     expect(await callMcpTool(context, 'engineer_prepare', {})).toMatchObject({
