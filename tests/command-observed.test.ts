@@ -176,6 +176,31 @@ describe('runCommandObserved', () => {
     }
   });
 
+  test('reads stdout and stderr from the host tool_response on separate lines', () => {
+    const repoRoot = workspace('command-observed-tool-response');
+    try {
+      const result = runCommandObserved({
+        repoRoot,
+        input: JSON.stringify({
+          tool_name: 'Bash',
+          tool_input: { command: 'git status --short' },
+          tool_response: { stdout: ' M src/a.ts', stderr: 'hint: advice', interrupted: false },
+        }),
+        env: { PATH: '' },
+        dependencies: { hasExecutable: () => false },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(checks(repoRoot)).toMatchObject({
+        command: 'git status --short',
+        exit_code: 0,
+        output_line_count: 2,
+        raw_output_bytes: Buffer.byteLength(' M src/a.ts\nhint: advice'),
+      });
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   test('preserves failed command output as raw evidence and emits the rewrite reminder', () => {
     const repoRoot = workspace('command-observed-failure');
     try {
