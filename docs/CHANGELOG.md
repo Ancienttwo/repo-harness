@@ -4,6 +4,23 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Breaking changes
+
+- MCP `engineer_acquire` now acquires one offer from a trusted
+  `engineer_prepare` observation. It requires `idempotency_key` and
+  `observation_ref`. It no longer accepts `max_attempts`.
+  Call `engineer_prepare` first. Then call `engineer_acquire` with the
+  observation ref, one stable idempotency key, and all 13 fields of one offer
+  from that observation. The same key returns the stored result.
+- The first acquisition on a store requires the protocol 2 acquisition cutover
+  seal. A store with pre-existing receipts but no seal fails with
+  `engineer_acquisition_ledger_cutover_required`. A new empty store
+  initializes the seal itself.
+- A selected or automatic acquisition that is not an idle poll writes a
+  ledger receipt. The same key replays that stored result.
+- MCP acquisition now surfaces the typed `engineer_observation_*` and
+  `engineer_acquire_next_*` codes.
+
 ### Added
 
 - Add `repo-harness engineer acquire` to acquire one exact observed Work Package.

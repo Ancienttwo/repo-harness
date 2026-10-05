@@ -304,6 +304,8 @@ describe('restricted Engineer MCP tools', () => {
       structuredContent: { error: { code: 'module_message_invalid' } },
     });
 
+    // The selected route has no retry budget. Sending the retired field fails
+    // as an unknown parameter before any fence is read.
     const invalidAttempts = await callMcpTool(context, 'engineer_acquire', {
       repo_id: repoHarnessRepoIdFor(repoRoot),
       task_id: 'a'.repeat(64),
@@ -311,7 +313,10 @@ describe('restricted Engineer MCP tools', () => {
       authorization_revision: 0,
       max_attempts: 17,
     });
-    expect(invalidAttempts).toMatchObject({ isError: true, structuredContent: { error: { code: 'INVALID_ARGUMENT' } } });
+    expect(invalidAttempts).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'INVALID_ARGUMENT', message: 'engineer_acquire does not accept unknown parameter: max_attempts' } },
+    });
 
     const secondAuthorization = '44444444-4444-4444-8444-444444444444';
     enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: secondAuthorization, binding, env: process.env });
