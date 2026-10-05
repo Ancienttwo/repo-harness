@@ -441,7 +441,7 @@ function runPerPathGuards(
     exit(2);
   }
 
-  if (filePath.startsWith('_ref/')) {
+  if (isUnderRepoDir(filePath, '_ref')) {
     out(ctx, `[ExternalReferenceGuard] ${filePath} is under _ref/.`);
     structuredError(
       ctx,
@@ -453,7 +453,7 @@ function runPerPathGuards(
     exit(2);
   }
 
-  if (filePath.startsWith('_ops/')) {
+  if (isUnderRepoDir(filePath, '_ops')) {
     out(ctx, `[OpsPrivateGuard] ${filePath} is under ignored private operations state.`);
     structuredError(
       ctx,
@@ -576,6 +576,11 @@ function tddCandidateExists(repoRoot: string, filePath: string): boolean {
 // ---------------------------------------------------------------------------
 // Path classification helpers
 // ---------------------------------------------------------------------------
+
+/** The directory itself or any path below it; a target named `_ops` is as private as `_ops/x`. */
+function isUnderRepoDir(filePath: string, dir: string): boolean {
+  return filePath === dir || filePath.startsWith(`${dir}/`);
+}
 
 function isRepoScopedPath(filePath: string): boolean {
   return filePath.length > 0 && !isAbsolutePathInAnyGrammar(filePath);

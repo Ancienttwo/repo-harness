@@ -295,6 +295,30 @@ describe('mutation boundaries after workflow cutover', () => {
       }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
+  test('host edit route refuses the protected directory itself', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-protected-dir-')));
+    const cwd = join(root, 'repo');
+    const home = join(root, 'home');
+    try {
+      mkdirSync(cwd, { recursive: true }); mkdirSync(home, { recursive: true });
+      initRepo(cwd);
+      const cases: Array<[Record<string, string>, string]> = [
+        [{ file_path: '_ops' }, '[OpsPrivateGuard]'],
+        [{ file_path: `${cwd}/_ops/` }, '[OpsPrivateGuard]'],
+        [{ file_path: '_ref' }, '[ExternalReferenceGuard]'],
+        [{ command: '*** Begin Patch\n*** Add File: _ops\n+x\n*** End Patch' }, '[OpsPrivateGuard]'],
+      ];
+      for (const [toolInput, guard] of cases) {
+        for (const host of ['claude', 'codex'] as const) {
+          const result = hostEdit(cwd, home, toolInput, host);
+          expect({ host, toolInput, status: result.status }).toEqual({ host, toolInput, status: 2 });
+          expect(`${result.stdout}${result.stderr}`).toContain(guard);
+        }
+      }
+      const sibling = hostEdit(cwd, home, { file_path: '_opsnotes.md' });
+      expect(sibling.status).toBe(0);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
   test('host edit route keeps a private-path deny when diagnostic I/O fails', () => {
     const faults: Record<string, (cwd: string) => void> = {
       'read-only failure log directory': (cwd) => {
