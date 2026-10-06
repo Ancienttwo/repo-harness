@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { architectureProjectionQueueState, enqueueArchitectureProjectionJob } from '../src/effects/architecture/projection-jobs';
@@ -113,7 +113,7 @@ async function until(predicate: () => boolean, label: string, timeoutMs = 35_000
 }
 function receipts(root: string) {
   const path = join(root, '.ai/harness/architecture-projection/receipts');
-  return existsSync(path) ? readdirSync(path).map(name => JSON.parse(readFileSync(join(path, name), 'utf8'))) : [];
+  return existsSync(path) ? readdirSync(path).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(path, name), 'utf8'))) : [];
 }
 function launch(root: string, env: NodeJS.ProcessEnv) {
   const script = `import { startArchitectureProjectionContinuation } from ${JSON.stringify(join(consumer, 'src/effects/architecture/projection-continuation.ts'))}; console.log(JSON.stringify(startArchitectureProjectionContinuation(process.cwd(), process.env)));`;
@@ -123,6 +123,20 @@ function launch(root: string, env: NodeJS.ProcessEnv) {
 }
 
 describe('architecture projection detached continuation', () => {
+  test('receipt observations ignore staged bytes and keep final JSON parsing strict', () => {
+    const root = join(sandbox, 'receipt-observation');
+    const directory = join(root, '.ai/harness/architecture-projection/receipts');
+    mkdirSync(directory, { recursive: true });
+    const temporary = join(directory, `job-observation.json.${process.pid}.tmp`);
+    const final = join(directory, 'job-observation.json');
+    writeFileSync(temporary, '{');
+    expect(receipts(root)).toEqual([]);
+    writeFileSync(temporary, JSON.stringify({ observed: true }));
+    renameSync(temporary, final);
+    expect(receipts(root)).toEqual([{ observed: true }]);
+    writeFileSync(final, '{');
+    expect(() => receipts(root)).toThrow();
+  });
   for (const mode of ['source', 'bundle']) {
     test(`${mode} explicit continuation consumes queued work once while Stop stays advisory`, async () => {
       const f = fixture(mode);
