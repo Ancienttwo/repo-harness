@@ -7,6 +7,9 @@
 - Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
 - Set package, skill, template, and README versions to `0.21.1`.
 - Add the dependency change to the 0.21.1 changelog.
+- Add #587, #589 and #590 to the 0.21.1 changelog. They merged to main
+  before this preparation. #588 adds only an offline experiment and its
+  tests, so the changelog does not list it.
 - Keep published release history unchanged.
 
 ## Verification

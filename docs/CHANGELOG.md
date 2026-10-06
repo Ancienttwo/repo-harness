@@ -6,11 +6,32 @@ All notable changes to this skill are documented here.
 
 ## [0.21.1] - Unreleased
 
+### Added
+
+- Add a read-only Architecture workspace to the operator board. It groups
+  modules by domain and shows model validity, generated summary and §3 state
+  separately. A module page shows a one-hop graph, model facts, flows, §3 text
+  and the review prompt, with a copy button for the exact Bot command. The
+  board serves three new GET/HEAD architecture routes with ETag support. (#590)
+- Add the operator capability to the architecture model. (#590)
+- Add a typed document handoff envelope, its validation and canonical
+  rendering, and a short SOP. (#587)
+
 ### Changed
 
 - Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
   Align architecture and refactor policies, init defaults, and clean-room
   verification with these dependencies. (#586)
+- `repo-harness module review-prompt` now fails with `secret_detected` when
+  the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
+  `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)
+- Operator API requests with a `Sec-Fetch-Site` value other than
+  `same-origin` or `none` now get 403. (#590)
+
+### Fixed
+
+- Restore the collaboration flow proof after a removed source symbol. The
+  architecture projection no longer reports unrelated drift. (#589)
 
 ## [0.21.0] - 2026-10-06
 
