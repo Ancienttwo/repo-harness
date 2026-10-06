@@ -195,7 +195,7 @@ describe('architecture module page', () => {
     const prompt = promptFor(detailFor(), 1);
     expect(prompt.shard.count).toBeGreaterThan(1);
     expect(document.querySelector('.review-prompt__digest')?.textContent).toBe(prompt.digest);
-    expect(document.querySelector('.review-prompt')?.textContent).toContain(`${prompt.budget.used_bytes} of 2048 bytes`);
+    expect(document.querySelector('.review-prompt')?.textContent).toContain(`Total ${prompt.budget.used_bytes} bytes · 2048 bytes per shard`);
     const command = document.querySelector('[data-bot-command]')?.textContent;
     expect(command).toBe(`repo-harness module review-prompt ${CENTER} --shard 1`);
     const copy = document.querySelector<HTMLButtonElement>('.review-prompt__command button')!;
