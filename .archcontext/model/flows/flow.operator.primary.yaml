@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.operator.primary
+capabilityId: capability.runtime-harness.operator
+name: Read an Operator observation
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-harness.operator
+  - id: component
+    nodeId: component.operator.primary
+steps:
+  - id: read
+    from: capability
+    to: component
+    label: Read public observations
+    evidence:
+      entrypointId: entrypoint.operator.primary
+      sourceSymbol: startOperatorServer
+      sinkId: sink.operator.primary
+outcomes:
+  - id: success
+    kind: success
+    label: Read completes
+    steps:
+      - id: return-data
+        from: component
+        to: capability
+        label: Return public JSON
+        evidence:
+          entrypointId: entrypoint.operator.primary
+          sourceSymbol: startOperatorServer
+          sinkId: sink.operator.primary
+    terminal:
+      participant: capability
+      label: Return data without writes
+  - id: error
+    kind: error
+    label: Read fails
+    steps:
+      - id: return-error
+        from: component
+        to: capability
+        label: Return a typed failure
+        evidence:
+          entrypointId: entrypoint.operator.primary
+          sourceSymbol: startOperatorServer
+          sinkId: sink.operator.primary
+    terminal:
+      participant: capability
+      label: Return a failure without writes

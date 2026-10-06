@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { buildArchContextNodesV2, findMatch, type ArchContextNodeV2 } from '../scripts/capability-resolver';
@@ -65,11 +66,14 @@ describe('capability-resolver archcontext-nodes-v2 export', () => {
     }
   });
 
-  test('CLI exports all twenty-six self-host nodes as v2 without v1 compatibility output', () => {
+  test('CLI exports every self-host capability node as v2 without v1 compatibility output', () => {
     const result = spawnSync('bun', ['scripts/capability-resolver.ts', 'export', '--format', 'archcontext-nodes-v2', '--repo', '.'], { cwd: ROOT, encoding: 'utf8' });
     expect(result.status, result.stderr).toBe(0);
     const nodes = JSON.parse(result.stdout) as ArchContextNodeV2[];
-    expect(nodes).toHaveLength(26);
+    const modelIds = readdirSync(join(ROOT, '.archcontext/model/nodes')).filter(path => /\.ya?ml$/.test(path))
+      .map(path => Bun.YAML.parse(readFileSync(join(ROOT, '.archcontext/model/nodes', path), 'utf8')) as { id: string; kind: string })
+      .filter(node => node.kind === 'capability').map(node => node.id).sort();
+    expect(nodes.map(node => node.id).sort()).toEqual(modelIds);
     expect(nodes.every((node) => node.schemaVersion === 'archcontext.node/v2')).toBe(true);
     expect(nodes.flatMap((node) => node.source.include).some((include) => include.endsWith('/**'))).toBe(true);
     const rejected = spawnSync('bun', ['scripts/capability-resolver.ts', 'export', '--format', 'archcontext-boundaries-v1', '--repo', '.'], { cwd: ROOT, encoding: 'utf8' });

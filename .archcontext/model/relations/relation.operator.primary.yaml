@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary
+kind: calls
+source: capability.runtime-harness.operator
+target: component.operator.primary
+intent: Return a read-only HTTP observation.

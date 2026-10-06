@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.operator
+kind: capability
+name: Operator Board
+status: active
+summary: Provides local read-only HTTP views of registered repositories.
+responsibilities:
+  - Serve public observations through GET and HEAD routes.
+  - Read architecture facts through the shared model reader in a bounded worker.
+  - Keep commands in the Bot and CLI channel.
+source:
+  include:
+    - "src/core/operator/**"
+    - "src/effects/operator/**"
+    - "src/operator-web/**"
+    - "src/cli/commands/operator.ts"
+  entrypoints:
+    - id: entrypoint.operator.primary
+      path: "src/effects/operator/server.ts"
+      symbols:
+        - name: "startOperatorServer"
+          sinks:
+            - id: sink.operator.primary
+              path: "src/effects/operator/server.ts"
+              symbol: "sendJson"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run check:type"
+    - "bun run test:files tests/cli/operator-serve.test.ts tests/effects/operator-write-boundary.test.ts --timeout 60000 --max-concurrency 1"
