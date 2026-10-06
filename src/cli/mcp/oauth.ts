@@ -245,6 +245,19 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     this.flush();
   }
 
+  /** Replace a refresh grant and its access token with their successors in one persisted write. */
+  rotateRefreshToken(
+    refreshToken: string,
+    accessToken: string,
+    next: { readonly accessToken: McpStoredAuthInfo; readonly refreshToken: string; readonly refreshExpiresAt?: number },
+  ): void {
+    this.refreshTokens.delete(refreshToken);
+    this.accessTokens.delete(accessToken);
+    this.accessTokens.set(next.accessToken.token, next.accessToken);
+    this.refreshTokens.set(next.refreshToken, { accessToken: next.accessToken.token, expiresAt: next.refreshExpiresAt });
+    this.flush();
+  }
+
   findRefreshTokenByAccessToken(accessToken: string): string | undefined {
     for (const [refreshToken, record] of this.refreshTokens) {
       if (record.accessToken === accessToken) return refreshToken;
@@ -447,8 +460,6 @@ export function createMcpOAuthProvider(
       if (!accessToken || !existing || existing.clientId !== client.client_id) {
         throw new InvalidGrantError('Invalid refresh token');
       }
-      store.deleteRefreshToken(refreshToken);
-      store.deleteAccessToken(accessToken);
       const nextAccessToken = issueToken();
       const nextRefreshToken = issueToken();
       const expiresIn = accessTokenTtlSeconds;
@@ -463,11 +474,16 @@ export function createMcpOAuthProvider(
           (requiredScope !== null && !existing.scopes.includes(requiredScope))
         ))
       ) {
+        store.deleteRefreshToken(refreshToken);
+        store.deleteAccessToken(accessToken);
         notifyAuthorizationRevoked(existing);
         throw new InvalidGrantError('Refresh token authorization is stale');
       }
-      store.setAccessToken(nextAccessToken, { ...existing, token: nextAccessToken, scopes, expiresAt: clock() + expiresIn, profile, authorizationRevision });
-      store.setRefreshToken(nextRefreshToken, nextAccessToken, clock() + refreshTokenTtlSeconds);
+      store.rotateRefreshToken(refreshToken, accessToken, {
+        accessToken: { ...existing, token: nextAccessToken, scopes, expiresAt: clock() + expiresIn, profile, authorizationRevision },
+        refreshToken: nextRefreshToken,
+        refreshExpiresAt: clock() + refreshTokenTtlSeconds,
+      });
       return {
         access_token: nextAccessToken,
         token_type: 'Bearer',

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { InvalidGrantError, InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -487,6 +487,51 @@ describe('mcp oauth provider', () => {
       expect(await providerB.verifyAccessToken(refreshed.access_token)).toMatchObject({ clientId: client.client_id });
       await expect(providerB.exchangeRefreshToken(reloadedClient!, tokens.refresh_token ?? ''))
         .rejects.toBeInstanceOf(InvalidGrantError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('refresh rotation persists the complete token pair in one private store write', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-rotation-write-'));
+    try {
+      const tokensPath = join(root, 'tokens.json');
+      const store = new McpOAuthTokenStore(tokensPath);
+      const provider = createMcpOAuthProvider(store);
+      const client = store.registerClient({
+        redirect_uris: ['http://localhost/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        client_name: 'repo-harness-rotation',
+      });
+      const redirect = redirectRecorder();
+      await provider.authorize(client, {
+        scopes: ['repo-harness', 'offline_access'],
+        redirectUri: 'http://localhost/callback',
+        codeChallenge: 'rotation-challenge',
+      }, redirect.response as never);
+      const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+      const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', 'http://localhost/callback');
+
+      const flush = store.flush.bind(store);
+      let flushes = 0;
+      store.flush = () => {
+        flushes += 1;
+        flush();
+      };
+      const refreshed = await provider.exchangeRefreshToken(client, tokens.refresh_token ?? '');
+      expect(flushes).toBe(1);
+      expect(statSync(tokensPath).mode & 0o777).toBe(0o600);
+
+      const restarted = new McpOAuthTokenStore(tokensPath);
+      restarted.load();
+      const restartedProvider = createMcpOAuthProvider(restarted);
+      expect(await restartedProvider.verifyAccessToken(refreshed.access_token)).toMatchObject({ clientId: client.client_id });
+      await expect(restartedProvider.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(restartedProvider.exchangeRefreshToken(client, tokens.refresh_token ?? ''))
+        .rejects.toBeInstanceOf(InvalidGrantError);
+      expect((await restartedProvider.exchangeRefreshToken(client, refreshed.refresh_token ?? '')).access_token).toBeTruthy();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
