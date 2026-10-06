@@ -3,15 +3,27 @@
  * fail-closed; reads apply the pure corrupt-tail policy from
  * `src/core/evidence/fold.ts` and quarantine any discarded tail.
  */
-import { existsSync, readFileSync, truncateSync } from "fs";
+import { existsSync, readFileSync, realpathSync, truncateSync } from "fs";
 import { join } from "path";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord } from "../../core/evidence/types";
 import { findCorruptTail, foldAcceptedEvents, parseLogLine } from "../../core/evidence/fold";
+import { withExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
 import { buildEvidenceEvent, type EvidenceEventConstructionInput } from "./event-writer";
 import { appendLineDurably, writeFileDurably } from "./atomic-append";
-import { resolveEventsDir, resolveLogPath } from "./paths";
+import { EVENTS_DIR_RELATIVE, resolveEventsDir, resolveLogPath } from "./paths";
 
 export type EvidenceEventInput = EvidenceEventConstructionInput;
+
+const LOG_LOCK = `${EVENTS_DIR_RELATIVE}/.log.lock`;
+
+/**
+ * Every log mutation (genesis, append, corrupt-tail repair) holds this lock.
+ * A repair truncates to an offset that it read, so an append between that
+ * read and the truncation would be deleted without a quarantine copy.
+ */
+function withLogLock<T>(repoRoot: string, operation: () => T): T {
+  return withExclusiveDirectoryLock(realpathSync(repoRoot), LOG_LOCK, operation, { reclaimStaleEmptyDirectory: true });
+}
 
 function readRawLines(logPath: string): string[] {
   if (!existsSync(logPath)) return [];
@@ -44,6 +56,14 @@ export interface AppendGenesisOptions {
  * has a different epoch pinned, or has non-genesis content at position 0.
  */
 export function appendGenesisRecord(
+  repoRoot: string,
+  ledgerEpochStartSha: string,
+  opts: AppendGenesisOptions,
+): GenesisRecord {
+  return withLogLock(repoRoot, () => appendGenesisRecordLocked(repoRoot, ledgerEpochStartSha, opts));
+}
+
+function appendGenesisRecordLocked(
   repoRoot: string,
   ledgerEpochStartSha: string,
   opts: AppendGenesisOptions,
@@ -82,12 +102,14 @@ export function appendGenesisRecord(
  */
 export function appendEvidenceEvent(repoRoot: string, input: EvidenceEventInput): EvidenceEventRecord {
   const logPath = resolveLogPath(repoRoot);
-  if (!readGenesisRecord(repoRoot)) {
-    throw new Error(`cannot append: store at ${logPath} has no genesis record; call appendGenesisRecord first`);
-  }
-  const record = buildEvidenceEvent(repoRoot, input);
-  appendLineDurably(logPath, JSON.stringify(record));
-  return record;
+  return withLogLock(repoRoot, () => {
+    if (!readGenesisRecord(repoRoot)) {
+      throw new Error(`cannot append: store at ${logPath} has no genesis record; call appendGenesisRecord first`);
+    }
+    const record = buildEvidenceEvent(repoRoot, input);
+    appendLineDurably(logPath, JSON.stringify(record));
+    return record;
+  });
 }
 
 export interface ReadAcceptedEventsResult {
@@ -102,21 +124,41 @@ export interface ReadAcceptedEventsResult {
  * record and resume), and fold the valid evidence events into the accepted
  * set.
  */
-export function readAcceptedEvents(repoRoot: string): ReadAcceptedEventsResult {
-  const logPath = resolveLogPath(repoRoot);
+interface LogSnapshot {
+  readonly rawLines: readonly string[];
+  readonly parsedLines: readonly ReturnType<typeof parseLogLine>[];
+  readonly corruptTail: ReturnType<typeof findCorruptTail>;
+}
+
+function readLogSnapshot(logPath: string): LogSnapshot {
   const rawLines = readRawLines(logPath);
   const parsedLines = rawLines.map((line) => parseLogLine(line));
-  const corruptTail = findCorruptTail(parsedLines);
+  return { rawLines, parsedLines, corruptTail: findCorruptTail(parsedLines) };
+}
 
-  let quarantinedPath: string | null = null;
-  if (corruptTail.corruptStartIndex !== null) {
+/** Re-read under the log lock, so the quarantine holds every byte that the truncation removes. */
+function repairCorruptTail(repoRoot: string, logPath: string): LogSnapshot & { readonly quarantinedPath: string | null } {
+  return withLogLock(repoRoot, () => {
+    const snapshot = readLogSnapshot(logPath);
+    const { rawLines, corruptTail } = snapshot;
+    if (corruptTail.corruptStartIndex === null) return { ...snapshot, quarantinedPath: null };
     const corruptLines = rawLines.slice(corruptTail.corruptStartIndex);
-    quarantinedPath = join(resolveEventsDir(repoRoot), `events.corrupt-${Date.now()}`);
+    const quarantinedPath = join(resolveEventsDir(repoRoot), `events.corrupt-${Date.now()}`);
     writeFileDurably(quarantinedPath, `${corruptLines.join("\n")}\n`);
 
     const validPrefix = rawLines.slice(0, corruptTail.validLineCount).map((line) => `${line}\n`).join("");
     truncateSync(logPath, Buffer.byteLength(validPrefix, "utf-8"));
-  }
+    return { ...snapshot, quarantinedPath };
+  });
+}
+
+export function readAcceptedEvents(repoRoot: string): ReadAcceptedEventsResult {
+  const logPath = resolveLogPath(repoRoot);
+  const unlocked = readLogSnapshot(logPath);
+  // A clean read changes nothing, so only a repair takes the log lock.
+  const { parsedLines, corruptTail, quarantinedPath } = unlocked.corruptTail.corruptStartIndex === null
+    ? { ...unlocked, quarantinedPath: null }
+    : repairCorruptTail(repoRoot, logPath);
 
   const validRecords: EvidenceLogRecord[] = [];
   for (let i = 0; i < corruptTail.validLineCount; i++) {

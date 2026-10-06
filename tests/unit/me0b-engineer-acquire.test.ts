@@ -97,6 +97,9 @@ function dependencies(root: string, overrides: Partial<EngineerAcquireDependenci
       },
     } as never),
     withBindingLock: (_cwd, _engineerId, run) => run(),
+    // The fixture repository carries no Profile files; the Profile limit is the
+    // only Profile field Engineer acquisition reads.
+    loadProfile: () => ({ profile: { max_active_claims: 1 }, engineer_contract_revision: actor.engineer_contract_revision } as never),
     ...overrides,
   };
 }
@@ -224,6 +227,36 @@ describe('ME-0B engineer acquire composition', () => {
     });
     expect(result).toMatchObject({ ok: false, error: 'fleet_acquire_failed', message: 'authenticated Engineer Binding is not current' });
     expect(events).toEqual(['lock', 'unlock']);
+    expect(acquires).toBe(0);
+  });
+
+  test('recounts live Claims under the Binding lock and refuses a full Profile before Fleet mutation', () => {
+    const root = fixture();
+    const events: string[] = [];
+    let acquires = 0;
+    const result = acquireEngineerTask({
+      repo_root: root,
+      principal: principal(),
+      dependencies: dependencies(root, {
+        withBindingLock: (_cwd, _engineerId, run) => { events.push('lock'); const value = run(); events.push('unlock'); return value; },
+        listLiveClaims: () => { events.push('count'); return [{}] as never; },
+        acquire: () => { acquires += 1; return { ok: true, envelope: envelope(root) }; },
+      }),
+    });
+    expect(result).toMatchObject({ ok: false, error: 'fleet_acquire_failed', message: 'Engineer active Claim limit is reached (1 of 1)' });
+    expect(events).toEqual(['lock', 'count', 'unlock']);
+    expect(acquires).toBe(0);
+
+    const unverifiable = acquireEngineerTask({
+      repo_root: root,
+      principal: principal(),
+      dependencies: dependencies(root, {
+        listLiveClaims: () => { throw new Error('Lease is unknown'); },
+        acquire: () => { acquires += 1; return { ok: true, envelope: envelope(root) }; },
+      }),
+    });
+    expect(unverifiable).toMatchObject({ ok: false, error: 'fleet_acquire_failed' });
+    expect(unverifiable.ok ? '' : unverifiable.message).toContain('capacity cannot be verified');
     expect(acquires).toBe(0);
   });
 });

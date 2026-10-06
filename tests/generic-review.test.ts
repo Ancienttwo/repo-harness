@@ -175,10 +175,10 @@ async function runOarNodeFixture(label: string, body: string, confined = true) {
   const temporary = reviewHostTemporaryDirectory(output), worker = join(root, 'fixture.mjs');
   const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
   writeFileSync(worker, `import assert from 'node:assert/strict';
-import {writeFileSync,readFileSync} from 'node:fs';
+import {existsSync,writeFileSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {openScriptedReviewHost,runHostFileRequest,reviewRuntime,assertOarHostNode} from ${JSON.stringify(entry)};
+import {openScriptedReviewHost,runHostFileRequest,serveHostFileRequests,reviewRuntime,assertOarHostNode} from ${JSON.stringify(entry)};
 const output=${JSON.stringify(output)},isolation=${JSON.stringify({paths,policyFile})};
 ${body}`);
   const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
@@ -207,6 +207,25 @@ const host=await openScriptedReviewHost(spec.options,()=>{},async({input,say})=>
 try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'fixture-'+round,context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round}}};writeFileSync(request.context_ref,content);const observed=await runHostFileRequest(host,spec,request);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
 assert.equal(calls,3);await assert.rejects(host.prompt('fourth'),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
   expect(result.calls).toBe(3); expect(result.model).toBeNull();
+});
+
+test.skipIf(process.platform !== 'darwin')('OAR host: a close request during a pending turn aborts that turn and disposes the Session', async () => {
+  const result = await runOarNodeFixture('oar-cancel-pending', String.raw`
+const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:10000,isolation};let calls=0;
+// The turn never ends by itself; only Session disposal can settle it.
+const host=await openScriptedReviewHost(spec.options,()=>{},async({signal})=>{calls++;writeFileSync(join(output,'turn-started'),'1');await new Promise(resolve=>signal.addEventListener('abort',resolve))},isolation);
+let closing;const close=()=>closing??=host.dispose();
+try{const content='pending turn';writeFileSync(join(output,'context-1.txt'),content);
+const request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:'fixture-1',context_ref:join(output,'context-1.txt'),source_ref:'fixture',result_ref:join(output,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename',submission:{command:'fixture',repo:output,task:'fixture',role:'deep-reasoner',round:1}}};
+writeFileSync(join(output,'request-1.json'),JSON.stringify(request));
+const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined);
+while(!existsSync(join(output,'turn-started')))await new Promise(resolve=>setTimeout(resolve,10));
+writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));
+await served;await close();
+assert.equal(JSON.parse(readFileSync(join(output,'observed-1.json'),'utf8')).outcome,'aborted');assert.equal(existsSync(request.result_ref),false);
+await assert.rejects(host.prompt('after-cancel'),/HOST_DISPOSED/);
+console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close()}`);
+  expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
 
 test.skipIf(process.platform !== 'darwin')('OAR Session refuses unconfined or changed owner profiles before opening', async () => {

@@ -617,10 +617,11 @@ function assertWakeStartable(repoRoot: string, intent: AgentRuntimeOfferWakeInte
 function prepareOfferWakeEffect(input: {
   repo_root: string; endpoint: RuntimeEndpointFenceV2; repository_id: string; authorization_revision: number;
   snapshot_revision: string; wake_reason: AgentRuntimeOfferWakeReason; capability_sha256: string; created_at: string;
+  predecessor_ledger_sha256: string | null;
 }): AgentRuntimeEffectStatus {
   const key = deriveAgentRuntimeOfferWakeIdempotencyKey({
     engineer_id: input.endpoint.engineer_id, binding_id: input.endpoint.binding_id, binding_generation: input.endpoint.binding_generation,
-    snapshot_revision: input.snapshot_revision, wake_reason: input.wake_reason,
+    snapshot_revision: input.snapshot_revision, wake_reason: input.wake_reason, predecessor_ledger_sha256: input.predecessor_ledger_sha256,
   });
   const paths = effectPaths(input.repo_root, deriveAgentRuntimeEffectId(key));
   return lock(paths, () => {
@@ -689,7 +690,9 @@ export function recordEngineerOfferSnapshot(input: RecordEngineerOfferSnapshotIn
     }
     const superseded = existing?.pending && pendingStatus?.current.state === 'intent_persisted' ? existing.pending : null;
     if (existing?.pending && !superseded && pendingStatus && !TERMINAL_STATES.includes(pendingStatus.current.state)) {
-      return Object.freeze({ outcome: 'no_wake' as const, cause: 'wake_in_flight' as const, ledger: publish(existing.pending), status: pendingStatus });
+      // The started wake consumes only its own snapshot. Keep this one
+      // unconsumed so a later observation of it is still due.
+      return Object.freeze({ outcome: 'no_wake' as const, cause: 'wake_in_flight' as const, ledger: existing, status: pendingStatus });
     }
     const capability = readAgentRuntimeCapability(input.repo_root, endpoint.host_id, endpoint.adapter_kind);
     if (capability.capability_sha256 !== input.expected_capability_sha256) fail('agent_runtime_effect_conflict', 'capability digest changed');
@@ -701,7 +704,7 @@ export function recordEngineerOfferSnapshot(input: RecordEngineerOfferSnapshotIn
     const status = prepareOfferWakeEffect({
       repo_root: input.repo_root, endpoint, repository_id: decision.repository_id, authorization_revision: decision.authorization_revision,
       snapshot_revision: decision.snapshot_revision, wake_reason: decision.wake_reason, capability_sha256: input.expected_capability_sha256,
-      created_at: input.observed_at,
+      created_at: input.observed_at, predecessor_ledger_sha256: existing?.ledger_sha256 ?? null,
     });
     input.crash_hook?.('after_intent_persisted');
     if (superseded && superseded.effect_id !== status.intent.effect_id) {

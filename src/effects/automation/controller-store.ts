@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'path';
 
 import {
   buildAutomationControllerEvent,
+  buildAutomationControllerRun,
   canonicalAutomationControllerCurrentBytes,
   canonicalAutomationControllerEventBytes,
   canonicalAutomationControllerRunBytes,
@@ -22,7 +23,7 @@ import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 const ROOT = 'repo-harness/automation-controllers/v1';
-const RUN_ID = /^sha256:[0-9a-f]{64}$/u;
+const RUN_ID = /^[0-9a-f]{64}$/u;
 
 export class AutomationControllerStoreError extends Error {
   constructor(readonly code: 'automation_controller_not_found' | 'automation_controller_conflict' | 'automation_controller_unsafe_path' | 'automation_controller_persistence_failed', message: string, readonly cause?: unknown) {
@@ -35,12 +36,14 @@ function safeRunId(value: string): string { if (!RUN_ID.test(value)) fail('autom
 function fileKey(value: string): string { return createHash('sha256').update(value, 'utf8').digest('hex'); }
 function shaName(value: string): string { if (!/^sha256:[0-9a-f]{64}$/u.test(value)) fail('automation_controller_unsafe_path', 'digest is invalid'); return value.slice(7); }
 function paths(repoRoot: string, runId: string) {
-  const common = resolveGitCommonDirectory(repoRoot); const root = join(common, ROOT); const name = safeRunId(runId).slice(7); const run = join(root, 'runs', name);
+  const common = resolveGitCommonDirectory(repoRoot); const root = join(common, ROOT); const name = safeRunId(runId); const run = join(root, 'runs', name);
   return { common, root, run, definition: join(run, 'run.json'), current: join(run, 'current.json'), lock: `${ROOT}/locks/runs/${name}.lock` };
 }
 function ensure(path: string): void { mkdirSync(path, { recursive: true, mode: 0o700 }); const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) fail('automation_controller_unsafe_path', `unsafe controller directory: ${path}`); }
 function prepare(value: ReturnType<typeof paths>): void { for (const path of [value.root, join(value.root, 'runs'), join(value.root, 'events'), join(value.root, 'transitions'), join(value.root, 'engineers'), value.run]) ensure(path); }
 function regular(path: string): Buffer { const stat = lstatSync(path); if (!stat.isFile() || stat.isSymbolicLink()) fail('automation_controller_unsafe_path', `unsafe controller file: ${path}`); return readFileSync(path); }
+// atomic() stages `.<pid>.<uuid>.tmp` beside its target. Another run's in-flight write or a crashed write leaves this name in the shared events directory.
+const STAGED = /^\.[0-9]+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 function atomic(path: string, bytes: Buffer): void {
   ensure(dirname(path)); const temp = join(dirname(path), `.${process.pid}.${randomUUID()}.tmp`); let fd: number;
   try { fd = openSync(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600); } catch (error) { return fail('automation_controller_persistence_failed', `cannot create controller temporary for ${path}`, error); }
@@ -53,11 +56,18 @@ function parse<T>(path: string, validate: (value: unknown) => T, canonical: (val
   if (!raw.equals(Buffer.from(`${canonical(value)}\n`, 'utf8'))) fail('automation_controller_conflict', `${path} is not canonical`); return value;
 }
 function current(value: ReturnType<typeof paths>): AutomationControllerCurrentV1 | null { return existsSync(value.current) ? parse(value.current, validateAutomationControllerCurrent, canonicalAutomationControllerCurrentBytes) : null; }
+/** Published event files only: a staged regular file is unpublished and inert; every other unexpected entry fails closed. */
+function publishedEventNames(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).filter((entry) => {
+    if (entry.isFile() && STAGED.test(entry.name)) return false;
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
+    return true;
+  }).map((entry) => entry.name);
+}
 function assertNoUnfoldedEvent(value: ReturnType<typeof paths>, runId: string, previous: AutomationControllerCurrentV1 | null): void {
   const directory = join(value.root, 'events');
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
-    const event = parse(join(directory, entry.name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
+  for (const name of publishedEventNames(directory)) {
+    const event = parse(join(directory, name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
     if (event.run_id === runId && event.previous_event_sha256 === (previous?.current_event_sha256 ?? null)
       && event.event_sha256 !== previous?.current_event_sha256) fail('automation_controller_persistence_failed', 'controller has a durable event not folded into current; replay its exact idempotency key');
   }
@@ -100,10 +110,13 @@ function appendLocked(value: ReturnType<typeof paths>, run: AutomationController
   const next = foldAutomationControllerCurrent(run, previous, event); atomic(value.current, Buffer.from(`${canonicalAutomationControllerCurrentBytes(next)}\n`, 'utf8')); input.crash_hook?.('after_current_fsync'); return Object.freeze({ event, current: next });
 }
 
-export function startAutomationControllerRun(input: { readonly repo_root: string; readonly run: AutomationControllerRunV1; readonly idempotency_key: string; readonly observed_at: string; readonly crash_hook?: AppendAutomationControllerEventInput['crash_hook'] }): { readonly run: AutomationControllerRunV1; readonly event: AutomationControllerEventV1; readonly current: AutomationControllerCurrentV1 } {
-  const repoRoot = resolve(input.repo_root); const run = validateAutomationControllerRun(input.run); const value = paths(repoRoot, run.run_id);
-  return withExclusiveDirectoryLock(value.common, `${ROOT}/locks/engineers/${fileKey(run.principal.engineer_id)}.lock`, () => withExclusiveDirectoryLock(value.common, value.lock, () => {
-    prepare(value); const bytes = Buffer.from(`${canonicalAutomationControllerRunBytes(run)}\n`, 'utf8'); immutable(value.definition, bytes);
+/** The run's created_at is the start event's observed_at, so a later retry of the same start reuses both from the persisted run. */
+export function startAutomationControllerRun(input: { readonly repo_root: string; readonly run: AutomationControllerRunV1; readonly idempotency_key: string; readonly crash_hook?: AppendAutomationControllerEventInput['crash_hook'] }): { readonly run: AutomationControllerRunV1; readonly event: AutomationControllerEventV1; readonly current: AutomationControllerCurrentV1 } {
+  const repoRoot = resolve(input.repo_root); const requested = validateAutomationControllerRun(input.run); const value = paths(repoRoot, requested.run_id);
+  return withExclusiveDirectoryLock(value.common, `${ROOT}/locks/engineers/${fileKey(requested.principal.engineer_id)}.lock`, () => withExclusiveDirectoryLock(value.common, value.lock, () => {
+    prepare(value);
+    const run = existsSync(value.definition) ? buildAutomationControllerRun({ ...requested, created_at: parse(value.definition, validateAutomationControllerRun, canonicalAutomationControllerRunBytes).created_at }) : requested;
+    immutable(value.definition, Buffer.from(`${canonicalAutomationControllerRunBytes(run)}\n`, 'utf8'));
     const pointer = join(value.root, 'engineers', `${fileKey(run.principal.engineer_id)}.json`);
     if (existsSync(pointer)) {
       const active = regular(pointer).toString('utf8').trim();
@@ -113,7 +126,7 @@ export function startAutomationControllerRun(input: { readonly repo_root: string
         atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
       }
     } else atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
-    const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [] }, observed_at: input.observed_at, crash_hook: input.crash_hook });
+    const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, attempt_context: null, evidence_refs: [] }, observed_at: run.created_at, crash_hook: input.crash_hook });
     return Object.freeze({ run, ...result });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true }), { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
@@ -133,9 +146,8 @@ export function readAutomationControllerStatus(repoRootInput: string, runId: str
 export function readAutomationControllerAttemptContext(repoRootInput: string, runId: string): NonNullable<AutomationControllerStepReceiptV1['attempt_context']> | null {
   const value = paths(resolve(repoRootInput), runId); if (!existsSync(value.definition) || !existsSync(value.current)) fail('automation_controller_not_found', 'controller run is missing');
   const head = current(value)!; let latest: AutomationControllerEventV1 | null = null;
-  for (const entry of readdirSync(join(value.root, 'events'), { withFileTypes: true })) {
-    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('automation_controller_unsafe_path', `unexpected controller event entry: ${entry.name}`);
-    const event = parse(join(value.root, 'events', entry.name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
+  for (const name of publishedEventNames(join(value.root, 'events'))) {
+    const event = parse(join(value.root, 'events', name), validateAutomationControllerEvent, canonicalAutomationControllerEventBytes);
     if (event.run_id === runId && event.revision <= head.revision && event.receipt.attempt_context !== null && (latest === null || event.revision > latest.revision)) latest = event;
   }
   return latest?.receipt.attempt_context ?? null;
@@ -149,5 +161,5 @@ export function readAutomationControllerHeadEvent(repoRootInput: string, runId: 
 export function listAutomationControllerRuns(repoRootInput: string): readonly ReturnType<typeof readAutomationControllerStatus>[] {
   const repoRoot = resolve(repoRootInput); const root = join(resolveGitCommonDirectory(repoRoot), ROOT, 'runs'); if (!existsSync(root)) return Object.freeze([]);
   const entries = readdirSync(root, { withFileTypes: true }); if (entries.some((entry) => !entry.isDirectory() || !/^[0-9a-f]{64}$/u.test(entry.name))) fail('automation_controller_unsafe_path', 'controller run store contains an unexpected entry');
-  return Object.freeze(entries.map((entry) => readAutomationControllerStatus(repoRoot, `sha256:${entry.name}`)).sort((left, right) => left.run.created_at.localeCompare(right.run.created_at) || left.run.run_id.localeCompare(right.run.run_id)));
+  return Object.freeze(entries.map((entry) => readAutomationControllerStatus(repoRoot, entry.name)).sort((left, right) => left.run.created_at.localeCompare(right.run.created_at) || left.run.run_id.localeCompare(right.run.run_id)));
 }

@@ -514,14 +514,15 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
  * Frozen at `main@a490a5ef76b439228a4b3282934c29ba15090cdf`, then deliberately
  * advanced by the approved R1 provider-neutral Agent Runtime work package when
  * FleetBoardSnapshot moved to protocol 3, then by the approved Operator delivery
- * evidence package for protocol 4 and AKN-04a for protocol 5. PR #523 now
- * splits publication receipt 2 from identity/create-intent/prepare 1.
+ * evidence package for protocol 4 and AKN-04a for protocol 5. PR #523 split
+ * publication receipt 2 from identity/create-intent/prepare 1. Audit F05-01
+ * moves the receipt to 3 when it drops the merge-seal binding.
  * A change here is an authority change:
  * it must be justified by the work package that caused it, not silently
  * re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:5b8c7a3b3f996a41873fe11e7a242dbd4accc47f5c1a0e42a4ef0f0f9da87fcb';
+  'sha256:d4a165e3c89e6327c06d57f0f6197ecd13d9af0b63dcb9835808e0961af47c5b';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
@@ -759,7 +760,7 @@ describe('C0 delivery-plane authority baseline', () => {
       'fleet-offers': 1,
       'fleet-board': 5,
       'task-freeze-receipt': 1,
-      'publication-receipt': 2,
+      'publication-receipt': 3,
       'publication-identity': 1,
       'publication-create-intent': 1,
       'publication-prepare': 1,

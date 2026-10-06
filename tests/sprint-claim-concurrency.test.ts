@@ -1091,6 +1091,114 @@ describe('lock wedges and their blast radius', () => {
     expect(complete.status).toBe(0);
     expect(existsSync(backlogLock)).toBe(false);
   }, 60_000);
+
+  /**
+   * A real `start-task` shell that holds the backlog lock until the test opens
+   * a FIFO. The CLI wrapper blocks `sprint identify`, the first CLI call inside
+   * the critical section, and then runs the real CLI. The shell runs in its own
+   * process group, so the test can stop the shell and the wrapper together.
+   */
+  async function holdBacklogLockInShell(fixture: Fixture) {
+    mkdirSync(join(fixture.primary, 'scripts'), { recursive: true });
+    writeFileSync(
+      join(fixture.primary, 'scripts/sprint-backlog.sh'),
+      readFileSync(join(HELPER_DIR, 'sprint-backlog.sh'), 'utf-8'),
+    );
+    const control = realpathSync(mkdtempSync(join(tmpdir(), 'sprint-shell-holder-')));
+    FIXTURES.add(control);
+    const gate = join(control, 'gate.fifo');
+    const held = join(control, 'held');
+    expect(spawnSync('mkfifo', [gate]).status).toBe(0);
+    const wrapper = join(control, 'repo-harness');
+    writeFileSync(wrapper, [
+      '#!/bin/bash',
+      'if [[ "$1" == sprint && "$2" == identify ]]; then',
+      `  : > '${held}'`,
+      `  read -r _ < '${gate}'`,
+      'fi',
+      `exec ${process.execPath} ${CLI} "$@"`,
+      '',
+    ].join('\n'));
+    chmodSync(wrapper, 0o755);
+
+    const shell = spawn('bash', ['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_ONE], {
+      cwd: fixture.primary,
+      env: sandboxEnv({ REPO_HARNESS_CLI_BIN: wrapper }),
+      detached: true,
+    });
+    let stdout = '';
+    let stderr = '';
+    shell.stdout.on('data', (chunk) => { stdout += String(chunk); });
+    shell.stderr.on('data', (chunk) => { stderr += String(chunk); });
+    const exited = new Promise<Run>((resolve) => {
+      shell.on('close', (status) => resolve({ status, stdout, stderr }));
+    });
+    const deadline = Date.now() + 30_000;
+    while (!existsSync(held)) {
+      if (Date.now() > deadline) throw new Error(`the shell holder never reached its critical section: ${stderr}`);
+      await Bun.sleep(10);
+    }
+    return {
+      pid: shell.pid!,
+      exited,
+      resume: () => writeFileSync(gate, 'go\n'),
+      kill: () => process.kill(-shell.pid!, 'SIGKILL'),
+    };
+  }
+
+  test('a live shell start-task holder keeps the backlog lock after its directory ages', async () => {
+    const fixture = createFixture('sprint-shell-holder', false);
+    const backlogLock = join(resolveGitCommonDirectory(fixture.primary), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
+    const holder = await holdBacklogLockInShell(fixture);
+    let finished = false;
+    try {
+      // Age only the lock directory, past the TS (30 s) and shell (1 min)
+      // thresholds. Age alone must not take the lock from a live holder.
+      expect(spawnSync('touch', ['-t', '202001010000', backlogLock]).status).toBe(0);
+
+      expect(() => withBacklogLock(fixture.primary, () => 'entered', () => {
+        throw new Error('reclaimed the backlog lock from a live shell holder');
+      })).toThrow(/timed out waiting/);
+      const contender = spawnSync('bash', ['scripts/sprint-backlog.sh', 'start-task', '--task', ROW_TWO], {
+        cwd: fixture.primary,
+        encoding: 'utf-8',
+        env: sandboxEnv({
+          REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: '5',
+          REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: '0.02',
+        }),
+      });
+      expect(contender.stderr).not.toContain('reclaiming stale backlog lock');
+      expect(contender.stderr).toContain('timed out acquiring backlog lock');
+      expect(contender.status).toBe(1);
+      // The holder names itself with its own live PID, in the format both
+      // reclaim paths read.
+      const owners = readdirSync(backlogLock);
+      expect(owners).toHaveLength(1);
+      expect(owners[0]!.startsWith(`${holder.pid}-`)).toBe(true);
+
+      holder.resume();
+      const result = await holder.exited;
+      finished = true;
+      expect(result.stdout).toContain(`Claimed backlog task '${ROW_ONE}'`);
+      expect(existsSync(backlogLock)).toBe(false);
+    } finally {
+      if (!finished) holder.kill();
+    }
+  }, 120_000);
+
+  test('a killed shell holder is reclaimed by PID at once, not after the age threshold', async () => {
+    const fixture = createFixture('sprint-shell-holder-killed', false);
+    const backlogLock = join(resolveGitCommonDirectory(fixture.primary), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
+    const holder = await holdBacklogLockInShell(fixture);
+    holder.kill();
+    await holder.exited;
+    expect(existsSync(backlogLock)).toBe(true);
+
+    const reclaimed: string[] = [];
+    expect(withBacklogLock(fixture.primary, () => 'recovered', (path) => reclaimed.push(path))).toBe('recovered');
+    expect(reclaimed).toEqual([backlogLock]);
+    expect(existsSync(backlogLock)).toBe(false);
+  }, 120_000);
 });
 
 /**

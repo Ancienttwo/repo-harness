@@ -715,3 +715,47 @@ receipt type. Their own protocol constants do not change.
 | `src/core/publication/publication-receipt.ts` | `sha256:34da4c2d2243c03ac33c7060fc8ae32748d0ea12e69f64f0fbd7423c84c2b7d4` |
 | `src/core/publication/publication-lifecycle.ts` | `sha256:16dff3283f0afa0decfbf83e20300aed30177bd873eb781168e7b3d3426905a5` |
 | `src/core/publication/merge-readiness.ts` | `sha256:ababf458eeb1a79145749347e47296acf798db24344934cae18211a2e5b5823c` |
+
+
+## Audit F05-01 publication version amendment (2026-10-05)
+
+Audit F05-01 found a circular prerequisite. Managed Draft publication wrote a
+receipt that required a host merge seal. Only `merge-gate run` writes that seal,
+and it requires a merge-ready PR. A Draft PR is not merge ready.
+
+This amendment changes the publication receipt to protocol 3. It removes the
+`merge_seal_sha256` field. The receipt now records publication identity only:
+the PR, the head, the tree, the base, and the native candidate diff. Merge
+readiness keeps its live gate. It compares the live provider base and head with
+the receipt and blocks a moved base. Protocols 1 and 2 are retired. Their cache
+and marker bytes fail closed. No store is moved or migrated.
+
+| Domain | Protocol | Wire kind | Independent store root |
+|---|---|---|---|
+| Publication receipt | 3 | `repo-harness-publication-receipt` | `repo-harness/publications/v1` |
+| Publication identity | 1 | None; ID hash basis only | None |
+| Publication create intent | 1 | `repo-harness-publication-create-intent` | None; embedded in the existing ship journal |
+| Publication prepare | 1 | `repo-harness-publication-prepare` | None; operation hand-off envelope |
+
+The publication ID hash basis stays at version 1. The source module still owns
+all four entries. Its protocol value multiset is `[1, 1, 1, 3]`. Publication
+lineage and integration observation keep protocol 1. All other inventory entries
+and versions stay unchanged. This amendment needs owner approval before merge.
+
+The previous inventory digest was
+`sha256:5b8c7a3b3f996a41873fe11e7a242dbd4accc47f5c1a0e42a4ef0f0f9da87fcb`.
+The amended inventory digest is
+`sha256:d4a165e3c89e6327c06d57f0f6197ecd13d9af0b63dcb9835808e0961af47c5b`.
+The machine guard keeps the exact protocol map, source export completeness,
+unique wire kinds, store-root convention and delegation invariants.
+No assertion is removed or relaxed.
+
+These source-byte digests were read from the amended working tree. Lifecycle
+and readiness use the V3 receipt type. Their own protocol constants do not
+change.
+
+| File | sha256 |
+|---|---|
+| `src/core/publication/publication-receipt.ts` | `sha256:e14ccfc74de6971809d20758e17f943967418dbbbc55fb53ba1427f9f1b83405` |
+| `src/core/publication/publication-lifecycle.ts` | `sha256:56f037f32f240803a9f248bbb9fe1849fe9f6374b8863a9d6bcecd7f3228a601` |
+| `src/core/publication/merge-readiness.ts` | `sha256:397c565de6b20177a69fb0200cbfdc69febf0585bc1b78a44999a42dddf2c0df` |

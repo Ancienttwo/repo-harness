@@ -212,12 +212,43 @@ coordination_wait_emit() {
 # start-task calls would otherwise both render from the same snapshot and the
 # second mv would drop the first writer's update.
 BACKLOG_LOCK_DIR=""
+BACKLOG_LOCK_OWNER=""
 
 release_backlog_lock() {
   if [[ -n "$BACKLOG_LOCK_DIR" ]]; then
+    # Only this shell's own owner file: another owner's file keeps the
+    # directory, and with it that owner's lock, in place.
+    [[ -z "$BACKLOG_LOCK_OWNER" ]] || rm -f "$BACKLOG_LOCK_DIR/$BACKLOG_LOCK_OWNER" 2>/dev/null || true
     rmdir "$BACKLOG_LOCK_DIR" 2>/dev/null || true
     BACKLOG_LOCK_DIR=""
+    BACKLOG_LOCK_OWNER=""
   fi
+}
+
+# Publish this shell as the single owner of the lock directory it just made,
+# in the TS primitive's exact owner format: `<pid>-<created_ms>-<uuid>.json`
+# holding `{"pid":N,"created_at":N,"token":"..."}`. Both reclaim paths then
+# judge the holder by PID liveness, so a live shell keeps the lock however old
+# the directory is, and a killed one is reclaimable at once. Like the TS
+# holder, the shell runs only while its file is the single entry: a creator
+# that lost the directory while paused finds no directory or a second entry,
+# withdraws its own file, and retries.
+publish_backlog_lock_owner() {
+  local nonce created token
+  nonce="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
+  created="$(date +%s)000"
+  token="$$-${created}-${nonce:0:8}-${nonce:8:4}-${nonce:12:4}-${nonce:16:4}-${nonce:20:12}"
+  BACKLOG_LOCK_OWNER="${token}.json"
+  if [[ "$nonce" =~ ^[0-9a-f]{32}$ ]] \
+    && { printf '{"pid":%s,"created_at":%s,"token":"%s"}\n' "$$" "$created" "$token" \
+      > "$BACKLOG_LOCK_DIR/$BACKLOG_LOCK_OWNER"; } 2>/dev/null \
+    && [[ "$(ls -A "$BACKLOG_LOCK_DIR" 2>/dev/null)" == "$BACKLOG_LOCK_OWNER" ]]; then
+    return 0
+  fi
+  rm -f "$BACKLOG_LOCK_DIR/$BACKLOG_LOCK_OWNER" 2>/dev/null || true
+  rmdir "$BACKLOG_LOCK_DIR" 2>/dev/null || true
+  BACKLOG_LOCK_OWNER=""
+  return 1
 }
 
 emit_backlog_lock_wait() {
@@ -250,9 +281,9 @@ backlog_owner_dead() {
 }
 
 # Mirror of the single-owner path in reclaimStaleLockDirectory
-# (src/effects/locking/exclusive-directory-lock.ts): a TypeScript holder takes
-# this same lock by creating `<pid>-<created_ms>-<uuid>.json` inside the lock
-# directory, so a holder that crashes after publication leaves a non-empty
+# (src/effects/locking/exclusive-directory-lock.ts): a TypeScript or shell
+# holder takes this same lock by creating `<pid>-<created_ms>-<uuid>.json` inside
+# the lock directory, so a holder that crashes after publication leaves a non-empty
 # directory the plain empty-dir reclaim below can never remove. Every
 # ambiguous input fails closed: only an exactly identified dead owner is
 # reclaimed, and this never hot-loops because a failed verdict falls through
@@ -366,7 +397,10 @@ acquire_backlog_lock() {
   fi
   BACKLOG_LOCK_DIR="$coordination_dir/locks/backlog.lock"
   mkdir -p "$(dirname "$BACKLOG_LOCK_DIR")"
-  until mkdir "$BACKLOG_LOCK_DIR" 2>/dev/null; do
+  until mkdir "$BACKLOG_LOCK_DIR" 2>/dev/null && publish_backlog_lock_owner; do
+    # Every holder publishes its owner file right after mkdir, so an empty
+    # directory is a creator that stopped before publication; if it resumes
+    # after this reclaim, its single-owner check fails and it retries.
     # Reclaim only when the stale dir actually goes away; a non-empty lock dir
     # must fall through to the timeout instead of hot-looping.
     if [[ -n "$(find "$BACKLOG_LOCK_DIR" -maxdepth 0 -mmin +1 2>/dev/null)" ]] \

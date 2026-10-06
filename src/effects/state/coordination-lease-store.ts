@@ -4,6 +4,7 @@
  *
  * ```
  * leases/<task-id>/owner.json
+ * retired-leases/<task-id>-<uuid>/   (a removed lease, until its cleanup ends)
  * locks/tasks/<task-id>.lock/
  * locks/backlog.lock/
  * ```
@@ -26,6 +27,7 @@
  * empty record, and a symlinked lease directory or record are all `unknown`,
  * and `unknown` is never silently deleted -- `removeLease` refuses to touch it.
  */
+import { randomUUID } from 'crypto';
 import {
   lstatSync,
   mkdirSync,
@@ -51,6 +53,9 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
 export const COORDINATION_BACKLOG_LOCK_RELATIVE_PATH = `${COORDINATION_ROOT_RELATIVE_PATH}/locks/backlog.lock`;
 export const LEASE_OWNER_FILE_NAME = 'owner.json';
+const LEASE_OWNER_TEMP_PREFIX = `.${LEASE_OWNER_FILE_NAME}.tmp-`;
+/** Sibling of `leases/`, so no lease reader ever enumerates a removed lease. */
+const RETIRED_LEASES_DIRECTORY_NAME = 'retired-leases';
 
 /** Why a lease could not be classified into a lifecycle state. */
 export type LeaseUnknownReason =
@@ -136,15 +141,15 @@ const defaultBacklogLockReclaimReporter: BacklogLockReclaimReporter = (lockPath)
  * worktrees.
  *
  * `sprint-backlog.sh`'s `acquire_backlog_lock` still takes this same directory
- * for `start-task`, and it reclaims a stale *empty* one -- an mtime older than
- * the threshold plus a successful `rmdir`. This side must reclaim the same
- * shape, or the two callers of one directory disagree about whether a dead
- * holder's lock is recoverable: a crash under the shell would strand every
- * later TypeScript caller, and the reverse. `reclaimStaleOwner` (a dead-PID
- * owner file, which is the shape *this* primitive leaves behind) is already on
- * by default; `reclaimStaleEmptyDirectory` is what brings the shell's shape
- * with it. The report reuses the shell's exact wording so an operator reading
- * either path's stderr sees one message.
+ * for `start-task`, and publishes the same owner file this primitive writes, so
+ * a live shell holder is protected by PID liveness and a killed one is
+ * reclaimed through `reclaimStaleOwner`, which is on by default. Both sides
+ * also reclaim a stale *empty* directory -- a creator that stopped between
+ * `mkdir` and publication -- and a creator resumed after that reclaim fails
+ * the single-owner check before it runs. `reclaimStaleEmptyDirectory` brings
+ * that shape to this side, so the two callers of one directory agree about
+ * which locks are recoverable. The report reuses the shell's exact wording so
+ * an operator reading either path's stderr sees one message.
  */
 export function withBacklogLock<T>(
   cwd: string,
@@ -195,7 +200,7 @@ export function writeLeaseOwnerDurably(
   }
   const directory = leaseDirectory(cwd, taskId);
   const target = join(directory, LEASE_OWNER_FILE_NAME);
-  const temp = join(directory, `.${LEASE_OWNER_FILE_NAME}.tmp-${process.pid}-${Date.now()}`);
+  const temp = join(directory, `${LEASE_OWNER_TEMP_PREFIX}${process.pid}-${Date.now()}`);
   try {
     writeFileDurably(temp, serializeLeaseOwnerRecord(record));
     renameSync(temp, target);
@@ -224,7 +229,14 @@ function classifyUnknown(
  * nothing is repaired, defaulted, or deleted along the way.
  */
 export function readLease(cwd: string, taskId: string): LeaseRead {
-  const directory = leaseDirectory(cwd, taskId);
+  return readLeaseAt(leaseDirectory(cwd, taskId), taskId);
+}
+
+/**
+ * `readLease` against an already resolved lease directory. Root discovery
+ * spawns `git`, so a scan resolves it once per call instead of once per entry.
+ */
+function readLeaseAt(directory: string, taskId: string): LeaseRead {
   let directoryStat;
   try {
     directoryStat = lstatSync(directory);
@@ -291,7 +303,7 @@ export function listLeaseReads(cwd: string): readonly LeaseRead[] {
   return Object.freeze(entries
     .filter((entry) => TASK_DIGEST_PATTERN.test(entry))
     .sort()
-    .map((entry) => readLease(cwd, entry)));
+    .map((entry) => readLeaseAt(join(leasesRoot, entry), entry)));
 }
 
 export interface LeaseByClaimId {
@@ -347,10 +359,25 @@ export function removeLease(cwd: string, taskId: string, expectedClaimId: string
       `refusing to remove lease ${taskId}: owned by ${read.record.claim_id}, not ${expectedClaimId}`,
     );
   }
+  // One rename takes the lease off the live path. Deleting the record first
+  // and the directory second left a crash window, and a terminated owner
+  // write's temporary file made the rmdir fail: both left an ownerless lease
+  // that `claim` refuses and `reconcile` must not clear.
   const directory = leaseDirectory(cwd, taskId);
-  unlinkSync(join(directory, LEASE_OWNER_FILE_NAME));
-  rmdirSync(directory);
+  const retiredRoot = join(coordinationRoot(cwd), RETIRED_LEASES_DIRECTORY_NAME);
+  mkdirSync(retiredRoot, { recursive: true, mode: 0o700 });
+  const retired = join(retiredRoot, `${taskId}-${randomUUID()}`);
+  renameSync(directory, retired);
   syncDirectoryDurably(dirname(directory));
+
+  // Cleanup only. The retired copy is outside every lease read, so a crash
+  // here blocks nothing; an entry this store did not write is left in place.
+  for (const entry of readdirSync(retired)) {
+    if (entry === LEASE_OWNER_FILE_NAME || entry.startsWith(LEASE_OWNER_TEMP_PREFIX)) {
+      unlinkSync(join(retired, entry));
+    }
+  }
+  if (readdirSync(retired).length === 0) rmdirSync(retired);
 }
 
 /**

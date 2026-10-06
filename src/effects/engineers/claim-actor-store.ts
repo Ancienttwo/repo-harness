@@ -143,7 +143,8 @@ export function validateClaimActorReceiptLive<TEnvelope extends ClaimActorEnvelo
 
 /**
  * Read immutable actor receipts and retain only Claims that are still the live
- * Lease owner. Historical receipts never count toward Profile concurrency.
+ * Lease owner. Historical receipts never count toward Profile concurrency. An
+ * unknown Lease behind one of this Engineer's receipts fails closed.
  */
 export function listLiveClaimActorReceiptsForEngineer(
   cwd: string,
@@ -175,7 +176,14 @@ export function listLiveClaimActorReceiptsForEngineer(
         throw new EngineerPrincipalError('claim_actor_receipt_invalid', `Claim actor receipt identity does not match path: ${entry}`);
       }
       if (receipt.engineer_id !== engineerId) continue;
-      const lease = leaseReader(cwd, taskId).record;
+      const read = leaseReader(cwd, taskId);
+      // An unknown Lease cannot prove this Claim ended; refuse instead of undercounting.
+      // The receipt itself is valid, so the code names the unavailable Lease
+      // state and points the operator at the Lease, not the receipt store.
+      if (read.classification === 'unknown') {
+        throw new EngineerPrincipalError('claim_actor_lease_unavailable', `cannot prove Claim ${claimId} ended: Lease is unknown (${read.unknown_reason})`);
+      }
+      const lease = read.record;
       if (lease && lease.claim_id === claimId && lease.generation === receipt.lease_generation
         && lease.task_revision === receipt.task_revision && lease.state !== 'released') receipts.push(receipt);
     }

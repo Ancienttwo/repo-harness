@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { randomUUID } from 'crypto';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import {
   CODEX_READ_ONLY_ARGV_TEMPLATE,
@@ -26,8 +27,10 @@ import {
   readLogicalRoleInstructions,
   loadLogicalReadOnlyRoleProfile,
   prepareDelegatedRun,
+  readDelegatedRunStatus,
   recordCodexReadOnlyCapability,
 } from '../../src/effects/engineers/delegated-run-store';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -251,6 +254,57 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
     expect(readDelegatedRunEvidenceBlob(root, processReceipt.stdout_ref, processReceipt.stdout_sha256).toString('utf8')).toBe('{"untrusted":true}\n');
   });
 
+  test('status fails closed when a persisted WorkerResult is a symlink or non-canonical bytes', () => {
+    const root = fixture();
+    const admission = admitted(root);
+    const prepared = prepare(root, admission);
+    dispatchDelegatedRun({
+      repo_root: root,
+      dispatch_id: prepared.intent.dispatch_id,
+      observed_at: '2026-08-26T00:00:03Z',
+      protected_paths: admission.protectedPaths,
+    });
+    const collected = collectDelegatedRunResult({
+      repo_root: root,
+      dispatch_id: prepared.intent.dispatch_id,
+      untrusted_claims: [],
+      contribution_refs: [],
+    });
+    const resultName = `${collected.result!.result_sha256.slice('sha256:'.length)}.json`;
+    const resultPath = join(resolveGitCommonDirectory(root), 'repo-harness', 'delegated-runs', 'v1', 'results', resultName);
+    const canonical = readFileSync(resultPath);
+    expect(readDelegatedRunStatus(root, prepared.intent.dispatch_id).result?.result_sha256).toBe(collected.result!.result_sha256);
+
+    // A symlink is not a regular evidence file, even when it points at the
+    // exact canonical bytes.
+    const copyPath = join(dirname(resultPath), `symlink-target-${resultName}`);
+    writeFileSync(copyPath, canonical);
+    rmSync(resultPath);
+    symlinkSync(copyPath, resultPath);
+    try {
+      readDelegatedRunStatus(root, prepared.intent.dispatch_id);
+      throw new Error('status accepted a symlinked result');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DelegatedRunStoreError);
+      expect((error as DelegatedRunStoreError).code).toBe('delegated_run_unsafe_path');
+    }
+
+    // Bytes that parse to the same record but are not canonical are a
+    // conflict, not a silent read.
+    unlinkSync(resultPath);
+    writeFileSync(resultPath, canonical);
+    const reparsed = JSON.parse(canonical.toString('utf8')) as Record<string, unknown>;
+    writeFileSync(resultPath, `${JSON.stringify(reparsed, null, 2)}\n`);
+    try {
+      readDelegatedRunStatus(root, prepared.intent.dispatch_id);
+      throw new Error('status accepted non-canonical result bytes');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DelegatedRunStoreError);
+      expect((error as DelegatedRunStoreError).code).toBe('delegated_run_conflict');
+    }
+    unlinkSync(copyPath);
+  });
+
   test('lost ACK after persisted launch claim reconciles without a second action', () => {
     const root = fixture();
     const admission = admitted(root);
@@ -326,6 +380,34 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
     });
     expect(retry.current.state).toBe('reconciliation_required');
     expect(dispatchCalls(root)).toBe(0);
+  });
+
+  test('a staged launch-claim temporary never blocks another run, while other entries still fail closed', () => {
+    const root = fixture();
+    const admission = admitted(root);
+    const prepared = prepare(root, admission);
+    expect(() => dispatchDelegatedRun({
+      repo_root: root, dispatch_id: prepared.intent.dispatch_id, observed_at: '2026-08-26T00:00:03Z', protected_paths: admission.protectedPaths,
+      crash_hook: (boundary) => { if (boundary === 'after_launch_claim_persisted') throw new Error('simulated process crash'); },
+    })).toThrow('simulated process crash');
+    const claims = join(root, '.git/repo-harness/delegated-runs/v1/launch-claims');
+    const [committed] = readdirSync(claims);
+    // The exact name persistImmutable stages for another claim; a crash before unlink leaves it behind.
+    const staged = join(claims, `.${'d'.repeat(64)}.${process.pid}.${randomUUID()}.tmp`);
+    writeFileSync(staged, '{"partial":');
+    expect(readDelegatedRunStatus(root, prepared.intent.dispatch_id).launch_claim?.launch_claim_sha256).toBe(`sha256:${committed!.slice(0, 64)}`);
+    const retry = dispatchDelegatedRun({
+      repo_root: root, dispatch_id: prepared.intent.dispatch_id, observed_at: '2026-08-26T00:00:04Z', protected_paths: admission.protectedPaths,
+    });
+    expect(retry.current.state).toBe('reconciliation_required');
+    expect(dispatchCalls(root)).toBe(0);
+    rmSync(staged);
+    for (const unexpected of [`.${'e'.repeat(64)}.${process.pid}.${randomUUID()}.tmp`, '.notes.tmp']) {
+      const path = join(claims, unexpected);
+      if (unexpected === '.notes.tmp') writeFileSync(path, '{}'); else mkdirSync(path);
+      expect(() => readDelegatedRunStatus(root, prepared.intent.dispatch_id)).toThrow('launch claim store contains unexpected entry');
+      rmSync(path, { recursive: true });
+    }
   });
 
   test('hands both the canary and the dispatch child an exact minimal environment bound into the receipts', () => {

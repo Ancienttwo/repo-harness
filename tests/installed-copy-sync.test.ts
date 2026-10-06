@@ -759,6 +759,33 @@ describe('minimal provider ownership boundary', () => {
   }
 });
 
+describe('separately installed integration ownership boundary', () => {
+  for (const profile of ['minimal', 'full'] as const) {
+    for (const link of [true, false]) {
+      test(`${profile} ${link ? 'link' : 'copy'} sync keeps an installed ChatGPT skill link`, async () => {
+        const { runChatgptSkillProjection } = await import('../src/cli/chatgpt-skill/installer');
+        const tmp = mkdtempSync('/tmp/rh-integration-boundary-');
+        try {
+          const home = join(tmp, 'home');
+          const source = join(tmp, 'source');
+          seedSkillSurfaceRuntime(source);
+          writeFileSync(join(source, 'SKILL.md'), '---\nname: repo-harness\n---\n');
+          const installed = runChatgptSkillProjection({ action: 'install', home });
+          const links = ['.codex', '.claude'].map(host => join(home, host, 'skills', 'repo-harness-chatgpt'));
+          expect([...installed.changed].sort()).toEqual([...links].sort());
+          const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], {
+            env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
+              AGENTIC_DEV_LINK_INSTALLED_COPIES: link ? '1' : '0', REPO_HARNESS_INSTALL_PROFILE: profile }, encoding: 'utf8',
+          });
+          expect(result.status, result.stderr).toBe(0);
+          for (const dest of links) expect(readlinkSync(dest)).toBe(installed.source);
+          expect(lstatSync(join(home, '.codex', 'skills', 'repo-harness')).isSymbolicLink()).toBe(link);
+        } finally { rmSync(tmp, { recursive: true, force: true }); }
+      }, 30000);
+    }
+  }
+});
+
 describe('installed copy file projection', () => {
   test('installer and upgrade staging copy exactly the shared canonical and facade file lists', async () => {
     const { hashManagedTree, installedCopyTreeOptions, managedTreeEntries } = await import('../src/cli/installer/install-profile');

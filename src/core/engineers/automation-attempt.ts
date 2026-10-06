@@ -37,7 +37,9 @@ export function buildTaskAutomationAttempt(input: Omit<TaskAutomationAttemptV1, 
   if (input.outcome === 'started' ? input.ended_at !== null || input.evidence_refs.length !== 0 : input.ended_at === null || input.evidence_refs.length === 0) throw new Error('attempt outcome, end timestamp and evidence are inconsistent');
   if (input.ended_at !== null && iso(input.ended_at, 'ended_at') < iso(input.started_at, 'started_at')) throw new Error('attempt ended before it started');
   if (!/^[0-9a-f]{64}$/u.test(input.task_revision)) throw new Error('task_revision is invalid');
-  for (const field of ['work_package_revision', 'controller_run_id', 'budget_revision', 'dispatch_id'] as const) sha(input[field], field);
+  for (const field of ['work_package_revision', 'dispatch_id'] as const) sha(input[field], field);
+  // The controller run and its budget revision are automation budget identities in the budget store's bare hex format.
+  for (const field of ['controller_run_id', 'budget_revision'] as const) if (!/^[0-9a-f]{64}$/u.test(input[field])) throw new Error(`${field} must be a budget digest`);
   if (input.runtime_effect_id !== null) sha(input.runtime_effect_id, 'runtime_effect_id'); if (input.previous_attempt_sha256 !== null) sha(input.previous_attempt_sha256, 'previous_attempt_sha256');
   const basis = Object.freeze({ protocol: AUTOMATION_ATTEMPT_PROTOCOL, kind: 'repo-harness-task-automation-attempt' as const, ...input, evidence_refs: Object.freeze([...input.evidence_refs]) });
   return Object.freeze({ ...basis, attempt_sha256: digest(basis) });

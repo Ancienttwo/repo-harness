@@ -583,6 +583,10 @@ export function validateSkillSurfaceCatalogValue(
 
   const diagnostics: SkillSurfaceCatalogDiagnostic[] = [];
   const packages: SkillSurfacePackage[] = [];
+  // Invalid entries are dropped, so `packages` positions differ from input
+  // positions. `names` holds positions in `packages`; diagnostics use
+  // `sourceIndexes` to name the input entry.
+  const sourceIndexes: number[] = [];
   const names = new Map<string, number>();
   const sources = new Map<string, number>();
 
@@ -590,6 +594,7 @@ export function validateSkillSurfaceCatalogValue(
     const pkg = validatePackage(rawPackage, index, diagnostics);
     if (!pkg) continue;
     packages.push(pkg);
+    sourceIndexes.push(index);
 
     if (pkg.name !== "(unknown)") {
       const previous = names.get(pkg.name);
@@ -600,7 +605,7 @@ export function validateSkillSurfaceCatalogValue(
           `duplicate package name: ${pkg.name}`,
         ));
       } else {
-        names.set(pkg.name, index);
+        names.set(pkg.name, packages.length - 1);
       }
     }
     if (pkg.source !== null) {
@@ -618,7 +623,8 @@ export function validateSkillSurfaceCatalogValue(
   }
 
   if (options.profileComponents) {
-    for (const [index, pkg] of packages.entries()) {
+    for (const [position, pkg] of packages.entries()) {
+      const index = sourceIndexes[position];
       for (const profile of pkg.profiles) {
         const allowed = options.profileComponents[profile];
         if (allowed && !allowed.includes(pkg.component)) {
@@ -632,7 +638,8 @@ export function validateSkillSurfaceCatalogValue(
     }
   }
 
-  for (const [index, pkg] of packages.entries()) {
+  for (const [position, pkg] of packages.entries()) {
+    const index = sourceIndexes[position];
     const seenRequirements = new Set<string>();
     for (const [requirementIndex, requirement] of pkg.requires.entries()) {
       const requirementPath = `packages[${index}].requires[${requirementIndex}]`;
@@ -713,7 +720,7 @@ export function validateSkillSurfaceCatalogValue(
         reportedCycles.add(key);
         diagnostics.push(diagnostic(
           "CYCLIC_REQUIREMENT",
-          `packages[${names.get(name) ?? 0}].requires`,
+          `packages[${sourceIndexes[names.get(name) ?? 0]}].requires`,
           `dependency cycle: ${cycle.join(" -> ")}`,
         ));
       }
@@ -731,7 +738,8 @@ export function validateSkillSurfaceCatalogValue(
   for (const name of names.keys()) visitRequirements(name, []);
 
   if (options.exists) {
-    for (const [index, pkg] of packages.entries()) {
+    for (const [position, pkg] of packages.entries()) {
+      const index = sourceIndexes[position];
       if (pkg.source !== null && !options.exists(pkg.source)) {
         diagnostics.push(diagnostic(
           "SOURCE_MISSING",

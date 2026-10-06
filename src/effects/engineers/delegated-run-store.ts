@@ -356,6 +356,9 @@ function immutablePath(repoRoot: string, kind: ImmutableStoreKind, valueDigest: 
   return join(storePath(repoRoot, kind, create), `${digest(valueDigest, `${kind} digest`).slice('sha256:'.length)}.json`);
 }
 
+/** The private name persistImmutable stages under before link publication. */
+const STAGED_IMMUTABLE = /^\.[0-9a-f]{64}\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/u;
+
 function persistImmutable(repoRoot: string, kind: ImmutableStoreKind, valueDigest: string, canonical: string): void {
   const target = immutablePath(repoRoot, kind, valueDigest, true);
   const directory = dirname(target);
@@ -386,7 +389,12 @@ function persistImmutable(repoRoot: string, kind: ImmutableStoreKind, valueDiges
 }
 
 function readImmutable<T>(repoRoot: string, kind: ImmutableStoreKind, valueDigest: string, validate: (value: unknown) => T, canonical: (value: T) => string): T {
-  const raw = readRegular(immutablePath(repoRoot, kind, valueDigest), `${kind} evidence`);
+  return readImmutableAt(immutablePath(repoRoot, kind, valueDigest), kind, validate, canonical);
+}
+
+/** `readImmutable` for a path inside a store directory the caller already resolved. */
+function readImmutableAt<T>(path: string, kind: ImmutableStoreKind, validate: (value: unknown) => T, canonical: (value: T) => string): T {
+  const raw = readRegular(path, `${kind} evidence`);
   let value: unknown;
   try { value = JSON.parse(raw.toString('utf8')); } catch (error) { throw new DelegatedRunStoreError('delegated_run_invalid', `${kind} evidence is not JSON`, error); }
   let result: T;
@@ -830,9 +838,14 @@ function launchClaimFor(repoRoot: string, id: string, intentSha: string): Delega
     if (error instanceof DelegatedRunStoreError && error.code === 'delegated_run_not_found') return null;
     throw error;
   }
-  for (const entry of readdirSync(directory).sort()) {
-    if (!/^[0-9a-f]{64}\.json$/u.test(entry)) fail('delegated_run_unsafe_path', 'launch claim store contains unexpected entry');
-    const raw = readRegular(join(directory, entry), 'launch claim');
+  const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  for (const entry of entries) {
+    // A concurrent or interrupted writer's staging file is not a committed
+    // claim. The directory entry type avoids a second stat that the writer's
+    // unlink could race.
+    if (entry.isFile() && STAGED_IMMUTABLE.test(entry.name)) continue;
+    if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/u.test(entry.name)) fail('delegated_run_unsafe_path', 'launch claim store contains unexpected entry');
+    const raw = readRegular(join(directory, entry.name), 'launch claim');
     let claim: DelegatedRunLaunchClaimV1;
     try { claim = validateDelegatedRunLaunchClaim(JSON.parse(raw.toString('utf8'))); } catch (error) { throw new DelegatedRunStoreError('delegated_run_invalid', 'launch claim is invalid', error); }
     if (claim.dispatch_id === id && claim.intent_sha256 === intentSha) return claim;
@@ -851,7 +864,9 @@ function status(repoRoot: string, intent: DelegatedRunIntentV1, current: Delegat
     }
     if (directory !== null && existsSync(directory)) for (const entry of readdirSync(directory).sort()) {
       if (!/^[0-9a-f]{64}\.json$/u.test(entry)) continue;
-      const candidate = readImmutable(repoRoot, 'results', `sha256:${entry.slice(0, -'.json'.length)}`, validateWorkerResult, canonicalWorkerResultBytes);
+      // `directory` is already resolved and verified; resolving it again per
+      // entry would start one `git` process for every historical result.
+      const candidate = readImmutableAt(join(directory, entry), 'results', validateWorkerResult, canonicalWorkerResultBytes);
       if (candidate.worker_run_ref_sha256 === runRef.run_ref_sha256) { result = candidate; break; }
     }
   }

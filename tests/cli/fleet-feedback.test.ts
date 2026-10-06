@@ -1,4 +1,4 @@
-import { candidate, helperFingerprint } from '../../scripts/merge-gate';
+import { candidate } from '../../scripts/merge-gate';
 import { deriveShipJournalKey } from '../../src/effects/publication/publication-lifecycle';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
@@ -6,7 +6,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
-  realpathSync, readFileSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'fs';
@@ -140,7 +140,6 @@ interface Fixture {
   readonly generation: number;
   readonly headSha: string;
   readonly baseSha: string;
-  readonly sealPath: string;
 }
 
 function fixture(): Fixture {
@@ -171,20 +170,6 @@ function fixture(): Fixture {
   const headSha = git(root, 'rev-parse', 'HEAD');
   const baseSha = git(root, 'rev-parse', 'main');
   const treeSha = git(root, 'rev-parse', 'HEAD^{tree}');
-  const sealPath = join(root, 'seal.json');
-  const sealBytes = `${JSON.stringify({
-    protocol: 2,
-    repository_root: realpathSync(root),
-    base_ref: 'main',
-    helper_fingerprint: helperFingerprint(root),
-    pr_number: 7,
-    sealed_at: '2026-08-23T06:30:00Z',
-    kind: 'repo-harness-merge-seal',
-    base_sha: baseSha,
-    head_sha: headSha,
-    diff_fingerprint: candidate(root, 'main').diffFingerprint,
-  })}\n`;
-  writeFileSync(sealPath, sealBytes);
 
   const receipt = buildPublicationReceipt({
     repo_id: publicationSha256(resolveGitCommonDirectory(root)),
@@ -198,7 +183,6 @@ function fixture(): Fixture {
     head_sha: headSha,
     tree_sha: treeSha,
     candidate_diff_fingerprint: candidate(root, 'main').diffFingerprint,
-    merge_seal_sha256: publicationSha256(sealBytes),
     provider: 'github',
     provider_repo_id: 'R_feedback_cli',
     pr_number: 7,
@@ -255,7 +239,6 @@ function fixture(): Fixture {
     generation: 1,
     headSha,
     baseSha,
-    sealPath,
   };
 }
 
@@ -291,7 +274,6 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
     head_sha: source.head_sha,
     tree_sha: source.tree_sha,
     candidate_diff_fingerprint: source.candidate_diff_fingerprint,
-    merge_seal_sha256: source.merge_seal_sha256,
     provider: source.provider,
     provider_repo_id: source.provider_repo_id,
     pr_number: source.pr_number + 1,
@@ -344,7 +326,6 @@ function runCli(fixture: Fixture, args: readonly string[], envOverrides: Record<
       ...process.env,
       REPO_HARNESS_GH_BIN: fixture.fakeGh,
       REPO_HARNESS_GIT_BIN: 'git',
-      REPO_HARNESS_PUBLICATION_SEAL_PATH: fixture.sealPath,
       GH_BODY_FILE: join(fixture.root, 'pr-body.md'),
       ...envOverrides,
     },
@@ -431,7 +412,6 @@ function prepareCompletionPublication(subject: Fixture) {
     head_sha: completionHead,
     tree_sha: completionTree,
     candidate_diff_fingerprint: source.candidate_diff_fingerprint,
-    merge_seal_sha256: source.merge_seal_sha256,
     provider: source.provider,
     provider_repo_id: source.provider_repo_id,
     pr_number: source.pr_number,

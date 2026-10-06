@@ -17,8 +17,14 @@ import {
 import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 import { processSprintDependencies, releaseSprintCommand } from '../state/coordination-sprint';
-import { readClaimActorReceipt, publishClaimActorReceipt, validateClaimActorReceiptLive } from './claim-actor-store';
+import {
+  listLiveClaimActorReceiptsForEngineer,
+  readClaimActorReceipt,
+  publishClaimActorReceipt,
+  validateClaimActorReceiptLive,
+} from './claim-actor-store';
 import { readEngineerBindingStatus, withEngineerBindingLock } from './binding-store';
+import { loadEngineerProfile } from './profile-store';
 
 export type EngineerAcquireFailureCode = 'fleet_acquire_failed' | 'claim_actor_receipt_failed' | 'rollback_failed';
 
@@ -41,6 +47,8 @@ export interface EngineerAcquireDependencies {
   readonly release: (repoRoot: string, claimId: string) => CommandOutcome;
   readonly readBinding: typeof readEngineerBindingStatus;
   readonly withBindingLock: typeof withEngineerBindingLock;
+  readonly loadProfile: typeof loadEngineerProfile;
+  readonly listLiveClaims: typeof listLiveClaimActorReceiptsForEngineer;
 }
 
 export interface EngineerAcquireOptions {
@@ -48,7 +56,6 @@ export interface EngineerAcquireOptions {
   readonly principal: EngineerPrincipalV1;
   readonly assertion?: FleetAcquireAssertionV1;
   readonly session_id?: string | null;
-  readonly max_attempts?: number;
   readonly now?: () => Date;
   readonly env?: NodeJS.ProcessEnv;
   readonly dependencies?: Partial<EngineerAcquireDependencies>;
@@ -64,12 +71,34 @@ function dependencies(overrides: Partial<EngineerAcquireDependencies> = {}): Eng
     release: (repoRoot, claimId) => releaseSprintCommand({ claimId }, processSprintDependencies(repoRoot)),
     readBinding: readEngineerBindingStatus,
     withBindingLock: withEngineerBindingLock,
+    loadProfile: loadEngineerProfile,
+    listLiveClaims: listLiveClaimActorReceiptsForEngineer,
     ...overrides,
   };
 }
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Enforce the Profile limit under the Binding lock. Offer checks run under a
+ * per-concurrency-key lock, so acquisitions on different keys reach this lock
+ * after their own offer check and must recount every live Claim here.
+ */
+function activeClaimCapacityRefusal(options: EngineerAcquireOptions, deps: EngineerAcquireDependencies): string | null {
+  try {
+    const profile = deps.loadProfile(options.repo_root, options.principal.engineer_id);
+    if (profile.engineer_contract_revision !== options.principal.engineer_contract_revision) {
+      return 'authenticated Engineer Profile is not current';
+    }
+    const live = deps.listLiveClaims(options.repo_root, options.principal.engineer_id, deps.readLease).length;
+    return live >= profile.profile.max_active_claims
+      ? `Engineer active Claim limit is reached (${live} of ${profile.profile.max_active_claims})`
+      : null;
+  } catch (error) {
+    return `Engineer active Claim capacity cannot be verified: ${message(error)}`;
+  }
 }
 
 function acquireEngineerTaskLocked(options: EngineerAcquireOptions, deps: EngineerAcquireDependencies): EngineerAcquireResult {
@@ -105,11 +134,12 @@ function acquireEngineerTaskLocked(options: EngineerAcquireOptions, deps: Engine
       message: `authenticated Engineer repository cannot be verified: ${message(error)}`,
     });
   }
+  const capacityRefusal = activeClaimCapacityRefusal(options, deps);
+  if (capacityRefusal !== null) return Object.freeze({ ok: false, error: 'fleet_acquire_failed', message: capacityRefusal });
   const fleet = deps.acquire({
     repo_id: options.principal.repository_id,
     assertion: options.assertion,
     session_id: `engineer:${options.principal.binding_id}`,
-    max_attempts: options.max_attempts,
     env: options.env,
   });
   if (!fleet.ok) return Object.freeze({ ok: false, error: 'fleet_acquire_failed', message: fleet.message, fleet });
