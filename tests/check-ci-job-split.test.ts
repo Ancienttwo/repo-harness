@@ -87,6 +87,38 @@ describe('single affected verification and daily fallback', () => {
     }
   });
 
+  test('required HOME isolation runs native review acceptance only on the exact macOS candidate', () => {
+    const job = workflow.jobs['test-home-isolation'];
+    expect(job.needs).toBe('selection');
+    expect(job.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'daily'");
+    expect(job['runs-on']).toBe('${{ matrix.os }}');
+    expect(job.strategy.matrix.os).toEqual(['ubuntu-latest', 'macos-latest', 'windows-latest']);
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
+    expect(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with).toEqual({
+      ref: '${{ needs.selection.outputs.sha }}', 'persist-credentials': false,
+    });
+    expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
+    expect(job.steps.some((step: any) => step.uses === 'actions/download-artifact@v4')).toBe(false);
+    const native = job.steps.filter((step: any) => step.name === 'Run native review acceptance tests');
+    expect(native).toHaveLength(1);
+    expect(native[0].if).toBe("matrix.os == 'macos-latest'");
+    expect(native[0].shell).toBe('bash');
+    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}' });
+    expect(native[0].run.trim().split('\n')).toEqual([
+      'set -euo pipefail',
+      'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"',
+      `bun -e 'if (process.platform !== "darwin") process.exit(1)'`,
+      `node -e 'if (process.platform !== "darwin" || process.versions.bun || !process.versions.node.startsWith("24.")) process.exit(1)'`,
+      'test -x /usr/bin/sandbox-exec',
+      'bun install --frozen-lockfile',
+      'test ! -e dist/oar-review-host.js',
+      'bun run build:oar-review-host',
+      'test -s dist/oar-review-host.js',
+      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/cli/cross-review.test.ts --timeout 60000 --max-concurrency 1',
+    ]);
+  });
+
   test('selector uses actual complete Git PR diff and outputs selected files', () => {
     const repo = mkdtempSync(join(tmpdir(), 'rh-ci-selection-'));
     const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' }); if (result.status !== 0) throw Error(result.stderr); return result.stdout.trim(); };

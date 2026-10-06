@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { join } from 'path';
@@ -16,6 +16,20 @@ import { ensureSessionDirectory, nextSessionRound, writeSessionArtifact } from '
 import { tmpWorkspace, run } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+function resolveNode24(): string {
+  const executable = Bun.which('node', { PATH: process.env.PATH ?? '' });
+  if (!executable) throw new Error('OAR fixture requires Node 24 on PATH');
+  const node = realpathSync(executable);
+  const runtime = JSON.parse(execFileSync(node, ['-p', 'JSON.stringify({ node: process.versions.node, bun: process.versions.bun, executable: process.execPath })'], {
+    encoding: 'utf8', timeout: 10_000,
+  })) as { node?: string; bun?: string; executable: string };
+  if (!/^24\./.test(runtime.node ?? '') || runtime.bun !== undefined || realpathSync(runtime.executable) !== node) {
+    throw new Error('OAR fixture requires the resolved PATH executable to be Node 24');
+  }
+  return node;
+}
+
 test('generic review refuses empty and missing plans before any provider starts on every platform', async () => {
   for (const reason of ['empty_plan', 'missing_plan']) {
     const { root, home, contract, verification } = seedAcceptanceFixture('gp');
@@ -227,7 +241,7 @@ fs.writeFileSync(spec.allowed,'ALLOWED');
 if(spec.child){const r=cp.spawnSync(process.execPath,[__filename,JSON.stringify({...spec,child:false,allowed:spec.childAllowed})],{encoding:'utf8'});console.log(JSON.stringify({results,operations,child:{status:r.status,stdout:r.stdout,stderr:r.stderr}}))}
 else console.log(JSON.stringify({results,operations}));
 `);
-  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const node = resolveNode24();
   const spec = { targets, allowedNative, allowed: join(output, 'host.txt'), childAllowed: join(output, 'child.txt'), child: true };
   const temporary = reviewHostTemporaryDirectory(output);
   const result = spawnSync('/usr/bin/sandbox-exec', ['-f', profile, node, worker, JSON.stringify(spec)], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } });
@@ -288,7 +302,7 @@ import {createHash} from 'node:crypto';
 import {openScriptedReviewHost,runHostFileRequest,serveHostFileRequests,reviewRuntime,assertOarHostNode} from ${JSON.stringify(entry)};
 const output=${JSON.stringify(output)},isolation=${JSON.stringify({paths,policyFile})};
 ${body}`);
-  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const node = resolveNode24();
   const result = confined ? spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, node, worker], { encoding: 'utf8', timeout: 15000, env: { ...process.env, TMPDIR: temporary } })
     : spawnSync(node, [worker], { encoding: 'utf8', timeout: 15000 });
   expect(result.status, result.stderr).toBe(0);
@@ -349,7 +363,7 @@ test.skipIf(process.platform !== 'darwin')('OAR installation is probed by the fi
   writeFileSync(executable, `#!/bin/sh\n/bin/ps -p "$PPID" -o command= >> '${trace}'\nprintf '0.0.0\\n'\n`); chmodSync(executable, 0o700);
   const priorNode = process.env.REPO_HARNESS_NODE_BIN, priorBin = process.env.OAR_CODEX_BIN;
   try {
-    process.env.REPO_HARNESS_NODE_BIN = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+    process.env.REPO_HARNESS_NODE_BIN = resolveNode24();
     process.env.OAR_CODEX_BIN = executable;
     const observed = await probeReviewInstallation('codex');
     expect(observed.kind).toBe('available');
@@ -402,7 +416,7 @@ test.skipIf(process.platform !== 'darwin')('OAR native child cannot forge owner 
   const owner = join(root, 'owner'), output = join(root, 'output'); mkdirSync(owner); mkdirSync(output);
   const paths = { subject: owner, primary: owner, ownerRecord: owner, journal: owner, gitCommonDir: owner, output };
   const policyFile = join(owner, 'profile.sb'); writeFileSync(policyFile, reviewIsolationPolicy(paths), { mode: 0o600 });
-  const node = realpathSync('/opt/homebrew/opt/node@24/bin/node');
+  const node = resolveNode24();
   const fixture = join(root, 'fixture-codex.cjs');
   writeFileSync(fixture, `#!${node}\n` + String.raw`
 const fs=require('node:fs'),path=require('node:path'),net=require('node:net'),readline=require('node:readline');
