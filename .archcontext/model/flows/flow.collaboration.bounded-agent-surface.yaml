@@ -17,13 +17,21 @@ participants:
   - id: delegated-run-store
     nodeId: component.delegated-runs.primary
 steps:
+  - id: authenticate-the-caller
+    from: collaboration
+    to: scheduling-authority
+    label: Resolve the authenticated principal before collection and on each offer read
+    evidence:
+      entrypointId: entrypoint.collaboration.agent-surface-offers
+      sourceSymbol: resolveSurfacePrincipal
+      sinkId: sink.collaboration.surface-principal
   - id: ask-the-scheduling-plane
     from: collaboration
     to: scheduling-authority
     label: Ask the scheduling plane what this exact authenticated principal could pick up, so an empty offer list means the plane answered rather than that nobody asked
     evidence:
       entrypointId: entrypoint.collaboration.agent-surface-offers
-      sourceSymbol: readExecutionOffersFor
+      sourceSymbol: collect
       sinkId: sink.collaboration.surface-offer-authority
 outcomes:
   - id: served

@@ -282,7 +282,12 @@ source:
     - id: entrypoint.collaboration.agent-surface-offers
       path: "src/effects/collaboration/agent-surface.ts"
       symbols:
-        - name: "readExecutionOffersFor"
+        - name: "resolveSurfacePrincipal"
+          sinks:
+            - id: sink.collaboration.surface-principal
+              path: "src/effects/engineers/principal.ts"
+              symbol: "resolveEngineerPrincipal"
+        - name: "collect"
           sinks:
             - id: sink.collaboration.surface-offer-authority
               path: "src/effects/engineers/scheduling.ts"

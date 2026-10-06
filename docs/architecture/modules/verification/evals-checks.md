@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:dab4410b60145f7fca9271ad864c60f8b83d8ea477dbdbe8a16d44bdb7956455" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9b17d3562bfed9c5dcb999e05010b4acfe80289694098c581cec01113b5e703d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:b50663c64a52361dbca00738f16d1aa0ba8db58da22380676c2020f39fd67472" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f441680980cbfba428fb128061ac15c3df130e0c6b5e66ffe05ac2ceeefa7f7c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`scripts/check-brain-manifest.sh`、`scripts/sync-brain-docs.sh`
@@ -34,7 +34,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`500–1000` 個文件 / `100k–200k` 行
+- 規模量級:`500–1000` 個文件 / `200k–500k` 行
 - 匹配前綴:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`scripts/check-brain-manifest.sh`、`scripts/sync-brain-docs.sh`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 

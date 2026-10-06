@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:98aca01f5972a801ccbed7b23063276724226233393bfd9d69dda2743eb9a26f" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f77e33f1153051b1b06a584faf6bd25a8581694d6b6148650dc66c9160b0cf2c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:2d761a23581c19f34eb060fc3baa1ce890de5094d8a65cadd151dfbb11d7b64a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5422b6f45cd474884c42d42a58f78d1a95f73bc85eb3584fca5fdbfd0e5d2f29" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -27,7 +27,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:b2f533221d0f4381ab78d10170b30b1d5d04fb5a17487c4901f4d76dcfca14b4`).
+- Proof: `proven` (`sha256:eececedfb9294ed416c2864a43214c37fa7546b484a6b89665cf1104adab0afa`).
 - Semantic nodes: `4`; declared relations: `3`.
 
 ### 1.2 模組職責表
@@ -65,7 +65,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:b2f533221d0f4381ab78d10170b30b1d5d04fb5a17487c4901f4d76dcfca14b4`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:eececedfb9294ed416c2864a43214c37fa7546b484a6b89665cf1104adab0afa`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -73,7 +73,7 @@ sequenceDiagram
   autonumber
   participant p2_engineer_mcp_97bc42c0 as MCP Sidecar
   participant p2_scheduling_authority_0fce7315 as Engineer Scheduling
-  p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Revalidate the exact Engineer offer before delegated Fleet acquisition
+  p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Acquire one exact offer from a trusted observation before delegated Fleet acquisition
   alt Exact WorkEnvelope and ClaimActorReceipt are returned
   p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return the live-validated envelope and immutable receipt
     Note over p2_engineer_mcp_97bc42c0: Return authenticated acquire result
