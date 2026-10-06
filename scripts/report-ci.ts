@@ -171,7 +171,7 @@ export async function watchDailyCI(repo: string, now: Date, api: GitHubAPI, sche
   if (now.getTime() < expected + 4 * 60 * 60 * 1000) throw new Error('Daily observation is before the four-hour deadline');
   const key = `ci-daily-missing:${date}`;
   try {
-    const runs = await githubPages(api, `${root}/actions/workflows/ci.yml/runs?event=schedule&created=${date}`, 'workflow_runs');
+    const runs = await githubPages(api, `${root}/actions/workflows/ci.yml/runs?event=schedule&created=${date}..${now.toISOString().slice(0, 10)}`, 'workflow_runs');
     const matching = runs.filter(run => {
       if (!positive(run.id) || typeof run.created_at !== 'string' || !Number.isFinite(Date.parse(run.created_at)) || typeof run.status !== 'string') throw new Error('Daily run observation incomplete');
       return run.path === '.github/workflows/ci.yml' && run.head_branch === 'main' && run.event === 'schedule'

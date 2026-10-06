@@ -116,6 +116,44 @@ test.each([{ runs: [] }, { runs: [{ id: 12, path: '.github/workflows/ci.yml', ev
   expect(late.delivery).toBe('reused'); expect(late.date).toBe('2026-10-03'); expect(issues).toHaveLength(1);
 });
 
+test.each([
+  { now: '2026-10-03T23:30:00Z', created: '2026-10-03T21:00:00Z', date: '2026-10-03' },
+  { now: '2026-10-06T03:09:34.720Z', created: '2026-10-06T00:41:50Z', date: '2026-10-05' },
+])('daily watchdog observes a completed run across its UTC window: %j', async ({ now, created, date }) => {
+  const run = { id: 37395342276, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: created, status: 'completed', conclusion: 'failure' };
+  let writes = 0;
+  const api: GitHubAPI = async (path, method = 'GET', body) => {
+    if (path.includes('/actions/workflows/ci.yml/runs?')) {
+      // Match the provider's inclusive calendar-date filter, including one-day queries.
+      const filter = new URL(path, 'https://api.github.com').searchParams.get('created')!;
+      const [from, to = from] = filter.split('..');
+      const day = run.created_at.slice(0, 10);
+      return { workflow_runs: day >= from! && day <= to! ? [run] : [] };
+    }
+    if (path.includes('/issues?')) return [];
+    if (path.endsWith('/commits/main')) return { sha: 'a'.repeat(40) };
+    if (path.endsWith('/issues') && method === 'POST') { writes++; return { ...(body as object), number: 1, html_url: 'https://github.com/test/repo/issues/1' }; }
+    throw Error(`Unexpected API request ${path}`);
+  };
+  const observed = await watchDailyCI('test/repo', new Date(now), api, '0 19 * * *');
+  expect(observed).toEqual({ date, observation: 'completion-observed', run_ids: [run.id] });
+  expect(writes).toBe(0);
+});
+
+test.each(['2026-10-05T18:59:59Z', '2026-10-06T03:09:35Z'])('daily watchdog does not count a run outside the exact window: %s', async created => {
+  let writes = 0;
+  const api: GitHubAPI = async (path, method = 'GET', body) => {
+    if (path.includes('/actions/workflows/ci.yml/runs?')) return { workflow_runs: [{ id: 12, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: created, status: 'completed' }] };
+    if (path.includes('/issues?')) return [];
+    if (path.endsWith('/commits/main')) return { sha: 'a'.repeat(40) };
+    if (path.endsWith('/issues') && method === 'POST') { writes++; return { ...(body as object), number: 1, html_url: 'https://github.com/test/repo/issues/1' }; }
+    throw Error(`Unexpected API request ${path}`);
+  };
+  const observed = await watchDailyCI('test/repo', new Date('2026-10-06T03:09:34.720Z'), api, '0 19 * * *');
+  expect(observed.observation).toBe('not-started');
+  expect(writes).toBe(1);
+});
+
 test('malformed provider JSON run is rejected before any issue effect', async () => {
   let writes = 0;
   const api: GitHubAPI = async (_path, method = 'GET') => { if (method === 'POST') writes++; return ['not a run object']; };
