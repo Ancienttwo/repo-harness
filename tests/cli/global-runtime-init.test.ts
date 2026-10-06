@@ -176,17 +176,17 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.6.1', 'archctx-contracts': '0.6.1' },
+    dependencies: { archctx: '0.6.3', 'archctx-contracts': '0.6.3' },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
-    version: '0.6.1',
+    version: '0.6.3',
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
     dependencies: { '@colbymchenry/codegraph': '1.6.1' },
   }));
   writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.6.1' }));
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.6.3' }));
   writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.6.1' }));
   const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
   writeExecutable(join(fakeBin, 'node'), [
@@ -195,7 +195,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" && "\${2:-}" == "daemon" ]]; then printf '%s\\n' '{"schemaVersion":"archcontext.envelope/v1","ok":true,"data":{"running":false}}'; exit 0; fi`,
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
-      package: { name: 'archctx', version: '0.6.1' },
+      package: { name: 'archctx', version: '0.6.3' },
       protocols: {
         projectionRequest: 'archcontext.projection-request/v1',
         projectionResult: 'archcontext.projection-result/v2',
@@ -2190,7 +2190,7 @@ test('managed runtime readback reports stale shared daemon after a successful pa
     writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
     const nodePath = join(fakeBin, 'node.fixture-body');
     const original = readFileSync(nodePath, 'utf8');
-    writeFileSync(nodePath, original.replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.1","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+    writeFileSync(nodePath, original.replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.3","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
     const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, env: {
       ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath,
@@ -2224,7 +2224,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     const result = runTransactionalRuntimeRefresh(options, (transactionOptions) => {
       setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
       const body = join(fakeBin, 'node.fixture-body');
-      writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.1","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
+      writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', '"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"0.6.3","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}'));
       return runGlobalRuntimeSetup(transactionOptions);
     });
     expect(result.exitCode).toBe(0);

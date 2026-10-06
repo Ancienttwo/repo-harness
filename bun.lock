@@ -7,8 +7,8 @@
       "dependencies": {
         "@botiverse/oar": "0.18.0",
         "@modelcontextprotocol/sdk": "^1.31.0",
-        "archctx": "0.6.1",
-        "archctx-contracts": "0.6.2",
+        "archctx": "0.6.3",
+        "archctx-contracts": "0.6.3",
         "commander": "^15.0.0",
         "express": "^5.2.1",
       },
@@ -404,9 +404,9 @@
 
     "ajv-formats": ["ajv-formats@3.0.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ=="],
 
-    "archctx": ["archctx@0.6.1", "", { "dependencies": { "@colbymchenry/codegraph": "1.6.1", "@node-rs/jieba": "^2.0.1", "koffi": "3.1.6" }, "bin": { "archctx": "bin/archctx.mjs" } }, "sha512-VrBIRUxCltArwx0JC+fcHnt1E0tkWT6O0MoTAmyFZ3i8Lj7neY/z4WMNWD+Fe+JBJLjTyzMxk18zN02BOFek2Q=="],
+    "archctx": ["archctx@0.6.3", "", { "dependencies": { "@colbymchenry/codegraph": "1.6.1", "@node-rs/jieba": "^2.0.1", "koffi": "3.1.6" }, "bin": { "archctx": "bin/archctx.mjs" } }, "sha512-aIhnEEeVPfhCIUiYpMHkQZzvxifhGdhpO4OmohxmIUo6KEhZf48CYip4nHmKzfqkXFJgWMPFJiYFRk/PWrWyjQ=="],
 
-    "archctx-contracts": ["archctx-contracts@0.6.2", "", {}, "sha512-8HzWuqcqgE2FQeBxIknD0//Gzd72TIYIRIwYVxdUNRpcoiS7Lolew9wBl4j40kjqMTZ4y0a3PyWuanPhSzw3lg=="],
+    "archctx-contracts": ["archctx-contracts@0.6.3", "", {}, "sha512-TXtMB5c1O0lM26A08merutPWJoeGn8l2lLnfuCdPOqErbpy4h7Vx68IdMHfriI8+F/O9YYs2KPhVGxi1z4w46Q=="],
 
     "balanced-match": ["balanced-match@4.0.4", "", {}, "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA=="],
 

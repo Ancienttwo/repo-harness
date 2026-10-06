@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_VERSION, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.6.1';
+const VERSION = '0.6.3';
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
@@ -192,6 +192,8 @@ function linkBuildDependencies(checkout: string): void {
   // an undeclared global package.
   const koffiTarget = join(targetModules, 'koffi');
   if (!existsSync(koffiTarget)) symlinkSync(join(repoRoot, 'node_modules', 'koffi'), koffiTarget, 'dir');
+  const yamlTarget = join(targetModules, 'yaml');
+  if (!existsSync(yamlTarget)) symlinkSync(realpathSync(join(archContextRoot, 'packages', 'core', 'node_modules', 'yaml')), yamlTarget, 'dir');
   const targetScope = join(targetModules, '@archcontext');
   mkdirSync(targetScope, { recursive: true });
   const workspaces = (JSON.parse(readFileSync(join(checkout, 'package.json'), 'utf8')) as { workspaces?: unknown }).workspaces;
