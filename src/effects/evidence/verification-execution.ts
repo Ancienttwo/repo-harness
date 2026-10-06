@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
-import type { EvidenceEventRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
+import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {
   VerificationPlanValidationError,
@@ -530,6 +530,24 @@ function executionEvents(context: EvidenceContext): readonly { event: EvidenceEv
   });
 }
 
+interface LedgerView {
+  readonly events: readonly { event: EvidenceEventRecord; payload: ExecutionPayload }[];
+  readonly genesis: GenesisRecord | null;
+}
+
+/**
+ * Reads the ledger at most once, on first use. Share one view only between
+ * checks with no append between them; take a new view after an append.
+ */
+function ledgerView(context: EvidenceContext): LedgerView {
+  let events: LedgerView["events"] | undefined;
+  let genesis: { readonly value: GenesisRecord | null } | undefined;
+  return {
+    get events() { return events ??= executionEvents(context); },
+    get genesis() { return (genesis ??= { value: readGenesisRecord(context.repoRoot) }).value; },
+  };
+}
+
 function readValidRunResult(context: EvidenceContext, payload: ExecutionPayload): VerificationExecutionResult | null {
   if (!payload.run_file.startsWith(".ai/harness/runs/")) return null;
   const resolved = resolveInsideRepo(context.repoRoot, payload.run_file);
@@ -552,9 +570,9 @@ function readValidRunResult(context: EvidenceContext, payload: ExecutionPayload)
   }
 }
 
-function currentResult(context: PreparedContext, check: VerificationCheck): VerificationExecutionResult | null {
+function currentResult(context: PreparedContext, check: VerificationCheck, ledger: LedgerView): VerificationExecutionResult | null {
   const key = cacheKey(context, check);
-  const matches = executionEvents(context).filter(({ payload }) => payload.cache_key === key);
+  const matches = ledger.events.filter(({ payload }) => payload.cache_key === key);
   const winner = matches[matches.length - 1];
   if (!winner) return null;
   const result = readValidRunResult(context, winner.payload);
@@ -562,16 +580,16 @@ function currentResult(context: PreparedContext, check: VerificationCheck): Veri
   if (!result.passed && result.exit_code === 0 && !result.timed_out && result.signal === null) return null;
   const projected = { ...result, execution: result.passed ? "reused" as const : "executed" as const };
   const materialized = (redactPayloadStrings({ result: projected } as unknown as JsonValue, collectDenylistSecretValues()) as unknown as { result: VerificationExecutionResult }).result;
-  return matchingImmutableExecution(context, check, materialized, false, context.toolchainHash) ? projected : null;
+  return matchingImmutableExecution(context, check, materialized, false, context.toolchainHash, ledger) ? projected : null;
 }
 
-function reusableResult(context: PreparedContext, check: VerificationCheck): VerificationExecutionResult | null {
-  const result = currentResult(context, check);
+function reusableResult(context: PreparedContext, check: VerificationCheck, ledger: LedgerView): VerificationExecutionResult | null {
+  const result = currentResult(context, check, ledger);
   return result?.passed ? result : null;
 }
 
-function priorExecutionExists(context: PreparedContext, check: VerificationCheck): boolean {
-  return executionEvents(context).some(({ payload }) =>
+function priorExecutionExists(context: PreparedContext, check: VerificationCheck, ledger: LedgerView): boolean {
+  return ledger.events.some(({ payload }) =>
     payload.execution_spec_hash === fingerprintVerificationCheckExecution(check));
 }
 
@@ -579,6 +597,7 @@ function baselineResult(
   context: EvidenceContext,
   check: VerificationCheck,
   current: ReadonlyMap<string, VerificationExecutionResult>,
+  ledger: LedgerView,
 ): VerificationExecutionResult {
   const key = sha256(canonicalize({
     policy: "baseline_with_delta",
@@ -605,7 +624,7 @@ function baselineResult(
     failure_log_file: null,
   };
   if (!check.baseline || !check.delta_checks) return { ...base, passed: false, message: "baseline reference is incomplete" };
-  const events = executionEvents(context);
+  const events = ledger.events;
   const eventMatch = events.find(({ payload }) =>
     payload.execution_id === check.baseline!.execution_id
       && payload.run_file === check.baseline!.run_file
@@ -694,14 +713,15 @@ function buildReport(
 }
 
 function evaluatePrepared(context: PreparedContext): VerificationExecutionReport {
+  const ledger = ledgerView(context);
   const current = new Map<string, VerificationExecutionResult>();
   for (const check of context.plan.checks) {
     if (check.evidence_policy !== "current_exact") continue;
-    current.set(check.id, currentResult(context, check) ?? missingResult(context, check, "current exact execution is missing"));
+    current.set(check.id, currentResult(context, check, ledger) ?? missingResult(context, check, "current exact execution is missing"));
   }
   const results = context.plan.checks.map((check) => check.evidence_policy === "current_exact"
     ? current.get(check.id)!
-    : baselineResult(context, check, current));
+    : baselineResult(context, check, current, ledger));
   return buildReport(context, results, results.every((result) => result.passed) ? "passed"
     : results.some(result => result.execution === "executed" && !result.passed) ? "failed" : "missing");
 }
@@ -746,8 +766,9 @@ function matchingImmutableExecution(
   result: VerificationExecutionResult,
   requirePass: boolean,
   currentToolchainHash: string | null,
+  ledger: LedgerView,
 ): boolean {
-  return executionEvents(context).some(({ event, payload }) => {
+  return ledger.events.some(({ event, payload }) => {
     if (currentToolchainHash !== null && (payload.contract_hash !== context.contractHash
       || payload.toolchain_hash !== currentToolchainHash
       || payload.inputs_hash !== declaredEnvironmentHash(check, context.env))) return false;
@@ -761,7 +782,7 @@ function matchingImmutableExecution(
       || payload.execution_id !== result.execution_id
       || payload.run_file !== result.run_file
       || (requirePass && !payload.passed)) return false;
-    const genesis = readGenesisRecord(context.repoRoot);
+    const genesis = ledger.genesis;
     if (!genesis || event.worktree_id !== genesis.worktree_id) return false;
     const identity = event.subject_identity;
     if (identity.authority_commit !== identity.base_commit
@@ -852,6 +873,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
     },
     env,
   };
+  const ledger = ledgerView(context);
   if (!Array.isArray(reportObject.results) || reportObject.results.length !== plan.checks.length) {
     throw new Error("verification report results do not cover the plan exactly");
   }
@@ -885,7 +907,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
       if (result.target !== "current_exact" || (!skipped && result.execution !== "executed" && result.execution !== "reused")) {
         throw new Error(`verification report exact result has invalid disposition: ${check.id}`);
       }
-      if (!skipped && !matchingImmutableExecution(context, check, result, requirePass, currentToolchainHash)) {
+      if (!skipped && !matchingImmutableExecution(context, check, result, requirePass, currentToolchainHash, ledger)) {
         throw new Error(`verification report exact result is not backed by immutable evidence: ${check.id}`);
       }
     }
@@ -893,7 +915,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   for (const check of plan.checks) {
     if (check.evidence_policy !== "baseline_with_delta") continue;
     const result = supplied.get(check.id)!;
-    const evaluated = baselineResult(context, check, supplied);
+    const evaluated = baselineResult(context, check, supplied, ledger);
     if (requirePass && !evaluated.passed) {
       throw new Error(`verification report baseline result is not backed by immutable evidence: ${check.id}`);
     }
@@ -994,7 +1016,8 @@ function executeCheck(
   }
   try {
     requestLock.assertOwned();
-    const afterLock = input.forceReason ? null : reusableResult(context, check);
+    // Another writer can append before this lock is held, so read a new view.
+    const afterLock = input.forceReason ? null : reusableResult(context, check, ledgerView(context));
     if (afterLock) return { result: afterLock, snapshotStable: true };
     const invocation = check.kind === "command"
       ? {
@@ -1148,9 +1171,10 @@ export function executeVerificationContract(input: ExecuteVerificationContractIn
   const evaluateBaselinePreflights = (): void => {
     if (baselinePreflightsEvaluated) return;
     baselinePreflightsEvaluated = true;
+    const ledger = ledgerView(context);
     for (const check of context.plan.checks) {
       if (check.phase !== "preflight" || check.evidence_policy !== "baseline_with_delta") continue;
-      const result = baselineResult(context, check, results);
+      const result = baselineResult(context, check, results, ledger);
       results.set(check.id, result);
       if (!result.passed) preflightFailed = true;
     }
@@ -1165,12 +1189,14 @@ export function executeVerificationContract(input: ExecuteVerificationContractIn
       results.set(check.id, missingResult(context, check, "not run because preflight failed"));
       continue;
     }
-    const reused = input.forceReason ? null : reusableResult(context, check);
+    // executeCheck appends to the ledger, so each check reads a new view.
+    const ledger = ledgerView(context);
+    const reused = input.forceReason ? null : reusableResult(context, check, ledger);
     if (reused) {
       results.set(check.id, reused);
       continue;
     }
-    if (check.cost === "expensive" && priorExecutionExists(context, check) && !input.forceReason) {
+    if (check.cost === "expensive" && priorExecutionExists(context, check, ledger) && !input.forceReason) {
       results.set(check.id, missingResult(context, check, "expensive input drift requires a new Verification Plan or an explicit force reason"));
       needsPlan = true;
       if (check.phase === "preflight") preflightFailed = true;
@@ -1189,9 +1215,10 @@ export function executeVerificationContract(input: ExecuteVerificationContractIn
   }
   evaluateBaselinePreflights();
 
+  const finalLedger = ledgerView(context);
   const planOrder = context.plan.checks.map((check) => check.evidence_policy === "current_exact"
     ? results.get(check.id) ?? missingResult(context, check, "current exact execution is missing")
-    : baselineResult(context, check, results));
+    : baselineResult(context, check, results, finalLedger));
   let snapshotChanged = false;
   try {
     snapshotChanged = captureGitVirtualTreeSnapshot(context.repoRoot).snapshot_hash !== context.snapshot.snapshot_hash;
