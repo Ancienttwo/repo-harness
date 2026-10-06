@@ -12,7 +12,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawn } from 'child_process';
 import { existsSync, mkdtempSync, realpathSync, readdirSync, rmSync, writeFileSync } from 'fs';
-import { open } from 'fs/promises';
+import { open, type FileHandle } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -371,27 +371,35 @@ describe('C6 collaboration run context binding fence', () => {
     }
 
     /**
-     * One writer in its own process. Each round it blocks on its own barrier
-     * FIFO, so both writers enter the same publication window together and the
-     * final-name link race is exercised for real, not by timing luck. Results
-     * are one JSON array on stdout, read after the process exits.
+     * One writer in its own process. It holds one persistent barrier pair: it
+     * blocks on the command FIFO until the parent releases a round, runs the
+     * publication, and writes one ack byte back, so both writers enter the
+     * same publication window together and the final-name link race is
+     * exercised for real, not by timing luck. Results are one JSON array on
+     * stdout, read after the process exits.
      */
     function writeDriver(): string {
       const directory = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-c6-driver-')));
       roots.push(directory);
       const driver = join(directory, 'publish.ts');
       writeFileSync(driver, [
-        `import { closeSync, constants, openSync, readSync } from 'fs';`,
+        `import { closeSync, constants, openSync, readSync, writeSync } from 'fs';`,
         `import {`,
         `  deliverCollaborationContext,`,
         `  recordCollaborationRunContextBinding,`,
         `} from ${JSON.stringify(join(sourceRoot, 'src/effects/collaboration/context-delivery'))};`,
         `import { collectCollaborativeWorkExchange } from ${JSON.stringify(join(sourceRoot, 'src/effects/collaboration/work-exchange'))};`,
         `const input = JSON.parse(process.argv[2]!);`,
+        // The barrier ends are opened once and held for the whole run. POSIX
+        // FIFO connections are not generational: a freshly opened writer can
+        // pair with the previous round's not-yet-closed reader. Held ends make
+        // the pairing per run instead of per round, so that cannot happen.
+        `const commands = openSync(input.commands[process.argv[3]!], constants.O_RDONLY);`,
+        `const acks = openSync(input.acks[process.argv[3]!], constants.O_WRONLY);`,
         `const rounds = [];`,
         `for (let round = 0; round < input.rounds; round += 1) {`,
-        `  const fd = openSync(input.barriers[process.argv[3]!], constants.O_RDONLY);`,
-        `  try { readSync(fd, Buffer.alloc(1), 0, 1, null); } finally { closeSync(fd); }`,
+        `  const signal = Buffer.alloc(1);`,
+        `  if (readSync(commands, signal, 0, 1, null) !== 1) break;`,
         `  try {`,
         `    if (input.role === 'packet') {`,
         `      const delivery = deliverCollaborationContext({`,
@@ -412,7 +420,10 @@ describe('C6 collaboration run context binding fence', () => {
         `  } catch (error) {`,
         `    rounds.push({ ok: false, code: (error as { code?: string }).code ?? null, message: (error as Error).message });`,
         `  }`,
+        `  writeSync(acks, signal);`,
         `}`,
+        `closeSync(commands);`,
+        `closeSync(acks);`,
         `process.stdout.write(JSON.stringify(rounds));`,
         '',
       ].join('\n'));
@@ -420,8 +431,8 @@ describe('C6 collaboration run context binding fence', () => {
     }
 
     /**
-     * One driver process. It blocks on its own FIFO per round, so a round is
-     * released only once both writers reached it.
+     * One driver process. It acknowledges each round on its own ack FIFO once
+     * the round's store work is done.
      */
     function startDriver(driver: string, input: unknown, env: NodeJS.ProcessEnv, index: string) {
       const child = spawn(process.execPath, [driver, JSON.stringify(input), index], { env });
@@ -440,26 +451,72 @@ describe('C6 collaboration run context binding fence', () => {
     }
 
     /**
-     * Release both writers for one round. The returned handle writes the round
-     * byte; the gap between connecting and writing is where the test resets a
-     * binding record, while both writers are parked on the barrier read.
+     * Two named FIFOs per driver: commands parent->child, acks child->parent.
      */
-    async function connectRound(barriers: readonly string[]): Promise<() => Promise<void>> {
-      const writers = await Promise.all(barriers.map((fifo) => open(fifo, 'w')));
-      return async () => {
-        for (const writer of writers) {
-          await writer.write('g');
-          await writer.close();
-        }
-      };
-    }
-
-    function prepareBarriers(value: Fixture, name: string): string[] {
-      return [0, 1].map((index) => {
-        const fifo = join(value.repoRoot, `.${name}-barrier-${index}`);
+    function prepareBarriers(value: Fixture, name: string): { commands: string[]; acks: string[] } {
+      const make = (kind: string): string[] => [0, 1].map((index) => {
+        const fifo = join(value.repoRoot, `.${name}-${kind}-${index}`);
         execFileSync('mkfifo', [fifo]);
         return fifo;
       });
+      return { commands: make('commands'), acks: make('acks') };
+    }
+
+    interface DriverBarriers {
+      /** Let both drivers start their next round. */
+      release(): Promise<void>;
+      /** Wait until both drivers finished their current round. */
+      awaitRound(): Promise<void>;
+      /** Close every held end, so a failed round cannot leak a FileHandle. */
+      close(): Promise<void>;
+    }
+
+    /**
+     * Open both drivers' barrier pairs once and hold the ends for the whole
+     * run. A per-round reopen cannot be made safe: POSIX FIFO connections are
+     * not generational, so the parent's next `open(fifo, 'w')` can pair with
+     * the previous round's not-yet-closed reader, which is an EPIPE on write
+     * or a byte nobody reads, and a parent open whose reader already exited
+     * blocks forever. Held ends fix the pairing for the run, and the per-round
+     * ack byte proves a driver finished its round before the parent resets
+     * store state for the next one.
+     */
+    async function holdBarriers(barriers: { commands: readonly string[]; acks: readonly string[] }): Promise<DriverBarriers> {
+      const opened: FileHandle[] = [];
+      const hold = async (path: string, flags: string): Promise<FileHandle> => {
+        const handle = await open(path, flags);
+        opened.push(handle);
+        return handle;
+      };
+      let commands: FileHandle[];
+      let acks: FileHandle[];
+      try {
+        // All four opens at once. Each parent end pairs only with the same
+        // FIFO's driver end, and every driver unconditionally opens its
+        // command end and then its ack end, so every open eventually pairs.
+        [commands, acks] = await Promise.all([
+          Promise.all(barriers.commands.map((fifo) => hold(fifo, 'w'))),
+          Promise.all(barriers.acks.map((fifo) => hold(fifo, 'r'))),
+        ]);
+      } catch (error) {
+        // A failed open must not leak the ends that did open.
+        for (const handle of opened) await handle.close().catch(() => {});
+        throw error;
+      }
+      return {
+        release: async (): Promise<void> => {
+          for (const handle of commands) await handle.write(Buffer.alloc(1));
+        },
+        awaitRound: async (): Promise<void> => {
+          for (const handle of acks) {
+            const read = await handle.read(Buffer.alloc(1), 0, 1, null);
+            if (read.bytesRead !== 1) throw new Error('a driver exited before acknowledging its round');
+          }
+        },
+        close: async (): Promise<void> => {
+          for (const handle of [...commands, ...acks]) await handle.close();
+        },
+      };
     }
 
     test('concurrent identical packet writers both succeed and publish one record', async () => {
@@ -469,9 +526,22 @@ describe('C6 collaboration run context binding fence', () => {
       const rounds = 8;
       const barriers = prepareBarriers(value, 'packet');
 
-      const first = startDriver(driver, { role: 'packet', repo_root: value.repoRoot, rounds, barriers }, value.env, '0');
-      const second = startDriver(driver, { role: 'packet', repo_root: value.repoRoot, rounds, barriers }, value.env, '1');
-      for (let round = 0; round < rounds; round += 1) await (await connectRound(barriers))();
+      const input = { role: 'packet', repo_root: value.repoRoot, rounds, commands: barriers.commands, acks: barriers.acks };
+      const first = startDriver(driver, input, value.env, '0');
+      const second = startDriver(driver, input, value.env, '1');
+      const barrier = await holdBarriers(barriers);
+      try {
+        // A round's command goes out only after the previous round's acks, so
+        // both writers are parked on the barrier read when it arrives and the
+        // publication window stays shared instead of running on buffered
+        // commands.
+        for (let round = 0; round < rounds; round += 1) {
+          await barrier.release();
+          await barrier.awaitRound();
+        }
+      } finally {
+        await barrier.close();
+      }
 
       const [leftRounds, rightRounds] = await Promise.all([first.results(), second.results()]);
       expect(first.stderr()).toBe('');
@@ -514,22 +584,37 @@ describe('C6 collaboration run context binding fence', () => {
       // reset clears the shard's records wholesale rather than by name.
       const bindingShard = runContextBindingStorePaths(repoRoot).shard;
       const barriers = prepareBarriers(value, 'binding');
-      const input = { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery, barriers };
+      const input = {
+        role: 'binding',
+        repo_root: value.repoRoot,
+        rounds,
+        dispatch_id: dispatchId,
+        delivery,
+        commands: barriers.commands,
+        acks: barriers.acks,
+      };
 
       const first = startDriver(driver, input, value.env, '0');
       const second = startDriver(driver, input, value.env, '1');
 
-      for (let round = 0; round < rounds; round += 1) {
-        const release = await connectRound(barriers);
-        if (round > 0) {
-          // Both writers are parked on this round's barrier read, so removing
-          // the converged record makes this round a fresh creation race rather
-          // than a replay.
-          for (const name of readdirSync(bindingShard)) {
-            if (name.endsWith('.json')) rmSync(join(bindingShard, name));
+      const barrier = await holdBarriers(barriers);
+      try {
+        for (let round = 0; round < rounds; round += 1) {
+          if (round > 0) {
+            // The acks prove both writers finished the previous round's store
+            // work and are parked on the next command, so removing the
+            // converged record makes this round a fresh creation race rather
+            // than a replay.
+            await barrier.awaitRound();
+            for (const name of readdirSync(bindingShard)) {
+              if (name.endsWith('.json')) rmSync(join(bindingShard, name));
+            }
           }
+          await barrier.release();
         }
-        await release();
+        await barrier.awaitRound();
+      } finally {
+        await barrier.close();
       }
 
       const [leftRounds, rightRounds] = await Promise.all([first.results(), second.results()]);
@@ -578,17 +663,25 @@ describe('C6 collaboration run context binding fence', () => {
 
       const first = startDriver(
         driver,
-        { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery, barriers },
+        { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery, commands: barriers.commands, acks: barriers.acks },
         value.env,
         '0',
       );
       const second = startDriver(
         driver,
-        { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery: other, barriers },
+        { role: 'binding', repo_root: value.repoRoot, rounds, dispatch_id: dispatchId, delivery: other, commands: barriers.commands, acks: barriers.acks },
         value.env,
         '1',
       );
-      for (let round = 0; round < rounds; round += 1) await (await connectRound(barriers))();
+      const barrier = await holdBarriers(barriers);
+      try {
+        for (let round = 0; round < rounds; round += 1) {
+          await barrier.release();
+          await barrier.awaitRound();
+        }
+      } finally {
+        await barrier.close();
+      }
 
       const [leftRounds, rightRounds] = await Promise.all([first.results(), second.results()]);
       expect(first.stderr()).toBe('');
