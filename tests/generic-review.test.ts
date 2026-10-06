@@ -1,11 +1,17 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
-import { reviewSessionOptions, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
+import { composeReviewPacket, type ReviewPacketInput } from '../src/core/review/review-packet';
+import { reviewLocation, reviewSessionOptions, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
 import { acceptanceReceiptPath } from '../scripts/acceptance-receipt';
 import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
+import { canonicalize } from '../src/core/evidence/canonical-json';
+import type { JsonValue } from '../src/core/evidence/types';
+import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
+import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import { ensureSessionDirectory, nextSessionRound, writeSessionArtifact } from '../src/effects/terminal/task-session';
 import { tmpWorkspace, run } from './helpers/repo-fixture';
 const roots: string[] = [];
@@ -36,6 +42,107 @@ test('generic review refuses empty and missing plans before any provider starts 
 const identity = { request_id: 'r', context_sha256: 'domain-context', subject_sha256: 'subject', actual_harness: 'claude' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-model' };
 const finding = { id: 'f', severity: 'P1' as const, status: 'new' as const, message: '[fixture opinion] fix the fence' };
 const fail = { ...identity, verdict: 'FAIL', summary: '[fixture opinion] revise', findings: [finding] };
+const packetInput: ReviewPacketInput = Object.freeze({ context_sha256: 'domain-context', subject_sha256: 'subject',
+  actual_harness: 'claude', actual_role: 'deep-reasoner', prior_findings: Object.freeze([Object.freeze(finding)]),
+  contract: 'contract\n', goal: 'goal\n', verification: 'verification\n', source: 'source\n' });
+test('review packet preserves the exact transport text, domain identity and prior findings', () => {
+  // Frozen pre-extraction bytes. Do not derive this expectation from the builder or shared rule.
+  const expected = [
+    'Review the complete current subject against its goal, contract and prepared verification evidence. Do not edit production code or invoke other reviewers. Only author one final JSON file to the exact request.result_ref; no temp/rename or alternate submission. Terminal output and idle are observation only.',
+    'Outer transport JSON is {request_id: request.request_id, context_sha256: request.context_sha256, value: domain output}. Provider value has EXACTLY request_id, context_sha256, subject_sha256, verdict, summary, findings. Domain request_id is request.request_id; domain context_sha256 is the prepared domain hash below (distinct from transport packet hash). The owner adds actual harness/role/model from the bound task-agent and OAR Session observation, not your self-description.',
+    'PASS requires no unresolved P0/P1. FAIL requires at least one unresolved finding. Each finding has EXACTLY id, severity:P0|P1|P2|P3, status:new|open|resolved, message. Keep stable IDs: every prior finding must remain resolved/open with current evidence. A previous verdict is not evidence for current code.',
+    'DOMAIN IDENTITY: {"context_sha256":"domain-context","subject_sha256":"subject","actual_harness":"claude","actual_role":"deep-reasoner"}',
+    'PRIOR FINDINGS: [{"id":"f","severity":"P1","status":"new","message":"[fixture opinion] fix the fence"}]',
+    'CONTRACT:\ncontract\n', 'GOAL:\ngoal\n', 'PREPARED VERIFICATION:\nverification\n', 'CURRENT SOURCE:\nsource\n',
+  ].join('\n\n');
+  expect(Buffer.from(composeReviewPacket(packetInput))).toEqual(Buffer.from(expected));
+  expect(composeReviewPacket(packetInput)).toBe(composeReviewPacket(packetInput));
+  const codex = composeReviewPacket({ ...packetInput, actual_harness: 'codex', prior_findings: [] });
+  expect(codex).toContain('"actual_harness":"codex","actual_role":"deep-reasoner"');
+  expect(codex).toContain('PRIOR FINDINGS: []');
+});
+
+test('review packet enforces the existing 10 MiB limit in UTF-8 bytes without truncation', () => {
+  const input = { ...packetInput, source: '' };
+  const remaining = 10 * 1024 * 1024 - Buffer.byteLength(composeReviewPacket(input));
+  const source = 'é'.repeat(Math.floor(remaining / 2)) + 'x'.repeat(remaining % 2);
+  const packet = composeReviewPacket({ ...input, source });
+  expect(Buffer.byteLength(packet)).toBe(10 * 1024 * 1024);
+  expect(packet.endsWith(source)).toBe(true);
+  expect(() => composeReviewPacket({ ...input, source: source + 'x' })).toThrow('review_context_too_large');
+});
+
+function packetRoundFixture() {
+  const fixture = seedAcceptanceFixture('review-packet');
+  roots.push(fixture.root, fixture.home);
+  const reviewerRepo = join(fixture.home, 'reviewer');
+  execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
+  const location = reviewLocation(fixture.root, fixture.contract);
+  const packetPath = (round = 1) => join(reviewerRepo, '.ai/harness/runs/generic-review-input', location.key, `packet-${round}.txt`);
+  const calls: string[] = [];
+  const effects: ReviewEffects = {
+    installation: async (_kind, executable) => { calls.push('installation'); return { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }; },
+    start: async () => {
+      calls.push('start');
+      expect(readFileSync(packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
+      expect(lstatSync(packetPath()).mode & 0o777).toBe(0o600);
+      throw new Error('fixture_start_failure');
+    },
+    send: async () => { calls.push('send'); throw new Error('must not send'); },
+  };
+  const refresh = () => {
+    const report = executeVerificationContract({ repoRoot: fixture.root, contractPath: fixture.contract, reportFile: fixture.verification });
+    expect(report.passed).toBe(true);
+    const prepared = prepareChangeAssessment({ repoRoot: fixture.root, contractPath: fixture.contract });
+    const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
+    writeFileSync(join(fixture.root, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify({ ...basis,
+      evidence_sha256: 'sha256:' + createHash('sha256').update(canonicalize(basis as unknown as JsonValue)).digest('hex'),
+    }, null, 2) + '\n');
+  };
+  const options = { repoRoot: fixture.root, contract: fixture.contract, verification: fixture.verification, reviewerRepo,
+    authorityHome: fixture.home, endpoint: { session: 'packet-fixture', home: fixture.home }, parentPane: 'fixture-owner-pane',
+    harness: 'claude' as const, admitSession: () => { calls.push('admit'); } };
+  return { ...fixture, ...location, options, effects, calls, packetPath, refresh };
+}
+
+test('packet composition failure starts no pane and saves no packet or request', async () => {
+  const f = packetRoundFixture();
+  writeSessionArtifact(join(f.dir, 'request-1.json'), { subject_sha256: 'previous-subject' });
+  writeSessionArtifact(join(f.dir, 'accepted-1.json'), { output: { findings: [{ ...finding, message: 'x'.repeat(10 * 1024 * 1024) }] } });
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_context_too_large');
+  expect(f.calls).toEqual(['installation', 'admit']);
+  expect(existsSync(f.packetPath(2))).toBe(false);
+  expect(existsSync(join(f.dir, 'request-2.json'))).toBe(false);
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+}, 60_000);
+
+test('packet survives launch failure; same input retries and changed subject fails before launch', async () => {
+  const f = packetRoundFixture();
+  // Linux keeps the real isolation refusal. Darwin reaches the injected start
+  // failure. Neither case starts a real pane or a provider process.
+  const launchError = process.platform === 'darwin' ? 'fixture_start_failure' : 'OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM';
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow(launchError);
+  const packet = readFileSync(f.packetPath(), 'utf8');
+  const modifiedAt = lstatSync(f.packetPath()).mtimeMs;
+  expect(packet).toContain('CURRENT SOURCE:');
+  expect(packet).toContain('+candidate');
+  expect(lstatSync(f.packetPath()).mode & 0o777).toBe(0o600);
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow(launchError);
+  expect(readFileSync(f.packetPath(), 'utf8')).toBe(packet);
+  expect(lstatSync(f.packetPath()).mtimeMs).toBe(modifiedAt);
+  expect(f.calls.filter(call => call === 'start')).toHaveLength(process.platform === 'darwin' ? 2 : 0);
+  const beforeChangedRetry = [...f.calls];
+  writeFileSync(join(f.root, 'feature.txt'), 'candidate\n\n');
+  f.refresh();
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_packet_changed_before_send; packet for round 1 is preserved. Inspect with repo-harness review status');
+  expect(f.calls).toEqual(beforeChangedRetry);
+  expect(readFileSync(f.packetPath(), 'utf8')).toBe(packet);
+  expect(existsSync(join(f.dir, 'request-1.json'))).toBe(false);
+  expect(existsSync(f.packetPath(2))).toBe(false);
+  expect(f.calls).not.toContain('send');
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+}, 60_000);
+
 test('generic review validates exact domain binding, verdict, stable findings and no launch fields', () => {
   expect(validateReviewOutput(fail, identity).verdict).toBe('FAIL');
   for (const field of Object.keys(identity)) expect(() => validateReviewOutput({ ...fail, [field]: 'different' }, identity)).toThrow(`review_${field}_mismatch`);
