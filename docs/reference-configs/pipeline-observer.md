@@ -60,6 +60,7 @@ Tasks without a reliable identity remain unclaimed. Do not invent their identity
 `ingest-event` appends observations and never changes a record version.
 Unknown version flags on `new` and `ingest-event` are usage errors.
 A command key returns the original receipt before CAS, source reads or gates.
+A matching replay first retries snapshot publication. It does not repeat the mutation.
 The receipt says `already_applied`, including its first return.
 It proves the committed operation. It does not prove current admission.
 Without a key, a retry is a new command. There is no response-loss replay promise.
@@ -114,12 +115,54 @@ Attention is a proposal. It does not suppress any notice.
 
 Each commit triggers up to three snapshot export attempts.
 An export failure keeps the committed receipt. It reports a warning on stderr.
+It also saves the target watermark and error code beside the snapshot pointer.
+A failure to save this status reports `publication_state_write_failed` on stderr.
+A missing status is not evidence that an export passed.
 The board keeps its last complete generation and source times.
 After five minutes, the shared projection threshold labels that generation stale.
 No published file is rewritten. Unchanged exports create no copy.
 A failed build or losing exporter removes only its own unpublished file.
 This implementation does not reclaim published or crash-orphan generations.
-A later explicit export can catch up.
+A later explicit export or idempotent command replay can catch up.
+An export with `--out` is a backup. It does not clear pending publication at the default pointer.
+
+## Publication health
+
+```sh
+repo-harness pipeline health --json
+```
+
+Health reads only the immutable snapshot, publication intents and publication status.
+It does not open the live ledger, probe SQLite, create directories, or repair state.
+It reports the configured path as a digest. It does not expose absolute paths.
+The SQLite version comes from the last matching writer publication status.
+It is `null` until that evidence exists. It is not a probe of the reader process.
+`sqlite_library_configured` describes the current configuration only.
+A host mismatch makes publication status `unknown`.
+A missing snapshot is distinct from a published, empty snapshot.
+Snapshot age and coverage refer to that exact published generation.
+Coverage counts idempotent deliveries separately from observations without delivery identity.
+Old observations without transport metadata are `unclassified_observations`.
+These counts do not prove source validation, gate admission, or live Bot coverage.
+
+Before each COMMIT, the writer saves a durable intent named for its target watermark.
+Each intent has its own file in `<db>.publication-intent/`.
+A pending intent alone does not prove that COMMIT occurred.
+Health reports `pending` until a writer can compare it with the live ledger.
+Writer startup holds the write lock during this comparison.
+It discards rolled-back intents and retries publication for committed intents.
+A successful publication clears only intents at or below the published watermark.
+A newer writer's intent stays intact.
+The status file is `<db>.publication.json`.
+It records `ok` or `failed`, the target watermark, writer identity, version and time.
+A valid published pointer takes priority over a stale status file.
+The health projection labels that status file `stale`.
+No schema migration, alternate authority or second database is added.
+
+A delivery key is scoped by source. Reuse it only for the same event payload.
+A different payload under the same key returns `idem_conflict`.
+An event without a delivery key can be recorded, but its observations have incomplete transport identity.
+Current run and attempt gates remain the source of admission decisions.
 
 ## Merge facts and restore
 
@@ -145,6 +188,12 @@ Incompatible store protocols fail closed. No migration from an older protocol is
 ## Deferred scope
 
 Plugin delivery governance, payload enrichment and webhook migration remain deferred.
+Local unsynced-command receipts and their replay interface remain deferred.
+A command that fails before COMMIT is still visible through its CLI error only.
+The planned Mini path decision and deployment checks remain open.
+This change keeps the existing default path and host unchanged.
+It does not move a database, configure a host, or start a live Bot pilot.
+Operator route, worker and frontend integration are separate from this backend change.
 MCP identity, pane placement, timers and test-slot enforcement remain deferred.
 Automatic dispatch, merge, cleanup, branch deletion and action outbox remain deferred.
 The tests exercise local source CLI channels in isolated processes.
