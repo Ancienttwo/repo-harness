@@ -405,6 +405,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(join(validatedBun, '..'), { recursive: true });
       symlinkSync(process.execPath, validatedBun);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
+      writeExecutable(join(fakeBin, 'herdr'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "---" "name: herdr" "---" "Check HERDR_ENV before control."; else printf "herdr 0.9.3\\n"; fi\n');
       writeReadyOfficialCodexPluginCli(fakeBin, home);
 
       const result = runGlobalRuntimeSetup({

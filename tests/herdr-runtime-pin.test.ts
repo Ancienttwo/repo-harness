@@ -2,6 +2,7 @@ import { defaultPolicy } from "../src/core/adoption/standard-plan";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 
 /**
  * `.ai/harness/policy.json#external_tooling.herdr` is the single herdr runtime
@@ -90,6 +91,82 @@ describe("herdr runtime pin has one source of truth", () => {
       expect(block.slice(1), seedPath).toEqual(expected.slice(1));
     }
   });
+});
+
+test("required Herdr skill comes from the binary, updates owned copies, and preserves unowned copies", () => {
+  const root = mkdtempSync(join(tmpdir(), "repo-harness-herdr-skill-"));
+  try {
+    const home = join(root, "home");
+    const bin = join(root, "bin");
+    const source = join(root, "skill.md");
+    mkdirSync(home);
+    mkdirSync(bin);
+    const herdr = join(bin, "herdr");
+    writeFileSync(herdr, "#!/bin/sh\ncat \"$FIXTURE_SKILL_FILE\"\n");
+    chmodSync(herdr, 0o755);
+    const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`, FIXTURE_SKILL_FILE: source };
+    const first = "---\nname: herdr\n---\nCheck HERDR_ENV before control.\n";
+    writeFileSync(source, first);
+    expect(configureRequiredHerdrSkill("both", env).status).toBe("ok");
+    for (const host of [".claude", ".codex"]) {
+      expect(readFileSync(join(home, host, "skills", "herdr", "SKILL.md"), "utf8")).toBe(first);
+    }
+
+    const next = `${first}Use herdr agent list.\n`;
+    writeFileSync(source, next);
+    expect(configureRequiredHerdrSkill("both", env).status).toBe("ok");
+    expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(next);
+
+    const afterCleanupFailure = `${next}Keep the installed skill.\n`;
+    writeFileSync(source, afterCleanupFailure);
+    let cleanupCount = 0;
+    const cleanup = configureRequiredHerdrSkill("both", env, (path) => {
+      cleanupCount += 1;
+      if (cleanupCount === 2) throw new Error("fixture cleanup failure");
+      rmSync(path, { recursive: true, force: true });
+    });
+    expect(cleanup.status).toBe("ok");
+    expect(cleanup.detail).toContain("backup cleanup pending");
+    for (const host of [".claude", ".codex"]) {
+      expect(readFileSync(join(home, host, "skills", "herdr", "SKILL.md"), "utf8")).toBe(afterCleanupFailure);
+    }
+
+    const claudeSkill = join(home, ".claude", "skills", "herdr", "SKILL.md");
+    writeFileSync(claudeSkill, "# user change\n");
+    writeFileSync(source, `${afterCleanupFailure}One more rule.\n`);
+    expect(configureRequiredHerdrSkill("both", env).status).toBe("failed");
+    expect(readFileSync(claudeSkill, "utf8")).toBe("# user change\n");
+    expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(afterCleanupFailure);
+    expect(existsSync(join(home, ".codex", "skills", "herdr", ".repo-harness-owner.json"))).toBe(true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("required Herdr skill rejects a symlinked host parent before writing a new skills directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "repo-harness-herdr-parent-"));
+  try {
+    const home = join(root, "home");
+    const outside = join(root, "outside");
+    const bin = join(root, "bin");
+    mkdirSync(home);
+    mkdirSync(outside);
+    mkdirSync(bin);
+    symlinkSync(outside, join(home, ".codex"), "dir");
+    const source = join(root, "skill.md");
+    writeFileSync(source, "---\nname: herdr\n---\nCheck HERDR_ENV before control.\n");
+    const herdr = join(bin, "herdr");
+    writeFileSync(herdr, "#!/bin/sh\ncat \"$FIXTURE_SKILL_FILE\"\n");
+    chmodSync(herdr, 0o755);
+    const result = configureRequiredHerdrSkill("codex", {
+      ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`, FIXTURE_SKILL_FILE: source,
+    });
+    expect(result.status).toBe("failed");
+    expect(result.detail).toContain("non-canonical host skill root");
+    expect(existsSync(join(outside, "skills"))).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // These fixtures replace only external I/O. They run the shipped command and plugin.

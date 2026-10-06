@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
@@ -13,7 +13,7 @@ import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
 import { ensureSessionDirectory, nextSessionRound, writeSessionArtifact } from '../src/effects/terminal/task-session';
-import { tmpWorkspace, run } from './helpers/repo-fixture';
+import { tmpWorkspace, tmpWorkspaceIn, run } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -90,6 +90,15 @@ function packetRoundFixture() {
   // Keep the named-session socket below Darwin's 103-byte path limit.
   const fixture = seedAcceptanceFixture('rp');
   roots.push(fixture.root, fixture.home);
+  // Match the acceptance fixture's short, private endpoint HOME. TMPDIR can be
+  // long on macOS; Herdr also needs room for the longer client socket name.
+  const endpointHome = tmpWorkspaceIn('/tmp', 'rp');
+  roots.push(endpointHome);
+  const endpoint = { session: 'packet-fixture', home: endpointHome };
+  for (const socket of ['herdr.sock', 'herdr-client.sock']) {
+    const path = join(endpoint.home, '.config/herdr/sessions', endpoint.session, socket);
+    expect(Buffer.byteLength(path, 'utf8')).toBeLessThanOrEqual(103);
+  }
   const reviewerRepo = join(fixture.home, 'reviewer');
   execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
   const location = reviewLocation(fixture.root, fixture.contract);
@@ -115,7 +124,7 @@ function packetRoundFixture() {
     }, null, 2) + '\n');
   };
   const options = { repoRoot: fixture.root, contract: fixture.contract, verification: fixture.verification, reviewerRepo,
-    authorityHome: fixture.home, endpoint: { session: 'packet-fixture', home: fixture.home }, parentPane: 'fixture-owner-pane',
+    authorityHome: fixture.home, endpoint, parentPane: 'fixture-owner-pane',
     harness: 'claude' as const, admitSession: () => { calls.push('admit'); } };
   return { ...fixture, ...location, options, effects, calls, packetPath, refresh };
 }
@@ -156,6 +165,27 @@ test('packet survives launch failure; same input retries and changed subject fai
   expect(existsSync(f.packetPath(2))).toBe(false);
   expect(f.calls).not.toContain('send');
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+}, 60_000);
+
+test('packet fixtures keep valid socket paths with a long UTF-8 temporary root', () => {
+  const temp = tmpWorkspaceIn('/tmp', 'packet-' + 'é'.repeat(52)); roots.push(temp);
+  expect(temp.length).toBeLessThan(103);
+  expect(Buffer.byteLength(temp, 'utf8')).toBeGreaterThan(107);
+  // Set startup variables only in the child. Keep the real isolation preload
+  // and run the original assertions, including the Darwin launch failure.
+  const result = spawnSync(process.execPath, ['--no-env-file', 'test', import.meta.path,
+    '--test-name-pattern', '^packet (composition failure|survives launch failure)',
+    '--timeout', '60000', '--max-concurrency', '1'], {
+    cwd: join(import.meta.dir, '..'),
+    env: { ...process.env, TMPDIR: temp, TEMP: temp, TMP: temp, NO_COLOR: '1' },
+    encoding: 'utf8', timeout: 50_000,
+  });
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  expect(result.error, output).toBeUndefined();
+  expect(result.signal, output).toBeNull();
+  expect(result.status, output).toBe(0);
+  expect(output).toContain('(pass) packet composition failure starts no pane and saves no packet or request');
+  expect(output).toContain('(pass) packet survives launch failure; same input retries and changed subject fails before launch');
 }, 60_000);
 
 test('generic review validates exact domain binding, verdict, stable findings and no launch fields', () => {

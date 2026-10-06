@@ -373,15 +373,15 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 11 repo-owned entries plus the 8 external skills (19 packages)", () => {
+  test("covers all 11 repo-owned entries plus the 9 external skills (20 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(19);
+    expect(resolution.catalog.packages.length).toBe(20);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
     expect(repoOwned.length).toBe(11);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
-      "check", "health", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "reverse-skill-router", "think",
+      "check", "health", "herdr", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "reverse-skill-router", "think",
     ]);
   });
 
@@ -577,7 +577,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       "repo-harness-ship", "obsidian-memory",
     ]);
     expect(externalSkills).toEqual([
-      "repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
+      "repo-harness-cross-review", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
       "obsidian-markdown", "obsidian-cli",
     ]);
   });

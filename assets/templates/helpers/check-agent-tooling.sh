@@ -921,6 +921,47 @@ function detectCodexAutomationProfile() {
   };
 }
 
+function detectRequiredHerdrSkill(herdrRuntime) {
+  let declared = false;
+  try {
+    const catalog = JSON.parse(fs.readFileSync(SKILL_SURFACE_MANIFEST_PATH, "utf8"));
+    declared = catalog.packages.find((entry) => entry.name === "repo-harness")?.requires?.includes("herdr") === true
+      && catalog.packages.some((entry) => entry.name === "herdr" && entry.kind === "external");
+  } catch (_) { /* The catalog check below reports the invalid source. */ }
+  let expected = null;
+  if (herdrRuntime.status === "present" && herdrRuntime.path) {
+    const result = spawnSync(herdrRuntime.path, ["--skill"], { encoding: "utf8", timeout: 5000 });
+    if (result.status === 0 && result.stdout?.startsWith("---\nname: herdr\n") && result.stdout.includes("HERDR_ENV")) {
+      expected = result.stdout;
+    }
+  }
+  const hosts = Object.fromEntries(SELECTED_HOSTS.map((host) => {
+    const skillFile = path.join(HOSTS[host].skillsDir, "herdr", "SKILL.md");
+    let installed = null;
+    let unreadable = false;
+    try {
+      if (fs.existsSync(skillFile)) installed = fs.readFileSync(skillFile, "utf8");
+    } catch (_) { unreadable = true; }
+    return [host, {
+      path: skillFile,
+      status: unreadable ? "invalid" : installed === null ? "missing" : expected === null ? "unverified" : installed === expected ? "present" : "mismatch",
+    }];
+  }));
+  const hostStatuses = Object.values(hosts).map((entry) => entry.status);
+  const status = !declared ? "invalid" : expected === null ? "unavailable"
+    : hostStatuses.includes("invalid") ? "invalid" : hostStatuses.includes("missing") ? "missing"
+      : hostStatuses.includes("mismatch") ? "mismatch" : "present";
+  return {
+    name: "herdr_skill",
+    status,
+    reason: status === "present" ? "Release-matched skill is present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the installed Herdr binary.",
+    source: "herdr --skill",
+    required_by: "assets/skill-commands/manifest.json#repo-harness.requires",
+    hosts,
+    install_command: `repo-harness update --target ${hostMode}`,
+  };
+}
+
 function inspectObsidianRuntimeSkill(host, skill) {
   const skillFile = path.join(HOSTS[host].skillsDir, skill, "SKILL.md");
   const local = readSkillFile(skillFile);
@@ -1847,14 +1888,16 @@ function detectArchctx() {
 }
 
 const wazaReport = detectWaza();
+const runtimeCapabilities = detectRuntimeCapabilities(wazaReport);
 const report = {
   generated_at: new Date().toISOString(),
   repo_root: REPO_ROOT,
   hosts: SELECTED_HOSTS,
   check_updates: checkUpdates,
-  runtime_capabilities: detectRuntimeCapabilities(wazaReport),
+  runtime_capabilities: runtimeCapabilities,
   tools: {
     waza: wazaReport,
+    herdr_skill: detectRequiredHerdrSkill(runtimeCapabilities.herdr),
     codex_automation_profile: detectCodexAutomationProfile(),
     obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
@@ -1868,6 +1911,9 @@ if (strictReadiness && report.runtime_capabilities.herdr.status !== "present") {
   const pinned = report.runtime_capabilities.herdr.min_version;
   if (!pinned) strictFailures.push(`herdr configuration error: ${report.runtime_capabilities.herdr.reason}`);
   else strictFailures.push(`herdr runtime is ${report.runtime_capabilities.herdr.status}; install herdr >=${pinned} and verify herdr --version`);
+}
+if (strictReadiness && report.tools.herdr_skill.status !== "present") {
+  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; run ${report.tools.herdr_skill.install_command}`);
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
@@ -1903,6 +1949,13 @@ function printText(result) {
     console.log(`  - ${capability.name}: ${capability.status} (${required})${pathBits}`);
     console.log(`    owner=${capability.owner}; required_for=${capability.required_for}`);
   }
+  console.log("");
+
+  const herdrSkill = result.tools.herdr_skill;
+  console.log(`Herdr skill [${herdrSkill.status}]`);
+  console.log(`  - Source: ${herdrSkill.source}`);
+  for (const host of SELECTED_HOSTS) console.log(`  - ${host}: ${herdrSkill.hosts[host].status} (${herdrSkill.hosts[host].path})`);
+  if (herdrSkill.status !== "present") console.log(`  - Install: ${herdrSkill.install_command}`);
   console.log("");
 
   const waza = result.tools.waza;
