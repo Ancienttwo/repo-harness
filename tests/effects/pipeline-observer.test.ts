@@ -504,3 +504,17 @@ test('D0: backup export leaves canonical publication pending',()=>{
   expect(readPipelineHealth({env}).publication.status).toBe('pending');expect(publicationIntents(store.path).map(i=>i.watermark)).toEqual([mark]);
   exportSnapshot(store);expect(readPipelineHealth({env}).publication.status).toBe('published');
 });
+
+test('D0: health decoder rejects non-string enum fields without coercion',()=>{
+  exportSnapshot(store);const health=readPipelineHealth({env});
+  expect(decodePipelineHealth(health)).toEqual(health);
+  for(const status of [['ready'],[['ready']],null,1,true,{}]) {
+    expect(()=>decodePipelineHealth({...health,snapshot:{...health.snapshot,status}})).toThrow('Publication evidence is invalid');
+  }
+  for(const status of [['published'],[['published']],null,1,true,{}]) {
+    expect(()=>decodePipelineHealth({...health,publication:{...health.publication,status}})).toThrow('Publication evidence is invalid');
+  }
+  for(const state_file of [['current'],[['current']],null,1,true,{}]) {
+    expect(()=>decodePipelineHealth({...health,publication:{...health.publication,state_file}})).toThrow('Publication evidence is invalid');
+  }
+});

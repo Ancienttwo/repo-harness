@@ -41,10 +41,10 @@ export function decodePipelineHealth(value:unknown):PipelineHealthV1 {
   token(s.authority_host);if(typeof s.path_sha256!=='string'||!/^sha256:[a-f0-9]{64}$/.test(s.path_sha256))invalid();
   if(s.sqlite_version!==null&&(typeof s.sqlite_version!=='string'||!/^\d+\.\d+\.\d+$/.test(s.sqlite_version)))invalid();
   const snapshot=object(v.snapshot);fields(snapshot,['status','watermark','produced_at','age_ms']);
-  if(!['missing','empty','ready','partial','stale','unavailable'].includes(String(snapshot.status)))invalid();
+  if(typeof snapshot.status!=='string'||!['missing','empty','ready','partial','stale','unavailable'].includes(snapshot.status))invalid();
   if(snapshot.watermark!==null)watermark(snapshot.watermark);if(snapshot.produced_at!==null)time(snapshot.produced_at);if(snapshot.age_ms!==null)integer(snapshot.age_ms);
   const p=object(v.publication);fields(p,['status','state_file','target','at','error_code','pending_intents']);
-  if(!['unknown','unavailable','pending','failed','published'].includes(String(p.status))||!['missing','current','stale','unavailable'].includes(String(p.state_file)))invalid();
+  if(typeof p.status!=='string'||!['unknown','unavailable','pending','failed','published'].includes(p.status)||typeof p.state_file!=='string'||!['missing','current','stale','unavailable'].includes(p.state_file))invalid();
   if(p.target!==null)watermark(p.target);if(p.at!==null)time(p.at);if(p.error_code!==null)token(p.error_code);if(p.pending_intents!==null)integer(p.pending_intents);
   const c=object(v.coverage);fields(c,['pipelines','idempotent_deliveries','missing_delivery_observations','unclassified_observations']);
   for(const key of ['idempotent_deliveries','missing_delivery_observations','unclassified_observations'])if(c[key]!==null)integer(c[key]);
