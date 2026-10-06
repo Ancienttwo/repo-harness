@@ -128,12 +128,15 @@ export function PipelineBoardPanel({
   readBoard = fetchPipelineBoard,
   initialBoard,
   refreshGeneration = 0,
+  active = true,
   t,
 }: {
   readonly readBoard?: PipelineBoardReader;
   readonly initialBoard?: PipelineBoardV2;
   /** The page-level explicit refresh generation; a change re-requests now. */
   readonly refreshGeneration?: number;
+  /** False while the owning panel is hidden; polling pauses and the last result stays. */
+  readonly active?: boolean;
   readonly t: OperatorTranslate;
 }) {
   const [view, setView] = useState<BoardView>(
@@ -154,7 +157,7 @@ export function PipelineBoardPanel({
   }, [readBoard]);
   // An explicit refresh must re-request now even when initial data seeded the
   // panel, so the generation participates in both identity and immediacy.
-  useObservationRefresh(read, JSON.stringify(['pipeline-board', refreshGeneration]), { immediate: initialBoard === undefined || refreshGeneration > 0 });
+  useObservationRefresh(read, JSON.stringify(['pipeline-board', refreshGeneration]), { enabled: active, immediate: initialBoard === undefined || refreshGeneration > 0 });
   const now = Date.now();
   const state = view.kind === 'ready' ? displayState(view.board, view.refreshFailed, now) : view.kind;
   return (

@@ -21,12 +21,15 @@ export function NotifyStatusPanel({
   readStatus = fetchNotifyStatus,
   initialStatus,
   refreshGeneration = 0,
+  active = true,
   t,
 }: {
   readonly readStatus?: NotifyStatusReader;
   readonly initialStatus?: NotifyStatusV1;
   /** The page-level explicit refresh generation; a change re-requests now. */
   readonly refreshGeneration?: number;
+  /** False while the owning panel is hidden; polling pauses and the last result stays. */
+  readonly active?: boolean;
   readonly t: OperatorTranslate;
 }) {
   const [view, setView] = useState<NotifyView>(initialStatus ? { kind: 'ready', status: initialStatus } : { kind: 'loading' });
@@ -42,7 +45,7 @@ export function NotifyStatusPanel({
   }, [readStatus]);
   // An explicit refresh must re-request now even when initial data seeded the
   // panel, so the generation participates in both identity and immediacy.
-  useObservationRefresh(read, JSON.stringify(['notify-status', refreshGeneration]), { immediate: initialStatus === undefined || refreshGeneration > 0 });
+  useObservationRefresh(read, JSON.stringify(['notify-status', refreshGeneration]), { enabled: active, immediate: initialStatus === undefined || refreshGeneration > 0 });
   return (
     <section className="notify-status" aria-labelledby="notify-status-heading" data-notify-state={view.kind}>
       <header className="notify-status__heading">
