@@ -2,7 +2,7 @@
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { readFileSync, readdirSync, realpathSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 
 import {
   canonicalPublicationJournalEvidenceBytes,
@@ -56,6 +56,10 @@ import { readClaimTokenForTask } from '../state/coordination-claim-token';
 const LINEAGE_RELATIVE_PATH = 'repo-harness/publications/v1/lineage';
 const INTEGRATION_RELATIVE_PATH = 'repo-harness/publications/v1/integration';
 const SHIP_TRANSACTIONS_RELATIVE_PATH = 'repo-harness/transactions/ship';
+// Integration classification is authority-sensitive: the candidate repository is
+// untrusted content, so the executable merge predicate is always the packaged
+// script and the candidate repository is only its working directory.
+const WORKTREE_MERGE_LIB = resolve(import.meta.dir, '../../../scripts/worktree-merge-lib.sh');
 
 function failure(
   code: PublicationLifecycleErrorCode,
@@ -786,7 +790,7 @@ function classifyPublicationMerge(
   }
   let output: string;
   try {
-    output = execFileSync('/bin/bash', [join(repoRoot, 'scripts/worktree-merge-lib.sh'), '--target', targetOid, headSha], {
+    output = execFileSync('/bin/bash', [WORKTREE_MERGE_LIB, '--target', targetOid, headSha], {
       cwd: repoRoot,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],

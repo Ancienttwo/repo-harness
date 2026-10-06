@@ -271,6 +271,60 @@ test('merge boundary repair reuses one open PR issue across new main SHAs, run I
   expect(f.issues).toHaveLength(6);
 }));
 
+test('concurrent reports for one merged PR elect one open shared repair issue', async () => {
+  const now = new Date().toISOString();
+  const after = 'b'.repeat(40);
+  const issues: any[] = [];
+  let lists = 0;
+  let releaseSecond = () => {};
+  const bothListed = new Promise<void>(resolve => { releaseSecond = resolve; });
+  const api: GitHubAPI = async (path, method = 'GET', raw) => {
+    const body = raw as any;
+    if (/^\/repos\/test\/repo\/actions\/runs\/\d+$/.test(path)) {
+      const id = Number(path.split('/').pop());
+      return { id, path: '.github/workflows/ci.yml', head_branch: 'main', head_sha: 'a'.repeat(40), event: 'schedule', status: 'completed', conclusion: 'success', run_attempt: 1, html_url: `https://github.com/test/repo/actions/runs/${id}`, created_at: now };
+    }
+    // Deterministic barrier: both reports read the same empty issue snapshot
+    // before either creation becomes visible, then creation runs for real.
+    if (path.startsWith('/repos/test/repo/issues?state=all')) {
+      lists++;
+      if (lists <= 2) { if (lists === 2) releaseSecond(); await bothListed; return []; }
+      return issues;
+    }
+    if (path.startsWith('/repos/test/repo/issues?state=open')) return issues.filter(issue => issue.state === 'open');
+    if (path === '/repos/test/repo/issues' && method === 'POST') {
+      const issue = { ...body, state: 'open', number: issues.length + 1, html_url: `https://github.com/test/repo/issues/${issues.length + 1}` };
+      issues.push(issue);
+      return issue;
+    }
+    if (path.startsWith('/repos/test/repo/issues/') && method === 'PATCH') {
+      const issue = issues.find(candidate => candidate.number === Number(path.split('/').pop()));
+      if (!issue) throw new Error(`Unexpected close of missing issue ${path}`);
+      issue.state = body.state ?? issue.state;
+      return issue;
+    }
+    if (path.startsWith('/repos/test/repo/pulls?')) return [{ number: 7, merged_at: now, merge_commit_sha: after, base: { ref: 'main' } }];
+    if (/^\/repos\/test\/repo\/git\/commits\//.test(path)) throw new CIReportError(503, 'HTTP 503');
+    throw Error(`Unexpected API operation ${method} ${path}`);
+  };
+  const reports = await Promise.all([reportCI('test/repo', 12, api), reportCI('test/repo', 13, api)]);
+  const repairs = reports.map(report => report.repairs[0]!);
+  expect(repairs.map(repair => repair.key)).toEqual(['ci-repair:merge-pr-7', 'ci-repair:merge-pr-7']);
+  expect([...repairs.map(repair => repair.delivery)].sort()).toEqual(['created', 'reused']);
+  const winner = repairs.find(repair => repair.delivery === 'created')!;
+  expect(repairs.find(repair => repair.delivery === 'reused')!.issue_url).toBe(winner.issue_url);
+  expect(issues).toHaveLength(2);
+  expect(issues.every(issue => typeof issue.body === 'string' && issue.body.includes('<!-- ci-repair:merge-pr-7 -->'))).toBe(true);
+  const open = issues.filter(issue => issue.state === 'open');
+  expect(open).toHaveLength(1);
+  expect(open[0]!.html_url).toBe(winner.issue_url);
+  expect(issues.find(issue => issue.state === 'closed')!.number).toBeGreaterThan(open[0]!.number);
+  const next = await reportCI('test/repo', 14, api);
+  expect(next.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'reused', issue_url: winner.issue_url });
+  expect(issues).toHaveLength(2);
+  expect(issues.filter(issue => issue.state === 'open')).toHaveLength(1);
+});
+
 test.each([
   { response: JSON.stringify({ message: 'Resource not accessible by integration\nfixture-secret-token ghp_othercredential Bearer another-token', token: 'must-not-be-recorded' }), reason: 'Resource not accessible by integration' },
   { response: 'upstream returned non-JSON fixture-secret-token', reason: '' },

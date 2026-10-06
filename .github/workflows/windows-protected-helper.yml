@@ -1,0 +1,93 @@
+name: Windows protected helper acceptance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/windows-protected-helper.yml'
+      - '.github/workflows/ci.yml'
+      - 'src/effects/runtime/protected-helper-platform.ts'
+      - 'src/effects/runtime/helper-runner.ts'
+      - 'src/cli/commands/global-runtime.ts'
+      - 'scripts/lib/ci-run-tests.sh'
+      - 'scripts/lib/test-home-isolation.mjs'
+      - 'tests/check-ci-job-split.test.ts'
+      - 'tests/unit/windows-protected-helper-platform-contract.test.ts'
+      - 'tests/cli/windows-protected-helper-runtime-smoke.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  windows-protected-helper:
+    name: Windows protected helper acceptance
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      BUN_TEST_MAX_CONCURRENCY: '1'
+      REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Record the native candidate and tools
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "Tested head: $EXPECTED_HEAD"
+          echo "Runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          where.exe git
+          git --version
+          bun --version
+          node --version
+      - run: bun install --frozen-lockfile
+      - name: Run the native Windows path matrix and contract tests
+        shell: bash
+        run: |
+          source scripts/lib/ci-run-tests.sh
+          BUN_TEST_ISOLATE_FILES=0 run_bun_tests \
+          tests/preload-home-isolation.test.ts \
+          tests/cli/mcp-workspaces.test.ts tests/cli/mcp-reader-tools.test.ts \
+          tests/cli/mcp-policy.test.ts tests/cli/mcp-http.test.ts tests/cli/mcp-oauth.test.ts \
+          tests/cli/mcp-stdio.test.ts tests/effects/fleet-collector-process.test.ts \
+          tests/effects/operator-task-diff.test.ts tests/effects/operator-task-context.test.ts \
+          tests/effects/operator-task-activity.test.ts tests/effects/task-inbox.test.ts \
+          tests/effects/task-reply.test.ts tests/effects/task-inbox-layout-migration.test.ts \
+          tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts \
+          tests/unit/windows-protected-helper-platform-contract.test.ts
+      - name: Run smoke with each installed internal Git first on PATH
+        shell: bash
+        run: |
+          source scripts/lib/ci-run-tests.sh
+          echo "Git Bash installation: $(cygpath -w /)"
+          test -f /cmd/git.exe
+          tested=0
+          for layout in mingw64 ucrt64; do
+            internal="/$layout/bin"
+            if [[ ! -f "$internal/git.exe" ]]; then
+              echo "Layout $layout is not installed; no coverage is claimed."
+              continue
+            fi
+            (
+              export PATH="$internal:$PATH"
+              echo "Native smoke with $layout first on PATH"
+              where.exe git
+              "$internal/git.exe" --version
+              BUN_TEST_ISOLATE_FILES=0 run_bun_tests tests/cli/windows-protected-helper-runtime-smoke.test.ts
+            )
+            tested=$((tested + 1))
+          done
+          test "$tested" -gt 0
