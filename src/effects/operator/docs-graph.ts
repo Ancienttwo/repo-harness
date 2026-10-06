@@ -71,6 +71,8 @@ export function createDocsGraphReader() {
         const commit = git(['rev-parse', '--verify', '--end-of-options', 'HEAD^{commit}']).trim();
         return oid(commit) ? commit : fail('unavailable');
       };
+      // A shallow boundary is not proof of the last change to each file.
+      if (git(['rev-parse', '--is-shallow-repository']).trim() !== 'false') return fail('unavailable');
       const commit = head();
       const rawTree = git(['ls-tree', '-rz', '--full-tree', commit, '--', ...ROOTS]);
       if (rawTree && !rawTree.endsWith('\0')) return fail('unavailable');

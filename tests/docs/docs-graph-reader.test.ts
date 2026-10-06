@@ -87,6 +87,24 @@ describe('Immutable Docs graph reader', () => {
     expect(calls.some(args => args.includes('cat-file') && args.includes(archivedOid))).toBe(true);
   });
 
+
+  test('reads the actual archive-writer prefix paths under all scope', () => {
+    const f = fixture();
+    const paths = ['tasks/archive/contract-20260904-1852-fixture.md', 'tasks/archive/review-20260904-1852-fixture.md', 'tasks/archive/notes-20260904-1852-fixture.md'];
+    f.put(paths[0]!, '> **Archived**: 2026-09-04 18:52\n\n# Task Contract\n\n> **Status**: Fulfilled\n'
+      + `> **Review File**: ${paths[1]}\n> **Notes File**: ${paths[2]}\n\n## Why\n`);
+    f.put(paths[1]!, '# Task Review\n> **Status**: Done\n');
+    f.put(paths[2]!, '# Task Notes\n');
+    f.commit('2026-10-05T10:00:00Z');
+    const read = createDocsGraphReader(), active = read({ repositoryRoot: f.root, now: NOW });
+    expect(active).toMatchObject({ archived_count: 3, nodes: [] });
+    const all = read({ repositoryRoot: f.root, now: NOW, scope: 'all' });
+    expect(all.nodes.map(node => node.kind).sort()).toEqual(['contract', 'notes', 'review']);
+    expect(all.nodes.find(node => node.id === paths[0])?.status).toBe('Fulfilled');
+    expect(all.edges).toHaveLength(2);
+    expect(all.issues).toEqual([]);
+  });
+
   test('does not follow symlinks, traversal, unrelated files, or body examples', () => {
     const f = fixture();
     const outside = mkdtempSync(join(tmpdir(), 'docs-graph-secret-')); roots.push(outside);
@@ -160,6 +178,20 @@ describe('Immutable Docs graph reader', () => {
     expect(errorCode(() => read({ repositoryRoot: f.root, now: NOW }))).toBe('unavailable');
     expect(commands.filter(args => args.includes('log'))).toHaveLength(2);
     expect(commands.some(args => args.includes('fetch') || args.includes('clone'))).toBe(false);
+  });
+
+
+  test('rejects shallow history instead of treating its boundary as the file update', () => {
+    const f = fixture();
+    f.put(plan, '# Plan\n> **Status**: Executing\n'); f.commit('2026-09-01T10:00:00Z');
+    f.put('README.md', '# Unrelated update\n'); f.commit('2026-10-06T10:00:00Z');
+    const shallow = mkdtempSync(join(tmpdir(), 'docs-graph-shallow-')); roots.push(shallow);
+    execFileSync('git', ['clone', '--quiet', '--depth', '1', `file://${f.root}`, shallow], { stdio: 'pipe' });
+    expect(execFileSync('git', ['rev-parse', '--is-shallow-repository'], { cwd: shallow, encoding: 'utf8' }).trim()).toBe('true');
+    expect(errorCode(() => createDocsGraphReader()({ repositoryRoot: shallow, now: NOW }))).toBe('unavailable');
+    const complete = createDocsGraphReader()({ repositoryRoot: f.root, now: NOW });
+    expect(complete.nodes[0]!.updated).toBe('2026-09-01T10:00:00.000Z');
+    expect(complete.issues[0]?.severity).toBe('escalated');
   });
 
   test('rejects unavailable repositories, bad requests, timeouts, and oversized blobs', () => {

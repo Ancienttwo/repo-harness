@@ -82,9 +82,9 @@ export function docsDocumentKind(path: string): Exclude<DocsNodeKind, 'capabilit
     if (path.endsWith('.sprint.md') || path.startsWith('plans/sprints/') && path.endsWith('.md')) return 'sprint';
     if (/\/plan-[^/]+\.md$/u.test(path)) return 'plan';
   }
-  if (/^tasks\/(?:contracts|archive)\/.+\.contract\.md$/u.test(path)) return 'contract';
-  if (/^tasks\/(?:reviews|archive)\/.+\.review\.md$/u.test(path)) return 'review';
-  if (/^tasks\/(?:notes|archive)\/.+\.notes\.md$/u.test(path)) return 'notes';
+  if (/^tasks\/(?:contracts|archive)\/.+\.contract\.md$/u.test(path) || /^tasks\/archive\/contract-[^/]+\.md$/u.test(path)) return 'contract';
+  if (/^tasks\/(?:reviews|archive)\/.+\.review\.md$/u.test(path) || /^tasks\/archive\/review-[^/]+\.md$/u.test(path)) return 'review';
+  if (/^tasks\/(?:notes|archive)\/.+\.notes\.md$/u.test(path) || /^tasks\/archive\/notes-[^/]+\.md$/u.test(path)) return 'notes';
   return null;
 }
 export const isArchivedDoc = (path: string): boolean => /^(?:plans|tasks)\/archive\//u.test(path);
@@ -115,12 +115,16 @@ export function docsStaleThresholds(overrides: Partial<DocsStaleThresholds> = {}
 interface Header { label: string; value: string; raw: string }
 function headers(content: string): Header[] {
   const result: Header[] = [];
-  // Body examples are not metadata. Reuse the shared parser for each full label.
+  // Preambles can contain historical notes, an archive envelope, or comments.
+  // Stop before sections and code examples. Reuse the shared full-label parser.
+  let comment = false;
+  let title = false;
   for (const line of content.split(/\r?\n/u)) {
-    if (!line.trim() || /^# [^#]/u.test(line)) continue;
+    if (comment || /^\s*(?:>\s*)?<!--/u.test(line)) { comment = !line.includes('-->'); continue; }
+    if (/^ {0,3}#{2,6}(?:\s|$)|^\s*(?:`{3,}|~{3,}|---\s*$)/u.test(line)) break;
+    if (/^ {0,3}#(?:\s|$)/u.test(line)) { if (title) break; title = true; continue; }
     const match = /^> \*\*([^*]+)\*\*:/u.exec(line);
-    if (!match) break;
-    result.push({ label: match[1]!, value: markdownHeader(line, match[1]!) ?? '', raw: line });
+    if (match) result.push({ label: match[1]!, value: markdownHeader(line, match[1]!) ?? '', raw: line });
   }
   return result;
 }

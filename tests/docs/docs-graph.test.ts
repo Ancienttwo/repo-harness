@@ -14,6 +14,60 @@ const prd = 'plans/prds/child.prd.md', parent = 'plans/prds/parent.prd.md', spri
 const plan = 'plans/plan-fixture.md', contract = 'tasks/contracts/fixture.contract.md';
 
 describe('Docs graph pure projection', () => {
+
+  test('reads real repository preambles with historical prose and interleaved comments', () => {
+    // These metadata forms occur at the source paths below in base 982d5de3.
+    const campaign = 'plans/prds/20260902-2238-gpt-pro-seeded-repair-campaign.prd.md';
+    const simplification = 'plans/prds/20260925-0436-harness-simplification.prd.md';
+    const sources = [
+      { ...doc(campaign), content: '# PRD: GPT Pro-Seeded Bounded Repair Campaign\n\n'
+        + '> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04.\n\n'
+        + '> **Status**: Approved\n> **Updated**: 2026-09-07 01:31\n> **Source Spec**: `docs/spec.md`\n\n## AI Quick-Read Card\n' },
+      { ...doc(simplification), content: '# PRD: Harness Simplification\n\n'
+        + '> Historical record. Campaign execution moved to the existing Bot skills on 2026-10-04.\n\n'
+        + '> **Status**: Draft\n> **Updated**: 2026-09-25\n> **Source Spec**: `docs/spec.md`\n\n## AI Quick-Read Card\n' },
+      { ...doc('docs/spec.md'), content: '# Product Spec\n\n'
+        + 'Campaign execution moved to the existing Bot skills on 2026-10-04.\n\n'
+        + '> **Status**: Approved\n> **Owner**: repo-harness maintainers\n\n## Global Architecture Projection\n' },
+      doc(contract, `> **Status**: Active\n> **Plan**: ${plan}\n`
+        + '> <!-- legal values: code-change | docs-only | ledger-closeout; omit for legacy passthrough -->\n'
+        + '> **Capability ID**: capability.runtime-harness.docs\n'
+        + '> **Review File**: `tasks/reviews/fixture.review.md`\n> **Notes File**: `tasks/notes/fixture.notes.md`\n'
+        + '\n## Body example\n> **Notes File**: tasks/notes/body.notes.md\n'),
+      doc(plan, '> **Status**: Executing'), doc('tasks/reviews/fixture.review.md'), doc('tasks/notes/fixture.notes.md'),
+    ];
+    const result = graph(sources, { capabilities: [{ id: 'capability.runtime-harness.docs', path: '.archcontext/model/nodes/capability.runtime-harness.docs.yaml', blob_oid: BLOB, last_commit: null }] });
+    expect(result.nodes.find(node => node.id === campaign)).toMatchObject({ status: 'Approved', updated: '2026-09-07T01:31:00.000Z', updated_source: 'header' });
+    expect(result.nodes.find(node => node.id === simplification)).toMatchObject({ status: 'Draft', updated: '2026-09-25T00:00:00.000Z', updated_source: 'header' });
+    expect(result.nodes.find(node => node.id === 'docs/spec.md')?.status).toBe('Approved');
+    expect(result.edges.filter(edge => edge.label === 'Source Spec')).toHaveLength(2);
+    expect(result.edges.filter(edge => edge.header_node === contract).map(edge => edge.label).sort()).toEqual(['Capability ID', 'Notes File', 'Plan', 'Review File']);
+    expect(result.issues).toEqual([]);
+  });
+
+  test('indexes the actual archive-writer contract, review, and notes names', () => {
+    const paths = {
+      contract: 'tasks/archive/contract-20260904-1852-operator-board-r1-presentation.md',
+      review: 'tasks/archive/review-20260904-1852-operator-board-r1-presentation.md',
+      notes: 'tasks/archive/notes-20260904-1852-operator-board-r1-presentation.md',
+    };
+    for (const kind of ['contract', 'review', 'notes'] as const) expect(docsDocumentKind(paths[kind])).toBe(kind);
+    const documents = [
+      { ...doc(paths.contract), content: '> **Archived**: 2026-09-04 18:52\n> **Lifecycle**: contract\n\n'
+        + '# Task Contract: operator-board-r1-presentation\n\n> **Status**: Fulfilled\n'
+        + '> <!-- legal values: code-change | docs-only -->\n'
+        + `> **Review File**: ${paths.review}\n> **Notes File**: ${paths.notes}\n\n## Why\n` },
+      doc(paths.review), doc(paths.notes),
+    ];
+    expect(graph(documents)).toMatchObject({ archived_count: 3, nodes: [], edges: [] });
+    const all = graph(documents, { scope: 'all' });
+    expect(all.nodes).toHaveLength(3);
+    expect(all.nodes.find(node => node.id === paths.contract)?.status).toBe('Fulfilled');
+    expect(all.edges.map(edge => edge.target).sort()).toEqual([paths.notes, paths.review]);
+    expect(all.issues).toEqual([]);
+    expect(docsDocumentKind('tasks/archive/todo-20260904-1852-operator-board-r1-presentation.md')).toBeNull();
+  });
+
   test('indexes artifact kinds and keeps explicit multi-parent and cyclic edges', () => {
     const result = graph([
       doc(prd, `> **Parent PRD**: \`${parent}\`\n> **Depends On**: ${sprint}`),
@@ -49,6 +103,17 @@ describe('Docs graph pure projection', () => {
     expect(result.edges.map(edge => edge.label)).toEqual(['Depends On']);
     expect(result.edges[0]!.target).toBe(prd);
     expect(result.issues).toEqual([]);
+  });
+
+
+  test('excludes examples after indented Markdown headings and inside comments', () => {
+    for (const indent of ['', ' ', '  ', '   ']) {
+      const result = graph([doc(plan, `> **Status**: Draft\n\n${indent}## Example\n> **Task Contract**: ${contract}`), doc(contract)]);
+      expect(result.edges).toEqual([]);
+    }
+    const commented = graph([doc(plan, `> <!--\n> **Task Contract**: ${contract}\n> -->\n> **Status**: Approved\n`), doc(contract)]);
+    expect(commented.edges).toEqual([]);
+    expect(commented.nodes.find(node => node.id === plan)?.status).toBe('Approved');
   });
 
   test('keeps ambiguous and malformed headers unknown rather than choosing a target', () => {
