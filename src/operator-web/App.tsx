@@ -11,7 +11,8 @@ import { NotifyStatusPanel, type NotifyStatusReader } from './NotifyStatus';
 import { type PipelineBoardV2 } from '../core/pipeline/board';
 import { PipelineBoardPanel, type PipelineBoardReader } from './PipelineBoard';
 import { TaskDiff } from './TaskDiff';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { parseWorkspaceLocation, workspaceHash, WORKSPACES, type Workspace, type WorkspaceLocation } from './workspace-location';
 
 import { Icon } from './icons';
 import { CarrotMark, DunkieMark, HookMark } from './marks';
@@ -746,6 +747,31 @@ function Worklist({
       )}
     </section>
   );
+}
+
+// Vite emits the workspace as its own chunk; Overview never loads it.
+const ArchitectureWorkspace = lazy(() => import('./ArchitectureWorkspace').then(module => ({ default: module.ArchitectureWorkspace })));
+
+function WorkspaceNav({ current, onOpen, t }: { readonly current: Workspace; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate }) {
+  return <nav className="workspace-nav" aria-label={t('workspace.label')}>
+    {WORKSPACES.map(workspace => {
+      const next = { workspace, module: null };
+      return <a key={workspace} href={workspaceHash(next) || '#'} aria-current={current === workspace ? 'page' : undefined} data-workspace={workspace}
+        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault(); onOpen(next);
+        }}>{t(`workspace.${workspace}`)}</a>;
+    })}
+  </nav>;
+}
+
+/** No data source exists yet, so the workspace states that and shows no sample data. */
+function WorkspaceUnavailable({ workspace, t }: { readonly workspace: Workspace; readonly t: OperatorTranslate }) {
+  return <section className="workspace-unavailable" aria-labelledby="workspace-unavailable-heading" data-workspace-state="unavailable">
+    <p className="detail-eyebrow">{t('workspace.unavailable.eyebrow')}</p>
+    <h2 id="workspace-unavailable-heading">{t(`workspace.${workspace}`)}</h2>
+    <p>{t('workspace.unavailable.body')}</p>
+  </section>;
 }
 
 type ObservationView = 'planning' | 'delivery' | 'organization';
@@ -1593,6 +1619,9 @@ export function OperatorApp({
     try { return localStorage.getItem(OPERATOR_REPOSITORY_STORAGE_KEY); } catch { return null; }
   });
   const [view, setView] = useState<ObservationView>('organization');
+  const [place, setPlace] = useState<WorkspaceLocation>(() => parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
+  const searchRef = useRef(typeof window === 'undefined' ? '' : window.location.search);
+  const overviewActive = place.workspace === 'overview';
   const [selection, setSelection] = useState<Selection | null>(location.selection);
   const [collaboration, setCollaboration] = useState<CollaborationViewState>(
     initialCollaboration ?? { kind: 'idle' },
@@ -1612,20 +1641,30 @@ export function OperatorApp({
   }, [activeRepository]);
   useEffect(() => {
     const restore = () => {
+      setPlace(parseWorkspaceLocation(window.location.hash));
+      // A fragment-only change moves between workspaces; the Task location is unchanged.
+      if (window.location.search === searchRef.current) return;
+      searchRef.current = window.location.search;
       const next = parseTaskLocation(window.location.search);
       setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
       setCollaboration({kind:'idle'}); setDecisionPage(null);
     };
     window.addEventListener('popstate',restore);
-    return () => window.removeEventListener('popstate',restore);
+    window.addEventListener('hashchange',restore);
+    return () => { window.removeEventListener('popstate',restore); window.removeEventListener('hashchange',restore); };
   }, []);
   const navigate = (id: string | null, next: Selection | null) => {
     const search=taskLocationSearch(id,next);
-    window.history.pushState(null,'',window.location.pathname+search);
+    searchRef.current=search;
+    window.history.pushState(null,'',window.location.pathname+search+window.location.hash);
     setLocation({repositoryId:id,selection:next,invalid:false});
     setSelection(next);
   };
   const closeSelection = () => navigate(activeRepositoryId || null,null);
+  const openPlace = (next: WorkspaceLocation) => {
+    window.history.pushState(null,'',window.location.pathname+window.location.search+workspaceHash(next));
+    setPlace(next);
+  };
   const switchRepository = (id: string) => {
     if (id !== activeRepository?.repository_id) { setCollaboration({ kind: 'idle' }); setDecisionPage(null); }
     setRepositoryId(id);
@@ -1713,7 +1752,7 @@ export function OperatorApp({
     }
   }, [collaborationRepositoryId,decisionAfter,fetchCollaboration]);
   useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId,decisionAfter,collaborationRefreshGeneration]), {
-    enabled: !initialCollaboration && collaborationRepositoryId !== null,
+    enabled: !initialCollaboration && collaborationRepositoryId !== null && overviewActive,
   });
   // Organization-only readers stay mounted to keep their last result, but they
   // poll only while their panel shows; the shared Fleet read keeps running.
@@ -1738,7 +1777,18 @@ export function OperatorApp({
         onRefresh={() => void refresh()}
         t={t}
       />
-      <div className="operator-main">
+      <WorkspaceNav current={place.workspace} onOpen={openPlace} t={t} />
+      {!overviewActive && <div className="operator-main">
+        <main className="operator-content" data-workspace={place.workspace}>
+          {place.workspace !== 'architecture' ? <WorkspaceUnavailable workspace={place.workspace} t={t} />
+            : !activeRepository ? <p role="status">{t('repository.select')}</p>
+            : <Suspense fallback={<p role="status">{t('workspace.loading')}</p>}>
+              <ArchitectureWorkspace repositoryId={activeRepository.repository_id} moduleId={place.module} refreshGeneration={collaborationRefreshGeneration}
+                onModule={module => openPlace({ workspace: 'architecture', module })} t={t} />
+            </Suspense>}
+        </main>
+      </div>}
+      {overviewActive && <div className="operator-main">
         <main className="operator-content">
           {location.invalid && <p role="alert">{t('history.invalidLink')}</p>}
           {selection && (selection.historical || (snapshot !== null && !selectedCard)) && <TaskHistory
@@ -1807,7 +1857,7 @@ export function OperatorApp({
             t={t}
           />
         )}
-      </div>
+      </div>}
       <footer className="operator-footer">
         <span className="operator-footer__mascots">
           <DunkieMark height={20} />
