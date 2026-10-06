@@ -4,11 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
-
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import type { OperatorCollaborationSnapshotV4 } from '../../src/core/operator/collaboration-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { OperatorCollaborationError, readOperatorCollaborationSnapshot } from '../../src/effects/operator/collaboration';
+import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit } from '../helpers/module-repository';
+import { createHash } from 'node:crypto';
+import { chmodSync, watch, lstatSync } from 'node:fs';
+import { spyOn } from 'bun:test';
+import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import { readArchitecture } from '../../src/effects/operator/architecture';
+
 import {
   startOperatorServer,
   type OperatorServerOptions,
@@ -1257,4 +1264,201 @@ test('history context inherits pre-reader guards and holds shared capacity until
     expect(await(await fetch(server.url+path)).json()).toEqual({code:'busy'});expect(calls).toBe(1);
     retire();await new Promise(resolve=>setTimeout(resolve,0));
   } finally {retire?.();await server.close();}
+});
+
+// Phase B uses the real Phase A fixture and the production worker/supervisor.
+
+function architectureFiles(root: string, path = ''): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const name of readdirSync(join(root, path))) {
+    const file = path ? `${path}/${name}` : name;
+    const stat = lstatSync(join(root, file));
+    result[file] = stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ? 'directory' : createHash('sha256').update(readFileSync(join(root, file))).digest('hex');
+    if (stat.isDirectory()) Object.assign(result, architectureFiles(root, file));
+  }
+  return result;
+}
+function architectureGit(scratch: string, slow = false) {
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  const log = join(scratch, 'git.jsonl');
+  const wrapper = `#!${process.execPath}\nimport {execFileSync} from 'node:child_process';\nimport {appendFileSync,writeFileSync} from 'node:fs';\nconst args=process.argv.slice(2);\nappendFileSync(${JSON.stringify(log)},JSON.stringify({args,gitEnv:[process.env.GIT_LITERAL_PATHSPECS,process.env.GIT_NO_LAZY_FETCH]})+'\\n');\n${slow ? "writeFileSync(" + JSON.stringify(join(scratch, 'entered')) + ",'entered'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);" : ''}\ntry {const out=execFileSync(${JSON.stringify(realGit)},args);appendFileSync(${JSON.stringify(log)},JSON.stringify({args,out:out.toString()})+'\\n');process.stdout.write(out);}catch{process.exit(1);}\n`;
+  writeFileSync(join(scratch, 'git'), wrapper); chmodSync(join(scratch, 'git'), 0o755);
+  return { log, env: { PATH: scratch + ':' + process.env.PATH } };
+}
+function architectureArgv(log: string) {
+  return existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; out?: string; gitEnv?: string[] }) : [];
+}
+function assertArchitectureArgv(records: ReturnType<typeof architectureArgv>): void {
+  expect(records.length).toBeGreaterThan(0);
+  const resolved = new Set<string>();
+  for (const { args, out, gitEnv } of records) {
+    if (out === undefined) expect(gitEnv).toEqual(['1', '1']);
+    expect(args.slice(0, 5)).toEqual(['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'diff.submodule=short']);
+    const tail = args.slice(5);
+    const safePath = (path: string) => path === '' || (!path.startsWith('/') && !path.includes('\\') && path.split('/').every(part => part !== '' && part !== '..' && part !== '.'));
+    if (tail[0] === 'rev-parse') {
+      if (tail[1] === '--show-toplevel') expect(tail).toEqual(['rev-parse', '--show-toplevel']);
+      else {
+        expect(tail.slice(0, 4)).toEqual(['rev-parse', '--verify', '--quiet', '--end-of-options']);
+        expect(tail).toHaveLength(5);
+        expect(tail[4]).toMatch(/^(?:HEAD|[0-9a-f]{40}|[0-9a-f]{64})\^\{commit\}$/);
+        if (out) { expect(out.trim()).toMatch(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/); resolved.add(out.trim()); }
+      }
+    } else if (tail[0] === 'cat-file') {
+      expect(tail.slice(0, 2)).toEqual(['cat-file', '-p']); expect(tail).toHaveLength(3);
+      const colon = tail[2].indexOf(':');
+      expect(resolved.has(tail[2].slice(0, colon))).toBe(true); expect(safePath(tail[2].slice(colon + 1))).toBe(true);
+    } else if (tail[0] === 'status') {
+      expect(tail.slice(0, 6)).toEqual(['status', '--porcelain=v2', '-z', '--untracked-files=all', '--ignore-submodules=dirty', '--']);
+      expect(tail.slice(6).every(safePath)).toBe(true);
+    } else {
+      expect(tail.slice(0, 3)).toEqual(['diff', '--no-ext-diff', '--no-textconv']);
+      expect(resolved.has(tail[3])).toBe(true); expect(resolved.has(tail[4])).toBe(true);
+      expect(tail[5]).toBe('--'); expect(tail.slice(6).every(safePath)).toBe(true);
+    }
+  }
+}
+
+test('architecture GET and HEAD match CLI digests and keep closed argv with zero file changes', async () => {
+  const root = realpathSync(moduleRepository());
+  const scratch = mkdtempSync('/tmp/oui-b-argv-');
+  const registry = registryHome([{ path: root, accessMode: 'read_only' }]);
+  const base = fixtureGit(root, ['rev-parse', 'HEAD']);
+  fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n'); const head = fixtureCommit(root);
+  const git = architectureGit(scratch);
+  const env = { ...process.env, ...registry.env, ...git.env };
+  const before = architectureFiles(root), registryBefore = architectureFiles(registry.home);
+  const changes: string[] = [];
+  const watchers = [root, registry.home].map(path => watch(path, { recursive: true }, (kind, file) => changes.push(`${kind}:${file}`)));
+  const spawned: string[][] = [];
+  const originalSpawn = childProcess.spawn;
+  const spawnSpy = spyOn(childProcess, 'spawn').mockImplementation(((command: string, args: string[], options: unknown) => {
+    spawned.push([command, ...args]); return originalSpawn(command, args, options as never);
+  }) as typeof childProcess.spawn);
+  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000 });
+  const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
+  try {
+    const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
+    const list = spawnSync(process.execPath, [cli, 'module', 'list', '--json'], { cwd: root, env, encoding: 'utf8' });
+    expect(list.status).toBe(0);
+    for (const method of ['GET', 'HEAD']) {
+      for (const suffix of ['', `/${MODULE_ID}`, `/${MODULE_ID}/review-prompt?shard=1`, `/${MODULE_ID}/review-prompt?shard=1&mode=diff&base=${base}&head=${head}`]) {
+        // A request has its own resolution authority. Do not let earlier calls authorize operands.
+        writeFileSync(git.log, '');
+        const response = await fetch(server.url + path + suffix, { method });
+        expect(response.status).toBe(200);
+        expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
+        const body = await response.text();
+        if (method === 'HEAD') expect(body).toBe('');
+        else {
+          expect(response.headers.get('etag')).toBe('"' + createHash('sha256').update(body).digest('hex') + '"');
+          if (!suffix) expect(JSON.parse(body)).toEqual(JSON.parse(list.stdout));
+          if (suffix.includes('review-prompt')) {
+            const args = ['module', 'review-prompt', MODULE_ID, '--json', '--shard', '1', ...(suffix.includes('mode=diff') ? ['--base', base, '--head', head] : [])];
+            const packet = spawnSync(process.execPath, [cli, ...args], { cwd: root, env, encoding: 'utf8' });
+            expect(packet.status).toBe(0); expect(JSON.parse(body).digest).toBe(JSON.parse(packet.stdout).digest);
+          }
+        }
+        assertArchitectureArgv(architectureArgv(git.log));
+        const unchanged = await fetch(server.url + path + suffix, { method, headers: { 'If-None-Match': response.headers.get('etag')! } });
+        expect(unchanged.status).toBe(304); expect(await unchanged.text()).toBe('');
+      }
+    }
+    expect(spawned.length).toBeGreaterThan(0);
+    expect(spawned.every(args => args.length === 2 && args[0] === process.execPath && args[1].endsWith('/operator/task-read-process.ts'))).toBe(true);
+    expect(architectureFiles(root)).toEqual(before); expect(architectureFiles(registry.home)).toEqual(registryBefore);
+    expect(changes).toEqual([]);
+  } finally {
+    await server.close(); spawnSpy.mockRestore(); watchers.forEach(watcher => watcher.close());
+    for (const path of [root, scratch, registry.home]) rmSync(path, { recursive: true, force: true });
+  }
+});
+
+test('architecture rejects F-01 query injections before any child and refuses cross-site API calls', async () => {
+  const root = realpathSync(moduleRepository()), scratch = mkdtempSync('/tmp/oui-b-reject-');
+  const registry = registryHome([{ path: root, accessMode: 'read_only' }]), git = architectureGit(scratch);
+  writeFileSync(join(scratch, 'index.html'), '<!doctype html><title>Static fixture</title>');
+  const processSpy = spyOn(childProcess, 'spawn');
+  const server = await startOperatorServer({ port: 0, static_root: scratch, env: { ...process.env, ...registry.env, ...git.env } });
+  const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt`;
+  try {
+    for (const method of ['GET', 'HEAD']) {
+      for (const query of ['', 'shard=0', 'shard=10000', 'shard=01', 'shard=1&shard=2', 'shard=1&path=/private', 'shard=1&mode=other', 'shard=1&base=' + 'a'.repeat(40),
+        ...['HEAD', 'abc123', '-x', '--output=' + join(root, 'output'), 'A'.repeat(40)].map(value => `shard=1&mode=diff&base=${encodeURIComponent(value)}&head=${'a'.repeat(40)}`),
+        `shard=1&mode=diff&base=${'a'.repeat(40)}`, `shard=1&mode=diff&head=${'a'.repeat(40)}`]) {
+        expect((await fetch(server.url + path + '?' + query, { method })).status).toBe(400);
+      }
+      for (const site of ['cross-site', 'same-site', 'foreign']) expect((await fetch(server.url + path + '?shard=1', { method, headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+      expect((await fetch(server.url + '/api/v1/fleet/snapshot', { method, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
+    }
+    expect(architectureArgv(git.log)).toEqual([]); expect(processSpy.mock.calls).toHaveLength(0);
+    expect(existsSync(join(root, 'output'))).toBe(false);
+    expect((await fetch(server.url + '/', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(200);
+    expect((await fetch(server.url + path + '?shard=1', { method: 'POST', headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(405);
+    for (const site of ['none', 'same-origin']) expect((await fetch(server.url + path + '?shard=1', { headers: { 'Sec-Fetch-Site': site } })).status).toBe(200);
+    expect((await fetch(server.url + '/healthz', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(200);
+    const missing = await fetch(server.url + path + `?shard=1&mode=diff&base=${'0'.repeat(40)}&head=${'0'.repeat(40)}`);
+    expect(missing.status).toBe(404); expect(await missing.json()).toEqual({ code: 'commit_not_found' });
+    expect((await fetch(server.url + path.replace(MODULE_ID, 'capability.test.missing') + '?shard=1')).status).toBe(404);
+    expect((await fetch(server.url + path.replace(registry.ids[0], 'repo_unknown') + '?shard=1')).status).toBe(404);
+    expect((await fetch(server.url + path.replace(MODULE_ID, 'bad-cap') + '?shard=1')).status).toBe(404);
+    expect((await fetch(server.url + path + '?shard=9999')).status).toBe(400);
+  } finally { await server.close(); processSpy.mockRestore(); for (const path of [root, scratch, registry.home]) rmSync(path, { recursive: true, force: true }); }
+});
+
+test('architecture slow git leaves health responsive and returns a bounded timeout', async () => {
+  const root = realpathSync(moduleRepository()), scratch = mkdtempSync('/tmp/oui-b-slow-');
+  const registry = registryHome([{ path: root, accessMode: 'read_only' }]), git = architectureGit(scratch, true);
+  const server = await startOperatorServer({ port: 0, timeout_ms: 1000, max_concurrency: 1, env: { ...process.env, ...registry.env, ...git.env } });
+  const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
+  try {
+    const pending = fetch(server.url + path);
+    await waitFor(() => existsSync(join(scratch, 'entered')), 'slow Git did not start');
+    const start = performance.now();
+    expect((await fetch(server.url + '/healthz')).status).toBe(200); expect(performance.now() - start).toBeLessThan(1000);
+    const busy = await fetch(server.url + path); expect(busy.status).toBe(503); expect(await busy.json()).toEqual({ code: 'busy' });
+    const timedOut = await pending; expect(timedOut.status).toBe(504); expect(await timedOut.json()).toEqual({ code: 'timeout' });
+  } finally { await server.close(); for (const path of [root, scratch, registry.home]) rmSync(path, { recursive: true, force: true }); }
+});
+
+test('architecture public outputs hide secrets and path escape never reads an outside file', async () => {
+  const secrets = ['sk-' + 'a'.repeat(32), 'https://hooks.slack.com/services/TFAKE/BFAKE/secret', 'https://user:pass@host.invalid/db', 'https://host.invalid/endpoint?token=fake', '/Users/fake/private-file'];
+  const root = realpathSync(moduleRepository({ section3: secrets.join('\n') })), registry = registryHome([{ path: root, accessMode: 'read_only' }]);
+  const node = Bun.YAML.parse(readFileSync(join(root, MODULE_NODE), 'utf8')) as Record<string, unknown>;
+  node.name = secrets[0]; node.summary = secrets.join(' '); fixtureWrite(root, MODULE_NODE, Bun.YAML.stringify(node)); fixtureCommit(root);
+  const server = await startOperatorServer({ port: 0, env: { ...process.env, ...registry.env } });
+  const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
+  try {
+    for (const suffix of ['', `/${MODULE_ID}`, `/${MODULE_ID}/review-prompt?shard=1`]) {
+      const response = await fetch(server.url + path + suffix);
+      expect(response.status).toBe(suffix.includes('review-prompt') ? 422 : 200);
+      const text = await response.text(); secrets.forEach(secret => expect(text).not.toContain(secret)); expect(text).not.toContain(root);
+      if (suffix.includes('review-prompt')) expect(JSON.parse(text)).toEqual({ code: 'secret_detected' });
+    }
+    const outside = mkdtempSync('/tmp/oui-b-outside-'); writeFileSync(join(outside, 'private.md'), 'OUTSIDE PRIVATE CONTENT');
+    const original = fs.readFileSync, reads: string[] = [];
+    const spy = spyOn(fs, 'readFileSync').mockImplementation(((path: unknown, ...args: unknown[]) => { reads.push(String(path)); return original(path as never, ...args as [never]); }) as typeof fs.readFileSync);
+    try {
+      // The committed path is regular. Its worktree replacement must still be refused.
+      rmSync(join(root, MODULE_DOC)); symlinkSync(join(outside, 'private.md'), join(root, MODULE_DOC));
+      expect(() => readArchitecture({ kind: 'architecture_module', repository_id: registry.ids[0], capability_id: MODULE_ID }, registry.env)).toThrow('path_escape');
+      expect(reads.length).toBeGreaterThan(0);
+      expect(reads.some(path => path.startsWith(outside))).toBe(false);
+      const escaped = await fetch(server.url + path + `/${MODULE_ID}`); expect(escaped.status).toBe(422); expect(await escaped.json()).toEqual({ code: 'path_escape' });
+    } finally { spy.mockRestore(); rmSync(outside, { recursive: true, force: true }); }
+  } finally { await server.close(); for (const path of [root, registry.home]) rmSync(path, { recursive: true, force: true }); }
+});
+
+test('architecture prompt keeps public absolute-path examples in CLI digest parity', async () => {
+  const root = realpathSync(moduleRepository({ section3: 'The test uses /tmp/x and https://example.invalid/?page=1.' }));
+  const registry = registryHome([{ path: root, accessMode: 'read_only' }]);
+  const env = { ...process.env, ...registry.env };
+  const server = await startOperatorServer({ port: 0, env });
+  try {
+    const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
+    const expected = spawnSync(process.execPath, [cli, 'module', 'review-prompt', MODULE_ID, '--json'], { cwd: root, env, encoding: 'utf8' });
+    expect(expected.status).toBe(0);
+    const response = await fetch(`${server.url}/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt?shard=1`);
+    expect(response.status).toBe(200); expect((await response.json()).digest).toBe(JSON.parse(expected.stdout).digest);
+  } finally { await server.close(); for (const path of [root, registry.home]) rmSync(path, { recursive: true, force: true }); }
 });

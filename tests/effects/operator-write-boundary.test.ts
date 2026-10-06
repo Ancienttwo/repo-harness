@@ -11,6 +11,9 @@ import {
 } from '../../src/effects/operator/collaboration';
 import {
   OPERATOR_API_PATH_PREFIX,
+  OPERATOR_ARCHITECTURE_MODULES_ROUTE,
+  OPERATOR_ARCHITECTURE_MODULE_ROUTE,
+  OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE,
   OPERATOR_COLLABORATION_SNAPSHOT_ROUTE,
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
@@ -81,6 +84,9 @@ describe('operator structural write boundary', () => {
       'task_diff',
       'pipelines',
       'notify_status',
+      'architecture_modules',
+      'architecture_module',
+      'architecture_review_prompt',
       'static_asset',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
@@ -92,6 +98,9 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('pipelines')).toBe(OPERATOR_PIPELINES_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
+    expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
+    expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
+    expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);

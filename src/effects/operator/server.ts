@@ -1,3 +1,5 @@
+import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
+export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodePipelineBoard, type PipelineBoardV2 } from '../../core/pipeline/board';
 import { createPipelineStatusReader, type PipelineStatusReadInput } from './pipeline-status';
 import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/notify-status';
@@ -6,7 +8,7 @@ import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILUR
 import { isDecisionCursor } from '../../core/operator/decision-inventory';
 import { readOperatorAutomationSummary, type AutomationSummaryReadInput } from './automation-summary';
 import { decodeOperatorAutomationSummary, type OperatorAutomationSummary } from '../../core/operator/automation-summary';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { projectOperatorRepositorySnapshot } from '../../core/operator/repository-snapshot';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
@@ -105,6 +107,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'pipelines', method: 'GET', pattern: OPERATOR_PIPELINES_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
+  Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
+  Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
+  Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
 ] as const);
 
@@ -1372,9 +1377,10 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'diff' | 'history',
+    failures: readonly string[], kind: 'context' | 'activity' | 'diff' | 'history' | 'architecture',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
+    cacheRequest?: IncomingMessage,
   ): void => {
     if (closed) { sendJson(response,503,{code:'unavailable'},headOnly); return; }
     if (activeTaskReadCancellers.size >= maxConcurrency) { sendJson(response,503,{code:'busy'},headOnly); return; }
@@ -1391,7 +1397,12 @@ export async function startOperatorServer(
       response.removeListener('close',cancel);
       if (response.destroyed) return;
       if (failure) sendJson(response, failureStatus(failure),{code:failure},headOnly);
-      else sendJson(response,200,snapshot,headOnly);
+      else if (cacheRequest) {
+        const etag = `"${createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}"`;
+        if (cacheRequest.headers['if-none-match'] === etag) {
+          response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end();
+        } else sendJson(response, 200, snapshot, headOnly, { ETag: etag });
+      } else sendJson(response,200,snapshot,headOnly);
     };
     const accept = (value: unknown) => {
       try { finish(undefined,decode(value,input)); }
@@ -1464,6 +1475,26 @@ export async function startOperatorServer(
       return;
     }
     const pathname = url.pathname;
+    const fetchSite = request.headers['sec-fetch-site'];
+    if (pathname.startsWith('/api/') && fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+      sendJson(response, 403, { code: 'fetch_site_not_allowed' }, headOnly); return;
+    }
+    if (pathname.startsWith('/api/v1/repositories/') && pathname.includes('/architecture/modules')) {
+      let input;
+      try { input = parseArchitectureRequest(url); }
+      catch { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+      if (!input) { sendJson(response, 404, { code: 'capability_not_found' }, headOnly); return; }
+      handleBoundedTaskRead(response, headOnly, input, (value, request) => {
+        const result = request.kind === 'architecture_modules' ? decodeArchitectureModuleIndex(value)
+          : request.kind === 'architecture_module' ? decodeArchitectureModuleDetail(value) : decodeArchitectureReviewPrompt(value);
+        if ('capability_id' in request && ('module' in result ? result.module.id !== request.capability_id
+          : 'capability_id' in result && result.capability_id !== request.capability_id)) throw new Error('identity');
+        return result;
+      }, ARCHITECTURE_FAILURES, 'architecture', undefined, code =>
+        code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
+          : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422, request);
+      return;
+    }
 
     if (pathname === OPERATOR_HEALTH_PATH) {
       const health: OperatorHealthResponseV1 = {

@@ -1,3 +1,5 @@
+import { Worker } from 'node:worker_threads';
+import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
 import { isTaskActivityRequest } from '../../core/operator/task-activity';
 import { isTaskContextRequest } from '../../core/operator/task-context';
@@ -35,7 +37,13 @@ function run(): void {
         || Object.values(message.env).some(value=>typeof value !== 'string'))) throw new Error('invalid environment');
       started = true;
       const env = message.env as NodeJS.ProcessEnv | undefined;
-      if (message.kind === 'context' && isTaskContextRequest(message.request)) {
+      if (message.kind === 'architecture' && isArchitectureRequest(message.request)) {
+        // The brief requires a worker; the outer process owns and retires its Git process tree.
+        const worker = new Worker(new URL('./architecture.ts', import.meta.url), { workerData: { request: message.request, env } });
+        worker.once('message', finish);
+        worker.once('error', () => finish({ ok: false, code: 'unavailable' }));
+        worker.once('exit', () => { if (!settled) finish({ ok: false, code: 'unavailable' }); });
+      } else if (message.kind === 'context' && isTaskContextRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskContext({...message.request,env})});
       } else if (message.kind === 'activity' && isTaskActivityRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskActivity({...message.request,env})});
