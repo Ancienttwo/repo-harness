@@ -519,10 +519,22 @@ repo-harness operator serve
 
 The command binds to loopback only and prints the local URL. The browser shows
 the canonical Fleet summary, an attention-first worklist, a resident task
-detail pane, and degraded snapshot states. Refresh is explicit; the board
-carries exactly one write action — sending a task-addressed message — and does
-not acquire tasks, mutate workflow state, launch agents, or expose repository
-paths.
+detail pane, and degraded snapshot states. The board is read-only. It does not
+send messages, acquire tasks, change workflow state, start agents, or show
+repository paths.
+
+Read committed architecture facts or export a module review prompt:
+
+```bash
+repo-harness module list --json
+repo-harness module review-prompt capability.runtime-harness.verified-context --json
+```
+
+The prompt uses HEAD content. It reports uncommitted paths and their content
+hash separately. Its input budget comes from `.archcontext/manifest.yaml`
+at `runtime.contextBudgetBytes`. If the prompt needs more than one shard, send
+each shard to the same reviewer with `--shard <n>`. Start review after all
+shards arrive. Diff mode requires both `--base <rev>` and `--head <rev>`.
 
 ## MCP Connector
 
