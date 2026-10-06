@@ -358,9 +358,18 @@ export function collectEngineerOffers(options: CollectEngineerOffersOptions): En
     ...options.fleet_options,
   });
   const liveClaims = deps.listLiveClaims(repo.path, options.principal.engineer_id, deps.readLease).length;
+  // One observation per concurrency group for this collection only: every
+  // member of a group would otherwise reread every member's Lease. A later
+  // collection, including the locked one, observes the Leases again.
+  const concurrencyByGroup = new Map<string, ReturnType<typeof concurrencyObservation>>();
   const candidates = current.graph.work_packages.map((item) => {
     const fleetOffer = fleet.offers.find((offer) => offer.task_id === item.task_id) ?? null;
-    const concurrency = concurrencyObservation(repo.path, item, current.graph!, deps);
+    const group = `${item.repository_id}\0${item.concurrency.key}`;
+    let concurrency = concurrencyByGroup.get(group);
+    if (concurrency === undefined) {
+      concurrency = concurrencyObservation(repo.path, item, current.graph!, deps);
+      concurrencyByGroup.set(group, concurrency);
+    }
     const retry = observeRetryEligibility({ policy: item.retry_policy, current: deps.readAttemptCurrent(repo.path, item.work_package_id, item.work_package_revision), work_package_revision: item.work_package_revision, observed_at: (options.now_ms === undefined ? deps.now() : new Date(options.now_ms)).toISOString() });
     return buildEngineerOfferCandidate({
       graph: current.graph!,

@@ -91,7 +91,6 @@ function feedbackEnvironment() {
     repo_root: process.cwd(),
     gh_bin: process.env.REPO_HARNESS_GH_BIN,
     git_bin: process.env.REPO_HARNESS_GIT_BIN,
-    merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
   } as const;
 }
 
@@ -382,7 +381,6 @@ export function buildFleetCommand(): Command {
           repo_root: process.cwd(),
           gh_bin: process.env.REPO_HARNESS_GH_BIN,
           git_bin: process.env.REPO_HARNESS_GIT_BIN,
-          merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
         });
         process.stdout.write(`${JSON.stringify(result)}\n`);
       } catch (error) {
