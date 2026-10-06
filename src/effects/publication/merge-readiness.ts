@@ -1,4 +1,4 @@
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { spawn, spawnSync } from 'child_process';
 
 import {
@@ -534,14 +534,18 @@ export function collectPullRequestMergeReadiness(
   }
 }
 
+// Same authority rule as publication reconcile: the candidate repository is
+// untrusted content, so the executable merge predicate is always the packaged
+// script and the candidate repository is only its working directory.
+const WORKTREE_MERGE_LIB = resolve(import.meta.dir, '../../../scripts/worktree-merge-lib.sh');
+
 function classifyIntegration(identity: ProviderIdentity, receipt: PublicationReceiptV3, input: PublicationReadinessInput): MergeReadinessIntegrationMode {
   const gitBin = input.git_bin ?? process.env.REPO_HARNESS_GIT_BIN ?? 'git';
   for (const oid of [identity.base_sha, receipt.head_sha]) {
     const objectCheck = spawnSync(gitBin, ['cat-file', '-e', `${oid}^{commit}`], { cwd: input.repo_root, encoding: 'utf-8' });
     if (objectCheck.error || objectCheck.status !== 0) return 'unavailable';
   }
-  const script = join(input.repo_root, 'scripts/worktree-merge-lib.sh');
-  const result = spawnSync('/bin/bash', [script, '--target', identity.base_sha, '--', receipt.head_sha], {
+  const result = spawnSync('/bin/bash', [WORKTREE_MERGE_LIB, '--target', identity.base_sha, '--', receipt.head_sha], {
     cwd: input.repo_root,
     encoding: 'utf-8',
   });
