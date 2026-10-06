@@ -4,7 +4,13 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+## [0.21.0] - 2026-10-06
+
 ### Breaking changes
+
+- `init --apply` and global runtime setup now require the release-matched
+  `herdr --skill` output. Hosts without that binary fail setup.
+  Managed skill writes preserve user edits and refuse unowned targets. (#582)
 
 - MCP `engineer_acquire` now acquires one offer from a trusted
   `engineer_prepare` observation. It requires `idempotency_key` and
@@ -22,6 +28,16 @@ All notable changes to this skill are documented here.
   `engineer_acquire_next_*` codes.
 
 ### Added
+
+- Export committed architecture module facts and bounded review prompts with
+  `repo-harness module`. Reads do not run configured Git helpers. (#536)
+- Read immutable Docs graph snapshots and compute Agent-config rule and policy
+  projections. These are backend foundations. New frontend views are deferred.
+  (#579, #580)
+- Read publication health with `repo-harness pipeline health --json`.
+  Writers save publication intent before commit. A later writer or matching
+  replay can repair a failed snapshot export without repeating the mutation.
+  Unsynced-command replay, Mini setup and a real Bot pilot are deferred. (#581)
 
 - Add `repo-harness engineer acquire` to acquire one exact observed Work Package.
   The command checks the full assertion and uses a durable transaction key.
@@ -51,6 +67,24 @@ All notable changes to this skill are documented here.
   no longer affect these commands.
 
 ### Fixed
+
+- Save the complete review packet before launch preparation or reviewer start.
+  A failed start preserves the packet. A changed retry fails before another
+  launch and reports how to inspect the saved subject. (#578)
+- Refuse invalid principals, incomplete collaboration reads and unknown Lease
+  capacity. Protect state locks, hook ownership and observation revisions.
+  (#551, #552, #553, #554, #556, #558, #562)
+- Bind pipeline gates and architecture publication to current evidence.
+  Keep committed publication receipts available after repair. (#547, #555, #559)
+- Use revision-bound MCP codes, recoverable OAuth consent retries and one doctor
+  client. Protect adoption rollback and exact index state. (#544, #550, #564)
+- Report stale operator panes, keep disclosure focus and refresh panel state.
+  Pause Organization-only readers while another tab is active. (#568, #570)
+- Reduce repeated log, lease, inbox and runtime probes without changing their
+  source authority. (#569, #571, #572, #573)
+- Resolve Windows Git installation roots and recover midnight CI observations.
+  Run native macOS review fixtures in the required HOME-isolation job.
+  (#566, #577, #578)
 
 - Managed Draft publication no longer needs a host merge seal. The publication
   receipt moves to protocol 3 and records PR, head, base and candidate diff
