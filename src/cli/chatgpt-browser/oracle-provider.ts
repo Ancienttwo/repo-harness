@@ -187,14 +187,16 @@ function probeOracleVersion(binary: string): string | undefined {
  * Probe an oracle binary's help/version output to confirm it actually accepts
  * the flags we send. The probe is the readiness gate — version comparison alone
  * is not enough, because the binary may not support the browser-mode surface.
+ * A caller that already ran the `--version` probe on this binary passes its
+ * result as `checkedVersion` so the probe does not spawn it a second time.
  */
-export function probeOracle(binary: string): OracleProbe {
+export function probeOracle(binary: string, checkedVersion?: string): OracleProbe {
   const help = spawnSync(binary, ['--help'], { encoding: 'utf-8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
   const debugHelp = spawnSync(binary, ['--debug-help'], { encoding: 'utf-8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
   const helpText = `${help.stdout ?? ''}\n${help.stderr ?? ''}\n${debugHelp.stdout ?? ''}\n${debugHelp.stderr ?? ''}`;
   // `--version` is the compatibility authority. A help banner is not a valid
   // substitute: it can omit or embed unrelated version-like strings.
-  const version = probeOracleVersion(binary);
+  const version = checkedVersion ?? probeOracleVersion(binary);
   const ranOk = !help.error && (help.status === 0 || helpText.trim().length > 0);
   const runtimeFlagsAccepted = probeRuntimeFlagAcceptance(binary);
   return {
@@ -576,7 +578,7 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
   }
   const oracleBinary = resolution.binary;
   let cachedProbe: OracleProbe | undefined;
-  const probeResolvedOracle = (): OracleProbe => (cachedProbe ??= probeOracle(oracleBinary));
+  const probeResolvedOracle = (): OracleProbe => (cachedProbe ??= probeOracle(oracleBinary, resolvedOracleVersion));
   // The session descriptor and evidence flags exist only in the repo-harness
   // Oracle fork. Without them the real command dies at argument parsing, so it is
   // refused before the browser is ever launched.
