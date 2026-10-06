@@ -1,7 +1,7 @@
 # repo-harness 0.21.0 release
 
 - Date: 2026-10-06.
-- Status: GitHub Release published. npm upload accepted; registry visibility pending.
+- Status: GitHub and npm publication verified. Local runtime refresh verified.
 - Lane: stable npm and GitHub Release.
 - Previous release: v0.20.0, commit 0482c621abbbd7d63fed7ab3d9eef1da5658f86f.
 - Source release commit: ef695fb9f964f29342ee6c98ce150601006eb40f.
@@ -54,7 +54,17 @@
 - The first npm publish attempt returned EOTP. The owner completed browser
   authentication and published the reviewed tarball. npm returned HTTP 202 and
   CLI exit 0. Registry readback still returned E404 at 2026-10-06 09:05 UTC.
-  Registry availability and registry clean-room runtime proof remain pending.
+  That observation is historical. A later readback resolves this hold.
+- bun run check:release-published returned 0. Registry version and latest tag
+  are 0.21.0. Downloaded registry tarball integrity matches the release bytes.
+  Clean-room installed CLI and hook runtime evidence is valid:
+  sha256:ace6597df65340d05020affde0979dc9477a4bc47dd734477af5d29721305994.
+- Local refresh uses the canonical host transaction and verified GitHub tarball.
+  It returned 0. The installed candidate receipt reports complete scope.
+  CLI readback is 0.21.0. Managed dependencies and daemon compatibility pass.
+  Codex hooks are 12/12. Claude hooks are 9/9. Both Herdr skills match herdr --skill.
+  Setup check has 32 ok and 0 fail. One optional Skills CLI warning and existing
+  unmanaged-hook notices remain. No permission bypass or daemon restart ran.
 - GitHub Release: https://github.com/Ancienttwo/repo-harness/releases/tag/v0.21.0.
   It is public and stable. The tag points to the source release commit above.
 - Annotated tag object: 3a0a879910a156ea91d4510cdf1bea6c982d38fa.
@@ -92,4 +102,4 @@ GitHub confirms the following squash boundaries.
 #583 merged as ef695fb9f964f29342ee6c98ce150601006eb40f.
 Its parent is 49da69373e19fe5fe65a716c446b67a47e2812f4.
 Rollback: git revert ef695fb9f964f29342ee6c98ce150601006eb40f.
-GitHub publication and asset bytes are verified. npm visibility remains pending.
+GitHub, npm registry bytes, clean-room runtime and local refresh are verified.
