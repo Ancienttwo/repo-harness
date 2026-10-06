@@ -867,6 +867,28 @@ describe('operator web interactions', () => {
     expect(dialogStaleNotices()).toHaveLength(0);
   });
 
+  test('Fleet keeps the failed-read notice through a pending retry until a valid read succeeds', async () => {
+    let finishRetry!: (snapshot: OperatorFleetSnapshotV1) => void;
+    let retry = false;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      fetchSnapshot={() => retry
+        ? new Promise(resolve => { finishRetry = resolve; })
+        : Promise.reject(new Error('fleet offline'))} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => buttonWithText('Refresh').click());
+    const staleNotices = () => Array.from(document.querySelectorAll('[role="alert"]'))
+      .filter(node => node.textContent?.includes('Showing the last successful snapshot'));
+    expect(staleNotices()).toHaveLength(2);
+    retry = true;
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(staleNotices()).toHaveLength(2);
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    await act(async () => finishRetry({ ...stableSnapshot, sequence: stableSnapshot.sequence + 1 }));
+    expect(staleNotices()).toHaveLength(0);
+    expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence + 1));
+  });
+
   test('modal Tab traversal reaches evidence disclosures before it wraps', async () => {
     const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     // Scoped board reads are irrelevant here; stub the transport so the pane
