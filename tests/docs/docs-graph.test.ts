@@ -1,0 +1,158 @@
+import { describe, expect, test } from 'bun:test';
+import {
+  buildDocsGraph, docsDocumentKind, docsTimestamp, type DocsDocument, type DocsGraphInput,
+} from '../../src/core/docs/docs-graph';
+
+const COMMIT = 'a'.repeat(40), BLOB = 'b'.repeat(40);
+const NOW = '2026-10-06T12:00:00Z';
+const doc = (path: string, headers = '', time: string | null = '2026-10-06T10:00:00Z'): DocsDocument => ({
+  path, content: '# Fixture\n' + headers, blob_oid: BLOB,
+  last_commit: time ? { commit: COMMIT, time } : null,
+});
+const graph = (documents: DocsDocument[], options: Partial<DocsGraphInput> = {}) => buildDocsGraph({ commit: COMMIT, now: NOW, documents, ...options });
+const prd = 'plans/prds/child.prd.md', parent = 'plans/prds/parent.prd.md', sprint = 'plans/sprints/fixture.sprint.md';
+const plan = 'plans/plan-fixture.md', contract = 'tasks/contracts/fixture.contract.md';
+
+describe('Docs graph pure projection', () => {
+  test('indexes artifact kinds and keeps explicit multi-parent and cyclic edges', () => {
+    const result = graph([
+      doc(prd, `> **Parent PRD**: \`${parent}\`\n> **Depends On**: ${sprint}`),
+      doc(parent), doc(sprint, `> **Child PRD A (Active)**: \`${prd}\``),
+      doc(plan, `> **Source PRD**: ${prd}\n> **Task Contract**: ${contract}\n> **Source Spec**: docs/spec.md`),
+      doc(contract, `> **Plan**: ${plan}\n> **Review File**: tasks/reviews/fixture.review.md\n> **Notes File**: tasks/notes/fixture.notes.md`),
+      doc('tasks/reviews/fixture.review.md'), doc('tasks/notes/fixture.notes.md'), doc('docs/spec.md'),
+    ]);
+    expect(result.nodes.map(node => node.kind).sort()).toEqual(['contract', 'notes', 'plan', 'prd', 'prd', 'review', 'spec', 'sprint']);
+    expect(result.edges.filter(edge => edge.target === prd).map(edge => edge.source).sort()).toEqual([parent, sprint]);
+    expect(result.edges.find(edge => edge.label === 'Child PRD A (Active)')).toEqual({
+      source: sprint, target: prd, label: 'Child PRD A (Active)', header_node: sprint,
+      header: `> **Child PRD A (Active)**: \`${prd}\``, slot: 'A', declared_status: 'Active',
+    });
+    expect(result.edges.some(edge => edge.source === prd && edge.target === sprint)).toBe(true);
+    expect(result.issues).toEqual([]);
+  });
+
+  test('reports missing and disallowed targets without reading or exposing absolute paths', () => {
+    const result = graph([doc(plan, '> **Task Contract**: tasks/contracts/missing.contract.md\n> **Source Spec**: ../../etc/passwd\n> **Notes File**: /tmp/private.md')]);
+    expect(result.issues.filter(issue => issue.kind === 'broken_link')).toHaveLength(3);
+    expect(result.edges).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain('/tmp/private.md');
+    expect(JSON.stringify(result)).not.toContain('../../etc/passwd');
+    for (const path of ['plans/../secrets.md', 'plans//plan-a.md', 'plans/plan-a.md?secret=x', 'plans/%2e%2e/plan-a.md', 'plans\\plan-a.md', '/plans/plan-a.md']) expect(docsDocumentKind(path)).toBeNull();
+  });
+
+  test('reads only metadata and path dependency values, with no filename or prose inference', () => {
+    const result = graph([
+      doc(plan, `> **Depends On**: ME-2A; ${prd}\n\n## Example\n> **Task Contract**: ${contract}`),
+      doc(prd), doc(contract),
+    ]);
+    expect(result.edges.map(edge => edge.label)).toEqual(['Depends On']);
+    expect(result.edges[0]!.target).toBe(prd);
+    expect(result.issues).toEqual([]);
+  });
+
+  test('keeps ambiguous and malformed headers unknown rather than choosing a target', () => {
+    const result = graph([
+      doc(plan, `> **Task Contract**: ${contract}\n> **task contract**: tasks/contracts/other.contract.md\n> **Status**: Active\n> **Status**: Draft\n> **Child PRD A**: ${prd}\n> **Updated**: not-a-date`),
+      doc(contract), doc(prd),
+    ]);
+    expect(result.edges).toEqual([]);
+    expect(result.nodes.find(node => node.id === plan)?.status).toBeNull();
+    expect(result.nodes.find(node => node.id === plan)?.updated).toBeNull();
+    expect(result.unknowns.map(item => item.reason).sort()).toEqual(['ambiguous_header', 'ambiguous_header', 'invalid_child_label', 'invalid_header']);
+  });
+
+  test('separates relationship conflicts from contract-plan status conflicts', () => {
+    const other = 'plans/plan-other.md';
+    const result = graph([
+      doc(plan, `> **Status**: Executing\n> **Task Contract**: ${contract}`),
+      doc(contract, `> **Status**: Active\n> **Plan**: ${other}`), doc(other, '> **Status**: Approved'),
+    ]);
+    expect(result.issues.filter(issue => issue.kind === 'relationship_conflict')).toEqual([
+      { kind: 'relationship_conflict', node: contract, target: plan, detail: 'contract_plan_relationship' },
+    ]);
+    expect(result.issues.filter(issue => issue.kind === 'status_conflict')).toEqual([
+      { kind: 'status_conflict', node: contract, target: other, detail: 'The active contract points to a plan that is not executing.' },
+    ]);
+    expect(graph([doc(plan, '> **Status**: Executing'), doc(contract, `> **Status**: Active\n> **Plan**: ${plan}`)]).issues).toEqual([]);
+  });
+
+  test('compares child activation independently of approval and retains unknown activation', () => {
+    for (const label of ['Deferred — Phase 2', 'Active']) {
+      for (const childActivation of ['Deferred — Phase 2', 'Active — Phase 1', null, 'Approved']) {
+        const result = graph([doc(sprint, `> **Child PRD B (${label})**: ${prd}`),
+          doc(prd, '> **Status**: Approved' + (childActivation ? `\n> **Activation**: ${childActivation}` : ''))]);
+        const explicit = childActivation?.startsWith('Active') || childActivation?.startsWith('Deferred');
+        const conflict = explicit && label.startsWith('Deferred') !== childActivation!.startsWith('Deferred');
+        expect(result.issues.filter(issue => issue.kind === 'status_conflict')).toHaveLength(conflict ? 1 : 0);
+        expect(result.unknowns.filter(item => item.field === 'child_activation')).toHaveLength(explicit ? 0 : 1);
+      }
+    }
+    expect(graph([doc(sprint, `> **Child PRD D (Approved — Phase 1)**: ${prd}`), doc(prd, '> **Activation**: Active')]).issues).toEqual([]);
+  });
+
+  test('uses explicit capability identities without making model edges', () => {
+    const cap = { id: 'capability.runtime-harness.docs', path: '.archcontext/model/nodes/capability.runtime-harness.docs.yaml', blob_oid: BLOB, last_commit: null };
+    const result = graph([doc(plan, `> **Capability ID**: ${cap.id}`)], { capabilities: [cap] });
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges[0]!.source).toBe(cap.id);
+    expect(result.nodes.find(node => node.id === cap.id)?.source.path).toBe(cap.path);
+    expect(graph([doc(plan, '> **Capability ID**: capability.runtime-harness.missing')]).issues[0]?.kind).toBe('broken_link');
+    expect(() => graph([], { capabilities: [cap, cap] })).toThrow('duplicate');
+  });
+
+  test('uses Updated before commit time and has deterministic UTC and unknown handling', () => {
+    const result = graph([
+      doc(plan, '> **Updated**: 2026-10-05 12:30'), doc(prd, '', '2026-10-05T18:00:00+0800'),
+      doc(parent, '', null), doc(contract, '> **Updated**: nonsense'),
+    ]);
+    expect(result.nodes.find(node => node.id === plan)).toMatchObject({ updated: '2026-10-05T12:30:00.000Z', updated_source: 'header' });
+    expect(result.nodes.find(node => node.id === prd)).toMatchObject({ updated: '2026-10-05T10:00:00.000Z', updated_source: 'commit' });
+    expect(result.nodes.find(node => node.id === parent)?.updated).toBeNull();
+    expect(result.nodes.find(node => node.id === contract)?.updated).toBeNull();
+    expect(docsTimestamp('2026-02-30')).toBeNull();
+    expect(docsTimestamp('yesterday')).toBeNull();
+    expect(docsTimestamp('2026-10-05')).toBe('2026-10-05T00:00:00.000Z');
+  });
+
+  test('evaluates exact stale boundaries, overrides, future time, and explicit waits', () => {
+    const cases = [
+      ['Executing', 23.999, null], ['Executing', 24, 'hint'], ['Executing', 72, 'escalated'],
+      ['Active', 167.999, null], ['Active', 168, 'hint'], ['Draft', 1000, null],
+      ['waiting-on-approval', 1000, null], ['waiting-on-external', 1000, null],
+    ] as const;
+    for (const [status, hours, severity] of cases) {
+      const updated = new Date(Date.parse(NOW) - hours * 3_600_000).toISOString();
+      const result = graph([doc(plan, `> **Status**: ${status}\n> **Updated**: ${updated}`)]);
+      expect(result.issues.filter(issue => issue.kind === 'stale').map(issue => issue.severity)).toEqual(severity ? [severity] : []);
+      if (status.startsWith('waiting')) expect(result.nodes[0]!.waiting_on).toBe(status.endsWith('approval') ? 'approval' : 'external');
+    }
+    const source = doc(plan, '> **Status**: Executing\n> **Updated**: 2026-10-06T10:00:00Z');
+    expect(graph([source], { thresholds: { executing_hint_hours: 1, executing_escalated_hours: 2 } }).issues[0]?.severity).toBe('escalated');
+    expect(graph([doc(plan, '> **Status**: Executing\n> **Updated**: 2026-10-07')]).unknowns).toContainEqual({ node: plan, field: 'freshness', reason: 'updated_in_future' });
+    expect(() => graph([], { thresholds: { active_days: -1 } })).toThrow('thresholds');
+    expect(() => graph([], { thresholds: { executing_hint_hours: 100 } })).toThrow('thresholds');
+  });
+
+  test('bounds all scope and never reports hidden or capped targets as missing', () => {
+    const archived = 'plans/archive/plan-old.md';
+    const documents = [doc(plan, `> **Plan**: ${archived}`), doc(archived), doc(prd)];
+    const active = graph(documents);
+    expect(active.archived_count).toBe(1);
+    expect(active.nodes.map(node => node.id)).not.toContain(archived);
+    expect(active.edges).toEqual([]);
+    expect(active.issues).toEqual([]);
+    const all = graph(documents, { scope: 'all', max_nodes: 1 });
+    expect(all.nodes).toHaveLength(1);
+    expect(all.observation.omitted_count).toBe(2);
+    expect(all.issues).toEqual([]);
+    expect(() => graph(documents, { max_nodes: 0 })).toThrow('input');
+  });
+
+  test('is deterministic over source order and keeps cyclic traversal bounded', () => {
+    const documents = [doc(plan, `> **Depends On**: ${prd}`), doc(prd, `> **Depends On**: ${plan}`)];
+    expect(JSON.stringify(graph(documents))).toBe(JSON.stringify(graph([...documents].reverse())));
+    expect(graph(documents).edges).toHaveLength(2);
+    expect(() => graph([documents[0]!, documents[0]!])).toThrow('duplicate');
+  });
+});
