@@ -492,7 +492,7 @@ describe('mcp oauth provider', () => {
     }
   });
 
-  test('refresh rotation persists the complete token pair in one private store write', async () => {
+  test('refresh rotation persists the complete token pair in one store write', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-rotation-write-'));
     try {
       const tokensPath = join(root, 'tokens.json');
@@ -522,7 +522,9 @@ describe('mcp oauth provider', () => {
       };
       const refreshed = await provider.exchangeRefreshToken(client, tokens.refresh_token ?? '');
       expect(flushes).toBe(1);
-      expect(statSync(tokensPath).mode & 0o777).toBe(0o600);
+      // Windows mode bits do not distinguish owner, group and others.
+      // This POSIX check is not a Windows ACL check.
+      if (process.platform !== 'win32') expect(statSync(tokensPath).mode & 0o777).toBe(0o600);
 
       const restarted = new McpOAuthTokenStore(tokensPath);
       restarted.load();
