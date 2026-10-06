@@ -13,6 +13,7 @@ import {
   listTaskInbox,
   sendTaskMessage,
   summarizeTaskInboxForFleet,
+  supersedeTaskInbox,
 } from '../../src/effects/fleet/task-inbox';
 import { readLease, createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
@@ -160,9 +161,30 @@ describe('Task Inbox V1 common-directory effects', () => {
     bind(value, CLAIM_ONE, 1);
     const claim = message(value, '123e4567-e89b-42d3-a456-426614174011', 'claim', 'only C1 may read');
     const task = message(value, '123e4567-e89b-42d3-a456-426614174012', 'task', 'C2 may repair this');
+    const acknowledgedByC1 = message(value, '123e4567-e89b-42d3-a456-426614174013', 'claim', 'C1 reads and acknowledges this');
     sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: claim });
     sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: task });
+    sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: acknowledgedByC1 });
+    // The fleet summary counts what each claim has not acknowledged, from that
+    // claim's own receipt among every receipt the message holds.
+    const unreadFor = (claim_id: string, generation: number) => summarizeTaskInboxForFleet({
+      repo_root: value.root, task_id: value.task_id, task_revision: value.task_revision, current_claim: { claim_id, generation },
+    });
+    const unread = (count: number) => ({ unread_count: count, addressed_to_current_claim: count > 0, snapshot_consistency: 'stable' as const });
+    expect(unreadFor(CLAIM_ONE, 1)).toEqual(unread(3));
+    const c1 = { kind: 'claim' as const, claim_id: CLAIM_ONE, generation: 1 };
+    expect(deliverTaskInbox({
+      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, recipient: c1,
+      execution_worktree: realpathSync(value.root), delivery_channel: 'hook_session', delivered_at: '2026-08-23T05:05:00Z',
+    }).deliveries).toHaveLength(3);
+    expect(unreadFor(CLAIM_ONE, 1)).toEqual(unread(3));
+    acknowledgeTaskInbox({
+      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, message_id: acknowledgedByC1.message_id,
+      recipient: c1, execution_worktree: realpathSync(value.root), acknowledged_at: '2026-08-23T05:06:00Z',
+    });
+    expect(unreadFor(CLAIM_ONE, 1)).toEqual(unread(2));
     bind(value, CLAIM_TWO, 2);
+    expect(unreadFor(CLAIM_TWO, 2)).toEqual(unread(1));
     const beforeDelivery = readLease(value.root, value.task_id).raw;
     const delivered = deliverTaskInbox({
       repo_root: value.root,
@@ -177,6 +199,14 @@ describe('Task Inbox V1 common-directory effects', () => {
     expect(delivered.superseded_count).toBe(1);
     expect(delivered.deliveries.map((entry) => entry.event.message_id)).toEqual([task.message_id]);
     expect(JSON.stringify(delivered)).not.toContain(claim.body);
+    expect(supersedeTaskInbox({
+      repo_root: value.root, task_id: value.task_id, canonical_source: value.source, message_id: claim.message_id,
+      recipient: c1, successor: { kind: 'claim', claim_id: CLAIM_TWO, generation: 2 },
+      successor_execution_worktree: realpathSync(value.root), delivery_channel: 'hook_session',
+    }).delivery_state).toBe('superseded');
+    // The task message now holds a delivered receipt for C1 and for C2.
+    expect(unreadFor(CLAIM_TWO, 2)).toEqual(unread(1));
+    expect(unreadFor(CLAIM_ONE, 1)).toEqual(unread(1));
     const beforeAck = readLease(value.root, value.task_id).raw;
     const receipt = acknowledgeTaskInbox({
       repo_root: value.root,
@@ -189,6 +219,8 @@ describe('Task Inbox V1 common-directory effects', () => {
     });
     expect(receipt.delivery_state).toBe('acknowledged');
     expect(readLease(value.root, value.task_id).raw).toBe(beforeAck);
+    expect(unreadFor(CLAIM_TWO, 2)).toEqual(unread(0));
+    expect(unreadFor(CLAIM_ONE, 1)).toEqual(unread(0));
     const listing = listTaskInbox({
       repo_root: value.root,
       task_id: value.task_id,

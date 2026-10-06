@@ -22,7 +22,15 @@ A changed assertion, observation or session with the same key returns a conflict
 Malformed JSON and missing CLI options fail before acquisition.
 
 `engineer acquire-next` remains the separate automatic selection command.
-This addition does not migrate the MCP or controller acquisition contracts.
+This addition does not migrate the controller acquisition contract.
+
+## Selected MCP acquisition
+
+MCP `engineer_prepare` returns the same trusted observation and offers.
+MCP `engineer_acquire` requires the 13 assertion fields, `idempotency_key` and `observation_ref`.
+It calls the same selected acquisition transaction as the CLI.
+A first-attempt offer keeps its observation time, so an unchanged offer stays usable while its observation is fresh.
+The tool has no session field and no `max_attempts` field.
 
 ## Error ownership
 

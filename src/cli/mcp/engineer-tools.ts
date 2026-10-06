@@ -37,8 +37,14 @@ import {
 } from '../../effects/engineers/agent-runtime-effect-store';
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
-import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
-import { acquireNextScheduledEngineerTask, prepareEngineerObservation, EngineerObservationError, EngineerAcquisitionLedgerError } from '../../effects/engineers/scheduling-acquire-next';
+import {
+  acquireNextScheduledEngineerTask,
+  acquireSelectedEngineerTask,
+  prepareEngineerObservation,
+  EngineerAcquisitionInputError,
+  EngineerAcquisitionLedgerError,
+  EngineerObservationError,
+} from '../../effects/engineers/scheduling-acquire-next';
 import {
   InterfaceChangeStoreError,
   readInterfaceChangeStatus,
@@ -94,7 +100,8 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
     'concurrency_revision',
     'fleet_offer_revision',
     'authorization_revision',
-    'max_attempts',
+    'idempotency_key',
+    'observation_ref',
   ],
   engineer_acquire_next: [
     'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
@@ -228,7 +235,7 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
     },
     {
       name: 'engineer_acquire',
-      description: 'Acquire one exact Engineer Work Package offer and publish immutable claim provenance.',
+      description: 'Acquire one exact offer from an engineer_prepare observation with a stable retry key, and publish immutable claim provenance.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -243,17 +250,18 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
           concurrency_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
           fleet_offer_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
           authorization_revision: { type: 'number', minimum: 0 },
-          max_attempts: { type: 'number', minimum: 1, maximum: 16 },
+          idempotency_key: { type: 'string', minLength: 1, maxLength: 512 },
+          observation_ref: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
         },
         required: [
           'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
           'work_package_id', 'work_package_revision', 'work_graph_revision', 'task_id', 'task_revision',
           'offer_revision', 'dependency_revision', 'concurrency_revision', 'fleet_offer_revision',
-          'authorization_revision',
+          'authorization_revision', 'idempotency_key', 'observation_ref',
         ],
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     {
       name: 'engineer_acquire_next',
@@ -540,11 +548,9 @@ function acquireAsEngineer(
   args: Record<string, unknown>,
   principal: ReturnType<typeof resolvePrincipal>,
 ): EngineerMcpToolResult {
-  const maxAttempts = optionalInteger(args, 'max_attempts', 1);
-  if (maxAttempts !== undefined && maxAttempts > 16) {
-    throw new EngineerMcpError('INVALID_ARGUMENT', 'max_attempts must be an integer from 1 through 16');
-  }
-  const result = acquireScheduledEngineerTask({
+  // The offer is acquired only from the trusted engineer_prepare observation, so
+  // a first-attempt offer keeps its observation time instead of being resampled.
+  const result = acquireSelectedEngineerTask({
     repo_root: ctx.repoRoot,
     principal,
     assertion: {
@@ -562,7 +568,8 @@ function acquireAsEngineer(
       fleet_offer_revision: requiredString(args, 'fleet_offer_revision'),
       authorization_revision: requiredInteger(args, 'authorization_revision', 0),
     },
-    max_attempts: maxAttempts,
+    idempotency_key: requiredString(args, 'idempotency_key'),
+    observation_ref: requiredString(args, 'observation_ref'),
   });
   audit(ctx, 'engineer_acquire', result.ok ? 'ok' : 'failed', args, result.ok ? undefined : result.message);
   return result.ok ? textResult(result) : errorResult(result.error, result.message);
@@ -765,7 +772,8 @@ export function callEngineerTool(
     if (name === 'engineer_work_demand_transition') return transitionWorkDemandAsEngineer(ctx,args,principal);
     return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
-    const code = error instanceof EngineerAcquisitionLedgerError || error instanceof EngineerObservationError || error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
+    const code = error instanceof EngineerAcquisitionInputError ? 'INVALID_ARGUMENT'
+      : error instanceof EngineerAcquisitionLedgerError || error instanceof EngineerObservationError || error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
       || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError
       || error instanceof TaskInboxError || error instanceof TaskReplyError || error instanceof TaskReplyStoreError
       || error instanceof ModuleInboxError

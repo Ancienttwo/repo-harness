@@ -5,7 +5,7 @@ const validSha = (value: unknown): value is string => typeof value === 'string' 
 export class CIReportError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
-export type GitHubAPI = (path: string, method?: 'GET' | 'POST', body?: unknown) => Promise<unknown>;
+export type GitHubAPI = (path: string, method?: 'GET' | 'POST' | 'PATCH', body?: unknown) => Promise<unknown>;
 export interface CIReport {
   run_id: number; run_attempt: number; sha: string; conclusion: string; run_url: string;
   repairs: { key: string; issue_url: string | null; delivery: 'created' | 'reused' | 'pending'; error?: string }[];
@@ -37,16 +37,28 @@ async function githubPages(api: GitHubAPI, path: string, field?: string): Promis
 }
 async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string, requireOpen = false): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
   const marker = `<!-- ${key} -->`;
+  const isClaim = (issue: Record<string, unknown>): boolean => !issue.pull_request && (!requireOpen || issue.state === 'open')
+    && typeof issue.body === 'string' && issue.body.includes(marker) && positive(issue.number);
   const issues = await githubPages(api, `${root}/issues?state=all`);
-  const existing = issues.find(issue => !issue.pull_request && (!requireOpen || issue.state === 'open')
-    && typeof issue.body === 'string' && issue.body.includes(marker));
+  const existing = issues.find(issue => isClaim(issue));
   if (existing) {
     if (typeof existing.html_url !== 'string') throw new Error('Existing repair issue has no provider URL');
     return { issue_url: existing.html_url, delivery: 'reused' };
   }
-  const issue = record(await api(`${root}/issues`, 'POST', { title, body: `${marker}\n\n${body}` }), 'Created repair issue');
-  if (!positive(issue.number) || typeof issue.html_url !== 'string') throw new Error('Repair issue was not confirmed by provider');
-  return { issue_url: issue.html_url, delivery: 'created' };
+  const created = record(await api(`${root}/issues`, 'POST', { title, body: `${marker}\n\n${body}` }), 'Created repair issue');
+  const createdNumber = created.number;
+  const createdUrl = created.html_url;
+  if (!positive(createdNumber) || typeof createdUrl !== 'string') throw new Error('Repair issue was not confirmed by provider');
+  // Separate list and create is not atomic across report runs, and the shared
+  // repair key admits concurrent creators. The oldest matching issue is the one
+  // winning claim; a loser closes only its own duplicate and reuses the winner.
+  const winner = (await githubPages(api, `${root}/issues?state=all`))
+    .filter(issue => isClaim(issue) && (issue.number as number) < createdNumber)
+    .sort((left, right) => (left.number as number) - (right.number as number))[0];
+  if (!winner) return { issue_url: createdUrl, delivery: 'created' };
+  record(await api(`${root}/issues/${createdNumber}`, 'PATCH', { state: 'closed' }), 'Duplicate repair issue close');
+  if (typeof winner.html_url !== 'string') throw new Error('Existing repair issue has no provider URL');
+  return { issue_url: winner.html_url, delivery: 'reused' };
 }
 
 export async function reportCI(repo: string, runId: number, api: GitHubAPI): Promise<CIReport> {

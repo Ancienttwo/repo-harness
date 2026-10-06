@@ -73,6 +73,51 @@ describe('single affected verification and daily fallback', () => {
     expect(reporter.jobs.report.steps.find((step: any) => step.uses === 'actions/checkout@v4').with.ref).toBe('main');
   });
 
+  test('Windows PR acceptance uses a read-only exact head and the unchanged native matrix', () => {
+    const native = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/windows-protected-helper.yml'), 'utf8')) as any;
+    expect(Object.keys(native.on)).toEqual(['pull_request']);
+    expect(native.on.pull_request.types).toEqual(['opened', 'synchronize', 'reopened']);
+    expect(native.on.pull_request.paths).toContain('src/effects/runtime/protected-helper-platform.ts');
+    expect(native.on.pull_request.paths).toContain('.github/workflows/windows-protected-helper.yml');
+    expect(native.on.pull_request.paths).not.toContain('**');
+    expect(native.permissions).toEqual({ contents: 'read' });
+    const job = native.jobs['windows-protected-helper'];
+    expect(job['runs-on']).toBe('windows-latest');
+    expect(job['timeout-minutes']).toBe(60);
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(job.permissions).toBeUndefined();
+    expect(job.env.REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE).toBe('1');
+    const checkout = job.steps.find((step: any) => step.uses === 'actions/checkout@v4');
+    expect(checkout.with).toEqual({ ref: '${{ github.event.pull_request.head.sha }}', 'persist-credentials': false });
+    expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
+    expect(job.steps.find((step: any) => step.uses === 'oven-sh/setup-bun@v2').with['bun-version']).toBe('1.4.0');
+    expect(job.steps.some((step: any) => step.run === 'bun install --frozen-lockfile')).toBe(true);
+    const matrix = job.steps.find((step: any) => step.name === 'Run the native Windows path matrix and contract tests');
+    const daily = workflow.jobs['mcp-path-matrix'].steps.find((step: any) => step.name === 'Run the native path tests');
+    const testFiles = (command: string): string[] => command.match(/tests\/[\w/.-]+\.test\.ts/g) ?? [];
+    expect(testFiles(matrix.run)).toEqual([
+      ...testFiles(daily.run), 'tests/unit/windows-protected-helper-platform-contract.test.ts',
+    ]);
+    const forced = job.steps.find((step: any) => step.name === 'Run smoke with each installed internal Git first on PATH');
+    expect(forced.run).toContain('for layout in mingw64 ucrt64');
+    expect(forced.run).toContain('[[ ! -f "$internal/git.exe" ]]');
+    expect(forced.run).toContain('export PATH="$internal:$PATH"');
+    expect(forced.run).toContain('test "$tested" -gt 0');
+    expect(testFiles(forced.run)).toEqual(['tests/cli/windows-protected-helper-runtime-smoke.test.ts']);
+    const identity = job.steps.find((step: any) => step.name === 'Record the native candidate and tools');
+    expect(identity.env.EXPECTED_HEAD).toBe('${{ github.event.pull_request.head.sha }}');
+    expect(identity.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"');
+    expect(identity.run).toContain('where.exe git');
+    expect(identity.run).toContain('git --version');
+    for (const step of job.steps) {
+      expect(step['continue-on-error']).toBeUndefined();
+      if (step.shell !== 'bash') continue;
+      const syntax = spawnSync('/bin/bash', ['-n'], { input: step.run, encoding: 'utf8' });
+      expect(syntax.status, syntax.stderr).toBe(0);
+    }
+    expect(JSON.stringify(native)).not.toContain('secrets.');
+  });
+
   test('real aggregate shell rejects failure, cancellation, omission and invalid coverage', () => {
     const command = workflow.jobs.required.steps[0].run;
     for (const selection of ['success', 'failure', 'cancelled', 'skipped']) {
