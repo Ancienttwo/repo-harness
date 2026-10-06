@@ -12,7 +12,7 @@ steps:
   - id: acquire-and-publish
     from: engineer-mcp
     to: scheduling-authority
-    label: Revalidate the exact Engineer offer before delegated Fleet acquisition
+    label: Acquire one exact offer from a trusted observation before delegated Fleet acquisition
     evidence:
       entrypointId: entrypoint.mcp-sidecar.engineer-tools
       sourceSymbol: acquireAsEngineer

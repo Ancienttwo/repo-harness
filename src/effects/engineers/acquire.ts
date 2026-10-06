@@ -56,7 +56,6 @@ export interface EngineerAcquireOptions {
   readonly principal: EngineerPrincipalV1;
   readonly assertion?: FleetAcquireAssertionV1;
   readonly session_id?: string | null;
-  readonly max_attempts?: number;
   readonly now?: () => Date;
   readonly env?: NodeJS.ProcessEnv;
   readonly dependencies?: Partial<EngineerAcquireDependencies>;
@@ -141,7 +140,6 @@ function acquireEngineerTaskLocked(options: EngineerAcquireOptions, deps: Engine
     repo_id: options.principal.repository_id,
     assertion: options.assertion,
     session_id: `engineer:${options.principal.binding_id}`,
-    max_attempts: options.max_attempts,
     env: options.env,
   });
   if (!fleet.ok) return Object.freeze({ ok: false, error: 'fleet_acquire_failed', message: fleet.message, fleet });
