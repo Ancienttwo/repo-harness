@@ -42,7 +42,7 @@
  * ExecutionPacket digest — and is cross-checked against the envelope rather than
  * reinterpreted.
  */
-import { existsSync, realpathSync } from 'fs';
+import { realpathSync } from 'fs';
 
 import {
   CollaborationError,
@@ -161,9 +161,13 @@ export function listCollaborationRunContextBindings(
  *
  * Both families are content-derived — a packet is filed under its own digest, a
  * binding under its dispatch — so a second write of the same record is the
- * ordinary result of a retry and reconciles to identical bytes. A second write
- * of *different* bytes under the same name is two records claiming one identity,
- * which is refused rather than overwritten.
+ * ordinary result of a retry and reconciles to identical bytes. That holds
+ * across processes, not only across retries: two writers can both pass the
+ * existence check before either publishes, so the publication itself is the
+ * arbitration point. A final-name `EEXIST` from the durable writer means
+ * another writer linked first, and the loser reconciles against the linked
+ * bytes: identical bytes are an idempotent success, different bytes are two
+ * records claiming one identity, which is refused rather than overwritten.
  */
 function publishHostRecord<T>(
   paths: CollaborationStorePaths,
@@ -175,7 +179,12 @@ function publishHostRecord<T>(
   const bytes = codec.canonicalBytes(record);
   ensureCollaborationDirectory(paths.common, paths.shard);
   const file = collaborationRecordPath(paths, recordId, field);
-  if (existsSync(file)) {
+  try {
+    publishCollaborationRecordDurably(paths.shard, file, bytes);
+  } catch (error) {
+    // The durable writer wraps every staging failure, so this can only be the
+    // final link losing to a concurrent publisher.
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     const existing = readCollaborationRecord(paths, codec, recordId, field);
     if (existing === null || codec.canonicalBytes(existing) !== bytes) {
       throw new CollaborationError(
@@ -183,9 +192,7 @@ function publishHostRecord<T>(
         `${codec.label} ${recordId} already exists with different bytes`,
       );
     }
-    return;
   }
-  publishCollaborationRecordDurably(paths.shard, file, bytes);
 }
 
 export interface DeliverCollaborationContextInput {

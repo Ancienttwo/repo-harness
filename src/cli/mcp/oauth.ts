@@ -245,6 +245,19 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     this.flush();
   }
 
+  /** Replace a refresh grant and its access token with their successors in one persisted write. */
+  rotateRefreshToken(
+    refreshToken: string,
+    accessToken: string,
+    next: { readonly accessToken: McpStoredAuthInfo; readonly refreshToken: string; readonly refreshExpiresAt?: number },
+  ): void {
+    this.refreshTokens.delete(refreshToken);
+    this.accessTokens.delete(accessToken);
+    this.accessTokens.set(next.accessToken.token, next.accessToken);
+    this.refreshTokens.set(next.refreshToken, { accessToken: next.accessToken.token, expiresAt: next.refreshExpiresAt });
+    this.flush();
+  }
+
   findRefreshTokenByAccessToken(accessToken: string): string | undefined {
     for (const [refreshToken, record] of this.refreshTokens) {
       if (record.accessToken === accessToken) return refreshToken;
@@ -272,6 +285,7 @@ interface AuthorizationCodeRecord {
   clientId: string;
   redirectUri: string;
   scopes: string[];
+  authorizationRevision: number;
   createdAt: number;
   expiresAt: number;
 }
@@ -375,6 +389,7 @@ export function createMcpOAuthProvider(
         clientId: client.client_id,
         redirectUri: params.redirectUri,
         scopes,
+        authorizationRevision: currentAuthorizationRevision(),
         createdAt,
         expiresAt: createdAt + authorizationCodeTtlSeconds,
       });
@@ -401,12 +416,20 @@ export function createMcpOAuthProvider(
       if (redirectUri !== stored.redirectUri) {
         throw new InvalidGrantError('redirect_uri mismatch');
       }
+      // Consent granted under an old authorization revision must not produce
+      // authority under the current one (the same rule access/refresh tokens
+      // already enforce). Delete the code so the stale grant cannot be replayed.
+      if (authorizationScoped && stored.authorizationRevision !== currentAuthorizationRevision()) {
+        authCodes.delete(authorizationCode);
+        throw new InvalidGrantError('Authorization code was issued under a different authorization revision');
+      }
       authCodes.delete(authorizationCode);
       const accessToken = issueToken();
       const expiresIn = accessTokenTtlSeconds;
       const expiresAt = clock() + expiresIn;
       const scopes = normalizeScopes(stored.scopes, profile);
-      const authorizationRevision = currentAuthorizationRevision();
+      // A later registry read must not upgrade the consent that issued this code.
+      const authorizationRevision = authorizationScoped ? stored.authorizationRevision : currentAuthorizationRevision();
       const authorizationId = authorizationScoped ? randomUUID() : undefined;
       store.setAccessToken(accessToken, {
         token: accessToken,
@@ -437,8 +460,6 @@ export function createMcpOAuthProvider(
       if (!accessToken || !existing || existing.clientId !== client.client_id) {
         throw new InvalidGrantError('Invalid refresh token');
       }
-      store.deleteRefreshToken(refreshToken);
-      store.deleteAccessToken(accessToken);
       const nextAccessToken = issueToken();
       const nextRefreshToken = issueToken();
       const expiresIn = accessTokenTtlSeconds;
@@ -453,11 +474,16 @@ export function createMcpOAuthProvider(
           (requiredScope !== null && !existing.scopes.includes(requiredScope))
         ))
       ) {
+        store.deleteRefreshToken(refreshToken);
+        store.deleteAccessToken(accessToken);
         notifyAuthorizationRevoked(existing);
         throw new InvalidGrantError('Refresh token authorization is stale');
       }
-      store.setAccessToken(nextAccessToken, { ...existing, token: nextAccessToken, scopes, expiresAt: clock() + expiresIn, profile, authorizationRevision });
-      store.setRefreshToken(nextRefreshToken, nextAccessToken, clock() + refreshTokenTtlSeconds);
+      store.rotateRefreshToken(refreshToken, accessToken, {
+        accessToken: { ...existing, token: nextAccessToken, scopes, expiresAt: clock() + expiresIn, profile, authorizationRevision },
+        refreshToken: nextRefreshToken,
+        refreshExpiresAt: clock() + refreshTokenTtlSeconds,
+      });
       return {
         access_token: nextAccessToken,
         token_type: 'Bearer',

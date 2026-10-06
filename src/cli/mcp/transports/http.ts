@@ -229,6 +229,33 @@ ${hiddenFields}
 </main></body></html>`;
 }
 
+// Hidden fields a failed consent attempt must carry into the retry form. The
+// consent form posts to /authorize with no query string, so on POST these can
+// only be recovered from the submitted body; the handler reads exactly these
+// keys from it. Anything not listed is dropped rather than echoed into HTML.
+const CONSENT_REQUEST_PARAMS = [
+  'client_id',
+  'response_type',
+  'code_challenge',
+  'code_challenge_method',
+  'state',
+  'scope',
+  'redirect_uri',
+];
+
+function consentRequestParams(req: Request): URLSearchParams {
+  const raw = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  const params = new URLSearchParams(raw);
+  if (req.method === 'POST' && req.body && typeof req.body === 'object') {
+    const body = req.body as Record<string, unknown>;
+    for (const key of CONSENT_REQUEST_PARAMS) {
+      const value = body[key];
+      if (typeof value === 'string' && value !== '') params.set(key, value);
+    }
+  }
+  return params;
+}
+
 function requirePassphrase(
   passphrase: string,
   opts: { coding?: boolean; engineer?: boolean; repoNames?: string[] } = {},
@@ -243,8 +270,7 @@ function requirePassphrase(
         return;
       }
     }
-    const params = new URLSearchParams(req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
-    res.type('html').send(renderPassphrasePage(params, opts));
+    res.type('html').send(renderPassphrasePage(consentRequestParams(req), opts));
   };
 }
 

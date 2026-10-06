@@ -12,10 +12,14 @@ export function ingestEvent(store:PipelineStore,payload:unknown,input:{source?:s
   const event=object(payload);const source=input.source??(typeof event.source==='string'?event.source:'herdr');
   if(event.phase!==undefined||event.state_version!==undefined)throw new PipelineError('usage',2,'Ingest cannot replace record state');
   const delivery=input.delivery_id;
-  if(delivery) {
-    const row=store.db.query('SELECT disposition FROM ingest_receipts WHERE source=? AND delivery_id=?').get(source,delivery);
-    if(row)return {status:'duplicate'};
-  }
+  const fingerprint=digest(JSON.stringify(event));
+  const duplicate=()=>{
+    if(!delivery)return false;
+    const row=store.db.query('SELECT fingerprint FROM ingest_receipts WHERE source=? AND delivery_id=?').get(source,delivery) as {fingerprint:string}|null;
+    if(row&&row.fingerprint!==fingerprint)throw new PipelineError('idem_conflict',4,'Delivery key has different input');
+    return !!row;
+  };
+  if(duplicate()){publishAfterCommit(store);return {status:'duplicate'};}
   store.assertWritable();
   const records=store.all();const oldLogs=observations(store);const pending:LogObservation[]=[];let status='unclaimed';let errors=0;
   if(input.snapshot) {
@@ -61,19 +65,24 @@ export function ingestEvent(store:PipelineStore,payload:unknown,input:{source?:s
   }
   if(status==='ignored')pending.push(empty('ignored',source,{event}));
   const result=store.transaction(()=>{
-    if(delivery&&store.db.query('SELECT 1 FROM ingest_receipts WHERE source=? AND delivery_id=?').get(source,delivery))return {status:'duplicate'};
+    if(duplicate())return {status:'duplicate'};
     store.assertWritable();
     let appended=0;
+    // Result checks read the log once, lazily, under the lock. Each append
+    // extends the view; rows appended before the first read are already in it.
+    let logs:LogObservation[]|undefined;
+    const view=()=>(logs??=observations(store));
     for(const log of pending) {
       if(log.task) {
         const current=store.read({source_host:log.source_host!,repository_id:log.repository_id!,task:log.task});
-        if(log.kind==='result'&&!projectedRuns(current,[...observations(store),...pending.filter(o=>o.kind==='enrollment'&&identity(o,keyOf(current)))]).some(r=>r.role===log.role&&r.round===log.round&&r.request_id===log.request_id)){errors++;continue;}
+        if(log.kind==='result'&&!projectedRuns(current,[...view(),...pending.filter(o=>o.kind==='enrollment'&&identity(o,keyOf(current)))]).some(r=>r.role===log.role&&r.round===log.round&&r.request_id===log.request_id)){errors++;continue;}
       }
       if(log.terminal_key&&store.db.query('SELECT 1 FROM observations WHERE terminal_key=?').get(log.terminal_key)){if(!input.snapshot)status='duplicate';continue;}
-      store.appendObservation({...(log.task?{key:{source_host:log.source_host!,repository_id:log.repository_id!,task:log.task}}:{}),role:log.role??undefined,round:log.round??undefined,request_id:log.request_id??undefined,kind:log.kind,source:log.source,observed_at:log.observed_at,payload:log.payload,terminal_key:log.terminal_key??undefined});appended++;
+      store.appendObservation({...(log.task?{key:{source_host:log.source_host!,repository_id:log.repository_id!,task:log.task}}:{}),role:log.role??undefined,round:log.round??undefined,request_id:log.request_id??undefined,kind:log.kind,source:log.source,observed_at:log.observed_at,payload:{...log.payload,transport:{delivery_id:delivery??null}},terminal_key:log.terminal_key??undefined});appended++;
+      logs?.push({...log,payload:JSON.parse(JSON.stringify(log.payload))});
     }
     boundary?.('observations');
-    if(delivery)store.db.query('INSERT INTO ingest_receipts VALUES(?,?,?,?,?)').run(source,delivery,digest(JSON.stringify(event)),new Date().toISOString(),status);
+    if(delivery)store.db.query('INSERT INTO ingest_receipts VALUES(?,?,?,?,?)').run(source,delivery,fingerprint,new Date().toISOString(),status);
     boundary?.('receipt');
     if(appended||delivery)return {status,observations:appended,errors,...store.bump()};
     return {status,observations:0,errors,...store.watermark()};

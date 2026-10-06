@@ -229,7 +229,14 @@ function classifyUnknown(
  * nothing is repaired, defaulted, or deleted along the way.
  */
 export function readLease(cwd: string, taskId: string): LeaseRead {
-  const directory = leaseDirectory(cwd, taskId);
+  return readLeaseAt(leaseDirectory(cwd, taskId), taskId);
+}
+
+/**
+ * `readLease` against an already resolved lease directory. Root discovery
+ * spawns `git`, so a scan resolves it once per call instead of once per entry.
+ */
+function readLeaseAt(directory: string, taskId: string): LeaseRead {
   let directoryStat;
   try {
     directoryStat = lstatSync(directory);
@@ -296,7 +303,7 @@ export function listLeaseReads(cwd: string): readonly LeaseRead[] {
   return Object.freeze(entries
     .filter((entry) => TASK_DIGEST_PATTERN.test(entry))
     .sort()
-    .map((entry) => readLease(cwd, entry)));
+    .map((entry) => readLeaseAt(join(leasesRoot, entry), entry)));
 }
 
 export interface LeaseByClaimId {

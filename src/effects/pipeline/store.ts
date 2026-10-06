@@ -1,8 +1,9 @@
 import { Database, constants as sqlite } from 'bun:sqlite';
 import { hostname } from 'node:os';
 import { dirname, join, resolve, basename } from 'node:path';
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, statfsSync, lstatSync, writeFileSync, unlinkSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, statfsSync, lstatSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { compareWatermarks, decodePublicationIntent, decodePublicationState, type PublicationIntent, type PublicationState } from '../../core/pipeline/health';
 import { decodeRecord, digest, PipelineError, type Key, type PipelineRecord } from '../../core/pipeline/types';
 
 export const WRITER_PROTOCOL = 2;
@@ -26,6 +27,30 @@ export function assertSQLiteVersion(version: string): void {
 }
 export const storePath = (env: NodeJS.ProcessEnv = process.env) => resolve(env.REPO_HARNESS_PIPELINES_DB ?? '/Volumes/D/repo-harness/pipelines/pipelines.db');
 export const snapshotPointerPath = (path: string) => path + '.snapshot.json';
+export const publicationIntentPath = (path: string) => path + '.publication-intent';
+export const publicationStatePath = (path: string) => path + '.publication.json';
+function atomicJSON(path:string,value:unknown):void {
+  const temporary=path+`.${randomUUID()}.tmp`;
+  try {durable(temporary,JSON.stringify(value)+'\n');renameSync(temporary,path);syncFile(dirname(path));}
+  finally {if(existsSync(temporary))unlinkSync(temporary);}
+}
+export function publicationIntents(path:string):PublicationIntent[] {
+  const directory=publicationIntentPath(path);
+  let names:string[];
+  try {names=readdirSync(directory);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return [];throw error;}
+  return names.filter(name=>name.endsWith('.json')).map(name=>{
+    const intent=decodePublicationIntent(JSON.parse(readFileSync(join(directory,name),'utf8')));
+    if(name!==`${intent.watermark.epoch}-${intent.watermark.commit_seq}.json`)throw new PipelineError('publication_intent',3,'Publication intent name does not match its watermark');
+    return intent;
+  });
+}
+function removeIntents(path:string,predicate:(mark:Watermark)=>boolean):void {
+  let removed=false;
+  for(const intent of publicationIntents(path))if(predicate(intent.watermark)) {
+    unlinkSync(join(publicationIntentPath(path),`${intent.watermark.epoch}-${intent.watermark.commit_seq}.json`));removed=true;
+  }
+  if(removed)syncFile(publicationIntentPath(path));
+}
 function syncFile(path: string): void {const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}}
 function durable(path:string,bytes:string|Buffer): void {const fd=openSync(path,'wx',0o600);try{writeFileSync(fd,bytes);fsyncSync(fd);}finally{closeSync(fd);}}
 export function storeFailure(error: unknown): PipelineError {
@@ -49,14 +74,14 @@ function requireLocation(path:string,env:NodeJS.ProcessEnv): void {
   if(path.split('/').includes('_share') || path.split('/').includes('_ops')) throw new PipelineError('store_location',3,'Shared and operations directories cannot hold the ledger');
 }
 export class PipelineStore {
-  readonly db!: Database; readonly path: string; readonly env: NodeJS.ProcessEnv;
+  readonly db!: Database; readonly path: string; readonly env: NodeJS.ProcessEnv; readonly sqliteVersion: string;
   constructor(options:StoreOptions={}) {
     this.env=options.env ?? process.env; this.path=resolve(options.path ?? storePath(this.env));
     const wait=options.wait_ms ?? 2000;
     if(!Number.isSafeInteger(wait)||wait<0||wait>30000) throw new PipelineError('usage',2,'wait-ms must be 0 to 30000');
     requireLocation(this.path,this.env);selectSQLite(this.env);
     const probe=new Database(':memory:');
-    try{assertSQLiteVersion((probe.query('SELECT sqlite_version() v').get() as {v:string}).v);}finally{probe.close();}
+    try{this.sqliteVersion=(probe.query('SELECT sqlite_version() v').get() as {v:string}).v;assertSQLiteVersion(this.sqliteVersion);}finally{probe.close();}
     mkdirSync(dirname(this.path),{recursive:true,mode:0o700});
     try {
       this.db=new Database(this.path,{create:true,strict:true});
@@ -89,6 +114,7 @@ export class PipelineStore {
       if(meta.protocol!==WRITER_PROTOCOL) throw new PipelineError('writer_protocol',3,'Incompatible writer protocol');
       const mode=this.db.query('PRAGMA journal_mode=WAL').get() as {journal_mode:string};
       if(mode.journal_mode!=='wal') throw new PipelineError('store_mode',3,'WAL is required');
+      this.reconcilePublication();
     } catch(error) {this.db!?.close();throw storeFailure(error);}
   }
   close():void {this.db.close();}
@@ -98,7 +124,22 @@ export class PipelineStore {
   }
   watermark():Watermark {return this.db.query('SELECT epoch,commit_seq FROM metadata WHERE id=1').get() as Watermark;}
   assertWritable():void {const row=this.db.query('SELECT recovery_pending FROM metadata WHERE id=1').get() as {recovery_pending:number};if(row.recovery_pending)throw new PipelineError('restore_requires_reverification',3,'Reverify source observations after restore before new writes');}
-  bump():Watermark {if(this.watermark().commit_seq>=2**52-1)throw new PipelineError('store_sequence_exhausted',3,'Store commit sequence exhausted its exact numeric range');this.db.exec('UPDATE metadata SET commit_seq=commit_seq+1 WHERE id=1');return this.watermark();}
+  bump():Watermark {if(this.watermark().commit_seq>=2**52-1)throw new PipelineError('store_sequence_exhausted',3,'Store commit sequence exhausted its exact numeric range');this.db.exec('UPDATE metadata SET commit_seq=commit_seq+1 WHERE id=1');return this.recordPublicationIntent();}
+  private recordPublicationIntent():Watermark {
+    const watermark=this.watermark();const directory=publicationIntentPath(this.path);
+    mkdirSync(directory,{recursive:true,mode:0o700});syncFile(dirname(directory));
+    atomicJSON(join(directory,`${watermark.epoch}-${watermark.commit_seq}.json`),{watermark,pid:process.pid,at:new Date().toISOString()});
+    return watermark;
+  }
+  private reconcilePublication():void {
+    // Hold the writer lock while comparing. An active writer may have an intent
+    // whose COMMIT is still pending; it must not be mistaken for a rollback.
+    const pending=this.transaction(()=>{
+      const current=this.watermark();removeIntents(this.path,mark=>compareWatermarks(mark,current)>0);
+      return publicationIntents(this.path).length>0;
+    });
+    if(pending)publishAfterCommit(this);
+  }
   read(key:Key):PipelineRecord {
     const row=this.db.query('SELECT record FROM pipelines WHERE source_host=? AND repository_id=? AND task=?').get(key.source_host,key.repository_id,key.task) as {record:string}|null;
     if(!row) throw new PipelineError('unknown_id',6,'Pipeline key is unknown');return decodeRecord(JSON.parse(row.record));
@@ -132,6 +173,7 @@ export class PipelineStore {
       // run state without losing the inbox or making receipt dedupe lie.
       this.appendObservation({kind:'restore_epoch',source:'store',observed_at:new Date().toISOString(),payload:{epoch}});
       this.db.query('UPDATE metadata SET epoch=?,commit_seq=commit_seq+1,recovery_pending=1 WHERE id=1').run(epoch);
+      this.recordPublicationIntent();
     });
   }
 }
@@ -140,7 +182,7 @@ export function immutableDatabase(path:string):Database {
   // URI parsing must be enabled explicitly. Never pass the live DB here.
   return new Database(`file:${encodeURI(resolve(path)).replaceAll('?','%3F').replaceAll('#','%23')}?immutable=1&mode=ro`, sqlite.SQLITE_OPEN_READONLY | sqlite.SQLITE_OPEN_URI);
 }
-export function exportSnapshot(store:PipelineStore,out=snapshotPointerPath(store.path),boundary?:(stage:'copied'|'verified'|'published')=>void):Pointer {
+function buildSnapshot(store:PipelineStore,out:string,boundary?:(stage:'copied'|'verified'|'published')=>void):Pointer {
   if(existsSync(out)) {
     const previous=openSnapshot(out);
     try {
@@ -173,6 +215,37 @@ export function exportSnapshot(store:PipelineStore,out=snapshotPointerPath(store
     const next=out+`.${randomUUID()}.tmp`;durable(next,JSON.stringify(pointer)+'\n');renameSync(next,out);published=true;syncFile(directory);boundary?.('published');return pointer;
   });
   }finally{if(!published&&existsSync(temporary))unlinkSync(temporary);}
+}
+function recordPublicationState(store:PipelineStore,state:PublicationState):void {
+  store.transaction(()=>{
+    const path=publicationStatePath(store.path);
+    if(existsSync(path)) {
+      const previous=decodePublicationState(JSON.parse(readFileSync(path,'utf8')));
+      if(compareWatermarks(previous.watermark,state.watermark)>0)return;
+    }
+    atomicJSON(path,state);
+    if(state.status==='ok')removeIntents(store.path,mark=>compareWatermarks(mark,state.watermark)<=0);
+  });
+}
+export function exportSnapshot(store:PipelineStore,out=snapshotPointerPath(store.path),boundary?:(stage:'copied'|'verified'|'published')=>void):Pointer {
+  // An alternate export is a backup. It must not claim publication at the
+  // canonical pointer, nor clear that pointer's outstanding intents.
+  if(resolve(out)!==snapshotPointerPath(store.path))return buildSnapshot(store,out,boundary);
+  const target=store.watermark();
+  const state=(status:PublicationState['status'],watermark:Watermark,error_code:string|null):PublicationState=>({
+    status,watermark:{epoch:watermark.epoch,commit_seq:watermark.commit_seq},error_code,at:new Date().toISOString(),
+    writer:{host:hostname(),path_sha256:digest(store.path),sqlite_version:store.sqliteVersion,sqlite_library_configured:!!store.env.REPO_HARNESS_PIPELINES_SQLITE_LIBRARY},
+  });
+  let pointer:Pointer;
+  try {pointer=buildSnapshot(store,out,boundary);}
+  catch(error) {
+    try {recordPublicationState(store,state('failed',target,storeFailure(error).code));}
+    catch {process.stderr.write(JSON.stringify({warning:'publication_state_write_failed'})+'\n');}
+    throw error;
+  }
+  try {recordPublicationState(store,state('ok',pointer,null));}
+  catch {throw new PipelineError('publication_state_write_failed',3,'Snapshot was published but its status was not saved',true);}
+  return pointer;
 }
 export function publishAfterCommit(store:PipelineStore):void {
   let last:unknown;

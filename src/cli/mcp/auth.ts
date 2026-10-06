@@ -80,6 +80,53 @@ export function mcpOAuthTokenStorePath(): string {
   return join(mcpStorageDir(), 'mcp.oauth-tokens.json');
 }
 
+export function mcpOAuthDoctorClientPath(): string {
+  return join(mcpStorageDir(), 'mcp.oauth-doctor-client.json');
+}
+
+export interface McpDoctorClientRecord {
+  version: 1;
+  clientId: string;
+  clientSecret?: string;
+}
+
+/**
+ * The live doctor's own dynamic client registration, persisted so repeated
+ * `mcp doctor --live` probes reuse one registration instead of consuming the
+ * server's fixed dynamic-client quota on every run. This record belongs to the
+ * doctor process only; it never replaces the server's token store file.
+ */
+export function readMcpDoctorClientRecord(): McpDoctorClientRecord | null {
+  const path = mcpOAuthDoctorClientPath();
+  if (!existsSync(path)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as {
+      version?: unknown;
+      clientId?: unknown;
+      clientSecret?: unknown;
+    };
+    if (parsed.version !== 1 || typeof parsed.clientId !== 'string' || !parsed.clientId.trim()) return null;
+    return {
+      version: 1,
+      clientId: parsed.clientId,
+      ...(typeof parsed.clientSecret === 'string' && parsed.clientSecret ? { clientSecret: parsed.clientSecret } : {}),
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+export function writeMcpDoctorClientRecord(clientId: string, clientSecret?: string): void {
+  const path = mcpOAuthDoctorClientPath();
+  mkdirSync(dirname(path), { recursive: true });
+  const record: McpDoctorClientRecord = {
+    version: 1,
+    clientId,
+    ...(clientSecret ? { clientSecret } : {}),
+  };
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+}
+
 export interface LegacyRepoScopeMcpPaths {
   dir: string;
   config: string;

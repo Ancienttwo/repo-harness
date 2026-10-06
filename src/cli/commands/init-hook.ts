@@ -491,7 +491,7 @@ function toolCheckStatus(toolName: string, status: string | undefined, target: I
   if (toolName === 'codex_automation_profile' && target === 'claude') return 'na';
   const normalized = (status ?? 'unknown').toLowerCase();
   if (['present', 'ok', 'configured', 'ready', 'synced'].includes(normalized)) return 'ok';
-  if (['missing', 'not-detected', 'unavailable', 'failed', 'fail', 'missing-local', 'partial'].includes(normalized)) {
+  if (['missing', 'not-detected', 'unavailable', 'failed', 'fail', 'missing-local', 'partial', 'mismatch', 'invalid'].includes(normalized)) {
     return 'needs_agent';
   }
   if (['warning', 'warn', 'deferred', 'unknown', 'drift', 'stale'].includes(normalized)) return 'warn';

@@ -5,7 +5,7 @@ import { newPipeline, mutatePipeline, reverifyRestoredStore } from '../../effect
 import { ingestEvent } from '../../effects/pipeline/ingest';
 import { validateOnSource, type AuthorityQuery } from '../../effects/pipeline/authority';
 import { PipelineStore, exportSnapshot, storeFailure } from '../../effects/pipeline/store';
-import { readPipelineSnapshot, readPipelineStatus, readPipelineListView } from '../../effects/pipeline/read';
+import { readPipelineSnapshot, readPipelineStatus, readPipelineListView, readPipelineHealth } from '../../effects/pipeline/read';
 
 const payload=(path:string)=>{const bytes=readFileSync(path==='-'?0:path);if(bytes.length>8*1024*1024)throw new PipelineError('usage',2,'Payload exceeds 8 MiB');try{return JSON.parse(bytes.toString('utf8'));}catch{throw new PipelineError('usage',2,'Payload is not valid JSON');}};
 const number=(value:string|undefined)=>value===undefined?undefined:Number(value);
@@ -33,6 +33,7 @@ export function buildPipelineCommand():Command {
   }));
   scoped(command.command('advance')).requiredOption('--to <phase>').option('--reason <s>').requiredOption('--state-version <n>').option('--command-key <key>').option('--wait-ms <ms>').option('--json').action(o=>output(()=>write(o,s=>mutatePipeline(s,key(o),{op:'advance',to:o.to as Phase,reason:o.reason,state_version:Number(o.stateVersion),command_key:o.commandKey}))));
   scoped(command.command('status')).option('--events').option('--limit <n>').option('--evidence <idx>').option('--json').action(o=>output(()=>readPipelineStatus(key(o),{events:o.events,limit:number(o.limit),evidence:number(o.evidence)})));
+  command.command('health').option('--json').action(()=>output(()=>readPipelineHealth()));
   command.command('list').option('--repo <id>').option('--phase <phase>').option('--summary').option('--projection <name>').option('--json').action(o=>output(()=>{
     if(o.projection!==undefined&&o.projection!=='board')throw new PipelineError('usage',2,'Only board projection is supported');
     if(!o.projection)return readPipelineListView(process.env,o.repo,o.phase);

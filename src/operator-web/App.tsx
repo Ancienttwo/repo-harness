@@ -163,6 +163,11 @@ function snapshotForState(state: OperatorSnapshotViewState): OperatorFleetSnapsh
   return state.snapshot;
 }
 
+function staleErrorForState(state: OperatorSnapshotViewState): OperatorApiErrorV1 | null {
+  if (state.kind === 'stale') return state.error;
+  return state.kind === 'loading' ? state.staleError ?? null : null;
+}
+
 /**
  * Selection identity deliberately excludes `task_revision`: a refresh that only
  * re-writes the task definition must keep the pane open and say so, not drop
@@ -457,6 +462,17 @@ function StatusBar({
   );
 }
 
+/** Retained Fleet facts after a failed read. The task pane omits Retry: its header already refreshes. */
+function FleetStaleNotice({ error, onRetry, t }: { readonly error: OperatorApiErrorV1; readonly onRetry?: () => void; readonly t: OperatorTranslate }) {
+  return (
+    <div className="operator-notice operator-notice--danger" role="alert">
+      <Icon name="alert" size={18} />
+      <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={error} t={t} /></span></div>
+      {onRetry && <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('notice.retry')}</button>}
+    </div>
+  );
+}
+
 function SnapshotNotice({
   state,
   onRetry,
@@ -474,15 +490,8 @@ function SnapshotNotice({
       </div>
     );
   }
-  if (state.kind === 'stale') {
-    return (
-      <div className="operator-notice operator-notice--danger" role="alert">
-        <Icon name="alert" size={18} />
-        <div><strong>{t('notice.staleTitle')}</strong><span><ApiErrorText error={state.error} t={t} /></span></div>
-        <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('notice.retry')}</button>
-      </div>
-    );
-  }
+  const staleError = staleErrorForState(state);
+  if (staleError) return <FleetStaleNotice error={staleError} onRetry={onRetry} t={t} />;
   if (state.kind === 'changed-during-read') {
     return (
       <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
@@ -1398,6 +1407,7 @@ function DetailPane({
   collaboration,
   revisionChangedFrom,
   evidenceGeneration,
+  fleetStaleError,
   readTaskContext,
   readTaskActivity,
   onClose,
@@ -1409,6 +1419,9 @@ function DetailPane({
   readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
   readonly evidenceGeneration: number;
+  /** Set while the Fleet read that produced `card` is stale; the full-screen
+   * pane hides the board's own banner, so the retained facts carry the mark. */
+  readonly fleetStaleError: OperatorApiErrorV1 | null;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
@@ -1433,9 +1446,17 @@ function DetailPane({
       if (event.key !== 'Tab') return;
       const dialog = dialogRef.current;
       if (!dialog) return;
+      // Native disclosure controls are keyboard-operable, so `summary` joins
+      // the tab order; content of a closed <details> is not rendered and can
+      // hold neither focus nor its copy buttons.
       const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ));
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => {
+        for (let host = element.closest('details'); host; host = host.parentElement?.closest('details') ?? null) {
+          if (!host.open && !(element.tagName === 'SUMMARY' && element.parentElement === host)) return false;
+        }
+        return true;
+      });
       if (focusable.length === 0) {
         event.preventDefault();
         return;
@@ -1496,6 +1517,7 @@ function DetailPane({
           </div>
         </div>
         <div className="detail-pane__body">
+          {fleetStaleError && <FleetStaleNotice error={fleetStaleError} t={t} />}
           <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
           <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
           {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
@@ -1614,7 +1636,8 @@ export function OperatorApp({
 
   const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     const previous = snapshotForState(stateRef.current);
-    const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
+    const staleError = staleErrorForState(stateRef.current);
+    const loading: OperatorSnapshotViewState = { kind: 'loading', previous, ...(staleError ? { staleError } : {}) };
     stateRef.current = loading;
     setState(loading);
     try {
@@ -1651,6 +1674,18 @@ export function OperatorApp({
   const selectedCard = selection && !selection.historical && snapshot
     ? activeRepository?.cards.find((card) => taskKey(card) === selection.key) ?? null
     : null;
+  // A current URL carries no revision, so the first snapshot that resolves the
+  // selection supplies the comparison baseline. Capturing it into the selection
+  // puts URL-opened and restored panes under the same changed-definition
+  // warning as clicked cards; later snapshots never move a stored baseline.
+  useEffect(() => {
+    if (!selection || selection.historical || selection.revision !== null || !selectedCard) return;
+    const baseline = selectedCard.task_revision;
+    setSelection((current) => current !== null && !current.historical && current.revision === null
+      && current.key === selection.key
+      ? { ...current, revision: baseline }
+      : current);
+  }, [selection, selectedCard]);
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
     ? selection.revision
     : null;
@@ -1680,6 +1715,9 @@ export function OperatorApp({
   useObservationRefresh(readCollaboration, JSON.stringify([collaborationRepositoryId,decisionAfter,collaborationRefreshGeneration]), {
     enabled: !initialCollaboration && collaborationRepositoryId !== null,
   });
+  // Organization-only readers stay mounted to keep their last result, but they
+  // poll only while their panel shows; the shared Fleet read keeps running.
+  const organizationActive = activeRepository === null || view === 'organization';
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id,{ key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
 
   return (
@@ -1708,17 +1746,18 @@ export function OperatorApp({
             generation={collaborationRefreshGeneration} read={readTaskHistory} onClose={closeSelection} t={t} />}
 
           {activeRepository && <ObservationTabs view={view} onChange={setView} t={t} />}
-          <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={activeRepository !== null && view !== 'organization'}>
+          <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive}>
           {activeRepository && <AutomationSummary
             repositoryId={activeRepository.repository_id}
             refreshGeneration={collaborationRefreshGeneration}
+            active={organizationActive}
             readObservation={fetchRepositoryObservation}
             t={t}
           />}
           {activeRepository && <DecisionSummary state={collaboration} repositoryId={activeRepository.repository_id} after={decisionAfter} onPage={changeDecisionPage} t={t} />}
           {activeRepository && <OrganizationSummary state={collaboration} repositoryId={activeRepository.repository_id} t={t} />}
-          <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} t={t} />
-          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} t={t} />
+          <NotifyStatusPanel readStatus={readNotifyStatus} initialStatus={initialNotifyStatus} refreshGeneration={collaborationRefreshGeneration} active={organizationActive} t={t} />
+          <PipelineBoardPanel readBoard={readPipelineBoard} initialBoard={initialPipelineBoard} refreshGeneration={collaborationRefreshGeneration} active={organizationActive} t={t} />
           <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
           {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
             : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />
@@ -1760,6 +1799,7 @@ export function OperatorApp({
             collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
             evidenceGeneration={collaborationRefreshGeneration}
+            fleetStaleError={staleErrorForState(state)}
             readTaskContext={readTaskContext}
             readTaskActivity={readTaskActivity}
             onClose={closeSelection}

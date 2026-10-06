@@ -3,7 +3,7 @@ import { join } from 'path';
 import { readRepoHarnessRegistryStrictSnapshot, restoreRepoHarnessRegistryEntries } from '../../effects/repo-registry';
 import { assertConfigurationPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, saveConfigurationReceipt, writePrivateConfiguration } from '../installer/configuration-ownership';
 import { withRuntimeHostTransactionLock } from '../installer/runtime-host-lock';
-import { mcpLocalConfigPath, mcpOAuthPath, mcpOAuthTokenStorePath, mcpStorageDir, mcpTokenPath } from './auth';
+import { mcpLocalConfigPath, mcpOAuthDoctorClientPath, mcpOAuthPath, mcpOAuthTokenStorePath, mcpStorageDir, mcpTokenPath } from './auth';
 import { resolveMcpRepoRoot } from './repo';
 import { assertMcpStoragePath, readMcpRegistryReceipt, saveMcpRegistryReceipt, withMcpSetupLock } from './setup-ownership';
 
@@ -79,7 +79,7 @@ export function runMcpUninstall(opts: McpUninstallOptions): McpUninstallResult {
       if (receiptChanged) mutations.push(() => saveConfigurationReceipt(receipt, env));
     }
     if (chatgpt) {
-      const files = [mcpLocalConfigPath(), mcpTokenPath(), mcpOAuthPath(), mcpOAuthTokenStorePath()];
+      const files = [mcpLocalConfigPath(), mcpTokenPath(), mcpOAuthPath(), mcpOAuthDoctorClientPath(), mcpOAuthTokenStorePath()];
       for (const path of files) {
         assertMcpStoragePath(path);
         if (existsSync(path)) {

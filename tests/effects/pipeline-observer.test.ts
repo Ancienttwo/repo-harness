@@ -7,13 +7,14 @@ import { basename, join, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { decodeRecord, digest, keyOf, PipelineError, type Evidence, type Key, type PipelineRecord, type Subject } from '../../src/core/pipeline/types';
+import { decodePipelineHealth } from '../../src/core/pipeline/health';
 import { currentSubject, requirementPass } from '../../src/core/pipeline/gates';
 import { advanceRecord } from '../../src/core/pipeline/stage-machine';
 import { projectedRuns, projectBoard } from '../../src/core/pipeline/projection';
-import { assertSQLiteVersion, exportSnapshot, immutableDatabase, openSnapshot, PipelineStore, snapshotPointerPath } from '../../src/effects/pipeline/store';
+import { assertSQLiteVersion, exportSnapshot, immutableDatabase, openSnapshot, PipelineStore, snapshotPointerPath, publicationIntentPath, publicationIntents, publicationStatePath } from '../../src/effects/pipeline/store';
 import { mutatePipeline, newPipeline, type MutationBoundary } from '../../src/effects/pipeline/ledger';
 import { ingestEvent, observations } from '../../src/effects/pipeline/ingest';
-import { readPipelineSnapshot, readPipelineStatus } from '../../src/effects/pipeline/read';
+import { readPipelineSnapshot, readPipelineStatus, readPipelineHealth } from '../../src/effects/pipeline/read';
 import { sourceAuthority, validateOnSource, type AuthorityQuery } from '../../src/effects/pipeline/authority';
 import { taskRepository } from '../../src/effects/terminal/task-worktree';
 import { taskSessionDirectory, processIdentity, harnessCapabilities, writeSessionArtifact, type TaskRequest, type TaskPaneBinding } from '../../src/effects/terminal/task-session';
@@ -70,6 +71,7 @@ function execute(root:string,name:string) {
 }
 function cli(args:string[],overrides:NodeJS.ProcessEnv={}) {return spawnSync(process.execPath,[CLI,'pipeline',...args],{env:{...env,...overrides},encoding:'utf8',timeout:20000});}
 async function child(script:string,args:string[]=[],childEnv:NodeJS.ProcessEnv=env) {const proc=spawn(process.execPath,[script,...args],{env:childEnv,stdio:['ignore','pipe','pipe']});let out='';let err='';proc.stdout.on('data',x=>out+=x);proc.stderr.on('data',x=>err+=x);const code=await new Promise<number|null>(resolve=>proc.on('exit',resolve));return {code,out,err};}
+async function signal(path:string):Promise<void> {const deadline=Date.now()+10000;while(!existsSync(path)){if(Date.now()>deadline)throw new Error('Worker did not reach its synchronization point');await Bun.sleep(5);}}
 function worker(body:string):string {const path=join(scratch,randomUUID()+'.ts');writeFileSync(path,`import {PipelineStore,exportSnapshot} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/store.ts'))};\nimport {mutatePipeline,newPipeline} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/ledger.ts'))};\nimport {ingestEvent} from ${JSON.stringify(resolve(import.meta.dir,'../../src/effects/pipeline/ingest.ts'))};\nimport {writeFileSync,existsSync} from 'fs';\nconst s=new PipelineStore();\n${body}\ns.close();\n`);return path;}
 
 test('A1: six tasks in two real repositories preserve imported and host-scoped identity',()=>{
@@ -225,8 +227,13 @@ test('A11: post-commit export failure preserves receipt; later export catches up
 
 test('A12: killed and concurrent exporters only publish complete monotonic immutable generations',async()=>{
   const key=create(repo('repo'));const pointerPath=snapshotPointerPath(store.path);const old=readFileSync(pointerPath);const pinned=openSnapshot(pointerPath);const pinnedBytes=readFileSync(join(join(scratch,'store'),pinned.pointer.file));
+  // Open the exporter before the commit. A new writer now repairs pending
+  // publication during startup, so it would otherwise close this crash window.
+  const ready=join(scratch,'exporter-ready'),go=join(scratch,'exporter-go');
+  const killed=worker(`writeFileSync(process.argv[2],'ready');const deadline=Date.now()+10000;while(!existsSync(process.argv[3])){if(Date.now()>deadline)throw new Error('Worker signal timed out');await Bun.sleep(5);}exportSnapshot(s,undefined,stage=>{if(stage==='copied')process.kill(process.pid,'SIGKILL')});`);
+  const killedResult=child(killed,[ready,go]);await signal(ready);
   const mutation=worker(`mutatePipeline(s,${JSON.stringify(key)},{op:'record',kind:'observation',payload:{kind:'note',source:'operator',data:{}},state_version:1},stage=>{if(stage==='commit')process.kill(process.pid,'SIGKILL')});`);await child(mutation);
-  const killed=worker(`exportSnapshot(s,undefined,stage=>{if(stage==='copied')process.kill(process.pid,'SIGKILL')});`);expect((await child(killed)).code).not.toBe(0);expect(readFileSync(pointerPath)).toEqual(old);
+  writeFileSync(go,'go');expect((await killedResult).code).not.toBe(0);expect(readFileSync(pointerPath)).toEqual(old);
   const exporter=worker(`console.log(JSON.stringify(exportSnapshot(s)));`);const result=await Promise.all([child(exporter),child(exporter)]);expect(result.map(r=>r.code)).toEqual([0,0]);const pointer=JSON.parse(readFileSync(pointerPath,'utf8'));expect(pointer.commit_seq).toBe(store.watermark().commit_seq);expect(result.map(r=>JSON.parse(r.out).file)).toEqual([pointer.file,pointer.file]);
   expect(pinned.db.query('SELECT state_version FROM pipelines').get()).toEqual({state_version:1});expect(readFileSync(join(join(scratch,'store'),pinned.pointer.file))).toEqual(pinnedBytes);pinned.db.close();
 });
@@ -387,4 +394,127 @@ test('ungated blocked return and rework remain observed rather than qualified',(
   const twice=create(root,'blocked-twice');const block=(reason:string)=>mutatePipeline(store,twice,{op:'advance',to:'blocked',reason,state_version:store.read(twice).state_version});
   block('First wait');block('Second wait');expect(store.read(twice).blocked).toMatchObject({reason:'Second wait',return_to:'plan'});
   mutatePipeline(store,twice,{op:'advance',to:'plan',state_version:store.read(twice).state_version});expect(store.read(twice).phase).toBe('plan');expect(store.read(twice).blocked).toBeNull();
+});
+
+test('D0: health reads only published evidence and distinguishes missing from empty',()=>{
+  const missing=join(scratch,'not-created','ledger.db');
+  const absent=readPipelineHealth({env:{...env,REPO_HARNESS_PIPELINES_DB:missing}});
+  expect(absent.snapshot.status).toBe('missing');expect(absent.publication.status).toBe('unavailable');expect(absent.store.sqlite_version).toBeNull();expect(absent.coverage.pipelines).toBeNull();expect(existsSync(join(scratch,'not-created'))).toBe(false);
+  exportSnapshot(store);
+  const path=store.path,files=readdirSync(join(scratch,'store')).sort(),wal=readFileSync(path+'-wal'),live=readFileSync(path);
+  const health=readPipelineHealth({env});expect(health.snapshot.status).toBe('empty');expect(health.publication.status).toBe('published');expect(health.store.sqlite_version).toMatch(/^\d+\.\d+\.\d+$/);expect(health.coverage.idempotent_deliveries).toBe(0);
+  // An invalid library path must not be loaded by a read-only health command.
+  const output=cli(['health','--json'],{REPO_HARNESS_PIPELINES_SQLITE_LIBRARY:join(scratch,'secret','missing-library')});
+  expect(output.status).toBe(0);const decoded=decodePipelineHealth(JSON.parse(output.stdout));expect(decoded.snapshot.status).toBe('empty');expect(decoded.store.sqlite_library_configured).toBe(true);expect(output.stdout).not.toContain(scratch);expect(output.stdout).not.toContain('missing-library');
+  expect(readFileSync(path+'-wal')).toEqual(wal);expect(readFileSync(path)).toEqual(live);expect(readdirSync(join(scratch,'store')).sort()).toEqual(files);
+  expect(readPipelineHealth({env:{...env,REPO_HARNESS_PIPELINES_AUTHORITY_HOST:'other-host'}}).publication.status).toBe('unknown');
+  expect(()=>decodePipelineHealth({...health,secret:'/private/value'})).toThrow();
+});
+
+test('D0: first export failure is durable without a snapshot and explicit export recovers',async()=>{
+  const crashed=worker(`newPipeline(s,{source_host:'fixture',repository_id:'fixture',title:'first',idem_key:'first'},stage=>{if(stage==='commit')process.kill(process.pid,'SIGKILL')});`);
+  expect((await child(crashed)).code).not.toBe(0);
+  expect(readPipelineHealth({env}).publication.status).toBe('pending');expect(readPipelineHealth({env}).snapshot.status).toBe('missing');
+  expect(()=>exportSnapshot(store,undefined,stage=>{if(stage==='verified')throw new Error('Copy cannot publish');})).toThrow('Copy cannot publish');
+  const failed=readPipelineHealth({env});expect(failed.publication.status).toBe('failed');expect(failed.publication.error_code).toBe('store_unavailable');expect(failed.snapshot.status).toBe('missing');expect(failed.publication.pending_intents).toBe(1);
+  const mark=store.watermark();exportSnapshot(store);expect(readPipelineHealth({env}).publication.status).toBe('published');expect(publicationIntents(store.path)).toEqual([]);expect(store.watermark()).toEqual(mark);
+});
+
+test('D0: rollback intent is uncertain to readers and only a locked writer can discard it',async()=>{
+  const key=create(repo('rollback-intent')),mark=store.watermark();
+  const crash=worker(`mutatePipeline(s,${JSON.stringify(key)},{op:'record',kind:'observation',payload:{kind:'note',source:'test',data:{}},state_version:1,command_key:'rollback'},stage=>{if(stage==='idem')process.kill(process.pid,'SIGKILL')});`);
+  expect((await child(crash)).code).not.toBe(0);expect(store.watermark()).toEqual(mark);
+  const health=readPipelineHealth({env});expect(health.publication.status).toBe('pending');expect(health.publication.pending_intents).toBe(1);expect(publicationIntents(store.path)).toHaveLength(1);
+  const restarted=new PipelineStore({env});restarted.close();expect(publicationIntents(store.path)).toEqual([]);expect(store.watermark()).toEqual(mark);expect(readPipelineHealth({env}).publication.status).toBe('published');
+});
+
+test('D0: publication failure keeps the old snapshot and all idempotent paths catch up once',async()=>{
+  const root=repo('replay-publication'),input={source_host:hostname(),repository_id:taskRepository(root).repository_id,root,adopt_task:'replay',idem_key:'register'};
+  const created=newPipeline(store,input),key={source_host:input.source_host,repository_id:input.repository_id,task:created.task};
+  const actions=[
+    {run:()=>newPipeline(store,input)},
+    {run:()=>mutatePipeline(store,key,{op:'record',kind:'observation',payload:{kind:'note',source:'test',data:{}},state_version:1,command_key:'note'})},
+    {run:()=>mutatePipeline(store,key,{op:'advance',to:'blocked',reason:'Fixture waits',state_version:2,command_key:'block'})},
+    {run:()=>ingestEvent(store,{event:'notice'},{source:'test',delivery_id:'notice'})},
+  ];
+  for(const [index,action] of actions.entries()) {
+    action.run();
+    const previous=readPipelineHealth({env}).snapshot.watermark!;
+    const crash=worker(`s.transaction(()=>s.bump());process.kill(process.pid,'SIGKILL');`);expect((await child(crash)).code).not.toBe(0);
+    const mark=store.watermark(),version=store.read(key).state_version,transitions=store.db.query('SELECT count(*) n FROM transitions').get(),receipts=store.db.query('SELECT count(*) n FROM ingest_receipts').get();
+    expect(()=>exportSnapshot(store,undefined,stage=>{if(stage==='verified')throw new Error('Publish failed');})).toThrow();
+    const failed=readPipelineHealth({env,now:new Date(Date.now()+600000)});expect(failed.publication.status).toBe('failed');expect(failed.snapshot.status).toBe('stale');expect(failed.snapshot.watermark).toEqual(previous);
+    const replay=action.run();if(index===0)expect(replay).toEqual(created);
+    expect(readPipelineHealth({env}).publication.status).toBe('published');expect(readPipelineHealth({env}).snapshot.watermark).toEqual(mark);expect(store.watermark()).toEqual(mark);expect(store.read(key).state_version).toBe(version);expect(store.db.query('SELECT count(*) n FROM transitions').get()).toEqual(transitions);expect(store.db.query('SELECT count(*) n FROM ingest_receipts').get()).toEqual(receipts);
+  }
+});
+
+test('D0: a published pointer wins over stale status after a process dies before status write',async()=>{
+  const key=create(repo('pointer-wins')),old=readPipelineHealth({env}).snapshot.watermark!;
+  const crash=worker(`s.transaction(()=>s.bump());exportSnapshot(s,undefined,stage=>{if(stage==='published')process.kill(process.pid,'SIGKILL')});`);
+  expect((await child(crash)).code).not.toBe(0);
+  const health=readPipelineHealth({env});expect(health.snapshot.watermark!.commit_seq).toBe(old.commit_seq+1);expect(health.publication.status).toBe('published');expect(health.publication.state_file).toBe('stale');expect(health.publication.pending_intents).toBe(0);expect(publicationIntents(store.path)).toHaveLength(1);
+  const restarted=new PipelineStore({env});restarted.close();expect(publicationIntents(store.path)).toEqual([]);expect(readPipelineHealth({env}).publication.state_file).toBe('current');expect(store.read(key).state_version).toBe(1);
+});
+
+test('D0: older publication cannot clear a concurrent writer intent',async()=>{
+  const key=create(repo('concurrent-publication'));store.transaction(()=>store.bump());
+  const ready=join(scratch,'writer-ready'),go=join(scratch,'writer-go'),committed=join(scratch,'writer-committed');
+  // Open before A's new commit. B's startup repair is then already complete.
+  const b=worker(`writeFileSync(process.argv[2],'ready');const deadline=Date.now()+10000;while(!existsSync(process.argv[3])){if(Date.now()>deadline)throw new Error('Worker signal timed out');await Bun.sleep(5);}s.transaction(()=>s.bump());writeFileSync(process.argv[4],'committed');process.kill(process.pid,'SIGKILL');`);
+  const bResult=child(b,[ready,go,committed]);await signal(ready);
+  store.transaction(()=>store.bump());const aMark=store.watermark();
+  const a=exportSnapshot(store,undefined,stage=>{
+    if(stage==='verified'){
+      writeFileSync(go,'go');
+      // Synchronize against a file emitted only after B commits. The worker
+      // runs in a different process, so this does not block its progress.
+      const deadline=Date.now()+10000;while(!existsSync(committed)){if(Date.now()>deadline)throw new Error('B did not commit');Bun.sleepSync(5);}
+    }
+  });
+  expect((await bResult).code).not.toBe(0);expect({epoch:a.epoch,commit_seq:a.commit_seq}).toEqual(aMark);
+  expect(publicationIntents(store.path).map(i=>i.watermark)).toEqual([store.watermark()]);expect(readPipelineHealth({env}).publication.status).toBe('pending');
+  const restarted=new PipelineStore({env});restarted.close();expect(readPipelineHealth({env}).publication.status).toBe('published');expect(publicationIntents(store.path)).toEqual([]);expect(store.read(key).state_version).toBe(1);
+});
+
+test('D0: delivery replay rejects a different event and coverage names missing transport identity',()=>{
+  const event={agent_status:'done',role:'implement',round:1,request_id:'attempt-one'};
+  ingestEvent(store,event,{source:'test',delivery_id:'one'});const mark=store.watermark();
+  expect(()=>ingestEvent(store,{...event,request_id:'attempt-two'},{source:'test',delivery_id:'one'})).toThrow('different input');expect(store.watermark()).toEqual(mark);
+  ingestEvent(store,event,{source:'test'});const health=readPipelineHealth({env});expect(health.coverage.idempotent_deliveries).toBe(1);expect(health.coverage.missing_delivery_observations).toBe(1);expect(health.coverage.unclassified_observations).toBe(0);
+});
+
+test('D0: intent write failure rolls back and status write failure cannot hide a published pointer',()=>{
+  const intents=publicationIntentPath(store.path);writeFileSync(intents,'Cannot create an intent directory');
+  expect(()=>newPipeline(store,{source_host:'fixture',repository_id:'fixture',title:'rollback'})).toThrow();expect(store.all()).toEqual([]);expect(store.watermark()).toEqual({epoch:1,commit_seq:0});expect(existsSync(snapshotPointerPath(store.path))).toBe(false);
+  rmSync(intents);create(repo('status-write'));
+  const stateBefore=readFileSync(publicationStatePath(store.path));store.transaction(()=>store.bump());
+  const directory=join(scratch,'store');
+  try {
+    expect(()=>exportSnapshot(store,undefined,stage=>{if(stage==='published')chmodSync(directory,0o500);})).toThrow('Snapshot was published but its status was not saved');
+  }finally{chmodSync(directory,0o700);}
+  expect(readFileSync(publicationStatePath(store.path))).toEqual(stateBefore);
+  const health=readPipelineHealth({env});expect(health.publication.status).toBe('published');expect(health.publication.state_file).toBe('stale');expect(health.snapshot.watermark).toEqual(store.watermark());expect(publicationIntents(store.path)).toHaveLength(1);
+  exportSnapshot(store);expect(publicationIntents(store.path)).toEqual([]);expect(readPipelineHealth({env}).publication.state_file).toBe('current');
+});
+
+test('D0: backup export leaves canonical publication pending',()=>{
+  create(repo('backup'));store.transaction(()=>store.bump());const mark=store.watermark();
+  exportSnapshot(store,join(scratch,'backup.json'));
+  expect(readPipelineHealth({env}).publication.status).toBe('pending');expect(publicationIntents(store.path).map(i=>i.watermark)).toEqual([mark]);
+  exportSnapshot(store);expect(readPipelineHealth({env}).publication.status).toBe('published');
+});
+
+test('D0: health decoder rejects non-string enum fields without coercion',()=>{
+  exportSnapshot(store);const health=readPipelineHealth({env});
+  expect(decodePipelineHealth(health)).toEqual(health);
+  for(const status of [['ready'],[['ready']],null,1,true,{}]) {
+    expect(()=>decodePipelineHealth({...health,snapshot:{...health.snapshot,status}})).toThrow('Publication evidence is invalid');
+  }
+  for(const status of [['published'],[['published']],null,1,true,{}]) {
+    expect(()=>decodePipelineHealth({...health,publication:{...health.publication,status}})).toThrow('Publication evidence is invalid');
+  }
+  for(const state_file of [['current'],[['current']],null,1,true,{}]) {
+    expect(()=>decodePipelineHealth({...health,publication:{...health.publication,state_file}})).toThrow('Publication evidence is invalid');
+  }
 });

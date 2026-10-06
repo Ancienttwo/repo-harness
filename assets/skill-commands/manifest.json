@@ -19,7 +19,9 @@
       ],
       "discoverability": "always",
       "component": "cli",
-      "requires": [],
+      "requires": [
+        "herdr"
+      ],
       "mutatesRepoByDefault": false,
       "summary": "Root router Skill; canonical entrypoint synced unconditionally to both hosts regardless of install profile.",
       "retirementCandidate": null,
@@ -216,6 +218,24 @@
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Canonical rule owner for repo-harness ChatGPT integration: Oracle-first browser/GPT Pro consult and continuation, MCP Connector setup, MCP bridge planning handoff, and Connector invocation read-back evidence. Additive only after an explicit ChatGPT setup action; never implied by either install profile.",
+      "retirementCandidate": null,
+      "audience": "bot"
+    },
+    {
+      "name": "herdr",
+      "kind": "external",
+      "source": null,
+      "provider": "herdrdev/herdr",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "external-marketplace",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Required Herdr control skill. Install the release-matched body from herdr --skill for both hosts.",
       "retirementCandidate": null,
       "audience": "bot"
     },
