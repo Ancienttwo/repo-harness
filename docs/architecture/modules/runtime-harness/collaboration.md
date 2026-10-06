@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:bd4593da4dd2b54e885bb9c388e046e46ca7bec68d38e7936776460ee3a4df98" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ee4f975d65d198d6854b681cf9a31f3b14fd496d207ab55aed69c8ed00af02c9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:78e706b4a2486625c22aa0e78f298de6bb69a8dcc9da766495197d80d2d73f35" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:65c2e5beb9c8cddc1813b25eb8bcd7653d4b09c9ca92cfaf72615a88ca09a209" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
@@ -42,7 +42,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:f1ceb5d4280caa61ca532e0e31dbe615c64cc2d17cfb4fb5290795070901f982`).
+- Proof: `proven` (`sha256:a29c0962e3b8eb03ef543478a03d91e8ca5e592977141b7a2e4a8300376b7570`).
 - Semantic nodes: `8`; declared relations: `13`.
 
 ### 1.2 模組職責表
@@ -74,7 +74,8 @@ flowchart LR
 | `entrypoint.collaboration.dispatch-fence` | `src/effects/collaboration/context-delivery.ts#assertCollaborationDispatchBinding` | `sink.collaboration.binding-fence-check` → `src/core/collaboration/run-binding.ts#checkCollaborationRunContextBinding`、`sink.collaboration.persisted-binding-read` → `src/effects/collaboration/context-delivery.ts#readCollaborationRunContextBinding` |
 | `entrypoint.collaboration.dispatch-guard` | `src/effects/collaboration/context-delivery.ts#fenceCollaborationDispatch` | `sink.collaboration.dispatch-intent` → `src/effects/collaboration/context-delivery.ts#collaborationDispatchIntent`、`sink.collaboration.dispatch-binding-assert` → `src/effects/collaboration/context-delivery.ts#assertCollaborationDispatchBinding` |
 | `entrypoint.collaboration.agent-surface-read` | `src/effects/collaboration/agent-surface.ts#collect` | `sink.collaboration.surface-exchange-collect` → `src/effects/collaboration/work-exchange.ts#collectCollaborativeWorkExchange` |
-| `entrypoint.collaboration.agent-surface-offers` | `src/effects/collaboration/agent-surface.ts#readExecutionOffersFor` | `sink.collaboration.surface-offer-authority` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
+| `entrypoint.collaboration.agent-surface-offers` | `src/effects/collaboration/agent-surface.ts#resolveSurfacePrincipal` | `sink.collaboration.surface-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
+| `entrypoint.collaboration.agent-surface-offers` | `src/effects/collaboration/agent-surface.ts#collect` | `sink.collaboration.surface-offer-authority` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
 | `entrypoint.collaboration.agent-surface-publish` | `src/effects/collaboration/agent-surface.ts#collaborationSignalPost` | `sink.collaboration.surface-signal-publish` → `src/effects/collaboration/signal-store.ts#publishCoordinationSignal` |
 | `entrypoint.collaboration.agent-surface-publish` | `src/effects/collaboration/agent-surface.ts#collaborationHandoffPublish` | `sink.collaboration.surface-handoff-publish` → `src/effects/collaboration/handoff-store.ts#publishWorkStateHandoff` |
 | `entrypoint.collaboration.agent-surface-publish` | `src/effects/collaboration/agent-surface.ts#collaborationHandoffAdopt` | `sink.collaboration.surface-handoff-adopt` → `src/effects/collaboration/adoption-store.ts#adoptWorkStateHandoff` |
@@ -107,7 +108,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:f1ceb5d4280caa61ca532e0e31dbe615c64cc2d17cfb4fb5290795070901f982`); selectors `48/48`.
+> **Proof**: `proven` (`sha256:a29c0962e3b8eb03ef543478a03d91e8ca5e592977141b7a2e4a8300376b7570`); selectors `49/49`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -119,6 +120,7 @@ sequenceDiagram
   participant p2_delegated_runs_6de9843b as Read-only Delegated Runs
   participant p2_scheduling_authority_0fce7315 as Engineer Scheduling
   participant p2_delegated_run_store_75dc2bad as Read-only Delegated Run Journal
+  p2_collaboration_50c48bca->>p2_scheduling_authority_0fce7315: Resolve the authenticated principal before collection and on each offer read
   p2_collaboration_50c48bca->>p2_scheduling_authority_0fce7315: Ask the scheduling plane what this exact authenticated principal could pick up， so an empty offer list means the plane answered rather than that nobody asked
   alt A Module Engineer reads the exchange and publishes bounded records whose author the Host derived， with every payload marked untrusted
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Collect the same double-read exchange the Host reads， so the surface adds no cache and no second answer that could disagree with snapshot_sha256
