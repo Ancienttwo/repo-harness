@@ -87,7 +87,8 @@ test('review packet enforces the existing 10 MiB limit in UTF-8 bytes without tr
 });
 
 function packetRoundFixture() {
-  const fixture = seedAcceptanceFixture('review-packet');
+  // Keep the named-session socket below Darwin's 103-byte path limit.
+  const fixture = seedAcceptanceFixture('rp');
   roots.push(fixture.root, fixture.home);
   const reviewerRepo = join(fixture.home, 'reviewer');
   execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
