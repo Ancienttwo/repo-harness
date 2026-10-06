@@ -33,6 +33,7 @@ describe('MCP setup uninstall', () => {
     runMcpSetupChatgpt({ repo, profile: 'coding', grantReadWrite: [repo] });
     runMcpSetupCodex({ repo });
     writeFileSync(join(store, 'mcp.oauth-tokens.json'), '{"secret":"credential-sentinel-937"}');
+    writeFileSync(join(store, 'mcp.oauth-doctor-client.json'), '{"version":1,"clientId":"client-doctor-sentinel"}');
     writeFileSync(join(store, 'mcp-workspaces.json'), 'workspace sentinel');
     const previewBefore = tree(store) + tree(repo);
     expect(runMcpUninstall({ repo, dryRun: true }).status).toBe('complete');
@@ -41,7 +42,7 @@ describe('MCP setup uninstall', () => {
     expect(result.status).toBe('complete');
     expect(result.scope).toBe('local_configuration');
     expect(JSON.stringify(result)).not.toContain('credential-sentinel-937');
-    for (const name of ['mcp.local.json', 'mcp.tokens.json', 'mcp.oauth.json', 'mcp.oauth-tokens.json']) expect(existsSync(join(store, name))).toBe(false);
+    for (const name of ['mcp.local.json', 'mcp.tokens.json', 'mcp.oauth.json', 'mcp.oauth-doctor-client.json', 'mcp.oauth-tokens.json']) expect(existsSync(join(store, name))).toBe(false);
     expect(readFileSync(join(store, 'mcp-workspaces.json'), 'utf8')).toBe('workspace sentinel');
     expect(existsSync(join(repo, '.codex/config.toml'))).toBe(false);
     expect(readRepoHarnessRegistryStrictSnapshot().repos).toEqual([]);
