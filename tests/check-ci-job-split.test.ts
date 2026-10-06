@@ -78,6 +78,7 @@ describe('single affected verification and daily fallback', () => {
     expect(Object.keys(native.on)).toEqual(['pull_request']);
     expect(native.on.pull_request.types).toEqual(['opened', 'synchronize', 'reopened']);
     expect(native.on.pull_request.paths).toContain('src/effects/runtime/protected-helper-platform.ts');
+    expect(native.on.pull_request.paths).toContain('tests/cli/mcp-oauth.test.ts');
     expect(native.on.pull_request.paths).toContain('.github/workflows/windows-protected-helper.yml');
     expect(native.on.pull_request.paths).not.toContain('**');
     expect(native.permissions).toEqual({ contents: 'read' });
