@@ -51,6 +51,8 @@ function useArchitectureRead<T>(path: string | null, decode: (value: unknown) =>
     } catch (error) {
       if (signal.aborted) return false;
       const code = error instanceof Error && /^[a-z][a-z0-9_]{0,63}$/u.test(error.message) ? error.message : 'unavailable';
+      // A failure on another path drops the shown body, so its ETag must go too.
+      if (shown.current?.path !== path) shown.current = null;
       setRead(current => ({ path, value: current.path === path ? current.value : null, error: code }));
       return false;
     }

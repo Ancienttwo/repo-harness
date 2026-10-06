@@ -174,6 +174,20 @@ describe('architecture module list', () => {
     expect(commits).toBe(committed + 1);
     expect(document.querySelector('.architecture-workspace')?.innerHTML).toBe(before);
   });
+
+  test('a failed read of another path drops the old ETag, so returning does not wait on a 304', async () => {
+    await mount(workspace());
+    expect(document.querySelectorAll('.module-row')).toHaveLength(3);
+    respond = path => path.includes('/repo-other/') ? json({ code: 'busy' }, 503) : serveArchitecture(path);
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-other' })));
+    await settle();
+    expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('busy');
+    respond = (path, call) => call.ifNoneMatch === '"index-1"' ? new Response(null, { status: 304 }) : serveArchitecture(path);
+    await act(async () => root?.render(workspace()));
+    await settle();
+    expect(calls.at(-1)).toEqual({ path: `/api/v1/repositories/${REPO}/architecture/modules`, ifNoneMatch: null });
+    expect(document.querySelectorAll('.module-row')).toHaveLength(3);
+  });
 });
 
 describe('architecture module page', () => {
