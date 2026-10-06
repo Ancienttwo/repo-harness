@@ -20,7 +20,7 @@ describe('automation controller CLI', () => {
     try {
       const list = spawnSync('bun', [CLI, 'automation', 'controller', 'status'], { cwd: root, encoding: 'utf8' });
       expect(list.status).toBe(0); expect(JSON.parse(list.stdout)).toEqual([]);
-      const missing = spawnSync('bun', [CLI, 'automation', 'controller', 'status', '--run', `sha256:${'a'.repeat(64)}`], { cwd: root, encoding: 'utf8' });
+      const missing = spawnSync('bun', [CLI, 'automation', 'controller', 'status', '--run', 'a'.repeat(64)], { cwd: root, encoding: 'utf8' });
       expect(missing.status).toBe(1); expect(JSON.parse(missing.stderr).error).toBe('automation_controller_not_found');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });

@@ -114,6 +114,8 @@ async function main(argv: readonly string[]): Promise<void> {
     const providers = hostSkillPlacements(catalog);
     for (const name of providers.claude) console.log(`provider\tclaude ${name}`);
     for (const name of providers.codex) console.log(`provider\tcodex ${name}`);
+    // Integrations have their own explicit setup command and lifecycle.
+    for (const pkg of catalog.packages) if (pkg.kind === "integration") console.log(`integration\t${pkg.name}`);
     return;
   }
   if (subcommand === "facade-sources") {

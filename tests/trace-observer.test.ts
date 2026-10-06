@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'child_process';
 import {
+  closeSync,
+  constants,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
+  writeSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -235,6 +240,160 @@ describe('runTraceObserver', () => {
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
+  });
+
+  describe('concurrent writers at the oversized-log rotation boundary', () => {
+    const TRACE_MODULE = join(import.meta.dir, '../src/cli/hook/trace-observer.ts');
+    // Writer A runs the real observer in its own process. Its only injected
+    // seam pauses it right after it reads the oversized trace: it publishes a
+    // read signal file, then blocks on a FIFO until the test writes to it.
+    const PAUSED_WRITER = `
+      import * as fs from 'fs';
+      const { runTraceObserver } = await import(process.env.TRACE_MODULE);
+      const tracePath = process.env.TRACE_PATH;
+      const fsApi = {
+        existsSync: fs.existsSync,
+        readFileSync: (path, encoding) => {
+          const value = fs.readFileSync(path, encoding);
+          if (path === tracePath) {
+            fs.writeFileSync(process.env.READ_SIGNAL, 'read\\n');
+            fs.readFileSync(process.env.RESUME_FIFO);
+          }
+          return value;
+        },
+        realpathSync: fs.realpathSync,
+        statSync: fs.statSync,
+        mkdirSync: (path, options) => fs.mkdirSync(path, options),
+        writeFileSync: (path, data) => fs.writeFileSync(path, data),
+        appendFileSync: (path, data) => fs.appendFileSync(path, data),
+      };
+      const result = runTraceObserver({
+        repoRoot: process.env.REPO_ROOT,
+        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: process.env.WRITER_SESSION }),
+        env: {},
+        dependencies: { fs: fsApi },
+      });
+      process.stdout.write(JSON.stringify(result));
+    `;
+    const FREE_WRITER = `
+      import * as fs from 'fs';
+      const { runTraceObserver } = await import(process.env.TRACE_MODULE);
+      fs.writeFileSync(process.env.START_SIGNAL, 'start\\n');
+      const result = runTraceObserver({
+        repoRoot: process.env.REPO_ROOT,
+        input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: process.env.WRITER_SESSION }),
+        env: {},
+      });
+      process.stdout.write(JSON.stringify(result));
+    `;
+
+    async function waitForFile(path: string, child: { exitCode: number | null }): Promise<void> {
+      while (!existsSync(path)) {
+        if (child.exitCode !== null) throw new Error(`writer exited before signal ${path}`);
+        await Bun.sleep(5);
+      }
+    }
+
+    function oversizedTrace(repoRoot: string): void {
+      mkdirSync(join(repoRoot, '.claude'), { recursive: true });
+      const oldRecords = Array.from({ length: 10001 }, (_, index) => JSON.stringify({ legacy: index })).join('\n') + '\n';
+      writeFileSync(join(repoRoot, '.claude/.trace.jsonl'), oldRecords);
+    }
+
+    function startWriter(repoRoot: string, script: string, session: string, signals: Record<string, string>) {
+      return Bun.spawn([process.execPath, '-e', script], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          TRACE_MODULE,
+          TRACE_PATH: join(repoRoot, '.claude/.trace.jsonl'),
+          REPO_ROOT: repoRoot,
+          WRITER_SESSION: session,
+          ...signals,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+    }
+
+    function resume(fifo: string): void {
+      // Non-blocking open fails with ENXIO when no paused reader exists.
+      try {
+        const fd = openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK);
+        writeSync(fd, 'go\n');
+        closeSync(fd);
+      } catch { /* writer is not paused */ }
+    }
+
+    test('a writer that reports success keeps its record when another writer rotates from a stale snapshot', async () => {
+      const repoRoot = workspace('trace-observer-race-stale');
+      const fifo = join(repoRoot, 'resume.fifo');
+      const readSignal = join(repoRoot, 'a.read');
+      let writerA: ReturnType<typeof startWriter> | null = null;
+      try {
+        oversizedTrace(repoRoot);
+        execFileSync('mkfifo', [fifo]);
+        writerA = startWriter(repoRoot, PAUSED_WRITER, 'writer-a', { READ_SIGNAL: readSignal, RESUME_FIFO: fifo });
+        await waitForFile(readSignal, writerA);
+
+        // A holds its stale 10001-line snapshot. B runs to completion now.
+        const writerB = runTraceObserver({
+          repoRoot,
+          input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'writer-b' }),
+          env: {},
+        });
+
+        resume(fifo);
+        await writerA.exited;
+        const resultA = JSON.parse(await new Response(writerA.stdout).text()) as { exitCode: number };
+        expect(resultA.exitCode).toBe(0);
+
+        const records = traceRecords(repoRoot);
+        const sessions = records.map((record) => record.session_key);
+        expect(sessions).toContain('writer-a');
+        if (writerB.exitCode === 0) expect(sessions).toContain('writer-b');
+        else expect(writerB.reason).toBe('write-failed');
+        expect(records.length).toBeLessThanOrEqual(5002);
+      } finally {
+        resume(fifo);
+        if (writerA && writerA.exitCode === null) writerA.kill();
+        rmSync(repoRoot, { recursive: true, force: true });
+      }
+    }, 30_000);
+
+    test('two overlapping writers both keep their records after rotation', async () => {
+      const repoRoot = workspace('trace-observer-race-both');
+      const fifo = join(repoRoot, 'resume.fifo');
+      const readSignal = join(repoRoot, 'a.read');
+      const startSignal = join(repoRoot, 'b.start');
+      let writerA: ReturnType<typeof startWriter> | null = null;
+      let writerB: ReturnType<typeof startWriter> | null = null;
+      try {
+        oversizedTrace(repoRoot);
+        execFileSync('mkfifo', [fifo]);
+        writerA = startWriter(repoRoot, PAUSED_WRITER, 'writer-a', { READ_SIGNAL: readSignal, RESUME_FIFO: fifo });
+        await waitForFile(readSignal, writerA);
+        writerB = startWriter(repoRoot, FREE_WRITER, 'writer-b', { START_SIGNAL: startSignal });
+        await waitForFile(startSignal, writerB);
+
+        resume(fifo);
+        await Promise.all([writerA.exited, writerB.exited]);
+        for (const writer of [writerA, writerB]) {
+          const result = JSON.parse(await new Response(writer.stdout).text()) as { exitCode: number };
+          expect(result.exitCode).toBe(0);
+        }
+
+        const raw = readFileSync(join(repoRoot, '.claude/.trace.jsonl'), 'utf8');
+        expect(raw.endsWith('\n')).toBe(true);
+        const sessions = traceRecords(repoRoot).map((record) => record.session_key);
+        expect(sessions).toContain('writer-a');
+        expect(sessions).toContain('writer-b');
+      } finally {
+        resume(fifo);
+        for (const writer of [writerA, writerB]) if (writer && writer.exitCode === null) writer.kill();
+        rmSync(repoRoot, { recursive: true, force: true });
+      }
+    }, 30_000);
   });
 
   test('suppresses annotation when git status fails but still records the observer event', () => {

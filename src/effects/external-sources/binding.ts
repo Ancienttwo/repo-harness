@@ -1,3 +1,4 @@
+import { buildExternalSourceProjection } from '../../core/external-sources/projection';
 import {
   buildExternalSourceBindingReceipt,
   renderExternalSourceUntrustedContext,
@@ -18,6 +19,7 @@ import {
 } from '../state/coordination-canonical-source';
 import {
   listExternalSourceBindingReceipts,
+  listExternalSourceRefreshReceipts,
   listProviderIssueObservations,
   writeExternalSourceBindingReceipt,
 } from './store';
@@ -35,6 +37,7 @@ export interface BindExternalSourceInput {
 export interface ExternalSourceBindingDependencies {
   readonly registry: (env?: NodeJS.ProcessEnv) => RepoHarnessRegistryStrictSnapshot;
   readonly observations: typeof listProviderIssueObservations;
+  readonly refreshReceipts: typeof listExternalSourceRefreshReceipts;
   readonly receipts: typeof listExternalSourceBindingReceipts;
   readonly canonical: typeof readCanonicalSprint;
   readonly plan: typeof readCanonicalTaskPlanProof;
@@ -46,6 +49,7 @@ function dependencies(overrides: Partial<ExternalSourceBindingDependencies> = {}
   return {
     registry: (env) => readRepoHarnessRegistryStrictSnapshot({ env }),
     observations: listProviderIssueObservations,
+    refreshReceipts: listExternalSourceRefreshReceipts,
     receipts: listExternalSourceBindingReceipts,
     canonical: readCanonicalSprint,
     plan: readCanonicalTaskPlanProof,
@@ -162,10 +166,10 @@ export function listExternalSourceBindings(
   const repo = registry.repos.find((candidate) => candidate.id === repositoryId);
   if (!repo) throw new Error(`registered repository is unknown: ${repositoryId}`);
   const observations = deps.observations(repo.path).filter((entry) => entry.registered_repository_id === repositoryId);
-  const latest = new Map<string, string>();
-  for (const observation of observations.slice().sort((left, right) => left.observed_at.localeCompare(right.observed_at) || left.source_revision.localeCompare(right.source_revision))) {
-    latest.set(`${observation.provider_repository_id}\0${observation.provider_issue_id}`, observation.source_revision);
-  }
+  // Latest observed state follows successful refresh chronology, so it is the
+  // projection's own latest_observation and not the newest immutable record.
+  const projection = buildExternalSourceProjection({ registered_repository_id: repositoryId, observations, receipts: deps.refreshReceipts(repo.path) });
+  const latest = new Map(projection.issues.map((issue) => [`${issue.provider_repository_id}\0${issue.provider_issue_id}`, issue.latest_observation.source_revision]));
   const bindings = deps.receipts(repo.path).filter((receipt) => receipt.registered_repository_id === repositoryId).map((receipt) => {
     const latestRevision = latest.get(`${receipt.provider_repository_id}\0${receipt.provider_issue_id}`);
     const sourceStatus = latestRevision === undefined ? 'unavailable' : latestRevision === receipt.source_revision ? 'current' : 'drifted';

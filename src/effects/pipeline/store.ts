@@ -6,7 +6,9 @@ import { randomUUID } from 'node:crypto';
 import { decodeRecord, digest, PipelineError, type Key, type PipelineRecord } from '../../core/pipeline/types';
 
 export const WRITER_PROTOCOL = 2;
-export interface StoreOptions { path?: string; wait_ms?: number; env?: NodeJS.ProcessEnv }
+// boundary marks the first-open point between unlocked reads and the init lock.
+// Concurrency tests use it as a real pause point, like MutationBoundary.
+export interface StoreOptions { path?: string; wait_ms?: number; env?: NodeJS.ProcessEnv; boundary?: (stage:'preflight')=>void }
 export interface Watermark {epoch:number;commit_seq:number}
 export interface Pointer extends Watermark {file:string;sha256:string;produced_at:string}
 let librarySelected = false;
@@ -64,9 +66,15 @@ export class PipelineStore {
       const version=(this.db.query('PRAGMA user_version').get() as {user_version:number}).user_version;
       if(version!==0 && version!==WRITER_PROTOCOL) throw new PipelineError('writer_protocol',3,'Store protocol requires an explicit migration');
       if(version===0) {
-        const count=this.db.query("SELECT count(*) n FROM sqlite_master WHERE type='table'").get() as {n:number};
-        if(count.n) throw new PipelineError('writer_protocol',3,'Unversioned store requires explicit migration');
-        this.transaction(()=>this.db.exec(`
+        options.boundary?.('preflight');
+        // Another first opener can initialize the store before this lock. Decide again under the lock.
+        this.transaction(()=>{
+          const locked=(this.db.query('PRAGMA user_version').get() as {user_version:number}).user_version;
+          if(locked===WRITER_PROTOCOL) return;
+          if(locked!==0) throw new PipelineError('writer_protocol',3,'Store protocol requires an explicit migration');
+          const count=this.db.query("SELECT count(*) n FROM sqlite_master WHERE type='table'").get() as {n:number};
+          if(count.n) throw new PipelineError('writer_protocol',3,'Unversioned store requires explicit migration');
+          this.db.exec(`
           CREATE TABLE metadata(id INTEGER PRIMARY KEY CHECK(id=1), epoch INTEGER NOT NULL, commit_seq INTEGER NOT NULL, protocol INTEGER NOT NULL, recovery_pending INTEGER NOT NULL);
           INSERT INTO metadata VALUES(1,1,0,2,0);
           CREATE TABLE pipelines(source_host TEXT,repository_id TEXT,task TEXT,state_version INTEGER,phase TEXT,admission TEXT,title TEXT,record TEXT,PRIMARY KEY(source_host,repository_id,task));
@@ -75,7 +83,7 @@ export class PipelineStore {
           CREATE TABLE ingest_receipts(source TEXT,delivery_id TEXT,fingerprint TEXT,received_at TEXT,disposition TEXT,PRIMARY KEY(source,delivery_id));
           CREATE TABLE observations(seq INTEGER PRIMARY KEY AUTOINCREMENT,source_host TEXT,repository_id TEXT,task TEXT,role TEXT,round INTEGER,request_id TEXT,kind TEXT,source TEXT,observed_at TEXT,payload TEXT,terminal_key TEXT UNIQUE);
           PRAGMA user_version=2;
-        `));
+        `);});
       }
       const meta=this.db.query('SELECT protocol FROM metadata WHERE id=1').get() as {protocol:number};
       if(meta.protocol!==WRITER_PROTOCOL) throw new PipelineError('writer_protocol',3,'Incompatible writer protocol');

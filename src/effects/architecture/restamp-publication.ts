@@ -15,6 +15,7 @@
  * Nothing here throws outward -- Stop must never be blocked by publication.
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import type { ProjectionResultV1 } from '../../core/architecture/projection';
@@ -35,7 +36,7 @@ import type { ArchitectureProjectionDrainResultV1 } from './projection-orchestra
 export const ARCHITECTURE_PROJECTION_RESTAMP_VERSION = 'repo-harness.architecture-projection-restamp/v1' as const;
 
 export type RestampNotApplicableReason = 'no-applied-drain' | 'no-receipt' | 'not-a-restamp';
-export type RestampSkipReason = RestampGateSkipReason | 'single-path-proof-failed' | 'ref-update-refused';
+export type RestampSkipReason = RestampGateSkipReason | 'single-path-proof-failed' | 'receipt-binding-mismatch' | 'ref-update-refused';
 
 export interface ArchitectureProjectionRestampOutcomeV1 {
   readonly schemaVersion: typeof ARCHITECTURE_PROJECTION_RESTAMP_VERSION;
@@ -173,6 +174,29 @@ function restoreIndex(repoRoot: string): void {
   }
 }
 
+/** Raw content SHA-256 of the manifest blob in `commit`, the digest form projection results declare. */
+function manifestBlobDigest(repoRoot: string, commit: string): string {
+  const blob = spawnSync('git', ['cat-file', 'blob', `${commit}:${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`], {
+    cwd: repoRoot,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (blob.error) throw blob.error;
+  if (blob.status !== 0) throw new Error(`git cat-file failed: ${blob.stderr.toString('utf8').trim().slice(0, 300) || `exit ${blob.status}`}`);
+  return `sha256:${createHash('sha256').update(blob.stdout).digest('hex')}`;
+}
+
+/**
+ * The receipt approves one exact change: its snapshot HEAD, its preimage blob, and
+ * its output blob. The candidate commit must be that change and nothing else.
+ */
+function receiptBindingMismatch(repoRoot: string, result: ProjectionResultV1, headSha: string, commitSha: string): 'head' | 'preimage' | 'output' | null {
+  const file = result.files[0]!;
+  if (result.outputSnapshot.headSha !== headSha) return 'head';
+  if (manifestBlobDigest(repoRoot, headSha) !== file.preimageDigest) return 'preimage';
+  if (manifestBlobDigest(repoRoot, commitSha) !== file.outputDigest) return 'output';
+  return null;
+}
+
 function aheadOfOrigin(repoRoot: string, branch: string, commitSha: string): boolean {
   const remoteRef = `refs/remotes/origin/${branch}`;
   const remote = git(repoRoot, ['rev-parse', '--verify', '--quiet', remoteRef]);
@@ -209,6 +233,11 @@ export function publishArchitectureProjectionRestamp(
       if (published.length !== 2 || published[0] !== 'M' || published[1] !== ARCHITECTURE_PROJECTION_MANIFEST_PATH) {
         restoreIndex(repoRoot);
         return skipped('single-path-proof-failed', published.join(' ') || 'empty diff');
+      }
+      const mismatch = receiptBindingMismatch(repoRoot, result, gate.headSha, commitSha);
+      if (mismatch !== null) {
+        restoreIndex(repoRoot);
+        return skipped('receipt-binding-mismatch', mismatch);
       }
       const updated = git(repoRoot, ['update-ref', '-m', RESTAMP_REFLOG_MESSAGE, gate.branchRef, commitSha, gate.headSha]);
       if (updated.status !== 0) {

@@ -117,6 +117,10 @@ function hostOutput(
     writeText(1, `${JSON.stringify({
       hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: budgeted.context },
     })}\n`);
+    const included = new Set(budgeted.evidence.included_sections);
+    for (const section of sections) {
+      if (included.has(section.id)) section.onDelivered?.();
+    }
     return;
   }
 

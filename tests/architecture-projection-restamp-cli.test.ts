@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectionResultReceiptDigest, type ProjectionResultV1 } from '../src/core/architecture/projection';
@@ -69,13 +70,13 @@ const SNAPSHOT: ProjectionResultV1['inputSnapshot'] = {
   },
 };
 
-function projectionResult(files: ProjectionResultV1['files']): ProjectionResultV1 {
+function projectionResult(files: ProjectionResultV1['files'], snapshot = SNAPSHOT): ProjectionResultV1 {
   const body: Omit<ProjectionResultV1, 'receiptDigest'> = {
     schemaVersion: 'archcontext.projection-result/v2',
     requestId: `repo-harness.projection.${JOB_ID}`,
     status: 'applied',
-    inputSnapshot: SNAPSHOT,
-    outputSnapshot: SNAPSHOT,
+    inputSnapshot: snapshot,
+    outputSnapshot: snapshot,
     affectedNodeIds: [],
     files,
     humanActions: [],
@@ -87,6 +88,20 @@ function projectionResult(files: ProjectionResultV1['files']): ProjectionResultV
 const RESTAMP = projectionResult([
   { path: ARCHITECTURE_PROJECTION_MANIFEST_PATH, action: 'update', preimageDigest: digest('9'), outputDigest: digest('c') },
 ]);
+
+const sha256 = (bytes: Buffer) => `sha256:${createHash('sha256').update(bytes).digest('hex')}` as const;
+
+/** A restamp result bound to the fixture's real HEAD, baseline blob, and dirty manifest bytes. */
+function restampFor(root: string): ProjectionResultV1 {
+  const headSha = git(root, ['rev-parse', 'HEAD']);
+  const preimage = spawnSync('git', ['cat-file', 'blob', `HEAD:${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`], { cwd: root }).stdout;
+  return projectionResult([{
+    path: ARCHITECTURE_PROJECTION_MANIFEST_PATH,
+    action: 'update',
+    preimageDigest: sha256(preimage),
+    outputDigest: sha256(readFileSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH))),
+  }], { ...SNAPSHOT, headSha, baseHeadSha: headSha });
+}
 
 /**
  * A repository whose only dirty tracked path is a restamped manifest, unless
@@ -132,7 +147,8 @@ function seedReceipt(root: string, value: ProjectionResultV1): void {
 describe('architecture-projection publish-restamp', () => {
   test('publishes a prepared dirty-manifest fixture and reports the outcome as JSON', () => {
     const root = fixture();
-    seedReceipt(root, RESTAMP);
+    const restamp = restampFor(root);
+    seedReceipt(root, restamp);
     const base = git(root, ['rev-parse', 'HEAD']);
 
     const result = cli(root, ['architecture-projection', 'publish-restamp', '--json']);
@@ -142,7 +158,7 @@ describe('architecture-projection publish-restamp', () => {
     expect(outcome.schemaVersion).toBe('repo-harness.architecture-projection-restamp/v1');
     expect(outcome.status).toBe('published');
     expect(outcome.branch).toBe('main');
-    expect(outcome.receiptDigest).toBe(RESTAMP.receiptDigest);
+    expect(outcome.receiptDigest).toBe(restamp.receiptDigest);
     expect(outcome.commitSha).toBe(git(root, ['rev-parse', 'HEAD']));
     expect(status(root)).toBe('');
     expect(git(root, ['rev-parse', 'HEAD^'])).toBe(base);
@@ -164,6 +180,15 @@ describe('architecture-projection publish-restamp', () => {
     expect(refused.status).toBe(1);
     expect(JSON.parse(refused.stdout)).toMatchObject({ status: 'skipped', reason: 'other-tracked-paths-dirty' });
     expect(git(dirty, ['rev-parse', 'HEAD'])).toBe(head);
+
+    const edited = fixture();
+    seedReceipt(edited, restampFor(edited));
+    writeFileSync(join(edited, ARCHITECTURE_PROJECTION_MANIFEST_PATH), '{ "not": "the approved output" }\n');
+    const editedHead = git(edited, ['rev-parse', 'HEAD']);
+    const unbound = cli(edited, ['architecture-projection', 'publish-restamp', '--json']);
+    expect(unbound.status).toBe(1);
+    expect(JSON.parse(unbound.stdout)).toMatchObject({ status: 'skipped', reason: 'receipt-binding-mismatch', detail: 'output' });
+    expect(git(edited, ['rev-parse', 'HEAD'])).toBe(editedHead);
   });
 });
 

@@ -22,7 +22,7 @@ import {
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
-import { reconcilePublication } from '../../src/effects/publication/publication-lifecycle';
+import { readPublicationIntegrationObservations, reconcilePublication } from '../../src/effects/publication/publication-lifecycle';
 import { observeProviderPullRequestIntegration, providerIntegrationFromJson, writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, leaseOwnerPath, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
@@ -97,7 +97,6 @@ function installFixture(options: FixtureOptions = {}): Fixture {
     repo_id: publicationSha256(resolveGitCommonDirectory(root)), task_id: taskId, task_revision: revision,
     claim_id: CLAIM, generation: 1, target_ref: 'main', base_sha: base, branch: 'codex/reconcile',
     head_sha: head, tree_sha: tree, candidate_diff_fingerprint: SUBJECT,
-    merge_seal_sha256: `sha256:${'5'.repeat(64)}`,
     provider: 'github', provider_repo_id: 'R_reconcile', pr_number: 1,
     pr_url: 'https://example.invalid/pr/1', created_at: '2026-08-22T04:05:55Z',
   });
@@ -296,6 +295,30 @@ describe('publication recovery and reconcile', () => {
   test('an OPEN provider PR with squash-absorbed content clears the lease with attention', () => withFixture({ integration: 'squash' }, (fixture) => {
     process.env.GH_PR_STATE = 'OPEN';
     delete process.env.GH_PR_MERGED_AT;
+    const result = reconcilePublication(reconcileInput(fixture));
+    expect(result).toMatchObject({ classification: 'integrated', integration_state: 'absorbed', attention: 'superseded_attention' });
+    expect(readLease(fixture.root, fixture.taskId).record).toBeNull();
+  }));
+
+  test('a candidate-supplied absorbed claim cannot substitute integration proof for an OPEN PR', () => withFixture({ integration: 'none' }, (fixture) => {
+    process.env.GH_PR_STATE = 'OPEN';
+    delete process.env.GH_PR_MERGED_AT;
+    // The adopted repository replaced the scaffolded helper with a shape-valid
+    // lie: it prints the expected prefix without proving absorption.
+    writeFileSync(join(fixture.root, 'scripts/worktree-merge-lib.sh'), [
+      '#!/bin/bash', 'set -euo pipefail',
+      'printf \'%s\\tabsorbed\\n\' "$3"', '',
+    ].join('\n'));
+    const before = readLease(fixture.root, fixture.taskId).raw;
+    expectLifecycleError(() => reconcilePublication(reconcileInput(fixture)), 'integration_unproven');
+    expect(readLease(fixture.root, fixture.taskId).raw).toBe(before);
+    expect(readPublicationIntegrationObservations(fixture.root, fixture.taskId, fixture.revision)).toEqual([]);
+  }));
+
+  test('classification runs the installed helper so an adopted repository needs no local merge lib copy', () => withFixture({ integration: 'squash' }, (fixture) => {
+    process.env.GH_PR_STATE = 'OPEN';
+    delete process.env.GH_PR_MERGED_AT;
+    rmSync(join(fixture.root, 'scripts/worktree-merge-lib.sh'));
     const result = reconcilePublication(reconcileInput(fixture));
     expect(result).toMatchObject({ classification: 'integrated', integration_state: 'absorbed', attention: 'superseded_attention' });
     expect(readLease(fixture.root, fixture.taskId).record).toBeNull();

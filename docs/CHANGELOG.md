@@ -4,12 +4,38 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+### Breaking changes
+
+- MCP `engineer_acquire` now acquires one offer from a trusted
+  `engineer_prepare` observation. It requires `idempotency_key` and
+  `observation_ref`. It no longer accepts `max_attempts`.
+  Call `engineer_prepare` first. Then call `engineer_acquire` with the
+  observation ref, one stable idempotency key, and all 13 fields of one offer
+  from that observation. The same key returns the stored result.
+- The first acquisition on a store requires the protocol 2 acquisition cutover
+  seal. A store with pre-existing receipts but no seal fails with
+  `engineer_acquisition_ledger_cutover_required`. A new empty store
+  initializes the seal itself.
+- A selected or automatic acquisition that is not an idle poll writes a
+  ledger receipt. The same key replays that stored result.
+- MCP acquisition now surfaces the typed `engineer_observation_*` and
+  `engineer_acquire_next_*` codes.
+
 ### Added
 
 - Add `repo-harness engineer acquire` to acquire one exact observed Work Package.
   The command checks the full assertion and uses a durable transaction key.
+- Add the `claim_actor_lease_unavailable` error code. Live Claim listing now
+  refuses a receipt whose Lease state is unknown. The receipt store stays valid.
+  Operators repair the Lease, not the receipt store.
 
 ### Changed
+
+- Unknown Leases now occupy a concurrency group. Only a proven-free Lease is
+  free capacity. The unknown reason is part of the concurrency revision.
+- Engineer acquisition reloads the Profile limit and counts live Claims under
+  the Engineer Binding lock before the Fleet mutation. A full Profile refuses
+  with `fleet_acquire_failed`.
 
 - Stop copying `workflow-state.sh` into consumer repositories during adoption.
   Use `repo-harness hook-lib path` to source the installed package library.
@@ -23,6 +49,15 @@ All notable changes to this skill are documented here.
 - `repo-harness run archive-workflow` and `repo-harness run summarize-failures`
   now use the package library. Edits in a repo-local `workflow-state.sh` copy
   no longer affect these commands.
+
+### Fixed
+
+- Managed Draft publication no longer needs a host merge seal. The publication
+  receipt moves to protocol 3 and records PR, head, base and candidate diff
+  identity only. Merge readiness still blocks a moved base. Receipt protocols 1
+  and 2 are retired and fail closed without migration.
+- Publication reopen, takeover and abandon now check historical publication
+  identity. A target base advance no longer blocks these repair transitions.
 
 ## [0.20.0] - 2026-10-05
 

@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
-import { cpSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync } from 'fs';
+import { cpSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -96,6 +96,17 @@ function sourceUnchanged(item: LeftoverItem, options: PlannerOptions): boolean {
     && hashUpgradeSource(item.sourcePath, options.packageRoot, item.sourceSurface) === item.expectedSourceHash;
 }
 
+/**
+ * An owned link stays a link and points at the current source. The install
+ * receipt then keeps its symlink type. Other targets become verified copies.
+ */
+function refreshedTargetMatches(item: LeftoverItem, path: string): boolean {
+  const snapshot = legacyPathSnapshot(path);
+  return item.expectedSymlinkTarget !== undefined
+    ? snapshot?.symlinkTarget === item.sourcePath
+    : snapshot?.contentHash === item.expectedSourceHash;
+}
+
 function refreshDirectory(
   item: LeftoverItem,
   options: PlannerOptions,
@@ -107,17 +118,21 @@ function refreshDirectory(
   const staging = join(stagingRoot, 'replacement');
   try {
     if (!sourceUnchanged(item, options)) return false;
-    execFileSync('bash', [join(options.packageRoot, 'scripts', 'sync-codex-installed-copies.sh'),
-      '--stage-owned-copy', item.sourcePath!, staging, item.sourceSurface!], {
-      env: { ...env, AGENTIC_DEV_SOURCE_ROOT: options.packageRoot }, stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    if (item.expectedSymlinkTarget !== undefined) {
+      symlinkSync(item.sourcePath!, staging, process.platform === 'win32' ? 'junction' : 'dir');
+    } else {
+      execFileSync('bash', [join(options.packageRoot, 'scripts', 'sync-codex-installed-copies.sh'),
+        '--stage-owned-copy', item.sourcePath!, staging, item.sourceSurface!], {
+        env: { ...env, AGENTIC_DEV_SOURCE_ROOT: options.packageRoot }, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    }
     dependencies.afterStage?.(item, staging);
-    if (legacyPathSnapshot(staging)?.contentHash !== item.expectedSourceHash
+    if (!refreshedTargetMatches(item, staging)
       || !sourceUnchanged(item, options) || !unchanged(item, options)
       || !planLegacyLeftovers(options).items.some((current) => itemKey(current) === itemKey(item)
         && current.action === 'refresh' && removable(current))) return false;
     if (!isLegacyPathSafe(options.home, stagingRoot, false)
-      || !isLegacyPathSafe(stagingRoot, staging, false)) throw new Error(`unsafe refresh staging: ${staging}`);
+      || !isLegacyPathSafe(stagingRoot, staging, item.expectedSymlinkTarget !== undefined)) throw new Error(`unsafe refresh staging: ${staging}`);
     onMutation();
     renameSync(item.path, join(stagingRoot, 'previous'));
     renameSync(staging, item.path);
@@ -309,8 +324,7 @@ function applyLocked(
       }
       for (const path of receiptPaths) {
         const item = candidates.find((candidate) => candidate.path === path && candidate.action === 'refresh')!;
-        if (!isLegacyPathSafe(options.home, path, false)
-          || legacyPathSnapshot(path)?.contentHash !== item.expectedSourceHash) {
+        if (!isLegacyPathSafe(options.home, path, item.expectedSymlinkTarget !== undefined) || !refreshedTargetMatches(item, path)) {
           throw new Error(`refreshed surface changed before ownership write: ${path}`);
         }
       }

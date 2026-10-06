@@ -116,9 +116,9 @@ function writeFakeGitleaks(dir: string, version = '8.30.0'): string {
 // oracle used with a profile binding must answer --help/--debug-help.
 const FAKE_ORACLE_HELP = 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --copy-profile <dir> --browser-chrome-profile <name> --chatgpt-url <url> --heartbeat <seconds>';
 
-function sessionDescriptorFixture(id: string, parent: string | null = null): string[] {
+function sessionDescriptorFixture(id: string, parent: string | null = null, runtime?: Record<string, unknown>): string[] {
   const descriptor = JSON.stringify({ protocol: 1, kind: 'oracle-session', sessionId: id, parentSessionId: parent });
-  const metadata = JSON.stringify({ id, browser: { modelSelection: { strategy: 'current', resolvedLabel: '6 Pro', verified: false } } });
+  const metadata = JSON.stringify({ id, browser: { modelSelection: { strategy: 'current', resolvedLabel: '6 Pro', verified: false }, ...(runtime ? { runtime } : {}) } });
   return [
     'SESSION=""', 'PREV=""',
     'for a in "$@"; do',
@@ -187,6 +187,129 @@ async function bindChromeProfile(repoRoot: string, opts: { profileDirectory?: st
   ]);
   expect(setup.status).toBe(0);
   return { userDataDir, profileDir };
+}
+
+// The native provider checks for the real Chrome executable before it calls
+// `open`; the harness below never executes it.
+const NATIVE_CHROME_PRESENT = process.platform === 'darwin'
+  && existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+
+interface FakeChromeOptions {
+  composerReady?: boolean;
+  capture?: { text: string; streaming: boolean };
+  failMethod?: string;
+}
+
+interface FakeChromeRun {
+  stdout: string;
+  stderr: string;
+  exitedOnItsOwn: boolean;
+  openArgs: string[];
+  methods: string[];
+  insertedTexts: string[];
+  closeCodes: number[];
+}
+
+/**
+ * Runs a native CLI command in a child process whose PATH holds only a fake
+ * `open`. The fake writes DevToolsActivePort for a loopback CDP stub instead of
+ * launching Chrome; without the fake, `open` does not resolve at all. The child
+ * keeps running while any CDP socket stays open, so a leak shows as a run that
+ * does not exit by itself.
+ */
+async function runWithFakeChrome(args: string[], opts: FakeChromeOptions = {}): Promise<FakeChromeRun> {
+  const methods: string[] = [];
+  const insertedTexts: string[] = [];
+  const closeCodes: number[] = [];
+  const capture = opts.capture ?? { text: 'stub answer', streaming: false };
+  const evaluate = (expression: string): unknown => {
+    if (expression.includes('ok: Boolean(element)')) return { ok: opts.composerReady !== false };
+    if (expression.includes('element.focus()')) return { ok: true };
+    if (expression.includes('button.click()')) return { ok: true };
+    if (expression.includes('const streaming')) return capture;
+    if (expression.includes('querySelectorAll')) return 0;
+    return 'https://chatgpt.com/c/fake-conversation';
+  };
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request, srv) {
+      if (new URL(request.url).pathname === '/json/version') {
+        return Response.json({ Browser: 'FakeChrome/1.0', webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/browser/fake` });
+      }
+      if (srv.upgrade(request)) return undefined;
+      return new Response('not found', { status: 404 });
+    },
+    websocket: {
+      message(ws, raw) {
+        const message = JSON.parse(String(raw)) as { id: number; method: string; params?: Record<string, unknown> };
+        methods.push(message.method);
+        if (message.method === opts.failMethod) {
+          ws.send(JSON.stringify({ id: message.id, error: { message: `stub ${message.method} failure` } }));
+          return;
+        }
+        let result: unknown = {};
+        if (message.method === 'Target.createTarget') result = { targetId: 'fake-target' };
+        if (message.method === 'Target.attachToTarget') result = { sessionId: 'fake-page-session' };
+        if (message.method === 'Input.insertText') insertedTexts.push(String(message.params?.text));
+        if (message.method === 'Runtime.evaluate') result = { result: { value: evaluate(String(message.params?.expression)) } };
+        ws.send(JSON.stringify({ id: message.id, result }));
+      },
+      close(_ws, code) {
+        closeCodes.push(code);
+      },
+    },
+  });
+  const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-chrome-bin-'));
+  try {
+    const openArgsPath = join(binDir, 'open.args');
+    writeFileSync(join(binDir, 'open'), [
+      '#!/bin/sh',
+      'DIR=""',
+      'for a in "$@"; do',
+      '  case "$a" in --user-data-dir=*) DIR="${a#--user-data-dir=}";; esac',
+      'done',
+      'printf "%s\\n" "$@" > "$FAKE_OPEN_ARGS_PATH"',
+      'printf "%s\\n%s\\n" "$FAKE_CDP_PORT" "/devtools/browser/fake" > "$DIR/DevToolsActivePort"',
+    ].join('\n') + '\n');
+    chmodSync(join(binDir, 'open'), 0o755);
+    const homeDir = mkdtempSync(join(binDir, 'home-'));
+    const child = Bun.spawn({
+      cmd: [process.execPath, CLI, 'chatgpt', ...args],
+      cwd: ROOT,
+      env: {
+        HOME: homeDir,
+        PATH: binDir,
+        TMPDIR: tmpdir(),
+        FAKE_CDP_PORT: String(server.port),
+        FAKE_OPEN_ARGS_PATH: openArgsPath,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const stdoutText = new Response(child.stdout).text();
+    const stderrText = new Response(child.stderr).text();
+    const exitedOnItsOwn = await Promise.race([
+      child.exited.then(() => true),
+      Bun.sleep(8_000).then(() => false),
+    ]);
+    // Read the stub before a forced kill: the kill itself drops the socket (1006).
+    const closeDeadline = Date.now() + 2_000;
+    while (exitedOnItsOwn && closeCodes.length === 0 && methods.length > 0 && Date.now() < closeDeadline) await Bun.sleep(10);
+    const observed = { methods: [...methods], insertedTexts: [...insertedTexts], closeCodes: [...closeCodes] };
+    if (!exitedOnItsOwn) child.kill('SIGKILL');
+    await child.exited;
+    return {
+      stdout: await stdoutText,
+      stderr: await stderrText,
+      exitedOnItsOwn,
+      openArgs: existsSync(openArgsPath) ? readFileSync(openArgsPath, 'utf-8').trimEnd().split('\n') : [],
+      ...observed,
+    };
+  } finally {
+    server.stop(true);
+    rmSync(binDir, { recursive: true, force: true });
+  }
 }
 
 describe('chatgpt browser command', () => {
@@ -1078,6 +1201,112 @@ describe('chatgpt browser command', () => {
     expect(capture).toEqual({ text: 'instant final', completed: true });
   });
 
+  const nativeConsultExitPaths: Array<{ label: string; chrome: FakeChromeOptions; status: string; code?: string }> = [
+    { label: 'a completed answer', chrome: {}, status: 'completed' },
+    { label: 'a composer that is not ready', chrome: { composerReady: false }, status: 'failed', code: 'LOGIN_OR_COMPOSER_NOT_READY' },
+    { label: 'an empty capture', chrome: { capture: { text: '', streaming: true } }, status: 'incomplete_capture', code: 'ASSISTANT_CAPTURE_TIMEOUT' },
+    { label: 'an unverified capture', chrome: { capture: { text: 'partial', streaming: true } }, status: 'incomplete_capture', code: 'ASSISTANT_CAPTURE_INCOMPLETE' },
+    { label: 'a CDP command error', chrome: { failMethod: 'Page.navigate' }, status: 'failed', code: 'NATIVE_PROVIDER_FAILED' },
+  ];
+  for (const keepBrowser of [true, false]) {
+    for (const exitPath of nativeConsultExitPaths) {
+      test.skipIf(!NATIVE_CHROME_PRESENT)(`native consult closes its CDP client after ${exitPath.label} (keepBrowser=${keepBrowser})`, async () => {
+        await withAsyncRepo(async (repoRoot) => {
+          const profileDir = join(repoRoot, 'automation-profile');
+          mkdirSync(profileDir);
+          const run = await runWithFakeChrome([
+            'browser-consult',
+            '--repo',
+            repoRoot,
+            '--provider',
+            'native',
+            '--profile-dir',
+            profileDir,
+            '--timeout-ms',
+            '1000',
+            ...(keepBrowser ? ['--keep-browser'] : []),
+            '--prompt',
+            'Native lifecycle probe.',
+          ], exitPath.chrome);
+          expect(run.openArgs).toContain('--remote-debugging-port=0');
+          const payload = JSON.parse(run.stdout);
+          expect(payload.status).toBe(exitPath.status);
+          if (exitPath.code) expect(payload.error.code).toBe(exitPath.code);
+          expect(run.methods.includes('Browser.close')).toBe(!keepBrowser);
+          expect(run.closeCodes).toEqual([1000]);
+          expect(run.exitedOnItsOwn).toBe(true);
+        });
+      }, 30_000);
+    }
+  }
+
+  // The follow-up guard runs before any Chrome check, so it holds on every host.
+  test('native consult refuses queued follow-ups before it opens Chrome', async () => {
+    await withAsyncRepo(async (repoRoot) => {
+      const profileDir = join(repoRoot, 'automation-profile');
+      mkdirSync(profileDir);
+      const run = await runWithFakeChrome([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--profile-dir',
+        profileDir,
+        '--timeout-ms',
+        '1000',
+        '--prompt',
+        'First turn.',
+        '--follow-up',
+        'Second turn.',
+      ]);
+      const payload = JSON.parse(run.stdout);
+      expect(payload.status).toBe('failed');
+      expect(payload.error.code).toBe('NATIVE_FOLLOWUPS_UNSUPPORTED');
+      expect(payload.error.message).toContain('1 queued follow-up');
+      expect(run.openArgs).toEqual([]);
+      expect(run.methods).toEqual([]);
+      expect(run.insertedTexts).toEqual([]);
+      expect(run.exitedOnItsOwn).toBe(true);
+    });
+  }, 30_000);
+
+  const nativeValidationExitPaths: Array<{ label: string; chrome: FakeChromeOptions; status: string }> = [
+    { label: 'a ready composer', chrome: {}, status: 'ready' },
+    { label: 'a login prompt', chrome: { composerReady: false }, status: 'login_required' },
+    { label: 'a CDP command error', chrome: { failMethod: 'Page.navigate' }, status: 'failed' },
+  ];
+  for (const keepBrowser of [true, false]) {
+    for (const exitPath of nativeValidationExitPaths) {
+      test.skipIf(!NATIVE_CHROME_PRESENT)(`native session validation closes its CDP client after ${exitPath.label} (keepBrowser=${keepBrowser})`, async () => {
+        await withAsyncRepo(async (repoRoot) => {
+          const profileDir = join(repoRoot, 'automation-profile');
+          mkdirSync(profileDir);
+          const run = await runWithFakeChrome([
+            'browser-doctor',
+            '--repo',
+            repoRoot,
+            '--provider',
+            'native',
+            '--validate-session',
+            '--profile-dir',
+            profileDir,
+            '--timeout-ms',
+            '1000',
+            ...(keepBrowser ? ['--keep-browser'] : []),
+            '--json',
+          ], exitPath.chrome);
+          expect(run.openArgs).toContain('--remote-debugging-port=0');
+          const readiness = JSON.parse(run.stdout);
+          expect(readiness.native.productSession.validation.status).toBe(exitPath.status);
+          expect(run.methods.includes('Browser.close')).toBe(!keepBrowser);
+          expect(run.closeCodes).toEqual([1000]);
+          expect(run.exitedOnItsOwn).toBe(true);
+        });
+      }, 30_000);
+    }
+  }
+
   test('oracle rejects unsupported versions uniformly before consultation side effects', async () => {
     await withRepo(async (repoRoot) => {
       const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-version-policy-'));
@@ -1234,6 +1463,112 @@ describe('chatgpt browser command', () => {
       }
     });
   }, 15_000);
+
+  test('oracle timeout after a recorded prompt submission stays recoverable for browser-followup', async () => {
+    if (process.platform === 'win32') return;
+    await withAsyncRepo(async (repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-submitted-timeout-'));
+      try {
+        const submittedPath = writeFakeOracle(join(binDir, 'oracle-submitted'), {
+          body: [
+            ...sessionDescriptorFixture('oracle_timeout_123', null, { promptSubmitted: true, conversationId: 'conv-timeout-123' }),
+            'while :; do sleep 1; done',
+          ],
+        });
+        const consult = await runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--oracle-bin',
+          submittedPath,
+          '--timeout-ms',
+          '100',
+          '--prompt',
+          'Submit, then outlive the workload timeout.',
+        ]);
+        const payload = JSON.parse(consult.stdout);
+        expect(payload).toMatchObject({ status: 'recoverable', error: { code: 'ORACLE_TIMEOUT_AFTER_SUBMIT' } });
+        expect(payload.error.message).toContain('timed out after 100ms');
+        const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+        expect(meta.status).toBe('recoverable');
+        expect(meta.providerSessionId).toBe('oracle_timeout_123');
+
+        const followupPath = writeFakeOracle(join(binDir, 'oracle-followup'), {
+          body: [
+            ...sessionDescriptorFixture('oracle_followup_789', 'oracle_timeout_123'),
+            'ARGS="$*"',
+            'OUT=""',
+            'PREV=""',
+            'for a in "$@"; do',
+            '  if [ "$PREV" = "--write-output" ]; then OUT="$a"; fi',
+            '  PREV="$a"',
+            'done',
+            'printf "%s\\n" "Oracle saw: $ARGS" > "$OUT"',
+          ],
+        });
+        const followup = await runChatgpt([
+          'browser-followup',
+          '--repo',
+          repoRoot,
+          '--session',
+          payload.sessionId,
+          '--prompt',
+          'Continue the interrupted conversation.',
+          '--oracle-bin',
+          followupPath,
+        ]);
+        expect(followup.status).toBe(0);
+        const followupPayload = JSON.parse(followup.stdout);
+        expect(followupPayload.status).toBe('completed');
+        expect(readFileSync(followupPayload.paths.output, 'utf-8')).toContain('--followup oracle_timeout_123');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle timeout with a session descriptor but no submission record stays failed', async () => {
+    if (process.platform === 'win32') return;
+    await withAsyncRepo(async (repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-unsubmitted-timeout-'));
+      try {
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+          body: [
+            ...sessionDescriptorFixture('oracle_timeout_456', null, { promptSubmitted: false }),
+            'while :; do sleep 1; done',
+          ],
+        });
+        const consult = await runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--oracle-bin',
+          oraclePath,
+          '--timeout-ms',
+          '100',
+          '--prompt',
+          'Time out before the prompt lands.',
+        ]);
+        const payload = JSON.parse(consult.stdout);
+        expect(payload).toMatchObject({ status: 'failed', error: { code: 'ORACLE_EXEC_FAILED' } });
+        const followup = await runChatgpt([
+          'browser-followup',
+          '--repo',
+          repoRoot,
+          '--session',
+          payload.sessionId,
+          '--prompt',
+          'Continue.',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        expect(followup.status).not.toBe(0);
+        expect(followup.stderr).toContain('with status "failed"');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
 
   test('oracle provider reads the --write-output answer file and treats stdout as logs', async () => {
     await withRepo(async (repoRoot) => {

@@ -175,7 +175,7 @@ function acquireFixture(): AcquireFixture {
   writeFileSync(join(repo, 'tasks/todos.md'), '# Deferred goals\n');
   writeFileSync(join(repo, 'src/index.ts'), 'export const business = false;\n');
   mkdirSync(join(repo, 'tests'), { recursive: true });
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { 'check:type': 'bun typecheck.ts' } }));
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { 'check:type': 'bun typecheck.ts', test: 'bun test' } }));
   writeFileSync(join(repo, 'typecheck.ts'), 'import { business } from "./src/index"; if (typeof business !== "boolean") throw Error("invalid business type");\n');
   writeFileSync(join(repo, 'tests/business.test.ts'), 'import { expect, test } from "bun:test"; import { business } from "../src/index"; test("business change", () => expect(business).toBe(true));\n');
   writeFileSync(join(repo, '.gitignore'), '.ai/harness/*\n!.ai/harness/policy.json\n');

@@ -40,7 +40,6 @@ const receipt = buildPublicationReceipt({
   head_sha: HEAD,
   tree_sha: 'c'.repeat(40),
   candidate_diff_fingerprint: 'sha256:' + '4'.repeat(64),
-  merge_seal_sha256: 'sha256:' + '6'.repeat(64),
   provider: 'github',
   provider_repo_id: 'R_readiness_effect',
   pr_number: 42,
@@ -397,7 +396,7 @@ test('review decision movement after facts prevents a green verdict', () => {
 
 // Provider commit responses come from real Git objects, including root and merge commits.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -517,5 +516,35 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     }
     git('checkout', '-qb', 'squash-rollback', squashed); git('revert', '--no-edit', squashed);
     expect(git('rev-parse', 'HEAD^{tree}')).toBe(git('rev-parse', `${base}^{tree}`));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('publication integration classification uses the installed helper without a repo-local merge lib copy', () => {
+  const root = mkdtempSync(join(tmpdir(), 'readiness-installed-helper-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  try {
+    git('init', '-b', 'main'); git('config', 'user.name', 'Readiness fixture'); git('config', 'user.email', 'readiness@test.invalid');
+    writeFileSync(join(root, 'feature'), 'base'); git('add', '.'); git('commit', '-qm', 'base');
+    git('switch', '-qc', 'codex/adopted');
+    writeFileSync(join(root, 'feature'), 'changed'); git('add', '.'); git('commit', '-qm', 'candidate');
+    const head = git('rev-parse', 'HEAD');
+    const tree = git('rev-parse', 'HEAD^{tree}');
+    git('switch', '-q', 'main'); git('merge', '--squash', 'codex/adopted'); git('commit', '-qm', 'squash');
+    const base = git('rev-parse', 'HEAD');
+    expect(existsSync(join(root, 'scripts/worktree-merge-lib.sh'))).toBe(false);
+    const adopted = buildPublicationReceipt({
+      repo_id: 'sha256:' + '5'.repeat(64), task_id: TASK_ID, task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
+      target_ref: 'main', base_sha: base, branch: 'codex/adopted', head_sha: head, tree_sha: tree,
+      candidate_diff_fingerprint: 'sha256:' + '6'.repeat(64), provider: 'github', provider_repo_id: 'R_readiness_adopted',
+      pr_number: 43, pr_url: 'https://example.invalid/pr/43', created_at: '2026-08-22T22:40:00Z',
+    });
+    const verdict = resolvePublicationReadiness({ repo_root: root, publication_id: adopted.publication_id }, {
+      ...productionMergeReadinessCollector,
+      resolve_receipt: () => adopted,
+      observe_identity: () => ({ ...providerIdentity, base_sha: base, head_sha: head }),
+      observe_facts: () => ({ ...providerFacts, head_sha: head, base_sha: base }),
+    });
+    expect(verdict.integration_mode).toBe('absorbed');
+    expect(verdict.blockers.map(blocker => blocker.code)).toContain('already_integrated');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

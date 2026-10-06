@@ -445,6 +445,10 @@ type OperatorCollaborationWorkerResponse =
       readonly code: OperatorCollaborationErrorCode;
     };
 
+// Observation children are read-only. Git must not fetch promised objects,
+// take optional locks or prompt. Apply these last so caller values cannot reopen them.
+const OPERATOR_READ_ONLY_GIT_ENVIRONMENT = { GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;
+
 function collaborationWorkerEnvironment(env: NodeJS.ProcessEnv | undefined): Record<string, string> | undefined {
   if (env === undefined) return undefined;
   return Object.fromEntries(
@@ -485,7 +489,7 @@ function readDefaultCollaborationSnapshot(
         repository_id: input.repository_id,
         decision_after: input.decision_after ?? null,
       },
-      env: { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT },
     });
     let settled = false;
     let result:
@@ -719,7 +723,7 @@ function readSupervisedOperatorProcess<T>(input: {
 }): Promise<T> {
   if (input.signal.aborted) return Promise.reject(new OperatorFleetTimeoutError());
   return new Promise((resolveRead, rejectRead) => {
-    const workerEnvironment = { ...process.env, ...collaborationWorkerEnvironment(input.env) };
+    const workerEnvironment = { ...process.env, ...collaborationWorkerEnvironment(input.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT };
     const collector = process.platform === 'win32'
       ? null
       : spawn(process.execPath, [input.process_path], {
@@ -1403,7 +1407,7 @@ export async function startOperatorServer(
       })
       : readSupervisedOperatorProcess<TSnapshot>({
         process_path:fileURLToPath(new URL('./task-read-process.ts',import.meta.url)),
-        env:{...options.env,GIT_NO_LAZY_FETCH:'1',GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'},
+        env:options.env,
         signal:controller.signal,
         start:{type:'start',protocol:1,kind,request:input,env:collaborationWorkerEnvironment(options.env)},
         response:value=>{

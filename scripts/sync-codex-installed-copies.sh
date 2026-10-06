@@ -71,10 +71,12 @@ if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" pr
 fi
 SELECTED_FACADES=""
 PROVIDER_PLACEMENTS=""
+INTEGRATION_NAMES=""
 while IFS=$'\t' read -r projection_kind projection_value; do
   case "$projection_kind" in
     facade) SELECTED_FACADES+="${SELECTED_FACADES:+$'\n'}$projection_value" ;;
     provider) PROVIDER_PLACEMENTS+="${PROVIDER_PLACEMENTS:+$'\n'}$projection_value" ;;
+    integration) INTEGRATION_NAMES+="${INTEGRATION_NAMES:+$'\n'}$projection_value" ;;
   esac
 done <<< "$PROFILE_PROJECTION"
 
@@ -295,6 +297,12 @@ provider_skill_for_root() {
   [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$PROVIDER_PLACEMENTS"
 }
 
+# An integration (for example repo-harness-chatgpt) is linked by its own
+# explicit setup command. Facade preflight and retirement never own it.
+integration_skill() {
+  [[ -n "$INTEGRATION_NAMES" ]] && grep -Fxq "$1" <<< "$INTEGRATION_NAMES"
+}
+
 preflight_skill_root() {
   local root="$1"
   [[ -n "$root" ]] || return 0
@@ -310,6 +318,7 @@ preflight_skill_root() {
     # facades, so this loop must neither require a command-facade owner marker
     # nor retire them. Profile cleanup owns provider retirement.
     provider_skill_for_root "$root" "$name" && continue
+    integration_skill "$name" && continue
     source_rel="$(facade_source_for "$name")"
     source=""
     [[ -n "$source_rel" ]] && source="$SOURCE_ROOT/$source_rel"
@@ -342,6 +351,7 @@ remove_retired_owned_facades() {
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
     provider_skill_for_root "$root" "$name" && continue
+    integration_skill "$name" && continue
     facade_selected "$name" && continue
     source_rel="$(facade_source_for "$name")"
     source=""

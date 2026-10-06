@@ -1,6 +1,6 @@
 # Plan: Operator UI 改版（Architecture / Docs / Pipeline / Agent config）
 
-> **Status**: Draft（§11 的 13 项已由 Aimpact 在 2026-10-05 11:18 HKT 决定；写代码前仍需 Aimpact 批准本 plan）
+> **Status**: Draft（§11 的 13 项默认值按 Dot 的 13 条建议锁定：Aimpact 2026-10-06 03:22 接受，Dot 03:23 无异议。#1 是第一版用轻量 SVG，不引入 xyflow + dagre。#2、#4 核对完成之前 D0 不验收。默认值不等于部署或切换完成。写代码前仍需 Aimpact 批准本 plan）
 > **Created**: 20261005-0405
 > **Slug**: operator-ui-revamp
 > **Planning Source**: claude-plan
@@ -11,7 +11,7 @@
 > **Rollback Surface**: 每个 phase 单独 `git revert <squash-commit>`；ledger 数据只增不改
 > **Baseline**: `main@ac21fbdd`（最初在 `39d4e9ed` 上核对；2026-10-05 在 `ac21fbdd` 上复核，见 §12 第三轮）
 > **Spec**: `docs/spec.md`
-> **Sources**: Claude 会话 "visualze"（2026-10-05 03:45 HKT 方案）；Dot 的评审（Aimpact 已全部接受）；Aimpact 附录（graph 库选型）；Aimpact Addendum 2（04:00-04:08 HKT：prior art、D0 细节、packet/GET 安全/图/Agent config/设置措辞）；Aimpact 决定（2026-10-05 11:18 HKT，经 Grok，见 §11）
+> **Sources**: Claude 会话 "visualze"（2026-10-05 03:45 HKT 方案）；Dot 的评审（Aimpact 已全部接受）；Aimpact 附录（graph 库选型）；Aimpact Addendum 2（04:00-04:08 HKT：prior art、D0 细节、packet/GET 安全/图/Agent config/设置措辞）；Aimpact 决定（2026-10-05 11:18 HKT，经 Grok；其中 #1 选 xyflow + dagre 的决定已被取代）；Dot 的 13 条建议（Slack #bot-worker，2026-10-05 11:14；Aimpact 2026-10-06 03:22 接受；Dot 2026-10-06 03:23 无异议；见 §11）
 
 本文件位置说明：任务简报建议 `docs/plans/operator-ui-revamp.md`。仓库已有 plan 位置 `plans/`，命名规则是 `plan-YYYYMMDD-HHMM-<slug>.md`。所以本 plan 放在 `plans/`。
 
@@ -53,7 +53,7 @@
 4. **Pipeline 数据（D0）**：让 ledger 有真实数据。内容包括 Bot 事件接入、task/run 身份、幂等、一台在线主机上的一个权威 ledger、存储健康状态。
 5. **Pipeline 可视化（D1）**：阶段轨道、门禁缺口和时间线。
 6. **Agent config 页面**：一个只读页面，不是一个工作区。内容包括 CLAUDE.md/AGENTS.md 共享规则块的比较、capability 本地合约文件、fleet 角色、engineer profile、skill、硬规则来源和 herdr dispatch 规则。
-7. **整体方向（Aimpact 2026-10-05 已决定，§11 #1、#12）**：前端用 React，图用 React Flow（`@xyflow/react` 12）+ `@dagrejs/dagre`。diff 的 `@git-diff-view/react` 在 Phase C 小范围评估。不做只读 xterm，终端输出改为脱敏后的文本日志。服务端只提供 GET，不做 SSE；前端 30 秒轮询，带 ETag 和退避，页面隐藏时暂停（现有 hook 的行为，比降频更省）。ETag 是新增工作，在 Phase B 交付（§6.1）。没有任何修改类端点，只读由架构保证。UI 上每一个「动作」按钮都改成「复制 Bot 命令」。
+7. **整体方向（§11 #1、#12，Dot 的默认值，Aimpact 2026-10-06 接受）**：前端用 React。第一版的图用自己写的轻量 SVG，不引入 `@xyflow/react` 和 `@dagrejs/dagre`，不新增依赖。diff 的 `@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估。不做只读 xterm，终端输出改为脱敏后的文本日志。服务端只提供 GET，不做 SSE；前端 30 秒轮询，带 ETag 和退避，页面隐藏时暂停（现有 hook 的行为，比降频更省）。ETag 是新增工作，在 Phase B 交付（§6.1）。没有任何修改类端点，只读由架构保证。UI 上每一个「动作」按钮都改成「复制 Bot 命令」。
 
 ### 非目标
 - 不加写路由，不在 UI 里派任务，不在 UI 里改文档或配置。
@@ -261,7 +261,7 @@
   - 只比较**声明为共享**的块。每个块用稳定的规则 ID 作为键。
   - 现状：根目录 `CLAUDE.md` 和 `AGENTS.md` 里没有任何块标记或规则 ID（grep `<!--` 为 0）。两边各有四个共享主题章节：`Workflow`、`Code Optimization Principles`、`Testing` 和 `Handoff`；`Claude Code` 和 `Codex` 是宿主章节。
   - **没有规则 ID 时，不做 drift 判定**：页面对应章节显示文本 diff，drift 一律显示 `not-declared`。标题对应不能证明块已声明共享，也不能证明规则逐项对应。标题对齐只用于排版。
-  - 要做真正的 drift 判定，需要先在两份文件里加共享块标记和稳定规则 ID。Aimpact 已决定（§11 #9）：规则 ID 只加在有意共享的块上；同一个 ID 重复出现时显示 `not-declared` 或 `invalid`；不做自动同步。
+  - 要做真正的 drift 判定，需要先在两份文件里加共享块标记和稳定规则 ID。已决定（§11 #9）：规则 ID 只加在有意共享的块上；没有 ID 时显示 `not-declared`；同一个 ID 重复出现时显示 `invalid`；不做自动同步。
   - **diff 不等于 drift**：页面显示 diff。只有声明为共享的块内容不同，才标成 drift。宿主章节的差异标成「host-specific（预期不同）」。
   - 永远不自动同步。
 - **来源版本**：
@@ -300,47 +300,49 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 
 | 选项 | License | 解包大小 | 直接依赖 | 是否适合当前栈 | 结论 |
 |---|---|---|---|---|---|
-| **@xyflow/react 12.12.0**（React Flow） | MIT | 1.22 MB，另有 `@xyflow/system` 0.0.83 0.69 MB | 3 个（zustand、classcat、@xyflow/system） | React 组件；peer `react >=17`，支持 React 19；节点可以用自己的 React 组件和 CSS token 渲染 | **推荐** |
-| ＋ **@dagrejs/dagre 3.1.1** | MIT | 1.41 MB | 1 个（@dagrejs/graphlib） | 纯 JS 分层布局，适合 LR 方向的一跳图 | **推荐的布局库** |
+| **轻量 SVG（自己写）** | — | — | 0 个 | React 直接渲染 `<svg>`；一跳图是固定的三列，每侧折叠后最多 9 个节点，不需要布局库；节点直接用 CSS token 和 i18n | **第一版采用（§11 #1）** |
+| @xyflow/react 12.12.0（React Flow） | MIT | 1.22 MB，另有 `@xyflow/system` 0.0.83 0.69 MB | 3 个（zustand、classcat、@xyflow/system） | React 组件；peer `react >=17`，支持 React 19；节点可以用自己的 React 组件和 CSS token 渲染 | 第一版不引入（§11 #1）。以后重新评估时是首选候选 |
+| ＋ @dagrejs/dagre 3.1.1 | MIT | 1.41 MB | 1 个（@dagrejs/graphlib） | 纯 JS 分层布局，适合 LR 方向的图 | 第一版不引入（§11 #1）。和 xyflow 一起重新评估 |
 | ＋ elkjs 0.12.0 | EPL-2.0 OR GPL-3.0-or-later | 8.05 MB | 0 个 | 布局质量更好，但对 ≤20 个节点的一跳图是多余的 | 不选：license 更重，体积大 |
 | dagre 0.8.5（旧包） | MIT | 0.84 MB | 2 个（graphlib、lodash） | 维护已经转到 `@dagrejs/dagre` | 不选 |
-| Cytoscape.js 3.34.3 | MIT | 5.70 MB | 0 个 | 命令式 canvas API，不是 React 组件；节点不能直接复用 CSS token 和 i18n | 不选（React Flow 已批准，§11 #1） |
+| Cytoscape.js 3.34.3 | MIT | 5.70 MB | 0 个 | 命令式 canvas API，不是 React 组件；节点不能直接复用 CSS token 和 i18n | 不选 |
 | C4 model / Structurizr 风格视图 | Structurizr 工具链（unverified） | — | — | C4 是一种表示法，不是渲染库。archctx 已导出 `architecture.structurizr.json`，但 JS 端没有可嵌入的渲染器（unverified） | **只借用表示法**：capability 按 container 画，component 按 component 画 |
 | @backstage/plugin-catalog-graph 0.6.8 | Apache-2.0 | 0.35 MB（只算自身） | 17 个，包括 `@material-ui/core` v4、`@backstage/core-components` 和 catalog-client | 需要 Backstage app 外壳和 catalog 后端；MUI v4 是 React 17 时代的库 | 不选 |
 | Mermaid 12.1.0 | MIT | 122 MB | 23 个 | 静态渲染。官方支持节点点击回调和外链（mermaid.js.org flowchart interaction），但没有一跳聚焦视图，体积和安全面也大 | 运行时不选。archctx 已生成 `.mmd`，静态导出继续用它 |
 | D2 | MPL-2.0 | — | Go 二进制 | 需要外部工具链，在服务端渲染 | 不选 |
 | LikeC4（参考） | MIT | 13.19 MB（likec4 1.59.4） | — | 它本身就用 xyflow + dagre + xstate。一个模型投影成多个视图，还有动态 flow 视图。archctx 已经能导出 `architecture.likec4` | **只借用模型/视图的思路**，不引入这个包 |
 
-**已批准方案（Aimpact 2026-10-05，§11 #1）**：`@xyflow/react` 12 + `@dagrejs/dagre`，两者都放在 devDependencies，打进 `dist/operator-ui`。
-- **依赖成本的边界**：表里只列了每个包固定版本下的**直接**依赖。`@xyflow/system` 0.0.83 的直接依赖共 9 个：运行时是 `d3-drag`、`d3-interpolate`、`d3-selection`、`d3-zoom` 四个，另有五个 `@types/*` 包（包括 `@types/d3-transition`；`d3-transition` 本身不是直接依赖，npm registry 2026-10-05 查询）。完整传递闭包**没有统计，unverified**，留到引入依赖的阶段验证。不能用顶层 MIT 推断整个依赖图的 license。已核对的部分（`npm view`，2026-10-05）：`d3-zoom`、`d3-drag`、`d3-selection`、`d3-interpolate`、`d3-color`、`d3-dispatch`、`d3-timer`、`d3-transition` 是 ISC，`d3-ease` 是 BSD-3-Clause，`zustand`、`classcat`、`@dagrejs/graphlib` 是 MIT。所以传递依赖的 license 规则按 §5A.6 的宽松许可白名单执行。B 阶段用构建产物测量实际打包体积。
-- **集成细节**：`@xyflow/react/dist/style.css` 只在 Architecture 的 lazy chunk 里 import，不进 Overview 首屏。画布容器要有明确的宽和高。happy-dom 不做布局，所以边、节点位置和折叠的断言放在 core 投影测试里；UI 测试只断言邻居列表。一跳视图同时提供邻居列表（也就是「N more」展开后的列表），作为键盘可访问的替代视图。
-- 一跳子图在 core 里用纯函数计算，服务端返回 `{nodes, edges}`。前端只负责布局和交互，不在前端推导模型关系。
+**第一版方案（§11 #1，Dot 的默认值，Aimpact 2026-10-06 接受）**：自己写轻量 SVG。不引入 `@xyflow/react` 和 `@dagrejs/dagre`。`package.json` 和 `bun.lock` 不变。这个默认值取代了 2026-10-05 11:18 HKT 选 xyflow + dagre 的决定，也取代了任务附录「不用自绘 SVG」的要求。
+- **画法**：`ModuleGraph.tsx` 直接渲染 `<svg>`。一跳图固定三列：左列是调用方，中列是中心模块和它的子 component，右列是被调用方。每侧折叠后最多 8 个节点加一个「N more」节点（§11 #13），所以列内按顺序等距排列。`calls` 边画成带箭头的线；非 `calls` 关系画成无箭头的虚线并标出种类（§4.2）。节点用现有的 CSS token 和 i18n 文本。
+- **测试位置**：happy-dom 不做布局，所以边、折叠和端点的断言放在 core 投影测试里；UI 测试断言邻居列表。一跳视图同时提供邻居列表（也就是「N more」展开后的列表），作为键盘可访问的替代视图。
+- **重新评估的条件**：以后需要全图、自动布局，或者交互超出轻量 SVG 的能力时，再单独批准一次 xyflow + dagre 的评估。上表的数据和下面的依赖成本留作那次评估的起点。
+- **依赖成本的边界（只用于以后的重新评估）**：表里只列了每个包固定版本下的**直接**依赖。`@xyflow/system` 0.0.83 的直接依赖共 9 个：运行时是 `d3-drag`、`d3-interpolate`、`d3-selection`、`d3-zoom` 四个，另有五个 `@types/*` 包（包括 `@types/d3-transition`；`d3-transition` 本身不是直接依赖，npm registry 2026-10-05 查询）。完整传递闭包**没有统计，unverified**，留到引入依赖的阶段验证。不能用顶层 MIT 推断整个依赖图的 license。已核对的部分（`npm view`，2026-10-05）：`d3-zoom`、`d3-drag`、`d3-selection`、`d3-interpolate`、`d3-color`、`d3-dispatch`、`d3-timer`、`d3-transition` 是 ISC，`d3-ease` 是 BSD-3-Clause，`zustand`、`classcat`、`@dagrejs/graphlib` 是 MIT。重新评估时，传递依赖的 license 规则按 §5A.6 的宽松许可白名单执行，并用构建产物测量实际打包体积。
+- 一跳子图在 core 里用纯函数计算，服务端返回 `{nodes, edges}`。前端只负责三列排布和交互，不在前端推导模型关系。
 - 只在 Architecture chunk 里按需加载，Overview 的首屏体积不变。
 - 静态导出不新增任何依赖。Docs 和 PR 场景继续用 archctx 生成的 Mermaid、Structurizr 和 LikeC4 文件。
-- Aimpact 已批准这两个新依赖，Cytoscape.js 备选不再需要。自绘 SVG 已经被任务附录否决，不再是选项。见 §11 #1。
 
 ---
 
 ## 5A. Prior art / OSS reuse（按模块）
 
-本节的库选择已由 Aimpact 在 2026-10-05 决定（§11 #1）：批准 xyflow + dagre；`@git-diff-view/react` 在 Phase C 小范围评估；只读 xterm 取消。其他项目仍然只借用思路。
+本节的库选择按 §11 #1（Dot 的默认值，Aimpact 2026-10-06 接受）：第一版用轻量 SVG，不引入 xyflow + dagre；`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估；只读 xterm 取消。其他项目仍然只借用思路。
 - 「仓库」一列的 license 来自 Addendum 2 的调研（GitHub API，2026-10-05，Aimpact 提供），我没有重新核对。
 - npm 包的 license 和版本是我在 2026-10-05 用 `npm view` 重新核对的（verified）。
 
 ### 5A.1 Architecture 图
-- 候选：React Flow（`@xyflow/react` 12.12.0，MIT）+ `@dagrejs/dagre` 3.1.1（MIT）。比较见 §5。
+- 第一版：自己写的轻量 SVG（§5）。React Flow（`@xyflow/react` 12.12.0，MIT）+ `@dagrejs/dagre` 3.1.1（MIT）第一版不引入，只留作以后重新评估的候选。比较见 §5。
 - 参考 LikeC4（`likec4` 1.59.4，MIT）：同一个模型投影成多个视图，flow 用动态视图展示。可以借用的部分是：
   - 一跳视图和全图视图从同一个 core 投影里取数据。
   - 把 `flows/*.yaml` 的 steps 画成按步骤编号的动态视图（P1）。
 - xstate（5.33.2，MIT）不需要。视图状态只有「中心节点」和「折叠状态」两个，React 自己的 state 就够了。
-- 已批准：xyflow + dagre，借用 LikeC4 的模型/视图思路（§11 #1）。
+- 决定：第一版用轻量 SVG，借用 LikeC4 的模型/视图思路；不引入 xyflow + dagre（§11 #1）。
 
 ### 5A.2 Docs 索引
 - 参考 Backlog.md（`backlog.md` 1.53.0，MIT，Bun，用 markdown 和 frontmatter 的 status 驱动本地 web 看板）：
   - 可以借用：状态列视图，以及「文件就是数据，UI 只读」的模式。
   - 不引入它的运行时。
 - gray-matter（4.0.3，MIT）和 velite（0.4.0，MIT，用 Zod 校验）**和当前仓库不匹配**。原因：仓库文档的头部是 blockquote `> **Key**: value`，不是 YAML frontmatter（§3.7）。现有的 `markdownHeader`（`artifact-parsers.ts:31`）已经能解析，所以不新增依赖。如果以后文档改用 frontmatter，再重新评估这两个库。
-- 参考 Quartz 的图视图：只借用局部图和反向链接的展示思路。文档图用的渲染组件和 Architecture 一样，也是 xyflow，不另引入一套。
+- 参考 Quartz 的图视图：只借用局部图和反向链接的展示思路。文档图用和 Architecture 相同的轻量 SVG 画法，不引入图库（§11 #1）。轻量画法放不下整张图时，先用列表和以选中节点为中心的一跳视图；引入布局库要重新批准。
 - 提议：沿用现有解析器，渲染组件和 Architecture 共用。
 
 ### 5A.3 Pipeline
@@ -355,8 +357,8 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 - `h0x91b/dev-3.0`（Apache-2.0，Bun + React + tmux + worktree，有一列「Has Questions」）：只作参考。「Has Questions」在 P1 概览里对应 herdr 的 `blocked`（需要人处理）。ledger 的 `waiting_input` 由同一个 herdr 状态投影而来（`projection.ts:17`）；`waiting_approval` 现在没有产生方（§3.4），显示 `unknown`。
 - ccmanager（MIT）：借用 busy/waiting/idle 的检测思路。P1 概览的数据来源只有 herdr 的 `agent_status` 和 task-agent 会话文件，不读终端屏幕，也不依赖 ledger。D0 有真实数据以后，可以再叠加 ledger 的 run 状态，那是单独的增量。
 - opensessions（**没有 license**）：只借用「agent 主动推送状态」的思路，不复制任何代码。这个思路对应 D0 的事件接入。
-- 终端输出：**不做只读 xterm**（Aimpact 2026-10-05，§11 #1）。终端历史不在 P1 概览范围里。以后要显示时另行批准：它需要 `herdr agent read`，这个动词现在不在 §6.8 的 argv 白名单里，而且只能显示脱敏后的纯文本日志。
-- diff：`@git-diff-view/react`（0.1.7，MIT，解包 1.31 MB）在 Phase C 小范围评估（§11 #1），评估通过后才替换现有 `TaskDiff.tsx`。0.x 版本说明 API 可能还不稳定。
+- 终端输出：**不做只读 xterm**（§11 #1）。终端历史不在 P1 概览范围里。以后要显示时另行批准：它需要 `herdr agent read`，这个动词现在不在 §6.8 的 argv 白名单里，而且只能显示脱敏后的纯文本日志。
+- diff：`@git-diff-view/react`（0.1.7，MIT，解包 1.31 MB）是可选项，Phase C 可以做一次小范围评估（§11 #1）。评估本身不改 `package.json`。评估通过后，引入它要按 §5A.6 单独批准，批准后才替换现有 `TaskDiff.tsx`。0.x 版本说明 API 可能还不稳定。
 
 ### 5A.5 Agent config 查看
 - 自己写只读解析器，不引入第三方配置管理工具。
@@ -375,7 +377,7 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 
 规则：
 - **直接依赖**：只有 MIT 或 Apache-2.0 的 npm 包可以作为候选，而且每个都要单独批准。
-- **传递依赖**：允许宽松许可白名单 MIT、Apache-2.0、ISC、BSD-2-Clause、BSD-3-Clause（xyflow 的 d3-* 是 ISC，`d3-ease` 是 BSD-3-Clause）。白名单以外的 license 出现在闭包里时，停下来单独批准。引入依赖的 PR 要附上完整闭包的 license 清单。
+- **传递依赖**：允许宽松许可白名单 MIT、Apache-2.0、ISC、BSD-2-Clause、BSD-3-Clause（例如 xyflow 的 d3-* 是 ISC，`d3-ease` 是 BSD-3-Clause，用于以后的重新评估）。白名单以外的 license 出现在闭包里时，停下来单独批准。引入依赖的 PR 要附上完整闭包的 license 清单。
 - 其他项目一行代码也不复制。
 
 ---
@@ -556,7 +558,7 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
 - **产品线**：A → 轻量 B → C（含 Agent config）。
 - **数据线**：D0（合约 + fixture + 试点）→ 真实接入 → D1。
 
-D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，不等两条线都完成（§11 #6，见本节「P1 其余项」）；P2 最后做。每个 phase 一个 PR。分工按 Model Division：后端、CLI 和测试由 Codex 做，前端由 Claude 做。每个 phase 结束时运行：
+D0 不阻塞 A、B、C，只阻塞 D1。A 和轻量 B 与 D0 并行。P1 其余项按各自的依赖排期，不等两条线都完成，也不阻塞轻量 B（§11 #6，见本节「P1 其余项」）；P2 最后做。每个 phase 一个 PR。分工按 Model Division：后端、CLI 和测试由 Codex 做，前端由 Claude 做。每个 phase 结束时运行：
 - `bun run check:type`
 - `bun run test:files <受影响的测试> --timeout 60000 --max-concurrency 1`
 - 涉及前端时运行 `bun run build:operator-web`，并在真实浏览器里打开截图。
@@ -614,7 +616,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | 2 | 结果收集 | `assets/skill-commands/repo-harness-check/SKILL.md:9`（verify）、`assets/skills/repo-harness-cross-review/references/generic-review.md`；herdr webhook → Bot → `ingest-event` | herdr 的 `done` 只记成一条**通知**，不算阶段通过。现有代码已经这样处理：没有完整身份的 done/blocked 事件会记成 `weak_observation`（`ingest.ts`）。阶段结果只来自经过 sourceAuthority 校验的 result 和 `record --kind evidence` |
 | 3 | 审批和收尾 | `assets/skill-commands/repo-harness-ship/SKILL.md:10-20`（返回 PR URL 和 head SHA） | 记录真实的批准或拒绝，以及 PR 和 head SHA。批准对应 `record --kind go`，它要求 subject、PR 和 target 完全匹配（`ledger.ts:84-89`）。合并路径见下面事件表的 `merge` 行 |
 
-- 仓库里的这几个 skill 文件是 Bot 的入口说明。README.md:411 说任务执行已经移到「现有的 Bot skills」。已核对（2026-10-05，见 §11「Verified facts」）：Grok Bot 的 runtime 不加载任何 repo-harness skill；Mini 的 worker 通过符号链接加载 bun 全局安装的 0.20.0 skill。运行时归属和试点链见 §11 #4。
+- 仓库里的这几个 skill 文件是 Bot 的入口说明。README.md:411 说任务执行已经移到「现有的 Bot skills」。已核对（2026-10-05，见 §11「Verified facts」）：Grok Bot 的 runtime 不加载任何 repo-harness skill；Mini 的 worker 通过符号链接加载 bun 全局安装的 0.20.0 skill。运行时归属和试点链见 §11 #4。实际的 skill 加载链还没有核对；runtime owner 用 hash 或回执证明之前，D0 不验收。
 
 **最小事件集，以及它们和现有 CLI 的对应关系**
 
@@ -626,7 +628,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | `stage_result` | `ingest-event`（完整身份）+ `record --kind evidence` | 先校验，再记成 observed 或 validated |
 | `blocked` / `unblocked` | `advance --to blocked --reason …` / `advance --to <return_to>` | `stage-machine.ts:8-11` |
 | `approve` | `record --kind go` | 需要真实的 Human 批准 |
-| `reject` | `record --kind observation`（payload kind `reject`，带原因和 PR/head SHA） | 现有的 observation kind 已经能记录这类事实（`ledger.ts:97-101`），阶段不变。`revoke` 是另一回事：它只能让**已有的** go 失效（`ledger.ts:90`）。Aimpact 已决定（§11 #10）：拒绝记录对象版本（例如 PR head SHA）和原因，UI 由此派生「awaiting changes」，不做阶段转换；拒绝不等于取消 |
+| `reject` | `record --kind observation`（payload kind `reject`，带原因和 PR/head SHA） | 现有的 observation kind 已经能记录这类事实（`ledger.ts:97-101`），阶段不变。`revoke` 是另一回事：它只能让**已有的** go 失效（`ledger.ts:90`）。已决定（§11 #10）：D0 只记录拒绝事实，也就是对象版本（例如 PR head SHA）和原因；不新增阶段转换。UI 由此派生「awaiting changes」；拒绝不等于取消 |
 | `merge`（正常批准后合并） | `record --kind observation`（payload kind `merge_fact`），然后 `advance --to merged` | 这条路径才会在 `merge-ask → merged` 时消费 go（`stage-machine.ts:31-35`，`ledger.ts:120-126`） |
 | `merge`（外部事实，没有记录批准） | `record --kind external-merge`，**后面不跟 advance** | `external-merge` 自己会把阶段设为 `merged`（`ledger.ts:91-94`），并把 `approval_not_recorded` 设为 true。之后再 `advance --to merged` 会变成 `merged → merged`，被 `stage-machine.ts:41` 拒绝。两条路径各有一个 fixture：检查 go 是否被消费、admission 的值和重放结果 |
 | `cleanup` | `advance --to cleanup` | 需要 8 项检查清单（`stage-machine.ts:36-40`） |
@@ -665,9 +667,15 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - 这时 Pipeline 视图显示「未连接」。它和「空」是两个不同的状态：没有快照指针时是「未连接」；有快照但没有 record 时是「空」。
 - dev store 里的数据只用于测试，选定主机以后直接丢弃，不迁移。
 
-**权威 ledger 主机（Aimpact 2026-10-05 已决定，§11 #2）**
+**权威 ledger 主机（§11 #2）**
 - 一台在线主机，一个权威 ledger。不给每个 Bot 单独建库，不做双写。
-- 主机是常开的 Mac mini。决定的 DB 路径是 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`（§11 #2，配置优先）。
+- 主机是常开的 Mac mini。决定的 DB 路径是 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`（§11 #2，通过配置指定）。
+- **启用前核对（§11 #2）**：第一次真实写入之前，在 Mini 上核对四项，并把结果记进 D0 的 PR：
+  1. 挂载：`/Volumes/D` 已挂载。
+  2. 卷身份：Volume UUID 等于 §11 Verified facts 记录的值。
+  3. 权限：所有写入入口的用户都能读写 `/Volumes/D/repo-harness/pipeline/`。
+  4. 备份：这块盘有可用的备份。2026-10-05 核对时没有任何备份（§11 Verified facts），所以先要有备份方案。
+  任何一项不通过，就不启用真实写入，D0 不验收。
 - **单一来源：决定值写进代码默认值，生产环境不靠环境变量选位置**。
   - 问题（已核对，`ac21fbdd`）：代码默认路径是 `/Volumes/D/repo-harness/pipelines/pipelines.db`（`store.ts:25`），和决定的路径不同。在 `kitos` 上，`/Volumes/D` 下的任何路径都能通过 `requireLocation`，然后 `mkdirSync(..., {recursive:true})` 会建目录（`store.ts:36-58`）。写入方分布在 Bot shell、herdr pane、webhook 接入和 operator 子进程里。只要其中一个进程没有带 `REPO_HARNESS_PIPELINES_DB`，它就会在默认路径建出第二个 ledger；operator 没带时会读错指针，显示 `unavailable`。
   - 改法：D0 把 `store.ts:25` 的默认值改成决定的路径 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`。`/Volumes/D/repo-harness` 现在还不存在（§11 Verified facts），所以不需要迁移。生产环境**不设置** `REPO_HARNESS_PIPELINES_DB`；它只留给测试和 dev store 覆盖用。这样没带环境变量的进程也写到同一个 ledger。同一个 PR 更新 `pipeline-observer.md:15-16` 的默认路径说明。
@@ -678,7 +686,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
   - 没带这个变量的进程在 `mkdir` 之前失败（`store.ts:55-58`），错误可见，不会建出第二个 ledger。所以它不会破坏「一个 ledger」，只会让这次写入进入「未同步」。
 - **`pipeline health` 报告解析结果**：输出 `store: {path_is_default: boolean, path_sha256, authority_host, hostname_matches: boolean, sqlite_version, sqlite_library_configured: boolean}`。CLI 输出可以包含绝对路径；operator 的 `pipeline_health` 投影只输出上面这些布尔值、digest 和版本，不输出绝对路径（I5）。
 - **D0 部署验收**：在 Mini 上，从四个入口（Bot shell、一个 herdr pane、webhook 接入进程、operator 的子进程）分别运行 `pipeline health --json`，四份输出的 `path_sha256`、`authority_host` 和 `sqlite_version` 相同，`sqlite_version` ≥ 3.51.3。然后对一个临时 dev store 运行一次 `pipeline new`，结果成功。
-- `/Volumes/D` 没有挂载时，ledger 显示 `unavailable`：不自动创建，不回退到第二个 DB。
+- `/Volumes/D` 没有挂载时，ledger 显示 `unavailable`：不自动创建，不回退到第二个 DB。任何情况下都不自动创建第二个 DB。
 - **operator 的运行位置和查看方式**：快照指针在 ledger 旁边（`read.ts:9,19`），所以 Pipeline 数据只能在 Mini 上读到。operator serve 在 Mini 上运行。人在 Max 上用 `ssh -L 4318:127.0.0.1:4318 <mini>` 查看，**本地端口必须也是 4318**：服务端期望的 Host 是 `127.0.0.1:<服务端 socket 的本地端口>`（`server.ts:1020-1024`），本地端口不同会得到 421。验收截图通过这条隧道拍摄。
 - notify 插件的 payload 增加 `delivery_id`，作为 ingest 的 `event_id`。herdr 事件本身有没有 id，**unverified**，D0 先确认。插件版本升到 0.3.0。
 - **v0.3.0 的升级方式（§11 #3）**：先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。每台升级前先备份，升级后核对没有重复发送。旧 payload 一律视为 incomplete。
@@ -713,7 +721,8 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 6. 写入失败时显示明确的「未同步」，并且不会重新执行已派发的工作。「已提交未发布」的状态也能被看到，并且重放或 `export-snapshot` 能恢复发布。
 7. 在非权威主机上，写入返回 `authority_unavailable`，ledger 路径上没有创建任何目录或文件。调用方 primary checkout 里的未同步回执目录**允许**创建，这一条验收只约束 ledger 路径。
 8. 合并的两条路径都正确：批准合并消费 go；外部事实合并不做 advance，`approval_not_recorded` 为 true。
-9. **Mini 部署**：「权威 ledger 主机」一节的部署验收通过：四个入口的 `pipeline health` 报告同一个 `path_sha256`、`authority_host` 和 `sqlite_version`（≥ 3.51.3）；没设 `REPO_HARNESS_PIPELINES_DB` 的进程写到决定的路径；`/Volumes/D/repo-harness/pipelines/` 这个旧默认目录不存在。
+9. **Mini 部署**：「权威 ledger 主机」一节的部署验收通过：四个入口的 `pipeline health` 报告同一个 `path_sha256`、`authority_host` 和 `sqlite_version`（≥ 3.51.3）；没设 `REPO_HARNESS_PIPELINES_DB` 的进程写到决定的路径；`/Volumes/D/repo-harness/pipelines/` 这个旧默认目录不存在；「启用前核对」的四项（挂载、卷身份、权限、备份）全部通过。
+10. **skill 加载链**：runtime owner 用 hash 或调用回执证明了实际的 skill 加载路径（§11 #4）。
 
 **测试**（扩展 `tests/effects/pipeline-observer.test.ts`）
 - **empty/stale/not connected**：没有指针时返回「未连接」；有快照但没有 record 时返回 `empty`；快照过旧时返回 `stale`。
@@ -736,18 +745,19 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - `tests/cli/operator-serve.test.ts`：`pipeline_health` 和未同步回执路由只接受 GET，其他方法返回 405。
 
 ### Phase B（轻量）：Architecture 工作区
-**范围**：3 条 architecture 路由；顶层导航；模块列表和模块页；一跳图（`@xyflow/react` + `@dagrejs/dagre`，按需加载）；复制 prompt；i18n（en/zh）；在 `.archcontext/model` 的现有 domain 下给 operator 补一个只读 capability 节点（Aimpact 已批准，§11 #5）；新路由的 ETag（§6.1）；`/api/*` 的 `Sec-Fetch-Site` 检查和 §6.8 的 argv 规则。
+**范围**：3 条 architecture 路由；顶层导航；模块列表和模块页；一跳图（轻量 SVG，按需加载，不新增依赖，§11 #1）；复制 prompt；i18n（en/zh）；在 `.archcontext/model` 的现有 domain 下给 operator 补一个只读 capability 节点（§11 #5）；新路由的 ETag（§6.1）；`/api/*` 的 `Sec-Fetch-Site` 检查和 §6.8 的 argv 规则。
 
 **涉及文件**
 - `src/effects/operator/server.ts`（路由、`Sec-Fetch-Site` 检查、ETag）、`src/effects/operator/architecture.ts`（新增，在 worker 里调用 A 阶段的读取器）、`src/core/operator/architecture.ts`（decoder）。
-- 新增 `src/operator-web/ArchitectureWorkspace.tsx`、`ModuleGraph.tsx`；修改 `App.tsx`（导航）、`i18n.ts`、`styles.css`。
-- `package.json`（2 个 devDependency）、`bun.lock`。
+- 新增 `src/operator-web/ArchitectureWorkspace.tsx`、`ModuleGraph.tsx`（轻量 SVG，§5）；修改 `App.tsx`（导航）、`i18n.ts`、`styles.css`。
+- 不改 `package.json` 和 `bun.lock`（§11 #1）。
 - `tests/effects/operator-write-boundary.test.ts`（在 `static_asset` 之前插入路由 id，并为每条新路由加 pattern 固定断言，§6.1）。
 - **新增 capability 必须改的三条测试断言**（必要的测试改动，PR 里逐项说明）：`tests/architecture-projection-e2e.test.ts:30`（capability 数 26 → 27）、`:50`（模块文档数 26 → 27）、`tests/capability-archcontext-export.test.ts:72`（节点数 26 → 27）。`tasks/todos.md:65` 记录了这个问题；如果同一个 PR 顺手把这三处改成从模型推导的数量，就关闭那条 todo，并在 PR 里说明。因为同一个 PR 既改测试断言又改实现，按规则做一次只读的 tests-bent review。
 
 **验收标准**
 - 对同一个 capability，GET 返回的 `digest` 等于 CLI `--json` 返回的 `digest`。
-- 构建产物里图相关代码在单独的 chunk 里，Overview 的首屏 chunk 体积变化不超过 5%，并记录实际的完整依赖闭包和 gzip 体积。
+- 构建产物里 Architecture 代码在单独的 chunk 里，Overview 的首屏 chunk 体积变化不超过 5%，并记录 Architecture chunk 的 gzip 体积。
+- `package.json` 和 `bun.lock` 没有改动，没有新增依赖（§11 #1）。
 - 在真实浏览器里截图，三个模块状态分开显示。
 
 **测试**
@@ -769,7 +779,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
   - 源码扫描：`src/operator-web` 里没有 `dangerouslySetInnerHTML`。
   - 用带假 token 和 webhook URL 的 fixture，断言输出里只有 `[redacted]` 或 `configured`。
 - 写边界测试：`toEqual([])` 和 GET/HEAD 扫描的断言不变。
-- **依赖 license**：PR 附上 `@xyflow/react` 和 `@dagrejs/dagre` 完整闭包的 license 清单，全部在 §5A.6 的传递依赖白名单里。
+- **没有新依赖**：PR 的 diff 里没有 `package.json` 和 `bun.lock`。第一版不引入 xyflow 和 dagre，所以不需要新的 license 清单（§11 #1）。
 
 ### Phase C：Docs 工作区 + Agent config 页面
 **范围**
@@ -777,6 +787,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - Docs 工作区。
 - Agent config 读取器和页面（P1 配置清单，§4.5）。仓库内的文件由读取器直接读；仓库外的全局文件由单独的 collector 按显式路径白名单采集，GET 只读快照（§11 #7）。
 - 设置类信息按 §4.6 的措辞显示：路由分成已配置和实际命中，通知分成三个状态。
+- 可选：对 `@git-diff-view/react` 做一次小范围评估（§5A.4、§11 #1）。评估不改 `package.json`；引入要单独批准。
 
 **涉及文件**
 - 新增 `src/core/docs/docs-graph.ts`、`src/effects/operator/docs-graph.ts`、`src/core/operator/agent-config.ts`、`src/effects/operator/agent-config.ts`、`src/operator-web/DocsWorkspace.tsx`、`src/operator-web/AgentConfig.tsx`。
@@ -787,7 +798,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 **验收标准**
 - 当前仓库：活动范围内的 PRD、Sprint、plan 和 contract 全部出现在图上。断链数量和人工核对的结果一致。
 - 一个 PRD 同时有 Parent PRD 和 Sprint 引用时，它在图上有两条入边。
-- 根目录 CLAUDE.md 和 AGENTS.md：没有加共享块标记时，diff 可见，drift 显示 `not-declared`；`## Claude Code` 和 `## Codex` 标为 host-specific。只有加了规则 ID 标记的块才做 drift 判定；ID 重复时显示 `not-declared` 或 `invalid`（§11 #9）。
+- 根目录 CLAUDE.md 和 AGENTS.md：没有加共享块标记时，diff 可见，drift 显示 `not-declared`；`## Claude Code` 和 `## Codex` 标为 host-specific。只有加了规则 ID 标记的块才做 drift 判定；没有 ID 时显示 `not-declared`，ID 重复时显示 `invalid`（§11 #9）。
 - 每个仓库内的文件显示它自己的最后一次 commit 和 dirty 标记，不显示仓库的 HEAD。
 - 页面上没有任何同步或修复按钮。停留过久的项只显示检查 prompt。
 
@@ -800,6 +811,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - **共享块比较**：
   - 没有规则 ID 时，drift 是 `not-declared`，页面只显示文本 diff。
   - 加了标记的 fixture：只有声明为共享的块参与 drift 判定；宿主章节不同不算 drift；共享块内容不同算 drift。
+  - 同一个规则 ID 出现两次的 fixture：drift 是 `invalid`。
   - 比较过程不写任何文件（用 fs spy 断言）。
 - **状态冲突**：fixture 用真实 header 格式（sprint 的 `Child PRD A (Active)` 写法）。一个「Approved + Activation: Deferred」的 fixture 断言**不报**冲突；一个 Activation 明确相反的 fixture 断言报冲突；`relationship_conflict` 和 `status_conflict` 分开报出。
 - **来源版本**：一个文件改了但没有提交，它的 dirty 标记为 true；其他文件的最后一次 commit 不受影响。
@@ -833,11 +845,11 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - 最小合约：task-agent 启动时写 `config-inventory.json` 到会话目录：`{files: [{path, sha256, size}], at, harness, session, status: 'snapshot', loaded: 'unknown'}`。这是**启动前快照**，证明 launcher 观察过这些文件。它**不能**证明外部 harness 消费了它们。
 - **只有消费侧确认才能标 `loaded`**：需要 harness 或 runtime 在运行中确认它读过的配置版本和 hash，并绑定到 session/run/request。这个确认机制现在不存在，需要新增运行时功能，单独审批。在那之前，UI 的措辞是「启动快照（snapshot）」和「预期（expected）」，`loaded` 一律显示 `unknown`。
 - 验收：快照里的 hash 和文件内容一致；文件后来变了，快照不变；页面区分「文件存在」和「运行时确认加载」两种状态，不把前者说成后者。
-- **运行时归属（§11 #4）**：runtime owner 要展示实际加载路径、版本/hash 和一次调用回执。试点链是 Grok → Repo-Harness → herdr，用一个低风险的 doc/test 任务，不用 byok-sdk，不强制合并。
+- **运行时归属（§11 #4）**：runtime owner 要展示实际加载路径、版本/hash 和一次调用回执。试点链是 Grok → Repo-Harness Bot → herdr，用一个低风险的 doc/test 任务。试点不扩展到 byok-sdk，不强制合并。
 
 ### P1 其余项（按各自依赖排期，不等两条线都完成；每项单独批准；以下是每项的最小合约）
 
-三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**（§11 #6）。各自的依赖：
+三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**（§11 #6）。它们都不阻塞轻量 B。三项的名称还要和 Dot 原文逐项对齐（§11「仍需核对」）。各自的依赖：
 
 | 项 | 依赖 | 能否单独交付 |
 |---|---|---|
@@ -894,7 +906,8 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | Bot 不按规定调用 pipeline CLI | Pipeline 工作区一直是空的 | D0 的验收标准要求有真实任务数据；health 显示 coverage；D1 必须在 D0 验收之后才开始 |
 | 权威主机离线 | ledger 有缺口（pipeline-observer.md:5 说这是 telemetry gap） | health 显示快照年龄；Bot 把写入失败报给人；不做双写 |
 | notify 投递会丢失，没有重试 | 时间线不完整 | `delivery_id` 去重；task-agent 的 request 记录作为第二个来源；coverage 显示缺口 |
-| 新依赖的体积和维护 | 构建产物变大 | 按需加载；B 阶段测量 chunk 体积和完整依赖闭包。两个顶层包 MIT；直接依赖共 4 个；`@xyflow/system` 另有 9 个直接依赖（d3-*，ISC；`d3-ease` 是 BSD-3-Clause）；按 §5A.6 的传递依赖白名单检查，完整闭包在 B 阶段列出 |
+| 新依赖的体积和维护 | 构建产物变大 | 第一版不新增依赖（§11 #1）。Phase C 可选评估 `@git-diff-view/react` 时，测量 chunk 体积和完整依赖闭包，按 §5A.6 检查 license，引入要单独批准 |
+| 轻量 SVG 放不下大图 | 图难读，或者需要自动布局 | 一跳视图每侧超过 8 个时折叠（§11 #13）；邻居列表作为替代视图；需要全图或自动布局时，单独批准一次 xyflow + dagre 的重新评估（§5） |
 | GET 的请求值变成 git 选项（例如 `--output=<file>`） | GET 写文件，破坏 I1/I4；跨站页面能触发 GET | GET 只接受完整 SHA；`rev-parse --verify --end-of-options`；§6.8 的精确 argv 形状；`Sec-Fetch-Site` 检查；B 阶段的注入测试 |
 | Mini 的 SQLite 是 3.51.0，低于 writer 门槛 | D0 每次写入都失败 | D0 部署步骤设置 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY`；`pipeline health` 报告版本；完成标准第 9 条 |
 | 某个进程没带位置环境变量 | 建出第二个 ledger，或 operator 读错指针 | 决定的路径写进代码默认值，生产不靠环境变量选位置；四个入口的 `pipeline health` 一致 |
@@ -907,11 +920,11 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | operator 服务多个仓库 | 读错仓库 | 只按注册表 id 解析仓库路径，并做 realpath 检查 |
 | 把 packet 构建挪到 pane 启动之前 | 改变 `review round` 的行为 | packet 字节不变；断言「拼装失败时不启动 pane」；同一个 PR 改测试断言时做 tests-bent review |
 | 拒绝后是否要改变阶段 | 事件语义不完整 | observation kind 已能记录 reject 事实（`ledger.ts:97-101`）。§11 #10 已决定：拒绝记录对象版本和原因，派生「awaiting changes」，不改阶段；拒绝不等于取消 |
-| 外部 Bot runtime 不使用仓库里的 skill 文件 | 三个接入点改了也不生效 | 试点链 Grok → Repo-Harness → herdr（§11 #4）核对实际加载路径、版本/hash 和调用回执；核对不通过就停在合约和 fixture 阶段。Mini 要先装一个包含 #531 的版本，skill 才全部是符号链接 |
+| 外部 Bot runtime 不使用仓库里的 skill 文件 | 三个接入点改了也不生效 | 试点链 Grok → Repo-Harness Bot → herdr（§11 #4）核对实际加载路径、版本/hash 和调用回执；核对不通过就停在合约和 fixture 阶段，D0 不验收。Mini 要先装一个包含 #531 的版本，skill 才全部是符号链接 |
 | 未同步回执留在本机 | 另一台机器上看不到 | 回执归发出命令的 checkout 所有（§7 D0）；试点要求 operator 和 writer 同主机，启动时校验；跨主机显示 `unknown`/`unavailable`，带主机名和快照时间（§11 #11） |
 | 复制了不兼容 license 的代码 | 法律风险 | §5A.6 规定只借用模式；依赖只考虑 MIT 或 Apache-2.0，并且每个单独批准 |
 | SSE 连接 | 新的长连接 GET 路由 | 已决定不做（§11 #12），改用带 version/ETag 的 30 秒轮询 |
-| ledger 所在的 `/Volumes/D` 没有备份 | 磁盘故障时 ledger 丢失 | 已核对没有 Time Machine 目的地和备份任务（§11「Verified facts」）；备份方案需要单独决定 |
+| ledger 所在的 `/Volumes/D` 没有备份 | 磁盘故障时 ledger 丢失 | 已核对没有 Time Machine 目的地和备份任务（§11「Verified facts」）。按 §11 #2，启用前必须核对备份；没有备份时不启用真实写入（§7 D0「启用前核对」）。备份方案需要单独决定 |
 
 ---
 
@@ -933,13 +946,13 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 - **与代码不一致的文档**：本 plan 在 Phase A 的 PR 里修正 `README.md:521-524`（写动作描述）和 `tasks/todos.md:63`（三个文件已被 #510 删除）。这两处事实已核对，不再作为问题征求批准；如有异议请在审阅时提出。
 - **导航**：Overview 保留现有的三个子 tab，现有的 URL 和截图不受影响。PipelineBoard 在 D1 移动。
 - **数据结构**：不改动现有的路由或响应 schema，只新增 schema 版本。
-- **架构模型**：在现有 domain 下给 operator 补一个只读 capability 节点，走正常的 architecture-projection 流程（Aimpact 已批准，§11 #5）。
+- **架构模型**：在现有 domain 下给 operator 补一个只读 capability 节点，走正常的 architecture-projection 流程（§11 #5）。
 
 ---
 
 ## 10. 依赖、文件和抽象的理由
 
-- **新依赖**：Aimpact 已批准 `@xyflow/react` 12 和 `@dagrejs/dagre`（§11 #1），都是 devDependency。理由是附录要求使用成熟的社区方案。§5 按固定版本比较了 9 个选项。`@git-diff-view/react` 在 Phase C 小范围评估；只读 xterm（`@xterm/xterm`）已取消（§5A.4）。完整依赖闭包和 license 没有统计（§5）。gray-matter 和 velite 不需要，因为现有解析器已经够用（§5A.2）。
+- **新依赖**：没有。第一版的图用自己写的轻量 SVG，不引入 `@xyflow/react` 和 `@dagrejs/dagre`（§11 #1）。一跳图是固定三列，节点数有上限，不需要布局库。§5 按固定版本比较了各个选项，数据留作以后重新评估的起点。`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估，引入要单独批准；只读 xterm（`@xterm/xterm`）已取消（§5A.4）。gray-matter 和 velite 不需要，因为现有解析器已经够用（§5A.2）。
 - **新抽象**：
   - `REVIEW_FINDING_RULES`（只含 `generic-review.ts:251` 的 verdict 和 finding 规则）：有两个真实使用方，`review round` 和 `module review-prompt`。
   - 门禁条件表（只放判断）：有两个真实使用方，`advanceRecord` 和 `explainGate`。
@@ -950,26 +963,36 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 
 ---
 
-## 11. Decisions (Aimpact 2026-10-05 11:18 HKT)
+## 11. Decisions（Dot 的 13 条默认值，Aimpact 2026-10-06 03:22 接受）
 
-原来的 13 个问题已由 Aimpact 决定（经 Grok 转达）。决定已经写进正文的对应位置。
+**来源**：Dot 在 Slack #bot-worker 提出 13 条建议（2026-10-05 11:14）。Aimpact 在 2026-10-06 03:22 接受。Dot 在 2026-10-06 03:23 回复没有异议。下面 13 项按这 13 条建议锁定，并已经写进正文的对应位置。
 
-1. **新依赖**：批准 React Flow（`@xyflow/react` 12）+ `@dagrejs/dagre`。`@git-diff-view/react` 在 Phase C 小范围评估。只读 xterm 取消，终端输出改用脱敏后的文本日志。（§1、§5、§5A、§10）
-2. **权威 ledger 主机**：ledger 放在常开的 Mac mini 上。DB 路径由配置指定，候选值 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`。`/Volumes/D` 没有挂载时，ledger 显示 `unavailable`：不自动创建，不回退到第二个 DB。（§7 D0、§9）
+**取代关系**：2026-10-05 11:18 HKT 经 Grok 转达的 Aimpact 决定里，#1 选了 `@xyflow/react` + `@dagrejs/dagre`。这一项已被下面的 #1 取代。其他各项和 Dot 的默认值一致，按下面的写法保留。
+
+**范围**：这些是默认值，不等于部署或切换已经完成。A 和轻量 B 与 D0 并行。
+
+1. **图和新依赖**：第一版用自己写的轻量 SVG。**不引入** `@xyflow/react` 和 `@dagrejs/dagre`，不改 `package.json`。`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估，引入要单独批准。只读 xterm 取消，终端输出改用脱敏后的文本日志。（§1、§5、§5A、Phase B、Phase C、§8、§10）
+2. **权威 ledger 主机**：ledger 放在常开的 Mac mini 上。DB 路径是 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`，通过配置指定。启用前要核对挂载、卷身份、权限和备份。`/Volumes/D` 没有挂载时，ledger 显示 `unavailable`。任何情况下都不自动创建第二个 DB。（§7 D0「权威 ledger 主机」、完成标准第 9 条、§8、§9）
    - 落地方式（第三轮复核，F-03）：配置的值写进代码默认值（`store.ts:25`），生产环境不再靠环境变量选位置，所以没带环境变量的进程也写到同一个 ledger。环境变量只留给测试覆盖。SQLite 库仍然用 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY` 设置，缺失时写入在建目录之前失败（F-02）。
-3. **notify 插件 v0.3.0**：先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。升级前先备份，升级后核对没有重复发送。旧 payload 视为 incomplete。（§7 D0、§9）
-4. **Bot skill 的归属**：runtime owner 要展示实际加载路径、版本/hash 和一次调用回执。试点链是 Grok → Repo-Harness → herdr，用一个低风险的 doc/test 任务，不用 byok-sdk，不强制合并。（§7 D0、§7 D 线后续、§8）
+3. **notify 插件 v0.3.0**：payload 带 `delivery_id`。先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。升级前先备份，升级后核对没有重复发送。旧 payload 视为 incomplete。（§7 D0、§9）
+4. **Bot skill 的加载链**：runtime owner 要用 hash 或调用回执证明实际的 skill 加载路径和版本。试点链是 Grok → Repo-Harness Bot → herdr，用一个低风险的 docs/test 任务。试点不扩展到 byok-sdk，不强制合并。（§7 D0、完成标准第 10 条、§7 D 线后续、§8）
    - **Skill 工作区只放在 Mac mini（Aimpact 2026-10-05 12:09 HKT）**：Bot 和 worker 的运行时 skill 来源只有一个，就是常开的 Mac mini。Max 只用于开发，不作为运行时来源，因为它经常离线。`repo-harness-cross-review` 的过时复制目录要统一成指向同一来源的符号链接。main 上的 #531（`ec4caf82`）已经实现了这一点：安装时建符号链接，`doctor` 检查漂移。#531 在 0.20.0 之后合并，所以 Mini 要装一个包含它的版本，再运行 `repo-harness doctor` 确认。
 5. **架构归属**：在现有 domain 下新增一个只读的 operator capability 节点。（Phase B、§9）
-6. **P1 的顺序**：三个 P1 项按各自的依赖排期，不排在两条线全部完成之后。三项是 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**。（§7）
-7. **Agent config 的边界**：用单独的 collector，带显式路径白名单。GET 只读快照，「不返回也不存储内容」。符号链接在白名单内解析。GET 里不调用 herdr 子进程。没有快照时显示 `unknown`。（§4.5、§6.8、Phase C）
-8. **停留过久的阈值**：`Executing` 24 小时没有进展算提示（hint），72 小时算升级（escalated）。`Active` 文档 7 天。每个项目可以覆盖。等待审批和等待外部单独列出。（§4.3）
-9. **共享块标记**：规则 ID 只加在有意共享的块上。重复的 ID 显示 `not-declared` 或 `invalid`。不做自动同步。（§4.5、Phase C）
-10. **拒绝的语义**：拒绝记录对象版本和原因，UI 派生「awaiting changes」。不做阶段转换。拒绝不等于取消。（§7 D0、§8）
-11. **同主机假设**：试点的同主机约束在启动时校验。跨主机时显示 `unknown` 或 `unavailable`，带上主机名和快照时间，绝不显示成「空 ledger」。（§7 D0、§8）
-12. **SSE**：不做。30 秒轮询，带 version/ETag，失败时退避，页面隐藏时降频。（§1、§6.1、§7 P1、§8）
-   - 落地方式（第三轮复核，F-15）：现有 hook 在页面隐藏时直接暂停，比降频更省，沿用它。ETag 现在不存在，在 Phase B 新增（§6.1）。
-13. **折叠阈值**：每一侧超过 8 个时折叠，显示「N more」。（§4.2）
+6. **P1 的顺序**：其余三个 P1 项按各自的依赖排期，不阻塞轻量 B。三项在本 plan 里叫 **pane/worker 概览**、**PR/merge 队列** 和 **通知路由视图**。（§7）
+7. **Agent config 的边界**：用单独的 collector，带显式路径白名单。GET 只读快照；快照只含 mtime、sha256 这类元数据，「不返回也不存储内容」。符号链接在白名单内解析。GET 里不调用 herdr 子进程。没有快照时显示 `unknown`。（§4.5、§6.8、Phase C）
+8. **停留过久的阈值**：`Executing` 24 小时没有进展算提示（hint），72 小时算升级（escalated）。`Active` 文档 7 天。每个项目可以覆盖。等待审批和等待外部不算停留过久，单独列出。（§4.3）
+9. **共享块标记**：稳定规则 ID 只加在有意共享的块上。没有 ID 时显示 `not-declared`。ID 重复时显示 `invalid`。不做自动同步。（§4.5、Phase C）
+10. **拒绝的语义**：D0 只记录拒绝事实，也就是对象版本和原因。不为拒绝新增阶段转换。UI 派生「awaiting changes」。拒绝不等于取消。（§7 D0、§8）
+11. **同主机约束**：试点要求 operator serve 和 pipeline 写入方在同一台主机上，operator 启动时校验。跨主机时显示 `unknown` 或 `unavailable`，带上主机名和快照时间，绝不显示成「空 ledger」。（§7 D0、§8）
+12. **SSE**：现在不做。保留 30 秒轮询，带 ETag，失败时退避。（§1、§6.1、§7 P1、§8）
+   - 落地方式（第三轮复核，F-15）：现有 hook 在页面隐藏时直接暂停，沿用它。ETag 现在不存在，在 Phase B 新增（§6.1）。
+13. **折叠阈值**：每一侧超过 8 个邻居时折叠，显示「N more」，展开后是列表。（§4.2）
+
+### 仍需核对（这些是核对项，不是验收）
+
+- **#2 Mini 的挂载**：挂载、卷身份、权限和备份还没有按「启用前核对」做过。下面的 Verified facts 只记录了磁盘信息，并且记录了这块盘没有备份。核对通过之前，D0 不验收。
+- **#4 skill 加载链**：实际的加载链还没有核对，调用回执是 unknown。runtime owner 用 hash 或回执证明之前，D0 不验收。
+- **#6 名称对齐**：三个 P1 项的名称还要和 Dot 原文逐项对齐。本 PR 没有 Dot 原文里的名称，所以对齐结果没有写进来；对齐后在 #6 里记录。
 
 ### Verified facts (2026-10-05)
 
@@ -1004,7 +1027,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。P1 其余项按各自的依赖排期，�
 | P2-08 依赖闭包不实 | 写明 @xyflow/system 的 9 个直接依赖；闭包标 unverified；不用顶层 license 推断闭包 | §5、§8、§10 |
 | P2-09 P1 余项和 metadata 迁移 | 三个 P1 项各补最小合约；metadata 一次性迁移规则；搬迁细节和迁移测试 | §7 P1、§9 |
 | P3-01 结论超出证据 | ledger 数据情况标 unverified；SKILL.md frontmatter 解析入口写明 | §3.3、§4.5 |
-| P3-02 已知事实留在问题清单 | Q1 删除自绘 SVG；Q7 改为计划动作；Q8、Q9 移除；Q13 改写；Mermaid 行更正 | §5、§9、§11、§12 |
+| P3-02 已知事实留在问题清单 | Q1 删除自绘 SVG（2026-10-06 已被 §11 #1 撤回，第一版用轻量 SVG，见第四轮）；Q7 改为计划动作；Q8、Q9 移除；Q13 改写；Mermaid 行更正 | §5、§9、§11、§12 |
 
 ### 第二轮复核（R-01..R-08、N-01..N-03）
 
@@ -1051,5 +1074,19 @@ P1 四条全部修正。P2 和 P3 里改动小的项一起修正；没改的项�
 | F-21 `explainNextGate` 没有目标 | 改名 `explainGate(record, to, now)`；表里只放判断 | §6.6、D1 |
 | F-22 分片协议 | 每个分片带固定头部，指令只在最后一个分片；写明预算键的复用 | §6.5 |
 | F-23 文档图每次轮询的成本 | 每个 HEAD 一次 `git log`，按 HEAD 缓存 | §4.3 |
-| F-24 React Flow 集成细节 | CSS 在 lazy chunk 里；容器尺寸；布局断言在 core；邻居列表作为可访问的替代视图 | §5 |
+| F-24 React Flow 集成细节 | CSS 在 lazy chunk 里；容器尺寸；布局断言在 core；邻居列表作为可访问的替代视图。2026-10-06 起第一版不用 React Flow（§11 #1），只保留「断言在 core」和「邻居列表」两条（见第四轮） | §5 |
 | F-25 通知视图没有路由表 | 按 `notify.mjs` 的规则投影「事件 × 渠道」表 | §3.4、§7 P1 其余项 |
+
+### 第四轮：锁定 Dot 的 13 条默认值（2026-10-06）
+
+Aimpact 在 2026-10-06 03:22 接受 Dot 的 13 条建议，Dot 在 03:23 回复没有异议。本轮只改 plan 文本，不改代码和依赖。
+
+| 项 | 处置 | 位置 |
+|---|---|---|
+| #1 图和新依赖 | 取代 xyflow + dagre 的决定：第一版用轻量 SVG，不改 `package.json`；`@git-diff-view/react` 改为 Phase C 可选评估；xterm 仍然取消 | 头部、§1、§5、§5A、Phase B、Phase C、§8、§10、§11、§12 F-24 和 P3-02 |
+| #2 ledger 主机 | 加「启用前核对」：挂载、卷身份、权限、备份；任何情况下不自动创建第二个 DB；完成标准第 9 条加这四项 | §7 D0、§8、§11 |
+| #4 skill 加载链 | 试点链写成 Grok → Repo-Harness Bot → herdr；不扩展到 byok-sdk；核对前 D0 不验收；新增完成标准第 10 条 | §7 D0、§7 D 线后续、§8、§11 |
+| #6 P1 顺序 | 写明不阻塞轻量 B；名称对齐列为核对项 | §7、§11 |
+| #9 共享块标记 | 没有 ID → `not-declared`；ID 重复 → `invalid`；补一个重复 ID 的测试 | §4.5、Phase C、§11 |
+| #10 拒绝的语义 | 写明 D0 只记录拒绝事实，不新增阶段转换 | §7 D0、§11 |
+| #3、#5、#7、#8、#11、#12、#13 | 正文已经一致；§11 措辞按 Dot 的写法更新 | §11 |

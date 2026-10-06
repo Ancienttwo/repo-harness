@@ -12,6 +12,8 @@ export interface OracleSessionEvidence {
     appSelection?: unknown;
     thinkingSelection?: unknown;
   };
+  /** Oracle recorded `browser.runtime.promptSubmitted: true` for this session. */
+  promptSubmitted?: true;
   evidenceError?: string;
   networkCapture?: OracleNetworkCapture;
   conversationCapture?: OracleConversationCapture;
@@ -37,7 +39,9 @@ export function readOracleSessionEvidence(path: string, oracleHome: string, pare
     if (metadata.id !== handle.sessionId) throw new Error('session metadata identity mismatch');
     const browser = metadata.browser;
     const observation = browser && typeof browser === 'object' && !Array.isArray(browser) ? browser as Record<string, unknown> : {};
+    const runtime = observation.runtime as { promptSubmitted?: unknown } | undefined;
     return {
+      ...(runtime?.promptSubmitted === true ? { promptSubmitted: true as const } : {}),
       providerSessionId: handle.sessionId,
       observation: {
         source: 'oracle-session-metadata', sessionId: handle.sessionId, parentSessionId: handle.parentSessionId as string | null,

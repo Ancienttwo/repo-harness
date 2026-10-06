@@ -9,7 +9,7 @@ import {
 import { buildLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 
 const SHA = `sha256:${'a'.repeat(64)}`;
-const RUN_ID = `sha256:${'b'.repeat(64)}`;
+const RUN_ID = 'b'.repeat(64);
 
 function run() {
   return buildAutomationControllerRun({
@@ -23,7 +23,7 @@ function run() {
       engineer_contract_revision: SHA,
       authorization_revision: 7,
     },
-    budget_sha256: SHA,
+    budget_sha256: 'f'.repeat(64),
     policy: {
       maximum_steps_per_invocation: 8,
       maximum_duration_ms: 60_000,
@@ -80,6 +80,14 @@ describe('issue #279 automation controller core', () => {
     expect(() => buildAutomationControllerRun({ ...value, policy: { ...value.policy, maximum_backoff_ms: 100 } })).toThrow('must be >=');
   });
 
+  test.each(['run_id', 'budget_sha256'] as const)('refuses a sha256:-prefixed %s because budget digests are bare hex', (field) => {
+    const value = run();
+    let error: unknown = null;
+    try { buildAutomationControllerRun({ ...value, [field]: `sha256:${value[field]}` }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AutomationControllerError);
+    expect(error).toMatchObject({ code: 'automation_controller_invalid', message: `${field} is invalid` });
+  });
+
   test('walks observation through one exact acquisition and dispatch evidence boundary', () => {
     const definition = run();
     let current = foldAutomationControllerCurrent(definition, null, event('start', 1, null));
@@ -121,6 +129,11 @@ describe('issue #279 automation controller core', () => {
     expect(nextAutomationControllerState('executing', 'request_stop')).toBe('stopping');
     expect(nextAutomationControllerState('executing', 'require_reconciliation')).toBe('reconciliation_required');
     expect(() => nextAutomationControllerState('executing', 'stop')).toThrow('cannot stop');
+  });
+
+  test('an empty acquisition completes only after its persisted acquisition boundary', () => {
+    expect(nextAutomationControllerState('acquiring', 'no_offer')).toBe('completed');
+    expect(() => nextAutomationControllerState('observing', 'no_offer')).toThrow('cannot no_offer from observing');
   });
 
   test('folding rejects a stale or forked event chain', () => {

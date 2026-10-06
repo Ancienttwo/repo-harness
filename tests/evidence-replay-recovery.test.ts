@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "fs";
+import { spawnSync } from "child_process";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeSync } from "fs";
 import { join } from "path";
-import { withTempRepo } from "./helpers/repo-fixture";
+import { tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
 import { findCorruptTail, foldAcceptedEvents, parseLogLine } from "../src/core/evidence/fold";
 import type { EvidenceEventRecord } from "../src/core/evidence/types";
@@ -247,4 +248,95 @@ describe("corrupt-tail recovery and quarantine", () => {
       expect(entries.some((name) => /^events\.corrupt-/.test(name))).toBe(true);
     });
   });
+});
+
+async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, marker: string, seen = ""): Promise<string> {
+  const decoder = new TextDecoder();
+  let text = seen;
+  while (!text.includes(marker)) {
+    const chunk = await reader.read();
+    if (chunk.done) return text;
+    text += decoder.decode(chunk.value);
+  }
+  return text;
+}
+
+describe("concurrent recovery and append", () => {
+  test("a repair paused between its read and its truncation cannot delete an acknowledged append", async () => {
+    const repoRoot = tmpWorkspace("evidence-repair-append-race");
+    try {
+      freshGenesisRepo(repoRoot);
+      const kept = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: "kept" } } }));
+      // A crash during an earlier append left a partial final line.
+      appendFileSync(logPathFor(repoRoot), '{"kind":"evidence_event","event_id":"evt-crashed');
+      const release = join(repoRoot, "repair-release.fifo");
+      expect(spawnSync("mkfifo", [release]).status).toBe(0);
+      const eventLog = join(import.meta.dir, "../src/effects/evidence/event-log.ts");
+
+      // The event log reads the clock only to name the quarantine file, after
+      // the repair has read the log and before it truncates. The repair process
+      // reports that point on stdout, then blocks on the FIFO until released.
+      const repair = Bun.spawn([process.execPath, "-e", `
+        import { readFileSync, writeSync } from "fs";
+        import { readAcceptedEvents } from ${JSON.stringify(eventLog)};
+        const now = Date.now;
+        let held = false;
+        Date.now = () => {
+          const caller = new Error().stack?.split("\\n").find((frame) => frame.includes("/src/"));
+          if (!held && caller?.includes("/src/effects/evidence/event-log.ts")) {
+            held = true;
+            writeSync(1, "held\\n");
+            readFileSync(${JSON.stringify(release)});
+          }
+          return now();
+        };
+        const result = readAcceptedEvents(${JSON.stringify(repoRoot)});
+        writeSync(1, JSON.stringify({ accepted: result.accepted.map((event) => event.event_id) }) + "\\n");
+      `], { stdout: "pipe", stderr: "pipe" });
+      const repairOutput = repair.stdout.getReader();
+      let repairText = await readUntil(repairOutput, "held\n");
+      expect(repairText).toBe("held\n");
+
+      const appender = Bun.spawn([process.execPath, "-e", `
+        import { writeSync } from "fs";
+        import { appendEvidenceEvent } from ${JSON.stringify(eventLog)};
+        try {
+          const record = appendEvidenceEvent(${JSON.stringify(repoRoot)}, ${JSON.stringify(baseInput({ payload: { kind: "json", value: { v: "appended" } } }))});
+          writeSync(1, JSON.stringify({ ok: true, event_id: record.event_id }));
+        } catch (error) {
+          writeSync(1, JSON.stringify({ ok: false, error: String(error) }));
+        }
+      `], { stdout: "pipe", stderr: "pipe" });
+      expect(await appender.exited).toBe(0);
+      const appended = JSON.parse(await new Response(appender.stdout).text()) as
+        { readonly ok: true; readonly event_id: string } | { readonly ok: false; readonly error: string };
+
+      const writer = openSync(release, "w");
+      writeSync(writer, "release\n");
+      closeSync(writer);
+      repairText = await readUntil(repairOutput, "]}\n", repairText);
+      expect(await repair.exited).toBe(0);
+      expect(JSON.parse(repairText.slice("held\n".length)).accepted).toEqual([kept.event_id]);
+
+      const accepted = readAcceptedEvents(repoRoot).accepted.map((event) => event.event_id);
+      const eventsDir = join(repoRoot, ".ai/harness/evidence/events");
+      const quarantined = readdirSync(eventsDir)
+        .filter((name) => name.startsWith("events.corrupt-"))
+        .map((name) => readFileSync(join(eventsDir, name), "utf-8"))
+        .join("");
+      expect(quarantined).toContain("evt-crashed");
+      expect(accepted).toContain(kept.event_id);
+      if (appended.ok) {
+        // An acknowledged append must stay accepted or stay in quarantine.
+        expect(`${accepted.join("\n")}\n${quarantined}`).toContain(appended.event_id);
+      } else {
+        expect(appended.error).toContain("timed out waiting for exclusive lock");
+      }
+
+      const retried = appendEvidenceEvent(repoRoot, baseInput({ payload: { kind: "json", value: { v: "retried" } } }));
+      expect(readAcceptedEvents(repoRoot).accepted.map((event) => event.event_id)).toEqual([kept.event_id, retried.event_id]);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

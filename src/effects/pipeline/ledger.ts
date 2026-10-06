@@ -65,7 +65,8 @@ function prepareRecord(store:PipelineStore,record:PipelineRecord,kind:string,pay
     const observed=payload.subject?observeSubject(store,record,{subject:decodeSubject(payload.subject),contract_path:text(payload.contract_path,'contract_path'),base_ref:text(payload.base_ref,'base_ref')}):null;
     return ()=>{if(payload.resources) record.resources={...record.resources,...object(payload.resources)};
       if(payload.policy){record.policy=payload.policy;record.flags_attested=record.flags_attested.filter(f=>f!=='policy_unmapped');}
-      if(observed){record.observations.push(observed);refreshValidity(record,currentSubject(record));}
+      if(observed)record.observations.push(observed);
+      if(observed||payload.resources)refreshValidity(record,currentSubject(record));
       if(payload.relations) record.relations.push(...payload.relations);
     };
   }
@@ -113,11 +114,12 @@ export function mutatePipeline(store:PipelineStore,key:Key,input:{op:'record'|'a
   const from=record.phase;let action:()=>void;
   if(input.op==='record')action=prepareRecord(store,record,text(input.kind,'kind'),object(input.payload),input.reconcile??false);
   else {
-    record.runs=projectedRuns(record,observations(store));
     if(!input.to||!PHASES.includes(input.to))throw new PipelineError('usage',2,'Unknown phase');
     const previous=record.observations.slice().reverse().find(o=>o.kind==='subject');
     const observed=previous?observeSubject(store,record,previous.data):null;
     action=()=>{
+      // Ingest does not change the record version. Project runs under the writer lock.
+      record.runs=projectedRuns(record,observations(store));
       if(observed)record.observations.push(observed);
       // T6 consumes the old candidate approval before new base observations.
       if(input.to==='merged') advanceRecord(record,input.to,input.reason);

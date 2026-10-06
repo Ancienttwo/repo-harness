@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -62,6 +63,26 @@ function result(overrides: Partial<Omit<ProjectionResultV1, 'receiptDigest'>> = 
 }
 
 const RESTAMP = result();
+
+const sha256 = (bytes: Buffer | string) => `sha256:${createHash('sha256').update(bytes).digest('hex')}` as const;
+
+/** A restamp result bound to the fixture's real HEAD, baseline blob, and dirty manifest bytes. */
+function restampFor(root: string): ProjectionResultV1 {
+  const headSha = git(root, ['rev-parse', 'HEAD']);
+  const snapshot = { ...SNAPSHOT, headSha, baseHeadSha: headSha };
+  const preimage = spawnSync('git', ['cat-file', 'blob', `HEAD:${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`], { cwd: root }).stdout;
+  return result({
+    inputSnapshot: snapshot,
+    outputSnapshot: snapshot,
+    files: [{
+      path: ARCHITECTURE_PROJECTION_MANIFEST_PATH,
+      action: 'update',
+      preimageDigest: sha256(preimage),
+      outputDigest: sha256(readFileSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH))),
+    }],
+  });
+}
+
 const SEMANTIC = result({
   files: [
     { path: ARCHITECTURE_PROJECTION_MANIFEST_PATH, action: 'update', preimageDigest: digest('9'), outputDigest: digest('c') },
@@ -102,12 +123,13 @@ describe('architecture projection restamp synthesis', () => {
     const root = fixture();
     const base = git(root, ['rev-parse', 'HEAD']);
     const manifest = readFileSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH), 'utf8');
+    const restamp = restampFor(root);
 
-    const outcome = publishArchitectureProjectionRestamp(root, RESTAMP);
+    const outcome = publishArchitectureProjectionRestamp(root, restamp);
 
     expect(outcome.status).toBe('published');
     expect(outcome.branch).toBe('main');
-    expect(outcome.receiptDigest).toBe(RESTAMP.receiptDigest);
+    expect(outcome.receiptDigest).toBe(restamp.receiptDigest);
     expect(outcome.commitSha).toMatch(/^[a-f0-9]{40}$/);
     expect(status(root)).toBe('');
     expect(git(root, ['rev-parse', 'HEAD'])).toBe(outcome.commitSha!);
@@ -119,9 +141,10 @@ describe('architecture projection restamp synthesis', () => {
 
   test('writes the frozen subject and receipt trailer without CI directives', () => {
     const root = fixture();
-    const outcome = publishArchitectureProjectionRestamp(root, RESTAMP);
+    const restamp = restampFor(root);
+    const outcome = publishArchitectureProjectionRestamp(root, restamp);
     const body = git(root, ['log', '-1', '--format=%B', outcome.commitSha!]);
-    expect(body).toBe(`${RESTAMP_COMMIT_SUBJECT}\n\nArchitecture-Projection-Restamp: ${RESTAMP.receiptDigest}`);
+    expect(body).toBe(`${RESTAMP_COMMIT_SUBJECT}\n\nArchitecture-Projection-Restamp: ${restamp.receiptDigest}`);
     expect(body).not.toContain('[skip ci]');
   });
 
@@ -131,7 +154,7 @@ describe('architecture projection restamp synthesis', () => {
     mkdirSync(join(root, 'src'), { recursive: true });
     writeFileSync(join(root, 'src/new-module.ts'), 'export const draft = 1;\n');
 
-    const outcome = publishArchitectureProjectionRestamp(root, RESTAMP);
+    const outcome = publishArchitectureProjectionRestamp(root, restampFor(root));
 
     expect(outcome.status).toBe('published');
     expect(git(root, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD^', 'HEAD']))
@@ -148,14 +171,14 @@ describe('architecture projection restamp synthesis', () => {
     git(root, ['remote', 'add', 'origin', remote]);
     git(root, ['push', '-q', 'origin', 'main']);
 
-    const outcome = publishArchitectureProjectionRestamp(root, RESTAMP);
+    const outcome = publishArchitectureProjectionRestamp(root, restampFor(root));
 
     expect(outcome.status).toBe('published');
     expect(outcome.aheadOfOrigin).toBe(true);
     expect(outcome.advisory).toBe(`[ArchitectureProjection] published restamp ${outcome.commitSha}; main is ahead of origin/main — push before running acceptance gates.`);
 
     const withoutRemote = fixture();
-    const solo = publishArchitectureProjectionRestamp(withoutRemote, RESTAMP);
+    const solo = publishArchitectureProjectionRestamp(withoutRemote, restampFor(withoutRemote));
     expect(solo.aheadOfOrigin).toBe(false);
     expect(solo.advisory).toBe(`[ArchitectureProjection] published restamp ${solo.commitSha}.`);
   });
@@ -219,7 +242,7 @@ describe('architecture projection restamp gate matrix', () => {
     writeFileSync(hook, '#!/bin/sh\nexit 1\n');
     chmodSync(hook, 0o755);
 
-    const outcome = publishArchitectureProjectionRestamp(root, RESTAMP);
+    const outcome = publishArchitectureProjectionRestamp(root, restampFor(root));
 
     expect(outcome.status).toBe('skipped');
     expect(outcome.reason).toBe('ref-update-refused');
@@ -242,6 +265,50 @@ describe('architecture projection restamp gate matrix', () => {
     expect(git(root, ['rev-parse', 'HEAD'])).toBe(base);
     expect(git(root, ['diff', '--cached', '--name-only'])).toBe('');
     expect(status(root)).toBe(` D ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+  });
+
+  test('publishes only the exact manifest bytes, baseline, and HEAD the receipt approved', () => {
+    const exact = fixture();
+    const approved = restampFor(exact);
+    expect(publishArchitectureProjectionRestamp(exact, approved).status).toBe('published');
+
+    const refusedAfter = (root: string, value: ProjectionResultV1, detail: string, dirty: string) => {
+      const head = git(root, ['rev-parse', 'HEAD']);
+      const outcome = publishArchitectureProjectionRestamp(root, value);
+      expect(outcome).toMatchObject({ status: 'skipped', reason: 'receipt-binding-mismatch', detail, commitSha: null });
+      expect(git(root, ['rev-parse', 'HEAD'])).toBe(head);
+      expect(git(root, ['diff', '--cached', '--name-only'])).toBe('');
+      expect(status(root)).toBe(dirty);
+    };
+
+    // A later edit of the same manifest after the receipt was written.
+    const edited = fixture();
+    const editedReceipt = restampFor(edited);
+    writeFileSync(join(edited, ARCHITECTURE_PROJECTION_MANIFEST_PATH), `${JSON.stringify({ worktreeDigest: digest('b'), injected: true }, null, 2)}\n`);
+    refusedAfter(edited, editedReceipt, 'output', ` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+
+    // HEAD moved after the receipt, while the manifest bytes stayed approved.
+    const moved = fixture();
+    const movedReceipt = restampFor(moved);
+    writeFileSync(join(moved, 'README.md'), '# moved\n');
+    git(moved, ['commit', '-q', '-m', 'unrelated', '--', 'README.md']);
+    refusedAfter(moved, movedReceipt, 'head', ` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+
+    // A receipt that was already published cannot publish a later edit.
+    writeFileSync(join(exact, ARCHITECTURE_PROJECTION_MANIFEST_PATH), `${JSON.stringify({ worktreeDigest: digest('d') }, null, 2)}\n`);
+    refusedAfter(exact, approved, 'head', ` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+
+    // The receipt classified a different baseline than the committed HEAD blob.
+    const baseline = fixture();
+    const bound = restampFor(baseline);
+    refusedAfter(baseline, result({ ...bound, files: [{ ...bound.files[0]!, preimageDigest: digest('9') }] }), 'preimage', ` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+
+    // A clean filter changes the staged blob, so approved worktree bytes are not enough.
+    const filtered = fixture();
+    const filteredReceipt = restampFor(filtered);
+    git(filtered, ['config', 'filter.upper.clean', 'tr a-z A-Z']);
+    writeFileSync(join(filtered, '.git/info/attributes'), `${ARCHITECTURE_PROJECTION_MANIFEST_PATH} filter=upper\n`);
+    refusedAfter(filtered, filteredReceipt, 'output', ` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
   });
 
   test('git refuses a stale compare-and-swap, which is the only concurrency primitive used', () => {
@@ -314,7 +381,8 @@ function seedReceipt(root: string, jobId: string, value: ProjectionResultV1, com
 describe('architecture projection restamp entrypoints', () => {
   test('publishes from the drain receipt and stays inert for every other drain outcome', () => {
     const root = fixture();
-    seedReceipt(root, 'job-07e4d2d8fe733699af945715', RESTAMP, '2026-08-18T11:30:48.744Z');
+    const restamp = restampFor(root);
+    seedReceipt(root, 'job-07e4d2d8fe733699af945715', restamp, '2026-08-18T11:30:48.744Z');
 
     expect(publishArchitectureProjectionRestampForDrain(root, drain({ status: 'retry-pending' })).reason).toBe('no-applied-drain');
     expect(publishArchitectureProjectionRestampForDrain(root, drain({ resultStatus: 'noop' })).reason).toBe('no-applied-drain');
@@ -324,7 +392,7 @@ describe('architecture projection restamp entrypoints', () => {
 
     const published = publishArchitectureProjectionRestampForDrain(root, drain());
     expect(published.status).toBe('published');
-    expect(published.receiptDigest).toBe(RESTAMP.receiptDigest);
+    expect(published.receiptDigest).toBe(restamp.receiptDigest);
     expect(status(root)).toBe('');
   });
 
@@ -335,10 +403,24 @@ describe('architecture projection restamp entrypoints', () => {
     seedReceipt(root, 'job-115767b95ce6133151e1d3a9', SEMANTIC, '2026-08-18T11:30:48.744Z');
     expect(publishLatestArchitectureProjectionRestamp(root).reason).toBe('not-a-restamp');
 
-    seedReceipt(root, 'job-07e4d2d8fe733699af945715', RESTAMP, '2026-08-19T09:00:00.000Z');
+    const restamp = restampFor(root);
+    seedReceipt(root, 'job-07e4d2d8fe733699af945715', restamp, '2026-08-19T09:00:00.000Z');
     const published = publishLatestArchitectureProjectionRestamp(root);
     expect(published.status).toBe('published');
     expect(status(root)).toBe('');
-    expect(git(root, ['log', '-1', '--format=%B'])).toContain(`Architecture-Projection-Restamp: ${RESTAMP.receiptDigest}`);
+    expect(git(root, ['log', '-1', '--format=%B'])).toContain(`Architecture-Projection-Restamp: ${restamp.receiptDigest}`);
+  });
+
+  test('manual entry refuses manifest bytes edited after the newest receipt', () => {
+    const root = fixture();
+    const head = git(root, ['rev-parse', 'HEAD']);
+    seedReceipt(root, 'job-07e4d2d8fe733699af945715', restampFor(root), '2026-08-19T09:00:00.000Z');
+    writeFileSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH), '{ "not": "the approved output" }\n');
+
+    const outcome = publishLatestArchitectureProjectionRestamp(root);
+
+    expect(outcome).toMatchObject({ status: 'skipped', reason: 'receipt-binding-mismatch', detail: 'output' });
+    expect(git(root, ['rev-parse', 'HEAD'])).toBe(head);
+    expect(status(root)).toBe(` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
   });
 });

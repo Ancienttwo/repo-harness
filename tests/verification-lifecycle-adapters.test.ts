@@ -174,7 +174,7 @@ describe("verification lifecycle explicit adapters", () => {
       test(`${script} runs typecheck once and ${typeExit ? "stops before selected tests on failure" : "runs selected tests once"}`, () => {
         const { root, counter } = fixture("verification-local-selection", []);
         mkdirSync(join(root, "tests"), { recursive: true });
-        writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { "check:type": "bun typecheck.ts" } }));
+        writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { "check:type": "bun typecheck.ts", test: "bun test" } }));
         writeFileSync(join(root, "typecheck.ts"), `import { appendFileSync } from "node:fs"; appendFileSync("counter.log", "type\\n"); process.exit(${typeExit});`);
         writeFileSync(join(root, "tests/selected.test.ts"), 'import { test } from "bun:test"; import { appendFileSync } from "node:fs"; test("selected", () => appendFileSync("counter.log", "test\\n"));');
         commit(root, "local checks");

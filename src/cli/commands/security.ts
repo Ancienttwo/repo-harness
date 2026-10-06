@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { MANAGED_TAG, type HookEntry } from '../installer/managed-entries';
+import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
 
 export type SecurityStatus = 'ok' | 'warn' | 'fail';
 export type SecuritySeverity = 'warn' | 'high' | 'fail';
@@ -240,9 +240,18 @@ function hookBlocks(config: HookConfig): Array<{ event: string; hook: HookComman
   return out;
 }
 
+/**
+ * Exact commands the installer writes for a host. The managed marker inside a
+ * command only names its owner; any text can repeat it, so it never exempts.
+ */
+function generatedHookCommands(host: HookHost): ReadonlySet<string> {
+  return new Set(Object.values(buildManagedHooks(host)).flat().flatMap((entry) => entry.hooks.map((hook) => hook.command)));
+}
+
 function scanHookConfig(
   findings: SecurityFinding[],
   filePath: string,
+  host: HookHost,
   hostLabel: string,
   legacyProjectAdapter: boolean,
 ): void {
@@ -258,6 +267,7 @@ function scanHookConfig(
 
   const config = parsed as HookConfig;
   const commands = hookBlocks(config);
+  const generated = generatedHookCommands(host);
   if (legacyProjectAdapter && commands.length > 0) {
     findings.push({
       filePath,
@@ -270,9 +280,8 @@ function scanHookConfig(
 
   for (const { event, hook } of commands) {
     const command = typeof hook.command === 'string' ? hook.command : '';
-    if (!command) continue;
+    if (!command || generated.has(command)) continue;
     const suspicious = suspiciousMatch(command);
-    if (command.includes(MANAGED_TAG) && suspicious === null) continue;
     findings.push({
       filePath,
       ruleId: suspicious?.ruleId ?? 'unmanaged-hook-command',
@@ -396,11 +405,11 @@ export function runSecurityScan(opts: SecurityScanOptions = {}): SecurityScanRep
   ].map((entry) => ({ ...entry, exists: fs.existsSync(entry.filePath) }));
 
   const findings: SecurityFinding[] = [];
-  scanHookConfig(findings, scannedFiles[0].filePath, 'Claude user-level', false);
-  scanHookConfig(findings, scannedFiles[1].filePath, 'Codex user-level', false);
+  scanHookConfig(findings, scannedFiles[0].filePath, 'claude', 'Claude user-level', false);
+  scanHookConfig(findings, scannedFiles[1].filePath, 'codex', 'Codex user-level', false);
   scanVscodeTasks(findings, scannedFiles[2].filePath);
-  scanHookConfig(findings, scannedFiles[3].filePath, 'Claude', true);
-  scanHookConfig(findings, scannedFiles[4].filePath, 'Codex', true);
+  scanHookConfig(findings, scannedFiles[3].filePath, 'claude', 'Claude', true);
+  scanHookConfig(findings, scannedFiles[4].filePath, 'codex', 'Codex', true);
 
   const reviewedExceptions = loadReviewedExceptions(repoRoot, home);
   const applied = applyReviewedExceptions(findings, reviewedExceptions);
