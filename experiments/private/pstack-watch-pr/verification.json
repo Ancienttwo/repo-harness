@@ -11,7 +11,7 @@
     {
       "command": "bun test ./comparison.test.ts ./vendor/github.test.ts ./vendor/policy.test.ts --timeout 60000 --max-concurrency 1",
       "cwd": "experiments/private/pstack-watch-pr",
-      "result": "63 pass; 0 fail; 216 assertions; 3 files",
+      "result": "Historical corrected run: 63 pass; 0 fail; 216 assertions; 3 files. The CI owner reruns the same suite after the scoped package assertion change.",
       "exitCode": 0,
       "logSha256": "6db65d1a92acabbc85ebe1d5d3c48fc82609971a31ce4dadfbbc6bfc2f5e5f6a",
       "logArtifact": "evidence/pstack-offline-corrected-test.log"
@@ -21,21 +21,21 @@
       "cwd": ".",
       "result": "pass",
       "exitCode": 0,
-      "logArtifact": "evidence/pstack-offline-corrected-typecheck.log"
+      "logArtifact": "evidence/pstack-ci-repair-private-typecheck.log"
     },
     {
       "command": "bun run check:type",
       "cwd": ".",
-      "result": "pass; no production source changes",
+      "result": "pass after CI test registration",
       "exitCode": 0,
-      "evidence": "Prior successful execution on the same unchanged root tsconfig and production sources; no separate raw stdout file was retained."
+      "logArtifact": "evidence/pstack-ci-repair-typecheck.log"
     }
   ],
   "testedSourceSha256": {
     "PROVENANCE.json": "9f5841b6d86d83f5dbfcc5b208ff5f15e6d212888e750381f2e62bfc6e19f191",
     "baseline-poller.ts": "4f173b576b231f78d83e1af8a414245f04fb1826d14ec3da24cddc3f447b7ef3",
     "bunfig.toml": "23d13b5a63c75ee0af0c5a61e1ac7bd32c2c8da3684207e13d69bccc37d5082f",
-    "comparison.test.ts": "317e6af0ae27f6f21c7c5aa1f449b143f3847c22aa7b84f731c92db797ce134d",
+    "comparison.test.ts": "b588bd6bfbccc923c063975d0cac671ecadccc34304e1715020b32ca60a5853f",
     "fixtures.ts": "b86848b9efaddc2878e298d326f9f4983adcbd527b53bc60fd44c5204f492f43",
     "offline-guard.ts": "3d37ab2067fd05d6266f4c82b7f1aaabd61438683d2f6cb6b18693de36e84f81",
     "tsconfig.json": "96919690171cbf1c0eb2357565309b6f7a072ad26f40c132d7f72b79b8121f0d",
@@ -55,5 +55,19 @@
     "real agents",
     "production integration"
   ],
-  "reviewCorrection": "Shared independently replayed temporal identity source; decoder-only partial-error label; baseline and watcher changed-content dedup limitation."
+  "reviewCorrection": "Shared independently replayed temporal identity source; decoder-only partial-error label; baseline and watcher changed-content dedup limitation.",
+  "ciRegistration": {
+    "publishedHead": "71c9cb78c25b3be90a2855c222d0af2e7f544bfb",
+    "owner": "tests/pstack-offline-experiment.test.ts",
+    "selector": "unchanged; real directory consumer",
+    "runner": "one bounded isolated Bun test child; no network or process calls in private suite",
+    "guardScope": "Reject exact, ancestor, descendant, glob (including extglob), or invalid private export entries. Allow unrelated plain directories; no full npm glob semantics claimed.",
+    "coverage": "root owner and selector regression pass; real affected selection includes owner; full selected set is not claimed as locally passed",
+    "command": "bun run test:files tests/pstack-offline-experiment.test.ts tests/check-ci-job-split.test.ts --timeout 60000 --max-concurrency 1",
+    "result": "13 root tests pass, 478 assertions; child private suite 64 pass, 234 assertions; zero failures",
+    "logArtifact": "evidence/pstack-ci-repair-tests.log",
+    "logSha256": "29324249166b245e7a91c257a0282d6472d704affc81f59611e0dbef7303c7c4",
+    "testedOwnerSha256": "07d443f55b3042998783c1755d7a0de608740502d1e30bf1022fbde07bc65be1",
+    "testedSelectorRegressionSha256": "65c14d8a5ed30b38ac8b1f1af4524e4d9f87eae29494002501789494e4876e9b"
+  }
 }

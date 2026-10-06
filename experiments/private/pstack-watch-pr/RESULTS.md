@@ -152,11 +152,13 @@ proposed production adapter.
 
 ## Verification and limits
 
-Corrected final test run: 63 passed, zero failed, 216 assertions across three files.
-There are 29 selected upstream tests and 34 comparison/integrity tests.
+Current private test run: 64 passed, zero failed, 234 assertions across three files.
+There are 29 selected upstream tests and 35 comparison/integrity tests.
 The private TypeScript project passes. The unchanged repository root typecheck
 also passes. Source hashes and license checks pass inside the test suite.
-`git diff --check` passes. Only files under this private experiment are added.
+`git diff --check` passes. The initial experiment adds only private files.
+The CI repair also adds `tests/pstack-offline-experiment.test.ts` and extends
+`tests/check-ci-job-split.test.ts`. Production runtime and selector code stay unchanged.
 
 From this directory, with installed Bun 1.4.0 on PATH:
 
@@ -168,8 +170,9 @@ From the repository root, with installed Node 24.19.0:
     bun run check:type
 
 The normal test wrapper is not used because its preload creates a child process.
-This lane uses its own Bun config and deny preload. Default test discovery and
-package exports exclude this directory. No full security scan, full suite, real
+This lane uses its own Bun config and deny preload. Direct root test discovery and package exports exclude this directory. A scoped
+root test owner now runs the three private files in one bounded child process
+for affected CI; the private guard still forbids process and network calls. No full security scan, full suite, real
 GitHub request inside tests, live PR mutation, real agent, installation, or
 publication was run. Initial setup caught an unsupported Bun config argument;
 the explicit file command above is the verified command. Type errors in new
@@ -178,3 +181,10 @@ cross-read probes gave only the collector an identity script. The corrected
 candidate replaces that setup with the shared replay above. Review also prompted
 the decoder-only label and the shared notification-key limitation. The final
 counts and saved output come from the corrected run.
+
+CI repair review found that the initial subtree package guard missed descendant
+exports. The current guard rejects equal, ancestor, and descendant entries.
+Focused cases cover a vendor directory and an individual private source file.
+Unrelated plain directories remain allowed. Globs, including extglobs, and invalid paths fail closed;
+the guard does not claim to implement npm's full pattern language. The selector
+and runtime code remain unchanged.

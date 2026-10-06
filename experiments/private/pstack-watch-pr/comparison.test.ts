@@ -302,9 +302,36 @@ it('verifies that the process import is the denied fixture transport', () => {
   expect(spawnSync as unknown).toBe(processApi.spawnSync as unknown);
 });
 
+const PRIVATE_EXPERIMENT_PATH = 'experiments/private/pstack-watch-pr';
+function packageEntryExposesPrivateFiles(entry: string): boolean {
+  // This small guard accepts plain relative file/directory entries only.
+  // New globs or invalid paths require review, never an inferred safe match.
+  if (/[?*\[\]{}!()\\]/.test(entry)) return true;
+  const listed = entry.replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!listed || listed.split('/').some(part => !part || part === '.' || part === '..')) return true;
+  return listed === PRIVATE_EXPERIMENT_PATH
+    || listed.startsWith(`${PRIVATE_EXPERIMENT_PATH}/`)
+    || PRIVATE_EXPERIMENT_PATH.startsWith(`${listed}/`);
+}
+
+it('rejects private package exports at every overlap and fails closed on globs', () => {
+  const parts = PRIVATE_EXPERIMENT_PATH.split('/');
+  const ancestors = [parts.slice(0, 1).join('/'), parts.slice(0, 2).join('/')];
+  for (const path of [
+    PRIVATE_EXPERIMENT_PATH, `${PRIVATE_EXPERIMENT_PATH}/`, `./${PRIVATE_EXPERIMENT_PATH}`,
+    ...ancestors, `${PRIVATE_EXPERIMENT_PATH}/vendor`, `${PRIVATE_EXPERIMENT_PATH}/vendor/github.ts`,
+    `${ancestors[0]}/**`, `${PRIVATE_EXPERIMENT_PATH}/**`,
+    `@(${ancestors[0]})/${parts.slice(1).join('/')}`, `+(${ancestors[0]})/${parts.slice(1).join('/')}`,
+    'assets/*.md', '', '.', '..',
+  ]) expect(packageEntryExposesPrivateFiles(path)).toBe(true);
+  for (const path of [`${ancestors[1]}/unrelated`, `${PRIVATE_EXPERIMENT_PATH}-other`, `${ancestors[0]}-other/`]) {
+    expect(packageEntryExposesPrivateFiles(path)).toBe(false);
+  }
+});
+
 it('preserves upstream MIT bytes and renders explicit non-authoritative output', async () => {
   const manifest = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
-  expect(manifest.files.some((path: string) => path.startsWith('experiments'))).toBe(false);
+  expect(manifest.files.some(packageEntryExposesPrivateFiles)).toBe(false);
   const provenance = JSON.parse(readFileSync(new URL('./PROVENANCE.json', import.meta.url), 'utf8'));
   for (const f of provenance.files) {
     const bytes = readFileSync(new URL(f.local, import.meta.url));

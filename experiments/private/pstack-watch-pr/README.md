@@ -1,7 +1,7 @@
 # Private pstack watcher experiment
 
 This directory is a bounded offline test harness. It is not a product API.
-It is outside package output and normal test discovery. It has no entry in the
+It is outside package output. Its tests run through an isolated CI test owner. It has no entry in the
 CLI, pipeline, hook, or runtime registry. Do not install the pstack plugin.
 
 ## Plan and fixed inputs
@@ -62,3 +62,18 @@ From the repository root, also run `bun run check:type`.
 The isolated test command replaces the normal runner because its preload creates
 a child process. This experiment explicitly disallows child processes in tests.
 It does not add a full-suite or security-scan requirement.
+
+## CI test registration
+
+`tests/pstack-offline-experiment.test.ts` is the affected-test owner for this
+exact directory. It launches the three explicit private test files in one bounded
+Bun child process. Process errors, timeout, signals, and nonzero exit fail the
+parent test. The private deny preload stays inside the child. It cannot replace
+globals in other root tests. The child still makes no network or process call.
+The parent compares its output with the recorded result. Unknown experiment
+paths still fail coverage selection. No selector exception was added.
+
+The package export guard rejects this exact private subtree, its ancestors,
+and every descendant file or directory. Unrelated plain directories remain
+allowed. Glob or invalid entries fail closed and require review; the private
+experiment does not implement npm's full package-pattern language.
