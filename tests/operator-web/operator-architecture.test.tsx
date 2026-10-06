@@ -43,7 +43,7 @@ function detailFor(id = CENTER, section3: string | null = 'Decision text.\n**not
 
 function promptFor(detail: ModuleDetailV1, shard: number): ModuleReviewPromptV1 {
   return buildModuleReviewPrompt({
-    detail, package_version: '0.21.0', repository_id: 'repo_fixture', input_cap_bytes: 2048, worktree_dirty_paths: [], dirty_content_sha256: null,
+    detail, package_version: '0.21.0', repository_id: 'repo_0123456789abcdef', input_cap_bytes: 2048, worktree_dirty_paths: [], dirty_content_sha256: null,
     model_sha256: 'a'.repeat(64), doc_sha256: null, sources: [], source_sections: {}, module_doc_path: 'docs/architecture/modules/pipeline.md',
     base: null, head: null, diff: null,
   }, shard);
