@@ -10,24 +10,24 @@ responsibilities:
   - Keep commands in the Bot and CLI channel.
 source:
   include:
-    - "src/core/operator/**"
-    - "src/effects/operator/**"
-    - "src/operator-web/**"
-    - "src/cli/commands/operator.ts"
+    - src/core/operator/**
+    - src/effects/operator/**
+    - src/operator-web/**
+    - src/cli/commands/operator.ts
   entrypoints:
     - id: entrypoint.operator.primary
-      path: "src/effects/operator/server.ts"
+      path: src/effects/operator/architecture.ts
       symbols:
-        - name: "startOperatorServer"
+        - name: readArchitecture
           sinks:
             - id: sink.operator.primary
-              path: "src/effects/operator/server.ts"
-              symbol: "sendJson"
+              path: src/core/operator/architecture.ts
+              symbol: decodeArchitectureModuleIndex
 extensions:
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun run check:type"
-    - "bun run test:files tests/cli/operator-serve.test.ts tests/effects/operator-write-boundary.test.ts --timeout 60000 --max-concurrency 1"
+    - bun run check:type
+    - bun run test:files tests/cli/operator-serve.test.ts tests/effects/operator-write-boundary.test.ts --timeout 60000 --max-concurrency 1

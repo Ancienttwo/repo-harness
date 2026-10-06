@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.operator.primary
 capabilityId: capability.runtime-harness.operator
-name: Read an Operator observation
+name: Read an architecture module index
 applicability: required
 participants:
   - id: capability
@@ -12,10 +12,10 @@ steps:
   - id: read
     from: capability
     to: component
-    label: Read public observations
+    label: Validate the public architecture module index
     evidence:
       entrypointId: entrypoint.operator.primary
-      sourceSymbol: startOperatorServer
+      sourceSymbol: readArchitecture
       sinkId: sink.operator.primary
 outcomes:
   - id: success
@@ -23,12 +23,12 @@ outcomes:
     label: Read completes
     steps:
       - id: return-data
-        from: component
-        to: capability
-        label: Return public JSON
+        from: capability
+        to: component
+        label: Validate and return the public module index
         evidence:
           entrypointId: entrypoint.operator.primary
-          sourceSymbol: startOperatorServer
+          sourceSymbol: readArchitecture
           sinkId: sink.operator.primary
     terminal:
       participant: capability
@@ -38,12 +38,12 @@ outcomes:
     label: Read fails
     steps:
       - id: return-error
-        from: component
-        to: capability
-        label: Return a typed failure
+        from: capability
+        to: component
+        label: Reject an invalid public module index
         evidence:
           entrypointId: entrypoint.operator.primary
-          sourceSymbol: startOperatorServer
+          sourceSymbol: readArchitecture
           sinkId: sink.operator.primary
     terminal:
       participant: capability
