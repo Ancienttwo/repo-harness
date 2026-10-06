@@ -228,6 +228,109 @@ describe('Windows protected-helper platform contract', () => {
     })).toThrow('config directory must be a non-symlink directory');
   });
 
+  for (const layout of ['cmd', 'bin', 'mingw32\\bin', 'mingw64\\bin', 'ucrt64\\bin', 'clangarm64\\bin']) {
+    test(`discovers ${layout} first on PATH and pins a supported Git wrapper`, () => {
+      const gitDirectory = `${GIT_ROOT}\\${layout}`;
+      const discovered = discoverWindowsProtectedHelperContract({
+        env: { PATH: `"${gitDirectory}";${GIT_ROOT}\\cmd;${CONTRACT.system_tools_dir}`, TEMP: CONTRACT.temp_dir },
+        fileAccess: access({
+          [gitDirectory]: 'directory',
+          [`${gitDirectory}\\git.exe`]: 'file',
+          [`${GIT_ROOT}\\${layout.split('\\')[0]}`]: 'directory',
+        }),
+        nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+        nativeTempDirectory: CONTRACT.temp_dir,
+      });
+      expect(discovered).toEqual({
+        ...CONTRACT,
+        git_bin: layout === 'bin' ? `${GIT_ROOT}\\bin\\git.exe` : CONTRACT.git_bin,
+      });
+    });
+  }
+
+  for (const name of ['mingw32', 'mingw64', 'ucrt64', 'clangarm64']) {
+    test(`preserves a public bin installation whose root is named ${name}`, () => {
+      const root = `D:\\Apps\\${name}`;
+      const directContract = {
+        ...CONTRACT,
+        git_root: root,
+        git_bin: `${root}\\bin\\git.exe`,
+        bash_bin: `${root}\\bin\\bash.exe`,
+        posix_tools_dir: `${root}\\usr\\bin`,
+      };
+      const discover = (overrides: Record<string, FakePathKind> = {}) => discoverWindowsProtectedHelperContract({
+        env: { PATH: `${root}\\bin;${CONTRACT.system_tools_dir}`, TEMP: CONTRACT.temp_dir },
+        fileAccess: access({
+          [root]: 'directory',
+          [directContract.git_bin]: 'file',
+          [directContract.bash_bin]: 'file',
+          [directContract.posix_tools_dir]: 'directory',
+          // A complete parent installation must not take over a public one.
+          'D:\\Apps': 'directory',
+          'D:\\Apps\\cmd\\git.exe': 'file',
+          'D:\\Apps\\bin\\bash.exe': 'file',
+          'D:\\Apps\\usr\\bin': 'directory',
+          [`${root}\\bin`]: 'directory',
+          ...overrides,
+        }),
+        nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+        nativeTempDirectory: CONTRACT.temp_dir,
+      });
+      expect(discover()).toEqual(directContract);
+      for (const required of [directContract.bash_bin, directContract.posix_tools_dir]) {
+        expect(() => discover({ [required]: 'missing' })).toThrow('is missing');
+        expect(() => discover({ [required]: 'symlink' })).toThrow('non-symlink');
+      }
+    });
+  }
+
+  test('internal Git discovery refuses incomplete or redirected installations', () => {
+    const internalDirectory = `${GIT_ROOT}\\mingw64\\bin`;
+    const internalGit = `${internalDirectory}\\git.exe`;
+    const discover = (overrides: Record<string, FakePathKind>, realpaths: Record<string, string> = {}) =>
+      discoverWindowsProtectedHelperContract({
+        env: { PATH: `${internalDirectory};${GIT_ROOT}\\cmd;${CONTRACT.system_tools_dir}`, TEMP: CONTRACT.temp_dir },
+        fileAccess: access({
+          [`${GIT_ROOT}\\mingw64`]: 'directory',
+          [internalDirectory]: 'directory',
+          [internalGit]: 'file',
+          ...overrides,
+        }, realpaths),
+        nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+        nativeTempDirectory: CONTRACT.temp_dir,
+      });
+    for (const required of [CONTRACT.git_root, CONTRACT.git_bin, CONTRACT.bash_bin, CONTRACT.posix_tools_dir]) {
+      expect(() => discover({ [required]: 'missing' })).toThrow('is missing');
+      expect(() => discover({ [required]: 'symlink' })).toThrow('non-symlink');
+    }
+    const escapedGit = 'D:\\OtherGit\\cmd\\git.exe';
+    expect(() => discover({ [escapedGit]: 'file' }, {
+      [CONTRACT.git_bin.toLowerCase()]: escapedGit,
+    })).toThrow('Git-for-Windows root');
+    for (const directory of [`${GIT_ROOT}\\mingw64`, internalDirectory]) {
+      expect(() => discover({ [directory]: 'symlink' })).toThrow('non-symlink');
+    }
+  });
+
+  test('does not search arbitrary ancestors or other PATH installs for a Git root', () => {
+    for (const layout of ['tools\\bin', 'mingw64\\nested\\bin']) {
+      const directory = `${GIT_ROOT}\\${layout}`;
+      expect(() => discoverWindowsProtectedHelperContract({
+        env: { PATH: `${directory};${GIT_ROOT}\\cmd;${CONTRACT.system_tools_dir}`, TEMP: CONTRACT.temp_dir },
+        fileAccess: access({
+          [directory]: 'directory',
+          [`${directory}\\git.exe`]: 'file',
+        }),
+        nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+        nativeTempDirectory: CONTRACT.temp_dir,
+      })).toThrow('is missing');
+    }
+    const internalGit = `${GIT_ROOT}\\mingw64\\bin\\git.exe`;
+    expect(() => validateWindowsProtectedHelperContract({ ...CONTRACT, git_bin: internalGit }, access({
+      [internalGit]: 'file',
+    }))).toThrow('cmd\\git.exe or bin\\git.exe');
+  });
+
   test('persists the contract atomically without replacing sibling user config', () => {
     const home = mkdtempSync(join(tmpdir(), 'repo-harness-windows-platform-config-'));
     const configDir = join(home, '.repo-harness');

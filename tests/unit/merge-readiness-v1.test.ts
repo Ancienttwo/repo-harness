@@ -23,7 +23,6 @@ const receipt = buildPublicationReceipt({
   head_sha: HEAD,
   tree_sha: 'c'.repeat(40),
   candidate_diff_fingerprint: `sha256:${'4'.repeat(64)}`,
-  merge_seal_sha256: `sha256:${'6'.repeat(64)}`,
   provider: 'github',
   provider_repo_id: 'R_readiness',
   pr_number: 42,

@@ -716,13 +716,6 @@ function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: stri
   if (current === null) fail('automation_budget_store_not_found', `automation run ${runId} has no budget`);
   const budget = readAutomationBudget(repoRoot, current.budget_sha256, env);
   if (budget.automation_run_id !== runId) fail('automation_budget_store_invalid', 'automation budget does not belong to this run');
-  for (const entry of jsonEntries(paths.reservations)) {
-    const reservation = parse(
-      readRaw(join(paths.reservations, entry), 'automation reservation'),
-      validateAutomationReservation,
-      'automation reservation',
-    );
-  }
   const receipt = readStopReceiptOptional(paths);
   if (current.stop_receipt_sha256 !== null && receipt === null) {
     fail('automation_budget_store_invalid', 'automation budget current names a stop receipt that is missing');

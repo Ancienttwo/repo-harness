@@ -210,8 +210,25 @@ function taskInboxStagingDirectory(repoRoot: string, taskId: string, kind: 'even
 }
 
 export function taskInboxTaskDirectory(repoRoot: string, taskId: string): string {
+  return taskInboxTaskScope(repoRoot, taskId).directory;
+}
+
+/**
+ * One task's inbox location, resolved once. Resolving the common directory
+ * spawns Git, so a scan carries this value instead of resolving it again for
+ * every event it reads.
+ */
+interface TaskInboxTaskScope {
+  readonly common: string;
+  readonly task_id: string;
+  readonly directory: string;
+}
+
+function taskInboxTaskScope(repoRoot: string, taskId: string): TaskInboxTaskScope {
   assertTaskId(taskId);
-  return join(taskInboxRoot(repoRoot), taskId);
+  const common = resolveGitCommonDirectory(repoRoot);
+  inspectTaskInboxLayout(common);
+  return { common, task_id: taskId, directory: join(common, TASK_INBOX_RELATIVE_PATH, taskId) };
 }
 
 export function taskInboxEventPath(repoRoot: string, taskId: string, messageId: string): string {
@@ -349,9 +366,10 @@ function recipientFromReceipt(receipt: TaskMessageDeliveryReceiptV1): TaskMessag
   return { kind: receipt.recipient_kind, id: receipt.recipient_id };
 }
 
-function listEvents(repoRoot: string, taskId: string): TaskMessageEventV1[] {
-  const directory = join(taskInboxTaskDirectory(repoRoot, taskId), 'events');
-  if (!inspectSafeDirectoryChain(resolveGitCommonDirectory(repoRoot), directory, false, 'task message event directory')) return [];
+function listEvents(scope: TaskInboxTaskScope): TaskMessageEventV1[] {
+  const taskId = scope.task_id;
+  const directory = join(scope.directory, 'events');
+  if (!inspectSafeDirectoryChain(scope.common, directory, false, 'task message event directory')) return [];
   let stat;
   try {
     stat = lstatSync(directory);
@@ -380,9 +398,9 @@ function listEvents(repoRoot: string, taskId: string): TaskMessageEventV1[] {
     : left.message_id < right.message_id ? -1 : left.message_id > right.message_id ? 1 : 0));
 }
 
-function listReceipts(repoRoot: string, taskId: string, messageId: string): TaskMessageDeliveryReceiptV1[] {
-  const directory = join(taskInboxTaskDirectory(repoRoot, taskId), 'delivery', messageId);
-  if (!inspectSafeDirectoryChain(resolveGitCommonDirectory(repoRoot), directory, false, 'task message delivery directory')) return [];
+function listReceipts(scope: TaskInboxTaskScope, messageId: string): TaskMessageDeliveryReceiptV1[] {
+  const directory = join(scope.directory, 'delivery', messageId);
+  if (!inspectSafeDirectoryChain(scope.common, directory, false, 'task message delivery directory')) return [];
   let stat;
   try {
     stat = lstatSync(directory);
@@ -675,7 +693,7 @@ function isCurrentRevisionEvent(event: TaskMessageEventV1, taskId: string, revis
 
 function isGloballySatisfied(repoRoot: string, taskId: string, event: TaskMessageEventV1): boolean {
   if (event.scope !== 'task') return false;
-  return listReceipts(repoRoot, taskId, event.message_id).some((receipt) => receipt.delivery_state === 'acknowledged');
+  return listReceipts(taskInboxTaskScope(repoRoot, taskId), event.message_id).some((receipt) => receipt.delivery_state === 'acknowledged');
 }
 
 function receiptFor(
@@ -712,13 +730,14 @@ function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskIn
   if (!/^[0-9a-f]{64}$/u.test(input.task_revision)) {
     fail('task_revision_mismatch', `task revision is invalid for ${input.task_id}`);
   }
-  const events = listEvents(input.repo_root, input.task_id);
+  const scope = taskInboxTaskScope(input.repo_root, input.task_id);
+  const events = listEvents(scope);
   const revisionParts: string[] = [];
   let unreadCount = 0;
   for (const event of events) {
     if (!isCurrentRevisionEvent(event, input.task_id, input.task_revision)) continue;
     revisionParts.push(canonicalTaskMessageEventBytes(event));
-    const receipts = listReceipts(input.repo_root, input.task_id, event.message_id);
+    const receipts = listReceipts(scope, event.message_id);
     for (const receipt of receipts) revisionParts.push(canonicalTaskMessageDeliveryReceiptBytes(receipt));
     if (event.audience !== 'owner' || input.current_claim === null) continue;
     if (event.scope === 'claim' && (event.target_claim_id !== input.current_claim.claim_id
@@ -727,7 +746,9 @@ function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskIn
     const recipient: TaskMessageRecipient = {
       kind: 'claim', claim_id: input.current_claim.claim_id, generation: input.current_claim.generation,
     };
-    const receipt = readOptionalReceipt(input.repo_root, input.task_id, event.message_id, recipient);
+    // listReceipts already read and identity-checked this recipient's receipt.
+    const recipientKey = deriveTaskMessageRecipientKey(recipient);
+    const receipt = receipts.find((entry) => deriveTaskMessageRecipientKey(recipientFromReceipt(entry)) === recipientKey);
     if (receipt?.delivery_state === 'acknowledged' || receipt?.delivery_state === 'superseded') continue;
     unreadCount += 1;
   }
@@ -836,7 +857,7 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
   return withInboxTaskLock(input.repo_root, input.task_id, () => {
     const expectedRevision = recipientTaskRevision(input);
     let supersededRevisionCount = 0;
-    const entries = listEvents(input.repo_root, input.task_id)
+    const entries = listEvents(taskInboxTaskScope(input.repo_root, input.task_id))
       .filter((event) => audienceMatches(event, input.recipient))
       .map((event) => {
         if (!isCurrentRevisionEvent(event, input.task_id, expectedRevision)) {
@@ -910,7 +931,7 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
     let supersededCount = 0;
     let pendingCount = 0;
     let renderedBodyBytes = 0;
-    for (const event of listEvents(input.repo_root, input.task_id)) {
+    for (const event of listEvents(taskInboxTaskScope(input.repo_root, input.task_id))) {
       if (!isCurrentRevisionEvent(event, input.task_id, expectedRevision)) continue;
       if (!audienceMatches(event, recipient)) continue;
       if (event.scope === 'claim' && recipient.kind === 'claim'

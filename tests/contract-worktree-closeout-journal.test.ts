@@ -1,5 +1,6 @@
 import { buildLeaseOwnerRecord,bindLeaseRecord,deriveTaskRevision } from '../src/core/state/coordination-identity';
-import { createLeaseDirectory,writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { createLeaseDirectory,readLease,writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { decodePublicationMarker } from '../src/core/publication/publication-receipt';
 import { writeClaimTokenForBoundLease } from '../src/effects/state/coordination-claim-token';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { fixtureTaskId } from './helpers/sprint-fixture';
@@ -1068,6 +1069,105 @@ describe("ship-worktrees closeout journal", () => {
       expect(JSON.parse(readFileSync(markState, "utf-8")).status).toBe("in_progress");
     });
   }, 30_000);
+
+  // Replace the publication CLI fixture with the real CLI, and the provider with
+  // a fake GitHub whose PR facts come from the bare remote. The merge seal store
+  // under the isolated HOME stays empty: only `merge-gate run` writes a seal.
+  function installRealPublication(container: string, fixture: ShipFixture): { readonly home: string; readonly body: string } {
+    writeExecutable(
+      join(container, "fixture-publication-cli.sh"),
+      `#!/bin/bash\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(join(ROOT, "src/cli/index.ts"))} "$@"\n`,
+    );
+    const body = join(container, "pr-body.md");
+    writeExecutable(
+      fixture.ghBin,
+      [
+        "#!/bin/bash",
+        "set -euo pipefail",
+        'printf \'%s\\n\' "$*" >> "$GH_LOG"',
+        "pr_json() {",
+        `  jq -cn --arg head "$(git -C ${JSON.stringify(fixture.remote)} rev-parse refs/heads/codex/demo)" --arg base "$(git -C ${JSON.stringify(fixture.remote)} rev-parse refs/heads/main)" \\`,
+        `    --rawfile body ${JSON.stringify(body)} '{number:1,url:"https://example.invalid/pr/1",headRefOid:$head,headRefName:"codex/demo",baseRefName:"main",baseRefOid:$base,body:$body,createdAt:"2026-08-22T04:05:55Z"}'`,
+        "}",
+        'case "${1:-} ${2:-}" in',
+        `  "repo view") printf '{"id":"R_fixture"}\\n' ;;`,
+        '  "pr list")',
+        `    if [[ ! -f ${JSON.stringify(body)} ]]; then [[ " $* " == *" --jq "* ]] && printf '\\n' || printf '[]\\n'`,
+        `    elif [[ " $* " == *" --jq "* ]]; then printf 'https://example.invalid/pr/1\\n'`,
+        "    else printf '[%s]\\n' \"$(pr_json)\"; fi ;;",
+        '  "pr create")',
+        '    while [[ $# -gt 0 ]]; do [[ "$1" != "--body" ]] || printf \'%s\' "$2" > ' + JSON.stringify(body) + '; shift; done',
+        '    if [[ "${FAULT_ON_PR_CREATE:-0}" == "1" && -f "${FAULT_PID_FILE:-/nonexistent}" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
+        "    printf 'https://example.invalid/pr/1\\n' ;;",
+        '  "pr edit") printf \'%s\' "$5" > ' + JSON.stringify(body) + " ;;",
+        "  \"pr view\") pr_json ;;",
+        '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;',
+        "esac",
+        "",
+      ].join("\n"),
+    );
+    const home = join(container, "home");
+    mkdirSync(home);
+    return { home, body };
+  }
+
+  test("default Draft managed ship reaches reviewing with the real publication CLI and no merge seal", () => {
+    withTempRepo("closeout-journal-ship-real-publication", (container) => {
+      const fixture = installShipFixture(container);
+      const provider = installRealPublication(container, fixture);
+      const result = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
+        HOME: provider.home,
+        REPO_HARNESS_GH_BIN: fixture.ghBin,
+        GH_LOG: fixture.ghLog,
+      });
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(readJournal(onlyJournal(fixture, "ship"))).toEqual({
+        status: "complete",
+        phases: ["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"],
+      });
+      const ghLog = readFileSync(fixture.ghLog, "utf-8");
+      expect(ghLog.split("\n").filter((line) => line.startsWith("pr create"))).toHaveLength(1);
+      // The PR body spans several log lines; the Draft flag ends the create call.
+      expect(ghLog).toMatch(/ --draft$/m);
+      const lease = readLease(fixture.linked, fixtureTaskId("demo")).record;
+      expect(lease?.state).toBe("reviewing");
+      const receipt = decodePublicationMarker(readFileSync(provider.body, "utf-8"));
+      expect(receipt).not.toBeNull();
+      expect(receipt!.head_sha).toBe(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim());
+      expect(receipt!.base_sha).toBe(runProcess("git", ["rev-parse", "refs/heads/main"], fixture.remote).stdout.trim());
+      expect(lease && "current_publication" in lease ? lease.current_publication?.publication_id : null).toBe(receipt!.publication_id);
+      expect(existsSync(join(provider.home, ".repo-harness/gates"))).toBe(false);
+    });
+  }, 60_000);
+
+  test("real publication recovery after a killed Draft PR creation finishes without a second push or PR", () => {
+    withTempRepo("closeout-journal-ship-real-publication-recovery", (container) => {
+      const fixture = installShipFixture(container);
+      const provider = installRealPublication(container, fixture);
+      const env = { HOME: provider.home, REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
+      const crashed = runHelperWithFault("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, fixture.pidFile, {
+        ...env,
+        FAULT_ON_PR_CREATE: "1",
+      });
+      expect(crashed.status).not.toBe(0);
+      const dir = onlyJournal(fixture, "ship");
+      expect(readJournal(dir).phases).toEqual(["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started"]);
+      const remoteHead = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
+
+      const reconciled = runHelper("scripts/ship-worktrees.sh", ["--recover", "reconcile"], fixture.linked, env);
+      expect(reconciled.status, `${reconciled.stdout}\n${reconciled.stderr}`).toBe(0);
+      expect(reconciled.stdout).not.toContain("git push");
+      expect(readFileSync(fixture.ghLog, "utf-8").split("\n").filter((line) => line.startsWith("pr create"))).toHaveLength(1);
+      expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim()).toBe(remoteHead);
+      expect(readJournal(dir)).toEqual({
+        status: "complete",
+        phases: ["prepared", "implementation_committed", "candidate_frozen", "publication_create_intent", "push_started", "pushed", "pr_create_started", "pr_observed", "complete"],
+      });
+      expect(readLease(fixture.linked, fixtureTaskId("demo")).record?.state).toBe("reviewing");
+      expect(decodePublicationMarker(readFileSync(provider.body, "utf-8"))?.head_sha).toBe(remoteHead);
+      expect(existsSync(join(provider.home, ".repo-harness/gates"))).toBe(false);
+    });
+  }, 60_000);
 
   test("SIGKILL right after the prepared phase rolls back with nothing pushed", () => {
     withTempRepo("closeout-journal-ship-prepared", (container) => {

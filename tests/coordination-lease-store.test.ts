@@ -8,6 +8,7 @@
  */
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'fs';
+import * as childProcess from 'child_process';
 import { spawn, spawnSync } from 'child_process';
 import {
   chmodSync,
@@ -404,6 +405,24 @@ describe('lookup by fencing token', () => {
     const result = findLeaseByClaimId(repo, 'claim-dup');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain('is held by 2 leases');
+  });
+
+  test('one scan of many leases starts one Git discovery process', () => {
+    const repo = createRepo();
+    claim(repo, 'scan lease a', 'scan-claim-a');
+    claim(repo, 'scan lease b', 'scan-claim-b');
+    claim(repo, 'scan lease c', 'scan-claim-c');
+    const discovery = spyOn(childProcess, 'execFileSync');
+    try {
+      const found = findLeaseByClaimId(repo, 'scan-claim-a');
+      expect(found.ok).toBe(true);
+      const discoveries = discovery.mock.calls
+        .filter((call) => Array.isArray(call[1]) && (call[1] as readonly string[]).includes('--git-common-dir'))
+        .length;
+      expect(discoveries).toBe(1);
+    } finally {
+      discovery.mockRestore();
+    }
   });
 });
 

@@ -163,6 +163,11 @@ function snapshotForState(state: OperatorSnapshotViewState): OperatorFleetSnapsh
   return state.snapshot;
 }
 
+function staleErrorForState(state: OperatorSnapshotViewState): OperatorApiErrorV1 | null {
+  if (state.kind === 'stale') return state.error;
+  return state.kind === 'loading' ? state.staleError ?? null : null;
+}
+
 /**
  * Selection identity deliberately excludes `task_revision`: a refresh that only
  * re-writes the task definition must keep the pane open and say so, not drop
@@ -485,7 +490,8 @@ function SnapshotNotice({
       </div>
     );
   }
-  if (state.kind === 'stale') return <FleetStaleNotice error={state.error} onRetry={onRetry} t={t} />;
+  const staleError = staleErrorForState(state);
+  if (staleError) return <FleetStaleNotice error={staleError} onRetry={onRetry} t={t} />;
   if (state.kind === 'changed-during-read') {
     return (
       <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
@@ -1630,7 +1636,8 @@ export function OperatorApp({
 
   const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     const previous = snapshotForState(stateRef.current);
-    const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
+    const staleError = staleErrorForState(stateRef.current);
+    const loading: OperatorSnapshotViewState = { kind: 'loading', previous, ...(staleError ? { staleError } : {}) };
     stateRef.current = loading;
     setState(loading);
     try {
@@ -1792,7 +1799,7 @@ export function OperatorApp({
             collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
             evidenceGeneration={collaborationRefreshGeneration}
-            fleetStaleError={state.kind === 'stale' ? state.error : null}
+            fleetStaleError={staleErrorForState(state)}
             readTaskContext={readTaskContext}
             readTaskActivity={readTaskActivity}
             onClose={closeSelection}

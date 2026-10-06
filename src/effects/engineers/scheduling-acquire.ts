@@ -71,7 +71,6 @@ export interface ScheduledEngineerAcquireOptions {
   readonly principal: EngineerPrincipalV1;
   readonly assertion: ScheduledEngineerAcquireAssertionV1;
   readonly session_id?: string | null;
-  readonly max_attempts?: number;
   readonly env?: NodeJS.ProcessEnv;
   readonly offer_options?: Omit<CollectEngineerOffersOptions, 'repo_root' | 'principal' | 'env'>;
   readonly acquire_options?: Pick<EngineerAcquireOptions, 'now'>;
@@ -152,7 +151,6 @@ export function acquireScheduledEngineerTask(options: ScheduledEngineerAcquireOp
           authorization_revision: current.authorization_revision,
         },
         session_id: options.session_id,
-        max_attempts: options.max_attempts,
         env: options.env,
         now: options.acquire_options?.now,
       });

@@ -1,10 +1,13 @@
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import {
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   statSync,
@@ -164,19 +167,34 @@ function normalizeRepoPath(repoRoot: string, pathValue: string | undefined): str
   return raw;
 }
 
+const FILE_HASH_SAMPLE_BYTES = 512 * 1024;
+
+// The hash covers only the file length and its leading sample, so read no
+// more than the sample: a large changed file must not cost a full read at Stop.
 function readFileHash(repoRoot: string, relPath: string): string {
   const abs = resolve(repoRoot, relPath);
   if (!existsSync(abs)) return 'missing';
   try {
     const stat = statSync(abs);
     if (!stat.isFile()) return `non-file:${stat.size}:${stat.mtimeMs}`;
-    const raw = readFileSync(abs);
-    const sample = raw.subarray(0, 512 * 1024);
-    return createHash('sha256')
-      .update(String(raw.length))
-      .update('\0')
-      .update(sample)
-      .digest('hex');
+    const fd = openSync(abs, 'r');
+    try {
+      const sample = Buffer.alloc(Math.min(stat.size, FILE_HASH_SAMPLE_BYTES));
+      let bytesRead = 0;
+      while (bytesRead < sample.length) {
+        const count = readSync(fd, sample, bytesRead, sample.length - bytesRead, bytesRead);
+        if (count === 0) break;
+        bytesRead += count;
+      }
+      const length = bytesRead < sample.length ? bytesRead : stat.size;
+      return createHash('sha256')
+        .update(String(length))
+        .update('\0')
+        .update(sample.subarray(0, bytesRead))
+        .digest('hex');
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return 'unreadable';
   }
@@ -559,6 +577,7 @@ export function collectMinimalChangeSignals(
     ? abstractionCandidates(repoRoot, relPath, protectedChanges)
     : [];
   const findings = buildFindings(policy, relPath, dependency.newDependencies, abstraction);
+  const fileHash = readFileHash(repoRoot, relPath);
   // Every policy field that shapes the report belongs here: event dedupe
   // skips the write on a match, and Stop reads only the saved report.
   const reportFingerprint = fingerprint({
@@ -572,8 +591,8 @@ export function collectMinimalChangeSignals(
     reportPath: policy.report_path,
     nameStatusRaw,
     numstatRaw,
-    fileHash: readFileHash(repoRoot, relPath),
-    manifestHash: manifest ? readFileHash(repoRoot, relPath) : '',
+    fileHash,
+    manifestHash: manifest ? fileHash : '',
   });
 
   const report: MinimalChangeReport = {

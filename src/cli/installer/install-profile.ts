@@ -947,11 +947,12 @@ function removeRetiredOwnedSurfaces(
       throw new Error(`refusing profile switch because managed surface drifted: ${surface.path}`);
     }
   }
+  const ownedSkills = profileOwnedSkillsSet();
   const removedSkills = new Set<string>();
   for (const surface of unique) {
     const normalized = surface.path.replaceAll('\\', '/');
     const name = normalized.split('/').at(-1) ?? '';
-    if (profileOwnedSkillsSet().has(name) && normalized.includes('/.agents/skills/')) removedSkills.add(name);
+    if (ownedSkills.has(name) && normalized.includes('/.agents/skills/')) removedSkills.add(name);
     if (surface.managed_marker === CODEGRAPH_CONFIG_MARKER) removeCodegraphProjection(surface.path);
     else rmSync(surface.path, { recursive: true, force: true });
   }
