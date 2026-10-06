@@ -304,7 +304,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:89376b656f3f8474159fdfe9af6f7b5dc1fabff31d00d61888280b1e767c4345" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7b5ba76b597099f090f745c4b130b3a7caa7b5d489a7acf50d2f5bcd3ee528fe" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:999a6de75548ad65459cdc71baa75dd1338274dfd1a30d263871350645cdef7d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1d2e85459e09dd41d3f97e56a2a987d9948d879a34a6ad142591c2f55c0dc2c4" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -329,6 +329,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Integration Product Acceptance](modules/runtime-harness/integration-acceptance.md) — capability / active
 - [Interface Change Requests](modules/runtime-harness/interface-change.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
+- [Operator Board](modules/runtime-harness/operator.md) — capability / active
 - [Refactor Program](modules/runtime-harness/refactor-program.md) — capability / active
 - [Verified Evidence Context](modules/runtime-harness/verified-context.md) — capability / active
 - [Work Demand Intake](modules/runtime-harness/work-demand.md) — capability / active
@@ -383,6 +384,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.interface-change — calls
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
+- capability.runtime-harness.operator -> component.operator.primary — calls
 - capability.runtime-harness.refactor-program -> component.refactor-program.archctx-provider — calls
 - capability.runtime-harness.refactor-program -> component.refactor-program.lifecycle — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls

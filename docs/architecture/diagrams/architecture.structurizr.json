@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:89376b656f3f8474159fdfe9af6f7b5dc1fabff31d00d61888280b1e767c4345" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:2fe2769ee51a0500f845c9fff7e39fbc26d07f16fea396c1b016fe44c7450301" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:999a6de75548ad65459cdc71baa75dd1338274dfd1a30d263871350645cdef7d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:119d5987a2e78d64984beec1fb4758166bbb4171b75d66491d4a1f3961bbaca2" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -143,6 +143,14 @@
       {
         "id": "capability.runtime-harness.mcp-sidecar",
         "name": "MCP Sidecar",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.operator",
+        "name": "Operator Board",
         "type": "Software System",
         "tags": [
           "capability"
@@ -391,6 +399,14 @@
       {
         "id": "component.mcp-sidecar.primary",
         "name": "MCP Tool Dispatcher",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.operator.primary",
+        "name": "Operator HTTP Reader",
         "type": "Component",
         "tags": [
           "component"
@@ -697,6 +713,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.operator.primary",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "component.operator.primary",
+        "description": "calls"
+      },
+      {
         "id": "relation.refactor-program.archctx-provider",
         "sourceId": "capability.runtime-harness.refactor-program",
         "destinationId": "component.refactor-program.archctx-provider",
@@ -774,6 +796,7 @@
         "capability.runtime-harness.integration-acceptance",
         "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
+        "capability.runtime-harness.operator",
         "capability.runtime-harness.refactor-program",
         "capability.runtime-harness.verified-context",
         "capability.runtime-harness.work-demand",
@@ -805,6 +828,7 @@
         "component.integration-acceptance.primary",
         "component.interface-change.primary",
         "component.mcp-sidecar.primary",
+        "component.operator.primary",
         "component.refactor-program.archctx-provider",
         "component.refactor-program.lifecycle",
         "component.root-router.primary",
