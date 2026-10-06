@@ -99,6 +99,7 @@ the historical `main@a490a5ef` count:
 | `src/core/refactor/board.ts` | C-1, C-2 | Refactor read model: projects Program, provider lifecycle, execution, and resolution authorities for display; no delivery-plane admission or ownership decision reads the board bytes |
 | `src/core/refactor/activation.ts` | C-1, C-2 | Refactor rollout-control plane: canary receipts gate mode activation but grant no Task/Claim, move no Lease generation, and publish or accept no delivery-plane fact |
 | `src/core/fleet/task-reply.ts` | C-1, C-2 | Messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots. AKN-03b Task Inbox and restricted Engineer MCP consume these records only for message disposition; structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority. The delivery-plane inventory and frozen identities remain unchanged. |
+| `src/core/messages/document-handoff.ts` | C-1, C-2 | Untrusted document content protocol. Pure validation, canonical rendering, and caller-supplied reference comparison own no delivery-plane identity. There is no production consumer or store. Sender claims authenticate nobody, and no admission or ownership decision reads the payload. Its bytes grant no Task/Claim, Lease, Publication, Acceptance, or Delegation authority. The delivery-plane inventory and frozen digest remain unchanged. |
 
 **`project-board.ts` vs `fleet/board.ts`.** Both are Task/Lease-plane read
 models, and both are inventoried; the earlier split between them had no stated

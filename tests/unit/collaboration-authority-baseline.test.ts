@@ -437,6 +437,11 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'messaging reply provenance plane: pure intent/commit validators relate existing message, ACK, mapping and actor snapshots; Task Inbox and restricted Engineer MCP consume them only for message disposition, and structural completeness grants no Task/Claim, Lease, Publication, Acceptance or Delegation authority',
   },
   {
+    module: 'src/core/messages/document-handoff.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'untrusted document content protocol: pure validation, canonical rendering, and caller-supplied reference comparison; no production consumer, store, authenticated sender, or admission decision, and no Task/Claim, Lease, Publication, Acceptance or Delegation authority',
+  },
+  {
     module: 'src/core/publication/feedback.ts',
     fails: ['C-1'],
     evidence: 'review/repair loop despite the publication/ directory (D12); merge-readiness imports only publication-receipt and no publication or merge decision reads a feedback event',
@@ -692,6 +697,13 @@ describe('C1 closed inclusion scan', () => {
     expect(DELIBERATELY_EXCLUDED.find((entry) => entry.module === 'src/core/collaboration/common.ts')?.fails)
       .toEqual(['C-1', 'C-2']);
     expect(AUTHORITY_INVENTORY.some((entry) => entry.authority.includes('collaboration'))).toBe(false);
+  });
+
+  test('the document handoff content protocol is adjudicated outside delivery authority', () => {
+    const module = 'src/core/messages/document-handoff.ts';
+    expect(DELIBERATELY_EXCLUDED.find((entry) => entry.module === module)?.fails).toEqual(['C-1', 'C-2']);
+    expect(AUTHORITY_SOURCE_MODULES.some((entry) => entry.module === module)).toBe(false);
+    expect(freezeRecordSource()).toContain(`| \`${module}\` | C-1, C-2 |`);
   });
 
   /**
