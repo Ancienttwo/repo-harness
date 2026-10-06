@@ -1,5 +1,5 @@
 import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -146,7 +146,11 @@ test('serialized output and nested recipient scan limits are independently visib
   const nested=readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,message_id:id(1),limit:1,after:null,budget:{max_scan:1,max_bytes:2*1024*1024,deadline_ms:250}});
   expect(nested.coverage).toMatchObject({complete:false,reason:'scan',scanned:1});
   for(let n=100;n<200;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n),body:'\\'.repeat(8000)}));
-  const result=readOperatorTaskActivity({...f.input,limit:100});
+  // Keep the output ceiling independent of host scheduling and the deadline.
+  const outputClock = spyOn(Date, 'now').mockReturnValue(Date.now());
+  let result: ReturnType<typeof readOperatorTaskActivity>;
+  try { result=readOperatorTaskActivity({...f.input,limit:100}); }
+  finally { outputClock.mockRestore(); }
   expect(result.coverage).toMatchObject({complete:false,reason:'output'});
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
   expect(result.next_cursor).toBeNull();
@@ -175,4 +179,19 @@ test('activity retains canonical UTF-8 body limits while metadata remains nonemp
   const entry = result.entries[0]!;
   expect(() => decodeOperatorTaskActivity({ ...result, entries: [{ ...entry, event: { ...entry.event, body: f.intent.reply.body + 'x' } }] }, result)).toThrow();
   expect(() => decodeOperatorTaskActivity({ ...result, entries: [{ ...entry, event: { ...entry.event, sender_id: '' } }] }, result)).toThrow();
+});
+
+// Real records and readers exercise the deadline at its exact boundary.
+test('activity deadline remains an independent hard boundary', () => {
+  const f = fixture();
+  const read = () => readHistoricalTaskActivity({ repo_root:f.root, task_id:f.input.task_id, message_id:id(1), limit:1, after:null, budget:{max_scan:1000,max_bytes:2*1024*1024,deadline_ms:250} });
+  for (const elapsed of [249, 250]) {
+    const clock = spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(elapsed);
+    try {
+      const result = read();
+      expect(result.coverage).toMatchObject(elapsed === 249 ? {complete:true,reason:null} : {complete:false,reason:'deadline',scanned:0,bytes:0});
+      expect(result.entries.length).toBe(elapsed === 249 ? 1 : 0);
+      expect(result.next_cursor).toBeNull();
+    } finally { clock.mockRestore(); }
+  }
 });
