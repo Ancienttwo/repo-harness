@@ -436,13 +436,15 @@ describe('C6 collaboration run context binding fence', () => {
      */
     function startDriver(driver: string, input: unknown, env: NodeJS.ProcessEnv, index: string) {
       const child = spawn(process.execPath, [driver, JSON.stringify(input), index], { env });
+      const exited = new Promise<number | null>((resolveExit) => child.once('close', resolveExit));
       let stdoutText = '';
       let stderrText = '';
       child.stdout?.on('data', (chunk: Buffer | string) => { stdoutText += String(chunk); });
       child.stderr?.on('data', (chunk: Buffer | string) => { stderrText += String(chunk); });
       return {
+        exited,
         results: async (): Promise<DriverRound[]> => {
-          const code = await new Promise<number | null>((resolveExit) => child.once('close', resolveExit));
+          const code = await exited;
           if (stdoutText === '') throw new Error(`driver produced no result (exit ${code}): ${stderrText}`);
           return JSON.parse(stdoutText) as DriverRound[];
         },
@@ -518,6 +520,32 @@ describe('C6 collaboration run context binding fence', () => {
         },
       };
     }
+
+    test('driver results remain available after both children close', async () => {
+      const value = fixture();
+      publishSignal(value, 'signal-a', 'merge-gate-flake');
+      const driver = writeDriver();
+      const barriers = prepareBarriers(value, 'closed-driver');
+      const input = { role: 'packet', repo_root: value.repoRoot, rounds: 1, commands: barriers.commands, acks: barriers.acks };
+      const first = startDriver(driver, input, value.env, '0');
+      const second = startDriver(driver, input, value.env, '1');
+      const barrier = await holdBarriers(barriers);
+      try {
+        await barrier.release();
+        await barrier.awaitRound();
+      } finally {
+        await barrier.close();
+      }
+      // Observe real close events before calling results. A late listener
+      // cannot receive those events, regardless of process scheduling.
+      expect(await Promise.all([first.exited, second.exited])).toEqual([0, 0]);
+      const [left, right] = await Promise.all([first.results(), second.results()]);
+      expect(first.stderr()).toBe('');
+      expect(second.stderr()).toBe('');
+      expect(left).toHaveLength(1);
+      expect(left[0]!.ok).toBe(true);
+      expect(right).toEqual(left);
+    }, 10000);
 
     test('concurrent identical packet writers both succeed and publish one record', async () => {
       const value = fixture();
