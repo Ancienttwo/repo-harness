@@ -12,6 +12,7 @@ import {
   type InitRuntimeDependencies,
 } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
+import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
@@ -1591,5 +1592,6 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "disabled" });
   }
 
+  if (steps.every((step) => step.status !== "failed")) steps.push(configureRequiredHerdrSkill(target, env));
   return finalizeRuntimeResult(steps);
 }

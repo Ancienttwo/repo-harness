@@ -392,6 +392,12 @@ installs. Install herdr through its official installer or platform package manag
 and verify `herdr --version` reports at least that pinned `min_version`.
 `check-agent-tooling.sh --strict-readiness` reads the same key and fails if herdr is
 missing, unusable, or older than the pin; `setup check` projects `runtime.herdr`. Repo-harness does not install it or edit user Herdr config.
+The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
+`repo-harness install` and `repo-harness update` copy the release-matched
+skill text from `herdr --skill` into each selected host skill root. They refuse
+to replace a user-edited or unowned copy. Strict readiness compares each
+installed copy with `herdr --skill` and fails when a copy is absent or differs.
+The skill only controls Herdr from a real Herdr pane with `HERDR_ENV=1`.
 The persistent reviewer still requires POSIX process groups: use macOS/Linux or
 WSL. Native Windows review lifecycle support is not implied by Herdr support.
 Drain old tmux reviewers with the previous repo-harness version before upgrading.
