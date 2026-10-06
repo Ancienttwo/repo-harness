@@ -4,10 +4,10 @@
 - Status: preparation. Publication is not yet verified.
 - Lane: stable npm and GitHub Release.
 - Previous release: v0.20.0, commit 0482c621abbbd7d63fed7ab3d9eef1da5658f86f.
-- Source integration: c47a5cdd. This combines current main b44bd386 with
-  #536, #578 and the native fixture path correction 66f623d2.
+- Source integration includes main bcae3302 and A0 integration a2bbf442.
+  The native fixture uses the authoritative remote correction f05c505d.
 - Authorization: the owner approved acceptance, main publication and release.
-- Excluded: #582 required Herdr skill. It remains a separate install change.
+- The owner expanded this release to include #582 after its main merge.
 - Notes: [CHANGELOG](../../docs/CHANGELOG.md#0210---2026-10-06).
 
 ## P1/P2/P3
@@ -34,5 +34,8 @@ grader_pass_rate and effectiveness_authority are unavailable.
 Existing external MCP clients must use engineer_prepare before engineer_acquire.
 Old arguments fail. A legacy receipt store without a cutover seal stays blocked.
 D0 is a backend foundation. Live Bot and Mini acceptance are not claimed.
+Hosts without release-matched Herdr cannot complete init --apply.
+The old 8de74ebd release gate was stopped after this scope change.
+It completed 140 file summaries and has no final full-suite result.
 Revert each squash commit with git revert <squash-commit>.
 A Git revert does not undo an npm publication or ledger data.

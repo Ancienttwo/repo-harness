@@ -8,6 +8,10 @@ All notable changes to this skill are documented here.
 
 ### Breaking changes
 
+- `init --apply` and global runtime setup now require the release-matched
+  `herdr --skill` output. Hosts without that binary fail setup.
+  Managed skill writes preserve user edits and refuse unowned targets. (#582)
+
 - MCP `engineer_acquire` now acquires one offer from a trusted
   `engineer_prepare` observation. It requires `idempotency_key` and
   `observation_ref`. It no longer accepts `max_attempts`.

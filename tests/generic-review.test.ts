@@ -87,8 +87,7 @@ test('review packet enforces the existing 10 MiB limit in UTF-8 bytes without tr
 });
 
 function packetRoundFixture() {
-  // Keep the named-session socket below Darwin's 103-byte path limit.
-  const fixture = seedAcceptanceFixture('rp');
+  const fixture = seedAcceptanceFixture('review-packet');
   roots.push(fixture.root, fixture.home);
   // Match the acceptance fixture's short, private endpoint HOME. TMPDIR can be
   // long on macOS; Herdr also needs room for the longer client socket name.
