@@ -9,6 +9,7 @@ export const SECRET_TOKEN_PATTERNS = [
   { type: 'private_key', pattern: /-----BEGIN\s+(?:RSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----/g, replacement: '[PRIVATE KEY REDACTED]' },
   { type: 'webhook_url', pattern: /https:\/\/(?:hooks\.slack\.com\/services|(?:canary\.|ptb\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks)\/[^\s<>"']+/gi, replacement: '[WEBHOOK REDACTED]' },
   { type: 'credential_url', pattern: /[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi, replacement: '[CREDENTIAL URL REDACTED]' },
+  { type: 'url_token', pattern: /https?:\/\/[^\s<>"']*[?&](?:token|key|secret|auth|signature|sig|code)=[^\s<>"']+/gi, replacement: '[ENDPOINT REDACTED]' },
   { type: 'telegram_token', pattern: /\b\d{5,16}:[A-Za-z0-9_-]{30,}\b/g, replacement: '[TELEGRAM TOKEN REDACTED]' },
 ] as const;
 

@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.operator.primary
+capabilityId: capability.runtime-harness.operator
+name: Read an architecture module index
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-harness.operator
+  - id: component
+    nodeId: component.operator.primary
+steps:
+  - id: read
+    from: capability
+    to: component
+    label: Validate the public architecture module index
+    evidence:
+      entrypointId: entrypoint.operator.primary
+      sourceSymbol: readArchitecture
+      sinkId: sink.operator.primary
+outcomes:
+  - id: success
+    kind: success
+    label: Read completes
+    steps:
+      - id: return-data
+        from: capability
+        to: component
+        label: Validate and return the public module index
+        evidence:
+          entrypointId: entrypoint.operator.primary
+          sourceSymbol: readArchitecture
+          sinkId: sink.operator.primary
+    terminal:
+      participant: capability
+      label: Return data without writes
+  - id: error
+    kind: error
+    label: Read fails
+    steps:
+      - id: return-error
+        from: capability
+        to: component
+        label: Reject an invalid public module index
+        evidence:
+          entrypointId: entrypoint.operator.primary
+          sourceSymbol: readArchitecture
+          sinkId: sink.operator.primary
+    terminal:
+      participant: capability
+      label: Return a failure without writes

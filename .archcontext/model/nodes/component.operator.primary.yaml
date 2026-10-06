@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.primary
+kind: component
+name: Operator HTTP Reader
+status: active
+parent: capability.runtime-harness.operator
+summary: Returns public JSON observations and typed failures without write routes.
