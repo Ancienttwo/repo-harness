@@ -5,7 +5,8 @@ import { isAbsolute, join, relative, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { REVIEW_FINDING_RULES, REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
+import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
+import { composeReviewPacket } from '../../core/review/review-packet';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
@@ -202,8 +203,22 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       writeSessionArtifact(join(dir, 'session.json'), session);
     }
     const round = nextSessionRound<RoundRecord>(dir, REVIEW_MAX_ROUNDS, identity.subject_sha256, previous => previous.subject_sha256);
+    const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
+    const contextDigest = acceptanceReviewContextDigest(context);
+    const packet = composeReviewPacket({ context_sha256: contextDigest, subject_sha256: identity.subject_sha256,
+      actual_harness: session.actual_harness, actual_role: GENERIC_REVIEW_ROLE, prior_findings: previous,
+      contract: context.contract.content, goal: context.goal.content, verification: context.verification.content,
+      source: sourcePacket(root, context.subject.paths, context.subject.target_rev) });
     const inputDir = join(reviewerRepo, '.ai/harness/runs/generic-review-input', key);
     ensureSessionDirectory(reviewerRepo, inputDir);
+    const packetPath = join(inputDir, `packet-${round}.txt`);
+    if (!existsSync(packetPath)) writeFileSync(packetPath, packet, { flag: 'wx', mode: 0o600 });
+    else if (readFileSync(packetPath, 'utf8') !== packet) {
+      // A failed start does not consume a round. Preserve its packet even when
+      // the launch outcome is unknown; do not replace it or start another pane.
+      const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+      throw new Error(`review_packet_changed_before_send; packet for round ${round} is preserved. Inspect with repo-harness review status --repo ${quote(root)} --contract ${quote(contract)} --json; restore the original subject and verification before retrying the same review round.`);
+    }
     const taskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
     const outbox = join(reviewerRepo, '.ai/harness/runs/task-agent-outbox', taskDir.split('/').pop()!);
     ensureSessionDirectory(reviewerRepo, outbox);
@@ -244,20 +259,6 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       reviewHostCommand(node, hostEntry, specPath), () => client.ready(join(dir, 'ready.json')));
     client.assertBinding(binding);
     if (binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
-    const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
-    const contextDigest = acceptanceReviewContextDigest(context);
-    const packet = [
-      'Review the complete current subject against its goal, contract and prepared verification evidence. Do not edit production code or invoke other reviewers. Only author one final JSON file to the exact request.result_ref; no temp/rename or alternate submission. Terminal output and idle are observation only.',
-      'Outer transport JSON is {request_id: request.request_id, context_sha256: request.context_sha256, value: domain output}. Provider value has EXACTLY request_id, context_sha256, subject_sha256, verdict, summary, findings. Domain request_id is request.request_id; domain context_sha256 is the prepared domain hash below (distinct from transport packet hash). The owner adds actual harness/role/model from the bound task-agent and OAR Session observation, not your self-description.',
-      REVIEW_FINDING_RULES.text,
-      `DOMAIN IDENTITY: ${JSON.stringify({ context_sha256: contextDigest, subject_sha256: identity.subject_sha256, actual_harness: session.actual_harness, actual_role: GENERIC_REVIEW_ROLE })}`,
-      `PRIOR FINDINGS: ${JSON.stringify(previous)}`, `CONTRACT:\n${context.contract.content}`, `GOAL:\n${context.goal.content}`,
-      `PREPARED VERIFICATION:\n${context.verification.content}`, `CURRENT SOURCE:\n${sourcePacket(root, context.subject.paths, context.subject.target_rev)}`,
-    ].join('\n\n');
-    if (Buffer.byteLength(packet) > 10 * 1024 * 1024) throw new Error('review_context_too_large');
-    const packetPath = join(inputDir, `packet-${round}.txt`);
-    if (!existsSync(packetPath)) writeFileSync(packetPath, packet, { flag: 'wx', mode: 0o600 });
-    else if (readFileSync(packetPath, 'utf8') !== packet) throw new Error('review_packet_changed_before_send');
     const recheck = await acceptanceContext({ root, contract, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
     const before = [fingerprint(root), fingerprint(reviewerRepo)];
