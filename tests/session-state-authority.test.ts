@@ -131,6 +131,8 @@ function captureHealthyBaseline(): Record<string, unknown> {
           ...gitEnv,
           HOOK_REPO_ROOT: root,
           HOOK_HOST: 'claude',
+          // This state-authority fixture must not leave a detached tooling refresh.
+          REPO_HARNESS_TOOLING_ADVISORY: '0',
           REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: undefined,
           HOOK_SESSION_ID: 'session-state-authority-baseline',
           HOOK_RUN_ID: 'session-state-authority-baseline-run',
