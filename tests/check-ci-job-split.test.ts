@@ -39,6 +39,28 @@ describe('single affected verification and daily fallback', () => {
     expect(selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]))).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });
 
+  test('private pstack files select their real isolated test owner without granting a prefix exemption', () => {
+    const owner = 'tests/pstack-offline-experiment.test.ts';
+    const prefix = 'experiments/private/pstack-watch-pr/';
+    const files = [
+      'README.md', 'RESULTS.md', 'PROVENANCE.json', 'results.json', 'verification.json',
+      'baseline-poller.ts', 'comparison.test.ts', 'fixtures.ts', 'offline-guard.ts',
+      'bunfig.toml', 'tsconfig.json', 'vendor/LICENSE', 'vendor/fakes.test-helper.ts',
+      'vendor/github.test.ts', 'vendor/github.ts', 'vendor/policy.test.ts', 'vendor/policy.ts',
+      'vendor/render.ts', 'vendor/types.ts',
+    ].map(file => `${prefix}${file}`);
+    const sources = new Map(files.map(file => [file, readFileSync(join(ROOT, file), 'utf8')]));
+    sources.set(owner, readFileSync(join(ROOT, owner), 'utf8'));
+    expect(selectAffectedTests(files, sources)).toEqual([owner]);
+    for (const file of files) expect(selectAffectedTests([file], sources)).toEqual([owner]);
+    sources.delete(owner);
+    expect(() => selectAffectedTests([`${prefix}vendor/policy.ts`], sources)).toThrow('coverage is unknown');
+    sources.set(owner, readFileSync(join(ROOT, owner), 'utf8'));
+    for (const path of ['experiments/private/unregistered/runner.ts', 'experiments/public/runner.ts', 'unknown/product.conf']) {
+      expect(() => selectAffectedTests([path], sources)).toThrow('coverage is unknown');
+    }
+  });
+
   test('canonical changelog uses the docs policy and keeps real consumer coverage', () => {
     expect(selectAffectedTests(['docs/CHANGELOG.md'], new Map())).toEqual([]);
     const sources = new Map([

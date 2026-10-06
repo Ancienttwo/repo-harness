@@ -1,0 +1,73 @@
+{
+  "harnessBase": "ef695fb9f964f29342ee6c98ce150601006eb40f",
+  "upstreamCommit": "df581122cde17e6e27686b5a448bde23e4ad4318",
+  "environment": {
+    "kind": "cloud Linux",
+    "bun": "1.4.0 (34cbb9a40)",
+    "node": "24.19.0",
+    "dependencies": "existing project node_modules; no installation"
+  },
+  "commands": [
+    {
+      "command": "bun test ./comparison.test.ts ./vendor/github.test.ts ./vendor/policy.test.ts --timeout 60000 --max-concurrency 1",
+      "cwd": "experiments/private/pstack-watch-pr",
+      "result": "Historical corrected run: 63 pass; 0 fail; 216 assertions; 3 files. The CI owner reruns the same suite after the scoped package assertion change.",
+      "exitCode": 0,
+      "logSha256": "6db65d1a92acabbc85ebe1d5d3c48fc82609971a31ce4dadfbbc6bfc2f5e5f6a",
+      "logArtifact": "evidence/pstack-offline-corrected-test.log"
+    },
+    {
+      "command": "node node_modules/typescript/bin/tsc --noEmit -p experiments/private/pstack-watch-pr/tsconfig.json",
+      "cwd": ".",
+      "result": "pass",
+      "exitCode": 0,
+      "logArtifact": "evidence/pstack-ci-repair-private-typecheck.log"
+    },
+    {
+      "command": "bun run check:type",
+      "cwd": ".",
+      "result": "pass after CI test registration",
+      "exitCode": 0,
+      "logArtifact": "evidence/pstack-ci-repair-typecheck.log"
+    }
+  ],
+  "testedSourceSha256": {
+    "PROVENANCE.json": "9f5841b6d86d83f5dbfcc5b208ff5f15e6d212888e750381f2e62bfc6e19f191",
+    "baseline-poller.ts": "4f173b576b231f78d83e1af8a414245f04fb1826d14ec3da24cddc3f447b7ef3",
+    "bunfig.toml": "23d13b5a63c75ee0af0c5a61e1ac7bd32c2c8da3684207e13d69bccc37d5082f",
+    "comparison.test.ts": "b588bd6bfbccc923c063975d0cac671ecadccc34304e1715020b32ca60a5853f",
+    "fixtures.ts": "b86848b9efaddc2878e298d326f9f4983adcbd527b53bc60fd44c5204f492f43",
+    "offline-guard.ts": "3d37ab2067fd05d6266f4c82b7f1aaabd61438683d2f6cb6b18693de36e84f81",
+    "tsconfig.json": "96919690171cbf1c0eb2357565309b6f7a072ad26f40c132d7f72b79b8121f0d",
+    "vendor/fakes.test-helper.ts": "e53e31b7f03068063f53a99a3591b052aaed66e4e2b196b3a364980f60324ab1",
+    "vendor/github.test.ts": "0cbce011050522938523e36bb42a260e92b812dcd2076930fa681672ad316b24",
+    "vendor/github.ts": "d1bbbafbe8e2c703c84da2029de7f2c4011412512f8cf65a42100f46bcb92c8a",
+    "vendor/policy.test.ts": "a9fedb25feefd1f57ef6a662f80c99018690170a3a8070773a08eaf694d1d3d9",
+    "vendor/policy.ts": "68d240505852cf23c9b2dea463342e9e61243f486b3cc86c735d140f9ee7be49",
+    "vendor/render.ts": "2b709e86628d5b8fdb61f860e60ababc342b0626c67576305442cf548283a604",
+    "vendor/types.ts": "64ba6221e3bfe61bbb292337d199cdec6309455477280efb060203dba34e0e91"
+  },
+  "notRun": [
+    "full suite",
+    "full security scan",
+    "real provider calls",
+    "live PR mutations",
+    "real agents",
+    "production integration"
+  ],
+  "reviewCorrection": "Shared independently replayed temporal identity source; decoder-only partial-error label; baseline and watcher changed-content dedup limitation.",
+  "ciRegistration": {
+    "publishedHead": "71c9cb78c25b3be90a2855c222d0af2e7f544bfb",
+    "owner": "tests/pstack-offline-experiment.test.ts",
+    "selector": "unchanged; real directory consumer",
+    "runner": "one bounded isolated Bun test child; no network or process calls in private suite",
+    "guardScope": "Reject exact, ancestor, descendant, glob (including extglob), or invalid private export entries. Allow unrelated plain directories; no full npm glob semantics claimed.",
+    "coverage": "root owner and selector regression pass; real affected selection includes owner; full selected set is not claimed as locally passed",
+    "command": "bun run test:files tests/pstack-offline-experiment.test.ts tests/check-ci-job-split.test.ts --timeout 60000 --max-concurrency 1",
+    "result": "13 root tests pass, 478 assertions; child private suite 64 pass, 234 assertions; zero failures",
+    "logArtifact": "evidence/pstack-ci-repair-tests.log",
+    "logSha256": "29324249166b245e7a91c257a0282d6472d704affc81f59611e0dbef7303c7c4",
+    "testedOwnerSha256": "07d443f55b3042998783c1755d7a0de608740502d1e30bf1022fbde07bc65be1",
+    "testedSelectorRegressionSha256": "65c14d8a5ed30b38ac8b1f1af4524e4d9f87eae29494002501789494e4876e9b"
+  }
+}

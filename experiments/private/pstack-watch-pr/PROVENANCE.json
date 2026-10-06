@@ -1,0 +1,81 @@
+{
+  "repository": "cursor/plugins",
+  "commit": "df581122cde17e6e27686b5a448bde23e4ad4318",
+  "harnessBase": "ef695fb9f964f29342ee6c98ce150601006eb40f",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 Lauren Tan",
+  "files": [
+    {
+      "local": "vendor/LICENSE",
+      "upstreamPath": "pstack/LICENSE",
+      "upstreamBlobSha": "6b5400237fdf6545be0b8fae370d6f2fcff8fb25",
+      "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
+      "bytes": 1067,
+      "lines": 21,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/fakes.test-helper.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/fakes.test-helper.ts",
+      "upstreamBlobSha": "2312522cd7399334115a5f39fd6438aab7fc5aa5",
+      "sha256": "e53e31b7f03068063f53a99a3591b052aaed66e4e2b196b3a364980f60324ab1",
+      "bytes": 2944,
+      "lines": 118,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/github.test.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/github.test.ts",
+      "upstreamBlobSha": "87f4048f08a63a54975c4ef2de8065375e751683",
+      "sha256": "0cbce011050522938523e36bb42a260e92b812dcd2076930fa681672ad316b24",
+      "bytes": 9059,
+      "lines": 306,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/github.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/github.ts",
+      "upstreamBlobSha": "79bc06fb682c5d99de7d48338b0a6ecd27a518da",
+      "sha256": "d1bbbafbe8e2c703c84da2029de7f2c4011412512f8cf65a42100f46bcb92c8a",
+      "bytes": 24072,
+      "lines": 699,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/policy.test.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/policy.test.ts",
+      "upstreamBlobSha": "0620ddedde46da8e763ab2a55ebceaad2aa6d0a7",
+      "sha256": "a9fedb25feefd1f57ef6a662f80c99018690170a3a8070773a08eaf694d1d3d9",
+      "bytes": 12397,
+      "lines": 420,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/policy.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/policy.ts",
+      "upstreamBlobSha": "4665be37e8f9afff1c9e1f5dd60d98e0d70c8c6c",
+      "sha256": "68d240505852cf23c9b2dea463342e9e61243f486b3cc86c735d140f9ee7be49",
+      "bytes": 25132,
+      "lines": 832,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/render.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/render.ts",
+      "upstreamBlobSha": "0e935839357335f24ab1bbc193d761495646ea99",
+      "sha256": "2b709e86628d5b8fdb61f860e60ababc342b0626c67576305442cf548283a604",
+      "bytes": 7083,
+      "lines": 169,
+      "delta": "none; byte-exact"
+    },
+    {
+      "local": "vendor/types.ts",
+      "upstreamPath": "pstack/skills/poteto-mode/scripts/watch-pr/types.ts",
+      "upstreamBlobSha": "b67144e0d757e0b61ff079f981ced0a98555ea9d",
+      "sha256": "64ba6221e3bfe61bbb292337d199cdec6309455477280efb060203dba34e0e91",
+      "bytes": 12359,
+      "lines": 401,
+      "delta": "none; byte-exact"
+    }
+  ]
+}

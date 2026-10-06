@@ -1,0 +1,4 @@
+[test]
+root = "."
+preload = ["./offline-guard.ts"]
+maxConcurrency = 1

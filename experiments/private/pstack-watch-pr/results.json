@@ -1,0 +1,445 @@
+{
+  "schemaVersion": 1,
+  "scope": "private offline fixture comparison",
+  "semantics": "Observer READY is not harness GO; exit 0 is not acceptance.",
+  "matrix": [
+    {
+      "name": "clean",
+      "category": "same-scope",
+      "harnessReady": true,
+      "harnessBlockers": [],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "pending",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "checks_pending"
+      ],
+      "observerDecision": "waiting",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "failed",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "checks_failed"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "unknown-check-bucket",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 6,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "unresolved-thread",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "unresolved_threads"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "draft",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "draft"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "changes-requested",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "changes_requested"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "conflict",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "not_mergeable"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "unknown-mergeability",
+      "category": "unknown-observation",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 2,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "code-review-gate-pending",
+      "category": "intentional-observer-semantics",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "checks_pending"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "required-ci-missing",
+      "category": "harness-authority-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 3,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "head-identity-mismatch",
+      "category": "harness-authority-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "head_moved"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "base-identity-mismatch",
+      "category": "harness-authority-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "base_moved_since_verification"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "head-changes-between-reads",
+      "category": "observation-consistency",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "changed_during_read"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 16,
+      "observerLogicalProviderReads": 4,
+      "temporalReplay": {
+        "trigger": "facts response captured; identity moves before observation returns",
+        "initialIdentityEqual": true,
+        "firstTransitionEqual": true,
+        "observerIdentityReads": 1,
+        "collectorIdentityReads": 4,
+        "observerFirstHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "observerEndingHead": "cccccccccccccccccccccccccccccccccccccccc",
+        "observerFirstBase": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "observerEndingBase": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "name": "base-changes-between-reads",
+      "category": "observation-consistency",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "changed_during_read"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 16,
+      "observerLogicalProviderReads": 4,
+      "temporalReplay": {
+        "trigger": "facts response captured; identity moves before observation returns",
+        "initialIdentityEqual": true,
+        "firstTransitionEqual": true,
+        "observerIdentityReads": 1,
+        "collectorIdentityReads": 4,
+        "observerFirstHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "observerEndingHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "observerFirstBase": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "observerEndingBase": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "name": "review-head-binding-mismatch",
+      "category": "observation-consistency",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 6,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "review-base-binding-mismatch",
+      "category": "observation-consistency",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 6,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "100-resolved-has-next-page",
+      "category": "incomplete-observation",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 6,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "100-resolved-last-page",
+      "category": "same-scope",
+      "harnessReady": true,
+      "harnessBlockers": [],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "101-full-threads-last-unresolved",
+      "category": "same-scope",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "unresolved_threads"
+      ],
+      "observerDecision": "blocker",
+      "falseReadyIfMisusedAsGate": false,
+      "collectorLogicalProviderReads": 8,
+      "observerLogicalProviderReads": 4
+    },
+    {
+      "name": "graphql-partial-error",
+      "category": "decoder-only-transport-unverified",
+      "harnessReady": false,
+      "harnessBlockers": [
+        "provider_data_incomplete"
+      ],
+      "observerDecision": "ready",
+      "falseReadyIfMisusedAsGate": true,
+      "collectorLogicalProviderReads": 6,
+      "observerLogicalProviderReads": 4
+    }
+  ],
+  "statusOnly": {
+    "observer": "STATUS",
+    "exitCode": 0,
+    "harnessReady": false
+  },
+  "checkPagination": {
+    "checks": 101,
+    "failedAt": 101,
+    "readerCalls": 3,
+    "limit": "Reader-level cursor contract tested; live GhGitHubReader transport is not executed."
+  },
+  "repeatedCursor": {
+    "boundedByFixtureCancellation": true,
+    "upstreamRepeatedPageGuard": false,
+    "adapterNeed": "Reject repeated cursors and impose an explicit page budget before live use."
+  },
+  "duplicateWaits": {
+    "polls": 3,
+    "observerNotifications": 3,
+    "baselineNotifications": 1,
+    "observerDuplicates": 2,
+    "baselineDuplicates": 0,
+    "observerLogicalProviderReads": 12,
+    "collectorLogicalProviderReads": 24
+  },
+  "recovery": {
+    "serviceAvailableAtSeconds": 120,
+    "observerRecoveredAtSeconds": 180,
+    "baselineRecoveredAtSeconds": 120,
+    "observerAttempts": 3,
+    "baselineAttempts": 13,
+    "observerLogicalProviderReads": 6,
+    "collectorLogicalProviderReads": 20,
+    "observerRetries": 2,
+    "baselineNotifications": 2,
+    "warning": "Endpoint totals include different observation contracts. Attempts and logical time show the scheduler tradeoff."
+  },
+  "cancellation": {
+    "observerReads": 4,
+    "baselinePolls": 1,
+    "postCancelReads": 0,
+    "limit": "Cancellation is a throwing injected clock. Upstream has no AbortSignal contract or live child cancellation test."
+  },
+  "stackSegments": {
+    "pureHarnessReadyPrefix": [
+      1
+    ],
+    "observerRowDecisions": [
+      "ready",
+      "waiting",
+      "ready"
+    ],
+    "observerTopReadyAfterBaseMove": true,
+    "semantics": "Neither a per-row observer result nor a contiguous segment authorizes a stack merge."
+  },
+  "queueDedup": {
+    "repeatedWaitSuppressed": true,
+    "sameCountChangedCheckSuppressed": true,
+    "baselineChangedCheckSuppressed": true,
+    "sharedLimitation": "The small baseline keys blocker codes only. Both candidates suppress build-to-security while still pending.",
+    "adapterNeed": "Notification key must include meaningful changed content and exact subject identity."
+  },
+  "queueCadence": {
+    "observerSnapshotReads": 8,
+    "baselineSnapshotReads": 9,
+    "observerLogicalProviderReads": 23,
+    "advances": 2,
+    "warning": "Snapshot counts compare schedules. Pure baseline snapshot reads are not HTTP request counts. Upstream caches upper rows until the sweep."
+  },
+  "upperRowStaleness": {
+    "baseChangeVisibleToPureProjection": true,
+    "nextUpstreamSweepAtSeconds": 300,
+    "limitation": "Frozen queue has no exact base identity or automatic upper-row invalidation."
+  },
+  "outputSample": {
+    "authority": "observation-only",
+    "acceptance": "not-granted",
+    "upstream": {
+      "schemaVersion": 1,
+      "sequence": 1,
+      "observedAt": "2026-10-06T00:00:00.000Z",
+      "mode": "single",
+      "kind": "READY",
+      "terminal": true,
+      "exitCode": 0,
+      "scope": {
+        "kind": "single",
+        "pr": {
+          "kind": "ready-pr",
+          "context": {
+            "owner": "fixture",
+            "repo": "offline",
+            "number": 1
+          },
+          "proof": {
+            "mergeability": "clear",
+            "threads": [],
+            "ci": {
+              "source": "gh-pr-checks",
+              "all": [
+                {
+                  "name": "Required / CI",
+                  "description": "",
+                  "link": "https://github.com/fixture/offline/actions/runs/123/job/456",
+                  "workflow": "",
+                  "kind": "passed",
+                  "reportedState": "SUCCESS"
+                }
+              ],
+              "hadPreviousPassingCi": false,
+              "kind": "ci-clean",
+              "failed": [],
+              "pending": [],
+              "github": {
+                "kind": "allowed",
+                "basis": "merge-state",
+                "mergeStateStatus": "CLEAN",
+                "headRollupState": "SUCCESS"
+              }
+            },
+            "gate": {
+              "state": "OPEN",
+              "reviewDecision": "APPROVED",
+              "draft": "not-draft"
+            }
+          }
+        }
+      }
+    },
+    "harness": {
+      "ready": true,
+      "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected_base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "integration_mode": "unmerged",
+      "attention_owner": "none",
+      "blockers": []
+    }
+  },
+  "measurementUnits": "Logical provider reads are injected collector gh commands or watcher reader methods. They are not actual HTTP requests, latency, CPU, or production throughput. External API requests are zero.",
+  "summary": {
+    "cases": 21,
+    "sameScopeMissedBlockers": 0,
+    "falseReadyIfMisusedAsGate": 11,
+    "observerComparisonFalseReadyIfMisusedAsGate": 10,
+    "decoderOnlyFalseReadyIfMisusedAsGate": 1,
+    "authorityChanges": 0,
+    "networkOrProcessCalls": 0,
+    "addedDependencies": 0
+  },
+  "maintenance": {
+    "upstreamRuntimeFiles": 4,
+    "upstreamRuntimeLines": 2101,
+    "upstreamRuntimeBytes": 68646,
+    "selectedUpstreamTestsAndHelperLines": 844,
+    "baselinePollingStubLines": 25,
+    "upstreamPatches": 0,
+    "addedManifestDependencies": 0
+  },
+  "decision": {
+    "productionReuse": "none at this stage",
+    "keep": "private reproducible comparison only",
+    "reason": "The small controlled fixtures show scheduler features, not enough incremental benefit to justify importing the full watcher and adapting its weaker identity/completeness contract.",
+    "potentialFutureAdapter": [
+      "bounded retry policy if provider rate limits become a measured problem",
+      "renderer-only if a real consumer needs the exact event shape"
+    ],
+    "nextStageRequires": "separate reviewed integration scope"
+  }
+}
