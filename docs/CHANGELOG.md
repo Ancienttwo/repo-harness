@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ## Unreleased
 
+## [0.21.1] - Unreleased
+
+### Changed
+
+- Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
+  Align architecture and refactor policies, init defaults, and clean-room
+  verification with these dependencies. (#586)
+
 ## [0.21.0] - 2026-10-06
 
 ### Breaking changes
