@@ -1,7 +1,7 @@
 # Plan: 自动关闭已完成的 herdr pane（pane reap）
 
-> **Status**: Draft rev 3+（只有设计。第四轮 Codex review：APPROVE WITH CHANGES；r3 P0/P2 已修，r4 仅剩两处交叉引用已就地更正，见 §10.5。§10 是作者的处理记录，不是独立验收。写代码前需要 Aimpact 批准本 plan 和 §9 的决定）
-> **Created**: 20261005-1811；**Revised**: 20261005（rev 1、rev 2、rev 3）
+> **Status**: Design only，rev 4。§9 的 D-1、D-2 和 Q1-Q9 已按 PR #563 body 的 2026-10-06 决定锁定。第四轮 Codex review：APPROVE WITH CHANGES，处理记录见 §10.5。§10 不是独立验收。合并本 plan 不授权实现。Phase 1-3 写代码前仍需 Aimpact 明确 GO。
+> **Created**: 20261005-1811；**Revised**: 20261006（rev 4，同步已锁定决定，修正无 upstream 的 `--no-pr` 范围）
 > **Slug**: pane-auto-close
 > **Planning Source**: claude-plan
 > **Orchestration Kind**: host-plan
@@ -94,7 +94,7 @@
 - G7. 在创建 pane 时执行「每个 tab 最多 3 个并排 pane」的规则。
 - G8. CLI 默认 dry-run。每个决定都输出结构化日志。
 
-**时间边界（Review r2 P2-2）：** 所有检查只证明观察时的状态。herdr 0.9.3 不能原子地执行「条件成立才关闭」（H1、H2），也看不到未提交的输入（H15）。ledger 锁只约束 repo-harness 自己的命令。它不能阻止用户、其他进程或 GitHub 在观察后改变 pane、tab、文件或 PR。所以在 0.9.3 上，G3、G4 和 G5 都只在检查时成立。v1 怎样处理检查和关闭之间的缺口由 Aimpact 决定（§4.0、§9 D-1）。人的确认不会消除这个缺口。
+**时间边界（Review r2 P2-2）：** 所有检查只证明观察时的状态。herdr 0.9.3 不能原子地执行「条件成立才关闭」（H1、H2），也看不到未提交的输入（H15）。ledger 锁只约束 repo-harness 自己的命令。它不能阻止用户、其他进程或 GitHub 在观察后改变 pane、tab、文件或 PR。所以在 0.9.3 上，G3、G4 和 G5 都只在检查时成立。Aimpact 已选择 v1 dry-run 加逐个 token 确认后 apply（§4.0、§9 D-1 B）。人的确认不会消除这个缺口。
 
 ### 非目标
 - 删除 worktree、分支、tab 或 workspace。代码中不出现 `worktree remove`、`branch -d/-D`、`tab close` 或 `workspace close`。
@@ -118,7 +118,7 @@
 | 每个 tab 最多 3 个 pane | 创建时用 `pane layout` 检查整个 tab 的布局。 | 只看 pane 数和新分割方向，不能证明 tab 中没有纵向分割（r1 P1-4）。 |
 | 不触碰用户的 pane 和 tab | `spawn` 不分割用户的 tab。reap 不调用 `tab close`。tab 和 workspace 的检查都在 `pane close` 之前。非 Bot tab 中的最后一个 pane 和 workspace 中的最后一个 pane 都不关闭。 | 关闭最后一个 pane 会连带关闭 tab，最后一个 tab 的最后一个 pane 会连带关闭 workspace（H7、H8）。 |
 | 增加 | 关闭前，shell 的所有后代进程都必须属于 provider 的进程组。 | `pane close` 也结束 shell 的后台任务（H17）。 |
-| 增加 | 关闭的执行方式本身需要 Aimpact 决定。 | H1、H2、H15。 |
+| 增加 | 已选择 dry-run 加逐个 token 确认后 apply（§9 D-1 B）。实现仍需明确 GO。 | H1、H2、H15。 |
 
 ---
 
@@ -151,7 +151,7 @@
 | 模式 | 0.9.3 上可用 | 保证 |
 |------|--------------|------|
 | dry-run（默认） | 是 | 完整：没有 herdr 变更，没有 ledger 写入 |
-| 确认后 apply：`reap --apply --spawn <id> --confirm <token>` | 只在 Aimpact 选择 §9 D-1 的 B 之后（Phase 2） | G1、G2 有证据。G3、G4、G5 在检查时成立。检查和关闭之间的窗口没有技术保护。未提交的输入看不到。每次确认都列出这两个缺口 |
+| 确认后 apply：`reap --apply --spawn <id> --confirm <token>` | D-1 已选择 B；实现和 T1/T2 验收后可用（Phase 2） | G1、G2 有证据。G3、G4、G5 在检查时成立。检查和关闭之间的窗口没有技术保护。未提交的输入看不到。每次确认都列出这两个缺口 |
 | 无人参与的自动 apply | 否 | 需要 §4.0.2 的上游能力（Phase 3） |
 
 #### 4.0.1 确认 token 和 digest（r2 P1-1）
@@ -192,7 +192,7 @@ pane.close {
 - `workspace_close` 固定为 `forbid`：如果关闭会删除 workspace，请求总是失败（H8）。
 - 不需要 `tab.close` 的条件版本，因为 reap 从不调用 `tab close`（H7）。
 
-向 herdr 项目提出这个需求是对外操作，需要 Aimpact 决定（§9 D-2）。
+D-2 已选择提出请求，并已提交 [herdrdev/herdr#4967](https://github.com/herdrdev/herdr/issues/4967)。issue 状态不证明能力已可用。Phase 3 仍须通过 §7.4 的验收。
 
 ### 4.1 组件
 
@@ -311,13 +311,15 @@ gh pr list --repo <spawn repo> --head <upstream branch> --state open --limit 100
 
 **inventory 范围：**
 - `inventory_scope: upstream_branch`：worktree 有 upstream。inventory 是这个 head ref 上的全部 open PR。`result` 时，声明必须包含全部 open PR（`pr_inventory_incomplete`）；reap 时重新查询，出现新的 open PR 就 keep（`pr_inventory_changed`）。
-- `inventory_scope: declared_only`：worktree 没有 upstream（例如 review pane 的 detached checkout）。inventory 只是声明的 PR，必须至少一个。报告中列出这个较弱的范围。这个范围依赖 Bot 完整登记，它不证明 repo 中没有其他相关 PR。
+- `inventory_scope: declared_only`：worktree 没有 upstream，并用 `--pr` 声明至少一个 PR（例如 review pane 的 detached checkout）。inventory 只是本结果声明的 PR。报告中列出这个较弱的范围。这个范围依赖 Bot 完整登记，它不证明 repo 中没有其他相关 PR。
+- `inventory_scope: none`：worktree 没有 upstream，并用 `--no-pr --reason` 声明本结果没有 PR。`head_ref: null`、`prs: []`、`open_pr_inventory: []`。有 upstream 时仍用 `upstream_branch`，`--no-pr` 不能跳过该分支的 inventory 检查。
+- inventory scope 只说明本结果的查询范围。它不解除历史 PR 义务。无 upstream 的 `--no-pr` 可以成功声明；关闭仍独立检查 S6 的接受和 S7 的全部历史义务。
 
 **PR 义务集合（r3 P0-1）：**
 - 定义：这个 spawn 的全部 `result-*.json` 中声明过的 PR 的并集，加上这些结果版本中记录过的全部 `head_ref`。它从已有的结果文件推导，不是第二份权威 ledger。
 - 一个 PR 只在 GitHub 的新鲜查询显示它是 `MERGED` 或 `CLOSED` 时离开义务集合。新的 `result`、`result --no-pr` 或 `obsolete` 都不能让它离开。从后来的声明中删除一个 PR，不是 loop 结束的证据。
 - reap 对义务集合中的每个 PR 运行 `gh pr view <n> --repo <spawn repo>`，对每个记录过的 `upstream_branch` head ref 重新运行 inventory 查询。任何一个 PR 是 `OPEN`，或者任何一个 head ref 上出现 open PR，都 keep（S7）。
-- 从来没有声明过 PR 的 spawn，义务集合为空。只有这种 spawn 才按无 PR 结果处理。
+- 当前结果可以没有 PR，但 spawn 的历史义务仍单独检查。只有全部历史 PR 和 head ref 的检查都没有 OPEN PR 时，S7 才通过。接受当前无 PR 结果仍需要绑定该结果的 mark（S6）。
 
 ---
 
@@ -358,8 +360,8 @@ gh pr list --repo <spawn repo> --head <upstream branch> --state open --limit 100
 | 只声明 `--no-pr`，没有 accept | S6 `not_accepted`，没有 token。 |
 | 声明 OPEN PR，然后 `obsolete`、`result --no-pr`，或者新结果省略这个 PR | PR 仍在义务集合中 → S7 `pr_open`，没有 token。 |
 | 用户在 Bot pane 中提交输入 | 如果提交改变了 lifecycle 计数器，S8 keep。提交不一定开始 turn（H5）。没有改变计数器的提交属于 `input_unobservable`。 |
-| 用户输入但没有提交，或在 shell 中输入 | 0.9.3 看不到（H15）。列为 `input_unobservable`。由 §9 D-1 决定。 |
-| 最后一次检查后用户 focus、输入、move pane、重命名 tab 或新建 pane | 0.9.3 不能阻止（H1、H2）。列为 `non_atomic_close`。由 §9 D-1 决定。Phase 3 由 §4.0.2 的条件关闭处理。 |
+| 用户输入但没有提交，或在 shell 中输入 | 0.9.3 看不到（H15）。列为 `input_unobservable`。按 §9 D-1 B 逐个确认 token。 |
+| 最后一次检查后用户 focus、输入、move pane、重命名 tab 或新建 pane | 0.9.3 不能阻止（H1、H2）。列为 `non_atomic_close`。按 §9 D-1 B 逐个确认 token。Phase 3 由 §4.0.2 的条件关闭处理。 |
 | 用户在 Bot pane 的 shell 中启动后台任务 | S13 keep。 |
 | pane 被移到另一个 tab 或 workspace | S3：`pane_moved` 或 `pane_gone`。 |
 | herdr 重启，自动恢复 agent（Max 的默认设置） | `terminal_id` 变化（H9）→ S3 永久 keep。恢复的 agent 没有原来的参数（H11）。所有未关闭的记录都变为 `identity_changed`（§9 Q1）。 |
@@ -431,7 +433,7 @@ interface ResultVersion {
   k: number; at: string; reason: string | null;    // only the result command writes this file
   head_sha: string;
   head_ref: { remote: string; branch: string; repo: string } | null;   // null: no upstream
-  inventory_scope: 'upstream_branch' | 'declared_only' | 'none';      // none only with prs: []
+  inventory_scope: 'upstream_branch' | 'declared_only' | 'none';      // upstream wins; declared_only: no upstream, prs nonempty; none: no upstream, --no-pr
   prs: { number: number; head_sha: string; state: 'OPEN' | 'MERGED' | 'CLOSED' }[];
   open_pr_inventory: number[];
   snapshot: ActivitySnapshot;
@@ -625,7 +627,7 @@ Phase 1 的发布物不包含关闭代码，所以 T1 不需要任何确认绕�
 | N55 | 锁 | 锁的持有者被 SIGKILL；另一个命令运行 | 回收锁，正常运行 |
 | N56 | S7 / r3 P0-1 | review pane 在 main checkout 中（upstream 是 `origin/main`，工作区干净，HEAD 已发布，workspace 中还有其他 pane）。result 1 声明 feature 分支的 PR 7，PR 7 是 `OPEN`。然后 `obsolete --result 1`，推进 301 秒以上 | `pr_open`；没有 token；result 1 的 PR 集合没有变化；没有新的 `result-*.json` |
 | N57 | S7 / r3 P0-1 | 与 N56 相同，但第二步改为 `result --no-pr` 再 `accept --result 2`；另一个变体是 result 2 声明 PR 8 并省略 PR 7 | `pr_open`（PR 7 仍在义务集合中）；`result` 的输出在 `pr_obligations` 中列出 PR 7 |
-| N58 | S7 / r3 P0-1 | detached review checkout（`inventory_scope: declared_only`）声明 OPEN 的 PR 7；然后分别运行 `obsolete --result 1`、`result --no-pr` + `accept`、省略 PR 7 的新结果 | 每种情况都 `pr_open`；没有 token |
+| N58 | S7 / r3 P0-1 | detached review checkout，没有 upstream。result 1 用 `--pr 7` 声明 OPEN PR，scope 是 `declared_only`。然后分别运行 `obsolete --result 1`、`result --no-pr --reason <text>` + `accept --result 2`、用 `--pr 8` 声明新结果并省略 PR 7 | `--no-pr` 声明成功，result 2 的 scope 是 `none`，`head_ref: null`、`prs: []`、`open_pr_inventory: []`。三种情况的 reap 都因历史 PR 7 返回 `pr_open`，没有 token；输出仍列出 PR 7 的义务 |
 | N59 | S6、S7 / r3 P0-1 | N56 和 N58 的状态之后，PR 7 变为 `MERGED`，或者变为 `CLOSED`；Bot 对最新结果运行 `accept --result k`（或者 `obsolete --result k`）；推进 301 秒以上 | `would_close`，有 token；digest 的 `pr_obligations` 中 PR 7 的状态是 `MERGED` 或 `CLOSED` |
 | N60 | §4.2 / r3 P0-1 | 没有任何结果版本时运行 `obsolete` | `obsolete` 失败（`no_result`）；没有 mark |
 
@@ -672,10 +674,12 @@ Phase 1 的发布物不包含关闭代码，所以 T1 不需要任何确认绕�
 
 ## 8. 推出计划
 
+当前只有设计。D-1 B、D-2 和 Q1-Q9 已锁定（§9）。V9、V10 仍未验证。合并本 plan 不授权 Phase 1-3 实现。每个实现阶段开始前仍需 Aimpact 明确 GO。
+
 | 阶段 | 内容 | 测试集合 | 进入下一阶段的条件 |
 |------|------|----------|--------------------|
-| Phase 0：验证 | V1-V8 已完成（§7.1）。运行 V9、V10。 | — | V9 有观察结果；Aimpact 对 §9 的 D-1 和 D-2 做出决定 |
-| Phase 1：只有 dry-run | 合入策略、ledger、观察和 CLI。不包含 `pane-reap-apply.ts`。`--apply` 返回 `reap_apply_disabled`。Bot 改为用 `spawn` 创建简报 pane，并按 §4.5 声明结果。Bot 核对结果后用 `accept` 明确接受。merged PR 的接受由 dry-run 推导（S6 (3)、S9），不写 mark。 | T1 | T1 全部通过；Aimpact 抽查 dry-run 报告；D-1 选择 B |
+| Phase 0：验证 | V1-V8 已完成（§7.1）。运行 V9、V10。 | — | V9 有观察结果；D-1 B 和 D-2 已锁定；Aimpact 明确 GO 才能开始 Phase 1 |
+| Phase 1：只有 dry-run | 合入策略、ledger、观察和 CLI。不包含 `pane-reap-apply.ts`。`--apply` 返回 `reap_apply_disabled`。Bot 改为用 `spawn` 创建简报 pane，并按 §4.5 声明结果。Bot 核对结果后用 `accept` 明确接受。merged PR 的接受由 dry-run 推导（S6 (3)、S9），不写 mark。 | T1 | T1 全部通过；Aimpact 抽查 dry-run 报告；D-1 B 已锁定；Aimpact 明确 GO 才能开始 Phase 2 |
 | Phase 2：确认后 apply | 合入 `pane-reap-apply.ts`。每个关闭都需要 Aimpact 在当前消息中确认对应的 token。 | T1 + T2 | — |
 | Phase 3：自动 apply | 只在 §4.0.2 的上游能力可用后。实现条件关闭调用和 `input_seq` 声明。Aimpact 明确启用。关闭次数不作为启用条件。 | T1 + T2 + T3 | — |
 
@@ -688,30 +692,33 @@ Phase 1 的发布物不包含关闭代码，所以 T1 不需要任何确认绕�
 
 ---
 
-## 9. 需要 Aimpact 决定的问题
+## 9. 已锁定的决定
 
-**D-1（必须决定）：在 herdr 0.9.3 上，v1 是否关闭 pane？**
+来源：[PR #563 body](https://github.com/Ancienttwo/repo-harness/pull/563)，2026-10-06 HKT。下列决定只锁定设计。合并本 plan 不授权实现，Phase 1-3 仍需 Aimpact 明确 GO。
+
+**D-1：已选择 B。v1 在 herdr 0.9.3 上使用 dry-run 加逐个 token 确认后 apply。**
 
 事实：最后一次检查和 `pane close` 之间有一个窗口（§4.0）。这个窗口中的用户输入、focus、move、重命名和新建 pane 都不能被检测或阻止。任何时候的未提交输入都看不到（H15）。人的确认不会消除这个窗口。
 
-| 选项 | 内容 | 偏差 | 推荐 |
+| 选项 | 内容 | 偏差 | 决定 |
 |------|------|------|------|
 | A | v1 只做 dry-run。等待 D-2 的上游能力。 | 没有偏差。pane 继续累积，由人手动关闭，dry-run 报告给出候选列表 | — |
-| B | v1 做 dry-run 加确认后 apply（§4.0.1）。Aimpact 逐个确认 token，token 900 秒有效。 | G3/G4/G5 只在检查时成立。检查到关闭之间的窗口没有保护（估计是一次 herdr 调用的时间，inferred，没有测量）。未提交的输入看不到。这两项在每个 token 中列为 `non_atomic_close` 和 `input_unobservable`。provider 已退出的 pane 不能确认关闭（S5） | **推荐** |
+| B | v1 做 dry-run 加确认后 apply（§4.0.1）。Aimpact 逐个确认 token，token 900 秒有效。 | G3/G4/G5 只在检查时成立。检查到关闭之间的窗口没有保护（估计是一次 herdr 调用的时间，inferred，没有测量）。未提交的输入看不到。这两项在每个 token 中列为 `non_atomic_close` 和 `input_unobservable`。provider 已退出的 pane 不能确认关闭（S5） | **已选择** |
 | C | 在 0.9.3 上无人参与的自动 apply | 和 B 相同的偏差，但没有人确认 | 不推荐 |
 
-**D-2（必须决定）：是否向 herdr 项目请求 §4.0.2 的条件关闭能力？** 这是对外操作。需求包括：条件 `pane.close`（workspace、tab、terminal、PGID、focus、声明时的 seq）、server 端的 `input_seq` 计数契约（覆盖所有输入路径，包括没有回显的输入）、`tab_close` 条件和固定的 `workspace_close: forbid`。推荐：Aimpact 批准后，用 `gh` 提交一个 issue，内容只包括这些接口需求。
+**D-2：已选择提出请求，并已提交 [herdrdev/herdr#4967](https://github.com/herdrdev/herdr/issues/4967)。** 请求包括条件 `pane.close`（workspace、tab、terminal、PGID、focus、声明时的 seq）、server 端的 `input_seq` 计数契约（覆盖所有输入路径，包括没有回显的输入）、`tab_close` 条件和固定的 `workspace_close: forbid`。提交 issue 不证明能力已可用。Phase 3 仍须通过 §7.4 的验收。
 
-**其他问题：**
-1. **herdr 重启后怎么办？** 每次重启后，所有未关闭的记录都永久 keep（`identity_changed`，§6.5）。推荐：v1 不做 `rebind`；dry-run 报告列出它们，由人手动关闭。
-2. **worktree 已被删除（经过批准）时怎么办？** v1 返回 `git_state_unknown`。推荐：保持 keep，直到删除流程能写一个可验证的删除记录。
-3. **settle 窗口 300 秒和 token 有效期 900 秒可以吗？**
-4. **现有的无记录 pane 怎么处理？** 推荐：Aimpact 一次性手动关闭。不做 `adopt`。
-5. **Bot 在哪台主机运行 CLI？** ledger、Git 检查和 herdr 必须在同一台主机（Max）。Bot 需要在 Max 上运行 `repo-harness herdr …`（例如通过 SSH）。请确认。
-6. **review pane 的生命周期可以接受吗？** review pane 声明它审查的 PR。PR 是 open 时，它不会被关闭（S7）。`obsolete`、`result --no-pr` 或新结果都不能解除这个 PR（§4.5 PR 义务集合）。所以 review pane 会保留到它声明过的每个 PR 都 merged 或 closed。要更早释放它，只能由人手动关闭。
-7. **「已推送」的判据（S10）可以接受吗？** 远端分支的 SHA 或声明的 PR 的 `refs/pull/<n>/head` 必须等于声明的 head。远端分支前进时，Bot 必须重新声明。
-8. **Max 的 `resume_agents_on_restore`（默认 true）要不要改？** 自动恢复会丢失原来的 agent 参数（例如模型），并让所有记录变为 `identity_changed`。改为 false 会让重启后的 agent 不再自动恢复。这是用户的 herdr 配置，本 plan 不改它。推荐：不改；Bot 在重启后检查恢复的 agent 是否使用了正确的参数。
-9. **S13 会保留有后台任务的 pane。** 如果 Claude 的后台工具进程有自己的 PGID（V9），这些 pane 也会被保留，直到后台任务结束。可以接受吗？
+**Q1-Q9：已锁定。**
+
+1. **Q1，herdr 重启。** 永久 keep（`identity_changed`，§6.5）。v1 不做 `rebind`。dry-run 列出记录，由人手动关闭。
+2. **Q2，worktree 已被删除。** 保持 keep，直到有可验证的删除记录。v1 返回 `git_state_unknown`。
+3. **Q3，时间。** settle 窗口为 300 秒。确认 token 有效期为 900 秒。
+4. **Q4，无记录 pane。** 由 Aimpact 一次性手动关闭。不做 `adopt`。
+5. **Q5，运行主机。** Bot 在 Max 上运行 `repo-harness herdr …`。ledger、Git 和 herdr 在同一台主机。
+6. **Q6，review pane。** 保留到它声明过的每个 PR 都 MERGED 或 CLOSED。`obsolete`、`result --no-pr` 或新结果都不能解除 OPEN PR 义务（S7、§4.5）。要更早释放，只能由人手动关闭。
+7. **Q7，发布证据。** S10 要求远端分支 SHA 或声明 PR 的 `refs/pull/<n>/head` 等于声明的 head。远端分支前进时，Bot 必须重新声明。
+8. **Q8，恢复配置。** 保持 `resume_agents_on_restore` 不变。Bot 在重启后检查恢复的 agent 参数。重启仍使记录永久 keep（Q1）。
+9. **Q9，后台任务。** 接受 S13 保留有其他 PGID 后台任务的 pane。Claude 后台工具进程若有自己的 PGID（V9），pane 保留到后台任务结束。
 
 ---
 
@@ -777,7 +784,7 @@ Phase 1 的发布物不包含关闭代码，所以 T1 不需要任何确认绕�
 | r3 P2-2 | N52 的 Phase 1 断言不应用于以后的 PR | N52 只在 Phase 1 的发布物上运行。Phase 2 及以后由 B1-B18 检查 apply。不增加确认绕过开关 | §7.0 T1、N52 |
 | 小修正 | 截断判断的顺序；`declared_only` 的范围 | 100 行截断在按 head repository 过滤之前判断；写明 `declared_only` 依赖 Bot 完整登记 | §4.5 |
 
-仍待处理：D-1、D-2 和 §9 的其他问题需要 Aimpact 决定。V9、V10 还没有验证。本轮没有运行任何测试或改变状态的命令。
+历史状态（rev 3）：当时 D-1、D-2 和 §9 的问题待决定。这项等待已由 2026-10-06 的锁定决定取代（§9）。V9、V10 仍未验证。本轮没有运行任何测试或改变状态的命令。
 
 ### 10.5 第四轮（`/tmp/pane-reap-design-review-r4.md`，APPROVE WITH CHANGES，对照 rev 3）
 
