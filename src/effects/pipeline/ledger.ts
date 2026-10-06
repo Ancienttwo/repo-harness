@@ -30,7 +30,7 @@ export function newPipeline(store:PipelineStore,input:{source_host:string;reposi
   const hash=digest(wire({...input,idem_key:undefined}));
   // Creation keys use their own namespace. The mapping and created task are atomic.
   const createKey={source_host:input.source_host,repository_id:input.repository_id,task:''};
-  const cached=replay(store,createKey,input.idem_key,hash);if(cached)return cached;store.assertWritable();
+  const cached=replay(store,createKey,input.idem_key,hash);if(cached){publishAfterCommit(store);return cached;}store.assertWritable();
   const now=new Date().toISOString();const repo=basename(input.root??input.repository_id.replace(/\/\.git$/,''));
   const task=input.adopt_task??generatedTask(repo,input.title!);const key={source_host:input.source_host,repository_id:input.repository_id,task};
   const brief=input.brief?sourceAuthority({key,root:input.root??null,kind:'brief',payload:{path:input.brief}},store.env):null;
@@ -109,7 +109,7 @@ export function mutatePipeline(store:PipelineStore,key:Key,input:{op:'record'|'a
   text(key.source_host,'source-host');text(key.repository_id,'repository-id');text(key.task,'task');
   if(!Number.isSafeInteger(input.state_version)||input.state_version<1)throw new PipelineError('usage',2,'state-version is required');
   const hash=digest(wire({...input,command_key:undefined}));
-  const cached=replay(store,key,input.command_key,hash);if(cached)return cached;store.assertWritable();
+  const cached=replay(store,key,input.command_key,hash);if(cached){publishAfterCommit(store);return cached;}store.assertWritable();
   const record=store.read(key);if(record.state_version!==input.state_version)throw new PipelineError('rev_conflict',4,'Record version changed',true);
   const from=record.phase;let action:()=>void;
   if(input.op==='record')action=prepareRecord(store,record,text(input.kind,'kind'),object(input.payload),input.reconcile??false);

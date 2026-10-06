@@ -9,7 +9,7 @@ import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
 import type { McpCodingRuntime } from '../../src/cli/mcp/server';
 import { resolveMcpRepoRoot } from '../../src/cli/mcp/repo';
-import { runMcpSetupChatgpt } from '../../src/cli/mcp/setup';
+import { runMcpSetupChatgpt, runMcpLiveDoctor } from '../../src/cli/mcp/setup';
 import {
   CodingAuthorizationRuntimeStore,
   createOAuthRateLimitMiddleware,
@@ -20,7 +20,7 @@ import { buildEngineerBindingCurrent, buildEngineerBindingEvent, canonicalEngine
 import { buildEngineerPrincipalMapping, canonicalEngineerPrincipalMappingBytes } from '../../src/core/engineers/principal-claim';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
+import { mcpOAuthDoctorClientPath, mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { readRegisteredRepoHarnessRepos, repoHarnessRegisteredReposPath, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
@@ -961,6 +961,210 @@ describe('mcp http transport', () => {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test('consent retry after a wrong passphrase preserves the OAuth request parameters', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-consent-retry-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
+      const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase as string;
+
+      proc = Bun.spawn(
+        [
+          'bun', 'src/cli/index.ts', 'mcp', 'serve',
+          '--repo', repoRoot, '--transport', 'http',
+          '--host', '127.0.0.1', '--port', String(port),
+          '--profile', 'planner',
+        ],
+        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } },
+      );
+      await waitForHealth(port);
+
+      const registered = await fetch(`http://127.0.0.1:${port}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          redirect_uris: ['http://localhost/callback'],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          client_name: 'repo-harness-test',
+        }),
+      });
+      expect(registered.status).toBe(201);
+      const client = await registered.json() as { client_id: string };
+      const verifier = randomBytes(32).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const query = new URLSearchParams({
+        client_id: client.client_id,
+        redirect_uri: 'http://localhost/callback',
+        response_type: 'code',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        scope: 'repo-harness offline_access',
+        state: 'state-retry',
+      });
+      const consentUrl = `http://127.0.0.1:${port}/authorize?${query.toString()}`;
+
+      const first = await fetch(consentUrl);
+      expect(first.status).toBe(200);
+      const firstHtml = await first.text();
+      expect(firstHtml).toContain('name="client_id"');
+
+      // A wrong passphrase must render a retry form that still carries the
+      // original OAuth transaction (the form posts to /authorize with no
+      // query string, so the retry can only recover the body fields).
+      const wrong = await submitRenderedConsentForm(consentUrl, firstHtml, 'definitely-wrong', {});
+      expect(wrong.status).toBe(200);
+      const retryHtml = await wrong.text();
+      expect(retryHtml).toContain('name="client_id"');
+      expect(retryHtml).toContain('name="response_type"');
+      expect(retryHtml).toContain('name="code_challenge"');
+      expect(retryHtml).toContain('name="state"');
+      expect(retryHtml).not.toContain('definitely-wrong');
+
+      const ok = await submitRenderedConsentForm(consentUrl, retryHtml, passphrase, {});
+      expect(ok.status).toBe(302);
+      const redirect = new URL(ok.headers.get('location') ?? '');
+      const code = redirect.searchParams.get('code');
+      expect(code).toBeTruthy();
+      expect(redirect.searchParams.get('state')).toBe('state-retry');
+
+      // The PKCE binding survived the retry: the verifier from the original
+      // request exchanges the code.
+      const token = await fetch(`http://127.0.0.1:${port}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: client.client_id,
+          code: code ?? '',
+          code_verifier: verifier,
+          redirect_uri: 'http://localhost/callback',
+        }),
+      });
+      expect(token.status).toBe(200);
+      expect((await token.json() as { scope: string }).scope).toBe('repo-harness offline_access');
+
+      // An empty first passphrase takes the same recovery path.
+      const second = await fetch(consentUrl);
+      const empty = await submitRenderedConsentForm(consentUrl, await second.text(), '', {});
+      expect(empty.status).toBe(200);
+      const emptyOk = await submitRenderedConsentForm(consentUrl, await empty.text(), passphrase, {});
+      expect(emptyOk.status).toBe(302);
+      expect(new URL(emptyOk.headers.get('location') ?? '').searchParams.get('state')).toBe('state-retry');
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('live doctor reuses one bounded diagnostic OAuth client registration', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-doctor-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    const savedPassphraseEnv = process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      // The endpoint must be a non-local HTTPS URL, so the tunnel layer stays
+      // down in the test and the probe runs against the local origin.
+      runMcpSetupChatgpt({ repo: repoRoot, port: String(port), endpoint: 'https://mcp.doctor-test.invalid/mcp' });
+      const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase as string;
+
+      proc = Bun.spawn(
+        [
+          'bun', 'src/cli/index.ts', 'mcp', 'serve',
+          '--repo', repoRoot, '--transport', 'http',
+          '--host', '127.0.0.1', '--port', String(port),
+          '--profile', 'planner',
+        ],
+        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } },
+      );
+      await waitForHealth(port);
+
+      type DoctorReport = { status: string; layers: Array<{ name: string; ok: boolean; detail: string }> };
+      const runDoctor = async (): Promise<DoctorReport> => {
+        const result = await runMcpLiveDoctor({ repo: repoRoot, json: true });
+        return JSON.parse(result.lines[0]) as DoctorReport;
+      };
+      const layer = (report: DoctorReport, name: string) => {
+        const found = report.layers.find((entry) => entry.name === name);
+        if (!found) throw new Error(`doctor report lacks layer ${name}: ${JSON.stringify(report.layers)}`);
+        return found.ok;
+      };
+      const expectProbePassed = (report: DoctorReport) => {
+        expect(layer(report, 'config_ready')).toBe(true);
+        expect(layer(report, 'local_ready')).toBe(true);
+        expect(layer(report, 'oauth_ready')).toBe(true);
+        expect(layer(report, 'mcp_ready')).toBe(true);
+      };
+      const doctorClientIds = () => {
+        const data = JSON.parse(readFileSync(mcpOAuthTokenStorePath(), 'utf-8')) as { clients?: Record<string, { client_name?: string }> };
+        return Object.entries(data.clients ?? {})
+          .filter(([, client]) => client.client_name === 'repo-harness-live-doctor')
+          .map(([id]) => id);
+      };
+
+      // More probe cycles than a small quota would allow, all reusing the one
+      // diagnostic registration.
+      for (let cycle = 0; cycle < 3; cycle += 1) {
+        expectProbePassed(await runDoctor());
+      }
+      const reused = doctorClientIds();
+      expect(reused).toHaveLength(1);
+      const record = JSON.parse(readFileSync(mcpOAuthDoctorClientPath(), 'utf-8')) as { version: number; clientId: string };
+      expect(record.version).toBe(1);
+      expect(reused).toContain(record.clientId);
+
+      // A failed probe (wrong passphrase) after registration keeps the
+      // footprint bounded and preserves the reusable registration.
+      process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE = 'definitely-wrong';
+      let failed: DoctorReport;
+      try {
+        failed = await runDoctor();
+      } finally {
+        if (savedPassphraseEnv === undefined) delete process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE;
+        else process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE = savedPassphraseEnv;
+      }
+      expect(layer(failed, 'oauth_ready')).toBe(false);
+      expect(doctorClientIds()).toHaveLength(1);
+      expect((JSON.parse(readFileSync(mcpOAuthDoctorClientPath(), 'utf-8')) as { clientId: string }).clientId).toBe(record.clientId);
+
+      // A registration the server no longer knows (reset store, past its TTL)
+      // recovers with one re-registration and keeps the probe working.
+      writeFileSync(mcpOAuthDoctorClientPath(), `${JSON.stringify({ version: 1, clientId: 'client-no-longer-known' })}\n`);
+      expectProbePassed(await runDoctor());
+      const next = JSON.parse(readFileSync(mcpOAuthDoctorClientPath(), 'utf-8')) as { clientId: string };
+      expect(next.clientId).not.toBe('client-no-longer-known');
+
+      // A later ordinary connector can still register alongside the doctor.
+      const registered = await fetch(`http://127.0.0.1:${port}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          redirect_uris: ['http://localhost/callback'],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          client_name: 'repo-harness-test',
+        }),
+      });
+      expect(registered.status).toBe(201);
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   test('engineer OAuth E2E binds sessions to authorization and exposes only the exact Engineer tools', async () => {
     let repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));

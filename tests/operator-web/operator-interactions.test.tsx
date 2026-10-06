@@ -163,6 +163,21 @@ function paneText(): string {
   return document.querySelector('.detail-pane')?.textContent ?? '';
 }
 
+/** A compact element key keeps focus assertion failures cheap to print: happy-dom element diffs are enormous. */
+function elementKey(element: Element): string {
+  return `${element.tagName}:${element.getAttribute('aria-label') ?? element.textContent ?? ''}`;
+}
+
+function focusKey(): string | null {
+  return document.activeElement ? elementKey(document.activeElement as Element) : null;
+}
+
+function tab(shift = false): Promise<void> {
+  return act(async () => {
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true }) as unknown as Event);
+  });
+}
+
 function filterChipCount(label: string): number {
   const chip = Array.from(document.querySelectorAll('.worklist__filters button'))
     .find((candidate) => candidate.textContent?.startsWith(label));
@@ -179,6 +194,28 @@ afterEach(async () => {
   root = null;
   window.close();
 });
+
+const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatusV1 = {
+  protocol: 1,
+  kind: 'operator_notify_status',
+  plugin_id: 'aimpact.webhook-notify',
+  linked: 'linked',
+  enabled: 'enabled',
+  config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' },
+  last_delivery: { at: null, result: 'missing' },
+  observed_at: '2026-09-22T00:00:00.000Z',
+};
+const board: import('../../src/core/pipeline/board').PipelineBoardV2 = {
+  projection_version: 'repo-harness.pipeline-board.v2',
+  status: 'ready',
+  generated_at: '2026-09-22T00:00:00.000Z',
+  last_reconciled_at: '2026-09-22T00:00:00.000Z',
+  epoch: 1,
+  commit_seq: 1,
+  source_observed_at: {},
+  coverage: { counted: 0, skipped: 0, errors: 0, registration_incomplete: 0 },
+  cards: [],
+};
 
 function observationClock() {
   const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
@@ -255,6 +292,57 @@ describe('bounded observation lifecycle',()=>{
       expect(counts).toEqual({ fleet: 2, repository: 3, context: 3 });
       expect(decisions).toHaveLength(4); expect(decisions.at(-1)).toBe('a'.repeat(64));
       expect(activities).toHaveLength(4); expect(activities.at(-1)).toEqual(query);
+    } finally {
+      await act(async () => root?.unmount()); root = null; clock.restore();
+    }
+  });
+
+  test('Organization-only readers pause behind another tab and read once on return, including a deferred Refresh', async () => {
+    const { repositoryObservationFixture } = await import('../../src/operator-web/fixture');
+    const clock = observationClock();
+    const counts = { fleet: 0, repository: 0, notify: 0, pipeline: 0 };
+    const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
+        fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
+        fetchRepositoryObservation={async id => { counts.repository++; return repositoryObservationFixture(id); }}
+        readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
+        readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
+      expect(counts).toEqual({ fleet: 0, repository: 1, notify: 1, pipeline: 1 });
+      await tab('delivery');
+      await clock.advance(600_000);
+      expect(counts).toEqual({ fleet: 20, repository: 1, notify: 1, pipeline: 1 });
+      expect(document.querySelector('.automation-summary')?.getAttribute('data-observation-status')).toBe('ready');
+      await tab('organization');
+      expect(counts).toEqual({ fleet: 20, repository: 2, notify: 2, pipeline: 2 });
+      await clock.advance(30_000);
+      expect(counts).toEqual({ fleet: 21, repository: 3, notify: 3, pipeline: 3 });
+      await tab('planning');
+      await act(async () => buttonWithText('Refresh').click());
+      expect(counts).toEqual({ fleet: 22, repository: 3, notify: 3, pipeline: 3 });
+      await tab('organization');
+      expect(counts).toEqual({ fleet: 22, repository: 4, notify: 4, pipeline: 4 });
+    } finally {
+      await act(async () => root?.unmount()); root = null; clock.restore();
+    }
+  });
+
+  test('seeded Organization readers that start without a read still read at once on return', async () => {
+    const clock = observationClock();
+    const counts = { notify: 0, pipeline: 0 };
+    const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialCollaboration={{ kind: 'ready', snapshot: collaborationSnapshot }}
+        fetchSnapshot={async () => stableSnapshot}
+        fetchRepositoryObservation={async () => { throw Error('fixture unavailable'); }}
+        initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }}
+        initialPipelineBoard={board} readPipelineBoard={async () => { counts.pipeline++; return board; }} />);
+      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+      await tab('delivery');
+      await clock.advance(300_000);
+      expect(counts).toEqual({ notify: 0, pipeline: 0 });
+      await tab('organization');
+      expect(counts).toEqual({ notify: 1, pipeline: 1 });
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -791,6 +879,181 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  test('a current Task URL baselines the revision it resolves so a later refresh warns about the change', async () => {
+    const card = stableSnapshot.repositories[0]!.cards.find((row) => row.task_id === fixtureTasks.blocked.task_id)!;
+    const revised = (revision: string): OperatorFleetSnapshotV1 => ({
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 1,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((row) => row.task_id === card.task_id ? { ...row, task_revision: revision } : row),
+      })),
+    });
+    let current = stableSnapshot;
+    window.history.replaceState(null, '', `?repository=${card.repository_id}&task=${card.task_id}`);
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => current} />);
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    expect(paneText()).not.toContain('Task definition changed');
+    current = revised('rev-url-next');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(paneText()).toContain('Task definition changed since last snapshot');
+    expect(paneText()).toContain(card.task_revision);
+    expect(paneText()).toContain('rev-url-next');
+
+    // A Back/Forward restore builds a fresh selection without a revision; the
+    // restored pane re-baselines from the snapshot it first resolves.
+    await act(async () => {
+      window.history.pushState(null, '', window.location.pathname);
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => {
+      window.history.pushState(null, '', `?repository=${card.repository_id}&task=${card.task_id}`);
+      window.dispatchEvent(new window.PopStateEvent('popstate'));
+    });
+    expect(paneText()).toContain('rev-url-next');
+    expect(paneText()).not.toContain('Task definition changed');
+    current = revised('rev-url-third');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(paneText()).toContain('Task definition changed since last snapshot');
+    expect(paneText()).toContain('rev-url-next');
+    expect(paneText()).toContain('rev-url-third');
+    expect(new URLSearchParams(window.location.search).get('task_revision')).toBeNull();
+  });
+
+  test('the task pane marks retained Fleet facts as stale while the Fleet read fails and clears on recovery', async () => {
+    let healthy = true;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      fetchSnapshot={async () => { if (!healthy) throw new Error('fleet offline'); return stableSnapshot; }} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    const dialogStaleNotices = () => Array.from(document.querySelectorAll('[role="dialog"] [role="alert"]'))
+      .filter((node) => node.textContent?.includes('Showing the last successful snapshot'));
+    expect(dialogStaleNotices()).toHaveLength(0);
+    healthy = false;
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    expect(dialogStaleNotices()).toHaveLength(1);
+    healthy = true;
+    await act(async () => buttonWithText('Refresh').click());
+    expect(dialogStaleNotices()).toHaveLength(0);
+  });
+
+  test('Fleet keeps the failed-read notice through a pending retry until a valid read succeeds', async () => {
+    let finishRetry!: (snapshot: OperatorFleetSnapshotV1) => void;
+    let retry = false;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      fetchSnapshot={() => retry
+        ? new Promise(resolve => { finishRetry = resolve; })
+        : Promise.reject(new Error('fleet offline'))} />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => buttonWithText('Refresh').click());
+    const staleNotices = () => Array.from(document.querySelectorAll('[role="alert"]'))
+      .filter(node => node.textContent?.includes('Showing the last successful snapshot'));
+    expect(staleNotices()).toHaveLength(2);
+    retry = true;
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(staleNotices()).toHaveLength(2);
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    await act(async () => finishRetry({ ...stableSnapshot, sequence: stableSnapshot.sequence + 1 }));
+    expect(staleNotices()).toHaveLength(0);
+    expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence + 1));
+  });
+
+  test('modal Tab traversal reaches evidence disclosures before it wraps', async () => {
+    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    // Scoped board reads are irrelevant here; stub the transport so the pane
+    // under test is the only live surface.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 })) as unknown as typeof fetch;
+    try {
+      await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en"
+        readTaskContext={async (request) => taskContextFixture(request)}
+        readTaskActivity={async (request) => ({ ...taskActivityFixture(request), entries: [] })} />);
+      await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
+      await act(async () => { await Promise.resolve(); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+      const summaries = Array.from(dialog.querySelectorAll<HTMLElement>('summary'));
+      // The unclaimed task has no diff button and no publication or head copy
+      // control: the task id copy button is the last plain control, and native
+      // disclosure summaries follow it in the tab order.
+      expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent))
+        .toEqual(['Refresh', 'Close task details', 'Copy task id']);
+      const lastSummary = summaries.at(-1)!;
+      expect(elementKey(lastSummary)).toBe('SUMMARY:Original record');
+      buttons.at(-1)!.focus();
+      expect(focusKey()).toBe('BUTTON:Copy task id');
+      await tab();
+      // A summary still follows the last button, so focus must not wrap yet.
+      expect(focusKey()).not.toBe('BUTTON:Refresh');
+      lastSummary.focus();
+      await tab();
+      expect(focusKey()).toBe('BUTTON:Refresh');
+      await tab(true);
+      expect(focusKey()).toBe('SUMMARY:Original record');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
+  test('modal Tab traversal skips copy controls inside a closed disclosure until it opens', async () => {
+    const available = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.available.task_id)!;
+    const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
+    // An unclaimed card with recorded delivery evidence: the closed
+    // "Source evidence details" disclosure holds two copy buttons and is the
+    // last keyboard-operable content in the pane once evidence reads fail.
+    const card = { ...available, inbox: { ...available.inbox, effect_sha256: working.inbox.effect_sha256, delivery_evidence: working.inbox.delivery_evidence } };
+    const snapshot: OperatorFleetSnapshotV1 = { ...stableSnapshot, repositories: [{ ...stableSnapshot.repositories[0]!, cards: [card] }] };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 })) as unknown as typeof fetch;
+    try {
+      await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en"
+        readTaskContext={async () => { throw new Error('unavailable'); }}
+        readTaskActivity={async () => { throw new Error('unavailable'); }} />);
+      await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
+      await act(async () => { await Promise.resolve(); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const details = dialog.querySelector<HTMLDetailsElement>('[aria-labelledby="detail-delivery-heading"] details')!;
+      const summary = details.querySelector<HTMLElement>('summary')!;
+      const hidden = Array.from(details.querySelectorAll<HTMLButtonElement>('button'));
+      expect(details.open).toBe(false);
+      expect(hidden.map(elementKey)).toEqual(['BUTTON:Copy effect sha256', 'BUTTON:Copy Observation digest']);
+      expect(elementKey(Array.from(dialog.querySelectorAll('summary, button')).at(-1)!)).toBe('BUTTON:Copy Observation digest');
+      // Closed: the summary is the true last tab stop, in both directions.
+      summary.focus();
+      await tab();
+      expect(focusKey()).toBe('BUTTON:Refresh');
+      await tab(true);
+      expect(focusKey()).toBe('SUMMARY:Source evidence details');
+      // Open: the copy controls become reachable, and the trap wraps after them.
+      await act(async () => { details.open = true; });
+      summary.focus();
+      await tab();
+      expect(focusKey()).toBe('SUMMARY:Source evidence details');
+      hidden.at(-1)!.focus();
+      await tab();
+      expect(focusKey()).toBe('BUTTON:Refresh');
+      await tab(true);
+      expect(focusKey()).toBe('BUTTON:Copy Observation digest');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
+  test('the page Refresh action also re-requests the Notify and Pipeline panels', async () => {
+    let notify = 0;
+    let pipeline = 0;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+      readNotifyStatus={async () => { notify += 1; if (notify === 1) throw new Error('notify down'); return notifyStatus; }}
+      readPipelineBoard={async () => { pipeline += 1; return board; }} />);
+    expect(notify).toBe(1);
+    expect(pipeline).toBe(1);
+    expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('unavailable');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(notify).toBe(2);
+    expect(pipeline).toBe(2);
+    expect(document.querySelector('.notify-status')?.getAttribute('data-notify-state')).toBe('ready');
+  });
+
   test('reveals a newly urgent first group while preserving an explicit collapse', async () => {
     const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
     const lowerPriority = {
@@ -1278,9 +1541,15 @@ test('automatic epoch change cancels associated evidence and late responses cann
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
   let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
   const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
-  globalThis.fetch = (async (_input, init) => {
-    diffSignal = init!.signal as AbortSignal;
-    return new Promise<Response>(resolve => { finishDiff = resolve; });
+  globalThis.fetch = (async (input, init) => {
+    // The explicit refresh generation now reaches the Notify and Pipeline
+    // panels, so an epoch reset issues their requests too; only the diff
+    // request is parked, and the rest fail fast.
+    if (String(input).includes('/diff')) {
+      diffSignal = init!.signal as AbortSignal;
+      return new Promise<Response>(resolve => { finishDiff = resolve; });
+    }
+    return Response.json({ code: 'unavailable' }, { status: 503 });
   }) as typeof fetch;
   try {
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}

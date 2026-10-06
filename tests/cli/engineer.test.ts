@@ -4,6 +4,8 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, realpathSyn
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
+import { getMcpPolicy } from '../../src/cli/mcp/policy';
+import { callMcpTool } from '../../src/cli/mcp/tools';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
@@ -192,6 +194,26 @@ ${tasks.map((item, index) => `| ${index + 1} | ${fixtureTaskId(item.task)} | [ ]
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
   return root;
+}
+
+/** A graph fixture with an isolated registry, an active Binding and one enrolled authorization. */
+function enrolledGraphFixture(authorizationId: string, tasks: readonly GraphFixtureTask[] = DEFAULT_GRAPH_TASKS) {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-enrolled-home-')));
+  tempRoots.push(home);
+  process.env.REPO_HARNESS_HOME = home;
+  const root = graphFixture(tasks);
+  setRepoHarnessAccessMode(root, 'read_write', { env: process.env, requireAdopted: false });
+  const profile = loadEngineerProfile(root, engineerId);
+  bindEngineer(root, {
+    engineer_id: engineerId, idempotency_key: 'enrolled-bind', provider: 'codex',
+    provider_thread_id: 'thread-enrolled', host_id: 'local',
+    engineer_contract_revision: profile.engineer_contract_revision,
+    expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null,
+    expected_engineer_contract_revision: profile.engineer_contract_revision,
+  });
+  const binding = readEngineerBindingStatus(root, engineerId, profile.engineer_contract_revision).binding!;
+  enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(root), authorization_id: authorizationId, binding, env: process.env });
+  return { root, home, binding };
 }
 
 function run(root: string, args: string[]): { readonly exitCode: number; readonly stdout: string; readonly stderr: string } {
@@ -564,26 +586,12 @@ describe('repo-harness engineer CLI', () => {
   });
 
   test('two processes on different concurrency keys cannot exceed one Engineer active Claim limit', async () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-capacity-home-')));
-    tempRoots.push(home);
-    process.env.REPO_HARNESS_HOME = home;
-    const root = graphFixture([
+    const authorizationId = '55555555-5555-4555-8555-555555555555';
+    const { root, home } = enrolledGraphFixture(authorizationId, [
       ...DEFAULT_GRAPH_TASKS,
       { task: 'task B', workPackageId: 'wp-b', concurrencyKey: 'demo-b', stem: '20260823-0203-cli-acquire-b' },
     ]);
-    setRepoHarnessAccessMode(root, 'read_write', { env: process.env, requireAdopted: false });
-    const profile = loadEngineerProfile(root, engineerId);
-    expect(profile.profile.max_active_claims).toBe(1);
-    bindEngineer(root, {
-      engineer_id: engineerId, idempotency_key: 'capacity-bind', provider: 'codex',
-      provider_thread_id: 'thread-capacity', host_id: 'local',
-      engineer_contract_revision: profile.engineer_contract_revision,
-      expected_current_digest: null, expected_binding_generation: 0, expected_binding_id: null,
-      expected_engineer_contract_revision: profile.engineer_contract_revision,
-    });
-    const binding = readEngineerBindingStatus(root, engineerId, profile.engineer_contract_revision).binding!;
-    const authorizationId = '55555555-5555-4555-8555-555555555555';
-    enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(root), authorization_id: authorizationId, binding, env: process.env });
+    expect(loadEngineerProfile(root, engineerId).profile.max_active_claims).toBe(1);
 
     const signals = join(root, '.capacity-signals');
     mkdirSync(signals);
@@ -657,6 +665,58 @@ describe('repo-harness engineer CLI', () => {
     expect(listLiveClaimActorReceiptsForEngineer(root, engineerId)).toHaveLength(1);
     // B was refused before the Fleet mutation, so its task has no Lease.
     expect(readLease(root, fixtureTaskId('task B')).classification).toBe('available');
+  }, 60_000);
+
+  test('MCP engineer_acquire claims an unchanged first-attempt offer after the clock moves', async () => {
+    const authorizationId = '66666666-6666-4666-8666-666666666666';
+    const { root, binding } = enrolledGraphFixture(authorizationId);
+    const context = { repoRoot: root, policy: getMcpPolicy('engineer'), engineerAuthorizationId: authorizationId };
+    const prepared = await callMcpTool(context, 'engineer_prepare', {});
+    expect(prepared.isError, JSON.stringify(prepared)).toBeUndefined();
+    const evidence = prepared.structuredContent as {
+      observation_ref: string;
+      observation: { observed_at_ms: number };
+      offers: { offers: Array<Record<string, unknown>> };
+    };
+    const offer = evidence.offers.offers.find((item) => item.work_package_id === 'wp-a')!;
+    // A first attempt has no attempt record, so eligible_since is the observation time.
+    expect(offer).toMatchObject({ attempt_count: 0, eligible_since: new Date(evidence.observation.observed_at_ms).toISOString() });
+    const assertion = Object.fromEntries([
+      'offer_revision', 'work_package_id', 'work_package_revision', 'work_graph_revision',
+      'task_id', 'task_revision', 'dependency_revision', 'concurrency_revision',
+      'binding_id', 'binding_generation', 'engineer_contract_revision',
+      'fleet_offer_revision', 'authorization_revision',
+    ].map((key) => [key, offer[key]]));
+    const args = {
+      repo_id: repoHarnessRepoIdFor(root),
+      engineer_id: engineerId,
+      binding_id: binding.binding_id,
+      binding_generation: binding.binding_generation,
+      engineer_contract_revision: binding.engineer_contract_revision,
+      ...assertion,
+      idempotency_key: 'mcp-first-offer',
+      observation_ref: evidence.observation_ref,
+    };
+
+    // No source authority changes; only the server clock moves past T1.
+    await Bun.sleep(1_000);
+    const acquired = await callMcpTool(context, 'engineer_acquire', args);
+    const result = acquired.structuredContent as { ok: boolean; offer?: { offer_revision: string }; envelope?: { worktree_path: string } };
+    if (result.envelope) tempRoots.push(result.envelope.worktree_path);
+    expect(acquired.isError, JSON.stringify(acquired)).toBeUndefined();
+    expect(result).toMatchObject({ ok: true, offer: { offer_revision: offer.offer_revision } });
+    expect(listLiveClaimActorReceiptsForEngineer(root, engineerId)).toHaveLength(1);
+
+    // The same key replays the stored result without a second claim.
+    const replay = await callMcpTool(context, 'engineer_acquire', args);
+    expect(replay.structuredContent).toEqual(acquired.structuredContent);
+    // A new key revalidates current authority: the claimed task is no longer offered.
+    const changed = await callMcpTool(context, 'engineer_acquire', { ...args, idempotency_key: 'mcp-after-claim' });
+    expect(changed).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_offer_stale' } } });
+    expect(listLiveClaimActorReceiptsForEngineer(root, engineerId)).toHaveLength(1);
+    // The selected route takes no caller clock or retry budget.
+    const retired = await callMcpTool(context, 'engineer_acquire', { ...args, idempotency_key: 'mcp-max-attempts', max_attempts: 2 });
+    expect(retired).toMatchObject({ isError: true, structuredContent: { error: { code: 'INVALID_ARGUMENT' } } });
   }, 60_000);
 
   test('offers report the Fleet domain error code when the coordination surface is unreadable', () => {
