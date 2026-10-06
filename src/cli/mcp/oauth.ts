@@ -415,7 +415,8 @@ export function createMcpOAuthProvider(
       const expiresIn = accessTokenTtlSeconds;
       const expiresAt = clock() + expiresIn;
       const scopes = normalizeScopes(stored.scopes, profile);
-      const authorizationRevision = currentAuthorizationRevision();
+      // A later registry read must not upgrade the consent that issued this code.
+      const authorizationRevision = authorizationScoped ? stored.authorizationRevision : currentAuthorizationRevision();
       const authorizationId = authorizationScoped ? randomUUID() : undefined;
       store.setAccessToken(accessToken, {
         token: accessToken,
