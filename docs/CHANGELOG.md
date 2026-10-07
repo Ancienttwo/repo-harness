@@ -32,6 +32,14 @@ All notable changes to this skill are documented here.
 
 - Restore the collaboration flow proof after a removed source symbol. The
   architecture projection no longer reports unrelated drift. (#589)
+- Remove stale `.herdr-stage-*` and `.herdr-stage-*-backup` directories that
+  an interrupted Herdr skill install left in the host skill roots. Only old,
+  provably owned entries are removed; every removal and skip is reported.
+  (#593)
+- Find a compatible Node runtime in Homebrew versioned kegs
+  (`/opt/homebrew/opt/node@N` and `/usr/local/opt/node@N`). A host with
+  Homebrew `node` 26 and keg-only `node@24` no longer fails
+  `repo-harness init` at architecture projection readiness. (#594)
 
 ## [0.21.0] - 2026-10-06
 

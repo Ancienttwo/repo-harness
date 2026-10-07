@@ -10,6 +10,8 @@
 - Add #587, #589 and #590 to the 0.21.1 changelog. They merged to main
   before this preparation. #588 adds only an offline experiment and its
   tests, so the changelog does not list it.
+- Add #593 and #594 to the 0.21.1 changelog. #592 changes only a test
+  fixture, so the changelog does not list it.
 - Keep published release history unchanged.
 
 ## Verification
