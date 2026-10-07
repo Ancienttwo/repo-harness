@@ -200,3 +200,53 @@ concurrent hostile directory replacement, same-size writes during a payload
 read, output-envelope and Unicode truncation edge coverage, and injected
 host-install rollback failure coverage. Confirmation is not an atomic snapshot.
 No business goal or owner was fabricated. No push, PR or live provider ran.
+
+## Independent static re-review fixes on 57c15efa
+
+The parent reviewer closed the original findings and requested four P2 fixes.
+The reviewer did not run the original tests. This change stays within the
+approved expansion. Acceptance assessment and benchmark replay remain excluded.
+
+1. State IO refuses an unselected memory body before opening it. Only explicit
+   selection of an active item permits its body in the state observer. If the
+   canonical verification tree needs an unselected or inactive body, state is
+   unavailable and proposal validation blocks. The summary packet still exports.
+   No partial tree stands in for the canonical tree. Production fixtures use
+   bodies larger than 64 KiB across active, stale, tombstoned, archived and
+   superseded lifecycle states. They use the production observer, not a seam.
+2. Enabled sparse checkout fails closed before virtual-tree source capture.
+   A real sparse repository fixture includes an absent out-of-cone tracked file.
+   The adapter refuses it rather than hash it as a deletion.
+3. Git normalizes core.filemode through config --bool --get. The read-only
+   allowlist permits that exact read shape. Mode capture uses the owner execute
+   bit 0o100. Fixtures compare canonical owner tree identity for mode 0645 with
+   true, false, off, no, 0 and FALSE configuration values.
+4. Both command paths use a shared bounded spawn capture. They charge stdout
+   and stderr on success and failure. Nonzero status, signal and captured
+   buffers remain available to callers. A local synthetic Git executable emits
+   60,000 warning bytes on successful calls. Both paths exhaust the request
+   budget. A nonzero exit fixture retains its status and both buffers.
+
+The existing active verification readiness fixture now explicitly loads its
+lesson. Its prior summary-only readiness assertion was invalid because the
+canonical tree needed that body. Its readiness, corrupt-tail and no-write
+assertions remain. The new production summary-only regression expects state
+unavailable. Ordinary non-verification context can remain reviewable without
+body selection. This is an explicit first-version limitation, not execution
+permission or an alternate effective-state model.
+
+### Verification
+
+- `bun run check:type`: passed on the final source and tests.
+- `bun run test:files tests/strategy.test.ts tests/effective-state.test.ts tests/state/effective-state-stability.test.ts tests/effects/verification-execution.test.ts --timeout 60000 --max-concurrency 1`:
+  passed, 104 tests, 578 assertions, four files, no skips.
+- After adding failure-buffer assertions to the stderr fixture,
+  `bun run test:files tests/strategy.test.ts --timeout 60000 --max-concurrency 1`:
+  passed, 29 tests, 195 assertions on the final tests.
+- State boundaries (324 files), hooks (three), helpers (59), reference configs
+  (26), context map (ten) and `git diff --check`: passed.
+
+The full suite, host lifecycle checks and real providers were not run. The
+scope excludes them. No push, PR, publication or deployment occurred. The
+updated archive retains full and exact-delta patches, the immutable commit
+bundle, file lists and command logs. Parent independent review remains pending.

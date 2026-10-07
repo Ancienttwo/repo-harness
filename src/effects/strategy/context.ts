@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { ObservationViolation, type ReadonlyObservationIO } from '../state/readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { activeMemory, parseStrategyDocument, validateProposal, type Evidence, type StrategyPacket } from '../../core/strategy/contracts';
@@ -47,6 +47,26 @@ export class StrategyBudgetError extends ObservationViolation {}
 
 export class StrategyReader {
   private bytes = 0;
+  private unselectedMemoryBodies = new Set<string>();
+  restrictStateMemoryBodies(paths: string[], selected: string[]): void {
+    const permitted = new Set(selected.map(path => resolve(this.root, path)));
+    this.unselectedMemoryBodies = new Set(paths.map(path => resolve(this.root, path)).filter(path => !permitted.has(path)));
+  }
+  private capture(file: string, args: string[], env: NodeJS.ProcessEnv): Buffer {
+    this.reserve(1);
+    const result = spawnSync(file, args, {
+      maxBuffer: Math.min(FILE_LIMIT, TOTAL_LIMIT - this.bytes), timeout: 5000,
+      env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const stdout = result.stdout ?? Buffer.alloc(0); const stderr = result.stderr ?? Buffer.alloc(0);
+    this.charge(stdout.length + stderr.length);
+    if (result.error || result.status !== 0) {
+      throw Object.assign(result.error ?? new Error(`Observation command failed: ${file}`), {
+        status: result.status, signal: result.signal, stdout, stderr,
+      });
+    }
+    return stdout;
+  }
   constructor(readonly root: string) {}
   get bytesRead(): number { return this.bytes; }
   private reserve(length: number): void {
@@ -55,19 +75,7 @@ export class StrategyReader {
   private charge(length: number): void { this.reserve(length); this.bytes += length; }
   /** Count both Git metadata and historical payload output in this request. */
   private git(args: string[]): string {
-    this.reserve(1);
-    let result: Buffer;
-    try {
-      result = execFileSync('git', ['-C', this.root, ...args], {
-        maxBuffer: Math.min(FILE_LIMIT, TOTAL_LIMIT - this.bytes), timeout: 5000,
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' }, stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch (error) {
-      const failed = error as { stdout?: Buffer; stderr?: Buffer };
-      this.charge((failed.stdout?.length ?? 0) + (failed.stderr?.length ?? 0));
-      throw error;
-    }
-    this.charge(result.length);
+    const result = this.capture('git', ['-C', this.root, ...args], { ...process.env, GIT_OPTIONAL_LOCKS: '0' });
     return new TextDecoder('utf-8', { fatal: true }).decode(result);
   }
   assertRoot(): void {
@@ -121,7 +129,11 @@ export class StrategyReader {
     };
     return {
       validatePath,
-      readFile: path => { validatePath(path); return this.readBytes(resolve(path)); },
+      readFile: path => {
+        validatePath(path);
+        if (this.unselectedMemoryBodies.has(resolve(path))) throw new ObservationViolation('Canonical state requires an unselected memory body');
+        return this.readBytes(resolve(path));
+      },
       readDirectory: path => {
         validatePath(path); const entries: string[] = []; const directory = opendirSync(path);
         try {
@@ -142,20 +154,12 @@ export class StrategyReader {
           if (args.some(arg => /^(--output|--ext-diff|--textconv|--filters|--follow-symlinks)(=|$)/.test(arg))) throw new ObservationViolation('Observation cannot redirect output, run filters or read outside Git scope');
           if (args.includes('--no-index') && args[0] !== 'check-ignore') throw new ObservationViolation('Observation cannot compare files outside Git scope');
           if (!['rev-parse', 'status', 'diff', 'merge-base', 'ls-files', 'ls-tree', 'cat-file', 'show', 'config', 'check-ignore', 'check-attr', '--version'].includes(args[0]!)) throw new ObservationViolation('Observation Git operation is not read-only');
-          if (args[0] === 'config' && !['--get', '--get-regexp'].includes(args[1]!)) throw new ObservationViolation('Observation cannot change Git config');
+          if (args[0] === 'config' && !(['--get', '--get-regexp'].includes(args[1]!) || (args[1] === '--bool' && args[2] === '--get'))) throw new ObservationViolation('Observation cannot change Git config');
           if (args[0] === 'status' && !args.includes('--porcelain=v1') && !args.includes('--porcelain=v2')) throw new ObservationViolation('Unsupported observation Git status');
         } else if (!((file === '/bin/bash' || file === '/usr/bin/bash' || file === process.execPath) && args.length === 1 && args[0] === '--version')) throw new ObservationViolation('Observation cannot execute a tool or provider');
-        this.reserve(1);
         const env: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_OPTIONAL_LOCKS: '0' };
         for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[key];
-        let bytes: Buffer;
-        try { bytes = execFileSync(file, gitBinary ? ['-C', this.root, '-c', 'core.fsmonitor=false', '-c', 'maintenance.auto=false', ...(['check-ignore', 'check-attr'].includes(args[0]!) ? [] : ['--literal-pathspecs']), ...args.slice(0, 1), ...(args[0] === 'diff' ? ['--no-ext-diff', '--no-textconv'] : []), ...args.slice(1)] : args, {
-          env, maxBuffer: Math.min(FILE_LIMIT, TOTAL_LIMIT - this.bytes), timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'],
-        }); } catch (error) {
-          const failed = error as { stdout?: Buffer; stderr?: Buffer };
-          this.charge((failed.stdout?.length ?? 0) + (failed.stderr?.length ?? 0)); throw error;
-        }
-        this.charge(bytes.length); return bytes;
+        return this.capture(file, gitBinary ? ['-C', this.root, '-c', 'core.fsmonitor=false', '-c', 'maintenance.auto=false', ...(['check-ignore', 'check-attr'].includes(args[0]!) ? [] : ['--literal-pathspecs']), ...args.slice(0, 1), ...(args[0] === 'diff' ? ['--no-ext-diff', '--no-textconv'] : []), ...args.slice(1)] : args, env);
       },
     };
   }
@@ -211,6 +215,9 @@ function collectContext(reader: StrategyReader, opts: StrategyCollectionOptions,
   const raw = reader.read(STRATEGY_DOCUMENT);
   const doc = parseStrategyDocument(JSON.parse(raw));
   const revision = reader.head();
+  const eligible = activeMemory(doc, nowMs, revision, topics);
+  reader.restrictStateMemoryBodies(doc.memory.flatMap(m => m.body ? [m.body.path] : []),
+    eligible.filter(m => load.includes(m.id)).flatMap(m => m.body ? [m.body.path] : []));
   const unknowns: string[] = [];
   const sources: Evidence[] = [{ path: STRATEGY_DOCUMENT, sha256: strategyHash(raw), revision }];
   for (const e of [...doc.evidence].sort((a, b) => a.path.localeCompare(b.path, 'en'))) {
@@ -227,7 +234,6 @@ function collectContext(reader: StrategyReader, opts: StrategyCollectionOptions,
   const observedState = observeState(reader, nowMs, effects);
   const stateRevision = observedState ?? 'unavailable';
   if (observedState === null) unknowns.push('Effective state unavailable: bounded observation failed');
-  const eligible = activeMemory(doc, nowMs, revision, topics);
   const memory = eligible.map(m => ({ ...m, authority: 'unverified_summary' as const }));
   const bodies: StrategyPacket['bodies'] = [];
   for (const id of [...load].sort()) {

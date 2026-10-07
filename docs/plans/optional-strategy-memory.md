@@ -89,3 +89,15 @@ Steps:
 No new ledger, provider, durable state publication or goal authority is added.
 Existing version locks may remain transient. No Git objects may be written by
 observation. A bounded unsupported input leaves state unavailable, not success.
+
+## Independent re-review fixes on 57c15efa
+
+P1: Four P2 findings affect progressive reads, Git identity and output quotas.
+P2: Active verification hashes all Git-visible bodies. Sparse checkout and
+mode normalization differ from the default Git owner. Successful commands hide
+stderr from the request budget.
+P3: Refuse state reads of memory bodies without explicit active selection.
+Do not invent a partial canonical tree. Reject sparse checkout. Normalize Git
+booleans and use the owner execute bit. Capture both command streams and charge
+them on success and failure. Add production and owner-identity regressions.
+Keep acceptance assessment and benchmark adapters outside this scope.

@@ -20,6 +20,11 @@ function hashTree(tree: Tree): Buffer {
 export function captureReadonlyGitTree(root: string): string {
   const io = currentReadonlyObservation(); if (!io) throw new Error('Readonly Git tree requires an observation scope');
   const git = (args: string[]) => observationExecFileSync('git', ['-C', root, '--literal-pathspecs', ...args]) as Buffer;
+  const booleanConfig = (key: string, fallback: boolean): boolean => {
+    try { return git(['config', '--bool', '--get', key]).toString().trim() === 'true'; }
+    catch (error) { if ((error as { status?: number }).status === 1) return fallback; throw error; }
+  };
+  if (booleanConfig('core.sparseCheckout', false)) rejectObservation('Sparse checkout requires a canonical observation adapter');
   const format = git(['rev-parse', '--show-object-format']).toString().trim();
   if (format !== 'sha1') rejectObservation('Unsupported Git object format for bounded observation');
   // Transforming content without running repository filters needs a separate owner
@@ -42,7 +47,7 @@ export function captureReadonlyGitTree(root: string): string {
     headModes.set(match[2]!, match[1]!);
   }
   const paths = new Set([...headModes.keys(), ...text(git(['ls-files', '--cached', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)]);
-  let filemode = 'true'; try { filemode = git(['config', '--get', 'core.filemode']).toString().trim(); } catch {}
+  const filemode = booleanConfig('core.filemode', true);
   const tree: Tree = { entries: new Map() };
   for (const path of [...paths].sort()) {
     assertObservationPath(join(root, path));
@@ -56,7 +61,7 @@ export function captureReadonlyGitTree(root: string): string {
     const attrs = git(['check-attr', '-z', 'filter', 'working-tree-encoding', 'text', 'eol', 'ident', '--', path]).toString().split('\0');
     for (let i = 2; i < attrs.length - 1; i += 3) if (attrs[i] !== 'unspecified' && attrs[i] !== 'unset') rejectObservation('Git attributes require a bounded conversion adapter');
     const hash = objectHash('blob', observationReadFileSync(join(root, path)));
-    const mode = filemode === 'false' ? headModes.get(path) ?? '100644' : stat.mode & 0o111 ? '100755' : '100644';
+    const mode = !filemode ? headModes.get(path) ?? '100644' : stat.mode & 0o100 ? '100755' : '100644';
     const segments = path.split('/'); let parent = tree;
     for (const segment of segments.slice(0, -1)) {
       let child = parent.entries.get(segment);

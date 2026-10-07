@@ -151,3 +151,12 @@ need a separate approved adapter; observation never launches their grader.
  Filesystem races cannot
 be fully excluded without operating-system directory handles. Do not run this
 reader against a concurrently hostile mutable worktree.
+
+State observation cannot read a memory body unless --load explicitly selects
+its active item. If canonical verification identity needs an unselected or
+inactive body, the packet exports summaries with state unavailable. Validation
+then blocks. It never substitutes a partial fingerprint. Explicit body loading
+still requires current provenance and matching hashes. Sparse checkout is
+unsupported and fails closed. Git file modes use normalized booleans and the
+owner execute bit. Both command output streams count in the shared budget on
+success and failure.

@@ -4,7 +4,7 @@ import { captureGitVirtualTreeSnapshot } from '../src/effects/evidence/verificat
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseStrategyDocument, validateProposal, type StrategyDocument, type StrategyPacket } from '../src/core/strategy/contracts';
@@ -35,6 +35,13 @@ function fixture() {
   };
   const save = () => write(root, 'docs/strategy/context.json', JSON.stringify(doc)); save();
   return { root, doc, save };
+}
+function activateVerification(root: string): void {
+  const plan = 'plans/plan-20261007-1901-strategy-fixture.md'; const contract = 'tasks/contracts/20261007-1901-strategy-fixture.contract.md';
+  write(root, '.ai/harness/active-plan', plan);
+  write(root, plan, `# Plan\n> **Status**: Executing\n> **Task Contract**: ${contract}\n`);
+  const checks = { protocol: 1, checks: [{ id: 'synthetic-check', kind: 'command', command: 'exit 0', cwd: '.', phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Synthetic fixture', inputs: { env: [] } }] };
+  write(root, contract, `# Contract\n> **Plan**: ${plan}\n\n## Verification Plan\n\n\`\`\`json\n${JSON.stringify(checks)}\n\`\`\`\n`);
 }
 function syntheticState(reader: StrategyReader): string {
   return strategyHash(JSON.stringify(['tasks/current.md', '.ai/harness/handoff/current.md', '.ai/harness/handoff/resume.md'].map(path => reader.optional(path))));
@@ -277,18 +284,14 @@ describe('optional strategy and progressive memory', () => {
     expect(readFileSync(join(root, path), 'utf8')).toBe('');
   });
   test('production active verification observes a corrupt tail without repair or Git writes', () => {
-    const { root } = fixture(); const plan = 'plans/plan-20261007-1901-strategy-fixture.md'; const contract = 'tasks/contracts/20261007-1901-strategy-fixture.contract.md';
-    write(root, '.ai/harness/active-plan', plan);
-    write(root, plan, `# Plan\n> **Status**: Executing\n> **Task Contract**: ${contract}\n`);
-    const checks = { protocol: 1, checks: [{ id: 'synthetic-check', kind: 'command', command: 'exit 0', cwd: '.', phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Synthetic fixture', inputs: { env: [] } }] };
-    write(root, contract, `# Contract\n> **Plan**: ${plan}\n\n## Verification Plan\n\n\`\`\`json\n${JSON.stringify(checks)}\n\`\`\`\n`);
+    const { root } = fixture(); activateVerification(root);
     const beforeClean = snapshot(root);
-    const clean = collectStrategyContext(root, { nowMs });
+    const clean = collectStrategyContext(root, { nowMs, load: ['lesson'] });
     expect(clean.stateRevision).not.toBe('unavailable');
     expect(validateProposal(proposal(clean), clean).status).toBe('reviewable');
     expect(snapshot(root)).toEqual(beforeClean);
     const path = '.ai/harness/evidence/events/log.jsonl'; write(root, path, '{broken\n');
-    const before = snapshot(root); const packet = collectStrategyContext(root, { nowMs });
+    const before = snapshot(root); const packet = collectStrategyContext(root, { nowMs, load: ['lesson'] });
     expect(packet.stateRevision).toBe('unavailable');
     expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
     expect(snapshot(root)).toEqual(before);
@@ -301,6 +304,70 @@ describe('optional strategy and progressive memory', () => {
     expect(readonlyTree).toEqual(defaultTree); expect(snapshot(root)).toEqual(before);
     const io = reader.observationIO();
     expect(() => withReadonlyObservation(io, () => io.exec('git', ['add', '-A'], {}))).toThrow(ObservationViolation);
+  });
+  test('production active verification never reads unselected or inactive memory bodies', () => {
+    for (const lifecycle of ['active', 'stale', 'tombstoned', 'archived', 'superseded'] as const) {
+      const { root, doc, save } = fixture();
+      doc.memory[0]!.lifecycle = lifecycle;
+      if (lifecycle === 'superseded') {
+        doc.memory[0]!.supersededBy = 'replacement';
+        doc.memory.push({ ...doc.memory[0]!, id: 'replacement', lifecycle: 'active', supersededBy: null, body: null });
+      }
+      write(root, 'docs/lesson.md', 'x'.repeat(65537)); save(); activateVerification(root);
+      const before = snapshot(root);
+      const packet = collectStrategyContext(root, { nowMs });
+      expect(packet.bodies).toEqual([]);
+      expect(packet.stateRevision).toBe('unavailable');
+      expect(packet.unknowns).toContain('Effective state unavailable: bounded observation failed');
+      expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
+      expect(snapshot(root)).toEqual(before);
+    }
+  });
+  test('sparse checkout fails closed instead of treating absent tracked files as deleted', () => {
+    const { root } = fixture(); write(root, 'outside/file.txt', 'Outside cone');
+    git(root, 'add', '.'); git(root, 'commit', '-m', 'Sparse fixture');
+    git(root, 'sparse-checkout', 'init', '--cone'); git(root, 'sparse-checkout', 'set', 'docs');
+    expect(() => readFileSync(join(root, 'outside/file.txt'))).toThrow();
+    const before = snapshot(root);
+    expect(() => withReadonlyObservation(new StrategyReader(root).observationIO(), () => captureGitVirtualTreeSnapshot(root))).toThrow('Sparse checkout');
+    activateVerification(root);
+    expect(collectStrategyContext(root, { nowMs, load: ['lesson'] }).stateRevision).toBe('unavailable');
+    // The setup changes worktree files; the direct rejected capture does not.
+    expect(snapshot(root)['.git/index']).toBe(before['.git/index']);
+  });
+  test('Git tree identity uses owner execute bit and normalized false filemode values', () => {
+    for (const value of ['true', 'false', 'off', 'no', '0', 'FALSE']) {
+      const { root } = fixture();
+      write(root, 'mode.txt', 'Tracked mode'); chmodSync(join(root, 'mode.txt'), 0o644);
+      git(root, 'add', '.'); git(root, 'commit', '-m', 'Modes');
+      git(root, 'config', 'core.filemode', value);
+      chmodSync(join(root, 'mode.txt'), 0o645);
+      write(root, 'new-mode.txt', 'New mode'); chmodSync(join(root, 'new-mode.txt'), 0o645);
+      const expected = captureGitVirtualTreeSnapshot(root); const before = snapshot(root);
+      expect(withReadonlyObservation(new StrategyReader(root).observationIO(), () => captureGitVirtualTreeSnapshot(root))).toEqual(expected);
+      expect(snapshot(root)).toEqual(before);
+    }
+  });
+  test('successful Git stderr counts in both request command budgets', () => {
+    const { root } = fixture(); const reader = new StrategyReader(root); const io = reader.observationIO();
+    const failedReader = new StrategyReader(root); const failedIO = failedReader.observationIO();
+    const bin = temp(); write(bin, 'git', `#!${process.execPath}\nprocess.stdout.write('synthetic'); process.stderr.write('w'.repeat(60000)); process.exitCode = Number(process.env.STRATEGY_TEST_EXIT ?? 0);\n`);
+    chmodSync(join(bin, 'git'), 0o755); const savedPath = process.env.PATH;
+    process.env.PATH = `${bin}:${savedPath}`;
+    try {
+      const before = reader.bytesRead;
+      expect(io.exec('git', ['--version'], {}).toString()).toBe('synthetic');
+      expect(reader.bytesRead - before).toBe(60009);
+      expect(() => { for (let i = 0; i < 20; i++) io.exec('git', ['--version'], {}); }).toThrow('byte limit');
+      let failure: { status?: number; stdout?: Buffer; stderr?: Buffer } | undefined;
+      try { failedIO.exec('git', ['--version'], { env: { ...process.env, STRATEGY_TEST_EXIT: '2' } }); }
+      catch (error) { failure = error as typeof failure; }
+      expect(failure?.status).toBe(2); expect(failure?.stdout?.toString()).toBe('synthetic');
+      expect(failure?.stderr?.length).toBe(60000); expect(failedReader.bytesRead).toBeGreaterThanOrEqual(60009);
+      const rawReader = new StrategyReader(root);
+      expect(rawReader.head()).toBe('synthetic'); expect(rawReader.bytesRead).toBe(60009);
+      expect(() => { for (let i = 0; i < 20; i++) rawReader.head(); }).toThrow('byte limit');
+    } finally { if (savedPath === undefined) delete process.env.PATH; else process.env.PATH = savedPath; }
   });
   test('state scope and quota errors cannot be hidden by owner fallback catches', () => {
     const { root } = fixture(); const outside = temp(); write(outside, 'current.md', 'Foreign');
