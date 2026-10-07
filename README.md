@@ -706,3 +706,10 @@ repo-harness commit scripts or hooks unless that repo adopts the same policy.
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
+
+### Optional strategic reflection
+
+`repo-harness strategy status|context|validate` exports project-local evidence
+and validates inert proposals. It is off by default and never dispatches work.
+The optional Skill needs an explicit `strategy install-skill` command. See
+[Strategy and progressive memory](docs/reference-configs/strategy.md).
