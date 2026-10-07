@@ -169,8 +169,104 @@ test("required Herdr skill rejects a symlinked host parent before writing a new 
   }
 });
 
+test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages and reports unsafe or recent entries", host => {
+  const root = mkdtempSync(join(tmpdir(), "repo-harness-herdr-stages-"));
+  try {
+    const home = join(root, "home");
+    const bin = join(root, "bin");
+    mkdirSync(home); mkdirSync(bin);
+    const content = "---\nname: herdr\n---\nCheck HERDR_ENV before control.\n";
+    const source = join(root, "skill.md");
+    writeFileSync(source, content);
+    writeFileSync(join(bin, "herdr"), '#!/bin/sh\ncat "$FIXTURE_SKILL_FILE"\n');
+    chmodSync(join(bin, "herdr"), 0o755);
+    const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`, FIXTURE_SKILL_FILE: source };
+    expect(configureRequiredHerdrSkill(host, env).status).toBe("ok");
+    const skills = join(home, `.${host}`, "skills");
+    const destination = join(skills, "herdr");
+    const marker = readFileSync(join(destination, ".repo-harness-owner.json"), "utf8");
+    const old = new Date(Date.now() - 20 * 60 * 1_000);
+    const stage = (name: string, files: Record<string, string> = {}, stale = true) => {
+      const path = join(skills, name);
+      mkdirSync(path);
+      for (const [name, text] of Object.entries(files)) writeFileSync(join(path, name), text);
+      if (stale) utimesSync(path, old, old);
+      return path;
+    };
+    // This is the on-disk state after destination -> backup and before stage -> destination.
+    const backup = join(skills, ".herdr-stage-abc123-backup");
+    renameSync(destination, backup); utimesSync(backup, old, old);
+    const empty = stage(".herdr-stage-empty1");
+    const partial = stage(".herdr-stage-part12", { "SKILL.md": content });
+    const complete = stage(".herdr-stage-full12", { "SKILL.md": content, ".repo-harness-owner.json": marker });
+    const fresh = stage(".herdr-stage-fresh1", {}, false);
+    const extra = stage(".herdr-stage-extra1-backup", { "SKILL.md": content, ".repo-harness-owner.json": marker, "keep": "user file" });
+    const foreign = stage(".herdr-stage-other1-backup", { "SKILL.md": content, ".repo-harness-owner.json": marker.replace("repo-harness", "foreign") });
+    const invalid = stage(".herdr-stage-bad123", { "SKILL.md": content, ".repo-harness-owner.json": "{}" });
+    const markerOnly = stage(".herdr-stage-mark12", { ".repo-harness-owner.json": marker });
+    const target = join(root, "keep"); mkdirSync(target); writeFileSync(join(target, "keep"), "keep");
+    const link = join(skills, ".herdr-stage-link12"); symlinkSync(target, link, "dir");
+    const childLink = stage(".herdr-stage-child1");
+    symlinkSync(source, join(childLink, "SKILL.md")); utimesSync(childLink, old, old);
+    const nested = stage(".herdr-stage-dir123");
+    mkdirSync(join(nested, "SKILL.md")); utimesSync(nested, old, old);
+    const unrelated = [stage(".herdr-stage-x"), stage("herdr-old"), stage("other-skill"), stage(".herdr-stage-abc123-backup-extra")];
+    const result = configureRequiredHerdrSkill(host, env);
+    expect(result.status).toBe("ok");
+    expect(readFileSync(join(destination, "SKILL.md"), "utf8")).toBe(content);
+    for (const path of [backup, empty, partial, complete]) {
+      expect(existsSync(path)).toBe(false);
+      expect(result.detail).toContain(`stage cleanup removed: ${path}`);
+    }
+    for (const path of [fresh, extra, foreign, invalid, markerOnly, link, childLink, nested]) {
+      expect(lstatSync(path)).toBeDefined();
+      expect(result.detail).toContain(`stage cleanup skipped: ${path}`);
+    }
+    expect(readFileSync(join(target, "keep"), "utf8")).toBe("keep");
+    expect(readFileSync(source, "utf8")).toBe(content);
+    for (const path of unrelated) {
+      expect(existsSync(path)).toBe(true);
+      expect(result.detail).not.toContain(path);
+    }
+    // Already-current installs also clean old stages. Cleanup errors remain advisory.
+    const pending = stage(".herdr-stage-fail12");
+    const advisory = configureRequiredHerdrSkill(host, env, () => { throw new Error("fixture cleanup failure"); });
+    expect(advisory.status).toBe("ok");
+    expect(advisory.detail).toContain(`stage cleanup pending: ${pending}: fixture cleanup failure`);
+    expect(existsSync(pending)).toBe(true);
+    const current = configureRequiredHerdrSkill(host, env);
+    expect(current.status).toBe("ok");
+    expect(current.detail).toContain(`stage cleanup removed: ${pending}`);
+    expect(existsSync(pending)).toBe(false);
+    // A backup made from an old installed directory must still count as recent.
+    utimesSync(destination, old, old);
+    writeFileSync(source, `${content}Updated binary skill.\n`);
+    let recentBackup = "";
+    let backupMtime = 0;
+    const update = configureRequiredHerdrSkill(host, env, path => {
+      recentBackup = path;
+      backupMtime = lstatSync(path).mtimeMs;
+      throw new Error("keep new backup for age check");
+    });
+    expect(update.status).toBe("ok");
+    expect(recentBackup).not.toBe("");
+    expect(backupMtime).toBeGreaterThan(Date.now() - 10 * 60 * 1_000);
+    expect(update.detail).toContain(`stage cleanup skipped: ${recentBackup}: recent stage`);
+    expect(existsSync(recentBackup)).toBe(true);
+    expect(readFileSync(join(destination, "SKILL.md"), "utf8")).toBe(`${content}Updated binary skill.\n`);
+    const failureStage = stage(".herdr-stage-stop12");
+    const movedRoot = join(root, "moved-skills");
+    renameSync(skills, movedRoot); symlinkSync(movedRoot, skills, "dir");
+    const failed = configureRequiredHerdrSkill(host, env);
+    expect(failed.status).toBe("failed");
+    expect(failed.detail).toContain("non-canonical host skill root");
+    expect(existsSync(failureStage)).toBe(true);
+    expect(failed.detail).not.toContain("stage cleanup");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 // These fixtures replace only external I/O. They run the shipped command and plugin.
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parseEnv } from 'node:util';
 import { spawnSync } from 'node:child_process';
