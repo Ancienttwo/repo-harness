@@ -58,7 +58,8 @@ function cleanupStaleStages(root: string, remove: BackupCleanup): string[] {
           else if (name.endsWith("-backup")) {
             if (!ownedSkillIsIntact(path)) reason = "backup ownership not proved";
           } else if (!(entries.length === 0
-            || (entries.length === 1 && entries[0] === "SKILL.md")
+            || (entries.length === 1 && entries[0] === "SKILL.md"
+              && readFileSync(join(path, "SKILL.md"), "utf8").startsWith("---\nname: herdr\n"))
             || ownedSkillIsIntact(path))) reason = "stage contents not proved";
         }
         if (reason) notes.push(`stage cleanup skipped: ${path}: ${reason}`);

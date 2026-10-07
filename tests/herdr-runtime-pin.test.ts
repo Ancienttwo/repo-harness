@@ -198,6 +198,7 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
     renameSync(destination, backup); utimesSync(backup, old, old);
     const empty = stage(".herdr-stage-empty1");
     const partial = stage(".herdr-stage-part12", { "SKILL.md": content });
+    const noPrefix = stage(".herdr-stage-nopre1", { "SKILL.md": "# unrelated skill\n" });
     const complete = stage(".herdr-stage-full12", { "SKILL.md": content, ".repo-harness-owner.json": marker });
     const fresh = stage(".herdr-stage-fresh1", {}, false);
     const extra = stage(".herdr-stage-extra1-backup", { "SKILL.md": content, ".repo-harness-owner.json": marker, "keep": "user file" });
@@ -213,6 +214,9 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
     const unrelated = [stage(".herdr-stage-x"), stage("herdr-old"), stage("other-skill"), stage(".herdr-stage-abc123-backup-extra")];
     const result = configureRequiredHerdrSkill(host, env);
     expect(result.status).toBe("ok");
+    expect(existsSync(noPrefix)).toBe(true);
+    expect(result.detail).toContain(`stage cleanup skipped: ${noPrefix}: stage contents not proved`);
+    expect(readFileSync(join(noPrefix, "SKILL.md"), "utf8")).toBe("# unrelated skill\n");
     expect(readFileSync(join(destination, "SKILL.md"), "utf8")).toBe(content);
     for (const path of [backup, empty, partial, complete]) {
       expect(existsSync(path)).toBe(false);
