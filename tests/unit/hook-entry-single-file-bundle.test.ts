@@ -264,3 +264,12 @@ describe('hook-entry single-file bundle', () => {
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf-8')).toMatch(/^dist\/$/m);
   });
 });
+
+// The bundle must contain the observation owner rather than resolve an eager
+// dynamic package path at runtime. The execution cases above test this from
+// isolated folders with no source tree.
+test('bundle includes the observation owner without a dynamic source require', () => {
+  const bundle = readFileSync(buildBundle('0.0.0-test'), 'utf8');
+  expect(/(?:require|requireFromHelper)\([^;\n]*readonly-observation/.test(bundle)).toBe(false);
+  expect(bundle).toContain('AsyncLocalStorage');
+});

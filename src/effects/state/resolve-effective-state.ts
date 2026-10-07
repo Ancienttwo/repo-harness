@@ -1,3 +1,4 @@
+import { withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from './readonly-observation';
 import {
   acceptanceReceiptPath,
   inspectAcceptanceCurrentBinding,
@@ -5,8 +6,7 @@ import {
 } from '../../../scripts/acceptance-receipt';
 import { evaluateVerificationContract } from '../evidence/verification-execution';
 import type { EffectiveStateInputs } from '../../core/state/project-effective-state';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { existsSync, realpathSync, statSync } from 'fs';
 import { isAbsolute, posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
@@ -908,9 +908,13 @@ export function resolveEffectiveStateReadOnly(
   cwd = process.cwd(),
   nowMs = Date.now(),
   risk?: EffectiveStateRiskInput,
+  observation?: ReadonlyObservationIO,
 ): EffectiveState {
-  const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
-  return { ...confirmed, state_version: currentStateVersion(cwd) };
+  const collect = () => {
+    const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
+    return { ...confirmed, state_version: currentStateVersion(cwd) };
+  };
+  return observation ? withReadonlyObservation(observation, collect) : collect();
 }
 
 function resolveStableEffectiveState(
