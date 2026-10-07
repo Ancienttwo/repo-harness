@@ -101,3 +101,16 @@ Do not invent a partial canonical tree. Reject sparse checkout. Normalize Git
 booleans and use the owner execute bit. Capture both command streams and charge
 them on success and failure. Add production and owner-identity regressions.
 Keep acceptance assessment and benchmark adapters outside this scope.
+
+## CI regression repair on 20ccf865
+
+P1: CI run 37684925885 tested merge 83c26e16. Typecheck passed. Two files failed.
+P2: Acceptance receipt loads scoped IO through an eager dynamic require. The
+single-file hook bundle cannot resolve that source path in an isolated folder.
+Routing eval models every explicit-setup package as reachable, but its expected
+sets omit strategy. This eval model is separate from default installation.
+P3: Use a static canonical observation import. Project the helper import path
+through the existing generator. Retain the isolated bundle execution tests.
+Update only eval expected sets and assert the explicit-setup reason. Keep the
+existing default profile exclusion tests. Run bounded local mock checks, then
+return a local commit for parent review. Do not push the changed candidate.

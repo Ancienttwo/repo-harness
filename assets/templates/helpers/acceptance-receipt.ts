@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync, observationSpawnSync as spawnSync } from '../../../src/effects/state/readonly-observation';
 import { createHash } from 'crypto';
 import {
   chmodSync,
@@ -193,9 +194,7 @@ type ProtectedGitRuntime = {
   readonly env: NodeJS.ProcessEnv;
 };
 const requireFromHelper = createRequire(import.meta.url);
-const { assertObservationPath, currentReadonlyObservation, rejectObservation,
-  observationReadFileSync: readFileSync, observationSpawnSync: spawnSync,
-} = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/state/readonly-observation.ts')) as typeof import('../src/effects/state/readonly-observation');
+
 let protectedGitRuntimeCache: ProtectedGitRuntime | null = null;
 
 function fixedPosixExecutable(label: string, candidates: readonly string[]): string {

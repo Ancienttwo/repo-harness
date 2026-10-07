@@ -250,3 +250,50 @@ The full suite, host lifecycle checks and real providers were not run. The
 scope excludes them. No push, PR, publication or deployment occurred. The
 updated archive retains full and exact-delta patches, the immutable commit
 bundle, file lists and command logs. Parent independent review remains pending.
+
+## Draft PR 599 CI repair on 20ccf865
+
+CI run 37684925885, job 113010410748, tested merge commit
+83c26e1699b7b3191f87ac46a55f1749a65889bb against main 3ea2f7b.
+Typecheck passed. Two test files failed. Required/CI failed as a consequence.
+The three HOME isolation jobs passed, as reported by the parent.
+
+The isolated hook bundle could not load readonly-observation.ts from a runtime
+package path. The acceptance helper used a new eager dynamic require. The fix
+uses a static import in the canonical helper, so Bun includes the owner in the
+bundle. The existing helper generator projects its relative import path for
+assets/templates/helpers. Both imports resolve the same canonical owner. No
+second IO scope or compatibility fallback was added. Existing isolated bundle
+execution assertions remain unchanged. A new guard checks that the owner is
+included and no dynamic source require survives.
+
+Routing eval expects all explicit-setup packages to be reachable in its model.
+That model differs from default profile installation. Its two expected sets
+now include strategy. A new assertion checks the explicit-setup reason. Default
+profile exclusion assertions remain in strategy.test.ts. The routing corpus,
+scoring rules, provider defaults and installation behavior did not change.
+
+### Checks and limits
+
+- `bun run check:type`: passed.
+- Initial four-file run: 96 passed, two failed. The new bundle guard incorrectly
+  rejected Bun's source-path comment; it now checks a require expression. The
+  existing TERM-resistant descendant test timed out with status null after five
+  seconds. Detached populate and successful bundled child execution passed.
+- Bundle delta: seven passed, one failed. The only failure was the descendant
+  timeout. This same test failed with the same status-null assertion on an
+  unchanged archived main 3ea2f7b checkout in this saved container. The archive
+  used local dependencies and the same isolated test runner. This proves the
+  timeout also affects the baseline here; it does not prove its host cause.
+  No timeout, assertion, skip condition or process cleanup code was changed.
+- `bun run test:files tests/skill-routing-eval.test.ts tests/unit/hook-entry-single-file-bundle.test.ts tests/strategy.test.ts tests/acceptance-receipt-evidence-fingerprint.test.ts --test-name-pattern '^(?!.*TERM-resistant)' --timeout 60000 --max-concurrency 1`:
+  97 passed, 822 assertions, one explicitly filtered baseline-failing test.
+  All routing tests used the stub provider or an inspected local executable.
+- State boundaries (324 files), hooks (three), helpers (59), reference configs
+  (26), context map (ten) and `git diff --check`: passed.
+
+Full CI still needs a remote rerun. The local result is not a clean full-suite
+pass. The baseline timeout remains an environment-dependent validation limit.
+No real provider, credential change, merge or deployment ran. The published
+20ccf865 evidence remains preserved. This repair commit stays local for parent
+independent review before publication to the existing draft PR.

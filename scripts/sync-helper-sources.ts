@@ -105,6 +105,14 @@ function buildRecoveryProjection(): ProjectionFileRecord {
   };
 }
 
+function buildAcceptanceProjection(): ProjectionFileRecord {
+  const file = readProjectionFile(CANONICAL_ROOT, "acceptance-receipt.ts");
+  const source = file.bytes.toString("utf8");
+  const importPath = "from '../src/effects/state/readonly-observation';";
+  if (source.split(importPath).length !== 2) throw new Error("acceptance helper must import the canonical observation owner exactly once");
+  return { ...file, bytes: Buffer.from(source.replace(importPath, "from '../../../src/effects/state/readonly-observation';")) };
+}
+
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
   const contract = loadWorkflowContract(CONTRACT_PATH);
@@ -122,7 +130,9 @@ function main(): void {
       ? buildCapabilityProjection()
       : name === "recovery-view-cli.ts"
         ? buildRecoveryProjection()
-        : readProjectionFile(CANONICAL_ROOT, name);
+        : name === "acceptance-receipt.ts"
+          ? buildAcceptanceProjection()
+          : readProjectionFile(CANONICAL_ROOT, name);
   }).filter((file) => file !== null);
 
   const targetFiles = existsSync(TARGET_ROOT) ? collectProjectionFiles(TARGET_ROOT) : [];
