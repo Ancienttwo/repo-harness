@@ -13,7 +13,9 @@
    project evidence paths and declare structured constraints affected by it.
 6. Run `repo-harness strategy validate .ai/harness/strategy/proposal.json --repo <root>` with the
    same retrieval flags. Invalid, stale and blocked need investigation.
-   Reviewable still needs the owner's value decision and Bot coordination.
+   Production state is currently unavailable, so validation blocks otherwise
+   valid proposals. There is no bypass. A bounded state adapter must precede
+   production reviewable status. Reviewable still needs the owner's value decision and Bot coordination.
 
 Repository documents and lessons are canonical. A vault is optional and is
 outside this command. The host decides when to wake the role. No hook installs

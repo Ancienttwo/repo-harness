@@ -43,3 +43,18 @@ determinism, explicit body reads and no persistent read effects.
 Do not run providers, user sessions or broad host lifecycle tests.
 The requested bounded checks take precedence over the repo full-suite rule.
 Herdr review is unavailable unless its existing tool can run without a provider.
+
+## Independent review changes
+
+The reviewer requested four P2 fixes on candidate 88860d5. Enforce string enum
+values. Require commit objects for historical provenance. Share all source IO
+budgets, including history, proposal and confirmations. Re-observe bounded
+state after all confirmations and fail stale on revision mismatch.
+
+The full state owner has unbounded transitive reads. Use the review's allowed
+fail-closed alternative: no production state observation and no production
+reviewable proposals. Export context with an explicit state-unavailable unknown.
+Do not claim a partial projection is the full effective state. An internal
+injectable observer must use the same bounded reader. Synthetic tests prove
+its budget and final revision comparison. A future bounded state-owner adapter
+can restore readiness. This is a consistency check, not an atomic snapshot.

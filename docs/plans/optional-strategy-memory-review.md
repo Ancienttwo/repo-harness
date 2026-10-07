@@ -76,3 +76,61 @@ A business pilot needs an actual owner and goal. No such project was fabricated.
 Revert the implementation commit to remove the optional surface. Explicitly
 installed host links can be removed with strategy uninstall-skill before a
 package rollback. No project memory was written by this task.
+
+## Independent review fixes on 88860d5
+
+Parent supplied an independent static review. It verified the original archive
+hash, commit object and eleven new-file blob hashes. It did not run tests.
+It requested changes for four P2 findings. This section supersedes the original
+state-read readiness claims above.
+
+1. IO limits now use one reader for proposal, context, current sources, history,
+   state observation and confirmations. File sizes are checked before payload
+   reads. Historical object sizes are checked before Git show. Git output counts
+   in the quota. Budget failures are not downgraded to unverified evidence.
+2. Every enum requires a string. Arrays, objects and null cannot bypass fact
+   evidence checks or produce reviewable action values.
+3. Provenance revisions must resolve to commit objects. Tree and missing object
+   IDs cannot prove a source revision. No ancestry rule was added.
+4. A bounded observer is called again after all context, evidence, body and
+   proposal confirmations. A changed state revision fails stale. The injected
+   regression changes tasks/current.md after the first observation. It uses no
+   sleeps and exercises both collection and proposal validation.
+
+The full effective-state resolver has unbounded direct and transitive reads.
+Strategy now takes the review's explicit fail-closed alternative. Production
+commands do not call resolveEffectiveStateReadOnly or the ordinary writer.
+They export packets with state unavailable and block otherwise valid proposals.
+There is no CLI bypass. The internal observer seam uses the request reader in
+synthetic tests. A bounded adapter owned by the full state resolver is still
+required to restore production reviewable status. This scope change avoids a
+false IO-limit promise and avoids substituting a partial state projection for
+canonical effective state.
+
+### Verification of the review changes
+
+- `bun run check:type`: passed.
+- `bun run test:files tests/strategy.test.ts --timeout 60000 --max-concurrency 1`:
+  passed, 18 tests, before the final enum regression refinement.
+- `bun run test:files tests/strategy.test.ts tests/skill-surface/catalog.test.ts tests/skill-surface/canonical-packages.test.ts --timeout 60000 --max-concurrency 1`:
+  passed on the final code and tests, 100 tests, 425 assertions.
+- `bun run check:state-boundaries`: passed, 322 files.
+- `bun run check:hooks`: passed, three projections.
+- `bun run check:helpers`: passed, 59 projections.
+- `bun run check:reference-configs`: passed, 26 projections.
+- `bun run check:context-map`: passed, ten entries.
+- `git diff --check`: passed.
+
+The real CLI test now expects blocked instead of reviewable because production
+state observation is unavailable. It still asserts no persistent repository or
+HOME changes on success and failure. This is the only changed readiness
+assertion. Pure validation with a synthetic bounded observer still proves that
+complete consistent context can be reviewable. All prior lifecycle, source
+scope, provenance, contradiction and truncation assertions remain.
+
+No broad host lifecycle tests, full suite or providers ran. Repeat independent
+review is pending with the parent. Remaining limits include the unavailable
+production state adapter, semantic entailment, concurrent hostile directory
+replacement, same-size writes during a read, output-envelope truncation edge
+coverage, Unicode truncation edge coverage and injected host-install rollback
+failure coverage. The confirmation pass is not an atomic filesystem snapshot.

@@ -54,7 +54,7 @@ function evidence(v: unknown): asserts v is Evidence {
 }
 function claim(v: unknown): asserts v is Claim {
   const o = object(v); exact(o, ['text', 'kind', 'evidence']); text(o.text); strings(o.evidence);
-  if (!['fact', 'assumption', 'unknown'].includes(String(o.kind))) throw new Error('Invalid claim kind');
+  if (typeof o.kind !== 'string' || !['fact', 'assumption', 'unknown'].includes(o.kind)) throw new Error('Invalid claim kind');
 }
 export function parseStrategyDocument(v: unknown): StrategyDocument {
   const o = object(v);
@@ -70,7 +70,7 @@ export function parseStrategyDocument(v: unknown): StrategyDocument {
     const m = object(v);
     exact(m, ['id', 'summary', 'kind', 'lifecycle', 'body', 'provenance', 'applicability', 'expiresAt', 'reviewOnRevision', 'reviewConditions', 'supersededBy']);
     text(m.id, 100); text(m.summary, 1000); strings(m.provenance); strings(m.applicability); strings(m.reviewConditions);
-    if (!['long_term', 'current', 'error'].includes(String(m.kind)) || !['active', 'stale', 'superseded', 'archived', 'tombstoned'].includes(String(m.lifecycle))) throw new Error('Invalid memory classification');
+    if (typeof m.kind !== 'string' || !['long_term', 'current', 'error'].includes(m.kind) || typeof m.lifecycle !== 'string' || !['active', 'stale', 'superseded', 'archived', 'tombstoned'].includes(m.lifecycle)) throw new Error('Invalid memory classification');
     if (m.body !== null) evidence(m.body);
     if (m.expiresAt !== null && (typeof m.expiresAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(m.expiresAt) || !Number.isFinite(Date.parse(m.expiresAt)))) throw new Error('Invalid expiry');
     if (m.reviewOnRevision !== null) revision(m.reviewOnRevision);
@@ -101,7 +101,7 @@ export function validateProposal(value: unknown, packet: StrategyPacket): Valida
     const p = object(value); exact(p, ['version', 'contextDigest', 'action', 'rationale', 'evidence', 'constraints']);
     if (p.version !== 1) throw new Error('Unsupported proposal');
     hash(p.contextDigest); text(p.rationale); strings(p.evidence); array(p.constraints);
-    if (!['continue', 'investigate', 'adjust', 'request_owner_decision', 'suggest_pause'].includes(String(p.action))) throw new Error('Invalid action');
+    if (typeof p.action !== 'string' || !['continue', 'investigate', 'adjust', 'request_owner_decision', 'suggest_pause'].includes(p.action)) throw new Error('Invalid action');
     p.constraints.forEach(v => { const c = object(v); exact(c, ['key', 'value']); text(c.key, 100); text(c.value, 500); });
     const proposal = value as StrategyProposal;
     if (proposal.contextDigest !== packet.digest) return result('stale', 'Context or source revision changed');

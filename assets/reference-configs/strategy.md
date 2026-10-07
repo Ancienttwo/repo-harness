@@ -4,6 +4,12 @@ Strategy is off by default. No hook or install profile calls it.
 The CLI only exports a packet. It does not launch a strategic agent.
 The host owns wake behavior. Human owns goals and values. Bot coordinates.
 
+Current readiness limit: production state observation is unavailable. The full
+read-only state resolver has unbounded transitive reads. Strategy does not call
+it. Context packets report this unknown and production validation blocks all
+otherwise valid proposals. A bounded state-owner adapter is required before
+production reviewable status is possible. There is no CLI bypass for this limit.
+
 ## Commands
 
 - `repo-harness strategy status --repo <root>` reports document presence.
@@ -87,9 +93,13 @@ Summary-first reads do not open body paths. Summary authority is always
 historical body hash. It proves identity only. Do not promote historical lessons
 to facts without current evidence. No command edits or archives memory.
 
-Limits: 64 KiB per file, 1 MiB per request including confirmation reads, 128
+Limits: 64 KiB per file, 1 MiB per request shared by context, proposal, history,
+state observations and confirmation reads, 128
 memory descriptors, 64 evidence sources, eight loaded bodies, 8 KiB per emitted
-body, 128 KiB packet output. Oversized files fail closed. Body and envelope
+body, 128 KiB packet output. Current and historical file sizes are checked
+before payload reads. Git output, including metadata and failed-command output,
+counts in the same quota. Internal Git object-store IO and filesystem metadata
+operations are not source payload bytes. Oversized files fail closed. Body and envelope
 truncation is explicit and blocks review. IDs sort deterministically. Topics
 match exactly. There is no semantic or vector retrieval.
 
@@ -112,13 +122,19 @@ not change the code review subject. Do not persist a second execution ledger.
 Actions: `continue`, `investigate`, `adjust`, `request_owner_decision`,
 `suggest_pause`. The digest binds repository, HEAD, read-only state revision,
 context bytes, verified source hashes, eligible memory and explicit retrieval.
+Evidence revisions must identify commit objects. Tree objects are rejected.
+An internal test seam supplies state observation through the request reader.
+It re-observes state after all source, body and proposal confirmation reads.
+A changed state revision is stale. This is a bounded consistency check, not
+an atomic filesystem snapshot. The seam has no production CLI adapter.
 Goal or evidence edits invalidate the previous proposal. Missing or forged
 provenance is invalid. Structured contradictions are blocked. Incomplete
 context is blocked. Remaining semantic consistency is unknown even when
 reviewable. Validation never dispatches work or changes goal authority.
 
 Successful and failed reads do not write code, tasks, leases, caches or state
-versions. The existing read-only state version observation can use a transient
-Git-common-dir lock. It does not allocate a new version. Filesystem races cannot
+versions. This strategy path does not call the full state resolver or observe a state
+version. It uses no state lock. A future bounded adapter must retain read-only
+state authority and must not allocate a version. Filesystem races cannot
 be fully excluded without operating-system directory handles. Do not run this
 reader against a concurrently hostile mutable worktree.

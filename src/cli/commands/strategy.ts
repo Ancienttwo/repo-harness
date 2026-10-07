@@ -1,6 +1,5 @@
 import { Command } from 'commander';
-import { validateProposal } from '../../core/strategy/contracts';
-import { collectStrategyContext, readStrategyProposal, strategyStatus, StrategySourceDriftError } from '../../effects/strategy/context';
+import { collectStrategyContext, validateStrategyRequest, strategyStatus, StrategySourceDriftError } from '../../effects/strategy/context';
 import { projectStrategySkill } from '../../effects/strategy/skill';
 
 interface Options { repo: string; load?: string[]; topic?: string[]; target?: string; dryRun?: boolean }
@@ -23,7 +22,7 @@ export function buildStrategyCommand(): Command {
   contextOptions(strategy.command('context')).action((o: Options) => run(() => collectStrategyContext(o.repo, { load: o.load, topics: o.topic })));
   contextOptions(strategy.command('validate').argument('<proposal>', 'Repository-relative proposal JSON'))
     .action((path: string, o: Options) => run(() => {
-      const result = validateProposal(readStrategyProposal(o.repo, path), collectStrategyContext(o.repo, { load: o.load, topics: o.topic }));
+      const result = validateStrategyRequest(o.repo, path, { load: o.load, topics: o.topic });
       if (result.status !== 'reviewable') process.exitCode = 1;
       return result;
     }));
