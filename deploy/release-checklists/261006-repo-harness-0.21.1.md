@@ -25,12 +25,30 @@
   `archctx@0.6.3` and `archctx-contracts@0.6.3`.
 - `git diff --check`: exit 0.
 
+## Release gate
+
+- Command: `bun run check:release`. Exit 0. Output ends with
+  `[release] OK: npm package gate passed.`
+- Tree: `03c238fb`. It is `152e9ce4` (this changelog) plus #594
+  (`f38a3385`) and #595 (`3a591fd3`), cherry-picked before their merge.
+- Result: 409 test files ran with 0 failures. The shared tarball smoke
+  installed `repo-harness-0.21.1.tgz`, served the packaged Operator and
+  started the packaged CLI bins.
+- Environment: macOS arm64, Bun 1.4.2, fresh temporary HOME.
+  `PATH` starts with `/opt/homebrew/opt/node@24/bin`, and `CLAUDECODE` and
+  `AGENT` are unset.
+- An earlier run with Homebrew Node 26 first on `PATH` and `CLAUDECODE=1`
+  failed 8 cases in `tests/generic-review.test.ts`. The OAR fixtures require
+  Node 24 as the first `node` on `PATH`. Bun agent mode hides the `(pass)`
+  lines that one case reads. Both causes are environment conditions, not
+  product defects.
+
 ## Publication status
 
-Release preparation belongs to branch `chore/prepare-0.21.1-archctx-0.6.3`.
+Merge #594, #595 and this preparation before the tag. The tag must point to
+the main commit that contains all three. If main changes after this gate,
+compare that commit with `03c238fb` before the tag.
 Tag creation and npm publication remain pending.
-The full release gate and package installation checks have not run for 0.21.1.
-This filing does not establish release readiness.
 
 Skill eval evidence is unavailable. `full_test_count`, `dry_run_ratio`,
 `grader_pass_rate`, and `effectiveness_authority` are unavailable.
