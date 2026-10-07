@@ -22,6 +22,9 @@ All notable changes to this skill are documented here.
 - Pin `archctx` and `archctx-contracts` to exact version `0.6.3`.
   Align architecture and refactor policies, init defaults, and clean-room
   verification with these dependencies. (#586)
+- Upgrade `@botiverse/oar` from `0.18.0` to `0.33.1`. The Generic review
+  host keeps its API surface, provider defaults and Seatbelt isolation. The
+  lockfile no longer installs the Cursor SDK. (#595)
 - `repo-harness module review-prompt` now fails with `secret_detected` when
   the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
   `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)
@@ -32,6 +35,14 @@ All notable changes to this skill are documented here.
 
 - Restore the collaboration flow proof after a removed source symbol. The
   architecture projection no longer reports unrelated drift. (#589)
+- Remove stale `.herdr-stage-*` and `.herdr-stage-*-backup` directories that
+  an interrupted Herdr skill install left in the host skill roots. Only old,
+  provably owned entries are removed; every removal and skip is reported.
+  (#593)
+- Find a compatible Node runtime in Homebrew versioned kegs
+  (`/opt/homebrew/opt/node@N` and `/usr/local/opt/node@N`). A host with
+  Homebrew `node` 26 and keg-only `node@24` no longer fails
+  `repo-harness init` at architecture projection readiness. (#594)
 
 ## [0.21.0] - 2026-10-06
 
