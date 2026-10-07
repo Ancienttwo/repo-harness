@@ -1837,6 +1837,8 @@ test('a lease this completion could not release is refused before any write', ()
   }, 60_000);
 });
 
+import { dirname } from 'path';
+import { assertOwnedTrashDirectory, worktreeTrashNames } from '../src/effects/state/worktree-trash';
 import { cleanupExactWorktree, removeExactWorktree, sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 
 describe('exact cleanup and SessionStart worktree sweep', () => {
@@ -1857,7 +1859,7 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
     const path = join(managed, 'repo-wt-demo'); git('worktree', 'add', '-q', '-b', 'codex/demo', path);
     const head = git('rev-parse', 'HEAD');
     const expected = { worktree: path, branch: 'codex/demo', head_sha: head, target_ref: 'refs/remotes/origin/main', target_oid: head, merge_commit_sha: head };
-    const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, REPO_HARNESS_TOOLING_UPDATE_CHECK: '0', HOME: join(parent, 'home') };
+    const env = { ...process.env, REPO_HARNESS_WORKTREE_ROOT: managed, REPO_HARNESS_TOOLING_ADVISORY: '0', HOME: join(parent, 'home') };
     return { parent, root, managed, path, git, expected, env, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
   }
 
@@ -1988,6 +1990,158 @@ describe('exact cleanup and SessionStart worktree sweep', () => {
       expect(existsSync(f.path)).toBe(true); expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
     } finally { f.cleanup(); }
   }, 15000);
+
+  async function interruptSweep(f: ReturnType<typeof fixture>, step: string): Promise<string> {
+    const worker = join(f.parent, 'w1-worker.ts'); const signal = join(f.parent, 'w1-signal.json');
+    const module = join(import.meta.dir, '../src/effects/state/coordination-worktree-topology.ts');
+    writeFileSync(worker, [
+      `import { sweepManagedWorktrees } from ${JSON.stringify(module)};`,
+      `import { writeFileSync } from 'fs';`,
+      `let stopped = false;`,
+      `const result = sweepManagedWorktrees(${JSON.stringify(f.root)}, ${JSON.stringify(f.root)}, process.env, { afterRemovalStep(step, path) {`,
+      `if (!stopped && step === ${JSON.stringify(step)}) { stopped = true; writeFileSync(${JSON.stringify(signal)}, JSON.stringify({ step, path })); process.kill(process.pid, 'SIGSTOP'); }`,
+      `} }); console.log(result);`,
+    ].join('\n'));
+    const child = spawn(process.execPath, [worker], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
+    const ended = new Promise<void>(resolve => { child.once('exit', () => resolve()); });
+    try {
+      const deadline = Date.now() + 15_000;
+      while (!existsSync(signal) && child.exitCode === null && child.signalCode === null && Date.now() < deadline) await Bun.sleep(10);
+      expect(existsSync(signal), output).toBe(true);
+      const path = JSON.parse(readFileSync(signal, 'utf8')).path as string;
+      child.kill('SIGKILL'); await ended;
+      expect(child.signalCode).toBe('SIGKILL');
+      // An unlink signal names a child of the renamed payload. Other steps name the container.
+      return step === 'trash-entry-deleted' ? dirname(dirname(path)) : path;
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await ended; }
+    }
+  }
+
+  test.each(['intent', 'renamed', 'unregistered', 'branch-deleted', 'trash-entry-deleted'])('W1 next sweep converges after SIGKILL at %s', async step => {
+    const f = fixture(); try {
+      const outside = join(f.parent, 'outside'); f.git('worktree', 'add', '-q', '-b', 'outside', outside);
+      const directory = await interruptSweep(f, step);
+      expect(existsSync(directory)).toBe(true);
+      if (step === 'intent') expect(existsSync(f.path)).toBe(true);
+      else expect(existsSync(f.path)).toBe(false);
+      if (step === 'unregistered' || step === 'branch-deleted' || step === 'trash-entry-deleted') expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path);
+      if (step === 'trash-entry-deleted') {
+        expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+        expect(readdirSync(join(directory, 'worktree')).length).toBeLessThan(3);
+      }
+      const next = sweepManagedWorktrees(f.root, f.root, f.env);
+      expect(next).toContain('resumed=1'); expect(existsSync(directory)).toBe(false);
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path);
+      expect(existsSync(outside)).toBe(true); expect(f.git('branch', '--list', 'outside')).toContain('outside');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W1 a real deadline during trash deletion leaves data that the next sweep finishes', () => {
+    const f = fixture(); try {
+      let delayed = false;
+      const timed = sweepManagedWorktrees(f.root, f.root, f.env, { afterRemovalStep(step) {
+        if (step === 'trash-entry-deleted' && !delayed) { delayed = true; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2100); }
+      } });
+      expect(delayed).toBe(true); expect(timed).toContain('trash deletion will resume');
+      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+      const directory = worktreeTrashNames(join(f.root, '.git'), f.managed)[0]!;
+      expect(existsSync(directory)).toBe(true);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('resumed=1');
+      expect(existsSync(directory)).toBe(false);
+    } finally { f.cleanup(); }
+  }, 15000);
+
+  test('W1 recovery accepts a local integration ref advance after the rename', async () => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'renamed');
+      f.git('commit', '--allow-empty', '-qm', 'advance target'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('resumed=1');
+      expect(existsSync(directory)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W1 recovery never removes a replacement directory at the old worktree name', async () => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'renamed');
+      mkdirSync(f.path); writeFileSync(join(f.path, 'replacement'), 'new owner data');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('resumed=1');
+      expect(existsSync(directory)).toBe(false); expect(readFileSync(join(f.path, 'replacement'), 'utf8')).toBe('new owner data');
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W1 trash resume does not touch a non-matching directory', () => {
+    const f = fixture(); try {
+      const unowned = join(f.managed, '.repo-harness-wt-trash-unowned'); mkdirSync(unowned); writeFileSync(join(unowned, 'keep'), 'keep');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('removed=1');
+      expect(readFileSync(join(unowned, 'keep'), 'utf8')).toBe('keep');
+    } finally { f.cleanup(); }
+  });
+
+  test('W1 trash resume refuses a matching symlink without following it', async () => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'renamed');
+      const saved = join(f.parent, 'saved'); fs.renameSync(directory, saved); symlinkSync(saved, directory);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('trash is not a real directory');
+      expect(readFileSync(join(saved, 'worktree/source'), 'utf8')).toBe('base\n');
+      expect(fs.lstatSync(directory).isSymbolicLink()).toBe(true); expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test.skipIf(!process.getuid || process.getuid() === 0)('W1 the production ownership check rejects a real foreign-owned directory', () => {
+    const foreign = realpathSync('/tmp');
+    expect(fs.lstatSync(foreign).uid).not.toBe(process.getuid?.());
+    expect(() => assertOwnedTrashDirectory(foreign)).toThrow('foreign-owned');
+    // The predicate reads native stat only. No permission or ownership is changed.
+    expect(fs.lstatSync(foreign).isDirectory()).toBe(true);
+  });
+
+  test('W1 trash resume keeps a payload that Git has registered after the rename', async () => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'renamed'); const payload = join(directory, 'worktree');
+      f.git('worktree', 'repair', payload);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('trash is still registered');
+      expect(f.git('worktree', 'list', '--porcelain')).toContain(payload); expect(existsSync(payload)).toBe(true);
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W1 whole prune refuses unknown metadata omitted from Git porcelain', () => {
+    const f = fixture(); try {
+      const outside = join(f.parent, 'outside'); f.git('worktree', 'add', '-q', '-b', 'outside', outside);
+      const admin = f.git('-C', outside, 'rev-parse', '--absolute-git-dir');
+      // This models a real interrupted metadata removal in the documented Git layout.
+      rmSync(join(admin, 'gitdir'));
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain(outside);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('unknown Git registration metadata');
+      expect(existsSync(admin)).toBe(true); expect(existsSync(outside)).toBe(true); expect(existsSync(f.path)).toBe(true);
+      expect(worktreeTrashNames(join(f.root, '.git'), f.managed)).toEqual([]);
+    } finally { f.cleanup(); }
+  });
+
+  test('W1 an interrupted Git metadata removal is completed by the next sweep', async () => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'renamed');
+      const receipt = JSON.parse(readFileSync(join(directory, 'receipt.json'), 'utf8'));
+      rmSync(join(receipt.git_directory, 'gitdir'));
+      expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('resumed=1');
+      expect(existsSync(receipt.git_directory)).toBe(false); expect(existsSync(directory)).toBe(false);
+      expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+    } finally { f.cleanup(); }
+  }, 20000);
+
+  test('W1 cleanup does not rename a worktree when whole-prune scope is unsafe', () => {
+    const f = fixture(); try {
+      const outside = join(f.parent, 'outside'); f.git('worktree', 'add', '-q', '-b', 'outside', outside); rmSync(outside, { recursive: true });
+      expect(sweepManagedWorktrees(f.root, f.root, f.env)).toContain('prune would affect a protected path');
+      expect(existsSync(f.path)).toBe(true); expect(worktreeTrashNames(join(f.root, '.git'), f.managed)).toEqual([]);
+      expect(f.git('worktree', 'list', '--porcelain')).toContain(outside);
+    } finally { f.cleanup(); }
+  });
 
   test('real SessionStart reports sweep failure and still returns zero', () => {
     const f = fixture(); try {
