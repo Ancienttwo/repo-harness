@@ -29,6 +29,17 @@ All notable changes to this skill are documented here.
   (#595, #598)
 - The prompt hook boundary text now says that a main merge needs explicit
   current-task authorization. (#596)
+- New task worktrees default to `/tmp/<repo>-wt-<slug>`, and MCP coding
+  workspaces default to `/tmp/repo-harness-mcp-worktrees`. Creation refuses a
+  target path that already exists. `contract-worktree` now reads the stored
+  `worktree_dir_template`, so existing downstream policies keep their value.
+  Set it to `../{{repo}}-wt-{{slug}}` to keep the old location.
+- Closeout removes a merged, clean worktree and its branch through the exact
+  cleanup checks. Each SessionStart also removes left-behind merged, clean,
+  unowned worktrees under the managed root and reports removed, kept and
+  deferred paths. The sweep has a time limit, and the next session resumes an
+  interrupted removal. Removal also deletes Git-ignored files in that
+  worktree. A reboot can clear `/tmp`; commit or push work first. (#600)
 - `repo-harness module review-prompt` now fails with `secret_detected` when
   the prompt contains a URL with a filled `token`, `key`, `auth`, `code`,
   `sig` or `signature` query field. MCP redaction uses the same patterns. (#590)

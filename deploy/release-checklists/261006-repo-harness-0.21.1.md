@@ -15,6 +15,8 @@
 - Add the OAR `0.33.1` upgrade (#595) to the 0.21.1 changelog.
 - Upgrade OAR to `0.37.0` (#598) and update the OAR changelog entry. Add the
   #596 prompt hook boundary text change.
+- Add the `/tmp` worktree default and the merged worktree sweep (#600) to
+  the 0.21.1 changelog. The owner approved moving tag `v0.21.1` to include it.
 - Keep published release history unchanged.
 
 ## Verification
